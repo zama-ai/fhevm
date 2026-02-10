@@ -1,47 +1,59 @@
-# Host Listener Parity Matrix (EVM -> Solana)
+# Host Listener Parity Matrix (Discovery)
 
 Date: 2026-02-09
-Status: Draft
+Status: Final draft for Discovery issue #1028
 
-## Purpose
+## Outcome
 
-List which EVM-host features must be replicated 1:1, and the Solana options for each. This is the contract for exploration scope.
+Recommended direction for PoC speed and low blast radius:
+- Build a separate `solana-listener`.
+- Preserve existing canonical DB contracts (`computations`, `allowed_handles`, `pbs_computations`).
+- Keep Gateway unchanged by preserving handle metadata semantics.
 
-## Legend
+## Core Findings
 
-- `Must now`: required for first host+listener feasibility loop.
-- `Soon`: likely needed before full end-to-end.
-- `Later`: can be deferred during initial PoC.
+| Concept | Finding (precise) | Solana implication | Code evidence |
+|---|---|---|---|
+| Handle metadata compatibility | Handle metadata includes host chain id + type + version in fixed bytes; Gateway parses this for host-chain validation. | Keep handle byte semantics compatible; replace EVM chain-id source with deterministic Solana host id derivation. | [FHEVMExecutor metadata write](https://github.com/zama-ai/fhevm/blob/main/host-contracts/contracts/FHEVMExecutor.sol#L780), [Handle parsing](https://github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/libraries/HandleOps.sol#L24), [Gateway host-chain check](https://github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/shared/GatewayConfigChecks.sol#L107) |
+| Listener coupling | Current host-listener chain transport and decode path is Ethereum-specific (RPC blocks/logs + ABI decode). | Implement Solana ingestion separately rather than refactoring EVM listener first. | [Poller loop](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/poller/mod.rs#L211), [ABI contract bindings](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/contracts/mod.rs#L1), [Log decode + ingest](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/ingest.rs#L63) |
+| DB ingestion contract reusability | Canonical effects are persisted in DB with idempotent conflict handling. | Preserve same row semantics and idempotency keys in Solana listener output. | [Computations insert (idempotent)](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/tfhe_event_propagate.rs#L299), [Allow insert](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/tfhe_event_propagate.rs#L683), [PBS trigger insert](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/tfhe_event_propagate.rs#L660) |
+| Chain identity binding | Current listener startup enforces configured chain identity match; upstream DB model is moving from `tenant` to `host_chains`. | Keep one-listener-one-configured-host-chain model for Solana too. | [Poller chain mismatch check](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/poller/mod.rs#L143), [Main chain mismatch check](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/cmd/mod.rs#L1051), [PR #1856 host_chains cache](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/host_chains.rs#L1) |
+| Finality + replay safety | Canonical ingestion uses finality gating and persisted cursor/catchup. | Use finalized Solana source and persisted slot/lane-seq cursor with backfill. | [Finality lag safe tip](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/poller/mod.rs#L229), [Poller cursor table](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/db-migration/migrations/20251015000000_host_listener_poller_state.sql#L1), [Reorg/missing ancestor recovery](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/cmd/mod.rs#L725) |
+| ACL parity (v0-relevant) | Persistent allow flow drives both permission persistence and downstream PBS queueing. | Reproduce both side effects 1:1 for Solana `allow` path in v0. | [ACL allow](https://github.com/zama-ai/fhevm/blob/main/host-contracts/contracts/ACL.sol#L191), [Allowed event handling](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/tfhe_event_propagate.rs#L521) |
+| Dependency correctness | Scheduler correctness depends on explicit dependency relations, not chain type. | Keep explicit dependency metadata in canonical Solana events; do not rely on lane order alone. | [Dependence chain derivation](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/host-listener/src/database/dependence_chains.rs#L44), [Scheduler dependency graph build](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/scheduler/src/dfg.rs#L326) |
+| Schedule ordering contract | Work selection/execution uses stable order fields and source ordering assumptions. | Derive deterministic Solana source order from canonical stream (not websocket arrival order). | [Worker query ordered by schedule_order](https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/tfhe-worker/src/tfhe_worker.rs#L377), [Ordering change context PR #1901](https://github.com/zama-ai/fhevm/pull/1901) |
 
-| Feature | EVM Baseline | 1:1 Invariant to Keep | Solana Options | PoC Choice | Priority |
-|---|---|---|---|---|---|
-| Handle metadata format | `host-contracts/contracts/FHEVMExecutor.sol` (`_appendMetadataToPrehandle`) + `gateway-contracts/contracts/libraries/HandleOps.sol` | 32-byte handle with parseable chain-id/type/version bytes | A) keep exact byte positions, custom prehandle hash; B) new format + gateway change | A | Must now |
-| Symbolic op request semantics | `host-contracts/contracts/FHEEvents.sol` + listener op mapping in `tfhe_event_propagate.rs` | host emits enough data to reconstruct operation/dependencies/result handle deterministically | A) logs only; B) PDA receipt only; C) hybrid | C | Must now |
-| ACL allow (persistent) | `host-contracts/contracts/ACL.sol` + `Allowed` event handling in listener | listener can ingest allow state and queue PBS work exactly once | A) logs only; B) PDA ACL state + logs | B (with logs as fast path) | Must now |
-| ACL allowForDecryption | `ACL.sol` + `AllowedForDecryption` handling | equivalent public-decrypt permission signal reaches ingestion | A) explicit log/event; B) PDA flag transition | A now, B later | Soon |
-| ACL delegation events | `ACL.sol` delegation + listener `insert_delegation` | delegation/revocation can be ingested with ordering and replay safety | A) event/log; B) delegation PDA journal | defer | Later |
-| ACL transient allowance | `ACL.sol` `allowTransient` via transient storage | per-transaction temporary access control for on-chain symbolic execution | A) instruction-context only; B) ephemeral PDA/session account | A | Soon |
-| HCU gating | `host-contracts/contracts/HCULimit.sol` | per-tx complexity limits prevent abuse of symbolic pipeline | A) protocol-level metering account/PDA; B) rely only on Solana compute budget; C) off-chain policy only | B for first loop; evaluate A | Soon |
-| Input verification surface | `FHEVMExecutor.verifyInput` + `VerifyInput` event currently ignored by ingestion | keep clear contract of what host-listener must ingest vs ignore | A) keep ignored in first PoC; B) add dedicated ingestion path | A | Later |
-| Chain identity binding | listener chain-id checks in `poller/mod.rs` + DB tenant mapping | one listener instance only writes for intended host chain tenant | A) map Solana cluster/program to protocol chain_id; B) redesign tenant keying | A | Must now |
-| Finality + reorg handling | EVM websocket/poller catchup (`cmd/mod.rs`, `poller/mod.rs`) | no silent data loss on transient forks/restarts | A) finalized commitment + slot cursor + backfill; B) processed commitment only | A | Must now |
-| Catchup cursor | `host_listener_poller_state`, `host_chain_blocks_valid` | resumable catchup with explicit cursor | A) store slot/signature cursor in new table/state; B) reuse existing cursor table shape | B (extend semantics) | Must now |
-| Idempotent ingestion | `ON CONFLICT DO NOTHING` in computations/allowed/delegations | replaying the same signal must not duplicate work | A) deterministic event keys + UPSERT; B) in-memory dedup only | A | Must now |
-| Dependence chain scheduling | `dependence_chain` updates from ingestion | dependency ordering remains coherent for worker scheduling | A) compute from canonical dependencies exactly as today; B) disable temporarily | A for ops included in PoC | Soon |
-| Health/metrics contract | listener health checks and metrics | liveness/readiness must expose chain and DB status | A) copy same health shape; B) minimal logs only | A (minimal first) | Soon |
-| Gateway compatibility | `GatewayConfigChecks.onlyHandleFromRegisteredHostChain` and gateway allow/add flows | gateway accepts host chain handles without protocol-level changes | A) register Solana host chain id and preserve handle metadata; B) gateway contract changes | A | Must now |
+## Strict v0 Scope (Host + Listener)
 
-## Immediate PoC Boundary
+Must implement now:
+1. Handle metadata compatibility for Gateway checks.
+2. One symbolic op (`add`) -> canonical `computations` insertion.
+3. Persistent `allow` -> canonical `allowed_handles` + `pbs_computations` insertion.
+4. Finality gating + persisted cursor + idempotent replay.
 
-To move fast, first Solana host+listener loop will cover:
+Explicitly deferred:
+1. Full op catalog parity.
+2. Delegation and all ACL edge paths.
+3. Full worker/gateway throughput tuning.
+4. Production indexer infra hardening.
 
-1. handle metadata compatibility
-2. symbolic op request ingestion (`add` first)
-3. persistent allow ingestion
-4. finality/cursor/idempotency
+## Model Update (2026-02-09 from PR #1856)
 
-Everything else is intentionally deferred.
+What changed upstream:
+- `tenants` is renamed to `keys`; tenant API key and tenant-centric fields are removed.
+- Chain metadata is moved to a dedicated `host_chains` table.
+- CRS is split into its own `crs` table.
 
-## Notes from Existing Local Solana Demo
+Why it matters for Solana discovery:
+- `tenant_id` is not a stable concept to build Solana integration around.
+- Our parity framing should target `host_chain_id` + key metadata compatibility.
+- The “one listener instance per host chain” assumption still holds; naming/model now aligns with `host_chains`.
 
-Local repository `/Users/work/code/zama/solana-symbolic-host-demo` already validates a hybrid `logs + PDAs` model and idempotent fulfillment flow. That project is not protocol-complete, but it is a useful template for quick feedback loop mechanics.
+Evidence:
+- [PR #1856 migration](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/db-migration/migrations/20260128095635_remove_tenants.sql#L1)
+- [PR #1856 host chain cache type](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/host_chains.rs#L1)
+- [PR #1856 key cache type](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/db_keys.rs#L1)
+
+## Decision for #1028
+
+Discovery recommendation: proceed to PoC with a separate `solana-listener` service writing the same canonical DB effects as the EVM host-listener.

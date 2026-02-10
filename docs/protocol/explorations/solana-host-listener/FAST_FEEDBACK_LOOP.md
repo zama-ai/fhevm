@@ -1,7 +1,7 @@
 # Fast Feedback Loop (Host + Listener First)
 
 Date: 2026-02-09
-Status: Draft for Experiment 1
+Status: Active (v0 baseline validated)
 
 ## Objective
 
@@ -70,7 +70,7 @@ Checks:
 
 - inserts into `computations`, `allowed_handles`, `pbs_computations`, `host_chain_blocks_valid`
 - no duplicates after replaying same batch (`ON CONFLICT` behavior)
-- stable `chain_id`/tenant routing
+- stable `host_chain_id` + key-id routing
 
 Pass criteria:
 
@@ -122,27 +122,28 @@ Why:
 
 ## Solana Signal Strategy for Fast Feedback
 
-Use hybrid source immediately:
+PoC baseline source:
 
-- `msg!`/program logs for low-latency trigger and observability
-- PDA receipt/state for replay/recovery source of truth
+- canonical: finalized RPC logs/events + durable cursor replay
+- optional fast hints: confirmed websocket logs (wake-up only)
+- event encoding variants to compare: `emit!` vs `emit_cpi!`
 
 Rationale:
 
-- logs-only is fast but fragile on reconnects
-- PDA-only is robust but slower to iterate on UX and instrumentation
-- hybrid gives fast local loop while preserving restart safety
-
-This matches existing local learning in `/Users/work/code/zama/solana-symbolic-host-demo/README.md` and `/Users/work/code/zama/solana-symbolic-host-demo/docs/notes/logs-vs-pdas.md`.
+- lowest state cost and fastest implementation
+- keeps replayability by using finalized catchup + idempotent DB writes
+- avoids early rent/state complexity from per-tx PDA or journal designs
+- lets us measure event-delivery reliability tradeoff early without changing DB contract
 
 ## Minimum Assertions Per Run
 
 Every L2 run must output:
 
-1. `request_id` (`signature` or equivalent)
+1. `tx_signature` (or equivalent canonical tx id)
 2. derived `handle` (hex/base58 + raw 32 bytes)
 3. ingestion summary (`inserted_computations`, `inserted_allowed`, `inserted_blocks`)
 4. replay summary (`replayed_events`, `new_rows=0`)
+5. event mode summary (`emit` or `emit_cpi`)
 
 If any of these are missing, the run is not considered valid.
 
@@ -152,11 +153,12 @@ If any of these are missing, the run is not considered valid.
 2. Start `solana-test-validator`.
 3. Deploy/start minimal symbolic host program.
 4. Start `solana-listener` in verbose mode.
-5. Submit one request tx (`add`).
+5. Submit one request tx (`add`) using event mode A (`emit!`).
 6. Query DB assertions.
-7. Restart listener.
-8. Re-run ingestion/backfill.
-9. Re-check DB for idempotency.
+7. Repeat with event mode B (`emit_cpi!`).
+8. Restart listener.
+9. Re-run ingestion/backfill.
+10. Re-check DB for idempotency.
 
 ## What We Explicitly Defer
 
@@ -165,9 +167,37 @@ If any of these are missing, the run is not considered valid.
 - transaction-sender integration
 - worker execution and ciphertext material publication
 - production-grade indexer infra (Geyser/custom pipeline)
+- on-chain receipt/journal cleanup design
 
 ## Exit Criteria for This Feedback Harness
 
 - We can run L2 locally end-to-end in under 10 minutes.
 - We can run L1 from fixtures in under 3 minutes.
 - We can detect regressions by failing assertions, not manual log reading.
+
+Current checkpoint:
+
+1. finalized RPC ingestion + DB assertions: validated
+2. `emit!` vs `emit_cpi!` DB-contract equivalence: validated
+3. replay idempotency (`new_rows=0`): validated
+4. worker e2e compute + decrypt sanity (`emit!` and `emit_cpi!`): validated
+5. ACL gate behavior (`request_add` blocked until `allow`): validated
+
+## v0 Binary Acceptance Checklist (Agreed)
+
+1. `request_add` path: one Solana request produces one canonical op record and exactly one `computations` row.
+2. `allow` path: one Solana allow signal produces exactly one `allowed_handles` row and exactly one `pbs_computations` row.
+3. Deterministic ordering: `schedule_order` is derived from `slot_time + tx_index + op_index` and replaying the same finalized range preserves ordering.
+4. Replay/idempotency: restarting listener and reprocessing the same finalized range inserts `0` new canonical rows.
+5. Finality safety: canonical ingestion/cursor advancement only from finalized data; confirmed/log stream is hint-only.
+6. Scope discipline: no required refactor/regression in existing EVM listener path.
+7. Event mode comparison: same payload semantics and DB effects for `emit!` and `emit_cpi!`.
+
+## Deferred State-Cost Experiments
+
+Not in the first PoC baseline:
+
+1. per-tx receipt PDA lifecycle and cleanup
+2. sharded journal/lane segment designs
+
+These are evaluated only after baseline logs path passes replay/correctness gates.

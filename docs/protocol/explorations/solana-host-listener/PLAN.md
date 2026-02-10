@@ -13,10 +13,11 @@ This is an exploratory PoC. Code can be discarded after each experiment if the l
 
 ```mermaid
 flowchart LR
-  A["Scope lock: add + allow"] --> B["Spec + fixtures (L0/L1)"]
-  B --> C["Local Solana loop (L2)"]
-  C --> D["Compare trigger models: logs vs PDA"]
-  D --> E["Architecture decision for next phase"]
+  A["Scope lock: add + allow"] --> B["Anchor interface + event mode freeze"]
+  B --> C["RPC baseline: emit! vs emit_cpi!"]
+  C --> D["Replay/idempotency validation loop"]
+  D --> E["Compare alternatives: Geyser/Helius + PDA/journal"]
+  E --> F["Architecture decision for next phase"]
 ```
 
 ## Scope
@@ -47,27 +48,112 @@ Choose one path based on evidence:
 
 Current expectation: Path B is lower risk for fast learning.
 
+## Program-First Execution Model
+
+We implement in this order:
+
+1. Minimal Solana host program surface (`request_add`, `allow`).
+2. Freeze IDL/event contract consumed by listener.
+3. Build `solana-listener` against that contract.
+4. Validate replay/idempotency with restart tests.
+
+Reason: the program/IDL is the equivalent of EVM event ABI and defines what listener can ingest.
+
+## PoC Topology (v0)
+
+```mermaid
+flowchart LR
+  U["PoC client tx"] --> V["solana-test-validator"]
+  V --> H["Solana host program (request_add, allow)"]
+  H --> L["confirmed logs (optional hints)"]
+  H --> P["finalized logs/events (canonical)"]
+  L --> S["solana-listener"]
+  P --> S
+  S --> I["database/ingest"]
+  I --> C1["computations"]
+  I --> C2["allowed_handles"]
+  I --> C3["pbs_computations"]
+  I --> C4["poller cursor/state"]
+```
+
+## Components: Create vs Modify vs Reuse
+
+### Create
+
+1. `coprocessor/fhevm-engine/solana-listener/` (new service)
+- `cmd/` args + bootstrap
+- `poller/` finalized canonical log ingestion + durable cursor
+- optional `ws_listener/` confirmed logs as wake-up hints
+- `database/ingest.rs` and `database/solana_event_propagate.rs` (same conceptual split as current host-listener)
+- tests for mapping/replay/idempotency
+
+2. Solana PoC program workspace (Anchor, minimal)
+- instructions: `request_add`, `allow`
+- events/log contract for listener reads
+- IDL committed and versioned for listener contract
+
+3. PoC local run scripts
+- one script to start validator + listener + required DB services
+- one script to submit `request_add` and `allow`
+- one script to assert DB rows + replay invariants
+
+### Modify
+
+1. `test-suite/fhevm/docker-compose/` to add PoC services
+- add Solana validator compose file
+- add solana-listener compose file
+- avoid changing existing EVM deploy path behavior
+
+2. `test-suite/fhevm/fhevm-cli` (optional, minimal)
+- optional new test/deploy shortcut for Solana PoC flow
+
+3. PoC docs in `docs/protocol/explorations/solana-host-listener/`
+- keep acceptance checklist and runbook up to date
+
+### Reuse
+
+1. Existing Postgres and migration wiring from `test-suite/fhevm`.
+2. Existing host-listener test patterns for replay/finality/cursor checks:
+- `coprocessor/fhevm-engine/host-listener/tests/host_listener_integration_tests.rs`
+- `coprocessor/fhevm-engine/host-listener/tests/poller_integration_tests.rs`
+3. Existing DB schema contracts (`computations`, `allowed_handles`, `pbs_computations`).
+
 ## Experiment Tracks
 
-### Track 1: Log-driven listener (`msg!`)
+### Track 1: RPC logs baseline (v0)
 
-Question: Can deterministic Solana logs be a reliable source of operation intents?
-
-Validation target:
-
-- Parse and map a minimal operation set from logs.
-- Insert rows that trigger downstream coprocessor execution.
-- Prove one local end-to-end pass.
-
-### Track 2: PDA receipt-driven listener
-
-Question: Are PDA receipts/state accounts a more reliable source than logs for indexing and retries?
+Question: Can finalized RPC logs/events provide deterministic replay and zero-loss ingestion for PoC?
 
 Validation target:
 
-- Persist operation intents in PDA accounts.
-- Index receipts and map them to the same DB operation model.
+- Parse/map `request_add` + `allow`.
+- Persist via canonical DB rows with idempotent replay.
 - Prove one local end-to-end pass.
+
+Track 1 variants:
+
+1. `emit!` events in program logs (`Program data:`).
+2. `emit_cpi!` events in CPI instruction data.
+
+Both variants must be tested with the same listener mapping contract and the same replay/idempotency gates.
+
+### Track 2: Managed/indexed streams
+
+Question: Do managed stream/indexer sources improve reliability/latency versus raw RPC logs?
+
+Validation target:
+
+- Repeat Track 1 workload with same metrics on Geyser/Helius-style source.
+- Compare miss rate, replay behavior, and operational complexity.
+
+### Track 3: On-chain state alternatives (deferred)
+
+Question: Are per-dapp journals/PDAs worth the state/rent overhead for stronger replay guarantees?
+
+Validation target:
+
+- Build explicit state-growth and rent budget model.
+- Prototype only if Track 1/2 fails hard replay requirements.
 
 ## E2E Feedback Loop Requirements
 
@@ -85,19 +171,84 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 
 ## Execution Plan
 
-1. Define minimal operation subset for PoC (`add` only, then 1-2 more ops).
-2. Formalize mapping from Solana signal -> existing DB schema.
-3. Implement Track 1 PoC with a small listener spike.
-4. Capture learnings and decide whether Track 1 is sufficient.
-5. Implement Track 2 PoC if uncertainty remains.
-6. Compare both tracks with explicit criteria.
-7. Decide architecture direction for next phase.
+1. Freeze v0 interface in Anchor (`request_add`, `allow`) and export IDL.
+2. Define canonical listener structs and exact DB mapping (1:1 parity for v0).
+3. Implement `solana-listener` finalized RPC log poller + DB ingest path.
+4. Add hint path (confirmed logs) to reduce latency without changing canonical commit source.
+5. Build L1 tests (fixture replay -> DB assertions).
+6. Build L2 smoke run for `emit!` (local validator -> listener -> DB).
+7. Build L2 smoke run for `emit_cpi!` (same assertions and workload).
+8. Run restart/replay test and assert `new_rows=0`.
+9. Compare raw RPC vs managed stream source with same workload/fault matrix.
+10. Record recommendation for next phase (keep/discard/adjust).
+
+## Decision Matrix and Scorecard
+
+Evaluate each option on the same scorecard:
+
+1. `missed_ops` after restart/replay (hard gate: `0`)
+2. `duplicate_effects` in canonical DB tables (hard gate: `0`)
+3. replay catch-up time from persisted cursor
+4. p50/p95 ingest latency
+5. operational complexity (dependencies, moving parts, failure modes)
+6. event extraction reliability across RPC providers (`emit!` vs `emit_cpi!`)
+7. state/rent footprint (if on-chain state option)
+
+Current option set:
+
+1. finalized RPC events via `emit!`
+2. finalized RPC events via `emit_cpi!`
+3. managed stream/indexer source (Geyser/Helius style)
+4. per-dapp journal/PDA designs (only if needed)
+
+## Test Plan (TDD-like feedback loop)
+
+### L0 Unit (seconds)
+
+1. Canonical mapping tests:
+- `request_add` -> expected computation payload
+- `allow` -> expected `allowed_handles` + `pbs_computations` payload
+2. Ordering tests:
+- deterministic `schedule_order = slot_time + tx_index + op_index`
+
+### L1 Integration (1-3 min)
+
+1. Feed deterministic fixtures into listener ingest.
+2. Assert exact row counts and keys in target tables.
+3. Re-feed same fixtures and assert idempotency (`0` new rows).
+
+### L2 Localnet (3-10 min)
+
+1. Start DB + migrations + Solana validator + solana-listener.
+2. Submit one `request_add` tx and one `allow` tx.
+3. Assert DB writes.
+4. Restart listener and replay same finalized range.
+5. Assert no duplicates and no missing rows.
+
+## State-Cost Gate (for PDA/journal alternatives)
+
+Before building on-chain receipt/journal options, estimate locked rent and growth envelope.
+
+Reference sample (local CLI, 2026-02-09):
+
+1. 128-byte account: `0.00178176 SOL`
+2. 192-byte account: `0.0022272 SOL`
+3. 256-byte account: `0.00267264 SOL`
+
+Formula:
+
+- `live_accounts ~= tps * ttl_seconds`
+- `locked_sol ~= live_accounts * rent_per_account`
+
+Any design with unacceptable locked capital or cleanup burden is rejected before implementation.
 
 ## Fast Loop Artifacts
 
 - Fast feedback loop design: `FAST_FEEDBACK_LOOP.md`
+- local test ladder and run commands: `TESTING_TIERS.md`
 - 1:1 feature parity matrix: `HOST_LISTENER_PARITY_MATRIX.md`
 - Solana architecture draft: `SOLANA_ARCHITECTURE.md`
+- v0 interface freeze: `INTERFACE_V0.md`
 
 ## Comparison Criteria
 

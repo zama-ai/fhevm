@@ -1,0 +1,13 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+zama_host_v0 = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "echo \"no tests yet\""

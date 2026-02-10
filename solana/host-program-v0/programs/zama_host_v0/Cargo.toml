@@ -1,0 +1,27 @@
+[package]
+name = "zama_host_v0"
+version = "0.1.0"
+description = "Minimal Solana host program v0 scaffold for Zama listener PoC"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "zama_host_v0"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = { version = "0.32.1", features = ["event-cpi"] }
+
+[dev-dependencies]
+mollusk-svm = { version = "0.10.2", features = ["inner-instructions"] }
+solana-account = "3.2.0"
+solana-instruction = "3.0.0"
+solana-pubkey = "4.0.0"
+solana-sdk-ids = "3.1.0"

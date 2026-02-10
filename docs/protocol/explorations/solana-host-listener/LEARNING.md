@@ -16,7 +16,11 @@ Status: Active
 flowchart TD
   E0["Experiment 0: repo architecture audit"] --> E1["Experiment 1: fast loop + parity scoping"]
   E1 --> E2["Experiment 2: Solana architecture decomposition"]
-  E2 --> NX["Next checkpoint: first validated L2 host+listener run"]
+  E2 --> E3["Experiment 3: evidence-backed parity audit"]
+  E3 --> E4["Experiment 4: tenant-removal model drift check"]
+  E4 --> E5["Experiment 5: finalized RPC source + localnet DB assertions"]
+  E5 --> E6["Experiment 6: emit! vs emit_cpi! + replay idempotency"]
+  E6 --> NX["Next checkpoint: managed source comparison + broader op surface"]
 ```
 
 ## Current Facts (confirmed)
@@ -27,10 +31,14 @@ flowchart TD
 4. Handle metadata compatibility with Gateway checks is mandatory.
 5. Fast learning requires a self-contained local e2e loop.
 6. A local hybrid (`logs + PDAs`) Solana host demo exists at `/Users/work/code/zama/solana-symbolic-host-demo` and is useful as a fast-loop reference.
+7. Listener ingestion SQL contracts (`computations`, `allowed_handles`, `pbs_computations`) are reusable if Solana ingestion preserves deterministic keys and idempotency semantics.
+8. The highest-coupling surfaces are chain transport/indexing and EVM ABI decode, not downstream scheduler/worker ingestion contracts.
+9. Upstream PR `zama-ai/fhevm#1856` removes tenant-centric DB/runtime model in favor of `keys`, `crs`, and `host_chains`; Solana discovery should target `host_chain_id` compatibility, not `tenant_id`.
+10. Local Solana rent estimates (2026-02-09) show per-tx receipt PDA cost can become prohibitive with long TTL at moderate/high TPS; this is now an explicit design gate.
 
 ## Open Questions
 
-1. Is log-driven ingestion (`msg!`) sufficiently deterministic for our indexing and replay needs?
+1. Which emission mode is more reliable for ingestion/replay in practice: `emit!` logs or `emit_cpi!`?
 2. Do PDA receipts reduce ambiguity enough to justify additional complexity?
 3. What is the smallest Solana operation model that maps cleanly to current DB schema?
 4. Which parts of the current listener should eventually become chain-agnostic, if any?
@@ -103,6 +111,91 @@ Notes:
 
 - Decided to favor monolithic host program for first loop, while keeping internal module seams compatible with later split (ACL/HCU programs).
 
+### Experiment 3: Evidence-backed parity audit
+
+Date: 2026-02-09
+Objective: Convert discovery assumptions into file-level evidence for parity scope and v0 gates.
+Result: Upgraded `HOST_LISTENER_PARITY_MATRIX.md` with concrete file:line anchors, coupling verdicts, and v0 acceptance gates.
+Confidence: High
+Notes:
+
+- Reinforced that `solana-listener` as separate PoC service is the lowest-risk path for speed.
+- Confirmed gateway handle compatibility is a hard invariant to preserve (chain-id/type/version bytes + host chain registration semantics).
+
+### Experiment 4: Coprocessor model drift check (tenant removal)
+
+Date: 2026-02-09
+Objective: Validate whether discovery assumptions around `tenant_id` are still valid upstream.
+Result: `tenant` notion is being removed; model is migrating to `keys` + `crs` + `host_chains`.
+Confidence: High
+Notes:
+
+- Migration renames `tenants` to `keys`, drops tenant API key fields, and creates `host_chains`.
+- Existing discovery docs should reference `host_chain_id` and key model, not tenant mapping.
+- References:
+  - [PR #1856](https://github.com/zama-ai/fhevm/pull/1856)
+  - [remove_tenants migration](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/db-migration/migrations/20260128095635_remove_tenants.sql#L1)
+  - [host_chains cache](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/host_chains.rs#L1)
+
+### Experiment 5: Finalized RPC source + localnet DB assertions
+
+Date: 2026-02-09
+Objective: Replace mock source with real finalized RPC block ingestion and prove DB writes end-to-end.
+Result: Completed and passing.
+Confidence: High
+Notes:
+
+- Added finalized RPC source to `solana-listener` and wired command bootstrap to use it.
+- Added localnet integration harness to build program, run validator + Postgres (testcontainers), submit txs, ingest, and assert DB rows.
+- Observed passing assertions for `computations`, `allowed_handles`, `pbs_computations`, and cursor advancement.
+
+### Experiment 6: `emit!` vs `emit_cpi!` parity + replay idempotency
+
+Date: 2026-02-09
+Objective: Validate event-mode equivalence and prove replay inserts no new rows.
+Result: Completed and passing in Tier 2 localnet harness.
+Confidence: High
+Notes:
+
+- Host program now supports both emission modes (`request_add`/`allow` and `request_add_cpi`/`allow_cpi`).
+- Listener decodes both direct `Program data` logs and CPI-carried event payloads from `innerInstructions`.
+- Localnet test verifies same DB contract for both modes and replay idempotency (`inserted rows = 0` on reprocessing same finalized range).
+- Mollusk fast tier currently validates `request_add`; CPI self-call remains localnet-validated due current Mollusk limitation.
+
+### Experiment 7: Worker e2e + ACL gate semantics (Solana localnet)
+
+Date: 2026-02-09
+Objective: Prove that Solana-ingested rows are not only inserted correctly but actually executable by worker, with decrypt sanity and ACL gating behavior.
+Result: Completed and passing in Tier 3 localnet ignored tests.
+Confidence: High
+Notes:
+
+- Added end-to-end tests for both event modes:
+  - `localnet_solana_request_add_computes_and_decrypts` (`emit!`)
+  - `localnet_solana_request_add_cpi_computes_and_decrypts` (`emit_cpi!`)
+- Added ACL gate test:
+  - `localnet_acl_gate_blocks_then_allows_compute`
+- Listener semantics now keep `request_add` non-runnable until `allow` is ingested; `allow` unlocks matching queued computations.
+- Added robust finalized tx wait loop in integration harness to avoid 16s poll timeout flakes.
+
+## Presentation Summary (for team)
+
+### What this PoC proves
+
+1. Solana host events can feed the existing DB-driven worker pipeline end-to-end.
+2. Both `emit!` and `emit_cpi!` can drive equivalent compute/decrypt outcomes.
+3. Replay/idempotency guarantees hold at listener ingest layer.
+4. ACL gate semantics are enforceable in listener DB contract:
+   - no `allow` => no execution
+   - `allow` => becomes runnable and completes
+
+### What this PoC does not prove yet
+
+1. Production indexer reliability under high throughput/long reorg windows.
+2. Cost/perf envelope at scale (TPS/load/rent economics).
+3. Full op-surface parity beyond the current minimal `request_add` + `allow` slice.
+4. Final architecture choice between long-lived adapter abstraction vs standalone listener service.
+
 ## Decision Log
 
 ### D0
@@ -118,6 +211,62 @@ Date: 2026-02-09
 Decision: Prioritize separate `solana-listener` PoC before attempting listener abstraction.
 Why: Minimizes blast radius and improves feedback speed.
 Status: Active (revisit after Track 1 and Track 2 results).
+
+### D2
+
+Date: 2026-02-09
+Decision: Use listener-canonical structs with explicit `version` and `host_chain_id`; keep canonical ingest finalized-only and use confirmed logs as hint-only.
+Why: Preserves explicitness at the listener boundary without forcing extra on-chain payload fields; aligns with replay safety target.
+Status: Active.
+
+### D3
+
+Date: 2026-02-09
+Decision: For PoC v0 ordering, derive `schedule_order` from `slot_time + tx_index + op_index`.
+Why: Deterministic replay ordering for Solana while staying compatible with timestamp-based worker ordering semantics.
+Status: Active (revisit after first full replay test).
+
+### D4
+
+Date: 2026-02-09
+Decision: PoC baseline ingestion source is finalized RPC logs/events with durable cursor replay; confirmed logs are hint-only.
+Why: Lowest state/rent overhead with fastest path to validate replay/idempotency.
+Status: Active.
+
+### D5
+
+Date: 2026-02-09
+Decision: Defer per-tx PDA/journal designs until a scorecard comparison is completed (RPC baseline vs managed stream source).
+Why: Early rent-growth estimates indicate high locked-capital risk for long TTL receipt accounts.
+Status: Active.
+
+### D6
+
+Date: 2026-02-09
+Decision: Freeze minimal v0 Solana host interface with two instructions (`request_add`, `allow`) and two emitted events (`OpRequestedAddV1`, `HandleAllowedV1`) mapped 1:1 to current DB ingestion semantics.
+Why: establish an unambiguous contract before implementing listener internals; reduce churn and improve test explainability.
+Status: Active.
+
+### D7
+
+Date: 2026-02-09
+Decision: Treat event emission mode (`emit!` vs `emit_cpi!`) as an explicit Track 1 comparison axis while keeping one shared listener mapping contract.
+Why: this can materially impact event retrieval reliability without forcing DB contract or architecture changes.
+Status: Active.
+
+### D8
+
+Date: 2026-02-09
+Decision: Prefer Rust in-process integration harness (`testcontainers`) over bash orchestration as the primary Tier 2 runner.
+Why: keeps setup/teardown deterministic in tests and aligns with existing coprocessor testing patterns.
+Status: Active.
+
+### D9
+
+Date: 2026-02-09
+Decision: Keep `emit_cpi!` in active comparison scope, but treat Tier 2 localnet integration as canonical validation path for CPI semantics.
+Why: current Mollusk harness path does not reliably support this self-CPI setup (`UnsupportedProgramId`) while localnet validation is stable.
+Status: Active.
 
 ## Next Update Triggers
 
