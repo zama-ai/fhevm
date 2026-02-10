@@ -43,12 +43,6 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn set_span_error(span: &tracing::Span, err: &impl std::fmt::Display) {
-    span.context()
-        .span()
-        .set_status(Status::error(err.to_string()));
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Order {
     Asc,
@@ -416,7 +410,10 @@ async fn fetch_and_execute_sns_tasks(
             Ok::<(), ExecutionError>(())
         };
         if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
-            set_span_error(&batch_store_span, &err);
+            batch_store_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             return Err(err);
         }
 
@@ -635,7 +632,10 @@ fn compute_task(
                 error!({ action = "review", error = %err }, "Failed to send task to upload worker");
                 let send_task_span = tracing::error_span!("send_task", operation = "send_task");
                 send_task_span.set_parent(task.otel.context().clone());
-                set_span_error(&send_task_span, &err);
+                send_task_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
             }
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -691,7 +691,10 @@ async fn update_ciphertext128(
                 }
                 Err(err) => {
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
-                    set_span_error(&persist_span, &err);
+                    persist_span
+                        .context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely
                     return Err(err.into());

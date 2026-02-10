@@ -33,12 +33,6 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
 
-fn set_span_error(span: &tracing::Span, err: &impl std::fmt::Display) {
-    span.context()
-        .span()
-        .set_status(Status::error(err.to_string()));
-}
-
 pub(crate) async fn spawn_resubmit_task(
     pool_mngr: &PostgresPoolManager,
     conf: Config,
@@ -187,7 +181,10 @@ async fn run_uploader_loop(
                             } else {
                                 error!(error = %err, "Failed to upload ciphertexts");
                             }
-                            set_span_error(&upload_span, &err);
+                            upload_span
+                                .context()
+                                .span()
+                                .set_status(Status::error(err.to_string()));
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
                         }
                     }
@@ -270,7 +267,10 @@ async fn upload_ciphertexts(
         {
             Ok(v) => v,
             Err(err) => {
-                set_span_error(&ct128_check_span, &err);
+                ct128_check_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 return Err(err);
             }
         };
@@ -341,7 +341,10 @@ async fn upload_ciphertexts(
         {
             Ok(v) => v,
             Err(err) => {
-                set_span_error(&ct64_check_span, &err);
+                ct64_check_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 return Err(err);
             }
         };
@@ -397,7 +400,9 @@ async fn upload_ciphertexts(
                         "Failed to upload ct128",
                     );
 
-                    set_span_error(&span, &err);
+                    span.context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
                     task.update_ct128_uploaded(&mut trx, digest).await?;
@@ -411,7 +416,9 @@ async fn upload_ciphertexts(
                         "Failed to upload ct64"
                     );
 
-                    set_span_error(&span, &err);
+                    span.context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
                     task.update_ct64_uploaded(&mut trx, digest).await?;
