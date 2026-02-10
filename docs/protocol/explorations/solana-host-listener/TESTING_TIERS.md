@@ -44,8 +44,8 @@ Purpose:
 Command:
 
 ```bash
-cd /Users/work/.codex/worktrees/66ae/fhevm/solana/host-program-v0
-cargo test -p zama_host_v0 --test mollusk_smoke
+cd /Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs
+cargo test -p zama_host --test mollusk_smoke
 ```
 
 Notes:

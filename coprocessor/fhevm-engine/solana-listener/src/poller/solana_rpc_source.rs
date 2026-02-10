@@ -6,19 +6,19 @@ use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
 use tracing::{debug, warn};
 
-use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEventV0, INTERFACE_V0_VERSION};
+use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEvent, INTERFACE_VERSION};
 use crate::poller::{Cursor, EventSource, SourceBatch};
 
-const OP_REQUESTED_ADD_DISC: [u8; 8] = [0xA2, 0xBA, 0x5F, 0xF4, 0xD7, 0xB8, 0x1C, 0xF8];
-const OP_REQUESTED_SUB_DISC: [u8; 8] = [0xF5, 0x9C, 0x43, 0x1D, 0x6E, 0x3F, 0x96, 0x79];
-const OP_REQUESTED_BINARY_DISC: [u8; 8] = [0x9E, 0x8F, 0x42, 0xF3, 0xA3, 0xD5, 0xFB, 0x74];
-const OP_REQUESTED_UNARY_DISC: [u8; 8] = [0x51, 0x69, 0xCE, 0xE2, 0xE1, 0x05, 0x32, 0x71];
-const OP_REQUESTED_IF_THEN_ELSE_DISC: [u8; 8] = [0x2B, 0xF2, 0xEF, 0x3C, 0x40, 0xD4, 0x76, 0x5B];
-const OP_REQUESTED_CAST_DISC: [u8; 8] = [0x88, 0x97, 0xD1, 0xE0, 0x8C, 0x2C, 0xD2, 0x64];
-const OP_REQUESTED_TRIVIAL_ENCRYPT_DISC: [u8; 8] = [0xF4, 0x9C, 0x24, 0xA9, 0x43, 0xAF, 0x2B, 0x4E];
-const OP_REQUESTED_RAND_DISC: [u8; 8] = [0x1E, 0xA6, 0x89, 0x6A, 0xC1, 0x45, 0x05, 0xA0];
-const OP_REQUESTED_RAND_BOUNDED_DISC: [u8; 8] = [0x87, 0x0E, 0xB8, 0x8B, 0xAE, 0x62, 0x8D, 0x03];
-const HANDLE_ALLOWED_DISC: [u8; 8] = [0xCA, 0x41, 0x12, 0x1D, 0xF9, 0x39, 0x93, 0xEF];
+const OP_REQUESTED_ADD_DISC: [u8; 8] = [0x8D, 0x59, 0xAF, 0xBE, 0x59, 0x4B, 0x41, 0x61];
+const OP_REQUESTED_SUB_DISC: [u8; 8] = [0xB8, 0x04, 0x1A, 0x3C, 0x56, 0x1C, 0x86, 0x92];
+const OP_REQUESTED_BINARY_DISC: [u8; 8] = [0x56, 0xF9, 0x69, 0xC3, 0xFA, 0x79, 0xE8, 0xDD];
+const OP_REQUESTED_UNARY_DISC: [u8; 8] = [0x17, 0x57, 0x06, 0x72, 0x02, 0xF8, 0x8F, 0x33];
+const OP_REQUESTED_IF_THEN_ELSE_DISC: [u8; 8] = [0xFD, 0xD9, 0x97, 0x53, 0x3C, 0x18, 0x34, 0x01];
+const OP_REQUESTED_CAST_DISC: [u8; 8] = [0x2E, 0x1D, 0xA1, 0x99, 0xF1, 0x6C, 0x17, 0xED];
+const OP_REQUESTED_TRIVIAL_ENCRYPT_DISC: [u8; 8] = [0xD8, 0xB2, 0x86, 0x4E, 0xC6, 0xFE, 0xDE, 0x63];
+const OP_REQUESTED_RAND_DISC: [u8; 8] = [0x07, 0x2A, 0x7C, 0x69, 0x3D, 0xEE, 0xBF, 0x26];
+const OP_REQUESTED_RAND_BOUNDED_DISC: [u8; 8] = [0x06, 0x16, 0x6C, 0x2C, 0x76, 0x7B, 0x6F, 0x0F];
+const HANDLE_ALLOWED_DISC: [u8; 8] = [0xC0, 0x6D, 0xFC, 0xBF, 0xC6, 0xE0, 0x9A, 0x9A];
 // Temporary manual decode table for PoC events.
 // TODO(zama-solana): replace this with IDL-driven decoding/codegen once we
 // freeze the host program event schema.
@@ -270,7 +270,7 @@ impl EventSource for SolanaRpcEventSource {
                         break;
                     }
                     events.push(FinalizedEventEnvelope {
-                        version: INTERFACE_V0_VERSION,
+                        version: INTERFACE_VERSION,
                         host_chain_id: self.host_chain_id,
                         slot,
                         block_time_unix,
@@ -318,7 +318,7 @@ impl EventSource for SolanaRpcEventSource {
     }
 }
 
-fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<ProgramEventV0> {
+fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<ProgramEvent> {
     let mut events = Vec::new();
     let mut stack: Vec<String> = Vec::new();
 
@@ -360,7 +360,7 @@ fn decode_program_events_from_inner_instructions(
     tx: &Value,
     program_id: &str,
     account_keys: &[String],
-) -> Vec<ProgramEventV0> {
+) -> Vec<ProgramEvent> {
     let mut events = Vec::new();
 
     let Some(inner_sets) = tx
@@ -457,7 +457,7 @@ fn parse_program_exit(line: &str) -> Option<&str> {
     None
 }
 
-fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEventV0> {
+fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
     if payload.len() < 8 {
         return None;
     }
@@ -489,7 +489,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEventV0> {
     }
 }
 
-fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 + 1 + 32 {
         return None;
     }
@@ -499,7 +499,7 @@ fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEventV0> {
     let is_scalar = body[96] != 0;
     let result_handle: HandleBytes = body[97..129].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedAddV1 {
+    Some(ProgramEvent::OpRequestedAdd {
         caller,
         lhs,
         rhs,
@@ -508,7 +508,7 @@ fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 + 1 + 32 {
         return None;
     }
@@ -518,7 +518,7 @@ fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEventV0> {
     let is_scalar = body[96] != 0;
     let result_handle: HandleBytes = body[97..129].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedSubV1 {
+    Some(ProgramEvent::OpRequestedSub {
         caller,
         lhs,
         rhs,
@@ -527,7 +527,7 @@ fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 + 1 + 32 + 1 {
         return None;
     }
@@ -538,7 +538,7 @@ fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEventV0> {
     let result_handle: HandleBytes = body[97..129].try_into().ok()?;
     let opcode = body[129];
 
-    Some(ProgramEventV0::OpRequestedBinaryV1 {
+    Some(ProgramEvent::OpRequestedBinary {
         caller,
         lhs,
         rhs,
@@ -548,7 +548,7 @@ fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 + 1 {
         return None;
     }
@@ -557,7 +557,7 @@ fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEventV0> {
     let result_handle: HandleBytes = body[64..96].try_into().ok()?;
     let opcode = body[96];
 
-    Some(ProgramEventV0::OpRequestedUnaryV1 {
+    Some(ProgramEvent::OpRequestedUnary {
         caller,
         input,
         result_handle,
@@ -565,7 +565,7 @@ fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 + 32 + 32 {
         return None;
     }
@@ -575,7 +575,7 @@ fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEventV0> {
     let if_false: HandleBytes = body[96..128].try_into().ok()?;
     let result_handle: HandleBytes = body[128..160].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedIfThenElseV1 {
+    Some(ProgramEvent::OpRequestedIfThenElse {
         caller,
         control,
         if_true,
@@ -584,7 +584,7 @@ fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 1 + 32 {
         return None;
     }
@@ -593,7 +593,7 @@ fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEventV0> {
     let to_type = body[64];
     let result_handle: HandleBytes = body[65..97].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedCastV1 {
+    Some(ProgramEvent::OpRequestedCast {
         caller,
         input,
         to_type,
@@ -601,7 +601,7 @@ fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 1 + 32 {
         return None;
     }
@@ -610,7 +610,7 @@ fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEventV0> {
     let to_type = body[64];
     let result_handle: HandleBytes = body[65..97].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedTrivialEncryptV1 {
+    Some(ProgramEvent::OpRequestedTrivialEncrypt {
         caller,
         pt,
         to_type,
@@ -618,7 +618,7 @@ fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 1 + 32 + 32 {
         return None;
     }
@@ -627,7 +627,7 @@ fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEventV0> {
     let seed: HandleBytes = body[33..65].try_into().ok()?;
     let result_handle: HandleBytes = body[65..97].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedRandV1 {
+    Some(ProgramEvent::OpRequestedRand {
         caller,
         rand_type,
         seed,
@@ -635,7 +635,7 @@ fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 1 + 32 + 32 {
         return None;
     }
@@ -645,7 +645,7 @@ fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEventV0> {
     let seed: HandleBytes = body[65..97].try_into().ok()?;
     let result_handle: HandleBytes = body[97..129].try_into().ok()?;
 
-    Some(ProgramEventV0::OpRequestedRandBoundedV1 {
+    Some(ProgramEvent::OpRequestedRandBounded {
         caller,
         upper_bound,
         rand_type,
@@ -654,14 +654,14 @@ fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEventV0> {
     })
 }
 
-fn decode_handle_allowed(body: &[u8]) -> Option<ProgramEventV0> {
+fn decode_handle_allowed(body: &[u8]) -> Option<ProgramEvent> {
     if body.len() < 32 + 32 + 32 {
         return None;
     }
     let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
     let handle: HandleBytes = body[32..64].try_into().ok()?;
     let account = Pubkey::new_from_array(body[64..96].try_into().ok()?);
-    Some(ProgramEventV0::HandleAllowedV1 {
+    Some(ProgramEvent::HandleAllowed {
         caller,
         handle,
         account,
@@ -695,7 +695,7 @@ mod tests {
         let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ProgramEventV0::OpRequestedAddV1 {
+            ProgramEvent::OpRequestedAdd {
                 lhs,
                 rhs,
                 is_scalar,
@@ -707,7 +707,7 @@ mod tests {
                 assert!(*is_scalar);
                 assert_eq!(*result_handle, [4u8; 32]);
             }
-            _ => panic!("expected OpRequestedAddV1"),
+            _ => panic!("expected OpRequestedAdd"),
         }
     }
 
@@ -756,7 +756,7 @@ mod tests {
             decode_program_events_from_inner_instructions(&tx, TARGET_PROGRAM, &account_keys);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ProgramEventV0::OpRequestedAddV1 {
+            ProgramEvent::OpRequestedAdd {
                 lhs,
                 rhs,
                 is_scalar,
@@ -768,7 +768,7 @@ mod tests {
                 assert!(!*is_scalar);
                 assert_eq!(*result_handle, [4u8; 32]);
             }
-            _ => panic!("expected OpRequestedAddV1"),
+            _ => panic!("expected OpRequestedAdd"),
         }
     }
 
@@ -792,7 +792,7 @@ mod tests {
         let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ProgramEventV0::OpRequestedSubV1 {
+            ProgramEvent::OpRequestedSub {
                 lhs,
                 rhs,
                 is_scalar,
@@ -804,7 +804,7 @@ mod tests {
                 assert!(*is_scalar);
                 assert_eq!(*result_handle, [7u8; 32]);
             }
-            _ => panic!("expected OpRequestedSubV1"),
+            _ => panic!("expected OpRequestedSub"),
         }
     }
 
@@ -829,7 +829,7 @@ mod tests {
         let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ProgramEventV0::OpRequestedBinaryV1 {
+            ProgramEvent::OpRequestedBinary {
                 lhs,
                 rhs,
                 is_scalar,
@@ -843,7 +843,7 @@ mod tests {
                 assert_eq!(*result_handle, [10u8; 32]);
                 assert_eq!(*opcode, 2u8);
             }
-            _ => panic!("expected OpRequestedBinaryV1"),
+            _ => panic!("expected OpRequestedBinary"),
         }
     }
 
@@ -866,7 +866,7 @@ mod tests {
         let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ProgramEventV0::OpRequestedUnaryV1 {
+            ProgramEvent::OpRequestedUnary {
                 input,
                 result_handle,
                 opcode,
@@ -876,7 +876,7 @@ mod tests {
                 assert_eq!(*result_handle, [12u8; 32]);
                 assert_eq!(*opcode, 20u8);
             }
-            _ => panic!("expected OpRequestedUnaryV1"),
+            _ => panic!("expected OpRequestedUnary"),
         }
     }
 

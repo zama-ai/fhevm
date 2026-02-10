@@ -1,13 +1,13 @@
-# Solana Host Program v0 (PoC scaffold)
+# Solana Host Program (PoC scaffold)
 
 This Anchor workspace is a minimal program-first scaffold for the Solana host listener PoC.
 
 It currently exposes:
 
-1. `request_add(lhs, rhs, is_scalar)` -> emits `OpRequestedAddV1`
-2. `allow(handle, account)` -> emits `HandleAllowedV1`
-3. `request_add_cpi(lhs, rhs, is_scalar)` -> emits `OpRequestedAddV1` via `emit_cpi!`
-4. `allow_cpi(handle, account)` -> emits `HandleAllowedV1` via `emit_cpi!`
+1. `request_add(lhs, rhs, is_scalar)` -> emits `OpRequestedAdd`
+2. `allow(handle, account)` -> emits `HandleAllowed`
+3. `request_add_cpi(lhs, rhs, is_scalar)` -> emits `OpRequestedAdd` via `emit_cpi!`
+4. `allow_cpi(handle, account)` -> emits `HandleAllowed` via `emit_cpi!`
 
 This aligns with:
 

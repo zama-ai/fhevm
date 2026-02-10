@@ -13,7 +13,7 @@ const OP_RAND: u8 = 26;
 const OP_RAND_BOUNDED: u8 = 27;
 
 #[program]
-pub mod zama_host_v0 {
+pub mod zama_host {
     use super::*;
 
     pub fn request_add(
@@ -24,7 +24,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, OP_ADD);
 
-        emit!(OpRequestedAddV1 {
+        emit!(OpRequestedAdd {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -43,7 +43,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, OP_SUB);
 
-        emit!(OpRequestedSubV1 {
+        emit!(OpRequestedSub {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -64,7 +64,7 @@ pub mod zama_host_v0 {
         validate_binary_opcode(opcode)?;
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, opcode);
 
-        emit!(OpRequestedBinaryV1 {
+        emit!(OpRequestedBinary {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -80,7 +80,7 @@ pub mod zama_host_v0 {
         validate_unary_opcode(opcode)?;
         let result_handle = derive_unary_result_handle(input, opcode);
 
-        emit!(OpRequestedUnaryV1 {
+        emit!(OpRequestedUnary {
             caller: ctx.accounts.caller.key(),
             input,
             result_handle,
@@ -99,7 +99,7 @@ pub mod zama_host_v0 {
         let result_handle =
             derive_ternary_result_handle(control, if_true, if_false, OP_IF_THEN_ELSE);
 
-        emit!(OpRequestedIfThenElseV1 {
+        emit!(OpRequestedIfThenElse {
             caller: ctx.accounts.caller.key(),
             control,
             if_true,
@@ -113,7 +113,7 @@ pub mod zama_host_v0 {
     pub fn request_cast(ctx: Context<RequestOp>, input: [u8; 32], to_type: u8) -> Result<()> {
         let result_handle = derive_unary_result_handle(input, OP_CAST ^ to_type);
 
-        emit!(OpRequestedCastV1 {
+        emit!(OpRequestedCast {
             caller: ctx.accounts.caller.key(),
             input,
             to_type,
@@ -130,7 +130,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_unary_result_handle(pt, OP_TRIVIAL_ENCRYPT ^ to_type);
 
-        emit!(OpRequestedTrivialEncryptV1 {
+        emit!(OpRequestedTrivialEncrypt {
             caller: ctx.accounts.caller.key(),
             pt,
             to_type,
@@ -143,7 +143,7 @@ pub mod zama_host_v0 {
     pub fn request_rand(ctx: Context<RequestOp>, rand_type: u8, seed: [u8; 32]) -> Result<()> {
         let result_handle = derive_unary_result_handle(seed, OP_RAND ^ rand_type);
 
-        emit!(OpRequestedRandV1 {
+        emit!(OpRequestedRand {
             caller: ctx.accounts.caller.key(),
             rand_type,
             seed,
@@ -162,7 +162,7 @@ pub mod zama_host_v0 {
         let result_handle =
             derive_ternary_result_handle(upper_bound, seed, [rand_type; 32], OP_RAND_BOUNDED);
 
-        emit!(OpRequestedRandBoundedV1 {
+        emit!(OpRequestedRandBounded {
             caller: ctx.accounts.caller.key(),
             upper_bound,
             rand_type,
@@ -174,7 +174,7 @@ pub mod zama_host_v0 {
     }
 
     pub fn allow(ctx: Context<AllowHandle>, handle: [u8; 32], account: Pubkey) -> Result<()> {
-        emit!(HandleAllowedV1 {
+        emit!(HandleAllowed {
             caller: ctx.accounts.caller.key(),
             handle,
             account,
@@ -191,7 +191,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, OP_ADD);
 
-        emit_cpi!(OpRequestedAddV1 {
+        emit_cpi!(OpRequestedAdd {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -210,7 +210,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, OP_SUB);
 
-        emit_cpi!(OpRequestedSubV1 {
+        emit_cpi!(OpRequestedSub {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -231,7 +231,7 @@ pub mod zama_host_v0 {
         validate_binary_opcode(opcode)?;
         let result_handle = derive_result_handle_with_tag(lhs, rhs, is_scalar, opcode);
 
-        emit_cpi!(OpRequestedBinaryV1 {
+        emit_cpi!(OpRequestedBinary {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -251,7 +251,7 @@ pub mod zama_host_v0 {
         validate_unary_opcode(opcode)?;
         let result_handle = derive_unary_result_handle(input, opcode);
 
-        emit_cpi!(OpRequestedUnaryV1 {
+        emit_cpi!(OpRequestedUnary {
             caller: ctx.accounts.caller.key(),
             input,
             result_handle,
@@ -270,7 +270,7 @@ pub mod zama_host_v0 {
         let result_handle =
             derive_ternary_result_handle(control, if_true, if_false, OP_IF_THEN_ELSE);
 
-        emit_cpi!(OpRequestedIfThenElseV1 {
+        emit_cpi!(OpRequestedIfThenElse {
             caller: ctx.accounts.caller.key(),
             control,
             if_true,
@@ -288,7 +288,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_unary_result_handle(input, OP_CAST ^ to_type);
 
-        emit_cpi!(OpRequestedCastV1 {
+        emit_cpi!(OpRequestedCast {
             caller: ctx.accounts.caller.key(),
             input,
             to_type,
@@ -305,7 +305,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_unary_result_handle(pt, OP_TRIVIAL_ENCRYPT ^ to_type);
 
-        emit_cpi!(OpRequestedTrivialEncryptV1 {
+        emit_cpi!(OpRequestedTrivialEncrypt {
             caller: ctx.accounts.caller.key(),
             pt,
             to_type,
@@ -322,7 +322,7 @@ pub mod zama_host_v0 {
     ) -> Result<()> {
         let result_handle = derive_unary_result_handle(seed, OP_RAND ^ rand_type);
 
-        emit_cpi!(OpRequestedRandV1 {
+        emit_cpi!(OpRequestedRand {
             caller: ctx.accounts.caller.key(),
             rand_type,
             seed,
@@ -341,7 +341,7 @@ pub mod zama_host_v0 {
         let result_handle =
             derive_ternary_result_handle(upper_bound, seed, [rand_type; 32], OP_RAND_BOUNDED);
 
-        emit_cpi!(OpRequestedRandBoundedV1 {
+        emit_cpi!(OpRequestedRandBounded {
             caller: ctx.accounts.caller.key(),
             upper_bound,
             rand_type,
@@ -357,7 +357,7 @@ pub mod zama_host_v0 {
         handle: [u8; 32],
         account: Pubkey,
     ) -> Result<()> {
-        emit_cpi!(HandleAllowedV1 {
+        emit_cpi!(HandleAllowed {
             caller: ctx.accounts.caller.key(),
             handle,
             account,
@@ -394,7 +394,7 @@ pub struct AllowHandleCpi<'info> {
 }
 
 #[event]
-pub struct OpRequestedAddV1 {
+pub struct OpRequestedAdd {
     pub caller: Pubkey,
     pub lhs: [u8; 32],
     pub rhs: [u8; 32],
@@ -403,7 +403,7 @@ pub struct OpRequestedAddV1 {
 }
 
 #[event]
-pub struct OpRequestedSubV1 {
+pub struct OpRequestedSub {
     pub caller: Pubkey,
     pub lhs: [u8; 32],
     pub rhs: [u8; 32],
@@ -412,7 +412,7 @@ pub struct OpRequestedSubV1 {
 }
 
 #[event]
-pub struct OpRequestedBinaryV1 {
+pub struct OpRequestedBinary {
     pub caller: Pubkey,
     pub lhs: [u8; 32],
     pub rhs: [u8; 32],
@@ -422,7 +422,7 @@ pub struct OpRequestedBinaryV1 {
 }
 
 #[event]
-pub struct OpRequestedUnaryV1 {
+pub struct OpRequestedUnary {
     pub caller: Pubkey,
     pub input: [u8; 32],
     pub result_handle: [u8; 32],
@@ -430,7 +430,7 @@ pub struct OpRequestedUnaryV1 {
 }
 
 #[event]
-pub struct OpRequestedIfThenElseV1 {
+pub struct OpRequestedIfThenElse {
     pub caller: Pubkey,
     pub control: [u8; 32],
     pub if_true: [u8; 32],
@@ -439,7 +439,7 @@ pub struct OpRequestedIfThenElseV1 {
 }
 
 #[event]
-pub struct OpRequestedCastV1 {
+pub struct OpRequestedCast {
     pub caller: Pubkey,
     pub input: [u8; 32],
     pub to_type: u8,
@@ -447,7 +447,7 @@ pub struct OpRequestedCastV1 {
 }
 
 #[event]
-pub struct OpRequestedTrivialEncryptV1 {
+pub struct OpRequestedTrivialEncrypt {
     pub caller: Pubkey,
     pub pt: [u8; 32],
     pub to_type: u8,
@@ -455,7 +455,7 @@ pub struct OpRequestedTrivialEncryptV1 {
 }
 
 #[event]
-pub struct OpRequestedRandV1 {
+pub struct OpRequestedRand {
     pub caller: Pubkey,
     pub rand_type: u8,
     pub seed: [u8; 32],
@@ -463,7 +463,7 @@ pub struct OpRequestedRandV1 {
 }
 
 #[event]
-pub struct OpRequestedRandBoundedV1 {
+pub struct OpRequestedRandBounded {
     pub caller: Pubkey,
     pub upper_bound: [u8; 32],
     pub rand_type: u8,
@@ -472,7 +472,7 @@ pub struct OpRequestedRandBoundedV1 {
 }
 
 #[event]
-pub struct HandleAllowedV1 {
+pub struct HandleAllowed {
     pub caller: Pubkey,
     pub handle: [u8; 32],
     pub account: Pubkey,

@@ -247,8 +247,8 @@ Result: Completed for `SUB` decode + ingest mapping.
 Confidence: Medium-high
 Notes:
 
-- Host program emits new `OpRequestedSubV1` / `request_sub(_cpi)` events.
-- Listener decodes `OpRequestedSubV1` and maps to `SupportedFheOperations::FheSub`.
+- Host program emits new `OpRequestedSub` / `request_sub(_cpi)` events.
+- Listener decodes `OpRequestedSub` and maps to `SupportedFheOperations::FheSub`.
 - Unit coverage added for decoder + ingest mapping.
 - ACL gate integration test now checks both `emit!` and `emit_cpi!` modes.
 
@@ -292,7 +292,7 @@ Status: Active.
 ### D6
 
 Date: 2026-02-09
-Decision: Freeze minimal v0 Solana host interface with two instructions (`request_add`, `allow`) and two emitted events (`OpRequestedAddV1`, `HandleAllowedV1`) mapped 1:1 to current DB ingestion semantics.
+Decision: Freeze minimal v0 Solana host interface with two instructions (`request_add`, `allow`) and two emitted events (`OpRequestedAdd`, `HandleAllowed`) mapped 1:1 to current DB ingestion semantics.
 Why: establish an unambiguous contract before implementing listener internals; reduce churn and improve test explainability.
 Status: Superseded by D10 after baseline validation.
 

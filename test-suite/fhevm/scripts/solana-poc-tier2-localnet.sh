@@ -16,7 +16,7 @@ log_error() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SOLANA_PROGRAM_DIR="${REPO_ROOT}/solana/host-program-v0"
+SOLANA_PROGRAM_DIR="${REPO_ROOT}/solana/host-programs"
 LISTENER_DIR="${REPO_ROOT}/coprocessor/fhevm-engine"
 LEDGER_DIR="${REPO_ROOT}/.solana-ledger-poc"
 VALIDATOR_LOG="${REPO_ROOT}/.solana-validator-poc.log"

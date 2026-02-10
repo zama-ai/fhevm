@@ -654,7 +654,7 @@ async fn computation_is_allowed(
 }
 
 fn build_anchor_program() -> anyhow::Result<ProgramMount> {
-    let workspace_dir = repo_root()?.join("solana/host-program-v0");
+    let workspace_dir = repo_root()?.join("solana/host-programs");
     let status = Command::new("anchor")
         .arg("build")
         .current_dir(&workspace_dir)
@@ -663,7 +663,7 @@ fn build_anchor_program() -> anyhow::Result<ProgramMount> {
     anyhow::ensure!(status.success(), "anchor build failed");
 
     let artifact_dir = workspace_dir.join("target/deploy");
-    let so_path = artifact_dir.join("zama_host_v0.so");
+    let so_path = artifact_dir.join("zama_host.so");
     anyhow::ensure!(
         so_path.exists(),
         "missing built program artifact: {:?}",
@@ -673,7 +673,7 @@ fn build_anchor_program() -> anyhow::Result<ProgramMount> {
     Ok(ProgramMount {
         program_id: SOLANA_PROGRAM_ID_STR.to_string(),
         artifact_dir,
-        program_file_name: "zama_host_v0.so".to_string(),
+        program_file_name: "zama_host.so".to_string(),
     })
 }
 

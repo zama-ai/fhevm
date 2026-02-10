@@ -5,7 +5,7 @@ use solana_pubkey::Pubkey;
 use solana_sdk_ids::system_program;
 
 const PROGRAM_ID_STR: &str = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq";
-const PROGRAM_ELF_NAME: &str = "zama_host_v0";
+const PROGRAM_ELF_NAME: &str = "zama_host";
 const REQUEST_ADD_DISC: [u8; 8] = [0xFE, 0xFA, 0xE0, 0x73, 0x76, 0x3D, 0x2B, 0x98];
 const REQUEST_ADD_CPI_DISC: [u8; 8] = [0xAF, 0x9F, 0xDA, 0x12, 0x9C, 0x82, 0xB3, 0x68];
 

@@ -42,16 +42,16 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 
 | Event | Fields | EVM parity |
 |---|---|---|
-| `OpRequestedAddV1` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheAdd(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
-| `OpRequestedSubV1` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheSub(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
-| `OpRequestedBinaryV1` | `caller`, `lhs`, `rhs`, `is_scalar`, `result_handle`, `opcode` | Generic binary-event contract for opcodes `0..19` (`FheAdd..FheMax`). |
-| `OpRequestedUnaryV1` | `caller`, `input`, `result_handle`, `opcode` | Generic unary-event contract for `FheNeg`/`FheNot` (`20/21`). |
-| `OpRequestedIfThenElseV1` | `caller`, `control`, `if_true`, `if_false`, `result_handle` | Equivalent to `FheIfThenElse`. |
-| `OpRequestedCastV1` | `caller`, `input`, `to_type`, `result_handle` | Equivalent to `Cast`. |
-| `OpRequestedTrivialEncryptV1` | `caller`, `pt`, `to_type`, `result_handle` | Equivalent to `TrivialEncrypt`. |
-| `OpRequestedRandV1` | `caller`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRand`. |
-| `OpRequestedRandBoundedV1` | `caller`, `upper_bound`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRandBounded`. |
-| `HandleAllowedV1` | `caller: Pubkey`, `handle: [u8;32]`, `account: Pubkey` | Equivalent to ACL `Allowed(handle, account)`. |
+| `OpRequestedAdd` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheAdd(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
+| `OpRequestedSub` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheSub(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
+| `OpRequestedBinary` | `caller`, `lhs`, `rhs`, `is_scalar`, `result_handle`, `opcode` | Generic binary-event contract for opcodes `0..19` (`FheAdd..FheMax`). |
+| `OpRequestedUnary` | `caller`, `input`, `result_handle`, `opcode` | Generic unary-event contract for `FheNeg`/`FheNot` (`20/21`). |
+| `OpRequestedIfThenElse` | `caller`, `control`, `if_true`, `if_false`, `result_handle` | Equivalent to `FheIfThenElse`. |
+| `OpRequestedCast` | `caller`, `input`, `to_type`, `result_handle` | Equivalent to `Cast`. |
+| `OpRequestedTrivialEncrypt` | `caller`, `pt`, `to_type`, `result_handle` | Equivalent to `TrivialEncrypt`. |
+| `OpRequestedRand` | `caller`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRand`. |
+| `OpRequestedRandBounded` | `caller`, `upper_bound`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRandBounded`. |
+| `HandleAllowed` | `caller: Pubkey`, `handle: [u8;32]`, `account: Pubkey` | Equivalent to ACL `Allowed(handle, account)`. |
 
 ## Event Transport Modes (same payload contract)
 
@@ -76,7 +76,7 @@ Not emitted by program; injected from finalized RPC context:
 
 ## Canonical Mapping to Existing DB Contracts
 
-### `OpRequestedAddV1` / `OpRequestedSubV1` -> `computations`
+### `OpRequestedAdd` / `OpRequestedSub` -> `computations`
 
 1. `output_handle` = `result_handle`
 2. `dependencies` = `[lhs, rhs]`
@@ -86,7 +86,7 @@ Not emitted by program; injected from finalized RPC context:
 6. `schedule_order` = `slot_time + tx_index + op_index`
 7. idempotency semantics must match current host-listener (`ON CONFLICT ... DO NOTHING` behavior)
 
-### `OpRequestedBinaryV1` -> `computations`
+### `OpRequestedBinary` -> `computations`
 
 1. `output_handle` = `result_handle`
 2. `dependencies` = `[lhs, rhs]`
@@ -96,7 +96,7 @@ Not emitted by program; injected from finalized RPC context:
 6. `schedule_order` = `slot_time + tx_index + op_index`
 7. idempotency semantics must match current host-listener (`ON CONFLICT ... DO NOTHING` behavior)
 
-### `OpRequestedUnaryV1` -> `computations`
+### `OpRequestedUnary` -> `computations`
 
 1. `output_handle` = `result_handle`
 2. `dependencies` = `[input]`
@@ -104,37 +104,37 @@ Not emitted by program; injected from finalized RPC context:
 4. `is_scalar` = `false`
 5. `transaction_id` = `tx_signature`
 
-### `OpRequestedIfThenElseV1` -> `computations`
+### `OpRequestedIfThenElse` -> `computations`
 
 1. `dependencies` = `[control, if_true, if_false]`
 2. `fhe_operation` = `FheIfThenElse`
 3. `is_scalar` = `false`
 
-### `OpRequestedCastV1` -> `computations`
+### `OpRequestedCast` -> `computations`
 
 1. `dependencies` = `[input, [to_type]]`
 2. `fhe_operation` = `FheCast`
 3. `is_scalar` = `true`
 
-### `OpRequestedTrivialEncryptV1` -> `computations`
+### `OpRequestedTrivialEncrypt` -> `computations`
 
 1. `dependencies` = `[pt, [to_type]]`
 2. `fhe_operation` = `FheTrivialEncrypt`
 3. `is_scalar` = `true`
 
-### `OpRequestedRandV1` -> `computations`
+### `OpRequestedRand` -> `computations`
 
 1. `dependencies` = `[seed, [rand_type]]`
 2. `fhe_operation` = `FheRand`
 3. `is_scalar` = `true`
 
-### `OpRequestedRandBoundedV1` -> `computations`
+### `OpRequestedRandBounded` -> `computations`
 
 1. `dependencies` = `[seed, upper_bound, [rand_type]]`
 2. `fhe_operation` = `FheRandBounded`
 3. `is_scalar` = `true`
 
-### `HandleAllowedV1` -> `allowed_handles` and `pbs_computations`
+### `HandleAllowed` -> `allowed_handles` and `pbs_computations`
 
 1. insert `allowed_handles` with `(handle, account, AllowedAccount, tx_signature)`
 2. insert `pbs_computations` for the same `handle` and `tx_signature`
@@ -157,9 +157,9 @@ sequenceDiagram
   participant DB as Coprocessor DB
 
   App->>Host: request_add(lhs, rhs, is_scalar)
-  Host-->>RPC: emit OpRequestedAddV1(...)
+  Host-->>RPC: emit OpRequestedAdd(...)
   App->>Host: allow(handle, account)
-  Host-->>RPC: emit HandleAllowedV1(...)
+  Host-->>RPC: emit HandleAllowed(...)
 
   Lis->>RPC: read finalized logs/events with cursor
   Lis->>DB: insert computations

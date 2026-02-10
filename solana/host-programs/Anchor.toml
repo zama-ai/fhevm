@@ -3,7 +3,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-zama_host_v0 = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq"
+zama_host = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq"
 
 [provider]
 cluster = "Localnet"

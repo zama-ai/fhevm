@@ -3,7 +3,7 @@ use fhevm_engine_common::types::{AllowEvents, SupportedFheOperations};
 use sha3::{Digest, Keccak256};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime};
 
-use crate::contracts::{FinalizedEventEnvelope, ProgramEventV0};
+use crate::contracts::{FinalizedEventEnvelope, ProgramEvent};
 
 #[derive(Clone, Debug)]
 pub struct ComputationInsert {
@@ -111,7 +111,7 @@ pub fn map_envelope_to_actions(
     };
 
     match &envelope.event {
-        ProgramEventV0::OpRequestedAddV1 {
+        ProgramEvent::OpRequestedAdd {
             lhs,
             rhs,
             is_scalar,
@@ -124,7 +124,7 @@ pub fn map_envelope_to_actions(
             result_handle,
             SupportedFheOperations::FheAdd,
         ),
-        ProgramEventV0::OpRequestedSubV1 {
+        ProgramEvent::OpRequestedSub {
             lhs,
             rhs,
             is_scalar,
@@ -137,7 +137,7 @@ pub fn map_envelope_to_actions(
             result_handle,
             SupportedFheOperations::FheSub,
         ),
-        ProgramEventV0::OpRequestedBinaryV1 {
+        ProgramEvent::OpRequestedBinary {
             lhs,
             rhs,
             is_scalar,
@@ -151,7 +151,7 @@ pub fn map_envelope_to_actions(
             result_handle,
             binary_opcode_to_operation(*opcode)?,
         ),
-        ProgramEventV0::OpRequestedUnaryV1 {
+        ProgramEvent::OpRequestedUnary {
             input,
             result_handle,
             opcode,
@@ -162,7 +162,7 @@ pub fn map_envelope_to_actions(
             false,
             unary_opcode_to_operation(*opcode)?,
         ),
-        ProgramEventV0::OpRequestedIfThenElseV1 {
+        ProgramEvent::OpRequestedIfThenElse {
             control,
             if_true,
             if_false,
@@ -174,7 +174,7 @@ pub fn map_envelope_to_actions(
             false,
             SupportedFheOperations::FheIfThenElse,
         ),
-        ProgramEventV0::OpRequestedCastV1 {
+        ProgramEvent::OpRequestedCast {
             input,
             to_type,
             result_handle,
@@ -185,7 +185,7 @@ pub fn map_envelope_to_actions(
             true,
             SupportedFheOperations::FheCast,
         ),
-        ProgramEventV0::OpRequestedTrivialEncryptV1 {
+        ProgramEvent::OpRequestedTrivialEncrypt {
             pt,
             to_type,
             result_handle,
@@ -196,7 +196,7 @@ pub fn map_envelope_to_actions(
             true,
             SupportedFheOperations::FheTrivialEncrypt,
         ),
-        ProgramEventV0::OpRequestedRandV1 {
+        ProgramEvent::OpRequestedRand {
             rand_type,
             seed,
             result_handle,
@@ -207,7 +207,7 @@ pub fn map_envelope_to_actions(
             true,
             SupportedFheOperations::FheRand,
         ),
-        ProgramEventV0::OpRequestedRandBoundedV1 {
+        ProgramEvent::OpRequestedRandBounded {
             upper_bound,
             rand_type,
             seed,
@@ -219,7 +219,7 @@ pub fn map_envelope_to_actions(
             true,
             SupportedFheOperations::FheRandBounded,
         ),
-        ProgramEventV0::HandleAllowedV1 {
+        ProgramEvent::HandleAllowed {
             handle, account, ..
         } => {
             actions.allowed_handles.push(AllowedHandleInsert {
@@ -313,7 +313,7 @@ fn pseudo_block_hash_from_slot(slot: u64) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::{FinalizedEventEnvelope, ProgramEventV0, INTERFACE_V0_VERSION};
+    use crate::contracts::{FinalizedEventEnvelope, ProgramEvent, INTERFACE_VERSION};
     use solana_pubkey::Pubkey;
 
     fn fixed_sig() -> Vec<u8> {
@@ -323,14 +323,14 @@ mod tests {
     #[test]
     fn map_add_event_to_computation() {
         let envelope = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 120,
             block_time_unix: 1_700_000_000,
             tx_signature: fixed_sig(),
             tx_index: 2,
             op_index: 3,
-            event: ProgramEventV0::OpRequestedAddV1 {
+            event: ProgramEvent::OpRequestedAdd {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 lhs: [2u8; 32],
                 rhs: [3u8; 32],
@@ -362,14 +362,14 @@ mod tests {
     #[test]
     fn map_allow_event_to_allowed_and_pbs() {
         let envelope = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 121,
             block_time_unix: 1_700_000_100,
             tx_signature: fixed_sig(),
             tx_index: 0,
             op_index: 0,
-            event: ProgramEventV0::HandleAllowedV1 {
+            event: ProgramEvent::HandleAllowed {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 handle: [7u8; 32],
                 account: Pubkey::new_from_array([8u8; 32]),
@@ -389,14 +389,14 @@ mod tests {
     #[test]
     fn map_sub_event_to_computation() {
         let envelope = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 122,
             block_time_unix: 1_700_000_200,
             tx_signature: fixed_sig(),
             tx_index: 1,
             op_index: 0,
-            event: ProgramEventV0::OpRequestedSubV1 {
+            event: ProgramEvent::OpRequestedSub {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 lhs: [9u8; 32],
                 rhs: [10u8; 32],
@@ -419,14 +419,14 @@ mod tests {
     #[test]
     fn map_binary_opcode_event_to_computation() {
         let envelope = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 123,
             block_time_unix: 1_700_000_300,
             tx_signature: fixed_sig(),
             tx_index: 1,
             op_index: 1,
-            event: ProgramEventV0::OpRequestedBinaryV1 {
+            event: ProgramEvent::OpRequestedBinary {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 lhs: [12u8; 32],
                 rhs: [13u8; 32],
@@ -447,14 +447,14 @@ mod tests {
     #[test]
     fn map_unary_opcode_event_to_computation() {
         let envelope = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 124,
             block_time_unix: 1_700_000_400,
             tx_signature: fixed_sig(),
             tx_index: 1,
             op_index: 2,
-            event: ProgramEventV0::OpRequestedUnaryV1 {
+            event: ProgramEvent::OpRequestedUnary {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 input: [15u8; 32],
                 result_handle: [16u8; 32],
@@ -473,14 +473,14 @@ mod tests {
     #[test]
     fn map_other_tfhe_events_to_computation() {
         let base = FinalizedEventEnvelope {
-            version: INTERFACE_V0_VERSION,
+            version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 125,
             block_time_unix: 1_700_000_500,
             tx_signature: fixed_sig(),
             tx_index: 0,
             op_index: 0,
-            event: ProgramEventV0::OpRequestedIfThenElseV1 {
+            event: ProgramEvent::OpRequestedIfThenElse {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 control: [1u8; 32],
                 if_true: [2u8; 32],
@@ -495,7 +495,7 @@ mod tests {
         );
 
         let cast = FinalizedEventEnvelope {
-            event: ProgramEventV0::OpRequestedCastV1 {
+            event: ProgramEvent::OpRequestedCast {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 input: [5u8; 32],
                 to_type: 4,
@@ -514,7 +514,7 @@ mod tests {
         );
 
         let trivial_encrypt = FinalizedEventEnvelope {
-            event: ProgramEventV0::OpRequestedTrivialEncryptV1 {
+            event: ProgramEvent::OpRequestedTrivialEncrypt {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 pt: [7u8; 32],
                 to_type: 3,
@@ -530,7 +530,7 @@ mod tests {
         );
 
         let rand = FinalizedEventEnvelope {
-            event: ProgramEventV0::OpRequestedRandV1 {
+            event: ProgramEvent::OpRequestedRand {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 rand_type: 2,
                 seed: [9u8; 32],
@@ -545,7 +545,7 @@ mod tests {
         );
 
         let rand_bounded = FinalizedEventEnvelope {
-            event: ProgramEventV0::OpRequestedRandBoundedV1 {
+            event: ProgramEvent::OpRequestedRandBounded {
                 caller: Pubkey::new_from_array([1u8; 32]),
                 upper_bound: [11u8; 32],
                 rand_type: 2,

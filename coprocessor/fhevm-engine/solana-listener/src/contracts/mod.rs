@@ -1,27 +1,27 @@
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 
-pub const INTERFACE_V0_VERSION: u8 = 1;
+pub const INTERFACE_VERSION: u8 = 1;
 
 pub type HandleBytes = [u8; 32];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ProgramEventV0 {
-    OpRequestedAddV1 {
+pub enum ProgramEvent {
+    OpRequestedAdd {
         caller: Pubkey,
         lhs: HandleBytes,
         rhs: HandleBytes,
         is_scalar: bool,
         result_handle: HandleBytes,
     },
-    OpRequestedSubV1 {
+    OpRequestedSub {
         caller: Pubkey,
         lhs: HandleBytes,
         rhs: HandleBytes,
         is_scalar: bool,
         result_handle: HandleBytes,
     },
-    OpRequestedBinaryV1 {
+    OpRequestedBinary {
         caller: Pubkey,
         lhs: HandleBytes,
         rhs: HandleBytes,
@@ -29,45 +29,45 @@ pub enum ProgramEventV0 {
         result_handle: HandleBytes,
         opcode: u8,
     },
-    OpRequestedUnaryV1 {
+    OpRequestedUnary {
         caller: Pubkey,
         input: HandleBytes,
         result_handle: HandleBytes,
         opcode: u8,
     },
-    OpRequestedIfThenElseV1 {
+    OpRequestedIfThenElse {
         caller: Pubkey,
         control: HandleBytes,
         if_true: HandleBytes,
         if_false: HandleBytes,
         result_handle: HandleBytes,
     },
-    OpRequestedCastV1 {
+    OpRequestedCast {
         caller: Pubkey,
         input: HandleBytes,
         to_type: u8,
         result_handle: HandleBytes,
     },
-    OpRequestedTrivialEncryptV1 {
+    OpRequestedTrivialEncrypt {
         caller: Pubkey,
         pt: HandleBytes,
         to_type: u8,
         result_handle: HandleBytes,
     },
-    OpRequestedRandV1 {
+    OpRequestedRand {
         caller: Pubkey,
         rand_type: u8,
         seed: HandleBytes,
         result_handle: HandleBytes,
     },
-    OpRequestedRandBoundedV1 {
+    OpRequestedRandBounded {
         caller: Pubkey,
         upper_bound: HandleBytes,
         rand_type: u8,
         seed: HandleBytes,
         result_handle: HandleBytes,
     },
-    HandleAllowedV1 {
+    HandleAllowed {
         caller: Pubkey,
         handle: HandleBytes,
         account: Pubkey,
@@ -83,15 +83,15 @@ pub struct FinalizedEventEnvelope {
     pub tx_signature: Vec<u8>,
     pub tx_index: u32,
     pub op_index: u16,
-    pub event: ProgramEventV0,
+    pub event: ProgramEvent,
 }
 
 impl FinalizedEventEnvelope {
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.version != INTERFACE_V0_VERSION {
+        if self.version != INTERFACE_VERSION {
             anyhow::bail!(
                 "unsupported event version: expected {}, got {}",
-                INTERFACE_V0_VERSION,
+                INTERFACE_VERSION,
                 self.version
             );
         }
