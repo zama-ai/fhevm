@@ -35,3 +35,4 @@ Notes:
 
 1. Tier 3 uses ignored integration tests and requires Docker, Anchor, and Solana CLI tooling.
 2. `SQLX_OFFLINE=true` is recommended for deterministic local compilation of test binaries.
+3. CLI mode writes to DB by default (`SOLANA_DRY_RUN=false`); set `SOLANA_DRY_RUN=true` for ingest preview without SQL writes.

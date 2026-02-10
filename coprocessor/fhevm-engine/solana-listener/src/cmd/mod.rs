@@ -51,7 +51,7 @@ pub struct Args {
     #[arg(long, env = "SOLANA_FINALIZED_ONLY", default_value_t = true)]
     pub finalized_only: bool,
 
-    #[arg(long, env = "SOLANA_DRY_RUN", default_value_t = true)]
+    #[arg(long, env = "SOLANA_DRY_RUN", default_value_t = false)]
     pub dry_run: bool,
 
     #[arg(long, env = "LOG_LEVEL", default_value_t = Level::INFO)]

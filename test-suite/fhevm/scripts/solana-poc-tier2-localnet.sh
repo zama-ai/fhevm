@@ -22,23 +22,8 @@ LEDGER_DIR="${REPO_ROOT}/.solana-ledger-poc"
 VALIDATOR_LOG="${REPO_ROOT}/.solana-validator-poc.log"
 SQLX_OFFLINE="${SQLX_OFFLINE:-true}"
 
-EVENT_MODE="emit"
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --event-mode)
-            EVENT_MODE="$2"
-            shift 2
-            ;;
-        *)
-            log_error "Unknown argument: $1"
-            exit 1
-            ;;
-    esac
-done
-
-if [[ "$EVENT_MODE" != "emit" && "$EVENT_MODE" != "emit-cpi" ]]; then
-    log_error "Invalid --event-mode value: $EVENT_MODE (allowed: emit | emit-cpi)"
+if [[ $# -gt 0 ]]; then
+    log_error "This script accepts no arguments"
     exit 1
 fi
 
@@ -56,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log_info "Tier 2 localnet scaffold start (event mode: $EVENT_MODE)"
+log_info "Tier 2 localnet scaffold start"
 
 log_info "Step 1/4: run Tier 0 listener mapping tests"
 (

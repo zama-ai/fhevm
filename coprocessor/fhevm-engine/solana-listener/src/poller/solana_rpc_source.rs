@@ -19,9 +19,7 @@ const OP_REQUESTED_TRIVIAL_ENCRYPT_DISC: [u8; 8] = [0xD8, 0xB2, 0x86, 0x4E, 0xC6
 const OP_REQUESTED_RAND_DISC: [u8; 8] = [0x07, 0x2A, 0x7C, 0x69, 0x3D, 0xEE, 0xBF, 0x26];
 const OP_REQUESTED_RAND_BOUNDED_DISC: [u8; 8] = [0x06, 0x16, 0x6C, 0x2C, 0x76, 0x7B, 0x6F, 0x0F];
 const HANDLE_ALLOWED_DISC: [u8; 8] = [0xC0, 0x6D, 0xFC, 0xBF, 0xC6, 0xE0, 0x9A, 0x9A];
-// Temporary manual decode table for PoC events.
-// TODO(zama-solana): replace this with IDL-driven decoding/codegen once we
-// freeze the host program event schema.
+// Manual event decode table for PoC host-program events.
 
 #[derive(Clone)]
 pub struct SolanaRpcEventSource {
@@ -178,22 +176,16 @@ impl EventSource for SolanaRpcEventSource {
 
         for slot in from_slot..=safe_tip {
             let Some(block) = self.get_block(slot, commitment).await? else {
-                next_cursor = Cursor {
-                    slot,
-                    tx_index: u32::MAX,
-                    op_index: u16::MAX,
-                };
-                continue;
+                // Do not advance the cursor on unavailable slots. Skipping here
+                // could silently lose events on lagging/snapshot-jumped nodes.
+                warn!(slot, commitment, "block unavailable, stopping batch");
+                break;
             };
 
             let block_time_unix = block.get("blockTime").and_then(Value::as_i64).unwrap_or(0);
             let Some(transactions) = block.get("transactions").and_then(Value::as_array) else {
-                next_cursor = Cursor {
-                    slot,
-                    tx_index: u32::MAX,
-                    op_index: u16::MAX,
-                };
-                continue;
+                warn!(slot, "block missing transactions array, stopping batch");
+                break;
             };
 
             let mut slot_fully_consumed = true;
@@ -464,28 +456,18 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
     let discriminator: [u8; 8] = payload[..8].try_into().ok()?;
     let body = &payload[8..];
 
-    if discriminator == OP_REQUESTED_ADD_DISC {
-        decode_op_requested_add(body)
-    } else if discriminator == OP_REQUESTED_SUB_DISC {
-        decode_op_requested_sub(body)
-    } else if discriminator == OP_REQUESTED_BINARY_DISC {
-        decode_op_requested_binary(body)
-    } else if discriminator == OP_REQUESTED_UNARY_DISC {
-        decode_op_requested_unary(body)
-    } else if discriminator == OP_REQUESTED_IF_THEN_ELSE_DISC {
-        decode_op_requested_if_then_else(body)
-    } else if discriminator == OP_REQUESTED_CAST_DISC {
-        decode_op_requested_cast(body)
-    } else if discriminator == OP_REQUESTED_TRIVIAL_ENCRYPT_DISC {
-        decode_op_requested_trivial_encrypt(body)
-    } else if discriminator == OP_REQUESTED_RAND_DISC {
-        decode_op_requested_rand(body)
-    } else if discriminator == OP_REQUESTED_RAND_BOUNDED_DISC {
-        decode_op_requested_rand_bounded(body)
-    } else if discriminator == HANDLE_ALLOWED_DISC {
-        decode_handle_allowed(body)
-    } else {
-        None
+    match discriminator {
+        OP_REQUESTED_ADD_DISC => decode_op_requested_add(body),
+        OP_REQUESTED_SUB_DISC => decode_op_requested_sub(body),
+        OP_REQUESTED_BINARY_DISC => decode_op_requested_binary(body),
+        OP_REQUESTED_UNARY_DISC => decode_op_requested_unary(body),
+        OP_REQUESTED_IF_THEN_ELSE_DISC => decode_op_requested_if_then_else(body),
+        OP_REQUESTED_CAST_DISC => decode_op_requested_cast(body),
+        OP_REQUESTED_TRIVIAL_ENCRYPT_DISC => decode_op_requested_trivial_encrypt(body),
+        OP_REQUESTED_RAND_DISC => decode_op_requested_rand(body),
+        OP_REQUESTED_RAND_BOUNDED_DISC => decode_op_requested_rand_bounded(body),
+        HANDLE_ALLOWED_DISC => decode_handle_allowed(body),
+        _ => None,
     }
 }
 
