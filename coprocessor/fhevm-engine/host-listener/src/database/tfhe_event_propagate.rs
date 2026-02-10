@@ -16,7 +16,7 @@ use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -790,13 +790,16 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
-        schedule_priority_by_chain: &HashMap<ChainHash, SchedulePriority>,
+        slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
             let dep_chain_id = chain.hash.to_vec();
-            let schedule_priority = *schedule_priority_by_chain
-                .get(&chain.hash)
-                .unwrap_or(&SchedulePriority::FAST);
+            let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
+            {
+                SchedulePriority::SLOW
+            } else {
+                SchedulePriority::FAST
+            };
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );

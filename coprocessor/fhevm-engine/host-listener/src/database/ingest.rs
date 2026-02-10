@@ -181,26 +181,28 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut schedule_priority_by_chain: HashMap<ChainHash, SchedulePriority> =
-        HashMap::new();
+    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
-        let mut fast_lane_ops: u64 = 0;
-        let mut slow_lane_ops: u64 = 0;
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
-
-        for chain in &chains {
-            let Some(chain_dep_ops) = dependent_ops_by_chain.get(&chain.hash)
-            else {
-                continue;
-            };
-            if *chain_dep_ops > max_per_chain {
-                slow_lane_ops = slow_lane_ops.saturating_add(*chain_dep_ops);
-                schedule_priority_by_chain
-                    .insert(chain.hash, SchedulePriority::SLOW);
-            } else {
-                fast_lane_ops = fast_lane_ops.saturating_add(*chain_dep_ops);
-            }
-        }
+        let (fast_lane_ops, slow_lane_ops) = chains
+            .iter()
+            .filter_map(|chain| {
+                dependent_ops_by_chain
+                    .get(&chain.hash)
+                    .copied()
+                    .map(|chain_dep_ops| (chain.hash, chain_dep_ops))
+            })
+            .fold(
+                (0_u64, 0_u64),
+                |(fast_ops, slow_ops), (chain_hash, chain_dep_ops)| {
+                    if chain_dep_ops > max_per_chain {
+                        slow_dep_chain_ids.insert(chain_hash);
+                        (fast_ops, slow_ops.saturating_add(chain_dep_ops))
+                    } else {
+                        (fast_ops.saturating_add(chain_dep_ops), slow_ops)
+                    }
+                },
+            );
         db.record_dependent_ops_metrics(fast_lane_ops, slow_lane_ops);
     }
 
@@ -222,7 +224,7 @@ pub async fn ingest_block_logs(
             chains,
             block_timestamp,
             &block_logs.summary,
-            &schedule_priority_by_chain,
+            &slow_dep_chain_ids,
         )
         .await?;
     }
