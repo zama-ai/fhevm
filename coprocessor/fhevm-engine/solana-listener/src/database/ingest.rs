@@ -239,7 +239,7 @@ pub fn map_envelope_to_actions(
 
     actions.blocks_valid.push(BlockValidInsert {
         chain_id: envelope.host_chain_id,
-        block_hash: pseudo_block_hash_from_slot(envelope.slot),
+        block_hash: envelope.block_hash.clone(),
         block_number: envelope.slot as i64,
     });
 
@@ -304,12 +304,6 @@ fn dependence_chain_from_signature(tx_signature: &[u8]) -> Vec<u8> {
     Keccak256::digest(tx_signature).to_vec()
 }
 
-fn pseudo_block_hash_from_slot(slot: u64) -> Vec<u8> {
-    let mut block_hash = vec![0u8; 32];
-    block_hash[..8].copy_from_slice(&slot.to_be_bytes());
-    block_hash
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +320,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 120,
+            block_hash: vec![9u8; 32],
             block_time_unix: 1_700_000_000,
             tx_signature: fixed_sig(),
             tx_index: 2,
@@ -365,6 +360,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 121,
+            block_hash: vec![10u8; 32],
             block_time_unix: 1_700_000_100,
             tx_signature: fixed_sig(),
             tx_index: 0,
@@ -392,6 +388,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 122,
+            block_hash: vec![11u8; 32],
             block_time_unix: 1_700_000_200,
             tx_signature: fixed_sig(),
             tx_index: 1,
@@ -422,6 +419,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 123,
+            block_hash: vec![12u8; 32],
             block_time_unix: 1_700_000_300,
             tx_signature: fixed_sig(),
             tx_index: 1,
@@ -450,6 +448,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 124,
+            block_hash: vec![13u8; 32],
             block_time_unix: 1_700_000_400,
             tx_signature: fixed_sig(),
             tx_index: 1,
@@ -476,6 +475,7 @@ mod tests {
             version: INTERFACE_VERSION,
             host_chain_id: 4242,
             slot: 125,
+            block_hash: vec![14u8; 32],
             block_time_unix: 1_700_000_500,
             tx_signature: fixed_sig(),
             tx_index: 0,

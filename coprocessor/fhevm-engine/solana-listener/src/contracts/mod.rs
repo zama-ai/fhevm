@@ -79,6 +79,7 @@ pub struct FinalizedEventEnvelope {
     pub version: u8,
     pub host_chain_id: i64,
     pub slot: u64,
+    pub block_hash: Vec<u8>,
     pub block_time_unix: i64,
     pub tx_signature: Vec<u8>,
     pub tx_index: u32,
@@ -97,6 +98,12 @@ impl FinalizedEventEnvelope {
         }
         if self.tx_signature.is_empty() {
             anyhow::bail!("empty tx signature in finalized envelope");
+        }
+        if self.block_hash.len() != 32 {
+            anyhow::bail!(
+                "invalid block hash length in finalized envelope: expected 32, got {}",
+                self.block_hash.len()
+            );
         }
         Ok(())
     }

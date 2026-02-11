@@ -56,6 +56,9 @@ pub struct Args {
 
     #[arg(long, env = "LOG_LEVEL", default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    #[arg(long, env = "SERVICE_NAME", default_value = "")]
+    pub service_name: String,
 }
 
 pub async fn main(args: Args) -> Result<()> {
