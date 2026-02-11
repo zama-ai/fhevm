@@ -399,36 +399,47 @@ fn execute_partition(
                 &tracer,
                 &exec_ctx,
             );
-            if let Ok(result) = result {
-                let nidx = NodeIndex::new(result.0);
-                if result.1.is_ok() {
-                    for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                        let child_index = edge.target();
-                        let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                            error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                            continue;
-                        };
-                        // Update input of consumers
-                        if let Ok(ref res) = result.1 {
-                            child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(res.0.clone());
+            match result {
+                Ok(result) => {
+                    let nidx = NodeIndex::new(result.0);
+                    if result.1.is_ok() {
+                        for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                            let child_index = edge.target();
+                            let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
+                                error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                                continue;
+                            };
+                            // Update input of consumers
+                            if let Ok(ref res) = result.1 {
+                                child_node.inputs[*edge.weight() as usize] =
+                                    DFGTaskInput::Value(res.0.clone());
+                            }
                         }
                     }
+                    // Update partition's outputs (allowed handles only)
+                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                        continue;
+                    };
+                    res.insert(
+                        node.result_handle.clone(),
+                        result.1.map(|v| TaskResult {
+                            ct: v.0,
+                            compressed_ct: if node.is_allowed { v.1 } else { None },
+                            is_allowed: node.is_allowed,
+                            transaction_id: tid.clone(),
+                        }),
+                    );
                 }
-                // Update partition's outputs (allowed handles only)
-                let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                    continue;
-                };
-                res.insert(
-                    node.result_handle.clone(),
-                    result.1.map(|v| TaskResult {
-                        ct: v.0,
-                        compressed_ct: if node.is_allowed { v.1 } else { None },
-                        is_allowed: node.is_allowed,
-                        transaction_id: tid.clone(),
-                    }),
-                );
+                Err(e) => {
+                    let Some(node) = dfg.graph.node_weight(*nidx) else {
+                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                        continue;
+                    };
+                    if node.is_allowed {
+                        res.insert(node.result_handle.clone(), Err(e));
+                    }
+                }
             }
         }
         s.end();
