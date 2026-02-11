@@ -106,6 +106,43 @@ function collect_multicoproc_logs() {
   done <<< "$containers"
 }
 
+function wait_for_multicoproc_key_bootstrap() {
+  local timeout_seconds=180
+  local poll_interval=5
+  local elapsed=0
+  echo -e "${LIGHT_BLUE}${BOLD}[WAIT] Waiting for multicoprocessor key bootstrap...${RESET}"
+  while [ "$elapsed" -lt "$timeout_seconds" ]; do
+    local not_ready=""
+    local containers
+    containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor([0-9]+)?-sns-worker$' || true)
+    if [ -z "$containers" ]; then
+      echo -e "${YELLOW}[WARN]${RESET} No sns-worker containers found yet"
+      sleep "$poll_interval"
+      elapsed=$((elapsed + poll_interval))
+      continue
+    fi
+
+    while IFS= read -r container; do
+      [ -z "$container" ] && continue
+      if ! docker logs --since=20m "$container" 2>&1 | rg -q "Fetched keyset"; then
+        not_ready="${not_ready} ${container}"
+      fi
+    done <<< "$containers"
+
+    if [ -z "$not_ready" ]; then
+      echo -e "${GREEN}[READY]${RESET} Key bootstrap confirmed for all sns-worker containers"
+      return 0
+    fi
+
+    echo -e "${YELLOW}[WAIT]${RESET} Key bootstrap pending for:${not_ready}"
+    sleep "$poll_interval"
+    elapsed=$((elapsed + poll_interval))
+  done
+
+  echo -e "${RED}[ERROR]${RESET} Key bootstrap did not complete within ${timeout_seconds}s"
+  return 1
+}
+
 COMMAND=$1
 shift
 
@@ -335,6 +372,9 @@ case $COMMAND in
     fi
     if [ "$TEST_TYPE" != "debug" ]; then
       echo -e "${log_message}"
+      if [ -n "$COLLECT_MULTICOPROC" ]; then
+        wait_for_multicoproc_key_bootstrap
+      fi
       test_status=0
       if docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"; then
         test_status=0
