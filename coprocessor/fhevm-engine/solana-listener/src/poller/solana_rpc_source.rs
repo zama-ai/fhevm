@@ -15,7 +15,6 @@ use solana_client::{
     rpc_response::{OptionSerializer, UiConfirmedBlock},
 };
 use solana_commitment_config::CommitmentConfig;
-use solana_pubkey::Pubkey;
 use tracing::{debug, warn};
 use zama_host::{
     HandleAllowed, OpRequestedAdd, OpRequestedBinary, OpRequestedCast, OpRequestedIfThenElse,
@@ -334,7 +333,7 @@ fn parse_program_exit(line: &str) -> Option<&str> {
 fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
     if let Some(event) = try_decode_event::<OpRequestedAdd>(payload) {
         return Some(ProgramEvent::OpRequestedAdd {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             lhs: event.lhs,
             rhs: event.rhs,
             is_scalar: event.is_scalar,
@@ -344,7 +343,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedSub>(payload) {
         return Some(ProgramEvent::OpRequestedSub {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             lhs: event.lhs,
             rhs: event.rhs,
             is_scalar: event.is_scalar,
@@ -354,7 +353,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedBinary>(payload) {
         return Some(ProgramEvent::OpRequestedBinary {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             lhs: event.lhs,
             rhs: event.rhs,
             is_scalar: event.is_scalar,
@@ -365,7 +364,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedUnary>(payload) {
         return Some(ProgramEvent::OpRequestedUnary {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             input: event.input,
             result_handle: event.result_handle,
             opcode: event.opcode,
@@ -374,7 +373,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedIfThenElse>(payload) {
         return Some(ProgramEvent::OpRequestedIfThenElse {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             control: event.control,
             if_true: event.if_true,
             if_false: event.if_false,
@@ -384,7 +383,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedCast>(payload) {
         return Some(ProgramEvent::OpRequestedCast {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             input: event.input,
             to_type: event.to_type,
             result_handle: event.result_handle,
@@ -393,7 +392,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedTrivialEncrypt>(payload) {
         return Some(ProgramEvent::OpRequestedTrivialEncrypt {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             pt: event.pt,
             to_type: event.to_type,
             result_handle: event.result_handle,
@@ -402,7 +401,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedRand>(payload) {
         return Some(ProgramEvent::OpRequestedRand {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             rand_type: event.rand_type,
             seed: event.seed,
             result_handle: event.result_handle,
@@ -411,7 +410,7 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<OpRequestedRandBounded>(payload) {
         return Some(ProgramEvent::OpRequestedRandBounded {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             upper_bound: event.upper_bound,
             rand_type: event.rand_type,
             seed: event.seed,
@@ -421,9 +420,9 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
 
     if let Some(event) = try_decode_event::<HandleAllowed>(payload) {
         return Some(ProgramEvent::HandleAllowed {
-            caller: into_listener_pubkey(event.caller),
+            caller: event.caller,
             handle: event.handle,
-            account: into_listener_pubkey(event.account),
+            account: event.account,
         });
     }
 
@@ -437,10 +436,6 @@ where
     let discriminator = T::DISCRIMINATOR;
     let body = payload.strip_prefix(discriminator)?;
     T::try_from_slice(body).ok()
-}
-
-fn into_listener_pubkey(pubkey: anchor_lang::prelude::Pubkey) -> Pubkey {
-    Pubkey::new_from_array(pubkey.to_bytes())
 }
 
 #[cfg(test)]

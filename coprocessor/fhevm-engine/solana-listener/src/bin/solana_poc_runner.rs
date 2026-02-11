@@ -3,6 +3,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
 
+use anchor_lang::InstructionData;
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser, ValueEnum};
 use solana_client::rpc_client::RpcClient;
@@ -11,7 +12,6 @@ use solana_listener::database::ingest::map_envelope_to_actions;
 use solana_listener::database::solana_event_propagate::Database;
 use solana_listener::poller::solana_rpc_source::SolanaRpcEventSource;
 use solana_listener::poller::{Cursor, EventSource};
-use solana_sdk::hash::hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
@@ -21,9 +21,9 @@ use tokio::time::{sleep, Instant};
 use urlencoding::encode;
 
 const DEFAULT_PROGRAM_ID: &str = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq";
-const DEFAULT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
-const DEFAULT_HOST_CHAIN_ID: i64 = 4242;
-const DEFAULT_TENANT_ID: i32 = 1;
+const DEFAULT_TENANT_API_KEY: &str = "00000000-0000-0000-0000-000000000042";
+// Temporary placeholder in the reserved non-EVM range used for Solana discovery.
+const DEFAULT_HOST_CHAIN_ID: i64 = 0x8000_0000_0000_0001_u64 as i64;
 const OP_ADD: u8 = 0;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -44,9 +44,6 @@ struct Args {
 
     #[arg(long, default_value_t = DEFAULT_HOST_CHAIN_ID)]
     host_chain_id: i64,
-
-    #[arg(long, default_value_t = DEFAULT_TENANT_ID)]
-    tenant_id: i32,
 
     #[arg(long, default_value = "~/.config/solana/id.json")]
     wallet: String,
@@ -72,8 +69,15 @@ struct Args {
     #[arg(long, action = ArgAction::Set, default_value_t = true)]
     docker_cleanup: bool,
 
-    #[arg(long, default_value = DEFAULT_API_KEY)]
+    #[arg(long, default_value = DEFAULT_TENANT_API_KEY)]
     tenant_api_key: String,
+
+    #[arg(
+        long,
+        env = "SOLANA_POC_KEYS_DIR",
+        default_value = "/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/fhevm-keys"
+    )]
+    keys_dir: String,
 }
 
 struct DockerPostgres {
@@ -156,7 +160,13 @@ async fn run_add_flow(
         .await
         .context("run db migrations")?;
 
-    seed_tenant_with_keys(&pool, &args.tenant_api_key).await?;
+    let tenant_id = seed_tenant_with_keys(
+        &pool,
+        &args.tenant_api_key,
+        args.host_chain_id,
+        &args.keys_dir,
+    )
+    .await?;
 
     let start_cursor = finalized_cursor(rpc)?;
     let lhs = [0x11_u8; 32];
@@ -191,9 +201,9 @@ async fn run_add_flow(
 
     let mut source =
         SolanaRpcEventSource::new(args.rpc_url.clone(), &args.program_id, args.host_chain_id);
-    let mut db = Database::connect(db_url, args.host_chain_id, args.tenant_id).await?;
+    let mut db = Database::connect(db_url, args.host_chain_id, tenant_id).await?;
     let (computations, allowed, pbs, next_cursor) =
-        ingest_expected(&mut source, &mut db, args.tenant_id, start_cursor, 2).await?;
+        ingest_expected(&mut source, &mut db, tenant_id, start_cursor, 2).await?;
 
     println!("ingest_inserted_computations={computations}");
     println!("ingest_inserted_allowed_handles={allowed}");
@@ -334,11 +344,12 @@ fn build_request_add_instruction(
     rhs: [u8; 32],
     is_scalar: bool,
 ) -> Instruction {
-    let mut data = Vec::with_capacity(8 + 32 + 32 + 1);
-    data.extend_from_slice(&anchor_global_discriminator("request_add"));
-    data.extend_from_slice(&lhs);
-    data.extend_from_slice(&rhs);
-    data.push(u8::from(is_scalar));
+    let data = zama_host::instruction::RequestAdd {
+        lhs,
+        rhs,
+        is_scalar,
+    }
+    .data();
     Instruction {
         program_id,
         accounts: vec![AccountMeta::new(signer, true)],
@@ -352,23 +363,13 @@ fn build_allow_instruction(
     handle: [u8; 32],
     account: Pubkey,
 ) -> Instruction {
-    let mut data = Vec::with_capacity(8 + 32 + 32);
-    data.extend_from_slice(&anchor_global_discriminator("allow"));
-    data.extend_from_slice(&handle);
-    data.extend_from_slice(account.as_ref());
+    let account = anchor_lang::prelude::Pubkey::new_from_array(account.to_bytes());
+    let data = zama_host::instruction::Allow { handle, account }.data();
     Instruction {
         program_id,
         accounts: vec![AccountMeta::new(signer, true)],
         data,
     }
-}
-
-fn anchor_global_discriminator(name: &str) -> [u8; 8] {
-    let preimage = format!("global:{name}");
-    let digest = hash(preimage.as_bytes()).to_bytes();
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
 }
 
 fn derive_add_result_handle(lhs: [u8; 32], rhs: [u8; 32], is_scalar: bool) -> [u8; 32] {
@@ -448,9 +449,13 @@ async fn ingest_expected(
     ))
 }
 
-async fn seed_tenant_with_keys(pool: &sqlx::PgPool, tenant_api_key: &str) -> Result<i32> {
-    let root = repo_root()?;
-    let key_dir = root.join("coprocessor/fhevm-engine/fhevm-keys");
+async fn seed_tenant_with_keys(
+    pool: &sqlx::PgPool,
+    tenant_api_key: &str,
+    host_chain_id: i64,
+    keys_dir: &str,
+) -> Result<i32> {
+    let key_dir = PathBuf::from(expand_tilde(keys_dir));
     let sks = tokio::fs::read(key_dir.join("sks"))
         .await
         .context("read sks")?;
@@ -490,7 +495,7 @@ async fn seed_tenant_with_keys(pool: &sqlx::PgPool, tenant_api_key: &str) -> Res
         ",
     )
     .bind(tenant_api_key)
-    .bind(12345_i64)
+    .bind(host_chain_id)
     .bind("0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2")
     .bind("0x69dE3158643e738a0724418b21a35FAA20CBb1c5")
     .bind(pks)

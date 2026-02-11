@@ -312,8 +312,17 @@ fn repo_root() -> anyhow::Result<PathBuf> {
 }
 
 async fn seed_tenant_with_keys(pool: &sqlx::PgPool) -> anyhow::Result<i32> {
-    let root = repo_root()?;
-    let key_dir = root.join("coprocessor/fhevm-engine/fhevm-keys");
+    let key_dir = if let Ok(path) = std::env::var("SOLANA_POC_KEYS_DIR") {
+        if path.trim().is_empty() {
+            let root = repo_root()?;
+            root.join("coprocessor/fhevm-engine/fhevm-keys")
+        } else {
+            PathBuf::from(path)
+        }
+    } else {
+        let root = repo_root()?;
+        root.join("coprocessor/fhevm-engine/fhevm-keys")
+    };
 
     let sks = tokio::fs::read(key_dir.join("sks"))
         .await
@@ -1524,6 +1533,76 @@ async fn localnet_solana_request_add_computes_and_decrypts() -> anyhow::Result<(
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
+async fn localnet_solana_request_add_computes_no_decrypt_benchmark() -> anyhow::Result<()> {
+    let mut harness = setup_compute_harness().await?;
+
+    let lhs = [0x11_u8; 32];
+    let rhs = [0x22_u8; 32];
+    let is_scalar = false;
+    let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
+    let allowed_account = Pubkey::new_unique();
+
+    seed_trivial_inputs(&mut harness.worker_client, lhs, rhs).await?;
+
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let start = Instant::now();
+    let request_add_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_add_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            lhs,
+            rhs,
+            is_scalar,
+        ),
+    )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (ingest_summary, _) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
+    assert_eq!(ingest_summary.inserted_computations, 1);
+    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
+
+    let tx_signature = request_add_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+
+    let output_exists =
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_exists, 1);
+    println!(
+        "benchmark_add_no_decrypt_elapsed_ms={}",
+        start.elapsed().as_millis()
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
 async fn localnet_solana_request_sub_computes_and_decrypts() -> anyhow::Result<()> {
     let mut harness = setup_compute_harness().await?;
 
@@ -2135,6 +2214,82 @@ async fn localnet_solana_request_rand_computes_and_decrypts() -> anyhow::Result<
     let _value = decrypted
         .parse::<u64>()
         .with_context(|| format!("rand output was not numeric: {decrypted}"))?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
+async fn localnet_solana_request_rand_computes_no_decrypt_benchmark() -> anyhow::Result<()> {
+    let harness = setup_compute_harness().await?;
+
+    let seed = [0x99_u8; 32];
+    let rand_type: u8 = 4;
+    let result_handle = derive_rand_result_handle(seed, rand_type);
+    let allowed_account = Pubkey::new_unique();
+
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let start = Instant::now();
+    let request_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_rand_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            rand_type,
+            seed,
+        ),
+    )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (ingest_summary, _) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
+    assert_eq!(ingest_summary.inserted_computations, 1);
+    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
+
+    assert_computation_contract(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        SupportedFheOperations::FheRand,
+        true,
+        &[seed.to_vec(), vec![rand_type]],
+    )
+    .await?;
+
+    let tx_signature = request_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+
+    let output_exists =
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_exists, 1);
+    println!(
+        "benchmark_rand_no_decrypt_elapsed_ms={}",
+        start.elapsed().as_millis()
+    );
 
     Ok(())
 }
