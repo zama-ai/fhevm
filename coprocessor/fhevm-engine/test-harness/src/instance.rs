@@ -63,7 +63,12 @@ async fn setup_test_app_existing_localhost(
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.to_string().replace("coprocessor", "postgres");
+        let admin_db_url = db_url
+            .as_str()
+            .to_string()
+            .replace("coprocessor", "postgres");
+
+        info!("Admin DB URL: {admin_db_url}");
         create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
