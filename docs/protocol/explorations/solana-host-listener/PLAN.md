@@ -27,6 +27,15 @@ flowchart LR
 - Prioritize fast feedback loops and clear validation over production readiness.
 - Capture decisions and corrections in `LEARNING.md`.
 
+## Implementation Directives
+
+1. Prefer Solana SDK crates over custom RPC plumbing whenever possible:
+- `solana-client`
+- `solana-commitment-config`
+- `solana-sdk`
+2. Keep canonical event decoding IDL-driven (Anchor event types), not manual byte-layout parsing.
+3. Only drop to custom parsing if SDK/IDL paths are insufficient for a specific requirement, and document why.
+
 ## Non-goals
 
 - No big refactor of current EVM `host-listener`.

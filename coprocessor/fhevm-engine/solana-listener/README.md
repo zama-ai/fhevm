@@ -9,6 +9,7 @@ Current behavior:
 1. finalized Solana RPC source -> canonical event envelopes
 2. canonical event envelopes -> existing DB ingestion contracts
 3. replay-safe cursor updates and idempotent writes
+4. SDK-first polling (`solana-client`) + IDL-typed event decode (Anchor event structs from `zama-host`)
 
 ## Local feedback tiers
 

@@ -1,36 +1,33 @@
+use anchor_lang::{AnchorDeserialize, Discriminator};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use reqwest::Client;
-use serde_json::{json, Value};
+use solana_client::{
+    client_error::{ClientError, ClientErrorKind},
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::RpcBlockConfig,
+    rpc_config::{TransactionDetails, UiTransactionEncoding},
+    rpc_custom_error::{
+        JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE,
+        JSON_RPC_SERVER_ERROR_BLOCK_STATUS_NOT_AVAILABLE_YET, JSON_RPC_SERVER_ERROR_SLOT_SKIPPED,
+    },
+    rpc_request::RpcError,
+    rpc_response::{OptionSerializer, UiConfirmedBlock},
+};
+use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
 use tracing::{debug, warn};
+use zama_host::{
+    HandleAllowed, OpRequestedAdd, OpRequestedBinary, OpRequestedCast, OpRequestedIfThenElse,
+    OpRequestedRand, OpRequestedRandBounded, OpRequestedSub, OpRequestedTrivialEncrypt,
+    OpRequestedUnary,
+};
 
-use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEvent, INTERFACE_VERSION};
+use crate::contracts::{FinalizedEventEnvelope, ProgramEvent, INTERFACE_VERSION};
 use crate::poller::{Cursor, EventSource, SourceBatch};
 
-const U8_LEN: usize = 1;
-const PUBKEY_LEN: usize = 32;
-const HANDLE_LEN: usize = 32;
-const DISCRIMINATOR_LEN: usize = 8;
-
-const OP_REQUESTED_ADD_DISC: [u8; 8] = [0x8D, 0x59, 0xAF, 0xBE, 0x59, 0x4B, 0x41, 0x61];
-const OP_REQUESTED_SUB_DISC: [u8; 8] = [0xB8, 0x04, 0x1A, 0x3C, 0x56, 0x1C, 0x86, 0x92];
-const OP_REQUESTED_BINARY_DISC: [u8; 8] = [0x56, 0xF9, 0x69, 0xC3, 0xFA, 0x79, 0xE8, 0xDD];
-const OP_REQUESTED_UNARY_DISC: [u8; 8] = [0x17, 0x57, 0x06, 0x72, 0x02, 0xF8, 0x8F, 0x33];
-const OP_REQUESTED_IF_THEN_ELSE_DISC: [u8; 8] = [0xFD, 0xD9, 0x97, 0x53, 0x3C, 0x18, 0x34, 0x01];
-const OP_REQUESTED_CAST_DISC: [u8; 8] = [0x2E, 0x1D, 0xA1, 0x99, 0xF1, 0x6C, 0x17, 0xED];
-const OP_REQUESTED_TRIVIAL_ENCRYPT_DISC: [u8; 8] = [0xD8, 0xB2, 0x86, 0x4E, 0xC6, 0xFE, 0xDE, 0x63];
-const OP_REQUESTED_RAND_DISC: [u8; 8] = [0x07, 0x2A, 0x7C, 0x69, 0x3D, 0xEE, 0xBF, 0x26];
-const OP_REQUESTED_RAND_BOUNDED_DISC: [u8; 8] = [0x06, 0x16, 0x6C, 0x2C, 0x76, 0x7B, 0x6F, 0x0F];
-const HANDLE_ALLOWED_DISC: [u8; 8] = [0xC0, 0x6D, 0xFC, 0xBF, 0xC6, 0xE0, 0x9A, 0x9A];
-// Anchor event decode table for PoC host-program events.
-// TODO: replace with generated IDL-driven Rust decoding once event schema is frozen.
-
-#[derive(Clone)]
 pub struct SolanaRpcEventSource {
-    client: Client,
-    rpc_url: String,
+    rpc: RpcClient,
     program_id: String,
     host_chain_id: i64,
 }
@@ -42,95 +39,48 @@ impl SolanaRpcEventSource {
         host_chain_id: i64,
     ) -> Self {
         Self {
-            client: Client::new(),
-            rpc_url: rpc_url.into(),
+            rpc: RpcClient::new(rpc_url.into()),
             program_id: program_id.into(),
             host_chain_id,
         }
     }
 
-    async fn rpc_call(&self, method: &str, params: Value) -> Result<Value> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        });
-        let resp = self
-            .client
-            .post(&self.rpc_url)
-            .json(&payload)
-            .send()
+    async fn get_slot(&self, commitment: CommitmentConfig) -> Result<u64> {
+        self.rpc
+            .get_slot_with_commitment(commitment)
             .await
-            .with_context(|| format!("rpc call failed: {method}"))?;
-        let status = resp.status();
-        let body: Value = resp
-            .json()
-            .await
-            .with_context(|| format!("decode rpc response failed: {method}"))?;
-        if !status.is_success() {
-            anyhow::bail!("rpc http failure for {method}: status={status} body={body}");
-        }
-        if let Some(err) = body.get("error") {
-            anyhow::bail!("rpc returned error for {method}: {err}");
-        }
-        body.get("result")
-            .cloned()
-            .with_context(|| format!("missing result field for rpc method: {method}"))
+            .context("rpc getSlot failed")
     }
 
-    async fn get_slot(&self, commitment: &str) -> Result<u64> {
-        // SDK clients expose getSlot/getBlock too. We intentionally keep raw JSON in this PoC
-        // poller because we consume nested RPC payload shape directly (accountKeys + logMessages)
-        // and want deterministic control over optional/missing fields.
-        let result = self
-            .rpc_call("getSlot", json!([{ "commitment": commitment }]))
-            .await?;
-        result
-            .as_u64()
-            .with_context(|| format!("invalid getSlot result payload: {result}"))
-    }
+    async fn get_block(
+        &self,
+        slot: u64,
+        commitment: CommitmentConfig,
+    ) -> Result<Option<UiConfirmedBlock>> {
+        let config = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base64),
+            transaction_details: Some(TransactionDetails::Full),
+            rewards: Some(false),
+            commitment: Some(commitment),
+            max_supported_transaction_version: Some(0),
+        };
 
-    async fn get_block(&self, slot: u64, commitment: &str) -> Result<Option<Value>> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getBlock",
-            "params": [
-                slot,
-                {
-                    "encoding": "json",
-                    "transactionDetails": "full",
-                    "rewards": false,
-                    "maxSupportedTransactionVersion": 0,
-                    "commitment": commitment
-                }
-            ]
-        });
-        let resp = self
-            .client
-            .post(&self.rpc_url)
-            .json(&payload)
-            .send()
-            .await
-            .context("rpc getBlock call failed")?;
-        let status = resp.status();
-        let body: Value = resp
-            .json()
-            .await
-            .context("decode getBlock response failed")?;
-        if !status.is_success() {
-            anyhow::bail!("getBlock http failure status={status} body={body}");
+        match self.rpc.get_block_with_config(slot, config).await {
+            Ok(block) => Ok(Some(block)),
+            Err(err) if is_block_temporarily_unavailable(&err) => Ok(None),
+            Err(err) => Err(err).with_context(|| format!("rpc getBlock failed for slot {slot}")),
         }
-        if let Some(err) = body.get("error") {
-            let code = err.get("code").and_then(Value::as_i64).unwrap_or_default();
-            if code == -32007 {
-                return Ok(None);
-            }
-            anyhow::bail!("getBlock rpc error for slot {slot}: {err}");
-        }
-        Ok(body.get("result").cloned())
     }
+}
+
+fn is_block_temporarily_unavailable(err: &ClientError) -> bool {
+    matches!(
+        err.kind(),
+        ClientErrorKind::RpcError(RpcError::RpcResponseError { code, .. })
+            if *code == JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE
+                || *code == JSON_RPC_SERVER_ERROR_SLOT_SKIPPED
+                || *code == JSON_RPC_SERVER_ERROR_BLOCK_STATUS_NOT_AVAILABLE_YET
+    )
 }
 
 fn cursor_marks_completed_slot(cursor: Cursor) -> bool {
@@ -168,10 +118,16 @@ impl EventSource for SolanaRpcEventSource {
         }
 
         let commitment = if finalized_only {
+            CommitmentConfig::finalized()
+        } else {
+            CommitmentConfig::confirmed()
+        };
+        let commitment_label = if finalized_only {
             "finalized"
         } else {
             "confirmed"
         };
+
         let safe_tip = self.get_slot(commitment).await?;
         let from_slot = from_slot_for_cursor(cursor);
         if from_slot > safe_tip {
@@ -185,16 +141,18 @@ impl EventSource for SolanaRpcEventSource {
 
         for slot in from_slot..=safe_tip {
             let Some(block) = self.get_block(slot, commitment).await? else {
-                // Do not advance the cursor on unavailable slots. Skipping here
-                // could silently lose events on lagging/snapshot-jumped nodes.
-                warn!(slot, commitment, "block unavailable, stopping batch");
+                // Do not advance cursor on unavailable blocks to prevent silent event loss.
+                warn!(
+                    slot,
+                    commitment = commitment_label,
+                    "block unavailable, stopping batch"
+                );
                 break;
             };
 
-            let block_time_unix = block.get("blockTime").and_then(Value::as_i64).unwrap_or(0);
-            let block_hash = extract_block_hash(&block)
-                .with_context(|| format!("missing/invalid blockhash for slot {slot}"))?;
-            let Some(transactions) = block.get("transactions").and_then(Value::as_array) else {
+            let block_time_unix = block.block_time.unwrap_or(0);
+            let block_hash = decode_base58_32("blockhash", &block.blockhash)?;
+            let Some(transactions) = block.transactions else {
                 warn!(slot, "block missing transactions array, stopping batch");
                 break;
             };
@@ -210,52 +168,41 @@ impl EventSource for SolanaRpcEventSource {
                 if slot == cursor.slot && tx_index < cursor.tx_index {
                     continue;
                 }
+
                 if tx
-                    .get("meta")
-                    .and_then(|meta| meta.get("err"))
-                    .map(|err| !err.is_null())
-                    .unwrap_or(false)
+                    .meta
+                    .as_ref()
+                    .and_then(|meta| meta.err.as_ref())
+                    .is_some()
                 {
                     continue;
                 }
-                let account_keys = extract_account_keys(tx);
-                if !account_keys
-                    .iter()
-                    .any(|account| account == &self.program_id)
-                {
+
+                let Some(decoded_tx) = tx.transaction.decode() else {
+                    warn!(slot, tx_index, "failed to decode transaction payload");
+                    continue;
+                };
+                let Some(signature) = decoded_tx.signatures.first() else {
+                    continue;
+                };
+                let tx_signature = signature.as_ref().to_vec();
+
+                let log_lines: Vec<&str> = tx
+                    .meta
+                    .as_ref()
+                    .and_then(|meta| match meta.log_messages.as_ref() {
+                        OptionSerializer::Some(lines) => {
+                            Some(lines.iter().map(String::as_str).collect::<Vec<&str>>())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+
+                let decoded_events = decode_program_events_from_logs(&log_lines, &self.program_id);
+                if decoded_events.is_empty() {
                     continue;
                 }
                 candidate_transactions += 1;
-
-                let Some(signature_str) = tx
-                    .get("transaction")
-                    .and_then(|v| v.get("signatures"))
-                    .and_then(Value::as_array)
-                    .and_then(|sigs| sigs.first())
-                    .and_then(Value::as_str)
-                else {
-                    continue;
-                };
-                let tx_signature = match bs58::decode(signature_str).into_vec() {
-                    Ok(sig) => sig,
-                    Err(err) => {
-                        warn!(
-                            signature = signature_str,
-                            ?err,
-                            "failed to decode tx signature"
-                        );
-                        continue;
-                    }
-                };
-
-                let log_messages = tx
-                    .get("meta")
-                    .and_then(|meta| meta.get("logMessages"))
-                    .and_then(Value::as_array);
-                let log_lines: Vec<&str> = log_messages
-                    .map(|lines| lines.iter().filter_map(Value::as_str).collect())
-                    .unwrap_or_default();
-                let decoded_events = decode_program_events_from_logs(&log_lines, &self.program_id);
 
                 for (op_index, event) in decoded_events.into_iter().enumerate() {
                     let op_index = op_index as u16;
@@ -266,6 +213,7 @@ impl EventSource for SolanaRpcEventSource {
                         slot_fully_consumed = false;
                         break;
                     }
+
                     events.push(FinalizedEventEnvelope {
                         version: INTERFACE_VERSION,
                         host_chain_id: self.host_chain_id,
@@ -307,13 +255,25 @@ impl EventSource for SolanaRpcEventSource {
             next_slot = next_cursor.slot,
             next_tx_index = next_cursor.tx_index,
             next_op_index = next_cursor.op_index,
-            "fetched finalized rpc batch"
+            "fetched rpc batch"
         );
         Ok(SourceBatch {
             events,
             next_cursor,
         })
     }
+}
+
+fn decode_base58_32(label: &str, value: &str) -> Result<Vec<u8>> {
+    let decoded = bs58::decode(value)
+        .into_vec()
+        .with_context(|| format!("decode {label}: {value}"))?;
+    anyhow::ensure!(
+        decoded.len() == 32,
+        "unexpected {label} length: {}",
+        decoded.len()
+    );
+    Ok(decoded)
 }
 
 fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<ProgramEvent> {
@@ -354,28 +314,6 @@ fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<Progr
     events
 }
 
-fn extract_account_keys(tx: &Value) -> Vec<String> {
-    let Some(keys) = tx
-        .get("transaction")
-        .and_then(|txn| txn.get("message"))
-        .and_then(|msg| msg.get("accountKeys"))
-        .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
-
-    keys.iter()
-        .filter_map(|entry| {
-            entry.as_str().map(ToOwned::to_owned).or_else(|| {
-                entry
-                    .get("pubkey")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned)
-            })
-        })
-        .collect()
-}
-
 fn parse_program_invoke(line: &str) -> Option<&str> {
     let content = line.strip_prefix("Program ")?;
     let (program, _) = content.split_once(" invoke [")?;
@@ -394,236 +332,134 @@ fn parse_program_exit(line: &str) -> Option<&str> {
 }
 
 fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEvent> {
-    if payload.len() < DISCRIMINATOR_LEN {
-        return None;
+    if let Some(event) = try_decode_event::<OpRequestedAdd>(payload) {
+        return Some(ProgramEvent::OpRequestedAdd {
+            caller: into_listener_pubkey(event.caller),
+            lhs: event.lhs,
+            rhs: event.rhs,
+            is_scalar: event.is_scalar,
+            result_handle: event.result_handle,
+        });
     }
-    let discriminator: [u8; 8] = payload[..DISCRIMINATOR_LEN].try_into().ok()?;
-    let body = &payload[DISCRIMINATOR_LEN..];
 
-    match discriminator {
-        OP_REQUESTED_ADD_DISC => decode_op_requested_add(body),
-        OP_REQUESTED_SUB_DISC => decode_op_requested_sub(body),
-        OP_REQUESTED_BINARY_DISC => decode_op_requested_binary(body),
-        OP_REQUESTED_UNARY_DISC => decode_op_requested_unary(body),
-        OP_REQUESTED_IF_THEN_ELSE_DISC => decode_op_requested_if_then_else(body),
-        OP_REQUESTED_CAST_DISC => decode_op_requested_cast(body),
-        OP_REQUESTED_TRIVIAL_ENCRYPT_DISC => decode_op_requested_trivial_encrypt(body),
-        OP_REQUESTED_RAND_DISC => decode_op_requested_rand(body),
-        OP_REQUESTED_RAND_BOUNDED_DISC => decode_op_requested_rand_bounded(body),
-        HANDLE_ALLOWED_DISC => decode_handle_allowed(body),
-        _ => None,
+    if let Some(event) = try_decode_event::<OpRequestedSub>(payload) {
+        return Some(ProgramEvent::OpRequestedSub {
+            caller: into_listener_pubkey(event.caller),
+            lhs: event.lhs,
+            rhs: event.rhs,
+            is_scalar: event.is_scalar,
+            result_handle: event.result_handle,
+        });
     }
+
+    if let Some(event) = try_decode_event::<OpRequestedBinary>(payload) {
+        return Some(ProgramEvent::OpRequestedBinary {
+            caller: into_listener_pubkey(event.caller),
+            lhs: event.lhs,
+            rhs: event.rhs,
+            is_scalar: event.is_scalar,
+            result_handle: event.result_handle,
+            opcode: event.opcode,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedUnary>(payload) {
+        return Some(ProgramEvent::OpRequestedUnary {
+            caller: into_listener_pubkey(event.caller),
+            input: event.input,
+            result_handle: event.result_handle,
+            opcode: event.opcode,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedIfThenElse>(payload) {
+        return Some(ProgramEvent::OpRequestedIfThenElse {
+            caller: into_listener_pubkey(event.caller),
+            control: event.control,
+            if_true: event.if_true,
+            if_false: event.if_false,
+            result_handle: event.result_handle,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedCast>(payload) {
+        return Some(ProgramEvent::OpRequestedCast {
+            caller: into_listener_pubkey(event.caller),
+            input: event.input,
+            to_type: event.to_type,
+            result_handle: event.result_handle,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedTrivialEncrypt>(payload) {
+        return Some(ProgramEvent::OpRequestedTrivialEncrypt {
+            caller: into_listener_pubkey(event.caller),
+            pt: event.pt,
+            to_type: event.to_type,
+            result_handle: event.result_handle,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedRand>(payload) {
+        return Some(ProgramEvent::OpRequestedRand {
+            caller: into_listener_pubkey(event.caller),
+            rand_type: event.rand_type,
+            seed: event.seed,
+            result_handle: event.result_handle,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<OpRequestedRandBounded>(payload) {
+        return Some(ProgramEvent::OpRequestedRandBounded {
+            caller: into_listener_pubkey(event.caller),
+            upper_bound: event.upper_bound,
+            rand_type: event.rand_type,
+            seed: event.seed,
+            result_handle: event.result_handle,
+        });
+    }
+
+    if let Some(event) = try_decode_event::<HandleAllowed>(payload) {
+        return Some(ProgramEvent::HandleAllowed {
+            caller: into_listener_pubkey(event.caller),
+            handle: event.handle,
+            account: into_listener_pubkey(event.account),
+        });
+    }
+
+    None
 }
 
-fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let lhs: HandleBytes = body[32..64].try_into().ok()?;
-    let rhs: HandleBytes = body[64..96].try_into().ok()?;
-    let is_scalar = body[96] != 0;
-    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedAdd {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-    })
+fn try_decode_event<T>(payload: &[u8]) -> Option<T>
+where
+    T: AnchorDeserialize + Discriminator,
+{
+    let discriminator = T::DISCRIMINATOR;
+    let body = payload.strip_prefix(discriminator)?;
+    T::try_from_slice(body).ok()
 }
 
-fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let lhs: HandleBytes = body[32..64].try_into().ok()?;
-    let rhs: HandleBytes = body[64..96].try_into().ok()?;
-    let is_scalar = body[96] != 0;
-    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedSub {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-    })
-}
-
-fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN + U8_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let lhs: HandleBytes = body[32..64].try_into().ok()?;
-    let rhs: HandleBytes = body[64..96].try_into().ok()?;
-    let is_scalar = body[96] != 0;
-    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
-    let opcode = body[129];
-
-    Some(ProgramEvent::OpRequestedBinary {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-        opcode,
-    })
-}
-
-fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + HANDLE_LEN + U8_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let input: HandleBytes = body[32..64].try_into().ok()?;
-    let result_handle: HandleBytes = body[64..96].try_into().ok()?;
-    let opcode = body[96];
-
-    Some(ProgramEvent::OpRequestedUnary {
-        caller,
-        input,
-        result_handle,
-        opcode,
-    })
-}
-
-fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + HANDLE_LEN + HANDLE_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let control: HandleBytes = body[32..64].try_into().ok()?;
-    let if_true: HandleBytes = body[64..96].try_into().ok()?;
-    let if_false: HandleBytes = body[96..128].try_into().ok()?;
-    let result_handle: HandleBytes = body[128..160].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedIfThenElse {
-        caller,
-        control,
-        if_true,
-        if_false,
-        result_handle,
-    })
-}
-
-fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let input: HandleBytes = body[32..64].try_into().ok()?;
-    let to_type = body[64];
-    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedCast {
-        caller,
-        input,
-        to_type,
-        result_handle,
-    })
-}
-
-fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let pt: HandleBytes = body[32..64].try_into().ok()?;
-    let to_type = body[64];
-    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedTrivialEncrypt {
-        caller,
-        pt,
-        to_type,
-        result_handle,
-    })
-}
-
-fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + U8_LEN + HANDLE_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let rand_type = body[32];
-    let seed: HandleBytes = body[33..65].try_into().ok()?;
-    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedRand {
-        caller,
-        rand_type,
-        seed,
-        result_handle,
-    })
-}
-
-fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + U8_LEN + HANDLE_LEN + HANDLE_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let upper_bound: HandleBytes = body[32..64].try_into().ok()?;
-    let rand_type = body[64];
-    let seed: HandleBytes = body[65..97].try_into().ok()?;
-    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
-
-    Some(ProgramEvent::OpRequestedRandBounded {
-        caller,
-        upper_bound,
-        rand_type,
-        seed,
-        result_handle,
-    })
-}
-
-fn decode_handle_allowed(body: &[u8]) -> Option<ProgramEvent> {
-    if body.len() < PUBKEY_LEN + HANDLE_LEN + PUBKEY_LEN {
-        return None;
-    }
-    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
-    let handle: HandleBytes = body[32..64].try_into().ok()?;
-    let account = Pubkey::new_from_array(body[64..96].try_into().ok()?);
-    Some(ProgramEvent::HandleAllowed {
-        caller,
-        handle,
-        account,
-    })
-}
-
-fn extract_block_hash(block: &Value) -> Result<Vec<u8>> {
-    let Some(block_hash_str) = block.get("blockhash").and_then(Value::as_str) else {
-        anyhow::bail!("block missing blockhash field");
-    };
-    let decoded = bs58::decode(block_hash_str)
-        .into_vec()
-        .with_context(|| format!("decode blockhash {block_hash_str}"))?;
-    anyhow::ensure!(
-        decoded.len() == 32,
-        "unexpected blockhash length: {}",
-        decoded.len()
-    );
-    Ok(decoded)
+fn into_listener_pubkey(pubkey: anchor_lang::prelude::Pubkey) -> Pubkey {
+    Pubkey::new_from_array(pubkey.to_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anchor_lang::Event;
 
     const TARGET_PROGRAM: &str = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq";
 
     #[test]
     fn decodes_op_requested_add_from_program_data_line() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&OP_REQUESTED_ADD_DISC);
-        payload.extend_from_slice(&[1u8; 32]); // caller
-        payload.extend_from_slice(&[2u8; 32]); // lhs
-        payload.extend_from_slice(&[3u8; 32]); // rhs
-        payload.push(1u8); // is_scalar
-        payload.extend_from_slice(&[4u8; 32]); // result
+        let payload = OpRequestedAdd {
+            caller: anchor_lang::prelude::Pubkey::new_from_array([1u8; 32]),
+            lhs: [2u8; 32],
+            rhs: [3u8; 32],
+            is_scalar: true,
+            result_handle: [4u8; 32],
+        }
+        .data();
         let b64 = STANDARD.encode(payload);
 
         let logs = [
@@ -666,13 +502,14 @@ mod tests {
 
     #[test]
     fn decodes_op_requested_sub_from_program_data_line() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&OP_REQUESTED_SUB_DISC);
-        payload.extend_from_slice(&[1u8; 32]); // caller
-        payload.extend_from_slice(&[5u8; 32]); // lhs
-        payload.extend_from_slice(&[6u8; 32]); // rhs
-        payload.push(1u8); // is_scalar
-        payload.extend_from_slice(&[7u8; 32]); // result
+        let payload = OpRequestedSub {
+            caller: anchor_lang::prelude::Pubkey::new_from_array([1u8; 32]),
+            lhs: [5u8; 32],
+            rhs: [6u8; 32],
+            is_scalar: true,
+            result_handle: [7u8; 32],
+        }
+        .data();
         let b64 = STANDARD.encode(payload);
 
         let logs = [
@@ -702,14 +539,15 @@ mod tests {
 
     #[test]
     fn decodes_op_requested_binary_from_program_data_line() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&OP_REQUESTED_BINARY_DISC);
-        payload.extend_from_slice(&[1u8; 32]); // caller
-        payload.extend_from_slice(&[8u8; 32]); // lhs
-        payload.extend_from_slice(&[9u8; 32]); // rhs
-        payload.push(0u8); // is_scalar
-        payload.extend_from_slice(&[10u8; 32]); // result
-        payload.push(2u8); // mul opcode
+        let payload = OpRequestedBinary {
+            caller: anchor_lang::prelude::Pubkey::new_from_array([1u8; 32]),
+            lhs: [8u8; 32],
+            rhs: [9u8; 32],
+            is_scalar: false,
+            result_handle: [10u8; 32],
+            opcode: 2,
+        }
+        .data();
         let b64 = STANDARD.encode(payload);
 
         let logs = [
@@ -741,12 +579,13 @@ mod tests {
 
     #[test]
     fn decodes_op_requested_unary_from_program_data_line() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&OP_REQUESTED_UNARY_DISC);
-        payload.extend_from_slice(&[1u8; 32]); // caller
-        payload.extend_from_slice(&[11u8; 32]); // input
-        payload.extend_from_slice(&[12u8; 32]); // result
-        payload.push(20u8); // neg opcode
+        let payload = OpRequestedUnary {
+            caller: anchor_lang::prelude::Pubkey::new_from_array([1u8; 32]),
+            input: [11u8; 32],
+            result_handle: [12u8; 32],
+            opcode: 20,
+        }
+        .data();
         let b64 = STANDARD.encode(payload);
 
         let logs = [

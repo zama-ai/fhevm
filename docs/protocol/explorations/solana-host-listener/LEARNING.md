@@ -31,7 +31,8 @@ flowchart TD
   E13 --> E14["Experiment 14: explorer-visible CLI runner (external validator mode)"]
   E14 --> E15["Experiment 15: explorer decode via auto IDL publish + one-command demo script"]
   E15 --> E16["Experiment 16: Tier-3 runtime parity expansion for remaining op families"]
-  E16 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E16 --> E17["Experiment 17: SDK-first RPC + IDL-typed event decode"]
+  E17 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -58,6 +59,7 @@ flowchart TD
 20. A new CLI runner path exists for explorer-visible PoC runs on external validator RPC (`solana_poc_runner`), with optional Dockerized Postgres provisioning.
 21. Explorer can decode local tx instructions/events for `zama-host` when IDL is published; PoC runner now auto-publishes IDL and the demo script provides a single reproducible command.
 22. Tier-3 runtime coverage now includes additional op families beyond `add/sub/if_then_else/cast`: representative `binary` + `unary`, and dedicated `trivial_encrypt`, `rand`, `rand_bounded` e2e tests with decrypt checks.
+23. Solana RPC ingestion is now SDK-first (`solana-client` + `solana-commitment-config`) and event decode is IDL-typed via Anchor event structs from `zama-host` (manual byte-layout decoder removed).
 
 ## Open Questions
 
@@ -198,6 +200,22 @@ Notes:
   - `localnet_acl_gate_blocks_then_allows_compute`
 - Listener semantics now keep `request_add` non-runnable until `allow` is ingested; `allow` unlocks matching queued computations.
 - Added robust finalized tx wait loop in integration harness to avoid 16s poll timeout flakes.
+
+### Experiment 17: SDK-first RPC + IDL-typed decode
+
+Date: 2026-02-11
+Objective: Remove custom raw JSON-RPC + manual event byte parsing and switch to SDK/IDL path for readability and maintainability.
+Result: Completed and passing.
+Confidence: High
+Notes:
+
+- Poller now uses `solana-client` typed calls (`get_slot_with_commitment`, `get_block_with_config`) with `solana-commitment-config`.
+- Block unavailability handling remains fail-closed (no cursor advance on unavailable blocks).
+- Event decoding now uses Anchor event structs from `zama-host` (`Event::data`/`Discriminator` + `AnchorDeserialize`) instead of manual discriminators and hardcoded field offsets.
+- Validation:
+  - `cargo check -p solana-listener --features solana-e2e`
+  - `cargo test -p solana-listener poller::solana_rpc_source::tests`
+  - `SQLX_OFFLINE=true cargo test -p solana-listener --features solana-e2e --no-run`
 
 ## Presentation Summary (for team)
 
