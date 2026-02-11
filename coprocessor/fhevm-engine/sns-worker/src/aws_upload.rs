@@ -260,7 +260,6 @@ async fn upload_ciphertexts(
             ct_type = "ct128",
             exists = tracing::field::Empty,
         );
-        ct128_check_span.set_parent(task.otel.context().clone());
         let exists = match check_object_exists(client, &conf.bucket_ct128, &key)
             .instrument(ct128_check_span.clone())
             .await
@@ -284,7 +283,6 @@ async fn upload_ciphertexts(
                 format = %format_as_str,
                 len = ct128_bytes.len(),
             );
-            ct128_upload_span.set_parent(task.otel.context().clone());
 
             jobs.push((
                 client
@@ -335,7 +333,6 @@ async fn upload_ciphertexts(
             ct_type = "ct64",
             exists = tracing::field::Empty,
         );
-        ct64_check_span.set_parent(task.otel.context().clone());
         let exists = match check_object_exists(client, &conf.bucket_ct64, &key)
             .instrument(ct64_check_span.clone())
             .await
@@ -358,7 +355,6 @@ async fn upload_ciphertexts(
                 ct_type = "ct64",
                 len = ct64_compressed.len(),
             );
-            ct64_upload_span.set_parent(task.otel.context().clone());
 
             jobs.push((
                 client

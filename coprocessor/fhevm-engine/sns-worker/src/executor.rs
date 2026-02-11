@@ -578,7 +578,6 @@ fn compute_task(
     }
 
     let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
-    decompress_span.set_parent(task.otel.context().clone());
     let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
         Ok(ct) => ct,
         Err(err) => {
@@ -599,7 +598,6 @@ fn compute_task(
         ct_type = %ct_type,
         operation = "squash_noise"
     );
-    squash_span.set_parent(task.otel.context().clone());
     let _squash_enter = squash_span.enter();
 
     match ct.squash_noise_and_serialize(enable_compression) {
@@ -631,7 +629,6 @@ fn compute_task(
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
                 let send_task_span = tracing::error_span!("send_task", operation = "send_task");
-                send_task_span.set_parent(task.otel.context().clone());
                 let _send_task_enter = send_task_span.enter();
                 send_task_span
                     .context()
@@ -678,7 +675,6 @@ async fn update_ciphertext128(
             let ciphertext128 = task.ct128.bytes();
             let persist_span =
                 tracing::info_span!("ciphertexts128_insert", operation = "ciphertexts128_insert");
-            persist_span.set_parent(task.otel.context().clone());
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (
