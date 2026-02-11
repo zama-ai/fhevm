@@ -407,7 +407,7 @@ set_env_value() {
     fi
 }
 
-configure_multicoprocessor_envs() {
+configure_coprocessor_topology_envs() {
     local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
     local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
     local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
@@ -725,7 +725,7 @@ fi
 
 prepare_all_env_files
 prepare_local_config_relayer
-configure_multicoprocessor_envs
+configure_coprocessor_topology_envs
 
 log_info "Deploying FHEVM Stack..."
 log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
@@ -826,11 +826,9 @@ if ! should_skip_step "coprocessor"; then
         "coprocessor-zkproof-worker:running" \
         "coprocessor-sns-worker:running" \
         "coprocessor-transaction-sender:running"
-    if [[ "$COPROCESSOR_COUNT" -gt 1 ]]; then
-        for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
-            run_additional_coprocessor_instance "$idx"
-        done
-    fi
+    for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+        run_additional_coprocessor_instance "$idx"
+    done
 else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
 fi
