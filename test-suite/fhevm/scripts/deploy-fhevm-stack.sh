@@ -193,8 +193,8 @@ if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]] && [[ "$COPROCESSOR_THRESHOLD_OVER
   exit 1
 fi
 
-if [[ "$COPROCESSOR_COUNT" -gt 2 ]]; then
-  log_error "This local multicoprocessor mode currently supports up to 2 coprocessors"
+if [[ "$COPROCESSOR_COUNT" -gt 5 ]]; then
+  log_error "This local multicoprocessor mode currently supports up to 5 coprocessors"
   exit 1
 fi
 
@@ -396,29 +396,47 @@ configure_multicoprocessor_envs() {
     set_env_value "$host_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
     set_env_value "$host_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
 
-    if [[ "$COPROCESSOR_COUNT" -eq 1 ]]; then
-        return 0
-    fi
-
-    local coprocessor_1_address
-    local coprocessor_1_private_key
-    coprocessor_1_address=$(get_env_value "$gateway_env" "PAUSER_ADDRESS_0")
-    coprocessor_1_private_key=$(get_env_value "$gateway_env" "PAUSER_PRIVATE_KEY")
-
-    if [[ -z "$coprocessor_1_address" || -z "$coprocessor_1_private_key" ]]; then
-        log_error "Missing PAUSER_ADDRESS_0 or PAUSER_PRIVATE_KEY in $gateway_env; cannot configure coprocessor #1"
+    local gateway_mnemonic
+    gateway_mnemonic=$(get_env_value "$gateway_env" "MNEMONIC")
+    if [[ -z "$gateway_mnemonic" ]]; then
+        log_error "Missing MNEMONIC in $gateway_env; cannot derive coprocessor accounts"
         exit 1
     fi
 
-    set_env_value "$gateway_env" "COPROCESSOR_TX_SENDER_ADDRESS_1" "$coprocessor_1_address"
-    set_env_value "$gateway_env" "COPROCESSOR_SIGNER_ADDRESS_1" "$coprocessor_1_address"
-    set_env_value "$gateway_env" "COPROCESSOR_S3_BUCKET_URL_1" "http://minio:9000/ct128"
-    set_env_value "$host_env" "COPROCESSOR_SIGNER_ADDRESS_1" "$coprocessor_1_address"
+    if ! command -v cast >/dev/null 2>&1; then
+        log_error "cast is required to derive coprocessor accounts from mnemonic"
+        exit 1
+    fi
 
-    local secondary_coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.1.local"
-    cp "$coprocessor_env" "$secondary_coprocessor_env"
-    set_env_value "$secondary_coprocessor_env" "DATABASE_URL" "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/coprocessor_1"
-    set_env_value "$secondary_coprocessor_env" "TX_SENDER_PRIVATE_KEY" "$coprocessor_1_private_key"
+    local -a account_indices=(5 8 9 10 11)
+    if [[ "$COPROCESSOR_COUNT" -gt "${#account_indices[@]}" ]]; then
+        log_error "Not enough predefined account indices for $COPROCESSOR_COUNT coprocessors"
+        exit 1
+    fi
+
+    for ((idx=0; idx<COPROCESSOR_COUNT; idx++)); do
+        local account_index="${account_indices[$idx]}"
+        local cp_address
+        local cp_private_key
+
+        cp_address=$(cast wallet address --mnemonic "$gateway_mnemonic" --mnemonic-index "$account_index")
+        cp_private_key=$(cast wallet private-key --mnemonic "$gateway_mnemonic" --mnemonic-index "$account_index")
+
+        set_env_value "$gateway_env" "COPROCESSOR_TX_SENDER_ADDRESS_${idx}" "$cp_address"
+        set_env_value "$gateway_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}" "$cp_address"
+        set_env_value "$gateway_env" "COPROCESSOR_S3_BUCKET_URL_${idx}" "http://minio:9000/ct128"
+        set_env_value "$host_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}" "$cp_address"
+
+        if [[ "$idx" -eq 0 ]]; then
+            set_env_value "$coprocessor_env" "TX_SENDER_PRIVATE_KEY" "$cp_private_key"
+            continue
+        fi
+
+        local coprocessor_instance_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.${idx}.local"
+        cp "$coprocessor_env" "$coprocessor_instance_env"
+        set_env_value "$coprocessor_instance_env" "DATABASE_URL" "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/coprocessor_${idx}"
+        set_env_value "$coprocessor_instance_env" "TX_SENDER_PRIVATE_KEY" "$cp_private_key"
+    done
 }
 
 run_additional_coprocessor_instance() {
@@ -434,14 +452,33 @@ run_additional_coprocessor_instance() {
         -e "s/--coprocessor${instance_idx}-fhe-threads/--coprocessor-fhe-threads/g" \
         "$source_compose" > "$temp_compose"
 
-    log_info "Starting additional coprocessor instance #$instance_idx"
+    local db_migration_service="coprocessor${instance_idx}-db-migration"
+    local runtime_services=(
+        "coprocessor${instance_idx}-host-listener"
+        "coprocessor${instance_idx}-host-listener-poller"
+        "coprocessor${instance_idx}-gw-listener"
+        "coprocessor${instance_idx}-tfhe-worker"
+        "coprocessor${instance_idx}-zkproof-worker"
+        "coprocessor${instance_idx}-sns-worker"
+        "coprocessor${instance_idx}-transaction-sender"
+    )
+
+    log_info "Starting additional coprocessor instance #$instance_idx (db migration phase)"
     if [[ "$FORCE_BUILD" == true ]]; then
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d "$db_migration_service"
     else
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d "$db_migration_service"
     fi
 
-    wait_for_service "$temp_compose" "coprocessor${instance_idx}-db-migration" "false"
+    wait_for_service "$temp_compose" "$db_migration_service" "false"
+
+    log_info "Starting additional coprocessor instance #$instance_idx (runtime phase)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d "${runtime_services[@]}"
+    else
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d "${runtime_services[@]}"
+    fi
+
     wait_for_service "$temp_compose" "coprocessor${instance_idx}-host-listener" "true"
     wait_for_service "$temp_compose" "coprocessor${instance_idx}-gw-listener" "true"
     wait_for_service "$temp_compose" "coprocessor${instance_idx}-tfhe-worker" "true"
