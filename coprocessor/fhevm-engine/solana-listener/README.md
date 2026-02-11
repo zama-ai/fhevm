@@ -39,6 +39,18 @@ Quickest path (one command):
 /Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
 ```
 
+Cleanup behavior (default):
+
+1. Stops validator started by the script after run completes.
+2. Removes script-created ledger directory (`/tmp/solana-codex-ledger` by default).
+3. Removes Docker Postgres container via runner default (`--docker-cleanup true`).
+
+Keep artifacts only when needed:
+
+```bash
+/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh --keep-validator --keep-ledger
+```
+
 Manual path:
 
 1. Start local validator with host program loaded under the canonical program id:

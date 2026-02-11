@@ -215,6 +215,16 @@ Flow:
 3. Runs `solana_poc_runner` against local RPC.
 4. Runner auto-publishes IDL (`anchor idl init`, fallback `anchor idl upgrade`) for explorer decode, submits `request_add` + `allow`, ingests via finalized RPC source, and prints explorer URLs + DB counters.
 5. Optional Postgres mode remains Docker by default (`--postgres-mode docker`).
+6. Cleanup defaults are fail-safe for disk usage:
+   - validator started by script is stopped on exit
+   - script-created ledger dir is removed
+   - Docker Postgres is removed by runner default
+
+Optional keep flags:
+
+```bash
+/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh --keep-validator --keep-ledger
+```
 
 ## Canonical v0 Sanity Acceptance (single flow)
 

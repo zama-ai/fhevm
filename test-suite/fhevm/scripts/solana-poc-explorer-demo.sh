@@ -29,10 +29,47 @@ PROGRAM_ID="${PROGRAM_ID:-Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:8899}"
 WALLET="${WALLET:-/Users/work/.config/solana/id.json}"
 LEDGER_DIR="${LEDGER_DIR:-/tmp/solana-codex-ledger}"
-KEEP_VALIDATOR="${KEEP_VALIDATOR:-true}"
+KEEP_VALIDATOR="${KEEP_VALIDATOR:-false}"
+CLEANUP_LEDGER="${CLEANUP_LEDGER:-true}"
 SQLX_OFFLINE="${SQLX_OFFLINE:-true}"
 
 SO_PATH="${SOLANA_PROGRAM_DIR}/target/deploy/zama_host.so"
+
+usage() {
+    cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --keep-validator     Keep validator running after script exits (default: false)
+  --keep-ledger        Keep local ledger directory after cleanup (default: false)
+  -h, --help           Show this help message
+
+Environment overrides:
+  PROGRAM_ID, RPC_URL, WALLET, LEDGER_DIR, SQLX_OFFLINE
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --keep-validator)
+            KEEP_VALIDATOR=true
+            shift
+            ;;
+        --keep-ledger)
+            CLEANUP_LEDGER=false
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            log_error "Unknown argument: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
 
 for bin in cargo solana-test-validator anchor docker curl; do
     if ! command -v "$bin" >/dev/null 2>&1; then
@@ -58,6 +95,12 @@ VALIDATOR_STARTED=false
 cleanup() {
     if [[ "$VALIDATOR_STARTED" == "true" && "$KEEP_VALIDATOR" != "true" && -n "${VALIDATOR_PID:-}" ]]; then
         kill "$VALIDATOR_PID" >/dev/null 2>&1 || true
+        wait "$VALIDATOR_PID" 2>/dev/null || true
+        log_info "Stopped validator pid=$VALIDATOR_PID"
+    fi
+    if [[ "$VALIDATOR_STARTED" == "true" && "$KEEP_VALIDATOR" != "true" && "$CLEANUP_LEDGER" == "true" ]]; then
+        rm -rf "$LEDGER_DIR"
+        log_info "Removed ledger directory: $LEDGER_DIR"
     fi
 }
 trap cleanup EXIT
@@ -112,5 +155,7 @@ log_info "Running explorer-visible PoC runner (auto IDL publish enabled)"
 if [[ "$VALIDATOR_STARTED" == "true" && "$KEEP_VALIDATOR" == "true" ]]; then
     log_info "Validator kept alive for Explorer inspection (pid: $VALIDATOR_PID)"
     log_info "Stop it with: kill $VALIDATOR_PID"
+    if [[ "$CLEANUP_LEDGER" == "true" ]]; then
+        log_info "Ledger is retained while validator is running. It will be removed only after validator stop."
+    fi
 fi
-
