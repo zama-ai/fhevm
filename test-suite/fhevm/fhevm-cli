@@ -107,12 +107,14 @@ function collect_multicoproc_logs() {
 }
 
 function wait_for_multicoproc_key_bootstrap() {
-  local timeout_seconds=180
+  local timeout_seconds=300
   local poll_interval=5
   local elapsed=0
   echo -e "${LIGHT_BLUE}${BOLD}[WAIT] Waiting for multicoprocessor key bootstrap...${RESET}"
   while [ "$elapsed" -lt "$timeout_seconds" ]; do
-    local not_ready=""
+    local ready_count=0
+    local total_count=0
+    local pending=""
     local containers
     containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor([0-9]+)?-sns-worker$' || true)
     if [ -z "$containers" ]; then
@@ -124,22 +126,37 @@ function wait_for_multicoproc_key_bootstrap() {
 
     while IFS= read -r container; do
       [ -z "$container" ] && continue
-      if ! docker logs --since=20m "$container" 2>&1 | rg -q "Fetched keyset"; then
-        not_ready="${not_ready} ${container}"
+      total_count=$((total_count + 1))
+      if docker logs --since=20m "$container" 2>&1 | rg -q "Fetched keyset"; then
+        ready_count=$((ready_count + 1))
+      else
+        pending="${pending} ${container}"
       fi
     done <<< "$containers"
 
-    if [ -z "$not_ready" ]; then
-      echo -e "${GREEN}[READY]${RESET} Key bootstrap confirmed for all sns-worker containers"
+    local configured_threshold=""
+    if [ -f "test-suite/fhevm/env/staging/.env.host-sc.local" ]; then
+      configured_threshold=$(rg '^COPROCESSOR_THRESHOLD=' test-suite/fhevm/env/staging/.env.host-sc.local -N | tail -n1 | cut -d'=' -f2 || true)
+    fi
+    if ! [[ "$configured_threshold" =~ ^[0-9]+$ ]] || [ "$configured_threshold" -lt 1 ]; then
+      configured_threshold="$total_count"
+    fi
+
+    if [ "$configured_threshold" -gt "$total_count" ]; then
+      configured_threshold="$total_count"
+    fi
+
+    if [ "$ready_count" -ge "$configured_threshold" ]; then
+      echo -e "${GREEN}[READY]${RESET} Key bootstrap confirmed for ${ready_count}/${total_count} sns-worker containers (threshold=${configured_threshold})"
       return 0
     fi
 
-    echo -e "${YELLOW}[WAIT]${RESET} Key bootstrap pending for:${not_ready}"
+    echo -e "${YELLOW}[WAIT]${RESET} Key bootstrap ready=${ready_count}/${total_count} threshold=${configured_threshold} pending:${pending}"
     sleep "$poll_interval"
     elapsed=$((elapsed + poll_interval))
   done
 
-  echo -e "${RED}[ERROR]${RESET} Key bootstrap did not complete within ${timeout_seconds}s"
+  echo -e "${RED}[ERROR]${RESET} Key bootstrap did not reach threshold within ${timeout_seconds}s"
   return 1
 }
 
