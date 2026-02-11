@@ -188,6 +188,7 @@ async fn run_uploader_loop(
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
                         }
                     }
+                    drop(upload_span);
                     drop(permit);
                 });
 
