@@ -407,6 +407,7 @@ set_env_value() {
     fi
 }
 
+# Build effective n/t topology config and per-instance coprocessor env files.
 configure_multicoprocessor_envs() {
     local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
     local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
@@ -474,6 +475,7 @@ configure_multicoprocessor_envs() {
     done
 }
 
+# Start one extra coprocessor instance (db-migration first, then runtime services).
 run_additional_coprocessor_instance() {
     local instance_idx=$1
     local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.${instance_idx}.local"

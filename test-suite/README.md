@@ -55,8 +55,6 @@ cd test-suite/fhevm
 
 # Run specific tests (works for both 1/1 and n/t topologies)
 ./fhevm-cli test input-proof
-# Legacy alias for the same flow (kept for compatibility)
-./fhevm-cli test multicoproc-input-proof
 # Skip Hardhat compile when artifacts are already up to date
 ./fhevm-cli test input-proof --no-hardhat-compile
 # Trivial
