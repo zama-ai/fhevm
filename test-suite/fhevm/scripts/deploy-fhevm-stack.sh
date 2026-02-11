@@ -426,10 +426,12 @@ run_additional_coprocessor_instance() {
     local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.${instance_idx}.local"
     local source_compose="$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml"
     local temp_compose
-    temp_compose=$(mktemp)
+    temp_compose=$(mktemp "$SCRIPT_DIR/../docker-compose/coprocessor-${instance_idx}.generated.XXXXXX")
 
     sed -e "s#../env/staging/.env.coprocessor.local#../env/staging/.env.coprocessor.${instance_idx}.local#g" \
         -e "s/coprocessor-/coprocessor${instance_idx}-/g" \
+        -e "s/--coprocessor${instance_idx}-api-key/--coprocessor-api-key/g" \
+        -e "s/--coprocessor${instance_idx}-fhe-threads/--coprocessor-fhe-threads/g" \
         "$source_compose" > "$temp_compose"
 
     log_info "Starting additional coprocessor instance #$instance_idx"
