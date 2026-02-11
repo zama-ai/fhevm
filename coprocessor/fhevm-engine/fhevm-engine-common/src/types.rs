@@ -1038,23 +1038,6 @@ impl From<SchedulePriority> for i16 {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum SchedulePriorityError {
-    InvalidValue(i16),
-}
-
-impl TryFrom<i16> for SchedulePriority {
-    type Error = SchedulePriorityError;
-
-    fn try_from(value: i16) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Fast),
-            1 => Ok(Self::Slow),
-            _ => Err(SchedulePriorityError::InvalidValue(value)),
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 pub enum AllowEvents {
     AllowedAccount = 0,
