@@ -1,7 +1,7 @@
 # Solana Host Listener PoC Plan
 
 Date: 2026-02-09
-Last synced: 2026-02-10
+Last synced: 2026-02-11
 Branch: `codex/solana-host-listener-discovery`
 
 ## Goal
@@ -249,6 +249,7 @@ Any design with unacceptable locked capital or cleanup burden is rejected before
 - Solana architecture draft: `SOLANA_ARCHITECTURE.md`
 - v0 interface freeze: `INTERFACE_V0.md`
 - freshness protocol: `DOC_FRESHNESS.md`
+- one-command explorer-visible demo: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
 
 ## Comparison Criteria
 

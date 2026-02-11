@@ -1,7 +1,7 @@
 # Host Listener Parity Matrix (Discovery)
 
 Date: 2026-02-09
-Last synced: 2026-02-10
+Last synced: 2026-02-11
 Status: Active reference (discovery complete, parity expansion in progress)
 
 ## Outcome
@@ -16,6 +16,7 @@ Recommended direction for PoC speed and low blast radius:
 1. Discovery scope from #1028 is complete and closed.
 2. Parity expansion is active under #1031/#1032.
 3. First non-ADD op (`SUB`) is now implemented in Solana listener decode + DB mapping.
+4. Explorer-visible flow is reproducible with one command, and local explorer decode is now enabled by default via auto IDL publish in runner.
 
 ## Core Findings
 
