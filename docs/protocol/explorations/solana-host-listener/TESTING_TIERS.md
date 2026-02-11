@@ -194,16 +194,27 @@ Purpose:
 1. Run a direct local validator flow without testcontainers so txs are visible in explorer.
 2. Keep fast demo/instrumentation loop with machine-readable outputs.
 
-Binary:
+Primary script (one command):
+
+`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
+
+Command:
+
+```bash
+/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
+```
+
+Binary (called by the script):
 
 `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/src/bin/solana_poc_runner.rs`
 
 Flow:
 
-1. Start `solana-test-validator` with `--bpf-program <canonical_program_id> <zama_host.so>`.
-2. Run `solana_poc_runner` against `--rpc-url http://127.0.0.1:8899`.
-3. Runner submits `request_add` + `allow`, ingests via finalized RPC source, and prints explorer URLs + DB counters.
-4. Optional Postgres mode: `--postgres-mode docker` (default) to auto-provision/dispose local Postgres container.
+1. Builds host program + IDL (`anchor build`).
+2. Starts `solana-test-validator` with `--bpf-program <canonical_program_id> <zama_host.so>` unless RPC is already healthy.
+3. Runs `solana_poc_runner` against local RPC.
+4. Runner auto-publishes IDL (`anchor idl init`, fallback `anchor idl upgrade`) for explorer decode, submits `request_add` + `allow`, ingests via finalized RPC source, and prints explorer URLs + DB counters.
+5. Optional Postgres mode remains Docker by default (`--postgres-mode docker`).
 
 ## Canonical v0 Sanity Acceptance (single flow)
 

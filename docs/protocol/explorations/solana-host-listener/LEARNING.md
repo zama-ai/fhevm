@@ -29,7 +29,8 @@ flowchart TD
   E11 --> E12["Experiment 12: inline host handlers (remove impl indirection)"]
   E12 --> E13["Experiment 13: Tier-3 runtime parity expansion (if_then_else + cast)"]
   E13 --> E14["Experiment 14: explorer-visible CLI runner (external validator mode)"]
-  E14 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E14 --> E15["Experiment 15: explorer decode via auto IDL publish + one-command demo script"]
+  E15 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -54,6 +55,7 @@ flowchart TD
 18. Host program handlers are now direct/inline (no `request_*_impl` helper layer), with unchanged event payload semantics.
 19. Tier-3 runtime validation now includes `request_if_then_else` and `request_cast` with DB contract assertions (`fhe_operation`, `dependencies`, `is_scalar`) and decrypt checks.
 20. A new CLI runner path exists for explorer-visible PoC runs on external validator RPC (`solana_poc_runner`), with optional Dockerized Postgres provisioning.
+21. Explorer can decode local tx instructions/events for `zama-host` when IDL is published; PoC runner now auto-publishes IDL and the demo script provides a single reproducible command.
 
 ## Open Questions
 
@@ -331,6 +333,21 @@ Notes:
 - Supports external RPC mode (`--rpc-url`) and optional Dockerized Postgres (`--postgres-mode docker`).
 - Emits tx signatures and preformatted explorer URLs, then runs finalized-RPC ingestion and DB counters.
 - Requires program-id/declared-id consistency; recommended local startup is `solana-test-validator --bpf-program <program_id> <zama_host.so>`.
+
+### Experiment 15: Explorer decode via auto IDL publish + one-command demo script
+
+Date: 2026-02-11
+Objective: Make explorer decoding reproducible with one command and no manual IDL steps.
+Result: Completed.
+Confidence: High
+Notes:
+
+- `solana_poc_runner` now auto-publishes IDL (`anchor idl init`, fallback `anchor idl upgrade`) before tx submission.
+- Added script `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`:
+  - builds host program + IDL
+  - starts/reuses local validator with `--bpf-program`
+  - runs `solana_poc_runner` and prints explorer links + ingest counters
+- Verified explorer renders decoded instruction/event payloads for local custom cluster txs.
 
 ### D3
 

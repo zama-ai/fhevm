@@ -33,6 +33,14 @@ Tier 3 e2e (encrypt/request/compute/decrypt):
 
 Explorer-visible CLI run (external validator + optional Docker Postgres):
 
+Quickest path (one command):
+
+```bash
+/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
+```
+
+Manual path:
+
 1. Start local validator with host program loaded under the canonical program id:
 
 ```bash
@@ -49,10 +57,23 @@ solana-test-validator \
 
 ```bash
 cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo run -p solana-listener --features solana-e2e --bin solana_poc_runner
+```
+
+Defaults:
+
+1. `rpc_url = http://127.0.0.1:8899`
+2. `wallet = ~/.config/solana/id.json`
+3. `postgres_mode = docker`
+4. `publish_idl = true` (runs `anchor idl init`, falls back to `anchor idl upgrade`)
+
+Common overrides:
+
+```bash
 SQLX_OFFLINE=true cargo run -p solana-listener --features solana-e2e --bin solana_poc_runner -- \
-  --rpc-url http://127.0.0.1:8899 \
-  --wallet /Users/work/.config/solana/id.json \
-  --postgres-mode docker
+  --publish-idl false \
+  --idl-path /absolute/path/to/idl.json \
+  --program-id Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq
 ```
 
 The runner prints:
@@ -66,3 +87,4 @@ Notes:
 1. Tier 3 uses ignored integration tests and requires Docker, Anchor, and Solana CLI tooling.
 2. `SQLX_OFFLINE=true` is recommended for deterministic local compilation of test binaries.
 3. `solana_poc_runner` requires the target program id to match the program's declared id (Anchor `DeclaredProgramIdMismatch` otherwise).
+4. Auto IDL publish requires `solana/host-programs/target/idl/zama_host.json` (or `--idl-path`) to exist.

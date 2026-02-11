@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_listener::database::ingest::map_envelope_to_actions;
@@ -51,6 +51,12 @@ struct Args {
     #[arg(long, default_value = "~/.config/solana/id.json")]
     wallet: String,
 
+    #[arg(long, action = ArgAction::Set, default_value_t = true)]
+    publish_idl: bool,
+
+    #[arg(long)]
+    idl_path: Option<String>,
+
     #[arg(long, value_enum, default_value_t = PostgresMode::Docker)]
     postgres_mode: PostgresMode,
 
@@ -63,7 +69,7 @@ struct Args {
     #[arg(long, default_value = "15.7")]
     docker_postgres_tag: String,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = ArgAction::Set, default_value_t = true)]
     docker_cleanup: bool,
 
     #[arg(long, default_value = DEFAULT_API_KEY)]
@@ -97,6 +103,9 @@ async fn run(args: Args) -> Result<()> {
 
     ensure_program_deployed(&rpc, program_id, &args.program_id)?;
     airdrop_payer(&rpc, &payer)?;
+    if args.publish_idl {
+        publish_anchor_idl(&args, &wallet_path)?;
+    }
 
     let (db_url, docker_pg) = match args.postgres_mode {
         PostgresMode::External => {
@@ -221,6 +230,81 @@ fn ensure_program_deployed(
         program_id_str
     );
     Ok(())
+}
+
+fn publish_anchor_idl(args: &Args, wallet_path: &str) -> Result<()> {
+    let root = repo_root()?;
+    let host_program_dir = root.join("solana/host-programs");
+    let idl_path = match &args.idl_path {
+        Some(path) => PathBuf::from(expand_tilde(path)),
+        None => host_program_dir.join("target/idl/zama_host.json"),
+    };
+
+    anyhow::ensure!(
+        idl_path.exists(),
+        "IDL file not found at {}. Run `anchor build` in solana/host-programs first or pass --idl-path.",
+        idl_path.display()
+    );
+
+    let init = run_anchor_idl_command(
+        &host_program_dir,
+        &args.rpc_url,
+        wallet_path,
+        "init",
+        &args.program_id,
+        &idl_path,
+    )?;
+    if init.success {
+        println!("idl_publish=init_ok idl_path={}", idl_path.display());
+        return Ok(());
+    }
+
+    let upgrade = run_anchor_idl_command(
+        &host_program_dir,
+        &args.rpc_url,
+        wallet_path,
+        "upgrade",
+        &args.program_id,
+        &idl_path,
+    )?;
+    if upgrade.success {
+        println!("idl_publish=upgrade_ok idl_path={}", idl_path.display());
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "anchor idl publish failed.\ninit stderr:\n{}\nupgrade stderr:\n{}",
+        init.stderr,
+        upgrade.stderr
+    );
+}
+
+struct CmdResult {
+    success: bool,
+    stderr: String,
+}
+
+fn run_anchor_idl_command(
+    cwd: &PathBuf,
+    rpc_url: &str,
+    wallet_path: &str,
+    action: &str,
+    program_id: &str,
+    idl_path: &PathBuf,
+) -> Result<CmdResult> {
+    let output = Command::new("anchor")
+        .current_dir(cwd)
+        .env("ANCHOR_PROVIDER_URL", rpc_url)
+        .env("ANCHOR_WALLET", wallet_path)
+        .args(["idl", action, program_id, "-f"])
+        .arg(idl_path)
+        .output()
+        .with_context(|| format!("run `anchor idl {action}`"))?;
+
+    Ok(CmdResult {
+        success: output.status.success(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
 }
 
 fn airdrop_payer(rpc: &RpcClient, payer: &solana_sdk::signature::Keypair) -> Result<()> {
@@ -506,9 +590,4 @@ fn expand_tilde(path: &str) -> String {
         }
     }
     path.to_string()
-}
-
-#[allow(dead_code)]
-fn _file_exists(path: &Path) -> bool {
-    path.exists()
 }
