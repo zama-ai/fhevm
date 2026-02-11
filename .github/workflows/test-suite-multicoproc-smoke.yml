@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [multi-2-2, multi-5-3]
+        profile: [multi-2-2, multi-3-5]
 
     steps:
       - name: Checkout code
