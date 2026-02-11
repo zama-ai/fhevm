@@ -99,6 +99,10 @@ RESUME_STEP=""
 ONLY_STEP=""
 RESUME_FLAG_DETECTED=false
 ONLY_FLAG_DETECTED=false
+COPROCESSOR_COUNT=1
+COPROCESSOR_THRESHOLD_OVERRIDE=""
+COPROCESSOR_COUNT_FLAG_DETECTED=false
+COPROCESSOR_THRESHOLD_FLAG_DETECTED=false
 NEW_ARGS=()
 
 for arg in "$@"; do
@@ -112,6 +116,10 @@ for arg in "$@"; do
     RESUME_FLAG_DETECTED=true
   elif [[ "$arg" == "--only" ]]; then
     ONLY_FLAG_DETECTED=true
+  elif [[ "$arg" == "--coprocessors" ]]; then
+    COPROCESSOR_COUNT_FLAG_DETECTED=true
+  elif [[ "$arg" == "--coprocessor-threshold" ]]; then
+    COPROCESSOR_THRESHOLD_FLAG_DETECTED=true
   elif [[ "$RESUME_FLAG_DETECTED" == true ]]; then
     RESUME_STEP="$arg"
     RESUME_FLAG_DETECTED=false
@@ -132,6 +140,20 @@ for arg in "$@"; do
       exit 1
     fi
     log_info "Only mode: deploying only step '$ONLY_STEP'"
+  elif [[ "$COPROCESSOR_COUNT_FLAG_DETECTED" == true ]]; then
+    COPROCESSOR_COUNT="$arg"
+    COPROCESSOR_COUNT_FLAG_DETECTED=false
+    if ! [[ "$COPROCESSOR_COUNT" =~ ^[0-9]+$ ]] || [[ "$COPROCESSOR_COUNT" -lt 1 ]]; then
+      log_error "--coprocessors expects a positive integer"
+      exit 1
+    fi
+  elif [[ "$COPROCESSOR_THRESHOLD_FLAG_DETECTED" == true ]]; then
+    COPROCESSOR_THRESHOLD_OVERRIDE="$arg"
+    COPROCESSOR_THRESHOLD_FLAG_DETECTED=false
+    if ! [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" =~ ^[0-9]+$ ]] || [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" -lt 1 ]]; then
+      log_error "--coprocessor-threshold expects a positive integer"
+      exit 1
+    fi
   else
     NEW_ARGS+=("$arg")
   fi
@@ -150,9 +172,29 @@ if [[ "$ONLY_FLAG_DETECTED" == true ]]; then
   exit 1
 fi
 
+if [[ "$COPROCESSOR_COUNT_FLAG_DETECTED" == true ]]; then
+  log_error "--coprocessors requires a value"
+  exit 1
+fi
+
+if [[ "$COPROCESSOR_THRESHOLD_FLAG_DETECTED" == true ]]; then
+  log_error "--coprocessor-threshold requires a value"
+  exit 1
+fi
+
 # Check for conflicting flags
 if [[ -n "$RESUME_STEP" && -n "$ONLY_STEP" ]]; then
   log_error "Cannot use --resume and --only together"
+  exit 1
+fi
+
+if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]] && [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" -gt "$COPROCESSOR_COUNT" ]]; then
+  log_error "Invalid coprocessor threshold: $COPROCESSOR_THRESHOLD_OVERRIDE (must be <= --coprocessors $COPROCESSOR_COUNT)"
+  exit 1
+fi
+
+if [[ "$COPROCESSOR_COUNT" -gt 2 ]]; then
+  log_error "This local multicoprocessor mode currently supports up to 2 coprocessors"
   exit 1
 fi
 
@@ -311,6 +353,103 @@ prepare_all_env_files() {
     log_info "All local environment files prepared successfully"
 }
 
+get_env_value() {
+    local file=$1
+    local key=$2
+    awk -F= -v k="$key" '$1 == k {print substr($0, index($0, "=") + 1); exit}' "$file"
+}
+
+set_env_value() {
+    local file=$1
+    local key=$2
+    local value=$3
+    local escaped_value
+    escaped_value=$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')
+    if grep -q "^${key}=" "$file"; then
+        sed -i.bak "s|^${key}=.*|${key}=${escaped_value}|" "$file"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$file"
+    fi
+}
+
+configure_multicoprocessor_envs() {
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
+    local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
+
+    local configured_threshold
+    configured_threshold=$(get_env_value "$gateway_env" "COPROCESSOR_THRESHOLD")
+    if [[ -z "$configured_threshold" ]]; then
+        configured_threshold=1
+    fi
+    if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]]; then
+        configured_threshold="$COPROCESSOR_THRESHOLD_OVERRIDE"
+    fi
+
+    if [[ "$configured_threshold" -gt "$COPROCESSOR_COUNT" ]]; then
+        log_error "Configured coprocessor threshold ($configured_threshold) cannot exceed number of coprocessors ($COPROCESSOR_COUNT)"
+        exit 1
+    fi
+
+    set_env_value "$gateway_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
+    set_env_value "$gateway_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
+    set_env_value "$host_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
+    set_env_value "$host_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
+
+    if [[ "$COPROCESSOR_COUNT" -eq 1 ]]; then
+        return 0
+    fi
+
+    local coprocessor_1_address
+    local coprocessor_1_private_key
+    coprocessor_1_address=$(get_env_value "$gateway_env" "PAUSER_ADDRESS_0")
+    coprocessor_1_private_key=$(get_env_value "$gateway_env" "PAUSER_PRIVATE_KEY")
+
+    if [[ -z "$coprocessor_1_address" || -z "$coprocessor_1_private_key" ]]; then
+        log_error "Missing PAUSER_ADDRESS_0 or PAUSER_PRIVATE_KEY in $gateway_env; cannot configure coprocessor #1"
+        exit 1
+    fi
+
+    set_env_value "$gateway_env" "COPROCESSOR_TX_SENDER_ADDRESS_1" "$coprocessor_1_address"
+    set_env_value "$gateway_env" "COPROCESSOR_SIGNER_ADDRESS_1" "$coprocessor_1_address"
+    set_env_value "$gateway_env" "COPROCESSOR_S3_BUCKET_URL_1" "http://minio:9000/ct128"
+    set_env_value "$host_env" "COPROCESSOR_SIGNER_ADDRESS_1" "$coprocessor_1_address"
+
+    local secondary_coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.1.local"
+    cp "$coprocessor_env" "$secondary_coprocessor_env"
+    set_env_value "$secondary_coprocessor_env" "DATABASE_URL" "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/coprocessor_1"
+    set_env_value "$secondary_coprocessor_env" "TX_SENDER_PRIVATE_KEY" "$coprocessor_1_private_key"
+}
+
+run_additional_coprocessor_instance() {
+    local instance_idx=$1
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.${instance_idx}.local"
+    local source_compose="$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml"
+    local temp_compose
+    temp_compose=$(mktemp)
+
+    sed -e "s#../env/staging/.env.coprocessor.local#../env/staging/.env.coprocessor.${instance_idx}.local#g" \
+        -e "s/coprocessor-/coprocessor${instance_idx}-/g" \
+        "$source_compose" > "$temp_compose"
+
+    log_info "Starting additional coprocessor instance #$instance_idx"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d
+    else
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d
+    fi
+
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-db-migration" "false"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-host-listener" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-gw-listener" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-tfhe-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-zkproof-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-sns-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-transaction-sender" "true"
+
+    rm -f "$temp_compose"
+}
+
 # Function to start an entire docker-compose file and wait for specified services
 run_compose() {
     local component=$1
@@ -405,12 +544,19 @@ get_minio_ip() {
     local minio_container_name=$1
     local minio_ip
     minio_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$minio_container_name")
-    local coprocessor_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
     if [ -n "$minio_ip" ]; then
     echo "Found $minio_container_name container IP: $minio_ip"
-    sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
-            "$coprocessor_file"
-    echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000"
+    local coprocessor_files=("$SCRIPT_DIR/../env/staging/.env.coprocessor.local")
+    for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+        coprocessor_files+=("$SCRIPT_DIR/../env/staging/.env.coprocessor.${idx}.local")
+    done
+    for coprocessor_file in "${coprocessor_files[@]}"; do
+        if [[ -f "$coprocessor_file" ]]; then
+            sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
+                "$coprocessor_file"
+        fi
+    done
+    echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000 for ${#coprocessor_files[@]} coprocessor env file(s)"
     else
     echo "Error: Could not find IP address for $minio_container_name container"
     exit 1
@@ -505,8 +651,10 @@ fi
 
 prepare_all_env_files
 prepare_local_config_relayer
+configure_multicoprocessor_envs
 
 log_info "Deploying FHEVM Stack..."
+log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
 
 BUILD_TAG=""
 if [ "$FORCE_BUILD" = true ]; then
@@ -604,6 +752,11 @@ if ! should_skip_step "coprocessor"; then
         "coprocessor-zkproof-worker:running" \
         "coprocessor-sns-worker:running" \
         "coprocessor-transaction-sender:running"
+    if [[ "$COPROCESSOR_COUNT" -gt 1 ]]; then
+        for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+            run_additional_coprocessor_instance "$idx"
+        done
+    fi
 else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
 fi

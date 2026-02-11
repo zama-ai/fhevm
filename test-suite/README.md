@@ -44,6 +44,9 @@ cd test-suite/fhevm
 # Deploy with local BuildKit cache (disables provenance attestations)
 ./fhevm-cli deploy --local
 
+# Deploy with 2 coprocessors and threshold 2 (local multicoprocessor mode)
+./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
 ./fhevm-cli deploy --resume kms-connector
 
@@ -52,6 +55,8 @@ cd test-suite/fhevm
 
 # Run specific tests
 ./fhevm-cli test input-proof
+# Runs the same test and dumps logs from all coprocessor instances
+./fhevm-cli test multicoproc-input-proof
 # Skip Hardhat compile when artifacts are already up to date
 ./fhevm-cli test input-proof --no-hardhat-compile
 # Trivial
