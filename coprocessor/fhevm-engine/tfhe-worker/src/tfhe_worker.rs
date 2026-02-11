@@ -531,22 +531,25 @@ async fn build_transaction_graph_and_execute<'a>(
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
-    // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
-    if cts_to_query.len() != ciphertext_map.len() {
+    let fetched_handles: std::collections::HashSet<_> = ciphertext_map.keys().cloned().collect();
+    if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
-            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
+            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
 	      "some inputs are missing to execute the dependence chain");
         }
-        // Do not stop execution, we will allow the scheduler to run
-        // and complete as many operations as can be computed given
-        // the inputs fetched
     }
-
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
             &DFGTxInput::Compressed(((ct_type, std::mem::take(&mut ct)), true)),
         )?;
+    }
+    // Resolve deferred cross-transaction dependences: edges whose
+    // handle was fetched from DB are dropped (data already available),
+    // remaining edges are added after cycle detection.
+    if let Err(e) = tx_graph.resolve_dependences(&fetched_handles) {
+        warn!(target: "tfhe_worker", { error = %e }, "error resolving cross-transaction dependences");
+        return Ok(tx_graph);
     }
     // Execute the DFG with the current tenant's keys
     let mut s_compute = tracer.start_with_context("compute_fhe_ops", loop_ctx);
