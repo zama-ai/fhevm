@@ -283,6 +283,17 @@ wait_for_service() {
         local status=$(docker inspect --format "{{.State.Status}}" "$container_id")
         local exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
 
+        # Some one-shot jobs may complete their work but keep a process alive.
+        # For host-sc-deploy, treat the deployment completion log as success and stop it.
+        if [[ "$expect_running" == "false" && "$service_name" == "host-sc-deploy" && "$status" == "running" ]]; then
+            if docker logs "$container_id" 2>&1 | rg -q "Contract deployment done!"; then
+                log_warn "$service_name reported completion marker while still running; stopping container to unblock flow"
+                docker stop "$container_id" >/dev/null 2>&1 || true
+                status=$(docker inspect --format "{{.State.Status}}" "$container_id")
+                exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
+            fi
+        fi
+
         # Check if service meets the expected state
         if [[ "$expect_running" == "true" && "$status" == "running" ]]; then
             log_info "$service_name is now running"
@@ -303,6 +314,30 @@ wait_for_service() {
         else
             log_error "$service_name failed to reach desired state within the expected time"
             docker logs "$container_id"
+            return 1
+        fi
+    done
+}
+
+wait_for_relayer_ready() {
+    local max_retries=24
+    local retry_interval=5
+    local container_name="${PROJECT}-relayer"
+
+    log_info "Waiting for $container_name readiness signal..."
+
+    for ((i=1; i<=max_retries; i++)); do
+        if docker logs --since=10m "$container_name" 2>&1 | rg -q "All servers are ready and responding"; then
+            log_info "$container_name reported ready"
+            return 0
+        fi
+
+        if [ "$i" -lt "$max_retries" ]; then
+            log_warn "$container_name not ready yet, waiting ${retry_interval}s... (${i}/${max_retries})"
+            sleep "$retry_interval"
+        else
+            log_error "$container_name did not report ready within expected time"
+            docker logs --tail 200 "$container_name" || true
             return 1
         fi
     done
@@ -848,6 +883,7 @@ fi
 if ! should_skip_step "relayer"; then
     ${RUN_COMPOSE} "relayer" "Relayer Services" \
         "${PROJECT}-relayer:running"
+    wait_for_relayer_ready
 else
     log_info "Skipping step: relayer (resuming from $RESUME_STEP)"
 fi
