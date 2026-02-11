@@ -31,6 +31,10 @@ Tier 3 e2e (encrypt/request/compute/decrypt):
 /Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
 ```
 
+Supported `--case` values:
+
+`emit | sub | binary | unary | ite | cast | trivial | rand | rand-bounded | acl | all`
+
 Explorer-visible CLI run (external validator + optional Docker Postgres):
 
 Quickest path (one command):

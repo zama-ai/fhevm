@@ -30,7 +30,8 @@ flowchart TD
   E12 --> E13["Experiment 13: Tier-3 runtime parity expansion (if_then_else + cast)"]
   E13 --> E14["Experiment 14: explorer-visible CLI runner (external validator mode)"]
   E14 --> E15["Experiment 15: explorer decode via auto IDL publish + one-command demo script"]
-  E15 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E15 --> E16["Experiment 16: Tier-3 runtime parity expansion for remaining op families"]
+  E16 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -56,6 +57,7 @@ flowchart TD
 19. Tier-3 runtime validation now includes `request_if_then_else` and `request_cast` with DB contract assertions (`fhe_operation`, `dependencies`, `is_scalar`) and decrypt checks.
 20. A new CLI runner path exists for explorer-visible PoC runs on external validator RPC (`solana_poc_runner`), with optional Dockerized Postgres provisioning.
 21. Explorer can decode local tx instructions/events for `zama-host` when IDL is published; PoC runner now auto-publishes IDL and the demo script provides a single reproducible command.
+22. Tier-3 runtime coverage now includes additional op families beyond `add/sub/if_then_else/cast`: representative `binary` + `unary`, and dedicated `trivial_encrypt`, `rand`, `rand_bounded` e2e tests with decrypt checks.
 
 ## Open Questions
 
@@ -348,6 +350,25 @@ Notes:
   - starts/reuses local validator with `--bpf-program`
   - runs `solana_poc_runner` and prints explorer links + ingest counters
 - Verified explorer renders decoded instruction/event payloads for local custom cluster txs.
+
+### Experiment 16: Tier-3 runtime parity expansion (remaining op families)
+
+Date: 2026-02-11
+Objective: Extend runtime/decrypt checks beyond initial representative subset (`add/sub/if_then_else/cast`).
+Result: In progress (new tests added; targeted local runs executed).
+Confidence: Medium-high
+Notes:
+
+- Added new Tier-3 tests in `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`:
+  - `localnet_solana_request_binary_ops_computes_and_decrypts`
+  - `localnet_solana_request_unary_ops_computes_and_decrypts`
+  - `localnet_solana_request_trivial_encrypt_computes_and_decrypts`
+  - `localnet_solana_request_rand_computes_and_decrypts`
+  - `localnet_solana_request_rand_bounded_computes_and_decrypts`
+- Extended Tier-3 runner cases in `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`:
+  - `binary | unary | trivial | rand | rand-bounded`
+- Completed targeted local runs for new cases: `unary`, `trivial`, `rand`, `rand-bounded`.
+- `binary` case is still flaky in this environment (intermittent validator/RPC instability during longer multi-op sequence); keep as active follow-up for stabilization.
 
 ### D3
 

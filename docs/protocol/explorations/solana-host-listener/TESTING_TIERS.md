@@ -160,9 +160,14 @@ Primary test:
 Additional tests:
 
 1. `localnet_solana_request_sub_computes_and_decrypts`
-2. `localnet_solana_request_if_then_else_computes_and_decrypts`
-3. `localnet_solana_request_cast_computes_and_decrypts`
-4. `localnet_acl_gate_blocks_then_allows_compute`
+2. `localnet_solana_request_binary_ops_computes_and_decrypts`
+3. `localnet_solana_request_unary_ops_computes_and_decrypts`
+4. `localnet_solana_request_if_then_else_computes_and_decrypts`
+5. `localnet_solana_request_cast_computes_and_decrypts`
+6. `localnet_solana_request_trivial_encrypt_computes_and_decrypts`
+7. `localnet_solana_request_rand_computes_and_decrypts`
+8. `localnet_solana_request_rand_bounded_computes_and_decrypts`
+9. `localnet_acl_gate_blocks_then_allows_compute`
 
 Runner script:
 
@@ -174,7 +179,7 @@ Example:
 /Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
 ```
 
-Supported `--case` values: `emit | sub | ite | cast | acl | all`.
+Supported `--case` values: `emit | sub | binary | unary | ite | cast | trivial | rand | rand-bounded | acl | all`.
 
 Coverage:
 
@@ -186,6 +191,7 @@ Coverage:
 6. Asserts DB contract shape for new op tests (`fhe_operation`, `is_scalar`, `dependencies`) before worker completion.
 7. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 8. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
+9. Binary multi-op runtime case can be flaky on some local environments; rerun single-case slices first (`sub`, `unary`, `trivial`, `rand`, `rand-bounded`) when debugging baseline stability.
 
 ## T2.5: Explorer-Visible CLI Loop
 
