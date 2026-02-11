@@ -164,11 +164,12 @@ impl Database {
         let rows = sqlx::query(
             r#"
             UPDATE dependence_chain dc
-            SET schedule_priority = 0
-            WHERE dc.schedule_priority <> 0
-              AND dc.dependence_chain_id = ANY($1::bytea[])
+            SET schedule_priority = $1
+            WHERE dc.schedule_priority <> $1
+              AND dc.dependence_chain_id = ANY($2::bytea[])
             "#,
         )
+        .bind(i16::from(SchedulePriority::Fast))
         .bind(seen_dep_chain_ids)
         .execute(tx.deref_mut())
         .await?;
@@ -192,7 +193,7 @@ impl Database {
               AND dependence_chain_id = ANY($2::bytea[])
             "#,
         )
-        .bind(i16::from(SchedulePriority::SLOW))
+        .bind(i16::from(SchedulePriority::Slow))
         .bind(dep_chain_ids)
         .fetch_all(tx.deref_mut())
         .await?;
@@ -813,9 +814,9 @@ impl Database {
         for chain in chains {
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {
-                SchedulePriority::SLOW
+                SchedulePriority::Slow
             } else {
-                SchedulePriority::FAST
+                SchedulePriority::Fast
             };
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),

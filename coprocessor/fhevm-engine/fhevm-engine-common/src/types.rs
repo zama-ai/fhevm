@@ -1032,23 +1032,25 @@ pub enum SchedulePriority {
     Slow = 1,
 }
 
-impl SchedulePriority {
-    pub const FAST: Self = Self::Fast;
-    pub const SLOW: Self = Self::Slow;
-}
-
 impl From<SchedulePriority> for i16 {
     fn from(value: SchedulePriority) -> Self {
         value as i16
     }
 }
 
-impl From<i16> for SchedulePriority {
-    fn from(value: i16) -> Self {
-        if value <= 0 {
-            Self::Fast
-        } else {
-            Self::Slow
+#[derive(Debug, Copy, Clone)]
+pub enum SchedulePriorityError {
+    InvalidValue(i16),
+}
+
+impl TryFrom<i16> for SchedulePriority {
+    type Error = SchedulePriorityError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Fast),
+            1 => Ok(Self::Slow),
+            _ => Err(SchedulePriorityError::InvalidValue(value)),
         }
     }
 }
