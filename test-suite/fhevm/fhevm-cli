@@ -58,10 +58,10 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
-  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)"
+  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|multicoproc-input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
@@ -78,7 +78,9 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test multicoproc-input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
@@ -86,6 +88,22 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
   echo -e "${BLUE}============================================================${RESET}"
+}
+
+function collect_multicoproc_logs() {
+  echo -e "${LIGHT_BLUE}${BOLD}[LOGS] Collecting multicoprocessor logs (last 10m)...${RESET}"
+  local containers
+  containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor[0-9-]*-(host-listener|gw-listener|tfhe-worker|sns-worker|transaction-sender)$' || true)
+  if [ -z "$containers" ]; then
+    echo -e "${YELLOW}[WARN]${RESET} No coprocessor containers found"
+    return
+  fi
+
+  while IFS= read -r container; do
+    [ -z "$container" ] && continue
+    echo -e "\n${CYAN}===== ${container} =====${RESET}"
+    docker logs --since=10m "$container" | tail -n 160 || true
+  done <<< "$containers"
 }
 
 COMMAND=$1
@@ -111,6 +129,26 @@ case $COMMAND in
         --local|--dev)
           DEPLOY_ARGS+=("--local")
           shift
+          ;;
+        --coprocessors)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            DEPLOY_ARGS+=("--coprocessors" "$2")
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Coprocessor count argument missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        --coprocessor-threshold)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            DEPLOY_ARGS+=("--coprocessor-threshold" "$2")
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Coprocessor threshold argument missing${RESET}"
+            usage
+            exit 1
+          fi
           ;;
         *)
           echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
@@ -167,6 +205,7 @@ case $COMMAND in
     GREP=""
     NO_RELAYER=""
     NO_COMPILE=""
+    COLLECT_MULTICOPROC=""
 
     while (( "$#" )); do
       case "$1" in
@@ -230,6 +269,11 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
           ;;
+        multicoproc-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] MULTICOPROCESSOR INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test user input uint64")
+          COLLECT_MULTICOPROC="1"
+          ;;
         input-proof-compute-decrypt)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test add 42 to uint64 input and decrypt")
@@ -291,7 +335,18 @@ case $COMMAND in
     fi
     if [ "$TEST_TYPE" != "debug" ]; then
       echo -e "${log_message}"
-      docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+      test_status=0
+      if docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"; then
+        test_status=0
+      else
+        test_status=$?
+      fi
+      if [ -n "$COLLECT_MULTICOPROC" ]; then
+        collect_multicoproc_logs
+      fi
+      if [ "$test_status" -ne 0 ]; then
+        exit "$test_status"
+      fi
     fi
     ;;
 
