@@ -19,7 +19,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 LISTENER_DIR="${REPO_ROOT}/coprocessor/fhevm-engine"
 SQLX_OFFLINE="${SQLX_OFFLINE:-true}"
 CASE="${CASE:-all}"
-SOLANA_POC_KEYS_DIR="${SOLANA_POC_KEYS_DIR:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,31 +50,19 @@ run_test_case() {
     log_info "Running ${test_name}"
     (
         cd "$LISTENER_DIR"
-        if [[ -n "$SOLANA_POC_KEYS_DIR" ]]; then
-            SQLX_OFFLINE="$SQLX_OFFLINE" SOLANA_POC_KEYS_DIR="$SOLANA_POC_KEYS_DIR" cargo test \
-                -p solana-listener \
-                --features solana-e2e \
-                --test localnet_harness_integration \
-                "${test_name}" \
-                -- \
-                --ignored \
-                --nocapture \
-                --test-threads=1
-        else
-            SQLX_OFFLINE="$SQLX_OFFLINE" cargo test \
-                -p solana-listener \
-                --features solana-e2e \
-                --test localnet_harness_integration \
-                "${test_name}" \
-                -- \
-                --ignored \
-                --nocapture \
-                --test-threads=1
-        fi
+        SQLX_OFFLINE="$SQLX_OFFLINE" cargo test \
+            -p solana-listener \
+            --features solana-e2e \
+            --test localnet_harness_integration \
+            "${test_name}" \
+            -- \
+            --ignored \
+            --nocapture \
+            --test-threads=1
     )
 }
 
-log_info "Tier 3 e2e start (case: $CASE, SQLX_OFFLINE=$SQLX_OFFLINE, SOLANA_POC_KEYS_DIR=${SOLANA_POC_KEYS_DIR:-<default>})"
+log_info "Tier 3 e2e start (case: $CASE, SQLX_OFFLINE=$SQLX_OFFLINE)"
 
 if [[ "$CASE" == "emit" || "$CASE" == "all" ]]; then
     run_test_case "localnet_solana_request_add_computes_and_decrypts"

@@ -312,17 +312,8 @@ fn repo_root() -> anyhow::Result<PathBuf> {
 }
 
 async fn seed_tenant_with_keys(pool: &sqlx::PgPool) -> anyhow::Result<i32> {
-    let key_dir = if let Ok(path) = std::env::var("SOLANA_POC_KEYS_DIR") {
-        if path.trim().is_empty() {
-            let root = repo_root()?;
-            root.join("coprocessor/fhevm-engine/fhevm-keys")
-        } else {
-            PathBuf::from(path)
-        }
-    } else {
-        let root = repo_root()?;
-        root.join("coprocessor/fhevm-engine/fhevm-keys")
-    };
+    let root = repo_root()?;
+    let key_dir = root.join("coprocessor/fhevm-engine/fhevm-keys");
 
     let sks = tokio::fs::read(key_dir.join("sks"))
         .await

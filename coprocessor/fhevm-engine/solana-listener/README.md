@@ -83,19 +83,15 @@ Defaults:
 2. `wallet = ~/.config/solana/id.json`
 3. `postgres_mode = docker`
 4. `publish_idl = true` (runs `anchor idl init`, falls back to `anchor idl upgrade`)
-5. `keys_dir = /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/fhevm-keys`
 
 Common overrides:
 
 ```bash
 SQLX_OFFLINE=true cargo run -p solana-listener --features solana-e2e --bin solana_poc_runner -- \
-  --keys-dir /absolute/path/to/fhevm-keys \
   --publish-idl false \
   --idl-path /absolute/path/to/idl.json \
   --program-id Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq
 ```
-
-You can also set `SOLANA_POC_KEYS_DIR=/absolute/path/to/fhevm-keys` for both `solana_poc_runner` and tier3 integration tests.
 
 The runner prints:
 

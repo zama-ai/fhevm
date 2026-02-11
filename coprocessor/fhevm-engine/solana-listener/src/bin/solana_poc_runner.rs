@@ -71,13 +71,6 @@ struct Args {
 
     #[arg(long, default_value = DEFAULT_TENANT_API_KEY)]
     tenant_api_key: String,
-
-    #[arg(
-        long,
-        env = "SOLANA_POC_KEYS_DIR",
-        default_value = "/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/fhevm-keys"
-    )]
-    keys_dir: String,
 }
 
 struct DockerPostgres {
@@ -160,13 +153,7 @@ async fn run_add_flow(
         .await
         .context("run db migrations")?;
 
-    let tenant_id = seed_tenant_with_keys(
-        &pool,
-        &args.tenant_api_key,
-        args.host_chain_id,
-        &args.keys_dir,
-    )
-    .await?;
+    let tenant_id = seed_tenant_with_keys(&pool, &args.tenant_api_key, args.host_chain_id).await?;
 
     let start_cursor = finalized_cursor(rpc)?;
     let lhs = [0x11_u8; 32];
@@ -453,9 +440,9 @@ async fn seed_tenant_with_keys(
     pool: &sqlx::PgPool,
     tenant_api_key: &str,
     host_chain_id: i64,
-    keys_dir: &str,
 ) -> Result<i32> {
-    let key_dir = PathBuf::from(expand_tilde(keys_dir));
+    let root = repo_root()?;
+    let key_dir = root.join("coprocessor/fhevm-engine/fhevm-keys");
     let sks = tokio::fs::read(key_dir.join("sks"))
         .await
         .context("read sks")?;
