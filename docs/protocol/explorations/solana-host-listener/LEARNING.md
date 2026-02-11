@@ -389,8 +389,8 @@ Notes:
 
 Date: 2026-02-11
 Objective: Extend runtime/decrypt checks beyond initial representative subset (`add/sub/if_then_else/cast`).
-Result: In progress (new tests added; targeted local runs executed).
-Confidence: Medium-high
+Result: Completed (full `--case all` pass).
+Confidence: High
 Notes:
 
 - Added new Tier-3 tests in `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`:
@@ -401,8 +401,21 @@ Notes:
   - `localnet_solana_request_rand_bounded_computes_and_decrypts`
 - Extended Tier-3 runner cases in `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`:
   - `binary | unary | trivial | rand | rand-bounded`
-- Completed targeted local runs for new cases: `unary`, `trivial`, `rand`, `rand-bounded`.
-- `binary` case is still flaky in this environment (intermittent validator/RPC instability during longer multi-op sequence); keep as active follow-up for stabilization.
+- Full runtime sweep completed with `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`:
+  - `localnet_solana_request_add_computes_and_decrypts` (62.31s)
+  - `localnet_solana_request_sub_computes_and_decrypts` (61.98s)
+  - `localnet_solana_request_binary_ops_computes_and_decrypts` (172.62s)
+  - `localnet_solana_request_unary_ops_computes_and_decrypts` (104.92s)
+  - `localnet_solana_request_if_then_else_computes_and_decrypts` (62.16s)
+  - `localnet_solana_request_cast_computes_and_decrypts` (52.25s)
+  - `localnet_solana_request_trivial_encrypt_computes_and_decrypts` (45.93s)
+  - `localnet_solana_request_rand_computes_and_decrypts` (51.24s)
+  - `localnet_solana_request_rand_bounded_computes_and_decrypts` (49.84s)
+  - `localnet_acl_gate_blocks_then_allows_compute` (57.25s)
+- Explorer-visible demo evidence (`solana-poc-explorer-demo.sh`):
+  - `request_add_signature=2Cung4UE36Ky1LkaLLGQT3JgKvD5Udmc85Zi82XRyBKp3ABgP3r7FpYpU2mJzRtuPFK421TkB1pEESTJ7wJD5JTy`
+  - `allow_signature=4DDdwLDaNQWirrrTLoDeaC19xnQGf74wzRrwqddvFeohDUALwupjQr1aTRzyfyqfcUGuNBT2shPDgEqgnbYmoeso`
+  - ingest counters: `computations=1`, `allowed_handles=1`, `pbs_computations=1`
 
 ### D3
 

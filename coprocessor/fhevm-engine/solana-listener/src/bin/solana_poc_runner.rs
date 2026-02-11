@@ -22,8 +22,8 @@ use urlencoding::encode;
 
 const DEFAULT_PROGRAM_ID: &str = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq";
 const DEFAULT_TENANT_API_KEY: &str = "00000000-0000-0000-0000-000000000042";
-// Temporary placeholder in the reserved non-EVM range used for Solana discovery.
-const DEFAULT_HOST_CHAIN_ID: i64 = 0x8000_0000_0000_0001_u64 as i64;
+// Must satisfy current `tenants_chain_id_check` until PR #1856 schema lands.
+const DEFAULT_HOST_CHAIN_ID: i64 = 12_345;
 const OP_ADD: u8 = 0;
 
 #[derive(Clone, Debug, ValueEnum)]

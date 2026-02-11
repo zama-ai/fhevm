@@ -181,6 +181,22 @@ Example:
 
 Supported `--case` values: `emit | sub | binary | unary | ite | cast | trivial | rand | rand-bounded | acl | all`.
 
+Latest full parity run (2026-02-11):
+
+1. Command: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`
+2. Result: all 10 Tier-3 cases passed (`EXIT_CODE=0`).
+3. Durations:
+   - `add` 62.31s
+   - `sub` 61.98s
+   - `binary` 172.62s
+   - `unary` 104.92s
+   - `if_then_else` 62.16s
+   - `cast` 52.25s
+   - `trivial_encrypt` 45.93s
+   - `rand` 51.24s
+   - `rand_bounded` 49.84s
+   - `acl` 57.25s
+
 Coverage:
 
 1. Seeds tenant keys in DB.
