@@ -32,7 +32,7 @@ flowchart TD
 | T0 | <=5s | Event -> canonical mapping only | none | Implemented |
 | T1 | 15-45s | Canonical DB effects + cursor checks | Postgres | Implemented (assert script) |
 | T2 | 1-3 min | Local validator + host program + listener ingest | Postgres + solana-test-validator | Implemented (real finalized RPC source + DB assertions) |
-| T3 | 5-10 min | Scheduler/worker path after ingest + decrypt sanity | full local stack | Implemented (3 localnet ignored tests) |
+| T3 | 5-10 min | Scheduler/worker path after ingest + decrypt sanity | full local stack | Implemented (10 localnet ignored tests) |
 
 ## T-1: Mollusk Host Smoke
 
@@ -74,6 +74,12 @@ Pass gates:
 2. `allow` maps to one `allowed_handles` and one `pbs_computations` action.
 3. Generic opcode events map to expected TFHE operations (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
 4. `schedule_order` remains deterministic.
+
+Cross-chain parity diff (EVM vs Solana ingest semantics):
+
+1. Script: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
+2. Test: `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface`
+3. Scope: normalized canonical effects for `add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded/allow`.
 
 ## T1: DB Assertion Loop
 

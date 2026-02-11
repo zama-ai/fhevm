@@ -50,6 +50,8 @@ zama_host = { path = "../../../solana/host-programs/zama-host", default-features
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [dev-dependencies]
+alloy = { workspace = true }
+host-listener = { path = "../host-listener" }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 testcontainers = { workspace = true }

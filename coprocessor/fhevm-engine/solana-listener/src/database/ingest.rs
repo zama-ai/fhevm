@@ -308,10 +308,395 @@ fn dependence_chain_from_signature(tx_signature: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::contracts::{FinalizedEventEnvelope, ProgramEvent, INTERFACE_VERSION};
+    use alloy::primitives::{Address, FixedBytes, Uint};
+    use host_listener::contracts::AclContract as EvmAcl;
+    use host_listener::contracts::AclContract::AclContractEvents as EvmAclEvent;
+    use host_listener::contracts::TfheContract as EvmTfhe;
+    use host_listener::contracts::TfheContract::TfheContractEvents as EvmTfheEvent;
     use solana_pubkey::Pubkey;
 
     fn fixed_sig() -> Vec<u8> {
         vec![42u8; 64]
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CanonicalComputation {
+        output_handle: Vec<u8>,
+        dependencies: Vec<Vec<u8>>,
+        fhe_operation: i16,
+        is_scalar: bool,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CanonicalAllow {
+        handle: Vec<u8>,
+        event_type: i16,
+        has_pbs_row: bool,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum CanonicalAction {
+        Computation(CanonicalComputation),
+        Allow(CanonicalAllow),
+    }
+
+    enum EvmCase {
+        Tfhe(EvmTfheEvent),
+        Acl(EvmAclEvent),
+    }
+
+    fn evm_caller() -> Address {
+        Address::from_slice(&[0x11u8; 20])
+    }
+
+    fn h32(value: [u8; 32]) -> FixedBytes<32> {
+        FixedBytes::from(value)
+    }
+
+    fn scalar_byte(value: bool) -> FixedBytes<1> {
+        if value {
+            FixedBytes::from([1u8])
+        } else {
+            FixedBytes::from([0u8])
+        }
+    }
+
+    fn u256(value: [u8; 32]) -> Uint<256, 4> {
+        Uint::<256, 4>::from_be_slice(&value)
+    }
+
+    fn h16(value: [u8; 16]) -> FixedBytes<16> {
+        FixedBytes::from(value)
+    }
+
+    fn canonical_from_solana(actions: &IngestActions) -> Vec<CanonicalAction> {
+        let mut out = Vec::new();
+        for row in &actions.computations {
+            let mut dependencies = row.dependencies.clone();
+            if (row.fhe_operation == SupportedFheOperations::FheRand as i16
+                || row.fhe_operation == SupportedFheOperations::FheRandBounded as i16)
+                && !dependencies.is_empty()
+                && dependencies[0].len() == 32
+            {
+                // EVM ABI exposes rand seed as bytes16; Solana v0 currently emits
+                // a [u8; 32] seed. Normalize to a shared 16-byte view for parity diff.
+                dependencies[0].truncate(16);
+            }
+            out.push(CanonicalAction::Computation(CanonicalComputation {
+                output_handle: row.output_handle.clone(),
+                dependencies,
+                fhe_operation: row.fhe_operation,
+                is_scalar: row.is_scalar,
+            }));
+        }
+        for row in &actions.allowed_handles {
+            let has_pbs_row = actions
+                .pbs_computations
+                .iter()
+                .any(|pbs| pbs.handle == row.handle);
+            out.push(CanonicalAction::Allow(CanonicalAllow {
+                handle: row.handle.clone(),
+                event_type: row.event_type,
+                has_pbs_row,
+            }));
+        }
+        out
+    }
+
+    fn evm_operation_id(event: &EvmTfheEvent) -> i16 {
+        let op = match event {
+            EvmTfheEvent::FheAdd(_) => SupportedFheOperations::FheAdd,
+            EvmTfheEvent::FheSub(_) => SupportedFheOperations::FheSub,
+            EvmTfheEvent::FheMul(_) => SupportedFheOperations::FheMul,
+            EvmTfheEvent::FheDiv(_) => SupportedFheOperations::FheDiv,
+            EvmTfheEvent::FheRem(_) => SupportedFheOperations::FheRem,
+            EvmTfheEvent::FheBitAnd(_) => SupportedFheOperations::FheBitAnd,
+            EvmTfheEvent::FheBitOr(_) => SupportedFheOperations::FheBitOr,
+            EvmTfheEvent::FheBitXor(_) => SupportedFheOperations::FheBitXor,
+            EvmTfheEvent::FheShl(_) => SupportedFheOperations::FheShl,
+            EvmTfheEvent::FheShr(_) => SupportedFheOperations::FheShr,
+            EvmTfheEvent::FheRotl(_) => SupportedFheOperations::FheRotl,
+            EvmTfheEvent::FheRotr(_) => SupportedFheOperations::FheRotr,
+            EvmTfheEvent::FheEq(_) => SupportedFheOperations::FheEq,
+            EvmTfheEvent::FheNe(_) => SupportedFheOperations::FheNe,
+            EvmTfheEvent::FheGe(_) => SupportedFheOperations::FheGe,
+            EvmTfheEvent::FheGt(_) => SupportedFheOperations::FheGt,
+            EvmTfheEvent::FheLe(_) => SupportedFheOperations::FheLe,
+            EvmTfheEvent::FheLt(_) => SupportedFheOperations::FheLt,
+            EvmTfheEvent::FheMin(_) => SupportedFheOperations::FheMin,
+            EvmTfheEvent::FheMax(_) => SupportedFheOperations::FheMax,
+            EvmTfheEvent::FheNeg(_) => SupportedFheOperations::FheNeg,
+            EvmTfheEvent::FheNot(_) => SupportedFheOperations::FheNot,
+            EvmTfheEvent::Cast(_) => SupportedFheOperations::FheCast,
+            EvmTfheEvent::TrivialEncrypt(_) => SupportedFheOperations::FheTrivialEncrypt,
+            EvmTfheEvent::FheIfThenElse(_) => SupportedFheOperations::FheIfThenElse,
+            EvmTfheEvent::FheRand(_) => SupportedFheOperations::FheRand,
+            EvmTfheEvent::FheRandBounded(_) => SupportedFheOperations::FheRandBounded,
+            EvmTfheEvent::Initialized(_)
+            | EvmTfheEvent::Upgraded(_)
+            | EvmTfheEvent::VerifyInput(_) => {
+                panic!("evm_operation_id called on non-computation event")
+            }
+        };
+        op as i16
+    }
+
+    fn canonical_from_evm(case: EvmCase) -> Vec<CanonicalAction> {
+        match case {
+            EvmCase::Tfhe(event) => {
+                let computation = match event {
+                    EvmTfheEvent::Cast(EvmTfhe::Cast {
+                        ct, toType, result, ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![ct.to_vec(), vec![toType]],
+                        fhe_operation: SupportedFheOperations::FheCast as i16,
+                        is_scalar: true,
+                    }),
+                    EvmTfheEvent::FheAdd(EvmTfhe::FheAdd {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheSub(EvmTfhe::FheSub {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheMul(EvmTfhe::FheMul {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheDiv(EvmTfhe::FheDiv {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheRem(EvmTfhe::FheRem {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheBitAnd(EvmTfhe::FheBitAnd {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheBitOr(EvmTfhe::FheBitOr {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheBitXor(EvmTfhe::FheBitXor {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheShl(EvmTfhe::FheShl {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheShr(EvmTfhe::FheShr {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheRotl(EvmTfhe::FheRotl {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheRotr(EvmTfhe::FheRotr {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheEq(EvmTfhe::FheEq {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheNe(EvmTfhe::FheNe {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheGe(EvmTfhe::FheGe {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheGt(EvmTfhe::FheGt {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheLe(EvmTfhe::FheLe {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheLt(EvmTfhe::FheLt {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheMin(EvmTfhe::FheMin {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    })
+                    | EvmTfheEvent::FheMax(EvmTfhe::FheMax {
+                        lhs,
+                        rhs,
+                        scalarByte,
+                        result,
+                        ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![lhs.to_vec(), rhs.to_vec()],
+                        fhe_operation: evm_operation_id(&event),
+                        is_scalar: !scalarByte.is_zero(),
+                    }),
+                    EvmTfheEvent::FheIfThenElse(EvmTfhe::FheIfThenElse {
+                        control,
+                        ifTrue,
+                        ifFalse,
+                        result,
+                        ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![control.to_vec(), ifTrue.to_vec(), ifFalse.to_vec()],
+                        fhe_operation: SupportedFheOperations::FheIfThenElse as i16,
+                        is_scalar: false,
+                    }),
+                    EvmTfheEvent::FheNeg(EvmTfhe::FheNeg { ct, result, .. })
+                    | EvmTfheEvent::FheNot(EvmTfhe::FheNot { ct, result, .. }) => {
+                        Some(CanonicalComputation {
+                            output_handle: result.to_vec(),
+                            dependencies: vec![ct.to_vec()],
+                            fhe_operation: evm_operation_id(&event),
+                            is_scalar: false,
+                        })
+                    }
+                    EvmTfheEvent::FheRand(EvmTfhe::FheRand {
+                        randType,
+                        seed,
+                        result,
+                        ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![seed.to_vec(), vec![randType]],
+                        fhe_operation: SupportedFheOperations::FheRand as i16,
+                        is_scalar: true,
+                    }),
+                    EvmTfheEvent::FheRandBounded(EvmTfhe::FheRandBounded {
+                        upperBound,
+                        randType,
+                        seed,
+                        result,
+                        ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![
+                            seed.to_vec(),
+                            upperBound.to_be_bytes_vec(),
+                            vec![randType],
+                        ],
+                        fhe_operation: SupportedFheOperations::FheRandBounded as i16,
+                        is_scalar: true,
+                    }),
+                    EvmTfheEvent::TrivialEncrypt(EvmTfhe::TrivialEncrypt {
+                        pt,
+                        toType,
+                        result,
+                        ..
+                    }) => Some(CanonicalComputation {
+                        output_handle: result.to_vec(),
+                        dependencies: vec![pt.to_be_bytes_vec(), vec![toType]],
+                        fhe_operation: SupportedFheOperations::FheTrivialEncrypt as i16,
+                        is_scalar: true,
+                    }),
+                    EvmTfheEvent::Initialized(_)
+                    | EvmTfheEvent::Upgraded(_)
+                    | EvmTfheEvent::VerifyInput(_) => None,
+                };
+                computation
+                    .map(CanonicalAction::Computation)
+                    .into_iter()
+                    .collect()
+            }
+            EvmCase::Acl(event) => match event {
+                EvmAclEvent::Allowed(allowed) => vec![CanonicalAction::Allow(CanonicalAllow {
+                    handle: allowed.handle.to_vec(),
+                    event_type: AllowEvents::AllowedAccount as i16,
+                    has_pbs_row: true,
+                })],
+                _ => Vec::new(),
+            },
+        }
+    }
+
+    fn fixed_envelope(event: ProgramEvent, op_index: u16) -> FinalizedEventEnvelope {
+        FinalizedEventEnvelope {
+            version: INTERFACE_VERSION,
+            host_chain_id: 12345,
+            slot: 999,
+            block_hash: vec![0xAA; 32],
+            block_time_unix: 1_700_000_500,
+            tx_signature: fixed_sig(),
+            tx_index: 4,
+            op_index,
+            event,
+        }
+    }
+
+    fn assert_parity(name: &str, solana_event: ProgramEvent, evm_case: EvmCase, op_index: u16) {
+        let actions = map_envelope_to_actions(&fixed_envelope(solana_event, op_index), 77)
+            .expect("solana mapping should work");
+        let solana = canonical_from_solana(&actions);
+        let evm = canonical_from_evm(evm_case);
+        assert_eq!(solana, evm, "parity mismatch for case {name}");
     }
 
     #[test]
@@ -559,6 +944,190 @@ mod tests {
         assert_eq!(
             rand_bounded_actions.computations[0].fhe_operation,
             SupportedFheOperations::FheRandBounded as i16
+        );
+    }
+
+    #[test]
+    fn parity_diff_matches_evm_semantics_for_v0_surface() {
+        let caller = Pubkey::new_from_array([0x11u8; 32]);
+        let allow_account = Pubkey::new_from_array([0x22u8; 32]);
+
+        assert_parity(
+            "add",
+            ProgramEvent::OpRequestedAdd {
+                caller,
+                lhs: [1u8; 32],
+                rhs: [2u8; 32],
+                is_scalar: true,
+                result_handle: [3u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheAdd(EvmTfhe::FheAdd {
+                caller: evm_caller(),
+                lhs: h32([1u8; 32]),
+                rhs: h32([2u8; 32]),
+                scalarByte: scalar_byte(true),
+                result: h32([3u8; 32]),
+            })),
+            0,
+        );
+
+        assert_parity(
+            "sub",
+            ProgramEvent::OpRequestedSub {
+                caller,
+                lhs: [4u8; 32],
+                rhs: [5u8; 32],
+                is_scalar: false,
+                result_handle: [6u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheSub(EvmTfhe::FheSub {
+                caller: evm_caller(),
+                lhs: h32([4u8; 32]),
+                rhs: h32([5u8; 32]),
+                scalarByte: scalar_byte(false),
+                result: h32([6u8; 32]),
+            })),
+            1,
+        );
+
+        assert_parity(
+            "binary_mul",
+            ProgramEvent::OpRequestedBinary {
+                caller,
+                lhs: [7u8; 32],
+                rhs: [8u8; 32],
+                is_scalar: true,
+                result_handle: [9u8; 32],
+                opcode: 2,
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheMul(EvmTfhe::FheMul {
+                caller: evm_caller(),
+                lhs: h32([7u8; 32]),
+                rhs: h32([8u8; 32]),
+                scalarByte: scalar_byte(true),
+                result: h32([9u8; 32]),
+            })),
+            2,
+        );
+
+        assert_parity(
+            "unary_neg",
+            ProgramEvent::OpRequestedUnary {
+                caller,
+                input: [10u8; 32],
+                result_handle: [11u8; 32],
+                opcode: 20,
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheNeg(EvmTfhe::FheNeg {
+                caller: evm_caller(),
+                ct: h32([10u8; 32]),
+                result: h32([11u8; 32]),
+            })),
+            3,
+        );
+
+        assert_parity(
+            "if_then_else",
+            ProgramEvent::OpRequestedIfThenElse {
+                caller,
+                control: [12u8; 32],
+                if_true: [13u8; 32],
+                if_false: [14u8; 32],
+                result_handle: [15u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheIfThenElse(EvmTfhe::FheIfThenElse {
+                caller: evm_caller(),
+                control: h32([12u8; 32]),
+                ifTrue: h32([13u8; 32]),
+                ifFalse: h32([14u8; 32]),
+                result: h32([15u8; 32]),
+            })),
+            4,
+        );
+
+        assert_parity(
+            "cast",
+            ProgramEvent::OpRequestedCast {
+                caller,
+                input: [16u8; 32],
+                to_type: 9,
+                result_handle: [17u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::Cast(EvmTfhe::Cast {
+                caller: evm_caller(),
+                ct: h32([16u8; 32]),
+                toType: 9,
+                result: h32([17u8; 32]),
+            })),
+            5,
+        );
+
+        assert_parity(
+            "trivial_encrypt",
+            ProgramEvent::OpRequestedTrivialEncrypt {
+                caller,
+                pt: [18u8; 32],
+                to_type: 7,
+                result_handle: [19u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::TrivialEncrypt(EvmTfhe::TrivialEncrypt {
+                caller: evm_caller(),
+                pt: u256([18u8; 32]),
+                toType: 7,
+                result: h32([19u8; 32]),
+            })),
+            6,
+        );
+
+        assert_parity(
+            "rand",
+            ProgramEvent::OpRequestedRand {
+                caller,
+                rand_type: 3,
+                seed: [20u8; 32],
+                result_handle: [21u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheRand(EvmTfhe::FheRand {
+                caller: evm_caller(),
+                randType: 3,
+                seed: h16([20u8; 16]),
+                result: h32([21u8; 32]),
+            })),
+            7,
+        );
+
+        assert_parity(
+            "rand_bounded",
+            ProgramEvent::OpRequestedRandBounded {
+                caller,
+                upper_bound: [22u8; 32],
+                rand_type: 4,
+                seed: [23u8; 32],
+                result_handle: [24u8; 32],
+            },
+            EvmCase::Tfhe(EvmTfheEvent::FheRandBounded(EvmTfhe::FheRandBounded {
+                caller: evm_caller(),
+                upperBound: u256([22u8; 32]),
+                randType: 4,
+                seed: h16([23u8; 16]),
+                result: h32([24u8; 32]),
+            })),
+            8,
+        );
+
+        assert_parity(
+            "allow",
+            ProgramEvent::HandleAllowed {
+                caller,
+                handle: [25u8; 32],
+                account: allow_account,
+            },
+            EvmCase::Acl(EvmAclEvent::Allowed(EvmAcl::Allowed {
+                caller: evm_caller(),
+                account: evm_caller(),
+                handle: h32([25u8; 32]),
+            })),
+            9,
         );
     }
 }

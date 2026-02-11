@@ -8689,6 +8689,7 @@ dependencies = [
 name = "solana-listener"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anchor-lang",
  "anyhow",
  "async-trait",
@@ -8697,6 +8698,7 @@ dependencies = [
  "clap",
  "fhevm-engine-common",
  "hex",
+ "host-listener",
  "reqwest",
  "serde",
  "serde_json",

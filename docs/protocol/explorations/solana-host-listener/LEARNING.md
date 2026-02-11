@@ -62,6 +62,7 @@ flowchart TD
 22. Tier-3 runtime coverage now includes additional op families beyond `add/sub/if_then_else/cast`: representative `binary` + `unary`, and dedicated `trivial_encrypt`, `rand`, `rand_bounded` e2e tests with decrypt checks.
 23. Solana RPC ingestion is now SDK-first (`solana-client` + `solana-commitment-config`) and event decode is IDL-typed via Anchor event structs from `zama-host` (manual byte-layout decoder removed).
 24. Tier-3 `binary` runtime slice is stable when scoped to fast/representative ops; `mul` was removed from this local runtime slice because it exceeds the current 90s per-op wait budget in this harness.
+25. Cross-chain parity diff now has a deterministic test entrypoint that compares normalized EVM vs Solana ingest semantics for the v0 operation surface.
 
 ## Open Questions
 
@@ -416,6 +417,23 @@ Notes:
   - `request_add_signature=2Cung4UE36Ky1LkaLLGQT3JgKvD5Udmc85Zi82XRyBKp3ABgP3r7FpYpU2mJzRtuPFK421TkB1pEESTJ7wJD5JTy`
   - `allow_signature=4DDdwLDaNQWirrrTLoDeaC19xnQGf74wzRrwqddvFeohDUALwupjQr1aTRzyfyqfcUGuNBT2shPDgEqgnbYmoeso`
   - ingest counters: `computations=1`, `allowed_handles=1`, `pbs_computations=1`
+
+### Experiment 19: EVM vs Solana ingest parity diff harness
+
+Date: 2026-02-11
+Objective: Add a reproducible test that runs the same semantic operation vectors against EVM and Solana ingest models and asserts canonical equality.
+Result: Completed.
+Confidence: High
+Notes:
+
+- Added test `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface` in:
+  - `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/src/database/ingest.rs`
+- Added one-command runner:
+  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
+- Compared normalized canonical effects for:
+  - `add`, `sub`, `binary(opcode=mul)`, `unary(neg)`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`, `allow`
+- Normalization note captured in test:
+  - EVM ABI exposes `rand` seed as `bytes16`; Solana v0 uses `[u8; 32]`. Test normalizes Solana seed to first 16 bytes for cross-chain semantic diffing.
 
 ### D3
 
