@@ -63,6 +63,7 @@ flowchart TD
 23. Solana RPC ingestion is now SDK-first (`solana-client` + `solana-commitment-config`) and event decode is IDL-typed via Anchor event structs from `zama-host` (manual byte-layout decoder removed).
 24. Tier-3 `binary` runtime slice is stable when scoped to fast/representative ops; `mul` was removed from this local runtime slice because it exceeds the current 90s per-op wait budget in this harness.
 25. Cross-chain parity diff now has a deterministic test entrypoint that compares normalized EVM vs Solana ingest semantics for the v0 operation surface.
+26. Runtime parity now has an initial cross-chain slice (`add + allow + decrypt`) with machine-readable outputs on both sides (`SOLANA_RUNTIME_PARITY_VALUE`, `SMOKE_DECRYPT_VALUE`).
 
 ## Open Questions
 
@@ -434,6 +435,25 @@ Notes:
   - `add`, `sub`, `binary(opcode=mul)`, `unary(neg)`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`, `allow`
 - Normalization note captured in test:
   - EVM ABI exposes `rand` seed as `bytes16`; Solana v0 uses `[u8; 32]`. Test normalizes Solana seed to first 16 bytes for cross-chain semantic diffing.
+
+### Experiment 20: Runtime parity diff slice (`add + allow + decrypt`)
+
+Date: 2026-02-11
+Objective: Add a reproducible runtime parity check that compares decrypted outputs across EVM and Solana for the same operation shape.
+Result: Implemented (execution depends on local EVM stack availability).
+Confidence: Medium-high
+Notes:
+
+- Added Solana Tier-3 runtime parity test:
+  - `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
+  - test: `localnet_solana_request_add_runtime_parity_value`
+  - emits `SOLANA_RUNTIME_PARITY_VALUE=49`
+- Updated EVM smoke script to emit decrypted value:
+  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/e2e/scripts/smoke-inputflow.ts`
+  - emits `SMOKE_DECRYPT_VALUE=49`
+- Added one-command runtime diff script:
+  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
+  - runs both sources and fails on mismatch.
 
 ### D3
 

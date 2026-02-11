@@ -1524,6 +1524,73 @@ async fn localnet_solana_request_add_computes_and_decrypts() -> anyhow::Result<(
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
+async fn localnet_solana_request_add_runtime_parity_value() -> anyhow::Result<()> {
+    let mut harness = setup_compute_harness().await?;
+
+    let lhs = [0x41_u8; 32];
+    let rhs = [0x42_u8; 32];
+    let is_scalar = false;
+    let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
+    let allowed_account = Pubkey::new_unique();
+
+    seed_trivial_inputs_with_values(&mut harness.worker_client, lhs, rhs, 7, 42).await?;
+
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let request_add_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_add_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            lhs,
+            rhs,
+            is_scalar,
+        ),
+    )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (ingest_summary, _) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
+    assert_eq!(ingest_summary.inserted_computations, 1);
+    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
+
+    let tx_signature = request_add_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+
+    let (decrypted, output_type) =
+        decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_type, 4);
+    assert_eq!(decrypted, "49");
+    println!("SOLANA_RUNTIME_PARITY_VALUE={decrypted}");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
 async fn localnet_solana_request_add_computes_no_decrypt_benchmark() -> anyhow::Result<()> {
     let mut harness = setup_compute_harness().await?;
 

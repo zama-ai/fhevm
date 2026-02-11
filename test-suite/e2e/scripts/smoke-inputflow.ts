@@ -644,6 +644,7 @@ async function runSmoke(): Promise<void> {
         'userDecryptSingleHandle',
       );
       console.log(`SMOKE_DECRYPT_USER_DONE ms=${Date.now() - decryptStart}`);
+      console.log(`SMOKE_DECRYPT_VALUE=${decryptedValue.toString()}`);
       assert.equal(decryptedValue, 49n);
 
       setSmokePhase('decrypt_public');

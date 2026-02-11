@@ -81,6 +81,13 @@ Cross-chain parity diff (EVM vs Solana ingest semantics):
 2. Test: `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface`
 3. Scope: normalized canonical effects for `add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded/allow`.
 
+Cross-chain runtime parity slice (`add + allow + decrypt`):
+
+1. Script: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
+2. Solana source: `localnet_solana_request_add_runtime_parity_value`
+3. EVM source: `test-suite/e2e/scripts/smoke-inputflow.ts` (`SMOKE_DECRYPT_VALUE=...`)
+4. Current comparison contract: both sides must decrypt to `49` for the parity slice.
+
 ## T1: DB Assertion Loop
 
 Purpose:
