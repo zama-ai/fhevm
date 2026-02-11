@@ -407,7 +407,7 @@ set_env_value() {
     fi
 }
 
-configure_coprocessor_topology_envs() {
+configure_multicoprocessor_envs() {
     local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
     local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
     local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
@@ -725,7 +725,7 @@ fi
 
 prepare_all_env_files
 prepare_local_config_relayer
-configure_coprocessor_topology_envs
+configure_multicoprocessor_envs
 
 log_info "Deploying FHEVM Stack..."
 log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
