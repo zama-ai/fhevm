@@ -579,7 +579,17 @@ fn compute_task(
 
     let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
     decompress_span.set_parent(task.otel.context().clone());
-    let ct = decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed).unwrap()); // TODO handle error properly
+    let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
+        Ok(ct) => ct,
+        Err(err) => {
+            decompress_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            error!({ handle = handle, error = %err }, "Failed to decompress ct64");
+            return;
+        }
+    };
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
