@@ -1,7 +1,10 @@
 pub mod scheduler;
 pub mod types;
 
-use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::AtomicUsize,
+};
 use tracing::{error, warn};
 
 use crate::dfg::types::*;
@@ -291,6 +294,7 @@ pub struct DFComponentGraph {
     pub needed_map: HashMap<Handle, Vec<NodeIndex>>,
     pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
+    deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
 }
 impl DFComponentGraph {
     pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
@@ -329,7 +333,16 @@ impl DFComponentGraph {
                         error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
 				   "Missing producer for handle");
                     } else {
-                        dependence_pairs.push((producer[0].0, consumer));
+                        // Cross-transaction dependence: defer until
+                        // after DB fetch. If the handle is found in
+                        // DB, we use the fetched value and skip the
+                        // dependence edge.
+                        self.deferred_dependences
+                            .push((producer[0].0, consumer, i.clone()));
+                        self.needed_map
+                            .entry(i.clone())
+                            .and_modify(|uses| uses.push(consumer))
+                            .or_insert(vec![consumer]);
                     }
                 } else {
                     self.needed_map
@@ -340,19 +353,52 @@ impl DFComponentGraph {
             }
         }
 
-        // We build a replica of the graph and map it to the
-        // underlying DiGraph so we can identify cycles.
-        let mut digraph = self.graph.map(|idx, _| idx, |_, _| ()).graph().clone();
-        // Add transaction dependence edges
+        // Same-transaction dependences are always acyclic (they
+        // derive from the transaction's internal DAG). Add them
+        // directly; cycle detection runs once in
+        // resolve_dependences() over the full edge set.
         for (producer, consumer) in dependence_pairs.iter() {
+            if self.graph.add_edge(*producer, *consumer, ()).is_err() {
+                let prod = self
+                    .graph
+                    .node_weight(*producer)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                let cons = self
+                    .graph
+                    .node_weight(*consumer)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
+		       "Unexpected cycle in same-transaction dependence");
+                return Err(SchedulerError::CyclicDependence.into());
+            }
+        }
+        Ok(())
+    }
+
+    // Resolve deferred cross-transaction dependences after DB fetch.
+    // Dependences whose handle was successfully fetched are dropped
+    // (the consumer already has the data). Remaining dependences are
+    // added as graph edges after cycle detection.
+    pub fn resolve_dependences(&mut self, fetched_handles: &HashSet<Handle>) -> Result<()> {
+        let remaining: Vec<(NodeIndex, NodeIndex)> = self
+            .deferred_dependences
+            .drain(..)
+            .filter(|(_, _, handle)| !fetched_handles.contains(handle))
+            .map(|(prod, cons, _)| (prod, cons))
+            .collect();
+        if remaining.is_empty() {
+            return Ok(());
+        }
+        // Build a digraph replica including existing edges +
+        // remaining deferred edges and check for cycles
+        let mut digraph = self.graph.map(|idx, _| idx, |_, _| ()).graph().clone();
+        for (producer, consumer) in remaining.iter() {
             digraph.add_edge(*producer, *consumer, ());
         }
         let mut tarjan = daggy::petgraph::algo::TarjanScc::new();
         let mut sccs = Vec::new();
         tarjan.run(&digraph, |scc| {
             if scc.len() > 1 {
-                // All non-singleton SCCs in a directed graph are
-                // dependence cycles
                 sccs.push(scc.to_vec());
             }
         });
@@ -368,9 +414,6 @@ impl DFComponentGraph {
                         .graph
                         .node_weight_mut(*idx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    // Mark the node as uncomputable so we don't go
-                    // and mark as completed operations that are in
-                    // error.
                     tx.is_uncomputable = true;
                     error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
 		       "Transaction is part of a dependence cycle");
@@ -384,26 +427,20 @@ impl DFComponentGraph {
                 }
             }
             return Err(SchedulerError::CyclicDependence.into());
-        } else {
-            // If no dependence cycles were found, then we can
-            // complete the graph and proceed to execution
-            for (producer, consumer) in dependence_pairs.iter() {
-                // The error case here should not happen as we've
-                // already covered it by testing for SCCs in the graph
-                // first
-                if self.graph.add_edge(*producer, *consumer, ()).is_err() {
-                    let prod = self
-                        .graph
-                        .node_weight(*producer)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    let cons = self
-                        .graph
-                        .node_weight(*consumer)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
+        }
+        for (producer, consumer) in remaining.iter() {
+            if self.graph.add_edge(*producer, *consumer, ()).is_err() {
+                let prod = self
+                    .graph
+                    .node_weight(*producer)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                let cons = self
+                    .graph
+                    .node_weight(*consumer)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
 		       "Dependence cycle when adding dependence - initial cycle detection failed");
-                    return Err(SchedulerError::CyclicDependence.into());
-                }
+                return Err(SchedulerError::CyclicDependence.into());
             }
         }
         Ok(())
