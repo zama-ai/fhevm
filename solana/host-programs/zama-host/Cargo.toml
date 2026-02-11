@@ -12,6 +12,7 @@ name = "zama_host"
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
+anchor-debug = []
 idl-build = ["anchor-lang/idl-build"]
 cpi = ["no-entrypoint"]
 default = []
