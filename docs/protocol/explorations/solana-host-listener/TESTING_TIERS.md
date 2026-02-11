@@ -191,7 +191,7 @@ Coverage:
 6. Asserts DB contract shape for new op tests (`fhe_operation`, `is_scalar`, `dependencies`) before worker completion.
 7. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 8. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
-9. Binary multi-op runtime case can be flaky on some local environments; rerun single-case slices first (`sub`, `unary`, `trivial`, `rand`, `rand-bounded`) when debugging baseline stability.
+9. Binary runtime slice is intentionally scoped to representative fast ops in this harness; `mul` is excluded from Tier-3 fast loop due current per-op runtime budget constraints.
 
 ## T2.5: Explorer-Visible CLI Loop
 

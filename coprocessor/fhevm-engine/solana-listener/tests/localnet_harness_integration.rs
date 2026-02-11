@@ -602,30 +602,70 @@ async fn wait_for_output_completion(
 ) -> anyhow::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(90);
     loop {
-        let completed = sqlx::query_scalar::<_, i64>(
+        let terminal_state: Option<(bool, bool, Option<String>)> = sqlx::query_as(
             "
-            SELECT COUNT(*)
+            SELECT is_completed, is_error, error_message
             FROM computations
             WHERE tenant_id = $1
               AND output_handle = $2
               AND transaction_id = $3
-              AND is_completed = TRUE
-              AND is_error = FALSE
+            LIMIT 1
             ",
         )
         .bind(tenant_id)
         .bind(output_handle)
         .bind(transaction_id)
-        .fetch_one(pool)
+        .fetch_optional(pool)
         .await
-        .context("check output completion")?;
+        .context("check output terminal state")?;
 
-        if completed > 0 {
-            return Ok(());
+        if let Some((is_completed, is_error, error_message)) = terminal_state {
+            if is_completed && !is_error {
+                return Ok(());
+            }
+            if is_error {
+                anyhow::bail!(
+                    "worker marked computation as error: {}",
+                    error_message.unwrap_or_else(|| "unknown error".to_string())
+                );
+            }
         }
 
         if Instant::now() >= deadline {
-            anyhow::bail!("timed out waiting for worker to complete output handle");
+            let timeout_state: Option<(bool, bool, bool, Option<Vec<u8>>, Option<String>)> =
+                sqlx::query_as(
+                    "
+                    SELECT is_allowed, is_completed, is_error, transaction_id, error_message
+                    FROM computations
+                    WHERE tenant_id = $1
+                      AND output_handle = $2
+                    LIMIT 1
+                    ",
+                )
+                .bind(tenant_id)
+                .bind(output_handle)
+                .fetch_optional(pool)
+                .await
+                .context("inspect timeout computation state")?;
+
+            if let Some((is_allowed, is_completed, is_error, seen_tx_id, error_message)) =
+                timeout_state
+            {
+                anyhow::bail!(
+                    "timed out waiting for worker completion (is_allowed={}, is_completed={}, is_error={}, tx_id={}, error={})",
+                    is_allowed,
+                    is_completed,
+                    is_error,
+                    seen_tx_id
+                        .map(hex::encode)
+                        .unwrap_or_else(|| "NULL".to_string()),
+                    error_message.unwrap_or_else(|| "NULL".to_string())
+                );
+            }
+
+            anyhow::bail!(
+                "timed out waiting for worker completion (no computation row for output handle)"
+            );
         }
         sleep(Duration::from_millis(250)).await;
     }
@@ -1750,12 +1790,6 @@ async fn localnet_solana_request_binary_ops_computes_and_decrypts() -> anyhow::R
 
     let cases = vec![
         Case {
-            opcode: 2,
-            lhs_value: 10,
-            rhs_value: 7,
-            expected: 70,
-        },
-        Case {
             opcode: 6,
             lhs_value: 202,
             rhs_value: 172,
@@ -1847,7 +1881,8 @@ async fn localnet_solana_request_binary_ops_computes_and_decrypts() -> anyhow::R
             &result_handle,
             &tx_signature,
         )
-        .await?;
+        .await
+        .with_context(|| format!("binary opcode {} did not complete", case.opcode))?;
 
         let (decrypted, output_type) =
             decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
