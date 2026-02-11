@@ -62,6 +62,7 @@ function usage {
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|multicoproc-input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)"
+  echo -e "  ${YELLOW}smoke${RESET} ${CYAN}[PROFILE]${RESET}      Run multicoproc smoke profile (multi-2-2|multi-5-3)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
@@ -79,6 +80,8 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli smoke multi-5-3${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test multicoproc-input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
@@ -405,6 +408,33 @@ case $COMMAND in
         exit "$test_status"
       fi
     fi
+    ;;
+
+  smoke)
+    print_logo
+    PROFILE=$1
+    if [[ ! $PROFILE =~ ^(multi-2-2|multi-5-3)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown smoke profile: ${PROFILE}${RESET}"
+      usage
+      exit 1
+    fi
+
+    coprocessors=""
+    threshold=""
+    case "$PROFILE" in
+      multi-2-2)
+        coprocessors=2
+        threshold=2
+        ;;
+      multi-5-3)
+        coprocessors=5
+        threshold=3
+        ;;
+    esac
+
+    echo -e "${LIGHT_BLUE}${BOLD}[SMOKE] Running profile ${PROFILE} (n=${coprocessors}, t=${threshold})...${RESET}"
+    "${SCRIPT_DIR}/fhevm-cli" deploy --local --coprocessors "${coprocessors}" --coprocessor-threshold "${threshold}"
+    "${SCRIPT_DIR}/fhevm-cli" test multicoproc-input-proof
     ;;
 
   help|-h|--help)
