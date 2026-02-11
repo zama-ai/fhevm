@@ -93,8 +93,8 @@ function usage {
   echo -e "${BLUE}============================================================${RESET}"
 }
 
-function collect_multicoproc_logs() {
-  echo -e "${LIGHT_BLUE}${BOLD}[LOGS] Collecting multicoprocessor logs (last 10m)...${RESET}"
+function collect_coprocessor_topology_logs() {
+  echo -e "${LIGHT_BLUE}${BOLD}[LOGS] Collecting coprocessor topology logs (last 10m)...${RESET}"
   local containers
   containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor[0-9-]*-(host-listener|gw-listener|tfhe-worker|sns-worker|transaction-sender)$' || true)
   if [ -z "$containers" ]; then
@@ -109,11 +109,11 @@ function collect_multicoproc_logs() {
   done <<< "$containers"
 }
 
-function wait_for_multicoproc_key_bootstrap() {
+function wait_for_coprocessor_key_bootstrap() {
   local timeout_seconds=300
   local poll_interval=5
   local elapsed=0
-  echo -e "${LIGHT_BLUE}${BOLD}[WAIT] Waiting for multicoprocessor key bootstrap...${RESET}"
+  echo -e "${LIGHT_BLUE}${BOLD}[WAIT] Waiting for coprocessor key bootstrap...${RESET}"
   while [ "$elapsed" -lt "$timeout_seconds" ]; do
     local ready_count=0
     local total_count=0
@@ -262,7 +262,7 @@ case $COMMAND in
     GREP=""
     NO_RELAYER=""
     NO_COMPILE=""
-    COLLECT_MULTICOPROC=""
+    WAIT_FOR_KEY_BOOTSTRAP=""
 
     while (( "$#" )); do
       case "$1" in
@@ -322,14 +322,10 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
-        input-proof)
+        input-proof|multicoproc-input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
-          ;;
-        multicoproc-input-proof)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] MULTICOPROCESSOR INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test user input uint64")
-          COLLECT_MULTICOPROC="1"
+          WAIT_FOR_KEY_BOOTSTRAP="1"
           ;;
         input-proof-compute-decrypt)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
@@ -392,8 +388,8 @@ case $COMMAND in
     fi
     if [ "$TEST_TYPE" != "debug" ]; then
       echo -e "${log_message}"
-      if [ -n "$COLLECT_MULTICOPROC" ]; then
-        wait_for_multicoproc_key_bootstrap
+      if [ -n "$WAIT_FOR_KEY_BOOTSTRAP" ]; then
+        wait_for_coprocessor_key_bootstrap
       fi
       test_status=0
       if docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"; then
@@ -401,8 +397,8 @@ case $COMMAND in
       else
         test_status=$?
       fi
-      if [ -n "$COLLECT_MULTICOPROC" ]; then
-        collect_multicoproc_logs
+      if [ -n "$WAIT_FOR_KEY_BOOTSTRAP" ]; then
+        collect_coprocessor_topology_logs
       fi
       if [ "$test_status" -ne 0 ]; then
         exit "$test_status"
