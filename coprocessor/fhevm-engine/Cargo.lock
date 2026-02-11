@@ -8291,6 +8291,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "urlencoding",
 ]
 
 [[package]]

@@ -31,8 +31,38 @@ Tier 3 e2e (encrypt/request/compute/decrypt):
 /Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
 ```
 
+Explorer-visible CLI run (external validator + optional Docker Postgres):
+
+1. Start local validator with host program loaded under the canonical program id:
+
+```bash
+solana-test-validator \
+  --reset \
+  --ledger /tmp/solana-codex-ledger \
+  --rpc-port 8899 \
+  --faucet-port 9900 \
+  --bpf-program Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq \
+  /Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs/target/deploy/zama_host.so
+```
+
+2. Run the PoC runner against that RPC:
+
+```bash
+cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo run -p solana-listener --features solana-e2e --bin solana_poc_runner -- \
+  --rpc-url http://127.0.0.1:8899 \
+  --wallet /Users/work/.config/solana/id.json \
+  --postgres-mode docker
+```
+
+The runner prints:
+
+1. request/allow tx signatures
+2. explorer URLs (custom cluster URL pre-filled)
+3. ingestion counters (`computations`, `allowed_handles`, `pbs_computations`)
+
 Notes:
 
 1. Tier 3 uses ignored integration tests and requires Docker, Anchor, and Solana CLI tooling.
 2. `SQLX_OFFLINE=true` is recommended for deterministic local compilation of test binaries.
-3. CLI mode writes to DB by default (`SOLANA_DRY_RUN=false`); set `SOLANA_DRY_RUN=true` for ingest preview without SQL writes.
+3. `solana_poc_runner` requires the target program id to match the program's declared id (Anchor `DeclaredProgramIdMismatch` otherwise).

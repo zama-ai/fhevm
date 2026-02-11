@@ -1,7 +1,7 @@
 # Solana Host Listener Testing Tiers
 
 Date: 2026-02-09
-Last synced: 2026-02-10
+Last synced: 2026-02-11
 Status: Active
 
 ## Goal
@@ -186,6 +186,24 @@ Coverage:
 6. Asserts DB contract shape for new op tests (`fhe_operation`, `is_scalar`, `dependencies`) before worker completion.
 7. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 8. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
+
+## T2.5: Explorer-Visible CLI Loop
+
+Purpose:
+
+1. Run a direct local validator flow without testcontainers so txs are visible in explorer.
+2. Keep fast demo/instrumentation loop with machine-readable outputs.
+
+Binary:
+
+`/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/src/bin/solana_poc_runner.rs`
+
+Flow:
+
+1. Start `solana-test-validator` with `--bpf-program <canonical_program_id> <zama_host.so>`.
+2. Run `solana_poc_runner` against `--rpc-url http://127.0.0.1:8899`.
+3. Runner submits `request_add` + `allow`, ingests via finalized RPC source, and prints explorer URLs + DB counters.
+4. Optional Postgres mode: `--postgres-mode docker` (default) to auto-provision/dispose local Postgres container.
 
 ## Canonical v0 Sanity Acceptance (single flow)
 

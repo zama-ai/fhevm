@@ -1,7 +1,7 @@
 # Solana Host Listener Learning Log
 
 Date opened: 2026-02-09
-Last synced: 2026-02-10
+Last synced: 2026-02-11
 Branch: `codex/solana-host-listener-discovery`
 Status: Active
 
@@ -28,7 +28,8 @@ flowchart TD
   E10 --> E11["Experiment 11: host program simplification (KISS/YAGNI)"]
   E11 --> E12["Experiment 12: inline host handlers (remove impl indirection)"]
   E12 --> E13["Experiment 13: Tier-3 runtime parity expansion (if_then_else + cast)"]
-  E13 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E13 --> E14["Experiment 14: explorer-visible CLI runner (external validator mode)"]
+  E14 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -52,6 +53,7 @@ flowchart TD
 17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
 18. Host program handlers are now direct/inline (no `request_*_impl` helper layer), with unchanged event payload semantics.
 19. Tier-3 runtime validation now includes `request_if_then_else` and `request_cast` with DB contract assertions (`fhe_operation`, `dependencies`, `is_scalar`) and decrypt checks.
+20. A new CLI runner path exists for explorer-visible PoC runs on external validator RPC (`solana_poc_runner`), with optional Dockerized Postgres provisioning.
 
 ## Open Questions
 
@@ -316,6 +318,19 @@ Notes:
 - Validated both runtime tests:
   - `localnet_solana_request_if_then_else_computes_and_decrypts`
   - `localnet_solana_request_cast_computes_and_decrypts`
+
+### Experiment 14: Explorer-visible CLI runner (external validator mode)
+
+Date: 2026-02-11
+Objective: Add a non-testcontainers runner path that keeps tx visibility in explorer while preserving listener ingest checks.
+Result: Completed for `request_add` + `allow`.
+Confidence: High
+Notes:
+
+- Added `solana_poc_runner` binary in `solana-listener`.
+- Supports external RPC mode (`--rpc-url`) and optional Dockerized Postgres (`--postgres-mode docker`).
+- Emits tx signatures and preformatted explorer URLs, then runs finalized-RPC ingestion and DB counters.
+- Requires program-id/declared-id consistency; recommended local startup is `solana-test-validator --bpf-program <program_id> <zama_host.so>`.
 
 ### D3
 
