@@ -83,7 +83,6 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-3-5${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test multicoproc-input-proof${RESET}   # legacy alias of input-proof"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
@@ -93,6 +92,7 @@ function usage {
   echo -e "${BLUE}============================================================${RESET}"
 }
 
+# Best-effort log dump across all coprocessor instances for quick local triage.
 function collect_coprocessor_topology_logs() {
   echo -e "${LIGHT_BLUE}${BOLD}[LOGS] Collecting coprocessor topology logs (last 10m)...${RESET}"
   local containers
@@ -322,7 +322,7 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
-        input-proof|multicoproc-input-proof)
+        input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
           WAIT_FOR_KEY_BOOTSTRAP="1"
@@ -430,7 +430,7 @@ case $COMMAND in
 
     echo -e "${LIGHT_BLUE}${BOLD}[SMOKE] Running profile ${PROFILE} (n=${coprocessors}, t=${threshold})...${RESET}"
     "${SCRIPT_DIR}/fhevm-cli" deploy --local --coprocessors "${coprocessors}" --coprocessor-threshold "${threshold}"
-    "${SCRIPT_DIR}/fhevm-cli" test multicoproc-input-proof
+    "${SCRIPT_DIR}/fhevm-cli" test input-proof
     ;;
 
   help|-h|--help)
