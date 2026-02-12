@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO tenants(tenant_api_key, chain_id, key_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)\n            VALUES (\n                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',\n                12345,\n                '\\x0500000000000000000000000000000000000000000000000000000000000001',\n                '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',\n                '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',\n                $1,\n                $2,\n                $3,\n                $4\n            )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f494db3ec1b377fe77fe147a71c2be0161b9a7fafed9194de09856a97f269aeb"
+}

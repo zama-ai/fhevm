@@ -173,10 +173,11 @@ pub async fn setup_test_user(
 
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_pk)
+            INSERT INTO tenants(tenant_api_key, chain_id, key_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_pk)
             VALUES (
                 'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
+                '\\x0500000000000000000000000000000000000000000000000000000000000001',
                 $1,
                 '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
                 $2,
