@@ -12,6 +12,7 @@ hex = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 tfhe = { workspace = true }
 tokio = { workspace = true }

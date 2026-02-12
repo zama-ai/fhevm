@@ -261,14 +261,19 @@ fn decompress_transaction_inputs(
     Ok(count)
 }
 
+use rand::prelude::*;
 fn re_randomise_operation_inputs(
     cts: &mut [SupportedFheCiphertexts],
     opcode: i32,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<()> {
+    let mut rng = rand::rng();
     let mut re_rand_context = ReRandomizationContext::new(
         OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [opcode.to_be_bytes().as_slice()],
+        [
+            opcode.to_be_bytes().as_slice(),
+            rng.random::<u64>().to_be_bytes().as_slice(),
+        ],
         COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
     );
     for ct in cts.iter() {
