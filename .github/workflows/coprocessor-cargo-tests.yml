@@ -82,7 +82,7 @@ jobs:
         sed -n '1,120p' coprocessor/fhevm-engine/fhevm-engine-common/src/lib.rs
         sed -n '1,160p' coprocessor/fhevm-engine/fhevm-engine-common/src/telemetry.rs
         sed -n '1,120p' coprocessor/fhevm-engine/solana-listener/src/bin/main.rs
-        cargo tree -p solana-listener -i fhevm-engine-common
+        cargo tree --manifest-path coprocessor/fhevm-engine/Cargo.toml -p solana-listener -i fhevm-engine-common
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
