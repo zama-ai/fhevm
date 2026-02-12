@@ -10,9 +10,7 @@ use kms_grpc::rpc_types::protobuf_to_alloy_domain;
 use kms_lib::client::js_api::{new_client, new_server_id_addr};
 use kms_lib::client::user_decryption_wasm::{CiphertextHandle, ParsedUserDecryptionRequest};
 use kms_lib::consts::SAFE_SER_SIZE_LIMIT;
-use kms_lib::cryptography::internal_crypto_types::{
-    PrivateEncKey, UnifiedPrivateEncKey, UnifiedPublicEncKey,
-};
+use kms_lib::cryptography::encryption::{PrivateEncKey, UnifiedPrivateEncKey, UnifiedPublicEncKey};
 use tracing::{debug, info};
 
 /// Builder for processing user decryption responses
@@ -228,7 +226,7 @@ impl ResponseProcessor {
         .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
 
         let ml_kem_priv_key =
-            bc2wrap::deserialize::<PrivateEncKey<ml_kem::MlKem512>>(&private_key_bytes)
+            bc2wrap::deserialize_safe::<PrivateEncKey<ml_kem::MlKem512>>(&private_key_bytes)
                 .map(UnifiedPrivateEncKey::MlKem512)
                 .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
 
@@ -246,11 +244,7 @@ impl ResponseProcessor {
                 .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}")))?
         } else {
             client
-                .insecure_process_user_decryption_resp(
-                    &responses,
-                    &ml_kem_pub_key,
-                    &ml_kem_priv_key,
-                )
+                .insecure_process_user_decryption_resp(&responses, &ml_kem_priv_key)
                 .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}")))?
         };
 

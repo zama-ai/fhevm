@@ -40,6 +40,7 @@ jobs:
             - 'sdk/rust-sdk/src/**'
             - 'sdk/rust-sdk/examples/**'
             - 'sdk/rust-sdk/Cargo.toml'
+            - gateway-contracts/rust-bindings/**
 
   start-runner:
     name: sdk-rust-sdk-tests/start-runner
