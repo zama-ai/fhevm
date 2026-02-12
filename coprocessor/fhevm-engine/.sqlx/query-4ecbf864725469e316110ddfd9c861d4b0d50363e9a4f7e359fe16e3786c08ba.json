@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO keys(key_id, key_id_gw, pks_key, sks_key, cks_key, sns_pk)\n            VALUES (\n                $1,\n                $2,\n                $3,\n                $4,\n                $5,\n                $6\n            )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Oid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ecbf864725469e316110ddfd9c861d4b0d50363e9a4f7e359fe16e3786c08ba"
+}

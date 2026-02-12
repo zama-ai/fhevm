@@ -1,6 +1,9 @@
 use alloy_primitives::Keccak256;
 use bigdecimal::num_bigint::BigInt;
-use fhevm_engine_common::{types::AllowEvents, utils::safe_deserialize_key};
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
@@ -21,6 +24,7 @@ pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
 }
 
 pub const DEF_TYPE: FheType = FheType::FheUint64;
+pub const HOST_CHAIN_ID: i64 = 12345;
 
 #[derive(Clone)]
 pub enum FheType {
@@ -70,7 +74,7 @@ pub fn next_random_handle(ct_type: FheType) -> Handle {
 
     // Handle from computation
     handle[21] = 255u8;
-    handle[22..30].copy_from_slice(&ecfg.chain_id.to_be_bytes());
+    handle[22..30].copy_from_slice(&ecfg.chain_id.as_u64().to_be_bytes());
     handle[30] = ct_type as u8;
     handle[31] = 0u8;
     Handle::from_slice(&handle)
@@ -166,23 +170,21 @@ pub async fn allow_handle(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
 
-    let ecfg = EnvConfig::new();
     let _query =
             sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
+                "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4)
                      ON CONFLICT DO NOTHING;",
-                ecfg.tenant_id,
                 handle,
                 account_address,
                 event_type as i16,
                 transaction_id.to_vec(),
             ).execute(tx.deref_mut()).await?;
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
+        "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id) VALUES($1, $2, $3) 
                      ON CONFLICT DO NOTHING;",
-        ecfg.tenant_id,
         handle,
-        transaction_id.to_vec()
+        transaction_id.to_vec(),
+        HOST_CHAIN_ID
     )
     .execute(tx.deref_mut())
     .await?;
@@ -199,15 +201,12 @@ pub async fn allow_handles(
     account_address: String,
     disable_pbs_computations: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ecfg = EnvConfig::new();
-    let tenant_id = vec![ecfg.tenant_id; handles.len()];
     let account_address = vec![account_address; handles.len()];
     let event_type = vec![event_type as i16; handles.len()];
     let _query = sqlx::query!(
-        "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type)
-                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::TEXT[], $4::SMALLINT[])
+        "INSERT INTO allowed_handles(handle, account_address, event_type)
+                 SELECT * FROM UNNEST($1::BYTEA[], $2::TEXT[], $3::SMALLINT[])
                  ON CONFLICT DO NOTHING;",
-        &tenant_id,
         handles,
         &account_address,
         &event_type,
@@ -219,11 +218,11 @@ pub async fn allow_handles(
         return Ok(());
     }
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(tenant_id, handle)
-                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[]) 
+        "INSERT INTO pbs_computations(handle, host_chain_id)
+                 SELECT * FROM UNNEST($1::BYTEA[], $2::BIGINT[])
                  ON CONFLICT DO NOTHING;",
-        &tenant_id,
         handles,
+        &vec![HOST_CHAIN_ID; handles.len()],
     )
     .execute(tx.deref_mut())
     .await?;
@@ -271,7 +270,6 @@ pub async fn generate_trivial_encrypt(
 }
 
 pub async fn query_and_save_pks(
-    tenant_id: i32,
     pool: &sqlx::PgPool,
 ) -> Result<(tfhe::CompactPublicKey, Arc<tfhe::zk::CompactPkeCrs>), Box<dyn std::error::Error>> {
     let keys = KEYS.read().await;
@@ -284,25 +282,15 @@ pub async fn query_and_save_pks(
         return Ok(keys.clone());
     }
 
-    info!("Querying database for keys of tenant {}", tenant_id);
+    info!("Querying database for keys");
 
-    let tenants = sqlx::query!(
-        "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, public_params
-            FROM tenants
-            WHERE tenant_id = $1
-        ",
-        tenant_id,
-    )
-    .fetch_one(pool)
-    .await?;
+    let db_key_cache = DbKeyCache::new(100)?;
+    let key = db_key_cache.fetch_latest(pool).await?;
+    let crs_cache = CrsCache::load(pool).await?;
+    let crs = crs_cache.get_latest().ok_or("No CRS found")?.clone();
 
-    let pks: tfhe::CompactPublicKey = safe_deserialize_key(&tenants.pks_key)?;
-    let public_params: Arc<tfhe::zk::CompactPkeCrs> =
-        Arc::new(safe_deserialize_key(&tenants.public_params)?);
-
-    keys.replace((pks.clone(), public_params.clone()));
-    Ok((pks, public_params))
+    keys.replace((key.pks.clone(), crs.crs.clone().into()));
+    Ok((key.pks, crs.crs.into()))
 }
 
 pub async fn get_ciphertext_digests(
@@ -333,7 +321,7 @@ pub async fn get_ciphertext_digests(
 }
 
 /// User configuration in which benchmarks must be run.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct EnvConfig {
     #[allow(dead_code)]
     pub evgen_scenario: String,
@@ -342,11 +330,7 @@ pub struct EnvConfig {
     #[allow(dead_code)]
     pub acl_contract_address: String,
     #[allow(dead_code)]
-    pub chain_id: i64,
-    #[allow(dead_code)]
-    pub api_key: String,
-    #[allow(dead_code)]
-    pub tenant_id: i32,
+    pub chain_id: ChainId,
     #[allow(dead_code)]
     pub synthetic_chain_length: u32,
     #[allow(dead_code)]
@@ -363,6 +347,13 @@ use std::env;
 
 use crate::args::Args;
 use crate::zk_gen::KEYS;
+
+impl Default for EnvConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EnvConfig {
     #[allow(dead_code)]
     pub fn new() -> Self {
@@ -378,17 +369,9 @@ impl EnvConfig {
             Ok(val) => val,
             Err(_) => "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c".to_string(),
         };
-        let chain_id: i64 = match env::var("CHAIN_ID") {
-            Ok(val) => val.parse::<i64>().unwrap(),
-            Err(_) => 12345i64,
-        };
-        let api_key: String = match env::var("API_KEY") {
-            Ok(val) => val,
-            Err(_) => "a1503fb6-d79b-4e9e-826d-44cf262f3e05".to_string(),
-        };
-        let tenant_id: i32 = match env::var("TENANT_ID") {
-            Ok(val) => val.parse::<i32>().unwrap(),
-            Err(_) => 1i32,
+        let chain_id: ChainId = match env::var("CHAIN_ID") {
+            Ok(val) => ChainId::try_from(val.parse::<i64>().unwrap()).unwrap(),
+            Err(_) => ChainId::try_from(12345_i64).unwrap(),
         };
         let synthetic_chain_length: u32 = match env::var("SYNTHETIC_CHAIN_LENGTH") {
             Ok(val) => val.parse::<u32>().unwrap(),
@@ -418,8 +401,6 @@ impl EnvConfig {
             evgen_db_url,
             acl_contract_address,
             chain_id,
-            api_key,
-            tenant_id,
             synthetic_chain_length,
             min_decryption_type,
             max_decryption_type,

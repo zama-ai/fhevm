@@ -7,7 +7,6 @@ use std::sync::Once;
 use tokio::task::JoinSet;
 
 pub mod daemon_cli;
-mod db_queries;
 pub mod dependence_chain;
 pub mod health_check;
 pub mod server;

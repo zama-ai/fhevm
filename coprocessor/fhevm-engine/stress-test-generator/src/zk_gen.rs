@@ -1,6 +1,7 @@
 use crate::utils::{
     new_transaction_id, next_random_handle, pool, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE,
 };
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::to_hex;
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 use rand::Rng;
@@ -36,7 +37,7 @@ struct ZkData {
     pub contract_address: String,
     pub user_address: String,
     pub acl_contract_address: String,
-    pub chain_id: i64,
+    pub chain_id: ChainId,
 }
 
 impl ZkData {
@@ -46,9 +47,8 @@ impl ZkData {
         let user_bytes = alloy_primitives::Address::from_str(&self.user_address)?.into_array();
         let acl_bytes =
             alloy_primitives::Address::from_str(&self.acl_contract_address)?.into_array();
-        let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id)
-            .to_owned()
-            .to_be_bytes();
+        let chain_id_bytes: [u8; 32] =
+            Into::<alloy_primitives::U256>::into(self.chain_id).to_be_bytes();
 
         // Copy contract address into the first 20 bytes
         let front: Vec<u8> = [contract_bytes, user_bytes, acl_bytes].concat();
@@ -72,11 +72,11 @@ async fn insert_proof(
 ) -> Result<(), sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified, transaction_id, retry_count)
+            "INSERT INTO verify_proofs (zk_proof_id, input, host_chain_id, contract_address, user_address, verified, transaction_id, retry_count)
             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)" 
         ).bind(request_id)
         .bind(zk_pok)
-        .bind(aux.chain_id)
+        .bind(aux.chain_id.as_i64())
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
         .bind(transaction_id.to_vec())
@@ -176,7 +176,7 @@ pub async fn generate_random_handle_vec(
     };
     let aux_data = zk_data.to_owned().assemble()?;
 
-    let (pks, public_params) = query_and_save_pks(ecfg.tenant_id, &pool).await?;
+    let (pks, public_params) = query_and_save_pks(&pool).await?;
 
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&pks);
     for _ in 0..count {
@@ -228,7 +228,7 @@ pub async fn generate_and_insert_inputs_batch(
     let ecfg = EnvConfig::new();
     let pool = pool(listener_event_to_db).await;
 
-    let (pks, public_params) = query_and_save_pks(ecfg.tenant_id, &pool).await?;
+    let (pks, public_params) = query_and_save_pks(&pool).await?;
 
     // Generate a batch of zkpoks
     for idx in 0..batch_size {

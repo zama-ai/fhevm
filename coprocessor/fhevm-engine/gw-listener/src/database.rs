@@ -1,114 +1,69 @@
 use std::ops::DerefMut;
 
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use tracing::info;
 
-use fhevm_engine_common::tenant_keys::write_large_object_in_chunks_tx;
+use tokio_util::bytes::Bytes;
 
-use crate::{ChainId, KeyType, TenantId};
-
-pub async fn tenant_id(
-    db_pool: &Pool<Postgres>,
-    chain_id: ChainId,
-) -> anyhow::Result<Option<TenantId>> {
-    let rows = sqlx::query!(
-        "SELECT tenant_id FROM tenants WHERE chain_id = $1",
-        chain_id as i64
-    )
-    .fetch_all(db_pool)
-    .await?;
-    if rows.len() > 1 {
-        anyhow::bail!("Multiple tenants found for chain_id {chain_id}");
-    } else if rows.is_empty() {
-        return Ok(None);
-    }
-    info!(
-        "Found tenant_id {} for chain_id {}",
-        rows[0].tenant_id, chain_id
-    );
-    Ok(Some(rows[0].tenant_id as TenantId))
-}
+use fhevm_engine_common::db_keys::{write_large_object_in_chunks_tx, DbKeyId};
 
 const CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128MB
 
-pub async fn update_tenant_key(
-    tx: &mut Transaction<'_, Postgres>,
-    key_id: &[u8],
-    key_type: KeyType,
-    key_bytes: &[u8],
-    reduced_key_bytes: Option<Vec<u8>>,
-    tenant_id: TenantId,
-    host_chain_id: ChainId,
-) -> anyhow::Result<()> {
-    let query = match key_type {
-        KeyType::ServerKey => {
-            info!(tenant_id, host_chain_id, key_id, "Updating server key");
-            let Some(reduced_key_bytes) = reduced_key_bytes else {
-                anyhow::bail!("Reduced key bytes must be provided for server key");
-            };
-            let oid = write_large_object_in_chunks_tx(tx, key_bytes, CHUNK_SIZE).await?;
-            sqlx::query!(
-                "UPDATE tenants
-                SET
-                    sns_pk = $1,
-                    sks_key = $2,
-                    key_id = $3
-                WHERE tenant_id = $4 AND chain_id = $5",
-                oid,
-                reduced_key_bytes,
-                key_id,
-                tenant_id as i32,
-                host_chain_id as i64,
-            )
-        }
-        KeyType::PublicKey => {
-            info!(tenant_id, host_chain_id, key_id, "Updating public key");
-            sqlx::query!(
-                "UPDATE tenants
-                SET
-                    pks_key = $1,
-                    key_id = $2
-                WHERE tenant_id = $3 AND chain_id = $4",
-                key_bytes,
-                key_id,
-                tenant_id as i32,
-                host_chain_id as i64,
-            )
-        }
-    };
-    let result = query.execute(tx.deref_mut()).await?;
-    if result.rows_affected() == 0 {
-        anyhow::bail!(
-            "No tenant found for tenant_id {} and chain_id {}",
-            tenant_id,
-            host_chain_id
-        );
+#[derive(Debug, Default)]
+pub(crate) struct KeyRecord {
+    pub key_id_gw: DbKeyId,
+    pub pks_key: Bytes,
+    pub sks_key: Bytes,
+    pub sns_pk: Bytes,
+}
+
+impl KeyRecord {
+    pub fn is_valid(&self) -> bool {
+        !self.key_id_gw.is_empty()
+            && !self.pks_key.is_empty()
+            && !self.sks_key.is_empty()
+            && !self.sns_pk.is_empty()
     }
+}
+
+pub async fn insert_key(
+    tx: &mut Transaction<'_, Postgres>,
+    key_record: &KeyRecord,
+) -> anyhow::Result<()> {
+    // TODO: we should extract the key_id from the server key
+    // TODO: think about what happens to the written object if the SQL query fails
+    let oid = write_large_object_in_chunks_tx(tx, &key_record.sns_pk, CHUNK_SIZE).await?;
+    let query = sqlx::query!(
+        "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, sns_pk)
+        VALUES ('', $1, $2, $3, $4)
+        ON CONFLICT (key_id_gw) DO UPDATE SET
+            key_id = '',
+            pks_key = EXCLUDED.pks_key,
+            sks_key = EXCLUDED.sks_key,
+            sns_pk = EXCLUDED.sns_pk",
+        &key_record.key_id_gw,
+        key_record.pks_key.as_ref(),
+        key_record.sks_key.as_ref(),
+        oid,
+    );
+    query.execute(tx.deref_mut()).await?;
     Ok(())
 }
 
-pub async fn update_tenant_crs(
+// Inserts or updates the CRS associated with the given key ID.
+pub async fn insert_crs(
     tx: &mut Transaction<'_, Postgres>,
-    key_bytes: &[u8],
-    tenant_id: TenantId,
-    chain_id: ChainId,
+    id: &[u8],
+    crs: &[u8],
 ) -> anyhow::Result<()> {
-    info!(tenant_id, chain_id, "Updating crs");
+    info!(id, "Inserting crs");
     let query = sqlx::query!(
-        "UPDATE tenants
-        SET public_params = $1
-        WHERE tenant_id = $2 AND chain_id = $3",
-        key_bytes,
-        tenant_id as i32,
-        chain_id as i64,
+        "INSERT INTO crs (crs_id, crs)
+        VALUES ($1, $2)
+        ON CONFLICT (crs_id) DO NOTHING",
+        id,
+        crs
     );
-    let result = query.execute(tx.deref_mut()).await?;
-    if result.rows_affected() == 0 {
-        anyhow::bail!(
-            "No tenant found for tenant_id {} and chain_id {}",
-            tenant_id,
-            chain_id
-        );
-    }
+    query.execute(tx.deref_mut()).await?;
     Ok(())
 }

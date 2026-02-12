@@ -8,6 +8,7 @@ use crate::server::tfhe_worker::{
     TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
+use test_harness::db_utils::setup_test_key as setup_test_key_in_db;
 use tonic::metadata::MetadataValue;
 use utils::{
     decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_allowed_handles_computed,
@@ -17,6 +18,7 @@ mod dependence_chain;
 mod errors;
 mod health_check;
 mod inputs;
+mod migrations;
 mod operators;
 mod operators_from_events;
 mod random;
@@ -116,7 +118,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     // decrypt values
     {
         let decrypt_request = vec![h4.to_vec(), h3.to_vec()];
-        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         println!("decrypt request: {:?}", resp);
         assert_eq!(resp.len(), 2);
         // first value
@@ -193,7 +195,6 @@ async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
 
     let res = utils::decrypt_ciphertexts(
         &pool,
-        1,
         vec![
             hex::decode("de2c33227b24ca797f7ad88495648446c70612c17f416d27513c77f2d0810200")
                 .unwrap(),
@@ -228,13 +229,13 @@ async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::test]
 #[ignore]
 /// setup test data with keys
-async fn setup_test_user() -> Result<(), Box<dyn std::error::Error>> {
+async fn setup_test_key() -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(&std::env::var("DATABASE_URL").expect("expected to get db url"))
         .await?;
 
-    utils::setup_test_user(&pool).await?;
+    setup_test_key_in_db(&pool, false).await?;
 
     Ok(())
 }

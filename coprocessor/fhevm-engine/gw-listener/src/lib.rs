@@ -1,5 +1,6 @@
 use alloy::primitives::Uint;
 use alloy::transports::http::reqwest::Url;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
@@ -13,9 +14,7 @@ pub mod http_server;
 pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
-pub(crate) type ChainId = u64;
 pub(crate) type KeyId = Uint<256, 4>;
-pub(crate) type TenantId = u64;
 
 #[derive(Clone, Copy, Debug)]
 pub enum KeyType {
@@ -59,17 +58,23 @@ pub struct ConfigSettings {
 
 pub fn chain_id_from_env() -> Option<ChainId> {
     let chain_id_str = std::env::var("CHAIN_ID").ok()?;
-    let Ok(chain_id) = chain_id_str.parse::<u64>() else {
+    let Ok(raw) = chain_id_str.parse::<u64>() else {
         error!("CHAIN_ID environment variable is not a valid u64");
         return None;
     };
-    Some(chain_id)
+    match ChainId::try_from(raw) {
+        Ok(id) => Some(id),
+        Err(err) => {
+            error!(%err, "CHAIN_ID environment variable is out of range");
+            None
+        }
+    }
 }
 
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
-            host_chain_id: chain_id_from_env().unwrap_or(12345),
+            host_chain_id: chain_id_from_env().unwrap_or(ChainId::try_from(12345_u64).unwrap()),
             database_url: DatabaseURL::default(),
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ins AS (\n            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)\n            VALUES ($1, $2, $3, $4, $5, true)\n        )\n        SELECT pg_notify($6, '')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_notify",
+        "type_info": "Void"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f85174d7d805525319eb455b86ce97d0a7a05563aa7dff3d705a99cc9842b697"
+}

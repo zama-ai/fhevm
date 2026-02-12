@@ -99,7 +99,7 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -217,7 +217,7 @@ async fn verify_proof_response_empty_handles_success(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -333,7 +333,7 @@ async fn verify_proof_response_concurrent_success(
     let contract_chain_id = 42u64;
 
     let mut query_builder = QueryBuilder::<Postgres>::new("WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)");
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)");
     query_builder.push_values(0..count, |mut b, i| {
         b.push_bind(i as i64);
         b.push_bind(contract_chain_id as i64);
@@ -454,7 +454,7 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, false)
         )
         SELECT pg_notify($6, '')",
@@ -555,7 +555,7 @@ async fn verify_proof_response_reversal_already_verified(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -658,7 +658,7 @@ async fn reject_proof_response_reversal_already_rejected(
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, false)
         )
         SELECT pg_notify($6, '')",
@@ -758,7 +758,7 @@ async fn verify_proof_response_other_reversal(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -858,7 +858,7 @@ async fn reject_proof_response_other_reversal(
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, false)
         )
         SELECT pg_notify($6, '')",
@@ -955,7 +955,7 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -1055,7 +1055,7 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, false)
         )
         SELECT pg_notify($6, '')",
@@ -1157,7 +1157,7 @@ async fn verify_proof_max_retries_remove_entry(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
@@ -1249,7 +1249,7 @@ async fn verify_proof_max_retries_do_not_remove_entry(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, handles, verified)
             VALUES ($1, $2, $3, $4, $5, true)
         )
         SELECT pg_notify($6, '')",
