@@ -229,7 +229,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         tx: &mut DbTransaction<'_>,
         last_ready_block: u64,
     ) -> Result<(Vec<DelegationRow>, Vec<Vec<u8>>)> {
-        let delegations = delayed_sorted_delegation(tx, last_ready_block).await?;
+        let delegations =
+            delayed_sorted_delegation(tx, last_ready_block, self.conf.delegation_max_retry).await?;
         let nb_ready_delegations = delegations.len();
         if delegations.is_empty() {
             return Ok((vec![], vec![]));
@@ -552,6 +553,7 @@ fn expiration_date_to_u64(value: BigDecimal) -> u64 {
 pub async fn delayed_sorted_delegation(
     tx: &mut DbTransaction<'_>,
     up_to_block_number: u64,
+    delegation_max_retry: u64,
 ) -> Result<Vec<DelegationRow>> {
     let query = sqlx::query!(
         r#"
@@ -560,10 +562,12 @@ pub async fn delayed_sorted_delegation(
         WHERE block_number <= $1
         AND on_gateway = false
         AND reorg_out = false
+        AND gateway_nb_attempts <= $2
         ORDER BY block_number ASC, delegation_counter ASC, transaction_id ASC
         FOR UPDATE
         "#,
         up_to_block_number as i64,
+        delegation_max_retry as i64,
     );
     let delegations_rows = query.fetch_all(tx.deref_mut()).await?;
     let mut delegations = Vec::with_capacity(delegations_rows.len());
