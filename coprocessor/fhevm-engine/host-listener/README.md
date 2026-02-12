@@ -46,8 +46,8 @@ slow-lane work when fast lane is empty, which isolates heavy dependent traffic
 without reordering within a chain.
 
 When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
-throttling accounting, and promotes seen chains to
-`schedule_priority = 0` during ingest.
+throttling accounting, and promotes all chains to `schedule_priority = 0` at
+startup.
 
 ### Local stack notes
 
@@ -58,7 +58,7 @@ cd coprocessor/fhevm-engine
 cargo test -p host-listener --test host_listener_integration_tests \
   test_slow_lane_threshold_matrix_locally \
   test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally \
-  test_slow_lane_off_mode_promotes_seen_chain_locally -- --nocapture
+  test_slow_lane_off_mode_promotes_all_chains_on_startup_locally -- --nocapture
 ```
 
 Before any stack-level slow-lane validation, ensure key bootstrap is healthy:

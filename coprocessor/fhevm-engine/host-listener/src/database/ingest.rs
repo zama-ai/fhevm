@@ -183,11 +183,6 @@ pub async fn ingest_block_logs(
     .await;
 
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
-    let seen_dep_chain_ids = if slow_lane_enabled {
-        Vec::new()
-    } else {
-        chains.iter().map(|chain| chain.hash.to_vec()).collect()
-    };
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
@@ -268,20 +263,6 @@ pub async fn ingest_block_logs(
             &slow_dep_chain_ids,
         )
         .await?;
-    }
-    if !slow_lane_enabled {
-        let promoted = db
-            .promote_seen_dep_chains_to_fast_priority(
-                &mut tx,
-                &seen_dep_chain_ids,
-            )
-            .await?;
-        if promoted > 0 {
-            info!(
-                count = promoted,
-                "Slow-lane disabled: promoted seen chains to fast"
-            );
-        }
     }
     tx.commit().await
 }

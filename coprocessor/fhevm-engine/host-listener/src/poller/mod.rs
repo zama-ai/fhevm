@@ -142,6 +142,15 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+    if config.dependent_ops_max_per_chain == 0 {
+        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
 
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();

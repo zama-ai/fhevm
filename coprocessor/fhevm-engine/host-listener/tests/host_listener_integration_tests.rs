@@ -671,7 +671,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
 
 #[tokio::test]
 #[serial(db)]
-async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
+async fn test_slow_lane_off_mode_promotes_all_chains_on_startup_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
@@ -694,15 +694,9 @@ async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
         "setup phase should create at least one slow chain"
     );
 
-    ingest_dependent_burst_seeded(
-        &mut db,
-        &setup,
-        Some(last_handle),
-        1,
-        1_u64,
-        0,
-    )
-    .await?;
+    let _ = last_handle;
+    let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+    assert!(promoted > 0, "startup promotion should reset slow chains");
 
     let remaining_slow = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
@@ -711,7 +705,7 @@ async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
     .await?;
     assert_eq!(
         remaining_slow, 0,
-        "off mode should promote seen slow chains back to fast"
+        "off mode startup should promote all slow chains back to fast"
     );
     Ok(())
 }

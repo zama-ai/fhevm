@@ -152,26 +152,19 @@ impl Database {
         }
     }
 
-    pub async fn promote_seen_dep_chains_to_fast_priority(
+    pub async fn promote_all_dep_chains_to_fast_priority(
         &self,
-        tx: &mut Transaction<'_>,
-        seen_dep_chain_ids: &[Vec<u8>],
     ) -> Result<u64, SqlxError> {
-        if seen_dep_chain_ids.is_empty() {
-            return Ok(0);
-        }
-
+        let mut connection = self.pool().await.acquire().await?;
         let rows = sqlx::query(
             r#"
             UPDATE dependence_chain dc
             SET schedule_priority = $1
             WHERE dc.schedule_priority <> $1
-              AND dc.dependence_chain_id = ANY($2::bytea[])
             "#,
         )
         .bind(i16::from(SchedulePriority::Fast))
-        .bind(seen_dep_chain_ids)
-        .execute(tx.deref_mut())
+        .execute(connection.deref_mut())
         .await?;
         Ok(rows.rows_affected())
     }
