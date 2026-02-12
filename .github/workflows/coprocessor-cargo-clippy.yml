@@ -69,6 +69,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
 
@@ -76,21 +77,6 @@ jobs:
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
       with:
         node-version: 20.x
-
-    - name: Debug telemetry resolution
-      run: |
-        set -euxo pipefail
-        git rev-parse HEAD
-        rustc --version
-        cargo --version
-        sed -n '1,120p' coprocessor/fhevm-engine/fhevm-engine-common/src/lib.rs
-        sed -n '1,160p' coprocessor/fhevm-engine/fhevm-engine-common/src/telemetry.rs
-        sed -n '1,120p' coprocessor/fhevm-engine/solana-listener/src/bin/main.rs
-        cargo tree --manifest-path coprocessor/fhevm-engine/Cargo.toml -p solana-listener -i fhevm-engine-common
-
-    - name: Clean target (debug run)
-      run: cargo clean
-      working-directory: coprocessor/fhevm-engine
 
     - name: Run clippy
       run: |
