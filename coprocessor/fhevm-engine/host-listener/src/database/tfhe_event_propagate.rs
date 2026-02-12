@@ -15,7 +15,7 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres, Row};
+use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -162,14 +162,14 @@ impl Database {
             .fetch_one(connection.deref_mut())
             .await?;
 
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
             UPDATE dependence_chain dc
             SET schedule_priority = $1
             WHERE dc.schedule_priority <> $1
             "#,
+            i16::from(SchedulePriority::Fast)
         )
-        .bind(i16::from(SchedulePriority::Fast))
         .execute(connection.deref_mut())
         .await;
 
@@ -194,23 +194,23 @@ impl Database {
             return Ok(HashSet::new());
         }
 
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
             SELECT dependence_chain_id
             FROM dependence_chain
             WHERE schedule_priority = $1
               AND dependence_chain_id = ANY($2::bytea[])
             "#,
+            i16::from(SchedulePriority::Slow),
+            dep_chain_ids as _
         )
-        .bind(i16::from(SchedulePriority::Slow))
-        .bind(dep_chain_ids)
         .fetch_all(tx.deref_mut())
         .await?;
 
         let mut slow_dep_chain_ids =
             HashSet::with_capacity(rows.len() + dep_chain_ids.len());
         for row in rows {
-            let dep_chain_id: Vec<u8> = row.try_get("dependence_chain_id")?;
+            let dep_chain_id = row.dependence_chain_id;
             if let Ok(dep_chain_bytes) =
                 <[u8; 32]>::try_from(dep_chain_id.as_slice())
             {
