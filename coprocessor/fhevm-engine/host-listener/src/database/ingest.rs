@@ -226,9 +226,11 @@ pub async fn ingest_block_logs(
                     .iter()
                     .map(|dependency| dependency.to_vec())
             })
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect::<Vec<_>>();
         let existing_slow_parents = db
-            .find_slow_dep_chain_ids(&mut tx, parent_dep_chain_ids)
+            .find_slow_dep_chain_ids(&mut tx, &parent_dep_chain_ids)
             .await?;
         slow_dep_chain_ids.extend(existing_slow_parents);
         propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
