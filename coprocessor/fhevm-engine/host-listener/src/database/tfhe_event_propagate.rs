@@ -65,6 +65,7 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+const SLOW_LANE_RESET_ADVISORY_LOCK_KEY: i64 = 1_907_001;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
@@ -156,6 +157,18 @@ impl Database {
         &self,
     ) -> Result<u64, SqlxError> {
         let mut connection = self.pool().await.acquire().await?;
+        let lock_acquired =
+            sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock($1)")
+                .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+                .fetch_one(connection.deref_mut())
+                .await?;
+        if !lock_acquired {
+            info!(
+                "Slow-lane disabled: eager promotion skipped (another instance is resetting priorities)"
+            );
+            return Ok(0);
+        }
+
         let rows = sqlx::query(
             r#"
             UPDATE dependence_chain dc
@@ -165,8 +178,18 @@ impl Database {
         )
         .bind(i16::from(SchedulePriority::Fast))
         .execute(connection.deref_mut())
-        .await?;
-        Ok(rows.rows_affected())
+        .await;
+
+        let unlock_res =
+            sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
+                .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+                .fetch_one(connection.deref_mut())
+                .await;
+        if let Err(err) = unlock_res {
+            warn!(error = %err, "Failed to release slow-lane reset advisory lock");
+        }
+
+        rows.map(|value| value.rows_affected())
     }
 
     pub async fn find_slow_dep_chain_ids(
