@@ -546,6 +546,10 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
           return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
         } else {
           bytes32 inputBytes32 = externalE${fheType.type.toLowerCase()}.unwrap(inputHandle);
+          if(inputBytes32 == 0){
+            inputBytes32 = Impl.trivialEncrypt(0, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
+            return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
+          }
           if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
           return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
         }
@@ -572,7 +576,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
 
     result += `
     /** 
-     * @dev Convert a plaintext value to an encrypted e${fheType.type.toLowerCase()} integer.
+     * @dev Convert a plaintext value to an encrypted e${fheType.type.toLowerCase()} value.
     */
     function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingType} value) internal returns (e${fheType.type.toLowerCase()}) {
         return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(uint256(${value}), FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));

@@ -133,4 +133,62 @@ describe('MultiSig', function () {
     );
     expect(carolDecrypted2).to.equal(clearValue + 42); // because the setter adds 42 to the encrypted input value
   });
+
+  it('should be able to use an uninitialized handle in the setter', async function () {
+    const setterFactory = await hre.ethers.getContractFactory('EncryptedSetter');
+    const setter2 = await setterFactory.deploy();
+    await this.multiSig.executeSpecialTx(await setter2.getAddress());
+
+    const aclAddress = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host')).ACL_CONTRACT_ADDRESS;
+    const ifaceACL = new hre.ethers.Interface([
+      'function allow(bytes32 handle, address account)',
+      'function multicall(bytes[] calldata data)',
+    ]);
+
+    const handleResult = await setter2.encryptedResult();
+    const multicalldata1 = ifaceACL.encodeFunctionData('allow', [handleResult, this.signers.alice.address]);
+    const multicalldata2 = ifaceACL.encodeFunctionData('allow', [handleResult, this.signers.bob.address]);
+    const multicalldata3 = ifaceACL.encodeFunctionData('allow', [handleResult, this.signers.carol.address]);
+    const multicalldataAll = ifaceACL.encodeFunctionData('multicall', [
+      [multicalldata1, multicalldata2, multicalldata3],
+    ]);
+    await this.multiSig.proposeTx(aclAddress, multicalldataAll); // alice propose tx
+    await this.multiSig.connect(this.signers.bob).approveTx(1); // bob approves
+    await this.multiSig.connect(this.signers.carol).approveTx(1); // carol approves
+    await this.multiSig.executeTx(1); // anyone can execute it finally
+
+    // finally all owners can user-decrypt the result:
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
+    const aliceDecrypted = await userDecryptSingleHandle(
+      handleResult,
+      await setter2.getAddress(),
+      this.instances.alice,
+      this.signers.alice,
+      privateKeyAlice,
+      publicKeyAlice,
+    );
+    expect(aliceDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
+
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
+    const bobDecrypted = await userDecryptSingleHandle(
+      handleResult,
+      await setter2.getAddress(),
+      this.instances.bob,
+      this.signers.bob,
+      privateKeyBob,
+      publicKeyBob,
+    );
+    expect(bobDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
+
+    const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = this.instances.carol.generateKeypair();
+    const carolDecrypted = await userDecryptSingleHandle(
+      handleResult,
+      await setter2.getAddress(),
+      this.instances.carol,
+      this.signers.carol,
+      privateKeyCarol,
+      publicKeyCarol,
+    );
+    expect(carolDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
+  });
 });
