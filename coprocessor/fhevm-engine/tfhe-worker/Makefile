@@ -1,6 +1,11 @@
 
 DB_URL ?= DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor
 OPTIMIZATION_TARGET ?= throughput
+DOCKER_BUILD_FLAGS :=
+
+ifeq ($(NO_CACHE),1)
+DOCKER_BUILD_FLAGS += --no-cache
+endif
 
 .PHONY: build
 build:
@@ -12,7 +17,7 @@ cleanup:
 
 .PHONY: init_db
 init_db:
-	docker compose up -d --build db-migration
+	docker compose up -d --build $(DOCKER_BUILD_FLAGS) db-migration
 	docker wait db-migration
 	@echo "Database migration completed"
 
