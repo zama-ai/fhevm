@@ -99,7 +99,7 @@ jobs:
         password: ${{ secrets.CGR_PASSWORD }}
 
     - name: Init database
-      run: NO_CACHE=1 make init_db
+      run: make init_db
       working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Use Node.js
