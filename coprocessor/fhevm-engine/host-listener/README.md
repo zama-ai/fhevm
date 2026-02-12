@@ -49,6 +49,50 @@ When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
 throttling accounting, and promotes all chains to `schedule_priority = 0` at
 startup.
 
+### Testnet incident runbook (slow lane)
+
+Use this when testnet decryptions stall and you suspect slow-lane side effects.
+
+1) Confirm whether slow lane is likely involved
+
+```sql
+-- Current pending chains by lane
+SELECT schedule_priority, COUNT(*) AS chains
+FROM dependence_chain
+WHERE status = 'updated'
+GROUP BY schedule_priority
+ORDER BY schedule_priority;
+
+-- Oldest pending work per lane
+SELECT schedule_priority, MIN(last_updated_at) AS oldest
+FROM dependence_chain
+WHERE status = 'updated'
+GROUP BY schedule_priority
+ORDER BY schedule_priority;
+```
+
+Signal to watch: lane `1` is large and/or very old while execution is stalled.
+
+2) Disable slow lane safely
+
+- Set `--dependent-ops-max-per-chain=0` on **all** host-listener types
+  (`main`, `catchup`, `poller`) in the same rollout.
+- Restart/rollout those listeners.
+
+Startup behavior in off mode:
+- a global eager reset runs (`schedule_priority -> 0`),
+- reset is serialized with a DB advisory lock (other listeners wait).
+
+3) Verify recovery
+
+```sql
+SELECT COUNT(*) AS remaining_slow
+FROM dependence_chain
+WHERE schedule_priority = 1;
+```
+
+Expected: `remaining_slow = 0` after listeners finish startup reset.
+
 ### Local stack notes
 
 Minimal deterministic checks:
