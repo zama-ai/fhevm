@@ -134,7 +134,7 @@ describe('MultiSig', function () {
     expect(carolDecrypted2).to.equal(clearValue + 42); // because the setter adds 42 to the encrypted input value
   });
 
-  it('should be able to use an unitialized handle in the setter', async function () {
+  it('should be able to use an uninitialized handle in the setter', async function () {
     const setterFactory = await hre.ethers.getContractFactory('EncryptedSetter');
     const setter2 = await setterFactory.deploy();
     await this.multiSig.executeSpecialTx(await setter2.getAddress());
