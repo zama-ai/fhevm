@@ -55,6 +55,7 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
+    pub inheritance_parents: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,

@@ -52,7 +52,7 @@ fn propagate_slow_lane_to_dependents(
     let mut dependents_by_dependency: HashMap<ChainHash, Vec<ChainHash>> =
         HashMap::new();
     for chain in chains {
-        for dependency in &chain.dependencies {
+        for dependency in &chain.inheritance_parents {
             dependents_by_dependency
                 .entry(*dependency)
                 .or_default()
@@ -222,7 +222,7 @@ pub async fn ingest_block_logs(
             .iter()
             .flat_map(|chain| {
                 chain
-                    .dependencies
+                    .inheritance_parents
                     .iter()
                     .map(|dependency| dependency.to_vec())
             })
@@ -277,6 +277,10 @@ mod tests {
         Chain {
             hash: FixedBytes::<32>::from([hash; 32]),
             dependencies: dependencies
+                .iter()
+                .map(|dep| FixedBytes::<32>::from([*dep; 32]))
+                .collect(),
+            inheritance_parents: dependencies
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
