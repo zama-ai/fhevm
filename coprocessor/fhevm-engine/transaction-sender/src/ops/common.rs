@@ -29,12 +29,6 @@ pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZ
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum RevertReason {
-    ConfigError(CoprocessorConfigError),
-    Other(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TerminalConfigError {
     pub(crate) config_error: CoprocessorConfigError,
     pub(crate) db_error: String,
@@ -126,20 +120,6 @@ pub(crate) async fn classify_failed_receipt<P>(
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
-    match get_revert_reason(provider, receipt, trace_timeout).await {
-        RevertReason::ConfigError(config_error) => Ok(config_error.into()),
-        RevertReason::Other(reason) => Err(reason),
-    }
-}
-
-async fn get_revert_reason<P>(
-    provider: &NonceManagedProvider<P>,
-    receipt: &TransactionReceipt,
-    trace_timeout: Duration,
-) -> RevertReason
-where
-    P: Provider<Ethereum> + Clone + 'static,
-{
     let trace = match tokio::time::timeout(
         trace_timeout,
         provider.inner().debug_trace_transaction(
@@ -151,10 +131,10 @@ where
     {
         Ok(Ok(trace)) => trace,
         Ok(Err(e)) => {
-            return RevertReason::Other(format!("Unable to use `debug_trace_transaction`: {e}"));
+            return Err(format!("Unable to use `debug_trace_transaction`: {e}"));
         }
         Err(_) => {
-            return RevertReason::Other(format!(
+            return Err(format!(
                 "`debug_trace_transaction` timed out after {trace_timeout:?}"
             ));
         }
@@ -163,17 +143,17 @@ where
     let call_frame = match trace.try_into_call_frame() {
         Ok(call_frame) => call_frame,
         Err(e) => {
-            return RevertReason::Other(format!(
+            return Err(format!(
                 "Unable to retrieve call frame from debug trace: {e}"
             ));
         }
     };
 
     if let Some(config_error) = find_config_error_in_trace(&call_frame) {
-        return RevertReason::ConfigError(config_error);
+        return Ok(config_error.into());
     }
 
-    RevertReason::Other(
+    Err(
         call_frame
             .revert_reason
             .clone()
