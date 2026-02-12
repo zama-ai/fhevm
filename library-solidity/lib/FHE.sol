@@ -8453,6 +8453,10 @@ library FHE {
             return ebool.wrap(Impl.verify(externalEbool.unwrap(inputHandle), inputProof, FheType.Bool));
         } else {
             bytes32 inputBytes32 = externalEbool.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Bool);
+                return ebool.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return ebool.wrap(inputBytes32);
         }
@@ -8476,13 +8480,17 @@ library FHE {
             return euint8.wrap(Impl.verify(externalEuint8.unwrap(inputHandle), inputProof, FheType.Uint8));
         } else {
             bytes32 inputBytes32 = externalEuint8.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint8);
+                return euint8.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint8.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint8 integer.
+     * @dev Convert a plaintext value to an encrypted euint8 value.
      */
     function asEuint8(uint8 value) internal returns (euint8) {
         return euint8.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint8));
@@ -8499,13 +8507,17 @@ library FHE {
             return euint16.wrap(Impl.verify(externalEuint16.unwrap(inputHandle), inputProof, FheType.Uint16));
         } else {
             bytes32 inputBytes32 = externalEuint16.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint16);
+                return euint16.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint16.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint16 integer.
+     * @dev Convert a plaintext value to an encrypted euint16 value.
      */
     function asEuint16(uint16 value) internal returns (euint16) {
         return euint16.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint16));
@@ -8522,13 +8534,17 @@ library FHE {
             return euint32.wrap(Impl.verify(externalEuint32.unwrap(inputHandle), inputProof, FheType.Uint32));
         } else {
             bytes32 inputBytes32 = externalEuint32.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint32);
+                return euint32.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint32.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint32 integer.
+     * @dev Convert a plaintext value to an encrypted euint32 value.
      */
     function asEuint32(uint32 value) internal returns (euint32) {
         return euint32.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint32));
@@ -8545,13 +8561,17 @@ library FHE {
             return euint64.wrap(Impl.verify(externalEuint64.unwrap(inputHandle), inputProof, FheType.Uint64));
         } else {
             bytes32 inputBytes32 = externalEuint64.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint64);
+                return euint64.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint64.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint64 integer.
+     * @dev Convert a plaintext value to an encrypted euint64 value.
      */
     function asEuint64(uint64 value) internal returns (euint64) {
         return euint64.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint64));
@@ -8568,13 +8588,17 @@ library FHE {
             return euint128.wrap(Impl.verify(externalEuint128.unwrap(inputHandle), inputProof, FheType.Uint128));
         } else {
             bytes32 inputBytes32 = externalEuint128.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint128);
+                return euint128.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint128.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint128 integer.
+     * @dev Convert a plaintext value to an encrypted euint128 value.
      */
     function asEuint128(uint128 value) internal returns (euint128) {
         return euint128.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint128));
@@ -8591,13 +8615,17 @@ library FHE {
             return eaddress.wrap(Impl.verify(externalEaddress.unwrap(inputHandle), inputProof, FheType.Uint160));
         } else {
             bytes32 inputBytes32 = externalEaddress.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint160);
+                return eaddress.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return eaddress.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted eaddress integer.
+     * @dev Convert a plaintext value to an encrypted eaddress value.
      */
     function asEaddress(address value) internal returns (eaddress) {
         return eaddress.wrap(Impl.trivialEncrypt(uint256(uint160(value)), FheType.Uint160));
@@ -8614,13 +8642,17 @@ library FHE {
             return euint256.wrap(Impl.verify(externalEuint256.unwrap(inputHandle), inputProof, FheType.Uint256));
         } else {
             bytes32 inputBytes32 = externalEuint256.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint256);
+                return euint256.wrap(inputBytes32);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint256.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint256 integer.
+     * @dev Convert a plaintext value to an encrypted euint256 value.
      */
     function asEuint256(uint256 value) internal returns (euint256) {
         return euint256.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint256));
