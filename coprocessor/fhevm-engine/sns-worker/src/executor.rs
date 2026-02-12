@@ -21,6 +21,7 @@ use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
+use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -39,7 +40,7 @@ use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::error_span;
 use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -390,15 +391,28 @@ async fn fetch_and_execute_sns_tasks(
 
         update_computations_status(trx, &tasks).await?;
 
-        let s = t.child_span("batch_store_ciphertext128");
+        let batch_store_span = tracing::info_span!(
+            "batch_store_ciphertext128",
+            operation = "batch_store_ciphertext128"
+        );
+        batch_store_span.set_parent(t.context().clone());
+        let batch_store = async {
+            update_ciphertext128(trx, &tasks).await?;
+            notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
-        update_ciphertext128(trx, &tasks).await?;
-        notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
-
-        // Try to enqueue the tasks for upload in the DB
-        // This is a best-effort attempt, as the upload worker might not be available
-        enqueue_upload_tasks(trx, &tasks).await?;
-        telemetry::end_span(s);
+            // Try to enqueue the tasks for upload in the DB
+            // This is a best-effort attempt, as the upload worker might not be available
+            enqueue_upload_tasks(trx, &tasks).await?;
+            Ok::<(), ExecutionError>(())
+        };
+        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
+            batch_store_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            return Err(err);
+        }
+        drop(batch_store_span);
 
         db_txn.commit().await?;
 
@@ -566,10 +580,18 @@ fn compute_task(
         return; // Skip empty ciphertexts
     }
 
-    let s = task.otel.child_span("decompress_ct64");
-
-    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
-    telemetry::end_span(s);
+    let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
+    let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
+        Ok(ct) => ct,
+        Err(err) => {
+            decompress_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            error!({ handle = handle, error = %err }, "Failed to decompress ct64");
+            return;
+        }
+    };
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
@@ -609,6 +631,12 @@ fn compute_task(
                 .try_send(UploadJob::Normal(task.clone()))
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
+                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
+                let _send_task_enter = send_task_span.enter();
+                send_task_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 // This could happen if either we are experiencing a burst of tasks
                 // or the upload worker cannot recover the connection to AWS S3
                 //
@@ -618,9 +646,7 @@ fn compute_task(
                 // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
                 // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
                 // 3. The PostgresDB (size: unlimited)
-
                 error!({ action = "review", error = %err }, "Failed to send task to upload worker");
-                telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
             }
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -629,6 +655,10 @@ fn compute_task(
             }
         }
         Err(err) => {
+            squash_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
@@ -646,7 +676,8 @@ async fn update_ciphertext128(
     for task in tasks {
         if !task.ct128.is_empty() {
             let ciphertext128 = task.ct128.bytes();
-            let s = task.otel.child_span("ciphertexts128_insert");
+            let persist_span =
+                tracing::info_span!("ciphertexts128_insert", operation = "ciphertexts128_insert");
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (
@@ -658,21 +689,26 @@ async fn update_ciphertext128(
                 ciphertext128,
             )
             .execute(db_txn.as_mut())
+            .instrument(persist_span.clone())
             .await;
 
             match res {
                 Ok(val) => {
+                    drop(persist_span);
                     info!(
                         handle = to_hex(&task.handle),
                         query_res = format!("{:?}", val),
                         size = ciphertext128.len(),
                         "Persisted ct128 successfully"
                     );
-                    telemetry::end_span(s);
                 }
                 Err(err) => {
+                    persist_span
+                        .context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
+                    drop(persist_span);
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
-                    telemetry::end_span_with_err(s, err.to_string());
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely
                     return Err(err.into());
