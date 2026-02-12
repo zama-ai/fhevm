@@ -220,7 +220,7 @@ impl LockMngr {
     }
 
     /// Acquire the earliest dependence-chain entry for processing
-    /// sorted by schedule_priority and then last_updated_at. Here we ignore
+    /// sorted by last_updated_at (FIFO), ignoring lane priority. Here we ignore
     /// dependency_count as reorgs can lead to incorrect counts and
     /// set of dependents until we add block hashes to transaction
     /// hashes to uniquely identify transactions.
@@ -243,7 +243,7 @@ impl LockMngr {
                     status = 'updated'      -- Marked as updated by host-listener
                     AND
                     worker_id IS NULL       -- Ensure no other workers own it
-                ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
+                ORDER BY last_updated_at ASC, schedule_priority ASC
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -278,69 +278,6 @@ impl LockMngr {
         }
 
         info!(?row, query_elapsed = %elapsed, "Acquired lock on earliest DCID");
-
-        Ok((
-            Some(row.dependence_chain_id),
-            LockingReason::from(row.match_reason.as_str()),
-        ))
-    }
-
-    /// Escape hatch used after repeated no-progress cycles.
-    /// Ignores lane priority and picks the oldest updated chain to avoid
-    /// starving chains when dependency visibility is incomplete.
-    pub async fn acquire_oldest_lock(
-        &mut self,
-    ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
-        if self.disable_locking {
-            debug!("Locking is disabled");
-            return Ok((None, LockingReason::Missing));
-        }
-
-        let started_at = SystemTime::now();
-        let row = sqlx::query_as::<_, DatabaseChainLock>(
-            r#"
-            WITH candidate AS (
-                SELECT dependence_chain_id, 'updated_unowned' AS match_reason
-                FROM dependence_chain
-                WHERE
-                    status = 'updated'
-                    AND
-                    worker_id IS NULL
-                ORDER BY last_updated_at ASC, schedule_priority ASC
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            UPDATE dependence_chain AS dc
-            SET
-                worker_id = $1,
-                status = 'processing',
-                lock_acquired_at = NOW(),
-                lock_expires_at = NOW() + make_interval(secs => $2)
-            FROM candidate
-            WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-            RETURNING dc.*, candidate.match_reason;
-        "#,
-        )
-        .bind(self.worker_id)
-        .bind(self.lock_ttl_sec)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        let row = if let Some(row) = row {
-            row
-        } else {
-            return Ok((None, LockingReason::Missing));
-        };
-
-        self.lock.replace((row.clone(), SystemTime::now()));
-        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
-
-        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-        if elapsed > 0.0 {
-            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
-        }
-
-        info!(?row, query_elapsed = %elapsed, "Acquired oldest lock");
 
         Ok((
             Some(row.dependence_chain_id),

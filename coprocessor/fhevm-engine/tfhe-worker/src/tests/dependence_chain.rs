@@ -106,7 +106,7 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_acquire_early_lock_prefers_fast_lane() {
+async fn test_acquire_early_lock_ignores_priority() {
     let instance = setup().await;
     let pool = PgPoolOptions::new()
         .max_connections(2)
@@ -141,63 +141,15 @@ async fn test_acquire_early_lock_prefers_fast_lane() {
     .await
     .unwrap();
 
-    let mut mgr_fast =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
-    let (acquired_fast, _) = mgr_fast.acquire_early_lock().await.unwrap();
-    assert_eq!(acquired_fast, Some(fast_id.clone()));
-
     let mut mgr_slow =
         LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
     let (acquired_slow, _) = mgr_slow.acquire_early_lock().await.unwrap();
     assert_eq!(acquired_slow, Some(slow_id.clone()));
-}
 
-#[tokio::test]
-#[serial(db)]
-async fn test_acquire_oldest_lock_ignores_priority() {
-    let instance = setup().await;
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(instance.db_url())
-        .await
-        .expect("Failed to connect to the database");
-
-    let fast_id = vec![5u8];
-    let slow_id = vec![6u8];
-
-    sqlx::query(
-        r#"
-        INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count, schedule_priority)
-        VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), 5, 10, 0)
-        "#,
-    )
-    .bind(fast_id.clone())
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        r#"
-        INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count, schedule_priority)
-        VALUES ($1, 'updated', NOW() - INTERVAL '2 minute', NOW(), 6, 0, 1)
-        "#,
-    )
-    .bind(slow_id.clone())
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let mut mgr_oldest =
+    let mut mgr_fast =
         LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
-    let (acquired_oldest, _) = mgr_oldest.acquire_oldest_lock().await.unwrap();
-    assert_eq!(acquired_oldest, Some(slow_id.clone()));
-
-    let mut mgr_next =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
-    let (acquired_next, _) = mgr_next.acquire_oldest_lock().await.unwrap();
-    assert_eq!(acquired_next, Some(fast_id.clone()));
+    let (acquired_fast, _) = mgr_fast.acquire_early_lock().await.unwrap();
+    assert_eq!(acquired_fast, Some(fast_id.clone()));
 }
 
 #[tokio::test]
