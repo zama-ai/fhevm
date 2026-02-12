@@ -150,3 +150,4 @@ caf = "caf"               # appears in AWS AMI IDs
 
 # Test variable naming patterns
 BA = "BA"                 # used in test variable names (e.g., wrongOrderBAInsteadOfAB)
+UE = "UE"                 # appears in base58 tx signatures in docs
