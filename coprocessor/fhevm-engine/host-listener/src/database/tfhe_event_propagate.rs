@@ -157,9 +157,9 @@ impl Database {
         &self,
     ) -> Result<u64, SqlxError> {
         let mut connection = self.pool().await.acquire().await?;
-        sqlx::query_scalar::<_, bool>("SELECT pg_advisory_lock($1)")
+        sqlx::query("SELECT pg_advisory_lock($1)")
             .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
-            .fetch_one(connection.deref_mut())
+            .execute(connection.deref_mut())
             .await?;
 
         let rows = sqlx::query!(
