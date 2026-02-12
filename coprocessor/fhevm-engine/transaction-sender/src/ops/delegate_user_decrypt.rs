@@ -512,7 +512,7 @@ where
                         &e,
                         self.conf.delegation_max_retry + 1,
                     )
-                    .await?;
+                    .await;
                 }
                 TxResult::OtherError(e) => {
                     nb_errors += 1;
@@ -629,14 +629,14 @@ pub async fn mark_delegation_terminal_config_error(
     delegation: &DelegationRow,
     error: &str,
     terminal_attempts: u64,
-) -> Result<()> {
+) {
     error!(
         %error,
         ?delegation,
         terminal_attempts,
         "Updating delegation with terminal gateway config error"
     );
-    let res = sqlx::query(
+    let res = match sqlx::query(
         r#"
         UPDATE delegate_user_decrypt
         SET gateway_nb_attempts = $1,
@@ -648,13 +648,21 @@ pub async fn mark_delegation_terminal_config_error(
     .bind(error)
     .bind(delegation.key)
     .execute(tx.deref_mut())
-    .await?;
-    anyhow::ensure!(
-        res.rows_affected() != 0,
-        "No rows updated when marking terminal delegation for key {}",
-        delegation.key
-    );
-    Ok(())
+    .await
+    {
+        Ok(res) => res,
+        Err(db_err) => {
+            error!(%db_err, ?delegation, "Cannot mark terminal delegation");
+            return;
+        }
+    };
+    if res.rows_affected() == 0 {
+        error!(
+            error,
+            ?delegation,
+            "No rows updated when marking terminal delegation"
+        );
+    }
 }
 
 pub async fn update_transmitted_delegation(
