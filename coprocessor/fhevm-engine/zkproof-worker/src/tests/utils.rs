@@ -2,9 +2,10 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::CrsCache;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
-use fhevm_engine_common::utils::safe_serialize;
+use fhevm_engine_common::utils::{safe_serialize, DatabaseURL};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use test_harness::db_utils::ACL_CONTRACT_ADDR;
 use test_harness::instance::{DBInstance, ImportMode};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
@@ -12,53 +13,115 @@ use tokio::time::sleep;
 use crate::auxiliary::ZkData;
 use crate::verifier::MAX_CACHED_KEYS;
 
-pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
+pub(crate) const DEFAULT_HOST_CHAIN_ID: i64 = 12345;
+pub(crate) const SECOND_HOST_CHAIN_ID: i64 = 22345;
+pub(crate) const UNKNOWN_HOST_CHAIN_ID: i64 = 999_999;
+pub(crate) const SECOND_CHAIN_ACL_CONTRACT_ADDR: &str =
+    "0x3333333333333333333333333333333333333333";
+
+pub(crate) async fn setup_pool() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
         .expect("valid db instance");
 
-    let conf = crate::Config {
-        database_url: test_instance.db_url.clone(),
+    let pool_mngr = PostgresPoolManager::connect_pool(
+        test_instance.parent_token.child_token(),
+        test_instance.db_url.as_str(),
+        Duration::from_secs(15),
+        10,
+        Duration::from_secs(2),
+        None,
+    )
+    .await
+    .expect("pool manager created");
+
+    sqlx::query("TRUNCATE TABLE verify_proofs")
+        .execute(&pool_mngr.pool())
+        .await
+        .expect("verify_proofs truncated");
+
+    Ok((pool_mngr, test_instance))
+}
+
+pub(crate) fn build_test_conf(
+    database_url: DatabaseURL,
+    host_chain_id: Option<i64>,
+    pg_polling_interval: u32,
+) -> crate::Config {
+    crate::Config {
+        database_url,
         listen_database_channel: "fhevm".to_string(),
         notify_database_channel: "notify".to_string(),
         pg_pool_connections: 10,
-        pg_polling_interval: 60,
+        pg_polling_interval,
         worker_thread_count: 1,
-        host_chain_id: None,
+        host_chain_id,
         pg_timeout: Duration::from_secs(15),
         pg_auto_explain_with_min_duration: None,
-    };
+    }
+}
 
-    let pool_mngr = PostgresPoolManager::connect_pool(
-        test_instance.parent_token.child_token(),
-        conf.database_url.as_str(),
-        conf.pg_timeout,
-        conf.pg_pool_connections,
-        Duration::from_secs(2),
-        conf.pg_auto_explain_with_min_duration,
-    )
-    .await
-    .unwrap();
-
-    let pmngr = pool_mngr.clone();
-
-    sqlx::query("TRUNCATE TABLE verify_proofs")
-        .execute(&pmngr.pool())
-        .await
-        .unwrap();
-
+pub(crate) fn spawn_worker(
+    pool_mngr: PostgresPoolManager,
+    conf: crate::Config,
+) -> tokio::task::JoinHandle<Result<(), crate::ExecutionError>> {
     let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
-
     tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(pmngr, conf.clone(), last_active_at.clone())
-            .await
-            .unwrap();
-    });
+        crate::verifier::execute_verify_proofs_loop(pool_mngr, conf, last_active_at).await
+    })
+}
+
+pub(crate) async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
+    let (pool_mngr, test_instance) = setup_pool().await?;
+    let conf = build_test_conf(test_instance.db_url.clone(), None, 60);
+    let _worker = spawn_worker(pool_mngr.clone(), conf);
 
     sleep(Duration::from_secs(2)).await;
 
     Ok((pool_mngr, test_instance))
+}
+
+pub(crate) async fn insert_second_host_chain(pool: &sqlx::PgPool) {
+    sqlx::query(
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, $2, $3)",
+    )
+    .bind(SECOND_HOST_CHAIN_ID)
+    .bind("second test chain")
+    .bind(SECOND_CHAIN_ACL_CONTRACT_ADDR)
+    .execute(pool)
+    .await
+    .expect("insert second host chain");
+}
+
+pub(crate) async fn insert_valid_proof_for_chain(
+    pool: &sqlx::PgPool,
+    request_id: i64,
+    host_chain_id: i64,
+) -> i64 {
+    let acl_contract_address = if host_chain_id == SECOND_HOST_CHAIN_ID {
+        SECOND_CHAIN_ACL_CONTRACT_ADDR
+    } else {
+        ACL_CONTRACT_ADDR
+    };
+
+    let (mut aux, _) = aux_fixture(acl_contract_address.to_string());
+    aux.chain_id = ChainId::try_from(host_chain_id).expect("valid test chain id");
+    let aux_bytes = aux.assemble().expect("assemble aux");
+    let proof = generate_sample_zk_pok(pool, &aux_bytes).await;
+    insert_proof(pool, request_id, &proof, &aux)
+        .await
+        .expect("insert proof")
+}
+
+pub(crate) async fn assert_verified_is_null(pool: &sqlx::PgPool, request_id: i64) {
+    let state: Option<bool> =
+        sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = $1")
+            .bind(request_id)
+            .fetch_one(pool)
+            .await
+            .expect("read verify_proofs.verified");
+    assert_eq!(state, None);
 }
 
 /// Checks if the proof is valid by querying the database continuously.
@@ -180,7 +243,7 @@ pub(crate) fn aux_fixture(acl_contract_address: String) -> (ZkData, [u8; 92]) {
         contract_address,
         user_address,
         acl_contract_address,
-        chain_id: ChainId::try_from(12345_u64).unwrap(),
+        chain_id: ChainId::try_from(DEFAULT_HOST_CHAIN_ID as u64).unwrap(),
     };
 
     (

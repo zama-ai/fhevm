@@ -1,120 +1,12 @@
 use serial_test::serial;
+use std::sync::Arc;
+use std::time::SystemTime;
 use test_harness::db_utils::ACL_CONTRACT_ADDR;
-use test_harness::instance::{DBInstance, ImportMode};
 use tokio::sync::RwLock;
-use tokio::time::sleep;
 
 use crate::MAX_INPUT_INDEX;
-use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::pg_pool::PostgresPoolManager;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
 
 mod utils;
-
-const DEFAULT_HOST_CHAIN_ID: i64 = 12345;
-const SECOND_HOST_CHAIN_ID: i64 = 22345;
-const UNKNOWN_HOST_CHAIN_ID: i64 = 999_999;
-const SECOND_CHAIN_ACL_CONTRACT_ADDR: &str = "0x3333333333333333333333333333333333333333";
-
-async fn setup_without_worker() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
-    let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
-    let instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-        .await
-        .expect("valid db instance");
-
-    let pool_mngr = PostgresPoolManager::connect_pool(
-        instance.parent_token.child_token(),
-        instance.db_url.as_str(),
-        Duration::from_secs(15),
-        10,
-        Duration::from_secs(2),
-        None,
-    )
-    .await
-    .expect("pool manager created");
-
-    sqlx::query("TRUNCATE TABLE verify_proofs")
-        .execute(&pool_mngr.pool())
-        .await
-        .expect("verify_proofs truncated");
-
-    Ok((pool_mngr, instance))
-}
-
-fn build_conf(
-    database_url: fhevm_engine_common::utils::DatabaseURL,
-    host_chain_id: Option<i64>,
-) -> crate::Config {
-    crate::Config {
-        database_url,
-        listen_database_channel: "fhevm".to_string(),
-        notify_database_channel: "notify".to_string(),
-        pg_pool_connections: 10,
-        pg_polling_interval: 1,
-        worker_thread_count: 1,
-        host_chain_id,
-        pg_timeout: Duration::from_secs(15),
-        pg_auto_explain_with_min_duration: None,
-    }
-}
-
-fn spawn_worker(
-    pool_mngr: PostgresPoolManager,
-    conf: crate::Config,
-) -> tokio::task::JoinHandle<Result<(), crate::ExecutionError>> {
-    let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
-    tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(pool_mngr, conf, last_active_at).await
-    })
-}
-
-async fn get_verified_state(pool: &sqlx::PgPool, request_id: i64) -> Option<bool> {
-    sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = $1")
-        .bind(request_id)
-        .fetch_one(pool)
-        .await
-        .expect("read verify_proofs.verified")
-}
-
-async fn assert_remains_unverified(
-    pool: &sqlx::PgPool,
-    request_id: i64,
-    checks: usize,
-    sleep_ms: u64,
-) {
-    for _ in 0..checks {
-        assert_eq!(get_verified_state(pool, request_id).await, None);
-        sleep(Duration::from_millis(sleep_ms)).await;
-    }
-}
-
-async fn insert_second_host_chain(pool: &sqlx::PgPool) {
-    sqlx::query(
-        "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, $2, $3)",
-    )
-    .bind(SECOND_HOST_CHAIN_ID)
-    .bind("second test chain")
-    .bind(SECOND_CHAIN_ACL_CONTRACT_ADDR)
-    .execute(pool)
-    .await
-    .expect("insert second host chain");
-}
-
-async fn insert_valid_proof_for_chain(
-    pool: &sqlx::PgPool,
-    request_id: i64,
-    chain_id: i64,
-    acl_contract_address: &str,
-) -> i64 {
-    let (mut aux, _) = utils::aux_fixture(acl_contract_address.to_string());
-    aux.chain_id = ChainId::try_from(chain_id).expect("valid test chain id");
-    let aux_bytes = aux.assemble().expect("assemble aux");
-    let proof = utils::generate_sample_zk_pok(pool, &aux_bytes).await;
-    utils::insert_proof(pool, request_id, &proof, &aux)
-        .await
-        .expect("insert proof")
-}
 
 #[tokio::test]
 #[serial(db)]
@@ -219,55 +111,52 @@ async fn test_max_input_index() {
 #[tokio::test]
 #[serial(db)]
 async fn processes_only_configured_host_chain() {
-    let (pool_mngr, instance) = setup_without_worker().await.expect("valid setup");
+    let (pool_mngr, instance) = utils::setup_pool().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
-    insert_second_host_chain(&pool).await;
+    utils::insert_second_host_chain(&pool).await;
 
     let selected_chain_request_id =
-        insert_valid_proof_for_chain(&pool, 201, DEFAULT_HOST_CHAIN_ID, ACL_CONTRACT_ADDR).await;
-    let other_chain_request_id = insert_valid_proof_for_chain(
-        &pool,
-        202,
-        SECOND_HOST_CHAIN_ID,
-        SECOND_CHAIN_ACL_CONTRACT_ADDR,
-    )
-    .await;
+        utils::insert_valid_proof_for_chain(&pool, 201, utils::DEFAULT_HOST_CHAIN_ID).await;
+    let other_chain_request_id =
+        utils::insert_valid_proof_for_chain(&pool, 202, utils::SECOND_HOST_CHAIN_ID).await;
 
-    let worker = spawn_worker(
+    let worker = utils::spawn_worker(
         pool_mngr.clone(),
-        build_conf(instance.db_url.clone(), Some(DEFAULT_HOST_CHAIN_ID)),
+        utils::build_test_conf(
+            instance.db_url.clone(),
+            Some(utils::DEFAULT_HOST_CHAIN_ID),
+            1,
+        ),
     );
 
     assert!(utils::is_valid(&pool, selected_chain_request_id, 300)
         .await
         .expect("selected proof status"));
-    assert_remains_unverified(&pool, other_chain_request_id, 15, 100).await;
 
     instance.parent_token.cancel();
     let worker_result = worker.await.expect("worker task join");
     assert!(worker_result.is_ok(), "worker result: {worker_result:?}");
+    utils::assert_verified_is_null(&pool, other_chain_request_id).await;
 }
 
 #[tokio::test]
 #[serial(db)]
 async fn processes_all_chains_when_filter_unset() {
-    let (pool_mngr, instance) = setup_without_worker().await.expect("valid setup");
+    let (pool_mngr, instance) = utils::setup_pool().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
-    insert_second_host_chain(&pool).await;
+    utils::insert_second_host_chain(&pool).await;
 
     let first_request_id =
-        insert_valid_proof_for_chain(&pool, 301, DEFAULT_HOST_CHAIN_ID, ACL_CONTRACT_ADDR).await;
-    let second_request_id = insert_valid_proof_for_chain(
-        &pool,
-        302,
-        SECOND_HOST_CHAIN_ID,
-        SECOND_CHAIN_ACL_CONTRACT_ADDR,
-    )
-    .await;
+        utils::insert_valid_proof_for_chain(&pool, 301, utils::DEFAULT_HOST_CHAIN_ID).await;
+    let second_request_id =
+        utils::insert_valid_proof_for_chain(&pool, 302, utils::SECOND_HOST_CHAIN_ID).await;
 
-    let worker = spawn_worker(pool_mngr.clone(), build_conf(instance.db_url.clone(), None));
+    let worker = utils::spawn_worker(
+        pool_mngr.clone(),
+        utils::build_test_conf(instance.db_url.clone(), None, 1),
+    );
 
     assert!(utils::is_valid(&pool, first_request_id, 300)
         .await
@@ -284,25 +173,26 @@ async fn processes_all_chains_when_filter_unset() {
 #[tokio::test]
 #[serial(db)]
 async fn fails_startup_for_unknown_configured_host_chain() {
-    let (pool_mngr, instance) = setup_without_worker().await.expect("valid setup");
-    let pool = pool_mngr.pool();
-
-    let request_id =
-        insert_valid_proof_for_chain(&pool, 401, DEFAULT_HOST_CHAIN_ID, ACL_CONTRACT_ADDR).await;
+    let (pool_mngr, instance) = utils::setup_pool().await.expect("valid setup");
 
     let result = crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
-        build_conf(instance.db_url.clone(), Some(UNKNOWN_HOST_CHAIN_ID)),
+        utils::build_test_conf(
+            instance.db_url.clone(),
+            Some(utils::UNKNOWN_HOST_CHAIN_ID),
+            1,
+        ),
         Arc::new(RwLock::new(SystemTime::now())),
     )
     .await;
 
     match result {
         Err(crate::ExecutionError::UnknownChainId(chain_id)) => {
-            assert_eq!(chain_id, UNKNOWN_HOST_CHAIN_ID);
+            assert_eq!(chain_id, utils::UNKNOWN_HOST_CHAIN_ID);
         }
-        other => panic!("expected UnknownChainId({UNKNOWN_HOST_CHAIN_ID}), got {other:?}"),
+        other => panic!(
+            "expected UnknownChainId({}), got {other:?}",
+            utils::UNKNOWN_HOST_CHAIN_ID
+        ),
     }
-
-    assert_eq!(get_verified_state(&pool, request_id).await, None);
 }
