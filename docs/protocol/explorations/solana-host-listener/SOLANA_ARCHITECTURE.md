@@ -1,7 +1,7 @@
 # Solana Host Integration Architecture
 
 Date: 2026-02-09
-Last synced: 2026-02-11
+Last synced: 2026-02-12
 Status: Draft (exploration)
 
 ## Goal
@@ -172,17 +172,19 @@ Implement only:
 
 1. full symbolic op event surface + persistent `allow`
 2. listener ingest + replay-safe cursor
-3. representative e2e slice (`request_add`) for compute/decrypt sanity
+3. tx-scoped HCU metering with global per-window cap enforcement at `close_hcu_meter`
+4. representative multi-op e2e slice (`add/sub/if_then_else/cast` + selected binary/unary/rand families) for compute/decrypt sanity
 
 Defer:
 
 - delegation/decryption-specific ACL extensions
 - `allowForDecryption` edge cases
 - stateful receipt/journal alternatives
+- fee-market and per-signer quota hardening beyond current global window cap
 
 ## Architecture Decision Checkpoints
 
-Re-evaluate after first validated local loop:
+Re-evaluate after full-op local loop:
 
 1. Should ACL/HCU become separate programs (Option B)?
 2. Is log-only finalized ingest sufficient, or do we need managed streams/stateful receipts?

@@ -1,7 +1,7 @@
 # Solana Host Listener Testing Tiers
 
 Date: 2026-02-09
-Last synced: 2026-02-11
+Last synced: 2026-02-12
 Status: Active
 
 ## Goal
@@ -44,15 +44,15 @@ Purpose:
 Command:
 
 ```bash
-cd /Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs
+cd <repo-root>/solana/host-programs
 anchor build
 cargo test -p zama_host --test mollusk_smoke
 ```
 
 Notes:
 
-1. `request_add` smoke test is active and passing once program ELF exists (`target/deploy/zama_host.so`).
-2. Test uses Anchor-generated instruction data (no hardcoded discriminators).
+1. `mollusk_smoke` now covers one success path and known HCU revert paths (`InvalidHcuAuthority`, tx HCU cap, depth cap, tracked-handle cap).
+2. Tests use Anchor-generated instruction data (no hardcoded discriminators).
 
 ## T0: Fast Mapping Loop
 
@@ -64,7 +64,7 @@ Purpose:
 Command:
 
 ```bash
-cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+cd <repo-root>/coprocessor/fhevm-engine
 cargo test -p solana-listener database::ingest::tests
 ```
 
@@ -77,13 +77,13 @@ Pass gates:
 
 Cross-chain parity diff (EVM vs Solana ingest semantics):
 
-1. Script: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
+1. Script: `<repo-root>/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
 2. Test: `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface`
 3. Scope: normalized canonical effects for `add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded/allow`.
 
 Cross-chain runtime parity slice (`add + allow + decrypt`):
 
-1. Script: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
+1. Script: `<repo-root>/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
 2. Solana source: `localnet_solana_request_add_runtime_parity_value`
 3. EVM source: `test-suite/e2e/scripts/smoke-inputflow.ts` (`SMOKE_DECRYPT_VALUE=...`)
 4. Current comparison contract: both sides must decrypt to `49` for the parity slice.
@@ -97,12 +97,12 @@ Purpose:
 
 Script:
 
-`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh`
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh`
 
 Example:
 
 ```bash
-/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh \
+<repo-root>/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh \
   --database-url postgresql://postgres:postgres@localhost:5432/coprocessor \
   --tenant-id 1 \
   --host-chain-id 4242 \
@@ -126,7 +126,7 @@ Purpose:
 
 Script:
 
-`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier2-localnet.sh`
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier2-localnet.sh`
 
 Current behavior:
 
@@ -138,12 +138,12 @@ Current behavior:
 
 Primary in-process runner (Rust + testcontainers):
 
-`/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
+`<repo-root>/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
 
 Command:
 
 ```bash
-cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+cd <repo-root>/coprocessor/fhevm-engine
 SQLX_OFFLINE=true cargo test -p solana-listener \
   --features solana-e2e \
   --test localnet_harness_integration \
@@ -184,19 +184,19 @@ Additional tests:
 
 Runner script:
 
-`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`
 
 Example:
 
 ```bash
-/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
+<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
 ```
 
 Supported `--case` values: `emit | sub | binary | unary | ite | cast | trivial | rand | rand-bounded | acl | all`.
 
 Latest full parity run (2026-02-11):
 
-1. Command: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`
+1. Command: `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`
 2. Result: all 10 Tier-3 cases passed (`EXIT_CODE=0`).
 3. Durations:
    - `add` 62.31s
@@ -231,17 +231,17 @@ Purpose:
 
 Primary script (one command):
 
-`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
 
 Command:
 
 ```bash
-/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
+<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
 ```
 
 Binary (called by the script):
 
-`/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/src/bin/solana_poc_runner.rs`
+`<repo-root>/coprocessor/fhevm-engine/solana-listener/src/bin/solana_poc_runner.rs`
 
 Flow:
 
@@ -258,7 +258,7 @@ Flow:
 Optional keep flags:
 
 ```bash
-/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh --keep-validator --keep-ledger
+<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh --keep-validator --keep-ledger
 ```
 
 ## Canonical v0 Sanity Acceptance (single flow)
@@ -279,7 +279,7 @@ Pass conditions:
 Reference command:
 
 ```bash
-cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+cd <repo-root>/coprocessor/fhevm-engine
 SQLX_OFFLINE=true cargo test -p solana-listener \
   --features solana-e2e \
   --test localnet_harness_integration \

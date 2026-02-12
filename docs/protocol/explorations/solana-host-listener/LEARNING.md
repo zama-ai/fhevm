@@ -1,7 +1,7 @@
 # Solana Host Listener Learning Log
 
 Date opened: 2026-02-09
-Last synced: 2026-02-11
+Last synced: 2026-02-12
 Branch: `codex/solana-host-listener-discovery`
 Status: Active
 
@@ -43,7 +43,7 @@ flowchart TD
 3. Coprocessor compute path downstream is mostly DB-driven.
 4. Handle metadata compatibility with Gateway checks is mandatory.
 5. Fast learning requires a self-contained local e2e loop.
-6. A local hybrid (`logs + PDAs`) Solana host demo exists at `/Users/work/code/zama/solana-symbolic-host-demo` and is useful as a fast-loop reference.
+6. A local hybrid (`logs + PDAs`) Solana host demo exists outside this repo (`<local-solana-symbolic-host-demo-root>`) and is useful as a fast-loop reference.
 7. Listener ingestion SQL contracts (`computations`, `allowed_handles`, `pbs_computations`) are reusable if Solana ingestion preserves deterministic keys and idempotency semantics.
 8. The highest-coupling surfaces are chain transport/indexing and EVM ABI decode, not downstream scheduler/worker ingestion contracts.
 9. Upstream PR `zama-ai/fhevm#1856` removes tenant-centric DB/runtime model in favor of `keys`, `crs`, and `host_chains`; Solana discovery should target `host_chain_id` compatibility, not `tenant_id`.
@@ -51,7 +51,7 @@ flowchart TD
 11. Tier-3 e2e runs now have a dedicated script entrypoint (`solana-poc-tier3-e2e.sh`) with explicit prerequisites and deterministic case selection.
 12. Operation parity expansion started with `SUB` in Solana listener decode + ingest mapping (same DB contract as `ADD`).
 13. Solana host/listener now supports full TFHE symbolic op surface at interface + decode + ingest mapping layers (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
-14. Solana host program layout has been normalized to `/Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs/zama-host` (no `v0` naming in folders/types).
+14. Solana host program layout has been normalized to `<repo-root>/solana/host-programs/zama-host` (no `v0` naming in folders/types).
 15. Host program PoC baseline is emit-only (`emit!`) to keep scope lean and testable.
 16. RPC source now fails closed on unavailable finalized blocks (no cursor advance on missing `getBlock` data), preventing silent slot skips.
 17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
@@ -233,7 +233,7 @@ Notes:
 - Tier-3 `binary` runtime slice now excludes `mul` and keeps representative binary ops that complete deterministically under current constraints.
 - Added opcode context + timeout-state diagnostics in `wait_for_output_completion` to improve failure readability.
 - Validation:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case binary` passes.
+  - `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case binary` passes.
 
 ## Presentation Summary (for team)
 
@@ -284,7 +284,7 @@ Result: Completed.
 Confidence: High
 Notes:
 
-- Added `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
+- Added `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
 - Script supports deterministic case selection: `emit`, `sub`, `ite`, `cast`, `acl`, `all`.
 - Updated testing docs and listener README with exact commands and `SQLX_OFFLINE=true` guidance.
 
@@ -381,7 +381,7 @@ Confidence: High
 Notes:
 
 - `solana_poc_runner` now auto-publishes IDL (`anchor idl init`, fallback `anchor idl upgrade`) before tx submission.
-- Added script `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`:
+- Added script `<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`:
   - builds host program + IDL
   - starts/reuses local validator with `--bpf-program`
   - runs `solana_poc_runner` and prints explorer links + ingest counters
@@ -395,15 +395,15 @@ Result: Completed (full `--case all` pass).
 Confidence: High
 Notes:
 
-- Added new Tier-3 tests in `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`:
+- Added new Tier-3 tests in `<repo-root>/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`:
   - `localnet_solana_request_binary_ops_computes_and_decrypts`
   - `localnet_solana_request_unary_ops_computes_and_decrypts`
   - `localnet_solana_request_trivial_encrypt_computes_and_decrypts`
   - `localnet_solana_request_rand_computes_and_decrypts`
   - `localnet_solana_request_rand_bounded_computes_and_decrypts`
-- Extended Tier-3 runner cases in `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`:
+- Extended Tier-3 runner cases in `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`:
   - `binary | unary | trivial | rand | rand-bounded`
-- Full runtime sweep completed with `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`:
+- Full runtime sweep completed with `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`:
   - `localnet_solana_request_add_computes_and_decrypts` (62.31s)
   - `localnet_solana_request_sub_computes_and_decrypts` (61.98s)
   - `localnet_solana_request_binary_ops_computes_and_decrypts` (172.62s)
@@ -428,9 +428,9 @@ Confidence: High
 Notes:
 
 - Added test `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface` in:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/src/database/ingest.rs`
+  - `<repo-root>/coprocessor/fhevm-engine/solana-listener/src/database/ingest.rs`
 - Added one-command runner:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
+  - `<repo-root>/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
 - Compared normalized canonical effects for:
   - `add`, `sub`, `binary(opcode=mul)`, `unary(neg)`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`, `allow`
 - Normalization note captured in test:
@@ -445,14 +445,14 @@ Confidence: Medium-high
 Notes:
 
 - Added Solana Tier-3 runtime parity test:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
+  - `<repo-root>/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
   - test: `localnet_solana_request_add_runtime_parity_value`
   - emits `SOLANA_RUNTIME_PARITY_VALUE=49`
 - Updated EVM smoke script to emit decrypted value:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/e2e/scripts/smoke-inputflow.ts`
+  - `<repo-root>/test-suite/e2e/scripts/smoke-inputflow.ts`
   - emits `SMOKE_DECRYPT_VALUE=49`
 - Added one-command runtime diff script:
-  - `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
+  - `<repo-root>/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
   - runs both sources and fails on mismatch.
 
 ### D3

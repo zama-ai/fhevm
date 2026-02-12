@@ -1,8 +1,8 @@
 # Fast Feedback Loop (Host + Listener First)
 
 Date: 2026-02-09
-Last synced: 2026-02-11
-Status: Active (v0 baseline validated)
+Last synced: 2026-02-12
+Status: Active (v0 baseline validated, HCU window-cap extension in progress)
 
 ## Objective
 
@@ -187,6 +187,7 @@ Current checkpoint:
 6. first non-ADD op mapping (`request_sub` -> `FheSub`) validated at listener decode+ingest layer
 7. full TFHE op-surface mapping (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`) validated at listener decode+ingest unit-test layer
 8. Tier-3 runtime parity expansion validated for `request_if_then_else` and `request_cast` (ingest + worker completion + decrypt checks)
+9. Host program now enforces HCU in two layers: tx-scoped meter + global per-window cap at `close_hcu_meter`.
 
 ## v0 Binary Acceptance Checklist (Agreed)
 

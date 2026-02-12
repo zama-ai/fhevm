@@ -1,8 +1,8 @@
 # Host Listener Parity Matrix (Discovery)
 
 Date: 2026-02-09
-Last synced: 2026-02-11
-Status: Active reference (discovery complete, parity expansion in progress)
+Last synced: 2026-02-12
+Status: Active reference (discovery complete, full-op parity active)
 
 ## Outcome
 
@@ -11,12 +11,12 @@ Recommended direction for PoC speed and low blast radius:
 - Preserve existing canonical DB contracts (`computations`, `allowed_handles`, `pbs_computations`).
 - Keep Gateway unchanged by preserving handle metadata semantics.
 
-## Checkpoint Update (2026-02-10)
+## Checkpoint Update (2026-02-12)
 
-1. Discovery scope from #1028 is complete and closed.
-2. Parity expansion is active under #1031/#1032.
-3. First non-ADD op (`SUB`) is now implemented in Solana listener decode + DB mapping.
-4. Explorer-visible flow is reproducible with one command, and local explorer decode is now enabled by default via auto IDL publish in runner.
+1. Discovery scope is complete and closed.
+2. Solana listener now supports full symbolic op-surface decode + DB mapping (`add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded`).
+3. Tx-scoped HCU metering is active with global per-window cap enforcement at `close_hcu_meter`.
+4. Explorer-visible flow remains reproducible with one command, with auto IDL publish in runner.
 
 ## Core Findings
 
@@ -35,15 +35,16 @@ Recommended direction for PoC speed and low blast radius:
 
 Must implement now:
 1. Handle metadata compatibility for Gateway checks.
-2. Minimal symbolic ops (`add`, `sub`) -> canonical `computations` insertion.
+2. Full symbolic op-surface (`add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded`) -> canonical `computations` insertion.
 3. Persistent `allow` -> canonical `allowed_handles` + `pbs_computations` insertion.
 4. Finality gating + persisted cursor + idempotent replay.
+5. HCU parity model active: per-tx meter + global per-window cap.
 
 Explicitly deferred:
-1. Full op catalog parity.
-2. Delegation and all ACL edge paths.
-3. Full worker/gateway throughput tuning.
-4. Production indexer infra hardening.
+1. Delegation and all ACL edge paths.
+2. Full worker/gateway throughput tuning.
+3. Production indexer infra hardening.
+4. Fee-market and per-signer window quotas (DoS-cost hardening beyond PoC).
 
 ## Model Update (2026-02-09 from PR #1856)
 
@@ -62,6 +63,6 @@ Evidence:
 - [PR #1856 host chain cache type](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/host_chains.rs#L1)
 - [PR #1856 key cache type](https://github.com/zama-ai/fhevm/blob/f991b40c0c8f0e73abf768d37506323a3175ee04/coprocessor/fhevm-engine/fhevm-engine-common/src/db_keys.rs#L1)
 
-## Decision for #1028
+## Decision
 
 Discovery recommendation: proceed to PoC with a separate `solana-listener` service writing the same canonical DB effects as the EVM host-listener.

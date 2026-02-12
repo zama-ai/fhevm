@@ -1,7 +1,7 @@
 # Solana Host Listener PoC Plan
 
 Date: 2026-02-09
-Last synced: 2026-02-11
+Last synced: 2026-02-12
 Branch: `codex/solana-host-listener-discovery`
 
 ## Goal
@@ -180,7 +180,7 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 
 ## Execution Plan
 
-1. Freeze v0.1 interface in Anchor (full symbolic op surface + `allow`) and export IDL.
+1. Keep Anchor interface frozen for full symbolic op surface + `allow`, with tx-scoped HCU metering and global per-window cap.
 2. Define canonical listener structs and exact DB mapping (1:1 parity for v0).
 3. Implement `solana-listener` finalized RPC log poller + DB ingest path.
 4. Add hint path (confirmed logs) to reduce latency without changing canonical commit source.
@@ -258,7 +258,7 @@ Any design with unacceptable locked capital or cleanup burden is rejected before
 - Solana architecture draft: `SOLANA_ARCHITECTURE.md`
 - v0 interface freeze: `INTERFACE_V0.md`
 - freshness protocol: `DOC_FRESHNESS.md`
-- one-command explorer-visible demo: `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
+- one-command explorer-visible demo: `<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
 
 ## Comparison Criteria
 
