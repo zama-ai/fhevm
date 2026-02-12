@@ -416,6 +416,7 @@ async fn fetch_and_execute_sns_tasks(
                 .set_status(Status::error(err.to_string()));
             return Err(err);
         }
+        drop(batch_store_span);
 
         db_txn.commit().await?;
 
@@ -693,6 +694,7 @@ async fn update_ciphertext128(
 
             match res {
                 Ok(val) => {
+                    drop(persist_span);
                     info!(
                         handle = to_hex(&task.handle),
                         query_res = format!("{:?}", val),
@@ -705,6 +707,7 @@ async fn update_ciphertext128(
                         .context()
                         .span()
                         .set_status(Status::error(err.to_string()));
+                    drop(persist_span);
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely

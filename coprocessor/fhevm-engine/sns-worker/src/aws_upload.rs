@@ -188,6 +188,7 @@ async fn run_uploader_loop(
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
                         }
                     }
+                    drop(upload_span);
                     drop(permit);
                 });
 
@@ -274,6 +275,7 @@ async fn upload_ciphertexts(
             }
         };
         ct128_check_span.record("exists", tracing::field::display(exists));
+        drop(ct128_check_span);
 
         if !exists {
             let ct128_upload_span = tracing::info_span!(
@@ -347,6 +349,7 @@ async fn upload_ciphertexts(
             }
         };
         ct64_check_span.record("exists", tracing::field::display(exists));
+        drop(ct64_check_span);
 
         if !exists {
             let ct64_upload_span = tracing::info_span!(
@@ -401,8 +404,10 @@ async fn upload_ciphertexts(
                     span.context()
                         .span()
                         .set_status(Status::error(err.to_string()));
+                    drop(span);
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
+                    drop(span);
                     task.update_ct128_uploaded(&mut trx, digest).await?;
                 }
             }
@@ -417,8 +422,10 @@ async fn upload_ciphertexts(
                     span.context()
                         .span()
                         .set_status(Status::error(err.to_string()));
+                    drop(span);
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
+                    drop(span);
                     task.update_ct64_uploaded(&mut trx, digest).await?;
                 }
             }
