@@ -47,6 +47,11 @@ pub struct Args {
     #[arg(long, default_value_t = 8)]
     pub worker_thread_count: u32,
 
+    /// Only process verify_proofs for this host chain ID.
+    /// If not set, proofs for all chains will be processed.
+    #[arg(long)]
+    pub host_chain_id: Option<i64>,
+
     /// Zkproof-worker service name in OTLP traces
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "zkproof-worker")]
     pub service_name: String,
@@ -99,6 +104,7 @@ async fn main() {
         pg_pool_connections: args.pg_pool_connections,
         pg_polling_interval: args.pg_polling_interval,
         worker_thread_count: args.worker_thread_count,
+        host_chain_id: args.host_chain_id,
         pg_timeout: args.pg_timeout,
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };

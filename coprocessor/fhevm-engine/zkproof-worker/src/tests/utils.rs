@@ -25,6 +25,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         pg_pool_connections: 10,
         pg_polling_interval: 60,
         worker_thread_count: 1,
+        host_chain_id: None,
         pg_timeout: Duration::from_secs(15),
         pg_auto_explain_with_min_duration: None,
     };

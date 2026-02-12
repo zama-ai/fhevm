@@ -94,6 +94,7 @@ pub struct Config {
     pub pg_auto_explain_with_min_duration: Option<Duration>,
 
     pub worker_thread_count: u32,
+    pub host_chain_id: Option<i64>,
 }
 
 pub static ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
@@ -108,7 +109,7 @@ impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Config {{ database_url: {}, listen_database_channel: {}, notify_database_channel: {}, pg_pool_connections: {}, pg_polling_interval: {}, pg_timeout: {:?}, pg_auto_explain_with_min_duration: {:?}, worker_thread_count: {} }}",
+            "Config {{ database_url: {}, listen_database_channel: {}, notify_database_channel: {}, pg_pool_connections: {}, pg_polling_interval: {}, pg_timeout: {:?}, pg_auto_explain_with_min_duration: {:?}, worker_thread_count: {}, host_chain_id: {:?} }}",
             self.database_url,
             self.listen_database_channel,
             self.notify_database_channel,
@@ -116,7 +117,8 @@ impl Display for Config {
             self.pg_polling_interval,
             self.pg_timeout,
             self.pg_auto_explain_with_min_duration,
-            self.worker_thread_count
+            self.worker_thread_count,
+            self.host_chain_id
         )
     }
 }

@@ -138,6 +138,13 @@ pub async fn execute_verify_proofs_loop(
             .await
             .map_err(|err| ExecutionError::Other(err.into()))?,
     );
+    if let Some(host_chain_id_raw) = conf.host_chain_id {
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
+        if host_chain_cache.get_chain(host_chain_id).is_none() {
+            return Err(ExecutionError::UnknownChainId(host_chain_id_raw));
+        }
+    }
 
     let t = telemetry::tracer("init_workers", &None);
     let mut s = t.child_span("start_workers");
@@ -229,9 +236,9 @@ async fn execute_worker(
             &conf,
         )
         .await?;
-        let count = get_remaining_tasks(&pool).await?;
-        if count > 0 {
-            info!({ count }, "zkproof requests available");
+        let has_work = has_remaining_tasks(&pool, conf.host_chain_id).await?;
+        if has_work {
+            info!("zkproof requests available");
             continue;
         }
 
@@ -266,16 +273,18 @@ async fn execute_verify_proof_routine(
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    if let Ok(row) = sqlx::query(
+    let next_task = sqlx::query(
         "SELECT zk_proof_id, input, host_chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
+              AND ($1::BIGINT IS NULL OR host_chain_id = $1::BIGINT)
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
+    .bind(conf.host_chain_id)
     .fetch_one(&mut *txn)
-    .await
-    {
+    .await;
+    if let Ok(row) = next_task {
         let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
@@ -566,26 +575,33 @@ fn create_ciphertext(
     })
 }
 
-/// Returns the number of remaining tasks in the database.
-async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
+/// Returns whether at least one unlocked task remains in the database.
+async fn has_remaining_tasks(
+    pool: &PgPool,
+    host_chain_id: Option<i64>,
+) -> Result<bool, ExecutionError> {
+    // Use EXISTS + LIMIT 1 because the worker loop only needs a boolean gate; counting all rows
+    // would scan/lock more tuples than necessary under load.
     let row = sqlx::query(
         "
-        SELECT COUNT(*)
-        FROM (
+        SELECT EXISTS (
             SELECT 1
             FROM verify_proofs
             WHERE verified IS NULL
+              AND ($1::BIGINT IS NULL OR host_chain_id = $1::BIGINT)
             ORDER BY zk_proof_id ASC
+            LIMIT 1
             FOR UPDATE SKIP LOCKED
-        ) AS unlocked_rows;
+        ) AS has_work;
         ",
     )
+    .bind(host_chain_id)
     .fetch_one(pool)
     .await?;
 
-    let count: i64 = row.get("count");
+    let has_work: bool = row.get("has_work");
 
-    Ok(count)
+    Ok(has_work)
 }
 
 pub(crate) async fn insert_ciphertexts(
