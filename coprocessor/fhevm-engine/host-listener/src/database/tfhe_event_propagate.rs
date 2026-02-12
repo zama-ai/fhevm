@@ -210,11 +210,21 @@ impl Database {
         rows
     }
 
-    pub async fn find_slow_dep_chain_ids(
+    pub async fn find_slow_dep_chain_ids<T, I>(
         &self,
         tx: &mut Transaction<'_>,
-        dep_chain_ids: &[Vec<u8>],
-    ) -> Result<HashSet<ChainHash>, SqlxError> {
+        dep_chain_ids: I,
+    ) -> Result<HashSet<ChainHash>, SqlxError>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<[u8]>,
+    {
+        let dep_chain_ids = dep_chain_ids
+            .into_iter()
+            .map(|dep_chain_id| dep_chain_id.as_ref().to_vec())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         if dep_chain_ids.is_empty() {
             return Ok(HashSet::new());
         }
@@ -232,8 +242,7 @@ impl Database {
         .fetch_all(tx.deref_mut())
         .await?;
 
-        let mut slow_dep_chain_ids =
-            HashSet::with_capacity(rows.len() + dep_chain_ids.len());
+        let mut slow_dep_chain_ids = HashSet::with_capacity(rows.len());
         for row in rows {
             let dep_chain_id = row.dependence_chain_id;
             if let Ok(dep_chain_bytes) =
