@@ -75,7 +75,7 @@ Use this when testnet decryptions stall and you suspect slow-lane side effects.
 - Keep following COP-RB01 health/catchup/capacity checks.
 - If recovery is unclear, keep standard incident flow and investigate other root causes.
 
-Operational note: off mode promotes chains to fast at startup (serialized via advisory lock).
+Operational note: off mode promotes chains to fast at startup (advisory-lock serialized, batched updates).
 
 ### Local stack notes
 
