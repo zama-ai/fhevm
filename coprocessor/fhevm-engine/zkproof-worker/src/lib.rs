@@ -61,6 +61,15 @@ pub enum ExecutionError {
 
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
+
+    #[error("Unknown chain ID: {0})")]
+    UnknownChainId(i64),
+
+    #[error("Cache creation error: {0})")]
+    CacheCreationError(String),
+
+    #[error("{0}")]
+    Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<ExecutionError> for ServiceError {

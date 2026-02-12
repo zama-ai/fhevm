@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use crate::{
-    db_queries::query_tenant_keys,
     server::{
         common::FheOperation,
         tfhe_worker::{
@@ -12,10 +11,10 @@ use crate::{
     },
     tests::{
         inputs::{test_random_contract_address, test_random_user_address},
-        utils::{default_api_key, default_tenant_id, setup_test_app},
+        utils::{default_api_key, latest_db_key, setup_test_app},
     },
 };
-use fhevm_engine_common::utils::safe_serialize;
+use fhevm_engine_common::{crs::CrsCache, db_keys::DbKeyCache, utils::safe_serialize};
 use tonic::metadata::MetadataValue;
 
 #[tokio::test]
@@ -28,24 +27,18 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let (key, crs) = latest_db_key(&pool).await;
 
     {
         // too many uploads at once
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
@@ -81,14 +74,14 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     {
         // garbage ciphertext
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
@@ -119,13 +112,13 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     {
         // more ciphertexts than limit
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         for _ in 0..300 {
             let _ = builder.push(false);
         }
 
         let the_list = builder
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
         let serialized = safe_serialize(&the_list);
 
@@ -179,82 +172,6 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 }
 
 #[tokio::test]
-async fn test_coprocessor_api_key_errors() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    {
-        // not provided api key
-        println!("Encrypting inputs...");
-        let input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: Vec::new(),
-        });
-        let resp = client.upload_inputs(input_request).await;
-        match resp {
-            Err(e) => {
-                assert!(e
-                    .to_string()
-                    .contains("API key unknown/invalid/not provided"));
-            }
-            Ok(_) => {
-                panic!("Should not have succeeded")
-            }
-        }
-    }
-
-    {
-        // invalid api key
-        println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: Vec::new(),
-        });
-        const API_KEY_HEADER: &str = "bearer invalid-guid";
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(API_KEY_HEADER).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await;
-        match resp {
-            Err(e) => {
-                assert!(e
-                    .to_string()
-                    .contains("API key unknown/invalid/not provided"));
-            }
-            Ok(_) => {
-                panic!("Should not have succeeded")
-            }
-        }
-    }
-
-    {
-        // non existing
-        println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: Vec::new(),
-        });
-
-        const API_KEY_HEADER: &str = "bearer 9a671665-3842-400f-b4d1-37e194e5e9a0";
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(API_KEY_HEADER).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await;
-        match resp {
-            Err(e) => {
-                assert!(e
-                    .to_string()
-                    .contains("API key unknown/invalid/not provided"));
-            }
-            Ok(_) => {
-                panic!("Should not have succeeded")
-            }
-        }
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
@@ -264,13 +181,10 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     let mut handle_counter = 0;
     let mut next_handle = || {
@@ -281,14 +195,14 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
 
     let initial_inputs_resp = {
         // not provided api key
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(false)
             .push(1u8)
             .push(2u16)
             .push(3u32)
             .push(4u64)
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);

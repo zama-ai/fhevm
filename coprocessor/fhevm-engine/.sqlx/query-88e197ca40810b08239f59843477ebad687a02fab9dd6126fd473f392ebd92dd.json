@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO host_chains (chain_id, name, acl_contract_address)\n            VALUES (\n                12345,\n                'test chain',\n                $1\n            )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "88e197ca40810b08239f59843477ebad687a02fab9dd6126fd473f392ebd92dd"
+}

@@ -232,7 +232,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
+            "SELECT zk_proof_id, host_chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -283,7 +283,7 @@ where
                             .contract_address
                             .parse()
                             .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
+                        contractChainId: U256::from(row.host_chain_id),
                         extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);

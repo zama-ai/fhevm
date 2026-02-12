@@ -44,6 +44,7 @@ enum DeviceSelection {
 pub struct Scheduler<'a> {
     graph: &'a mut DFComponentGraph,
     edges: Dag<(), ComponentEdge>,
+    #[cfg(not(feature = "gpu"))]
     sks: tfhe::ServerKey,
     cpk: tfhe::CompactPublicKey,
     #[cfg(feature = "gpu")]
@@ -60,7 +61,7 @@ impl<'a> Scheduler<'a> {
     }
     pub fn new(
         graph: &'a mut DFComponentGraph,
-        sks: tfhe::ServerKey,
+        #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
         cpk: tfhe::CompactPublicKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
         activity_heartbeat: HeartBeat,
@@ -69,6 +70,7 @@ impl<'a> Scheduler<'a> {
         Self {
             graph,
             edges,
+            #[cfg(not(feature = "gpu"))]
             sks: sks.clone(),
             cpk: cpk.clone(),
             #[cfg(feature = "gpu")]

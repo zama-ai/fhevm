@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ciphertexts128(handle, ciphertext)\n                VALUES ($1, $2)\n            ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8c9fde48a0d089461d92437b2afe994bef17f18e5c64ddcf63574cc0a579d28"
+}

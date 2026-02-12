@@ -1,16 +1,15 @@
 use std::str::FromStr;
 
 use alloy::primitives::keccak256;
-use fhevm_engine_common::utils::safe_serialize;
+use fhevm_engine_common::{crs::CrsCache, db_keys::DbKeyCache, utils::safe_serialize};
 use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 use tonic::metadata::MetadataValue;
 
 use crate::{
-    db_queries::query_tenant_keys,
     server::tfhe_worker::{
         fhevm_coprocessor_client::FhevmCoprocessorClient, InputToUpload, InputUploadBatch,
     },
-    tests::utils::{decrypt_ciphertexts, default_api_key, default_tenant_id, setup_test_app},
+    tests::utils::{decrypt_ciphertexts, default_api_key, setup_test_app},
 };
 
 pub fn test_random_user_address() -> String {
@@ -33,16 +32,13 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     println!("Building list");
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(false)
         .push(1u8)
@@ -55,7 +51,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .push(StaticUnsignedBigInt::<8>::from(8u32))
         .push(StaticUnsignedBigInt::<16>::from(9u32))
         .push(StaticUnsignedBigInt::<32>::from(10u32))
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
@@ -111,7 +107,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         decr_handles.push(handle.handle.clone());
     }
 
-    let resp = decrypt_ciphertexts(&pool, 1, decr_handles).await?;
+    let resp = decrypt_ciphertexts(&pool, decr_handles).await?;
     assert_eq!(resp.len(), 10);
 
     assert_eq!(resp[0].output_type, 0);
@@ -153,16 +149,13 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .connect(db_url)
         .await?;
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     println!("Building list");
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(false)
         .push(1u8)
@@ -170,7 +163,7 @@ async fn custom_insert_inputs() -> Result<(), Box<dyn std::error::Error>> {
         .push(3u32)
         .push(4u64)
         .push(5u64)
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);

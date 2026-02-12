@@ -1,4 +1,3 @@
-use crate::db_queries::query_tenant_keys;
 use crate::server::common::FheOperation;
 use crate::server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput};
 use crate::server::tfhe_worker::{
@@ -6,9 +5,11 @@ use crate::server::tfhe_worker::{
     InputToUpload, InputUploadBatch,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
+    decrypt_ciphertexts, default_api_key, random_handle, setup_test_app,
     wait_until_all_allowed_handles_computed,
 };
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
 use tonic::metadata::MetadataValue;
@@ -48,22 +49,19 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
             .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
@@ -177,7 +175,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -222,22 +220,19 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
             .push(20_u64) // Balance destination
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
@@ -357,7 +352,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -402,18 +397,15 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let serialized = safe_serialize(&the_list);
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -440,11 +432,11 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(100_u64) // Balance source
             .push(10_u64) // Transfer amount
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
 
         let serialized = safe_serialize(&the_list);
@@ -564,7 +556,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -610,18 +602,15 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(42_u64) // Initial counter value
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let serialized = safe_serialize(&the_list);
     let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -684,7 +673,7 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -723,13 +712,10 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
     let num_levels = (num_samples as f64).log2().ceil() as usize;
     let mut num_comps_at_level = 2f64.powi((num_levels - 1) as i32) as usize;
@@ -738,11 +724,11 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     let mut level_outputs = vec![];
 
     for _ in 0..num_comps_at_level {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
         let the_list = builder
             .push(1_u64) // Initial value
             .push(1_u64) // Initial value
-            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
             .unwrap();
         let serialized = safe_serialize(&the_list);
         let mut input_request = tonic::Request::new(InputUploadBatch {
@@ -809,7 +795,7 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),

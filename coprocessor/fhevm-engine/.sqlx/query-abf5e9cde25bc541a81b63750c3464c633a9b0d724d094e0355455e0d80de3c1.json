@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE computations\n            SET is_completed = true, completed_at = CURRENT_TIMESTAMP\n            WHERE is_completed = false\n            AND (output_handle, transaction_id) IN (\n                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "abf5e9cde25bc541a81b63750c3464c633a9b0d724d094e0355455e0d80de3c1"
+}

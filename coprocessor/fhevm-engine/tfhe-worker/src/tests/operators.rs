@@ -181,7 +181,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -292,7 +292,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -430,7 +430,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -538,7 +538,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),
@@ -703,7 +703,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
 
     assert_eq!(
         resp.len(),

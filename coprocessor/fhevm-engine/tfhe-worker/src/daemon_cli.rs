@@ -39,9 +39,9 @@ pub struct Args {
     #[arg(long, default_value_t = 20)]
     pub dependence_chains_per_batch: i32,
 
-    /// Tenant key cache size
-    #[arg(long, default_value_t = 32)]
-    pub tenant_key_cache_size: i32,
+    /// Key cache size
+    #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
+    pub key_cache_size: usize,
 
     /// Maximum compact inputs to upload
     #[arg(long, default_value_t = 10)]

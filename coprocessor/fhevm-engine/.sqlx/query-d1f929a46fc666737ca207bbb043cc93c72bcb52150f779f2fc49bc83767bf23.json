@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO crs(crs_id, crs)\n            VALUES (\n                ''::BYTEA,\n                $1\n            )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1f929a46fc666737ca207bbb043cc93c72bcb52150f779f2fc49bc83767bf23"
+}

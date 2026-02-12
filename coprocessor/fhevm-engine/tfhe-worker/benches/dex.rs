@@ -1,12 +1,14 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_allowed_handles_computed, write_to_json, EnvConfig, OperatorType,
+    default_api_key, random_handle, setup_test_app, wait_until_all_allowed_handles_computed,
+    write_to_json, EnvConfig, OperatorType,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -227,15 +229,12 @@ async fn swap_request_whitepaper(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // From balance 0
         .push(200_u64) // From balance 1
@@ -247,7 +246,7 @@ async fn swap_request_whitepaper(
         .push(200_u64) // Total dex token in 1
         .push(10_u64) // Amount 0
         .push(20_u64) // Amount 1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
@@ -513,7 +512,7 @@ async fn swap_request_whitepaper(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -554,15 +553,12 @@ async fn swap_request_no_cmux(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // From balance 0
         .push(200_u64) // From balance 1
@@ -574,7 +570,7 @@ async fn swap_request_no_cmux(
         .push(200_u64) // Total dex token in 1
         .push(10_u64) // Amount 0
         .push(20_u64) // Amount 1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
@@ -858,7 +854,7 @@ async fn swap_request_no_cmux(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -899,15 +895,12 @@ async fn swap_claim_whitepaper(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // Pending 0 in
         .push(200_u64) // Pending 1 in
@@ -915,7 +908,7 @@ async fn swap_claim_whitepaper(
         .push(900_u64) // Old balance 1
         .push(100_u64) // Current dex balance 0
         .push(200_u64) // Current dex balance  1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let total_dex_token_0_in: u64 = 300;
     let total_dex_token_1_in: u64 = 600;
@@ -1277,7 +1270,7 @@ async fn swap_claim_whitepaper(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -1318,15 +1311,12 @@ async fn swap_claim_no_cmux(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // Pending 0 in
         .push(200_u64) // Pending 1 in
@@ -1334,7 +1324,7 @@ async fn swap_claim_no_cmux(
         .push(900_u64) // Old balance 1
         .push(100_u64) // Current dex balance 0
         .push(200_u64) // Current dex balance  1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let total_dex_token_0_in: u64 = 300;
     let total_dex_token_1_in: u64 = 600;
@@ -1694,7 +1684,7 @@ async fn swap_claim_no_cmux(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -1736,15 +1726,12 @@ async fn swap_request_whitepaper_dep(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // From balance 0
         .push(200_u64) // From balance 1
@@ -1756,7 +1743,7 @@ async fn swap_request_whitepaper_dep(
         .push(200_u64) // Total dex token in 1
         .push(10_u64) // Amount 0
         .push(20_u64) // Amount 1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
@@ -2027,7 +2014,7 @@ async fn swap_request_whitepaper_dep(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -2068,15 +2055,12 @@ async fn swap_request_no_cmux_dep(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // From balance 0
         .push(200_u64) // From balance 1
@@ -2088,7 +2072,7 @@ async fn swap_request_no_cmux_dep(
         .push(200_u64) // Total dex token in 1
         .push(10_u64) // Amount 0
         .push(20_u64) // Amount 1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
@@ -2377,7 +2361,7 @@ async fn swap_request_no_cmux_dep(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -2418,15 +2402,12 @@ async fn swap_claim_whitepaper_dep(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // Pending 0 in
         .push(200_u64) // Pending 1 in
@@ -2434,7 +2415,7 @@ async fn swap_claim_whitepaper_dep(
         .push(900_u64) // Old balance 1
         .push(100_u64) // Current dex balance 0
         .push(200_u64) // Current dex balance  1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let total_dex_token_0_in: u64 = 300;
     let total_dex_token_1_in: u64 = 600;
@@ -2806,7 +2787,7 @@ async fn swap_claim_whitepaper_dep(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,
@@ -2847,15 +2828,12 @@ async fn swap_claim_no_cmux_dep(
         num_samples = samples.parse::<usize>().unwrap();
     }
 
-    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
-        .await
-        .map_err(|e| {
-            let e: Box<dyn std::error::Error> = e;
-            e
-        })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(100).unwrap();
+    let key = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().unwrap();
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
     let the_list = builder
         .push(100_u64) // Pending 0 in
         .push(200_u64) // Pending 1 in
@@ -2863,7 +2841,7 @@ async fn swap_claim_no_cmux_dep(
         .push(900_u64) // Old balance 1
         .push(100_u64) // Current dex balance 0
         .push(200_u64) // Current dex balance  1
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let total_dex_token_0_in: u64 = 300;
     let total_dex_token_1_in: u64 = 600;
@@ -3233,7 +3211,7 @@ async fn swap_claim_no_cmux_dep(
             )
         });
 
-    let params = keys.cks.computation_parameters();
+    let params = key.cks.unwrap().computation_parameters();
     write_to_json::<u64, _>(
         &bench_id,
         params,

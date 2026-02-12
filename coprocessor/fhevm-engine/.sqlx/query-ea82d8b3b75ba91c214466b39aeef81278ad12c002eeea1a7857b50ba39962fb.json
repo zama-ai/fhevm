@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, sns_pk)\n        VALUES ('', $1, $2, $3, $4)\n        ON CONFLICT (key_id_gw) DO UPDATE SET\n            key_id = '',\n            pks_key = EXCLUDED.pks_key,\n            sks_key = EXCLUDED.sks_key,\n            sns_pk = EXCLUDED.sns_pk",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Oid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea82d8b3b75ba91c214466b39aeef81278ad12c002eeea1a7857b50ba39962fb"
+}
