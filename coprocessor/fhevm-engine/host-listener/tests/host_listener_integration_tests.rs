@@ -671,6 +671,114 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let slow_parent = FixedBytes::<32>::from([0x11; 32]);
+    let fast_parent = FixedBytes::<32>::from([0x22; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
+        VALUES ($1, 'updated', NOW(), NOW(), 1, 1)
+        "#,
+    )
+    .bind(slow_parent.as_slice())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
+        VALUES ($1, 'updated', NOW(), NOW(), 1, 0)
+        "#,
+    )
+    .bind(fast_parent.as_slice())
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut tx = db.new_transaction().await?;
+    let found = db
+        .find_slow_dep_chain_ids(
+            &mut tx,
+            &[slow_parent.to_vec(), fast_parent.to_vec(), vec![0x33; 32]],
+        )
+        .await?;
+
+    assert!(found.contains(&slow_parent));
+    assert!(!found.contains(&fast_parent));
+    assert_eq!(found.len(), 1);
+    tx.rollback().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let first_output =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 50_u64, 1)
+            .await?;
+    let slow_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, first_output).await?;
+    let initial_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&slow_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(initial_priority, 1, "first pass should mark chain slow");
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+
+    let second_output = ingest_dependent_burst_seeded(
+        &mut db,
+        &setup,
+        Some(first_output),
+        1,
+        51_u64,
+        64,
+    )
+    .await?;
+    let second_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, second_output).await?;
+    assert_eq!(
+        second_dep_chain_id, slow_dep_chain_id,
+        "continuation should stay on the same dependence chain"
+    );
+
+    let final_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&slow_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        final_priority, 1,
+        "priority must not downgrade from slow to fast"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_slow_lane_off_mode_promotes_all_chains_on_startup_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 3.0).await?;
