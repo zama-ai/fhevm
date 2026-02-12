@@ -29,7 +29,7 @@ pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZ
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum RevertReason {
+enum RevertReason {
     ConfigError(CoprocessorConfigError),
     Other(String),
 }
@@ -79,7 +79,7 @@ impl Display for CoprocessorConfigError {
     }
 }
 
-pub(crate) fn try_decode_coprocessor_config_error_from_revert_data(
+fn try_decode_coprocessor_config_error_from_revert_data(
     revert_data: &[u8],
 ) -> Option<CoprocessorConfigError> {
     let decoded = GatewayConfigChecksErrors::abi_decode(revert_data).ok()?;
@@ -104,7 +104,7 @@ fn map_gateway_config_error(decoded: GatewayConfigChecksErrors) -> Option<Coproc
     }
 }
 
-pub(crate) fn try_decode_coprocessor_config_error(
+fn try_decode_coprocessor_config_error(
     err: &RpcError<TransportErrorKind>,
 ) -> Option<CoprocessorConfigError> {
     err.as_error_resp()
@@ -132,7 +132,7 @@ where
     }
 }
 
-pub(crate) async fn get_revert_reason<P>(
+async fn get_revert_reason<P>(
     provider: &NonceManagedProvider<P>,
     receipt: &TransactionReceipt,
     trace_timeout: Duration,
