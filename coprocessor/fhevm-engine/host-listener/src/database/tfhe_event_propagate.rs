@@ -157,17 +157,10 @@ impl Database {
         &self,
     ) -> Result<u64, SqlxError> {
         let mut connection = self.pool().await.acquire().await?;
-        let lock_acquired =
-            sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_lock($1)")
-                .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
-                .fetch_one(connection.deref_mut())
-                .await?;
-        if !lock_acquired {
-            info!(
-                "Slow-lane disabled: eager promotion skipped (another instance is resetting priorities)"
-            );
-            return Ok(0);
-        }
+        sqlx::query_scalar::<_, bool>("SELECT pg_advisory_lock($1)")
+            .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+            .fetch_one(connection.deref_mut())
+            .await?;
 
         let rows = sqlx::query(
             r#"
