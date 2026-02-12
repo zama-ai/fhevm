@@ -2,7 +2,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
@@ -55,6 +55,8 @@ const OP_TRIVIAL_ENCRYPT: u8 = 24;
 const OP_IF_THEN_ELSE: u8 = 25;
 const OP_RAND: u8 = 26;
 const OP_RAND_BOUNDED: u8 = 27;
+const HCU_METER_SEED: &[u8] = b"hcu_meter";
+const HCU_GLOBAL_SEED: &[u8] = b"hcu_global";
 
 #[derive(Default, Debug)]
 struct IngestionSummary {
@@ -911,6 +913,131 @@ fn anchor_global_discriminator(name: &str) -> [u8; 8] {
     out
 }
 
+fn build_begin_hcu_meter_instruction(
+    program_id: Pubkey,
+    payer: Pubkey,
+    authority: Pubkey,
+    meter: Pubkey,
+    hcu_global: Pubkey,
+    meter_id: [u8; 16],
+) -> Instruction {
+    let mut data = Vec::with_capacity(8 + 16);
+    data.extend_from_slice(&anchor_global_discriminator("begin_hcu_meter"));
+    data.extend_from_slice(&meter_id);
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(payer, true),
+            AccountMeta::new_readonly(authority, true),
+            AccountMeta::new(meter, false),
+            AccountMeta::new(hcu_global, false),
+            AccountMeta::new_readonly(system_program_id(), false),
+        ],
+        data,
+    }
+}
+
+fn build_close_hcu_meter_instruction(
+    program_id: Pubkey,
+    payer: Pubkey,
+    authority: Pubkey,
+    meter: Pubkey,
+    hcu_global: Pubkey,
+    meter_id: [u8; 16],
+) -> Instruction {
+    let mut data = Vec::with_capacity(8 + 16);
+    data.extend_from_slice(&anchor_global_discriminator("close_hcu_meter"));
+    data.extend_from_slice(&meter_id);
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(payer, true),
+            AccountMeta::new_readonly(authority, true),
+            AccountMeta::new(meter, false),
+            AccountMeta::new(hcu_global, false),
+        ],
+        data,
+    }
+}
+
+fn derive_hcu_meter_pda(program_id: Pubkey, authority: Pubkey, meter_id: [u8; 16]) -> Pubkey {
+    let (pda, _bump) = Pubkey::find_program_address(
+        &[HCU_METER_SEED, authority.as_ref(), meter_id.as_ref()],
+        &program_id,
+    );
+    pda
+}
+
+fn derive_hcu_global_pda(program_id: Pubkey) -> Pubkey {
+    let (pda, _bump) = Pubkey::find_program_address(&[HCU_GLOBAL_SEED], &program_id);
+    pda
+}
+
+fn meter_id_for_instruction(instruction: &Instruction) -> [u8; 16] {
+    let mut preimage = Vec::with_capacity(
+        instruction.data.len() + instruction.accounts.len() * 34 + std::mem::size_of::<u128>(),
+    );
+    preimage.extend_from_slice(&instruction.data);
+    for meta in &instruction.accounts {
+        preimage.extend_from_slice(meta.pubkey.as_ref());
+        preimage.push(u8::from(meta.is_signer));
+        preimage.push(u8::from(meta.is_writable));
+    }
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .to_le_bytes();
+    preimage.extend_from_slice(&now_nanos);
+
+    let digest = hash(&preimage).to_bytes();
+    let mut meter_id = [0u8; 16];
+    meter_id.copy_from_slice(&digest[..16]);
+    meter_id
+}
+
+fn instruction_requires_hcu_meter(instruction: &Instruction) -> bool {
+    let Some(discriminator) = instruction.data.get(..8) else {
+        return false;
+    };
+    [
+        "request_add",
+        "request_sub",
+        "request_binary_op",
+        "request_unary_op",
+        "request_if_then_else",
+        "request_cast",
+        "request_trivial_encrypt",
+        "request_rand",
+        "request_rand_bounded",
+    ]
+    .iter()
+    .any(|name| discriminator == anchor_global_discriminator(name).as_slice())
+}
+
+fn wrap_metered_instruction(
+    signer: Pubkey,
+    mut request_instruction: Instruction,
+) -> Vec<Instruction> {
+    let program_id = request_instruction.program_id;
+    let meter_id = meter_id_for_instruction(&request_instruction);
+    let meter = derive_hcu_meter_pda(program_id, signer, meter_id);
+    let hcu_global = derive_hcu_global_pda(program_id);
+    request_instruction
+        .accounts
+        .push(AccountMeta::new(meter, false));
+
+    vec![
+        build_begin_hcu_meter_instruction(program_id, signer, signer, meter, hcu_global, meter_id),
+        request_instruction,
+        build_close_hcu_meter_instruction(program_id, signer, signer, meter, hcu_global, meter_id),
+    ]
+}
+
+fn system_program_id() -> Pubkey {
+    Pubkey::from_str("11111111111111111111111111111111").expect("valid system program id")
+}
+
 fn build_allow_instruction(
     program_id: Pubkey,
     signer: Pubkey,
@@ -1042,11 +1169,16 @@ fn send_instruction(
     signer: &Keypair,
     instruction: Instruction,
 ) -> anyhow::Result<Signature> {
+    let instructions = if instruction_requires_hcu_meter(&instruction) {
+        wrap_metered_instruction(signer.pubkey(), instruction)
+    } else {
+        vec![instruction]
+    };
     let blockhash = client
         .get_latest_blockhash()
         .context("get latest blockhash")?;
     let tx = Transaction::new_signed_with_payer(
-        &[instruction],
+        &instructions,
         Some(&signer.pubkey()),
         &[signer],
         blockhash,

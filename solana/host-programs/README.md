@@ -4,12 +4,15 @@ This Anchor workspace is a minimal program-first scaffold for the Solana host li
 
 It currently exposes:
 
-1. Full symbolic op request surface:
+1. HCU metering lifecycle:
+- `begin_hcu_meter`
+- `close_hcu_meter`
+2. Full symbolic op request surface (HCU-metered):
 - `request_add`, `request_sub`
 - `request_binary_op`, `request_unary_op`
 - `request_if_then_else`, `request_cast`
 - `request_trivial_encrypt`, `request_rand`, `request_rand_bounded`
-2. ACL signal:
+3. ACL signal:
 - `allow`
 
 This aligns with:
@@ -19,5 +22,5 @@ This aligns with:
 Notes:
 
 1. `result_handle` derivation is placeholder only.
-2. No persistence/state accounts are implemented in this scaffold.
+2. HCU is enforced with a tx-scoped meter account (`request_*` time) plus a global per-window budget account (`close_hcu_meter` time).
 3. Listener integration is expected to consume emitted events from finalized RPC logs.

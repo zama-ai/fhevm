@@ -19,7 +19,7 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = { version = "0.32.1" }
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 
 [dev-dependencies]
 mollusk-svm = "0.10.2"

@@ -1,8 +1,8 @@
 # Solana Host Interface v0/v0.1 (Freeze + Incremental Extension)
 
 Date: 2026-02-09
-Last synced: 2026-02-11
-Status: Active full-op interface (v0.1)
+Last synced: 2026-02-12
+Status: Active full-op interface (v0.3 with tx-scoped HCU metering + global window cap)
 
 ## Goal
 
@@ -17,6 +17,8 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 
 | Instruction | Args | Notes |
 |---|---|---|
+| `begin_hcu_meter` | `meter_id: [u8;16]` | Creates tx-scoped HCU meter PDA and initializes global HCU window PDA if needed. |
+| `close_hcu_meter` | `meter_id: [u8;16]` | Applies tx HCU to global per-window usage cap, then closes tx meter PDA and refunds lamports to `payer`. |
 | `request_add` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Symbolic request only; no FHE compute on-chain. |
 | `request_sub` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same contract as add, mapped to `FheSub`. |
 | `request_binary_op` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `opcode: u8` | Covers binary/comparison/bitwise/shift/rotate/min/max (`FheAdd..FheMax`, opcodes `0..19`). |
@@ -27,6 +29,8 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 | `request_rand` | `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRand`. |
 | `request_rand_bounded` | `upper_bound: [u8;32]`, `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRandBounded`. |
 | `allow` | `handle: [u8;32]`, `account: Pubkey` | Persistent allow signal equivalent to EVM `Allowed`. |
+
+All `request_*` instructions require a writable `meter` account owned by the host program and bound to the request `caller` (`authority`) via `meter.authority == caller`.
 
 ## Emitted Events (v0)
 
