@@ -7,7 +7,7 @@ use crate::metrics::{
     DELEGATE_USER_DECRYPT_SUCCESS_COUNTER,
 };
 use crate::nonce_managed_provider::NonceManagedProvider;
-use crate::ops::common::{get_revert_reason, try_decode_coprocessor_config_error, RevertReason};
+use crate::ops::common::{classify_failed_receipt, try_extract_terminal_config_error};
 
 use alloy::primitives::{Address, FixedBytes};
 use alloy::providers::Provider;
@@ -149,25 +149,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 );
                 return TxResult::IdemPotentError;
             }
-            Err(error) if try_decode_coprocessor_config_error(&error).is_some() => {
-                let config_error = try_decode_coprocessor_config_error(&error).unwrap();
-                let config_error_str = config_error.to_db_error_string();
-                error!(
-                    error = %config_error,
-                    ?delegation,
-                    "{operation} failed with non-retryable gateway coprocessor config error"
-                );
-                return TxResult::NonRetryableError(config_error_str);
-            }
-            Err(error) if is_transient_error(&error) => {
-                warn!(
-                    %error,
-                    ?delegation,
-                    "{operation} sending with transient error. Will retry indefinitely"
-                );
-                return TxResult::TransientError;
-            }
             Err(error) => {
+                if let Some(terminal_error) = try_extract_terminal_config_error(&error) {
+                    error!(
+                        error = %terminal_error.config_error,
+                        ?delegation,
+                        "{operation} failed with non-retryable gateway coprocessor config error"
+                    );
+                    return TxResult::NonRetryableError(terminal_error.db_error);
+                }
+                if is_transient_error(&error) {
+                    warn!(
+                        %error,
+                        ?delegation,
+                        "{operation} sending with transient error. Will retry indefinitively"
+                    );
+                    return TxResult::TransientError;
+                }
                 warn!(
                     %error,
                     ?delegation,
@@ -193,24 +191,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 ?delegation,
                 "{operation} txn failed"
             );
-            match get_revert_reason(
+            match classify_failed_receipt(
                 &self.gateway_provider,
                 &receipt,
                 Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
             .await
             {
-                RevertReason::ConfigError(config_error) => {
-                    let config_error_str = config_error.to_db_error_string();
+                Ok(terminal_error) => {
                     error!(
-                        error = %config_error,
+                        error = %terminal_error.config_error,
                         ?delegation,
                         transaction_hash = %receipt.transaction_hash,
                         "{operation} terminalized after debug trace matched gateway coprocessor config error"
                     );
-                    TxResult::NonRetryableError(config_error_str)
+                    TxResult::NonRetryableError(terminal_error.db_error)
                 }
-                RevertReason::Other(reason) => TxResult::OtherError(reason),
+                Err(reason) => TxResult::OtherError(reason),
             }
         }
     }

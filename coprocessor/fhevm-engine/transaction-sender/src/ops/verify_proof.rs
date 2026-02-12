@@ -1,4 +1,4 @@
-use super::common::{get_revert_reason, try_decode_coprocessor_config_error, RevertReason};
+use super::common::{classify_failed_receipt, try_extract_terminal_config_error};
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -160,17 +160,18 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if try_decode_coprocessor_config_error(&e).is_some() {
-                    let config_error = try_decode_coprocessor_config_error(&e).unwrap();
-                    let config_error_str = config_error.to_db_error_string();
+                } else if let Some(terminal_error) = try_extract_terminal_config_error(&e) {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         zk_proof_id = txn_request.0,
-                        error = %config_error,
+                        error = %terminal_error.config_error,
                         "Detected non-retryable gateway coprocessor config error while sending verify_proof transaction"
                     );
-                    self.mark_verify_proof_terminal_config_error(txn_request.0, &config_error_str)
-                        .await?;
+                    self.mark_verify_proof_terminal_config_error(
+                        txn_request.0,
+                        &terminal_error.db_error,
+                    )
+                    .await?;
                     return Ok(());
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
@@ -212,26 +213,28 @@ where
                 status = receipt.status(),
                 "Transaction failed"
             );
-            match get_revert_reason(
+            match classify_failed_receipt(
                 &self.provider,
                 &receipt,
                 Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
             .await
             {
-                RevertReason::ConfigError(config_error) => {
-                    let config_error_str = config_error.to_db_error_string();
+                Ok(terminal_error) => {
                     error!(
                         zk_proof_id = txn_request.0,
                         transaction_hash = %receipt.transaction_hash,
-                        error = %config_error,
+                        error = %terminal_error.config_error,
                         "Terminalizing verify_proof due to gateway coprocessor config error from debug trace"
                     );
-                    self.mark_verify_proof_terminal_config_error(txn_request.0, &config_error_str)
-                        .await?;
+                    self.mark_verify_proof_terminal_config_error(
+                        txn_request.0,
+                        &terminal_error.db_error,
+                    )
+                    .await?;
                     return Ok(());
                 }
-                RevertReason::Other(reason) => {
+                Err(reason) => {
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
                         current_retry_count,

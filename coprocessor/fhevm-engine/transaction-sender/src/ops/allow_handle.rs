@@ -7,9 +7,7 @@ use std::{
 use crate::{
     metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    ops::common::{
-        get_revert_reason, try_decode_coprocessor_config_error, try_into_array, RevertReason,
-    },
+    ops::common::{classify_failed_receipt, try_extract_terminal_config_error, try_into_array},
     REVIEW,
 };
 
@@ -101,40 +99,37 @@ where
                     .await?;
                 return Ok(());
             }
-            Err(e) if try_decode_coprocessor_config_error(&e).is_some() => {
-                let config_error = try_decode_coprocessor_config_error(&e).unwrap();
-                let config_error_str = config_error.to_db_error_string();
-                ALLOW_HANDLE_FAIL_COUNTER.inc();
-                error!(
-                    error = %config_error,
-                    key = %key,
-                    "Detected non-retryable gateway coprocessor config error while allowing handle"
-                );
-                self.mark_allow_handle_terminal_config_error(key, &config_error_str)
-                    .await?;
-                return Ok(());
-            }
-            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
-            // Local usage are included as they might be transient due to external AWS KMS signers.
-            Err(e)
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
-                    || matches!(&e, RpcError::LocalUsageError(_)) =>
-            {
-                ALLOW_HANDLE_FAIL_COUNTER.inc();
-                warn!(
-                    error = %e,
-                    handle = h,
-                    "Transaction sending failed with unlimited retry error"
-                );
-                self.increment_txn_unlimited_retries_count(
-                    key,
-                    &e.to_string(),
-                    current_unlimited_retries_count,
-                )
-                .await?;
-                bail!(e);
-            }
             Err(e) => {
+                if let Some(terminal_error) = try_extract_terminal_config_error(&e) {
+                    ALLOW_HANDLE_FAIL_COUNTER.inc();
+                    error!(
+                        error = %terminal_error.config_error,
+                        key = %key,
+                        "Detected non-retryable gateway coprocessor config error while allowing handle"
+                    );
+                    self.mark_allow_handle_terminal_config_error(key, &terminal_error.db_error)
+                        .await?;
+                    return Ok(());
+                }
+                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Local usage are included as they might be transient due to external AWS KMS signers.
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_))
+                {
+                    ALLOW_HANDLE_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %e,
+                        handle = h,
+                        "Transaction sending failed with unlimited retry error"
+                    );
+                    self.increment_txn_unlimited_retries_count(
+                        key,
+                        &e.to_string(),
+                        current_unlimited_retries_count,
+                    )
+                    .await?;
+                    bail!(e);
+                }
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
                     error = %e,
@@ -175,26 +170,25 @@ where
                 "allowAccount txn failed"
             );
 
-            match get_revert_reason(
+            match classify_failed_receipt(
                 &self.provider,
                 &receipt,
                 Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
             .await
             {
-                RevertReason::ConfigError(config_error) => {
-                    let config_error_str = config_error.to_db_error_string();
+                Ok(terminal_error) => {
                     error!(
-                        error = %config_error,
+                        error = %terminal_error.config_error,
                         transaction_hash = %receipt.transaction_hash,
                         key = %key,
                         "Terminalizing allow_handle due to gateway coprocessor config error from debug trace"
                     );
-                    self.mark_allow_handle_terminal_config_error(key, &config_error_str)
+                    self.mark_allow_handle_terminal_config_error(key, &terminal_error.db_error)
                         .await?;
                     return Ok(());
                 }
-                RevertReason::Other(reason) => {
+                Err(reason) => {
                     self.increment_txn_limited_retries_count(
                         key,
                         &reason,

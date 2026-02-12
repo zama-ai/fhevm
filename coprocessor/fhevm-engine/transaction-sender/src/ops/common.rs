@@ -35,6 +35,12 @@ pub(crate) enum RevertReason {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TerminalConfigError {
+    pub(crate) config_error: CoprocessorConfigError,
+    pub(crate) db_error: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CoprocessorConfigError {
     NotCoprocessorSigner(Address),
     NotCoprocessorTxSender(Address),
@@ -44,6 +50,15 @@ pub(crate) enum CoprocessorConfigError {
 impl CoprocessorConfigError {
     pub(crate) fn to_db_error_string(&self) -> String {
         format!("gw: {self}")
+    }
+}
+
+impl From<CoprocessorConfigError> for TerminalConfigError {
+    fn from(config_error: CoprocessorConfigError) -> Self {
+        Self {
+            db_error: config_error.to_db_error_string(),
+            config_error,
+        }
     }
 }
 
@@ -95,6 +110,26 @@ pub(crate) fn try_decode_coprocessor_config_error(
     err.as_error_resp()
         .and_then(|payload| payload.as_decoded_interface_error::<GatewayConfigChecksErrors>())
         .and_then(map_gateway_config_error)
+}
+
+pub(crate) fn try_extract_terminal_config_error(
+    err: &RpcError<TransportErrorKind>,
+) -> Option<TerminalConfigError> {
+    try_decode_coprocessor_config_error(err).map(Into::into)
+}
+
+pub(crate) async fn classify_failed_receipt<P>(
+    provider: &NonceManagedProvider<P>,
+    receipt: &TransactionReceipt,
+    trace_timeout: Duration,
+) -> std::result::Result<TerminalConfigError, String>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
+    match get_revert_reason(provider, receipt, trace_timeout).await {
+        RevertReason::ConfigError(config_error) => Ok(config_error.into()),
+        RevertReason::Other(reason) => Err(reason),
+    }
 }
 
 pub(crate) async fn get_revert_reason<P>(
