@@ -66,6 +66,7 @@ pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY: i64 = 1_907_001;
+const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
@@ -162,15 +163,38 @@ impl Database {
             .execute(connection.deref_mut())
             .await?;
 
-        let rows = sqlx::query!(
-            r#"
-            UPDATE dependence_chain dc
-            SET schedule_priority = $1
-            WHERE dc.schedule_priority <> $1
-            "#,
-            i16::from(SchedulePriority::Fast)
-        )
-        .execute(connection.deref_mut())
+        let rows = async {
+            let mut total_promoted: u64 = 0;
+            loop {
+                let updated = sqlx::query(
+                    r#"
+                    WITH candidate AS (
+                        SELECT dependence_chain_id
+                        FROM dependence_chain
+                        WHERE schedule_priority <> $1
+                        ORDER BY dependence_chain_id
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE dependence_chain dc
+                    SET schedule_priority = $1
+                    FROM candidate
+                    WHERE dc.dependence_chain_id = candidate.dependence_chain_id
+                    "#,
+                )
+                .bind(i16::from(SchedulePriority::Fast))
+                .bind(SLOW_LANE_RESET_BATCH_SIZE)
+                .execute(connection.deref_mut())
+                .await?
+                .rows_affected();
+
+                total_promoted = total_promoted.saturating_add(updated);
+                if updated == 0 {
+                    break;
+                }
+            }
+            Ok(total_promoted)
+        }
         .await;
 
         let unlock_res =
@@ -182,7 +206,7 @@ impl Database {
             warn!(error = %err, "Failed to release slow-lane reset advisory lock");
         }
 
-        rows.map(|value| value.rows_affected())
+        rows
     }
 
     pub async fn find_slow_dep_chain_ids(
