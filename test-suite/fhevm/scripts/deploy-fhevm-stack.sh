@@ -12,8 +12,8 @@ if [[ "$CLI_IMPL" == "legacy" ]]; then
 fi
 
 if ! command -v bun >/dev/null 2>&1; then
-  echo "[ERROR] bun runtime is required for deploy-fhevm-stack.sh. Install bun or run with FHEVM_CLI_IMPL=legacy." >&2
-  exit 1
+  echo "[WARN] bun runtime not found, falling back to legacy deploy script." >&2
+  exec "$LEGACY_DEPLOY_SCRIPT" "$@"
 fi
 
 exec bun "$BUN_CLI" deploy "$@"
