@@ -395,8 +395,6 @@ where
         }
         // we don't split by transition_id because delegations have an internal order
         // it's expected that both order are compatible but we don't now the transation_id order
-        let _prepare_span = tracing::info_span!("prepare_delegate", operation = "prepare_delegate");
-        let _prepare_enter = _prepare_span.enter();
         let mut requests = Vec::with_capacity(ready_delegations.len());
         let to_transaction = |delegation: &DelegationRow| {
             let is_revoke = delegation.new_expiration_date == 0;
@@ -433,8 +431,6 @@ where
             };
             requests.push((delegation, txn_request));
         }
-        drop(_prepare_enter);
-        drop(_prepare_span);
         let mut join_set = JoinSet::new();
         for (delegation, txn_request) in requests.iter() {
             // parallel transaction can fail if any of the transaction fail

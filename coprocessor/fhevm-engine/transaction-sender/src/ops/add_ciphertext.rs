@@ -335,12 +335,6 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let _span = tracing::info_span!(
-                "prepare_add_ciphertext",
-                operation = "prepare_add_ciphertext"
-            );
-            let _enter = _span.enter();
-
             let handle = row.handle.clone();
 
             let (ciphertext64_digest, ciphertext128_digest) =
@@ -394,9 +388,6 @@ where
                     )
                     .into_transaction_request(),
             };
-
-            drop(_enter);
-            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {

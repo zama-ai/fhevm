@@ -13,11 +13,11 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
-use sqlx::{postgres::PgListener, query, Acquire};
+use sqlx::{postgres::PgListener, query, Acquire, PgPool};
 use std::collections::HashMap;
 use std::time::SystemTime;
 use time::PrimitiveDateTime;
-use tracing::{debug, error, info, warn, Instrument};
+use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -80,6 +80,21 @@ pub async fn run_tfhe_worker(
     }
 }
 
+#[tracing::instrument(skip_all, fields(operation = "acquire_connection"))]
+async fn acquire_connection(
+    pool: &PgPool,
+) -> Result<sqlx::pool::PoolConnection<Postgres>, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(pool.acquire().await?)
+}
+
+#[tracing::instrument(skip_all, fields(operation = "begin_transaction"))]
+async fn begin_transaction<'a>(
+    conn: &'a mut sqlx::pool::PoolConnection<Postgres>,
+) -> Result<sqlx::Transaction<'a, Postgres>, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(conn.begin().await?)
+}
+
+#[tracing::instrument(skip_all, fields(operation = "worker_cycle", worker_id = %worker_id))]
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
@@ -135,13 +150,8 @@ async fn tfhe_worker_cycle(
 
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
-        let loop_span = tracing::info_span!("worker_iteration");
-        let _acq_span = tracing::info_span!(parent: &loop_span, "acquire_connection", operation = "acquire_connection");
-        let mut conn = pool.acquire().await?;
-        drop(_acq_span);
-        let _txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction", operation = "begin_transaction");
-        let mut trx = conn.begin().await?;
-        drop(_txn_span);
+        let mut conn = acquire_connection(&pool).await?;
+        let mut trx = begin_transaction(&mut conn).await?;
 
         // Query for transactions to execute
         let (mut transactions, earliest_computation, has_more_work) = query_for_work(
@@ -151,7 +161,6 @@ async fn tfhe_worker_cycle(
             &mut dcid_mngr,
             &mut no_progress_cycles,
         )
-        .instrument(loop_span.clone())
         .await?;
         if has_more_work {
             // We've fetched work, so we'll poll again without waiting
@@ -164,17 +173,13 @@ async fn tfhe_worker_cycle(
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
-            let _dcid_span = tracing::info_span!(parent: &loop_span, "query_dependence_chain", operation = "query_dependence_chain");
-
             let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
             immedially_poll_more_work = dependence_chain_id.is_some();
 
             tracing::info!(
-                parent: &_dcid_span,
                 dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
                 "acquired dependence chain lock"
             );
-            drop(_dcid_span);
 
             continue;
         }
@@ -199,12 +204,9 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &dcid_mngr,
         )
-        .instrument(loop_span.clone())
         .await?;
         let has_progressed =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
-                .instrument(loop_span.clone())
-                .await?;
+            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr).await?;
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -221,7 +223,6 @@ async fn tfhe_worker_cycle(
             }
         }
         trx.commit().await?;
-        drop(loop_span);
         #[cfg(feature = "bench")]
         {
             let prev_cycle_time = TIMING.load(std::sync::atomic::Ordering::SeqCst);
@@ -275,10 +276,6 @@ async fn query_for_work<'a>(
     no_progress_cycles: &mut u32,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), Box<dyn std::error::Error + Send + Sync>>
 {
-    let _s_dcid = tracing::info_span!(
-        "query_dependence_chain",
-        operation = "query_dependence_chain"
-    );
     // Lock dependence chain
     let (dependence_chain_id, locking_reason) =
         match deps_chain_mngr.extend_or_release_current_lock(true).await? {
@@ -303,13 +300,10 @@ async fn query_for_work<'a>(
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
     tracing::info!(
-        parent: &_s_dcid,
         dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
         "query dependence chain result"
     );
-    drop(_s_dcid);
 
-    let _s_work = tracing::info_span!("query_work_items", operation = "query_work_items");
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
     let the_work = query!(
@@ -351,8 +345,7 @@ WHERE c.transaction_id IN (
     })?;
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
-    tracing::info!(parent: &_s_work, count = the_work.len(), "work items queried");
-    drop(_s_work);
+    tracing::info!(count = the_work.len(), "work items queried");
     health_check.update_db_access();
     if the_work.is_empty() {
         if let Some(dependence_chain_id) = &dependence_chain_id {
@@ -365,11 +358,6 @@ WHERE c.transaction_id IN (
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
     let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
-    let _s_prep = tracing::info_span!(
-        "prepare_dataflow_graphs",
-        operation = "prepare_dataflow_graphs",
-        work_items = the_work.len()
-    );
     // Partition work directly by transaction
     let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
         .into_iter()
@@ -428,7 +416,6 @@ WHERE c.transaction_id IN (
         let (mut components, _) = build_component_nodes(ops, transaction_id)?;
         transactions.append(&mut components);
     }
-    drop(_s_prep);
     Ok((transactions, earliest_schedule_order, true))
 }
 
@@ -471,41 +458,36 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     // Execute the DFG
-    let s_compute = tracing::info_span!("compute_fhe_ops", operation = "compute_fhe_ops");
-    {
-        // Fetch the latest key from the database
-        let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
-            Ok(k) => k,
-            Err(err) => {
-                let cerr = CoprocessorError::MissingKeys {
-                    reason: err.to_string(),
-                };
-                error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
-                s_compute
-                    .context()
-                    .span()
-                    .set_status(opentelemetry::trace::Status::Error {
-                        description: cerr.to_string().into(),
-                    });
-                WORKER_ERRORS_COUNTER.inc();
-                return Err(cerr.into());
-            }
-        };
+    // Fetch the latest key from the database
+    let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
+        Ok(k) => k,
+        Err(err) => {
+            let cerr = CoprocessorError::MissingKeys {
+                reason: err.to_string(),
+            };
+            error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
+            tracing::Span::current().context().span().set_status(
+                opentelemetry::trace::Status::Error {
+                    description: cerr.to_string().into(),
+                },
+            );
+            WORKER_ERRORS_COUNTER.inc();
+            return Err(cerr.into());
+        }
+    };
 
-        // Schedule computations in parallel as dependences allow
-        tfhe::set_server_key(keys.sks.clone());
-        let mut sched = Scheduler::new(
-            &mut tx_graph,
-            #[cfg(not(feature = "gpu"))]
-            keys.sks.clone(),
-            keys.pks.clone(),
-            #[cfg(feature = "gpu")]
-            keys.gpu_sks.clone(),
-            health_check.activity_heartbeat.clone(),
-        );
-        sched.schedule().await?;
-    }
-    drop(s_compute);
+    // Schedule computations in parallel as dependences allow
+    tfhe::set_server_key(keys.sks.clone());
+    let mut sched = Scheduler::new(
+        &mut tx_graph,
+        #[cfg(not(feature = "gpu"))]
+        keys.sks.clone(),
+        keys.pks.clone(),
+        #[cfg(feature = "gpu")]
+        keys.gpu_sks.clone(),
+        health_check.activity_heartbeat.clone(),
+    );
+    sched.schedule().await?;
     Ok(tx_graph)
 }
 
@@ -585,9 +567,12 @@ async fn upload_transaction_graph_results<'a>(
         }
     }
     if !cts_to_insert.is_empty() {
-        let _s_insert = tracing::info_span!("insert_ct_into_db", operation = "insert_ct_into_db");
         for (h, (_, (_, db_type))) in cts_to_insert.iter() {
-            tracing::info!(parent: &_s_insert, handle = %format!("0x{}", hex::encode(h)), ciphertext_type = *db_type as i64, "inserting ciphertext");
+            tracing::info!(
+                handle = %format!("0x{}", hex::encode(h)),
+                ciphertext_type = *db_type as i64,
+                "inserting ciphertext"
+            );
         }
         #[allow(clippy::type_complexity)]
         let (handles, (ciphertexts, (ciphertext_versions, ciphertext_types))): (
@@ -611,14 +596,15 @@ async fn upload_transaction_graph_results<'a>(
         let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
             .execute(trx.as_mut())
             .await?;
-        drop(_s_insert);
         res |= cts_inserted > 0;
     }
 
     if !handles_to_update.is_empty() {
-        let _s_update = tracing::info_span!("update_computation", operation = "update_computation");
         for (h, _) in handles_to_update.iter() {
-            tracing::info!(parent: &_s_update, handle = %format!("0x{}", hex::encode(h)), "updating computation");
+            tracing::info!(
+                handle = %format!("0x{}", hex::encode(h)),
+                "updating computation"
+            );
         }
         let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
         let comp_updated = query!(
@@ -638,7 +624,6 @@ async fn upload_transaction_graph_results<'a>(
             error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
             err
         })?.rows_affected();
-        drop(_s_update);
         res |= comp_updated > 0;
     }
     Ok(res)
