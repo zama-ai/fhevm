@@ -44,15 +44,12 @@ What this parameter measures (current behavior):
 - Count is **per dependence chain, per ingest pass** (effectively block-scoped in normal flow).
 - Count unit is **unweighted dependent TFHE ops**: `+1` for each event that is:
   - newly inserted,
-  - `is_allowed = true`,
   - and has at least one input handle (depends on previous outputs).
 - It is **not** cumulative across past blocks.
 - It is **not** dependency depth.
 
-Why only allowed ops are counted:
-
-- Slow lane is meant to throttle near-term executable pressure.
-- Non-allowed ops are ACL-gated and may never become executable in the same horizon; counting them would over-throttle.
+`is_allowed` is not used in this counter; producer ops required by allowed downstream
+work are still counted because they are dependent ops in the same ingest pass.
 
 When enabled, over-limit chains are assigned to a slow lane by setting
 `dependence_chain.schedule_priority = 1`. Priority is monotonic per chain

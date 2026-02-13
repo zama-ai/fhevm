@@ -187,12 +187,11 @@ pub async fn ingest_block_logs(
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
-        // Count only newly inserted, currently allowed TFHE ops that actually
-        // consume input handles. This approximates dependent work added to a
-        // chain by this ingest pass.
+        // Count newly inserted dependent TFHE ops (ops that consume input
+        // handles). This approximates dependent work added to a chain by this
+        // ingest pass.
         let has_dependencies = !tfhe_inputs_handle(&tfhe_log.event).is_empty();
-        let is_new_allowed_event = inserted && tfhe_log.is_allowed;
-        if slow_lane_enabled && is_new_allowed_event && has_dependencies {
+        if slow_lane_enabled && inserted && has_dependencies {
             let total = dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .or_default();
