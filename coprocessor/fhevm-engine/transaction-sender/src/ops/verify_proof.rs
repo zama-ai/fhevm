@@ -247,6 +247,12 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
+            let _span = tracing::info_span!(
+                "prepare_verify_proof_resp",
+                operation = "prepare_verify_proof_resp"
+            );
+            let _enter = _span.enter();
+
             let txn_request = match row.verified {
                 Some(true) => {
                     info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
@@ -347,6 +353,9 @@ where
                     continue;
                 }
             };
+
+            drop(_enter);
+            drop(_span);
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;

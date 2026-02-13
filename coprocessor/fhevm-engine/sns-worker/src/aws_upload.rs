@@ -15,7 +15,6 @@ use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha3::{Digest, Keccak256};
 use sqlx::{PgPool, Pool, Postgres, Transaction};
-use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
@@ -33,13 +32,6 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
-
-fn mark_current_span_error(err: impl fmt::Display) {
-    tracing::Span::current()
-        .context()
-        .span()
-        .set_status(Status::error(err.to_string()));
-}
 
 pub(crate) async fn spawn_resubmit_task(
     pool_mngr: &PostgresPoolManager,
@@ -221,8 +213,8 @@ async fn run_uploader_loop(
 }
 
 enum UploadResult {
-    CtType128(Vec<u8>),
-    CtType64(Vec<u8>),
+    CtType128((Vec<u8>, tracing::Span)),
+    CtType64((Vec<u8>, tracing::Span)),
 }
 
 /// Uploads both 128-bit bootstrapped ciphertext and regular ciphertext to S3
@@ -233,7 +225,6 @@ enum UploadResult {
 ///   its digest in the database.
 /// - If the upload of the regular ciphertext fails, the function will not store
 ///   its digest in the database.
-#[tracing::instrument(skip_all, fields(operation = "upload_ciphertexts"))]
 async fn upload_ciphertexts(
     mut trx: Transaction<'_, Postgres>,
     task: HandleItem,
@@ -264,16 +255,37 @@ async fn upload_ciphertexts(
             hex::encode(&ct128_digest)
         };
 
-        let exists = match check_object_exists(client, &conf.bucket_ct128, &key).await {
+        let ct128_check_span = tracing::info_span!(
+            "ct128_check_s3",
+            operation = "ct128_check_s3",
+            ct_type = "ct128",
+            exists = tracing::field::Empty,
+        );
+        let exists = match check_object_exists(client, &conf.bucket_ct128, &key)
+            .instrument(ct128_check_span.clone())
+            .await
+        {
             Ok(v) => v,
             Err(err) => {
-                mark_current_span_error(&err);
+                ct128_check_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 return Err(err);
             }
         };
-        info!(ct_type = "ct128", exists, "S3 object exists check");
+        ct128_check_span.record("exists", tracing::field::display(exists));
+        drop(ct128_check_span);
 
         if !exists {
+            let ct128_upload_span = tracing::info_span!(
+                "ct128_upload_s3",
+                operation = "ct128_upload_s3",
+                ct_type = "ct128",
+                format = %format_as_str,
+                len = ct128_bytes.len(),
+            );
+
             jobs.push((
                 client
                     .put_object()
@@ -281,8 +293,9 @@ async fn upload_ciphertexts(
                     .metadata("Ct-Format", format_as_str)
                     .key(key)
                     .body(ByteStream::from(ct128_bytes.to_vec()))
-                    .send(),
-                UploadResult::CtType128(ct128_digest.clone()),
+                    .send()
+                    .instrument(ct128_upload_span.clone()),
+                UploadResult::CtType128((ct128_digest.clone(), ct128_upload_span)),
             ));
         } else {
             info!(
@@ -315,24 +328,45 @@ async fn upload_ciphertexts(
             hex::encode(&ct64_digest)
         };
 
-        let exists = match check_object_exists(client, &conf.bucket_ct64, &key).await {
+        let ct64_check_span = tracing::info_span!(
+            "ct64_check_s3",
+            operation = "ct64_check_s3",
+            ct_type = "ct64",
+            exists = tracing::field::Empty,
+        );
+        let exists = match check_object_exists(client, &conf.bucket_ct64, &key)
+            .instrument(ct64_check_span.clone())
+            .await
+        {
             Ok(v) => v,
             Err(err) => {
-                mark_current_span_error(&err);
+                ct64_check_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 return Err(err);
             }
         };
-        info!(ct_type = "ct64", exists, "S3 object exists check");
+        ct64_check_span.record("exists", tracing::field::display(exists));
+        drop(ct64_check_span);
 
         if !exists {
+            let ct64_upload_span = tracing::info_span!(
+                "ct64_upload_s3",
+                operation = "ct64_upload_s3",
+                ct_type = "ct64",
+                len = ct64_compressed.len(),
+            );
+
             jobs.push((
                 client
                     .put_object()
                     .bucket(conf.bucket_ct64.clone())
                     .key(key)
                     .body(ByteStream::from(ct64_compressed.clone()))
-                    .send(),
-                UploadResult::CtType64(ct64_digest.clone()),
+                    .send()
+                    .instrument(ct64_upload_span.clone()),
+                UploadResult::CtType64((ct64_digest.clone(), ct64_upload_span)),
             ));
         } else {
             info!(
@@ -358,7 +392,7 @@ async fn upload_ciphertexts(
 
     for (ct_variant, result) in results {
         match result {
-            UploadResult::CtType128(digest) => {
+            UploadResult::CtType128((digest, span)) => {
                 if let Err(err) = ct_variant {
                     error!(
                         error = %err,
@@ -366,13 +400,17 @@ async fn upload_ciphertexts(
                         "Failed to upload ct128",
                     );
 
-                    mark_current_span_error(&err);
+                    span.context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
+                    drop(span);
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
+                    drop(span);
                     task.update_ct128_uploaded(&mut trx, digest).await?;
                 }
             }
-            UploadResult::CtType64(digest) => {
+            UploadResult::CtType64((digest, span)) => {
                 if let Err(err) = ct_variant {
                     error!(
                         error = %err,
@@ -380,9 +418,13 @@ async fn upload_ciphertexts(
                         "Failed to upload ct64"
                     );
 
-                    mark_current_span_error(&err);
+                    span.context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
+                    drop(span);
                     transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
                 } else {
+                    drop(span);
                     task.update_ct64_uploaded(&mut trx, digest).await?;
                 }
             }

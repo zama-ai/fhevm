@@ -40,7 +40,7 @@ use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::error_span;
 use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -590,10 +590,14 @@ fn compute_task(
         return; // Skip empty ciphertexts
     }
 
-    let ct = match decompress_ct(&task.handle, ct64_compressed) {
+    let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
+    let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
         Ok(ct) => ct,
         Err(err) => {
-            mark_current_span_error(&err);
+            decompress_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to decompress ct64");
             return;
         }
@@ -601,6 +605,13 @@ fn compute_task(
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
+
+    let squash_span = tracing::info_span!(
+        "squash_noise",
+        ct_type = %ct_type,
+        operation = "squash_noise"
+    );
+    let _squash_enter = squash_span.enter();
 
     match ct.squash_noise_and_serialize(enable_compression) {
         Ok(bytes) => {
@@ -630,7 +641,12 @@ fn compute_task(
                 .try_send(UploadJob::Normal(task.clone()))
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
-                mark_current_span_error(&err);
+                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
+                let _send_task_enter = send_task_span.enter();
+                send_task_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 // This could happen if either we are experiencing a burst of tasks
                 // or the upload worker cannot recover the connection to AWS S3
                 //
@@ -649,7 +665,10 @@ fn compute_task(
             }
         }
         Err(err) => {
-            mark_current_span_error(&err);
+            squash_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
@@ -667,6 +686,8 @@ async fn update_ciphertext128(
     for task in tasks {
         if !task.ct128.is_empty() {
             let ciphertext128 = task.ct128.bytes();
+            let persist_span =
+                tracing::info_span!("ciphertexts128_insert", operation = "ciphertexts128_insert");
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (
@@ -678,10 +699,12 @@ async fn update_ciphertext128(
                 ciphertext128,
             )
             .execute(db_txn.as_mut())
+            .instrument(persist_span.clone())
             .await;
 
             match res {
                 Ok(val) => {
+                    drop(persist_span);
                     info!(
                         handle = to_hex(&task.handle),
                         query_res = format!("{:?}", val),
@@ -690,7 +713,11 @@ async fn update_ciphertext128(
                     );
                 }
                 Err(err) => {
-                    mark_current_span_error(&err);
+                    persist_span
+                        .context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
+                    drop(persist_span);
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely

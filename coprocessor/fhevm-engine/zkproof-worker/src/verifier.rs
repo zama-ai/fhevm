@@ -310,6 +310,8 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
+        let t = tracing::info_span!("db_insert", operation = "db_insert", request_id);
+
         let mut verified = false;
         let mut handles_bytes = vec![];
         match res.as_ref() {
@@ -329,7 +331,7 @@ async fn execute_verify_proof_routine(
                 insert_ciphertexts(&mut txn, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
-                tracing::info!(count = count, "ciphertexts inserted");
+                tracing::info!(parent: &t, count = count, "ciphertexts inserted");
             }
             Err(err) => {
                 error!(
@@ -340,7 +342,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        tracing::info!(valid = verified, "db_insert result");
+        tracing::info!(parent: &t, valid = verified, "db_insert result");
 
         // Mark as verified=true/false and set handles, if computed
         sqlx::query(

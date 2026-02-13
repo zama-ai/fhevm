@@ -359,6 +359,10 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
+            let _span =
+                tracing::info_span!("prepare_allow_account", operation = "prepare_allow_account");
+            let _enter = _span.enter();
+
             let handle = row.handle.clone();
             let chain_id = u64::from_be_bytes(handle[22..30].try_into()?);
             let h_as_hex = to_hex(&handle);
@@ -425,6 +429,9 @@ where
                 account_addr: account_addr.to_string(),
                 event_type,
             };
+
+            drop(_enter);
+            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {
