@@ -31,9 +31,7 @@ fn main() {
     let mut group = c.benchmark_group(bench_name);
     if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
         let num_elems = 1;
-        let bench_id = format!(
-            "{bench_name}::latency::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
-        );
+        let bench_id = format!("{bench_name}::latency::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(counter_increment(
                 b,
@@ -42,9 +40,8 @@ fn main() {
             ));
         });
 
-        let bench_id = format!(
-            "{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
-        );
+        let bench_id =
+            format!("{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(tree_reduction(
                 b,
