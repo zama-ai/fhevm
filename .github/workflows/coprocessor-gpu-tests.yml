@@ -17,9 +17,6 @@ on:
   # Allows you to run this workflow manually from the Actions tab as an alternative.
   workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
 
 jobs:
   check-changes:
