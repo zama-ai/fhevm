@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::{chain_id::ChainId, types::AllowEvents};
 use rand::Rng;
@@ -35,10 +37,6 @@ impl TestInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
     }
-}
-
-pub fn default_api_key() -> &'static str {
-    "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
 }
 
 pub fn random_handle() -> u64 {
