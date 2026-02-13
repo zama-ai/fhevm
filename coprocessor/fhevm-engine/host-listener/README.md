@@ -50,6 +50,9 @@ What this parameter measures (current behavior):
 
 `is_allowed` is not used in this counter; producer ops required by allowed downstream
 work are still counted because they are dependent ops in the same ingest pass.
+Note: `is_allowed = false` does **not** mean “not executed”. It only means the
+op output is not ACL-allowed; the op can still be required to compute an
+allowed downstream result.
 
 When enabled, over-limit chains are assigned to a slow lane by setting
 `dependence_chain.schedule_priority = 1`. Priority is monotonic per chain
