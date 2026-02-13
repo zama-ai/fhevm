@@ -60,6 +60,13 @@ impl fmt::Display for Order {
     }
 }
 
+fn mark_current_span_error(err: impl fmt::Display) {
+    tracing::Span::current()
+        .context()
+        .span()
+        .set_status(Status::error(err.to_string()));
+}
+
 pub struct SwitchNSquashService {
     pool: PgPool,
     conf: Config,
@@ -176,11 +183,11 @@ impl SwitchNSquashService {
     }
 }
 
+#[tracing::instrument(skip_all, fields(operation = "fetch_keyset"))]
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    let _t = telemetry::tracer("fetch_keyset", &None);
     fetch_latest_keyset(&keys_cache, &pool).await
 }
 
@@ -285,6 +292,7 @@ pub(crate) async fn run_loop(
 
 /// Clean up the database by removing old ciphertexts128 already uploaded to S3.
 /// Ideally, the table will be cleaned up by txn-sender if it's working properly
+#[tracing::instrument(skip_all, fields(operation = "cleanup_ct128", limit))]
 pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
     if limit == 0 {
         // GC disabled
@@ -310,7 +318,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst
     // Skip Locked to prevent concurrent updates
-    let start = SystemTime::now();
     let rows_affected: u64 = sqlx::query!(
         "
         WITH uploaded_ct128 AS (
@@ -334,7 +341,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     .rows_affected();
 
     if rows_affected > 0 {
-        let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
         info!(
             rows_affected = rows_affected,
             "Cleaning up old ciphertexts128"
@@ -346,6 +352,10 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
 /// Fetch and process SnS tasks from the database.
 /// Returns (maybe_remaining, number_of_tasks_processed) on success.
+#[tracing::instrument(
+    skip_all,
+    fields(operation = "batch_execution", task_count = tracing::field::Empty)
+)]
 async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
@@ -376,9 +386,7 @@ async fn fetch_and_execute_sns_tasks(
     {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
-
-        let t = telemetry::tracer("batch_execution", &None);
-        t.set_attribute("count", tasks.len().to_string());
+        tracing::Span::current().record("task_count", tasks.len() as i64);
 
         process_tasks(
             &mut tasks,
@@ -391,28 +399,10 @@ async fn fetch_and_execute_sns_tasks(
 
         update_computations_status(trx, &tasks).await?;
 
-        let batch_store_span = tracing::info_span!(
-            "batch_store_ciphertext128",
-            operation = "batch_store_ciphertext128"
-        );
-        batch_store_span.set_parent(t.context().clone());
-        let batch_store = async {
-            update_ciphertext128(trx, &tasks).await?;
-            notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
-
-            // Try to enqueue the tasks for upload in the DB
-            // This is a best-effort attempt, as the upload worker might not be available
-            enqueue_upload_tasks(trx, &tasks).await?;
-            Ok::<(), ExecutionError>(())
-        };
-        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
-            batch_store_span
-                .context()
-                .span()
-                .set_status(Status::error(err.to_string()));
+        if let Err(err) = store_processed_tasks(trx, &tasks, &conf.db.notify_channel).await {
+            mark_current_span_error(&err);
             return Err(err);
         }
-        drop(batch_store_span);
 
         db_txn.commit().await?;
 
@@ -429,15 +419,37 @@ async fn fetch_and_execute_sns_tasks(
     Ok((maybe_remaining, tasks_processed))
 }
 
+#[tracing::instrument(
+    skip_all,
+    fields(operation = "batch_store_ciphertext128", task_count = tasks.len() as i64)
+)]
+async fn store_processed_tasks(
+    trx: &mut Transaction<'_, Postgres>,
+    tasks: &[HandleItem],
+    notify_channel: &str,
+) -> Result<(), ExecutionError> {
+    update_ciphertext128(trx, tasks)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    notify_ciphertext128_ready(trx, notify_channel)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    // Try to enqueue the tasks for upload in the DB.
+    // This is best-effort; uploader availability is handled by retries.
+    enqueue_upload_tasks(trx, tasks)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    Ok(())
+}
+
 /// Queries the database for a fixed number of tasks.
+#[tracing::instrument(skip_all, fields(operation = "db_fetch_tasks", limit, order = %order))]
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let start_time = SystemTime::now();
-
     let query = format!(
         "
         SELECT a.*, c.ciphertext
@@ -464,10 +476,6 @@ pub async fn query_sns_tasks(
         return Ok(None);
     }
 
-    let t = telemetry::tracer_with_start_time("db_fetch_tasks", start_time);
-    t.set_attribute("count", records.len().to_string());
-    t.end();
-
     // Convert the records into HandleItem structs
     let tasks = records
         .into_iter()
@@ -487,7 +495,7 @@ pub async fn query_sns_tasks(
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: telemetry::tracer_with_handle("task", handle, &transaction_id),
+                otel: tracing::info_span!("task", operation = "task"),
                 transaction_id,
             })
         })
@@ -562,8 +570,10 @@ fn compute_task(
 ) {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
+    // Cross-boundary: compute_task runs on a thread-pool worker;
+    // restore the OTel context that was captured when the task was enqueued.
     let span = error_span!("compute", thread_id = %thread_id);
-    span.set_parent(task.otel.context().clone());
+    span.set_parent(task.otel.context());
     let _enter = span.enter();
 
     let handle = to_hex(&task.handle);

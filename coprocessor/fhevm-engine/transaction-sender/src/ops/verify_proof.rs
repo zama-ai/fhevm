@@ -117,6 +117,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(operation = "call_verify_proof_resp"))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
@@ -124,7 +125,6 @@ where
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         info!(zk_proof_id = txn_request.0, "Processing transaction");
-        let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
 
         let receipt = match self
             .provider
@@ -247,7 +247,11 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_verify_proof_resp", &transaction_id);
+            let _span = tracing::info_span!(
+                "prepare_verify_proof_resp",
+                operation = "prepare_verify_proof_resp"
+            );
+            let _enter = _span.enter();
 
             let txn_request = match row.verified {
                 Some(true) => {
@@ -350,7 +354,8 @@ where
                 }
             };
 
-            t.end();
+            drop(_enter);
+            drop(_span);
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;

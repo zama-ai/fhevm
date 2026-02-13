@@ -50,6 +50,7 @@ impl TryFrom<u64> for ChainId {
     type Error = InvalidChainId;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
+        #[allow(clippy::checked_conversions)]
         if value <= i64::MAX as u64 {
             Ok(ChainId(value as i64))
         } else {

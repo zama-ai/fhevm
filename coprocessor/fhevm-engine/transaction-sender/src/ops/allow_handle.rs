@@ -66,6 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
+    #[tracing::instrument(skip_all, fields(operation = "call_allow_account"))]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -77,7 +78,6 @@ where
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
-        let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
         let receipt = match self
             .provider
@@ -359,7 +359,9 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
+            let _span =
+                tracing::info_span!("prepare_allow_account", operation = "prepare_allow_account");
+            let _enter = _span.enter();
 
             let handle = row.handle.clone();
             let chain_id = u64::from_be_bytes(handle[22..30].try_into()?);
@@ -428,7 +430,8 @@ where
                 event_type,
             };
 
-            t.end();
+            drop(_enter);
+            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {
