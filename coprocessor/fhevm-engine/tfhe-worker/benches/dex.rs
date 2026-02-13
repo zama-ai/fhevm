@@ -52,7 +52,8 @@ fn main() {
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
         for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_request_whitepaper(
                     b,
@@ -62,7 +63,8 @@ fn main() {
             });
 
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_request_no_cmux(
                     b,
@@ -99,7 +101,8 @@ fn main() {
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
         for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_claim_whitepaper(
                     b,
@@ -109,7 +112,8 @@ fn main() {
             });
 
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_claim_no_cmux(
                     b,
@@ -126,7 +130,8 @@ fn main() {
         let mut group = c.benchmark_group(bench_name);
         for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new()
                     .unwrap()
@@ -138,7 +143,8 @@ fn main() {
             });
 
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_request_no_cmux_dep(
                     b,
@@ -153,7 +159,8 @@ fn main() {
         let mut group = c.benchmark_group(bench_name);
         for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_claim_whitepaper_dep(
                     b,
@@ -163,7 +170,8 @@ fn main() {
             });
 
             group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            let bench_id =
+                format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(swap_claim_no_cmux_dep(
                     b,
