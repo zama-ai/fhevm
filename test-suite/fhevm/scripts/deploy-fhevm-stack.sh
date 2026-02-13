@@ -499,7 +499,6 @@ run_additional_coprocessor_instance() {
 
     sed -e "s#../env/staging/.env.coprocessor.local#../env/staging/.env.coprocessor.${instance_idx}.local#g" \
         -e "s/coprocessor-/coprocessor${instance_idx}-/g" \
-        -e "s/--coprocessor${instance_idx}-api-key/--coprocessor-api-key/g" \
         -e "s/--coprocessor${instance_idx}-fhe-threads/--coprocessor-fhe-threads/g" \
         "$source_compose" > "$temp_compose"
 
