@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use fhevm_engine_common::types::FhevmError;
 use scheduler::dfg::types::SchedulerError;
 

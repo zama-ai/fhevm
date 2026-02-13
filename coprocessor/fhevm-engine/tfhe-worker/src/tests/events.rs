@@ -1,4 +1,5 @@
 use alloy::primitives::Log;
+use fhevm_engine_common::chain_id::ChainId;
 use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::types::AllowEvents;
@@ -7,7 +8,7 @@ use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 
-use crate::tests::utils::{default_api_key, default_dependence_cache_size, TestInstance};
+use crate::tests::utils::{default_dependence_cache_size, TestInstance};
 
 fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     let address = "0x0000000000000000000000000000000000000000"
@@ -44,11 +45,9 @@ pub fn tfhe_log(
 }
 
 pub async fn listener_db(app: &TestInstance) -> ListenerDatabase {
-    let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
-
     ListenerDatabase::new(
         &app.db_url().into(),
-        &coprocessor_api_key,
+        ChainId::try_from(12345_u64).unwrap(),
         default_dependence_cache_size(),
     )
     .await

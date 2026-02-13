@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
+use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
 use tracing::Level;
@@ -296,7 +297,7 @@ pub struct DecryptionResult {
 pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
     let keys = test_keys();
 
-    sqlx::query!(
+    sqlx::query(
         "
             INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
@@ -310,11 +311,15 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
                 $4
             )
         ",
-        &keys.pks,
-        &keys.sks,
-        &keys.public_params,
-        &keys.cks,
     )
+    .bind(&keys.pks)
+    .bind(&keys.sks)
+    .bind(&keys.public_params)
+    .bind(&keys.cks)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn decrypt_ciphertexts(

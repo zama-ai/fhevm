@@ -101,7 +101,7 @@ async fn test_smoke_events() -> Result<(), Box<dyn std::error::Error>> {
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
-    let resp = decrypt_ciphertexts(&pool, 1, vec![h3.to_vec()]).await?;
+    let resp = decrypt_ciphertexts(&pool, vec![h3.to_vec()]).await?;
     assert_eq!(resp.len(), 1);
     assert_eq!(resp[0].output_type, ct_type as i16);
     assert_eq!(resp[0].value, "247");

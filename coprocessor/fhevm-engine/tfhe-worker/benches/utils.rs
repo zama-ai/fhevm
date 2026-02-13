@@ -1,5 +1,6 @@
 use alloy::primitives::{Address, Log as PrimitivesLog};
 use alloy::rpc::types::Log as RpcLog;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, try_expand_ciphertext_list};
 use fhevm_engine_common::types::SupportedFheOperations;
@@ -100,7 +101,7 @@ async fn start_coprocessor(rx: Receiver<bool>, health_port: u16, db_url: &str) {
         generate_fhe_keys: false,
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
-        tenant_key_cache_size: 4,
+        key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         tokio_threads: 32,
         pg_pool_max_connections: 2,
@@ -114,6 +115,7 @@ async fn start_coprocessor(rx: Receiver<bool>, health_port: u16, db_url: &str) {
         processed_dcid_ttl_sec: 0,
         dcid_cleanup_interval_sec: 0,
         dcid_max_no_progress_cycles: 2,
+        dcid_ignore_dependency_count_threshold: 100,
         log_level: Level::INFO,
         health_check_port: health_port,
         metric_rerand_batch_latency: MetricsConfig::default(),
@@ -223,7 +225,7 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let pks = tokio::fs::read(pks).await.expect("can't read pks key");
     let cks = tokio::fs::read(cks).await.expect("can't read cks key");
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
-    sqlx::query!(
+    sqlx::query(
         "
             INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
@@ -237,11 +239,11 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
                 $4
             )
         ",
-        &pks,
-        &sks,
-        &public_params,
-        &cks,
     )
+    .bind(&pks)
+    .bind(&sks)
+    .bind(&public_params)
+    .bind(&cks)
     .execute(pool)
     .await?;
 
@@ -382,7 +384,8 @@ pub async fn insert_compact_list(
 
     let mut handles = Vec::with_capacity(expanded.len());
     for (ct_idx, the_ct) in expanded.into_iter().enumerate() {
-        let (ct_type, ct_bytes) = the_ct.compress();
+        let ct_type = the_ct.type_num();
+        let ct_bytes = the_ct.compress()?;
         let handle = derive_handle(
             &blob_hash,
             ct_idx,
@@ -623,10 +626,9 @@ fn tfhe_log(event: TfheContractEvents, transaction_hash: Handle) -> RpcLog<TfheC
 }
 
 pub async fn listener_db(app: &TestInstance) -> ListenerDatabase {
-    let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
     ListenerDatabase::new(
         &app.db_url().into(),
-        &coprocessor_api_key,
+        ChainId::try_from(12345_u64).unwrap(),
         default_dependence_cache_size(),
     )
     .await

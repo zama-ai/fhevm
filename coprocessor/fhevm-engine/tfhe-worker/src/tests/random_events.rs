@@ -186,7 +186,7 @@ async fn test_fhe_random_basic_events() -> Result<(), Box<dyn std::error::Error>
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
-    let resp = decrypt_ciphertexts(&pool, 1, output_handles).await?;
+    let resp = decrypt_ciphertexts(&pool, output_handles).await?;
     let expected: Vec<DecryptionResult> = RAND_BASIC_EXPECTED
         .iter()
         .enumerate()
@@ -197,10 +197,10 @@ async fn test_fhe_random_basic_events() -> Result<(), Box<dyn std::error::Error>
         .collect();
     assert_eq!(expected, resp);
 
-    let resp_repeated = decrypt_ciphertexts(&pool, 1, repeated_output_handles).await?;
+    let resp_repeated = decrypt_ciphertexts(&pool, repeated_output_handles).await?;
     assert_eq!(resp, resp_repeated, "randomness is not deterministic");
 
-    let resp_other_seed = decrypt_ciphertexts(&pool, 1, other_seed_output_handles).await?;
+    let resp_other_seed = decrypt_ciphertexts(&pool, other_seed_output_handles).await?;
     assert_ne!(resp, resp_other_seed, "seed changed, values should differ");
 
     Ok(())
@@ -250,7 +250,7 @@ async fn test_fhe_random_bounded_events() -> Result<(), Box<dyn std::error::Erro
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
-    let resp = decrypt_ciphertexts(&pool, 1, output_handles).await?;
+    let resp = decrypt_ciphertexts(&pool, output_handles).await?;
     for (resp_idx, resp_entry) in resp.iter().enumerate() {
         let the_type = random_supported_types()[resp_idx] as i16;
         let type_idx = the_type as usize;

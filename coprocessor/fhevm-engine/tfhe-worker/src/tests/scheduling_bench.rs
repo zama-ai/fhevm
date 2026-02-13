@@ -230,7 +230,7 @@ async fn schedule_erc20_graph_events() -> Result<(), Box<dyn std::error::Error>>
         .map(|(h, _, _)| h.clone())
         .collect::<Vec<_>>();
 
-    let resp = decrypt_ciphertexts(&pool, 1, allowed_handles).await?;
+    let resp = decrypt_ciphertexts(&pool, allowed_handles).await?;
     assert_eq!(resp.len(), num_samples * 2);
 
     for (idx, r) in resp.iter().enumerate() {

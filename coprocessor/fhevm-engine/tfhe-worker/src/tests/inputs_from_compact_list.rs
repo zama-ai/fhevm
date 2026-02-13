@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
 use alloy::primitives::Address;
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, try_expand_ciphertext_list};
 use fhevm_engine_common::utils::safe_serialize;
 use serial_test::serial;
 use sha3::{Digest, Keccak256};
+use sqlx::Row;
 use tfhe::integer::{bigint::StaticUnsignedBigInt, U256};
 
-use crate::db_queries::query_tenant_keys;
 use crate::tests::utils::{decrypt_ciphertexts, setup_test_app};
 
 fn derive_handle(
@@ -39,10 +41,10 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
         .connect(app.db_url())
         .await?;
 
-    let keys = query_tenant_keys(vec![1], &pool)
-        .await
-        .map_err(|e| -> Box<dyn std::error::Error> { e })?;
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(8)?;
+    let keys = db_key_cache.fetch_latest(&pool).await?;
+    let crs_cache = CrsCache::load(&pool).await?;
+    let crs = crs_cache.get_latest().ok_or("missing crs row in test db")?;
     tfhe::set_server_key(keys.sks.clone());
 
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
@@ -57,18 +59,23 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
         .push(StaticUnsignedBigInt::<8>::from(8u32))
         .push(StaticUnsignedBigInt::<16>::from(9u32))
         .push(StaticUnsignedBigInt::<32>::from(10u32))
-        .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     let serialized = safe_serialize(&the_list);
     let blob_hash = Keccak256::digest(&serialized).to_vec();
-    let expanded = try_expand_ciphertext_list(&serialized, keys.public_params.as_ref()).unwrap();
+    let expanded = try_expand_ciphertext_list(&serialized, &crs.crs).unwrap();
     assert_eq!(expanded.len(), 10);
 
     let cipher_version = current_ciphertext_version();
-    let acl_address = Address::from_str(&keys.acl_contract_address)?;
-    let chain_id = keys.chain_id as u64;
-    let tenant_id = keys.tenant_id;
+    let host_chain = sqlx::query(
+        "SELECT chain_id, acl_contract_address FROM host_chains ORDER BY sequence_number DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let acl_address = Address::from_str(host_chain.get::<&str, _>("acl_contract_address"))?;
+    let chain_id = host_chain.get::<i64, _>("chain_id") as u64;
+    let tenant_id = 1_i32;
 
     let mut tx = pool.begin().await?;
     sqlx::query(
@@ -87,7 +94,8 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
 
     let mut handles = Vec::with_capacity(expanded.len());
     for (ct_idx, the_ct) in expanded.into_iter().enumerate() {
-        let (ct_type, ct_bytes) = the_ct.compress();
+        let ct_type = the_ct.type_num();
+        let ct_bytes = the_ct.compress()?;
         let handle = derive_handle(
             &blob_hash,
             ct_idx,
@@ -124,7 +132,7 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
     }
     tx.commit().await?;
 
-    let resp = decrypt_ciphertexts(&pool, tenant_id, handles).await?;
+    let resp = decrypt_ciphertexts(&pool, handles).await?;
     assert_eq!(resp.len(), 10);
 
     assert_eq!(resp[0].output_type, 0);
