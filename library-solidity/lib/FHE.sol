@@ -42,12 +42,9 @@ interface IKMSVerifier {
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Decryption result type.
-    string private constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
-
     /// @notice Decryption result typehash.
-    bytes32 private constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
+    bytes32 private constant DECRYPTION_RESULT_TYPEHASH =
+        keccak256("PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)");
 
     /// @notice EIP-712 domain  typehash.
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
