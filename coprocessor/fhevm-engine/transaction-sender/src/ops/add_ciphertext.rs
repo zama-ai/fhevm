@@ -41,6 +41,7 @@ impl<P> AddCiphertextOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
+    #[tracing::instrument(skip_all, fields(operation = "call_add_ciphertext"))]
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -52,8 +53,6 @@ where
         let h = to_hex(handle);
 
         info!(handle = h, "Processing transaction");
-        let _span = tracing::info_span!("call_add_ciphertext", operation = "call_add_ciphertext");
-        let _enter = _span.enter();
 
         let receipt = match self
             .provider

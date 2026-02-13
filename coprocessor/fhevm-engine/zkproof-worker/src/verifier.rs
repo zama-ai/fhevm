@@ -83,14 +83,11 @@ impl HealthCheckService for ZkProofService {
 }
 
 impl ZkProofService {
+    #[tracing::instrument(skip_all, fields(operation = "init_service"))]
     pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-        let _init_span = tracing::info_span!("init_service", operation = "init_service");
-        let _init_enter = _init_span.enter();
-        let _pg_span = tracing::info_span!("pg_connect", operation = "pg_connect");
-        let _pg_enter = _pg_span.enter();
 
         let Some(pool_mngr) = PostgresPoolManager::connect_pool(
             token.child_token(),
@@ -142,13 +139,6 @@ pub async fn execute_verify_proofs_loop(
             .map_err(|err| ExecutionError::Other(err.into()))?,
     );
 
-    let _init_workers_span = tracing::info_span!("init_workers", operation = "init_workers");
-    let _init_workers_enter = _init_workers_span.enter();
-    let _start_workers_span = tracing::info_span!(
-        "start_workers",
-        operation = "start_workers",
-        count = conf.worker_thread_count
-    );
     let mut task_set = JoinSet::new();
 
     for index in 0..conf.worker_thread_count {
@@ -181,8 +171,6 @@ pub async fn execute_verify_proofs_loop(
             .spawn_join_set_with_db_retry(op, &mut task_set, format!("worker_{}", index).as_str())
             .await;
     }
-
-    drop(_start_workers_span);
 
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
@@ -302,19 +290,15 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let t = tracing::info_span!(
-            "verify_task",
-            operation = "verify_task",
-            request_id = request_id
-        );
-
         let host_chain = host_chain_cache
             .get_chain(host_chain_id)
             .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
+        let verify_span = tracing::info_span!("verify_task", operation = "verify_task", request_id);
         let res = tokio::task::spawn_blocking(move || {
+            let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
                 contract_address,
                 user_address,
@@ -322,15 +306,11 @@ async fn execute_verify_proof_routine(
                 acl_contract_address,
             };
 
-            verify_proof(request_id, &db_key, &crs, &aux_data, &input, t)
+            verify_proof(request_id, &db_key, &crs, &aux_data, &input)
         })
         .await?;
 
-        let t = tracing::info_span!(
-            "db_insert",
-            operation = "db_insert",
-            request_id = request_id
-        );
+        let t = tracing::info_span!("db_insert", operation = "db_insert", request_id);
 
         let mut verified = false;
         let mut handles_bytes = vec![];
@@ -402,58 +382,16 @@ pub(crate) fn verify_proof(
     crs: &Crs,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-    span: tracing::Span,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(key.sks.clone());
 
     // Step 1: Deserialize and verify the proof
-    let s_verify = tracing::info_span!("verify_proof", operation = "verify_proof");
-    s_verify.set_parent(span.context());
-    let verified_list =
-        match s_verify.in_scope(|| verify_proof_only(request_id, raw_ct, key, crs, aux_data)) {
-            Ok(list) => {
-                tracing::info!(parent: &s_verify, list_len = list.len(), "proof verified");
-                info!(message = "Proof verified successfully", request_id);
-                list
-            }
-            Err(err) => {
-                s_verify
-                    .context()
-                    .span()
-                    .set_status(opentelemetry::trace::Status::Error {
-                        description: err.to_string().into(),
-                    });
-                return Err(err);
-            }
-        };
+    let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)?;
 
     // Step 2: Expand the verified ciphertext list
-    let s_expand = tracing::info_span!(
-        "expand_ciphertext_list",
-        operation = "expand_ciphertext_list"
-    );
-    s_expand.set_parent(span.context());
-    let mut cts = match s_expand.in_scope(|| expand_verified_list(request_id, &verified_list)) {
-        Ok(cts) => {
-            tracing::info!(parent: &s_expand, count = cts.len(), "ciphertext list expanded");
-            info!(message = "Ciphertext list expanded", request_id);
-            cts
-        }
-        Err(err) => {
-            s_expand
-                .context()
-                .span()
-                .set_status(opentelemetry::trace::Status::Error {
-                    description: err.to_string().into(),
-                });
-            return Err(err);
-        }
-    };
+    let mut cts = expand_verified_list(request_id, &verified_list)?;
 
-    let _s_create_ct = tracing::info_span!("create_ciphertext", operation = "create_ciphertext");
-    _s_create_ct.set_parent(span.context());
-    let _s_create_ct_enter = _s_create_ct.enter();
-
+    // Step 3: Create ciphertext handles
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
@@ -462,12 +400,13 @@ pub(crate) fn verify_proof(
     let cts = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data, &span))
+        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
 }
 
+#[tracing::instrument(skip_all, fields(operation = "verify_proof"))]
 fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
@@ -505,15 +444,22 @@ fn verify_proof_only(
     let verification_result = the_list.verify(&crs.crs, &key.pks, &aux_data_bytes);
 
     if verification_result.is_invalid() {
-        return Err(ExecutionError::InvalidProof(
-            request_id,
-            "ZK proof verification failed".to_string(),
-        ));
+        let err =
+            ExecutionError::InvalidProof(request_id, "ZK proof verification failed".to_string());
+        tracing::Span::current()
+            .context()
+            .span()
+            .set_status(opentelemetry::trace::Status::Error {
+                description: err.to_string().into(),
+            });
+        return Err(err);
     }
 
+    tracing::info!(list_len = the_list.len(), "proof verified");
     Ok(the_list)
 }
 
+#[tracing::instrument(skip_all, fields(operation = "expand_ciphertext_list"))]
 fn expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
@@ -530,13 +476,18 @@ fn expand_verified_list(
 }
 
 /// Creates a ciphertext
+#[tracing::instrument(skip_all, fields(
+    operation = "create_handle",
+    ct_type = tracing::field::Empty,
+    ct_idx = ct_idx,
+    chain_id = %aux_data.chain_id,
+))]
 fn create_ciphertext(
     request_id: i64,
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-    span: &tracing::Span,
 ) -> Result<Ciphertext, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
         return Err(ExecutionError::TooManyInputs(ct_idx));
@@ -570,18 +521,10 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    let _create_handle_span = tracing::info_span!(
-        "create_handle",
-        operation = "create_handle",
-        ct_type = serialized_type as i64,
-        ct_idx = ct_idx as i64,
-        chain_id = %aux_data.chain_id,
-    );
-    _create_handle_span.set_parent(span.context());
-    let _create_handle_enter = _create_handle_span.enter();
+    tracing::Span::current().record("ct_type", serialized_type as i64);
     tracing::info!(
-        request_id = request_id,
-        handle = %hex::encode(handle.clone()),
+        request_id,
+        handle = %hex::encode(&handle),
         user_address = %aux_data.user_address,
         contract_address = %aux_data.contract_address,
         version = current_ciphertext_version(),

@@ -114,17 +114,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
+    #[tracing::instrument(skip_all, fields(operation = "call_delegate_user_decrypt"))]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
-        let _span = tracing::info_span!(
-            "call_delegate_user_decrypt",
-            operation = "call_delegate_user_decrypt"
-        );
-        let _enter = _span.enter();
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
         } else {
