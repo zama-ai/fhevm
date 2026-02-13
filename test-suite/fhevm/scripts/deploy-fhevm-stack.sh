@@ -257,6 +257,15 @@ if [ "$LOCAL_BUILD" = true ]; then
 fi
 
 # Function to check if services are ready based on expected state
+log_contains() {
+    local pattern=$1
+    if command -v rg >/dev/null 2>&1; then
+        rg -q "$pattern"
+    else
+        grep -q "$pattern"
+    fi
+}
+
 wait_for_service() {
     local compose_file=$1
     local service_name=$2
@@ -286,7 +295,7 @@ wait_for_service() {
         # Some one-shot jobs may complete their work but keep a process alive.
         # For host-sc-deploy, treat the deployment completion log as success and stop it.
         if [[ "$expect_running" == "false" && "$service_name" == "host-sc-deploy" && "$status" == "running" ]]; then
-            if docker logs "$container_id" 2>&1 | rg -q "Contract deployment done!"; then
+            if docker logs "$container_id" 2>&1 | log_contains "Contract deployment done!"; then
                 log_warn "$service_name reported completion marker while still running; stopping container to unblock flow"
                 docker stop "$container_id" >/dev/null 2>&1 || true
                 status=$(docker inspect --format "{{.State.Status}}" "$container_id")
@@ -327,7 +336,7 @@ wait_for_relayer_ready() {
     log_info "Waiting for $container_name readiness signal..."
 
     for ((i=1; i<=max_retries; i++)); do
-        if docker logs --since=10m "$container_name" 2>&1 | rg -q "All servers are ready and responding"; then
+        if docker logs --since=10m "$container_name" 2>&1 | log_contains "All servers are ready and responding"; then
             log_info "$container_name reported ready"
             return 0
         fi
