@@ -177,6 +177,27 @@ You can force legacy mode explicitly with:
 FHEVM_CLI_IMPL=legacy ./fhevm-cli deploy
 ```
 
+Version updates do not require editing many per-service vars manually.
+You can override them in one place:
+
+- `FHEVM_STACK_VERSION` (gateway/host/coprocessor/kms-connector/test-suite)
+- `FHEVM_CORE_VERSION`
+- `FHEVM_RELAYER_VERSION` (relayer + relayer-migrate)
+
+These can be set as environment variables, or in an optional file:
+
+- `test-suite/fhevm/env/staging/.env.versions`
+- (template: `test-suite/fhevm/env/staging/.env.versions.example`)
+
+Example:
+
+```sh
+FHEVM_STACK_VERSION=v0.12.0-rc.1 \
+FHEVM_CORE_VERSION=v0.14.0-rc.1 \
+FHEVM_RELAYER_VERSION=v0.10.0-rc.1 \
+./fhevm-cli deploy
+```
+
 ### Troubleshooting deploy failures
 
 When deploy fails, the script now surfaces explicit hints for common operational failure modes.

@@ -19,6 +19,7 @@ export interface VersionEntry {
   group: string;
   displayName: string;
   appendBuildTag: boolean;
+  groupOverrideEnv?: string;
 }
 
 export interface TestTypeConfig {
@@ -29,6 +30,14 @@ export interface TestTypeConfig {
 }
 
 export const PROJECT = "fhevm";
+
+export const DEFAULT_STACK_VERSION = "v0.11.0-1";
+export const DEFAULT_CORE_VERSION = "v0.13.0-rc.2";
+export const DEFAULT_RELAYER_VERSION = "v0.9.0-rc.1";
+
+export const STACK_VERSION_OVERRIDE_ENV = "FHEVM_STACK_VERSION";
+export const CORE_VERSION_OVERRIDE_ENV = "FHEVM_CORE_VERSION";
+export const RELAYER_VERSION_OVERRIDE_ENV = "FHEVM_RELAYER_VERSION";
 
 export const DEPLOYMENT_STEPS: DeploymentStep[] = [
   {
@@ -156,129 +165,147 @@ export const DEPLOYMENT_STEPS: DeploymentStep[] = [
 export const VERSION_ENTRIES: VersionEntry[] = [
   {
     envVar: "GATEWAY_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Contracts",
     displayName: "gateway-contracts",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "HOST_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Contracts",
     displayName: "host-contracts",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_DB_MIGRATION_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/db-migration",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_GW_LISTENER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/gw-listener",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_HOST_LISTENER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/host-listener",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_HOST_LISTENER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/poller",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_TX_SENDER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/tx-sender",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_TFHE_WORKER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/tfhe-worker",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_SNS_WORKER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/sns-worker",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "COPROCESSOR_ZKPROOF_WORKER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Coprocessor Services",
     displayName: "coprocessor/zkproof-worker",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "CONNECTOR_DB_MIGRATION_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM KMS Connector Services",
     displayName: "kms-connector/db-migration",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "CONNECTOR_GW_LISTENER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM KMS Connector Services",
     displayName: "kms-connector/gw-listener",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "CONNECTOR_KMS_WORKER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM KMS Connector Services",
     displayName: "kms-connector/kms-worker",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "CONNECTOR_TX_SENDER_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM KMS Connector Services",
     displayName: "kms-connector/tx-sender",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "TEST_SUITE_VERSION",
-    defaultValue: "v0.11.0-1",
+    defaultValue: DEFAULT_STACK_VERSION,
     group: "FHEVM Test Suite",
     displayName: "test-suite/e2e",
     appendBuildTag: true,
+    groupOverrideEnv: STACK_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "CORE_VERSION",
-    defaultValue: "v0.13.0-rc.2",
+    defaultValue: DEFAULT_CORE_VERSION,
     group: "External Dependencies",
     displayName: "kms-core-service",
     appendBuildTag: false,
+    groupOverrideEnv: CORE_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "RELAYER_VERSION",
-    defaultValue: "v0.9.0-rc.1",
+    defaultValue: DEFAULT_RELAYER_VERSION,
     group: "External Dependencies",
     displayName: "fhevm-relayer",
     appendBuildTag: false,
+    groupOverrideEnv: RELAYER_VERSION_OVERRIDE_ENV,
   },
   {
     envVar: "RELAYER_MIGRATE_VERSION",
-    defaultValue: "v0.9.0-rc.1",
+    defaultValue: DEFAULT_RELAYER_VERSION,
     group: "External Dependencies",
     displayName: "fhevm-relayer-migrate",
     appendBuildTag: false,
+    groupOverrideEnv: RELAYER_VERSION_OVERRIDE_ENV,
   },
 ];
 
