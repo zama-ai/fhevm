@@ -176,11 +176,11 @@ impl SwitchNSquashService {
     }
 }
 
+#[tracing::instrument(skip_all, fields(operation = "fetch_keyset"))]
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    let _t = tracing::info_span!("fetch_keyset", operation = "fetch_keyset");
     fetch_latest_keyset(&keys_cache, &pool).await
 }
 
@@ -285,6 +285,7 @@ pub(crate) async fn run_loop(
 
 /// Clean up the database by removing old ciphertexts128 already uploaded to S3.
 /// Ideally, the table will be cleaned up by txn-sender if it's working properly
+#[tracing::instrument(skip_all, fields(operation = "cleanup_ct128", limit))]
 pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
     if limit == 0 {
         // GC disabled
@@ -310,7 +311,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst
     // Skip Locked to prevent concurrent updates
-    let _start = SystemTime::now();
     let rows_affected: u64 = sqlx::query!(
         "
         WITH uploaded_ct128 AS (
@@ -334,7 +334,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     .rows_affected();
 
     if rows_affected > 0 {
-        let _s = tracing::info_span!("cleanup_ct128", operation = "cleanup_ct128");
         info!(
             rows_affected = rows_affected,
             "Cleaning up old ciphertexts128"
@@ -433,14 +432,13 @@ async fn fetch_and_execute_sns_tasks(
 }
 
 /// Queries the database for a fixed number of tasks.
+#[tracing::instrument(skip_all, fields(operation = "db_fetch_tasks", limit, order = %order))]
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let _start_time = SystemTime::now();
-
     let query = format!(
         "
         SELECT a.*, c.ciphertext
@@ -465,14 +463,6 @@ pub async fn query_sns_tasks(
 
     if records.is_empty() {
         return Ok(None);
-    }
-
-    {
-        let _t = tracing::info_span!(
-            "db_fetch_tasks",
-            operation = "db_fetch_tasks",
-            count = records.len()
-        );
     }
 
     // Convert the records into HandleItem structs
