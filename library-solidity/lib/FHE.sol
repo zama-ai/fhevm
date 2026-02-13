@@ -9529,6 +9529,7 @@ library FHE {
     ///                             The ABI-encoded list order must match the `handlesList` order.
     /// @param decryptionProof The KMS public decryption proof. It includes the KMS signatures, associated metadata,
     ///                        and the context needed for verification.
+    /// @return true if the signatures verification succeeds, false otherwise.
     function isDecryptionResultValid(
         bytes32[] memory handlesList,
         bytes memory abiEncodedCleartexts,
