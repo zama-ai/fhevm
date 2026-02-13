@@ -354,11 +354,6 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let schedule_order =
-            log.block_timestamp
-                .saturating_add(TimeDuration::microseconds(
-                    log.tx_depth_size as i64,
-                ));
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -384,7 +379,10 @@ impl Database {
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
-            schedule_order,
+            log.block_timestamp
+                .saturating_add(TimeDuration::microseconds(
+                    log.tx_depth_size as i64
+                )),
             !log.is_allowed,
             self.chain_id.as_i64()
         );
