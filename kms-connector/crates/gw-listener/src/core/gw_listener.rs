@@ -450,7 +450,7 @@ mod tests {
     async fn test_listener_ended_by_end_of_any_task() {
         let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
-        // Will stop because some subcription tasks will not be able to init their event filter
+        // Will stop because some subscription tasks will not be able to init their event filter
         gw_listener.start().await;
 
         test_instance.wait_for_log("Failed to subscribe to").await;

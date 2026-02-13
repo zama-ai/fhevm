@@ -54,7 +54,7 @@ pub struct DelegationRow {
 
 #[derive(Copy, Clone)]
 enum BlockStatus {
-    Unkown,    // the status could not be determined
+    Unknown,   // the status could not be determined
     Stable,    // block is still valid
     Dismissed, // block has been reorged out
 }
@@ -151,7 +151,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 warn!(
                     %error,
                     ?delegation,
-                    "{operation} sending with transient error. Will retry indefinitively"
+                    "{operation} sending with transient error. Will retry indefinitely"
                 );
                 return TxResult::TransientError;
             }
@@ -263,7 +263,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                             "Cannot get block hash for delegation, will retry next block"
                         );
                         unsure_block.push(delegation.block_number);
-                        BlockStatus::Unkown
+                        BlockStatus::Unknown
                     }
                 };
                 blocks_status.insert(delegation.block_number, status);
@@ -273,7 +273,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 BlockStatus::Stable => {
                     stable_delegations.push(delegation.clone());
                 }
-                BlockStatus::Unkown => {
+                BlockStatus::Unknown => {
                     // skip the full block, will retry on the delegation on next call
                     nb_unsure_delegations += 1;
                     continue;
@@ -326,7 +326,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
             let block_number = self.host_chain_provider.get_block_number().await?;
             warn!(
                 block_number,
-                "Delegation notification, based on timeout, use last block nmber"
+                "Delegation notification, based on timeout, use last block number"
             );
             return Ok(block_number);
         };
@@ -401,7 +401,7 @@ where
             all_transaction_id.insert(tx_id);
         }
         // we don't split by transition_id because delegations have an internal order
-        // it's expected that both order are compatible but we don't now the transation_id order
+        // it's expected that both order are compatible but we don't know the transaction_id order
         let ts = all_transaction_id
             .iter()
             .map(|id| telemetry::tracer("prepare_delegate", id))
