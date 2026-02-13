@@ -169,9 +169,3 @@ impl From<SchedulerError> for CoprocessorError {
         CoprocessorError::SchedulerError(err)
     }
 }
-
-impl From<CoprocessorError> for tonic::Status {
-    fn from(err: CoprocessorError) -> Self {
-        tonic::Status::from_error(Box::new(err))
-    }
-}

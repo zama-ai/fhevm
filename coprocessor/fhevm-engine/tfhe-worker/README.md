@@ -52,5 +52,5 @@ make recreate_db
 Run the server and background fhe worker
 
 ```
-cargo run -- --run-server --run-bg-worker --worker-polling-interval-ms 1000
+cargo run -- --run-bg-worker --worker-polling-interval-ms 1000
 ```

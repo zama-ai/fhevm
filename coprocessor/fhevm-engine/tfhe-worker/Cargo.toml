@@ -14,7 +14,6 @@ clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 prometheus = { workspace = true }
-prost = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 serde_json = { workspace = true }
@@ -26,7 +25,6 @@ tfhe-zk-pok = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -42,9 +40,6 @@ actix-web = "4.9.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 regex = "1.10.6"
-tonic-health = "0.12.3"
-tonic-types = "0.12.3"
-tonic-web = "0.12.3"
 uuid = { version = "1", features = ["v4"] }
 
 # local dependencies
@@ -65,9 +60,6 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
-
-[build-dependencies]
-tonic-build = { workspace = true }
 
 [[bin]]
 name = "tfhe_worker"
