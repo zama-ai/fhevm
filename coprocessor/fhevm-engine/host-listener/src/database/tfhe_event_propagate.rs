@@ -397,6 +397,7 @@ impl Database {
     }
 
     #[rustfmt::skip]
+    #[tracing::instrument(skip_all, fields(operation = "handle_tfhe_event"))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -417,9 +418,6 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
-
-        let _span = tracing::info_span!("handle_tfhe_event", operation = "handle_tfhe_event");
-        let _enter = _span.enter();
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -561,6 +559,7 @@ impl Database {
     }
 
     /// Handles all types of ACL events
+    #[tracing::instrument(skip_all, fields(operation = "handle_acl_event"))]
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -573,12 +572,6 @@ impl Database {
         let data = &event.data;
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
-
-        let _span = tracing::info_span!(
-            "handle_acl_event",
-            operation = "handle_acl_event"
-        );
-        let _enter = _span.enter();
 
         // Record only Allowed or AllowedForDecryption events
         if matches!(

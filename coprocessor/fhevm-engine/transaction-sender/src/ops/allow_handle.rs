@@ -66,6 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
+    #[tracing::instrument(skip_all, fields(operation = "call_allow_account"))]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -77,8 +78,6 @@ where
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
-        let _span = tracing::info_span!("call_allow_account", operation = "call_allow_account");
-        let _enter = _span.enter();
 
         let receipt = match self
             .provider

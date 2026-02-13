@@ -117,6 +117,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(operation = "call_verify_proof_resp"))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
@@ -124,11 +125,6 @@ where
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         info!(zk_proof_id = txn_request.0, "Processing transaction");
-        let _span = tracing::info_span!(
-            "call_verify_proof_resp",
-            operation = "call_verify_proof_resp"
-        );
-        let _enter = _span.enter();
 
         let receipt = match self
             .provider
