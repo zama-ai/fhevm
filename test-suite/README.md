@@ -21,6 +21,10 @@ KMS can be configured to two modes:
   - [Local Developer Optimizations](#local-developer-optimizations)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
+  - [Orchestration Source of Truth](#orchestration-source-of-truth)
+  - [Troubleshooting Deploy Failures](#troubleshooting-deploy-failures)
+  - [Behavior Parity Tests](#behavior-parity-tests)
+  - [CLI Parity Diff Tests](#cli-parity-diff-tests)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -144,6 +148,88 @@ You can combine `--only` or `--resume` with other flags:
 ```sh
 # Redeploy only gateway-sc with a local build
 ./fhevm-cli deploy --only gateway-sc --build --local
+```
+
+### Orchestration source of truth
+
+The orchestration is Bun-first with shell entrypoint wrappers:
+
+- `test-suite/fhevm/fhevm-cli`
+- `test-suite/fhevm/scripts/deploy-fhevm-stack.sh`
+
+Canonical deploy/test metadata now lives in one TypeScript source:
+
+- `test-suite/fhevm/scripts/bun/manifest.ts`
+
+Runtime implementation:
+
+- `test-suite/fhevm/scripts/bun/cli.ts`
+- `test-suite/fhevm/scripts/bun/process.ts`
+
+Compatibility snapshots used for parity verification:
+
+- `test-suite/fhevm/fhevm-cli.legacy`
+- `test-suite/fhevm/scripts/deploy-fhevm-stack.legacy.sh`
+
+You can force legacy mode explicitly with:
+
+```sh
+FHEVM_CLI_IMPL=legacy ./fhevm-cli deploy
+```
+
+Version updates do not require editing many per-service vars manually.
+You can override them in one place:
+
+- `FHEVM_STACK_VERSION` (gateway/host/coprocessor/kms-connector/test-suite)
+- `FHEVM_CORE_VERSION`
+- `FHEVM_RELAYER_VERSION` (relayer + relayer-migrate)
+
+These can be set as environment variables, or in an optional file:
+
+- `test-suite/fhevm/env/staging/.env.versions`
+- (template: `test-suite/fhevm/env/staging/.env.versions.example`)
+
+Example:
+
+```sh
+FHEVM_STACK_VERSION=v0.12.0-rc.1 \
+FHEVM_CORE_VERSION=v0.14.0-rc.1 \
+FHEVM_RELAYER_VERSION=v0.10.0-rc.1 \
+./fhevm-cli deploy
+```
+
+### Troubleshooting deploy failures
+
+When deploy fails, the script now surfaces explicit hints for common operational failure modes.
+
+- OOM-killed critical service:
+  - Symptom: failure includes `looks OOM-killed`.
+  - Action: increase Docker memory and resume from the failed step, for example:
+    - `./fhevm-cli deploy --resume coprocessor`
+
+- Key bootstrap / CRS not ready:
+  - Symptom: failure includes `Detected key-bootstrap-not-ready state`.
+  - Action: wait for keygen/CRS generation to settle, then resume from gateway contracts:
+    - `./fhevm-cli deploy --resume gateway-sc`
+
+### Behavior parity tests
+
+A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, and actionable failure hints).
+
+Run it with:
+
+```sh
+./test-suite/fhevm/scripts/tests/deploy-fhevm-stack.behavior.sh
+```
+
+### CLI parity diff tests
+
+A dry-run parity harness executes legacy Bash and Bun CLI flows under the same mocked Docker environment, then diffs command traces and exit codes for sampled command cases.
+
+Run it with:
+
+```sh
+./test-suite/fhevm/scripts/tests/fhevm-cli-parity-diff.sh
 ```
 
 ## Security policy
