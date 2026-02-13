@@ -9519,7 +9519,7 @@ library FHE {
     }
 
     /// @notice Returns false or reverts if the KMS signatures verification against the provided handles and public decryption data
-    ///         fails. Returns true only if KMS signatures verification pass. This is the `view` variant of {checkSignatures}.
+    ///         fails. Returns true only if KMS signatures verification pass. This is the `view` variant of `checkSignatures`.
     /// @dev **WARNING**: Prefer using `checkSignatures` (non-view) over this function whenever possible, for several reasons:
     ///      1. **Safety** – `checkSignatures` automatically reverts when signatures are invalid, making misuse impossible.
     ///         In contrast, `isDecryptionResultValid` returns a boolean: if the caller forgets to `require` the returned
