@@ -461,7 +461,7 @@ async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;
@@ -586,7 +586,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;
@@ -661,7 +661,7 @@ async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locall
     let setup = setup_with_block_time(None, 3.0).await?;
     let db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;
@@ -713,7 +713,7 @@ async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;
@@ -769,7 +769,7 @@ async fn test_slow_lane_off_mode_promotes_all_chains_on_startup_locally(
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;
@@ -810,7 +810,7 @@ async fn test_slow_lane_contention_prefers_fast_chain(
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
-        &setup.args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         setup.args.dependence_cache_size,
     )
     .await?;

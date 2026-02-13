@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::types::{Handle, SchedulePriority};
+use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
