@@ -74,18 +74,14 @@ Usage: tfhe_worker [OPTIONS]
 Options:
       --run-bg-worker
           Run the background worker
-      --worker-polling-interval-ms <WORKER_POLLING_INTERVAL_MS>
-          Polling interval for the background worker to fetch jobs [default: 1000]
       --generate-fhe-keys
           Generate fhe keys and exit
       --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
-          Work items batch size [default: 100]
-      --dependence-chains-per-batch <DEPENDENCE_CHAINS_PER_BATCH>
-          Number of dependence chains to fetch per worker [default: 20]
+          Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
       --coprocessor-fhe-threads <COPROCESSOR_FHE_THREADS>
-          Coprocessor FHE processing threads [default: 32]
+          Coprocessor FHE processing threads [default: 8]
       --tokio-threads <TOKIO_THREADS>
           Tokio Async IO threads [default: 4]
       --pg-pool-max-connections <PG_POOL_MAX_CONNECTIONS>
@@ -94,8 +90,6 @@ Options:
           Prometheus metrics server address [default: 0.0.0.0:9100]
       --database-url <DATABASE_URL>
           Postgres database url. If unspecified DATABASE_URL environment variable is used
-      --service-name <SERVICE_NAME>
-          tfhe-worker service name in OTLP traces [default: tfhe-worker]
 ```
 
 ```bash

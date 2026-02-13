@@ -404,7 +404,7 @@ async fn schedule_dex(
             false,
         )
         .await?;
-        let numer = next_handle(&mut handle_counter);
+        let numerator = next_handle(&mut handle_counter);
         utils::insert_tfhe_event(
             &listener_db,
             &mut tx,
@@ -415,7 +415,7 @@ async fn schedule_dex(
                     lhs: amount,
                     rhs: pool_out,
                     scalarByte: scalar_flag(false),
-                    result: numer,
+                    result: numerator,
                 })),
             ),
             tx_id,
@@ -430,7 +430,7 @@ async fn schedule_dex(
                 tx_id,
                 tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
                     caller,
-                    lhs: numer,
+                    lhs: numerator,
                     rhs: denom,
                     scalarByte: scalar_flag(false),
                     result: quote,
