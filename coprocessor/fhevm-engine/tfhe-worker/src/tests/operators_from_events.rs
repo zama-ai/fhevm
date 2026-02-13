@@ -22,7 +22,11 @@ use super::utils::default_dependence_cache_size;
 pub fn supported_types() -> &'static [i32] {
     &[
         0, // bool
-        8, // 256 bit
+        1, // 4 bit
+        2, // 8 bit
+        3, // 16 bit
+        4, // 32 bit
+        5, // 64 bit
     ]
 }
 
