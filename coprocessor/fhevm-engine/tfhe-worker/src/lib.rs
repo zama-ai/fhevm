@@ -6,7 +6,6 @@ use tokio_util::sync::CancellationToken;
 use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
-pub mod computation;
 pub mod daemon_cli;
 pub mod dependence_chain;
 pub mod health_check;
