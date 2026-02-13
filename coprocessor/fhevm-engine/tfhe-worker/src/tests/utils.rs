@@ -4,7 +4,6 @@ use fhevm_engine_common::db_keys::{DbKey, DbKeyCache};
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
-use rand::Rng;
 use std::collections::BTreeMap;
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -38,16 +37,8 @@ impl TestInstance {
     }
 }
 
-pub fn default_api_key() -> &'static str {
-    "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
-}
-
 pub fn default_dependence_cache_size() -> u16 {
     128
-}
-
-pub fn random_handle() -> u64 {
-    rand::rng().random()
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
