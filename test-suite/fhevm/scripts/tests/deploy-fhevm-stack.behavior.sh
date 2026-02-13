@@ -28,6 +28,7 @@ setup_fixture() {
   COMMAND_LOG="${TEST_TMP_DIR}/commands.log"
 
   mkdir -p "${FIXTURE_ROOT}/scripts/lib"
+  mkdir -p "${FIXTURE_ROOT}/scripts/bun"
   mkdir -p "${FIXTURE_ROOT}/env/staging"
   mkdir -p "${FIXTURE_ROOT}/config/relayer"
   mkdir -p "${FIXTURE_ROOT}/docker-compose"
@@ -36,6 +37,9 @@ setup_fixture() {
   cp "${SCRIPTS_ROOT}/deploy-fhevm-stack.sh" "${FIXTURE_ROOT}/scripts/deploy-fhevm-stack.sh"
   cp "${SCRIPTS_ROOT}/lib/deploy-manifest.sh" "${FIXTURE_ROOT}/scripts/lib/deploy-manifest.sh"
   cp "${SCRIPTS_ROOT}/lib/version-manifest.sh" "${FIXTURE_ROOT}/scripts/lib/version-manifest.sh"
+  cp "${SCRIPTS_ROOT}/bun/cli.ts" "${FIXTURE_ROOT}/scripts/bun/cli.ts"
+  cp "${SCRIPTS_ROOT}/bun/manifest.ts" "${FIXTURE_ROOT}/scripts/bun/manifest.ts"
+  cp "${SCRIPTS_ROOT}/bun/process.ts" "${FIXTURE_ROOT}/scripts/bun/process.ts"
 
   chmod +x "${FIXTURE_ROOT}/scripts/deploy-fhevm-stack.sh"
 
