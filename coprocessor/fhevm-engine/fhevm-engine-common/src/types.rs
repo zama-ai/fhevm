@@ -611,7 +611,7 @@ impl SupportedFheCiphertexts {
     }
 
     // Decompress without checking if enough GPU memory is available -
-    // used when GPU featre is active, but decompressing on CPU
+    // used when GPU feature is active, but decompressing on CPU
     pub fn decompress_no_memcheck(ct_type: i16, list: &[u8]) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)

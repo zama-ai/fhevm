@@ -174,7 +174,7 @@ struct Conf {
     #[arg(
         long,
         default_value = "648000", // 3 months assuming 12s block time on host chain
-        help = "Clear delegation entries after N blocks (deault to 3 months)"
+        help = "Clear delegation entries after N blocks (default to 3 months)"
     )]
     pub delegation_clear_after_n_blocks: u64,
 
