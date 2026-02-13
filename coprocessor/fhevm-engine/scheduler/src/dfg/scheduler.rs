@@ -14,7 +14,7 @@ use daggy::{
 };
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use opentelemetry::trace::{Status, TraceContextExt};
 use std::collections::HashMap;
@@ -545,6 +545,67 @@ fn rerandomise_node_inputs(
 }
 
 type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
+
+#[tracing::instrument(
+    skip_all,
+    fields(
+        operation = "compress_ciphertext",
+        txn_id = %short_transaction_id(transaction_id),
+        logical_operation = logical_operation,
+        ct_type = ciphertext.type_name(),
+        compressed_size = tracing::field::Empty
+    )
+)]
+fn compress_ciphertext_result(
+    ciphertext: SupportedFheCiphertexts,
+    logical_operation: &str,
+    graph_node_index: usize,
+    transaction_id: &Handle,
+) -> (usize, OpResult) {
+    let ct_type = ciphertext.type_num();
+    match ciphertext.compress() {
+        Ok(ct_bytes) => {
+            tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
+            (
+                graph_node_index,
+                Ok((ciphertext, Some((ct_type, ct_bytes)))),
+            )
+        }
+        Err(error) => {
+            mark_current_span_error(&error);
+            (graph_node_index, Err(error.into()))
+        }
+    }
+}
+
+#[tracing::instrument(
+    skip_all,
+    fields(
+        operation = "fhe_operation",
+        txn_id = %short_transaction_id(transaction_id),
+        logical_operation = op_name,
+        operation_code = operation as i64,
+        input_type = tracing::field::Empty
+    )
+)]
+fn execute_fhe_operation(
+    operation: i32,
+    inputs: &[SupportedFheCiphertexts],
+    gpu_idx: usize,
+    transaction_id: &Handle,
+    op_name: &str,
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    if let Some(first_input) = inputs.first() {
+        tracing::Span::current().record("input_type", first_input.type_name());
+    }
+
+    let result = perform_fhe_operation(operation as i16, inputs, gpu_idx);
+    if let Err(err) = &result {
+        mark_current_span_error(err);
+    }
+    result
+}
+
 #[tracing::instrument(
     skip_all,
     fields(
@@ -562,87 +623,30 @@ fn run_computation(
     gpu_idx: usize,
     transaction_id: &Handle,
 ) -> (usize, OpResult) {
-    let txn_id_short = short_transaction_id(transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
-        Ok(FheOperation::FheGetCiphertext) => {
-            // Compression span (no FHE here)
-            let _guard = tracing::info_span!(
-                "compress_ciphertext",
-                txn_id = %txn_id_short,
-                ct_type = inputs[0].type_name(),
-                operation = "FheGetCiphertext",
-                compressed_size = tracing::field::Empty,
-            )
-            .entered();
-
-            let ct_type = inputs[0].type_num();
-            let compressed = inputs[0].compress();
-            match compressed {
-                Ok(ct_bytes) => {
-                    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
-                    (
-                        graph_node_index,
-                        Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
-                    )
-                }
-                Err(error) => {
-                    mark_current_span_error(&error);
-                    (graph_node_index, Err(error.into()))
-                }
-            }
-        }
+        Ok(FheOperation::FheGetCiphertext) => compress_ciphertext_result(
+            inputs[0].clone(),
+            "FheGetCiphertext",
+            graph_node_index,
+            transaction_id,
+        ),
         Ok(fhe_op) => {
             let op_name = fhe_op.as_str_name();
-
-            // FHE operation span
-            let _fhe_guard = tracing::info_span!(
-                "fhe_operation",
-                txn_id = %txn_id_short,
-                operation = op_name,
-                operation_code = operation as i64,
-                input_type = tracing::field::Empty,
-            )
-            .entered();
-            if !inputs.is_empty() {
-                tracing::Span::current().record("input_type", inputs[0].type_name());
-            }
-
-            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx);
-
-            match result {
+            match execute_fhe_operation(operation, &inputs, gpu_idx, transaction_id, op_name) {
                 Ok(result) => {
                     if is_allowed {
-                        // Compression span
-                        let _guard = tracing::info_span!(
-                            "compress_ciphertext",
-                            txn_id = %txn_id_short,
-                            ct_type = result.type_name(),
-                            operation = op_name,
-                            compressed_size = tracing::field::Empty,
+                        compress_ciphertext_result(
+                            result,
+                            op_name,
+                            graph_node_index,
+                            transaction_id,
                         )
-                        .entered();
-                        let ct_type = result.type_num();
-                        let compressed = result.compress();
-                        match compressed {
-                            Ok(ct_bytes) => {
-                                tracing::Span::current()
-                                    .record("compressed_size", ct_bytes.len() as i64);
-                                (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
-                            }
-                            Err(error) => {
-                                mark_current_span_error(&error);
-                                (graph_node_index, Err(error.into()))
-                            }
-                        }
                     } else {
                         (graph_node_index, Ok((result, None)))
                     }
                 }
-                Err(e) => {
-                    mark_current_span_error(&e);
-                    (graph_node_index, Err(e.into()))
-                }
+                Err(err) => (graph_node_index, Err(err.into())),
             }
         }
         Err(e) => {

@@ -60,6 +60,13 @@ impl fmt::Display for Order {
     }
 }
 
+fn mark_current_span_error(err: impl fmt::Display) {
+    tracing::Span::current()
+        .context()
+        .span()
+        .set_status(Status::error(err.to_string()));
+}
+
 pub struct SwitchNSquashService {
     pool: PgPool,
     conf: Config,
@@ -345,6 +352,10 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
 /// Fetch and process SnS tasks from the database.
 /// Returns (maybe_remaining, number_of_tasks_processed) on success.
+#[tracing::instrument(
+    skip_all,
+    fields(operation = "batch_execution", task_count = tracing::field::Empty)
+)]
 async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
@@ -375,12 +386,7 @@ async fn fetch_and_execute_sns_tasks(
     {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
-
-        let t = tracing::info_span!(
-            "batch_execution",
-            operation = "batch_execution",
-            count = tasks.len()
-        );
+        tracing::Span::current().record("task_count", tasks.len() as i64);
 
         process_tasks(
             &mut tasks,
@@ -393,28 +399,10 @@ async fn fetch_and_execute_sns_tasks(
 
         update_computations_status(trx, &tasks).await?;
 
-        let batch_store_span = tracing::info_span!(
-            parent: &t,
-            "batch_store_ciphertext128",
-            operation = "batch_store_ciphertext128"
-        );
-        let batch_store = async {
-            update_ciphertext128(trx, &tasks).await?;
-            notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
-
-            // Try to enqueue the tasks for upload in the DB
-            // This is a best-effort attempt, as the upload worker might not be available
-            enqueue_upload_tasks(trx, &tasks).await?;
-            Ok::<(), ExecutionError>(())
-        };
-        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
-            batch_store_span
-                .context()
-                .span()
-                .set_status(Status::error(err.to_string()));
+        if let Err(err) = store_processed_tasks(trx, &tasks, &conf.db.notify_channel).await {
+            mark_current_span_error(&err);
             return Err(err);
         }
-        drop(batch_store_span);
 
         db_txn.commit().await?;
 
@@ -429,6 +417,29 @@ async fn fetch_and_execute_sns_tasks(
     }
 
     Ok((maybe_remaining, tasks_processed))
+}
+
+#[tracing::instrument(
+    skip_all,
+    fields(operation = "batch_store_ciphertext128", task_count = tasks.len() as i64)
+)]
+async fn store_processed_tasks(
+    trx: &mut Transaction<'_, Postgres>,
+    tasks: &[HandleItem],
+    notify_channel: &str,
+) -> Result<(), ExecutionError> {
+    update_ciphertext128(trx, tasks)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    notify_ciphertext128_ready(trx, notify_channel)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    // Try to enqueue the tasks for upload in the DB.
+    // This is best-effort; uploader availability is handled by retries.
+    enqueue_upload_tasks(trx, tasks)
+        .await
+        .inspect_err(|err| mark_current_span_error(err))?;
+    Ok(())
 }
 
 /// Queries the database for a fixed number of tasks.
