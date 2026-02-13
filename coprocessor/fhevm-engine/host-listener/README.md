@@ -39,15 +39,39 @@ One flag enables slow‑lane assignment for heavy dependent chains:
 
 - `--dependent-ops-max-per-chain` (0 disables)
 
-When enabled, over-limit dependent ops are assigned to a slow lane by setting
-`dependence_chain.schedule_priority = 1`. Priority is monotonic per chain (never
-reset by workers). The tfhe-worker always prefers priority 0, but will process
-slow-lane work when fast lane is empty, which isolates heavy dependent traffic
-without reordering within a chain.
+What this parameter measures (current behavior):
+
+- Count is **per dependence chain, per ingest pass** (effectively block-scoped in normal flow).
+- Count unit is **unweighted dependent TFHE ops**: `+1` for each event that is:
+  - newly inserted,
+  - `is_allowed = true`,
+  - and has at least one input handle (depends on previous outputs).
+- It is **not** cumulative across past blocks.
+- It is **not** dependency depth.
+
+Why only allowed ops are counted:
+
+- Slow lane is meant to throttle near-term executable pressure.
+- Non-allowed ops are ACL-gated and may never become executable in the same horizon; counting them would over-throttle.
+
+When enabled, over-limit chains are assigned to a slow lane by setting
+`dependence_chain.schedule_priority = 1`. Priority is monotonic per chain
+(`GREATEST` on upsert, never downgraded by workers). The tfhe-worker always
+prefers priority 0, but still processes slow-lane work when fast lane is empty.
 
 When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
 throttling accounting, and promotes all chains to `schedule_priority = 0` at
 startup.
+
+Tuning guidance:
+
+- Start with `64` on testnet as a conservative default.
+- If slow lane is too aggressive (many normal chains marked), raise gradually (e.g. `64 -> 96 -> 128`).
+- If heavy dependent bursts still dominate fast lane, lower gradually (e.g. `64 -> 48 -> 32`).
+- Validate changes with:
+  - `rate(host_listener_slow_lane_marked_chains_total[5m])`,
+  - completion throughput,
+  - and backlog slope in the same time window.
 
 ### Testnet incident runbook (slow lane)
 
