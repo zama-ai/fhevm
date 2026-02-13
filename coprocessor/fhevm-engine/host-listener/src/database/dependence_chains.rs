@@ -33,7 +33,7 @@ impl Transaction {
             allowed_handle: Vec::with_capacity(5),
             input_tx: HashSet::with_capacity(3),
             output_tx: HashSet::with_capacity(3),
-            linear_chain: tx_hash, //  before coallescing linear tx chains
+            linear_chain: tx_hash, //  before coalescing linear tx chains
             size: 0,
             depth_size: 0,
         }

@@ -152,14 +152,14 @@ pub async fn init_public_decryption_response_listener<P: Provider>(
         >,
     >,
 > {
-    debug!("Subcribing to PublicDecryptionResponse events...");
+    debug!("Subscribing to PublicDecryptionResponse events...");
     let mut response_filter = decryption_contract
         .PublicDecryptionResponse_filter()
         .watch()
         .await
         .map_err(|e| anyhow!("Failed to subscribe to PublicDecryptionResponse {e}"))?;
     debug!(
-        "Subcribed to PublicDecryptionResponse events! Can start sending PublicDecryptionRequests..."
+        "Subscribed to PublicDecryptionResponse events! Can start sending PublicDecryptionRequests..."
     );
 
     response_filter.poller = response_filter

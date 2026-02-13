@@ -118,11 +118,11 @@ async fn tfhe_worker_cycle(
             &pool,
         )
         .await?;
-    let mut immedially_poll_more_work = false;
+    let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
     loop {
         // only if previous iteration had no work done do the wait
-        if !immedially_poll_more_work {
+        if !immediately_poll_more_work {
             tokio::select! {
                 _ = listener.try_recv() => {
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
@@ -160,7 +160,7 @@ async fn tfhe_worker_cycle(
         if has_more_work {
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
-            immedially_poll_more_work = true;
+            immediately_poll_more_work = true;
         } else {
             dcid_mngr.release_current_lock(true, None).await?;
             dcid_mngr.do_cleanup().await?;
@@ -171,7 +171,7 @@ async fn tfhe_worker_cycle(
             let mut s = tracer.start_with_context("query_dependence_chain", &loop_ctx);
 
             let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
-            immedially_poll_more_work = dependence_chain_id.is_some();
+            immediately_poll_more_work = dependence_chain_id.is_some();
 
             s.set_attribute(KeyValue::new(
                 "dependence_chain_id",
