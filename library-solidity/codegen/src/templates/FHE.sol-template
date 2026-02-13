@@ -318,8 +318,8 @@ library FHE {
     ///      - The `decryptionProof` is empty or has an invalid length.
     ///      - The number of valid signatures is zero or less than the configured KMS signers threshold.
     ///      - Any signature is produced by an address that is not a registered KMS signer.
-    /// @dev Returns false if any there are enough signatures to reach threshold, but some recovered signer is duplicated.
-    /// @return true if the signatures verification succeeds, false or revert otherwise.
+    /// @dev Returns false if there are enough signatures to reach threshold, but some recovered signer is duplicated.
+    /// @return true if the signatures verification succeeds, false or reverts otherwise.
     function isPublicDecryptionResultValid(
         bytes32[] memory handlesList,
         bytes memory abiEncodedCleartexts,
