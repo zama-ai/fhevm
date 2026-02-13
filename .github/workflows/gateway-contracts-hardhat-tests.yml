@@ -4,10 +4,6 @@ name: gateway-contracts-hardhat-tests
 on:
   pull_request:
 
-  push:
-    branches:
-      - main
-
 permissions: {}
 
 concurrency:
