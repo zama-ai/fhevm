@@ -14,6 +14,25 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
+# Portable grep helpers: prefer rg when available, fallback to grep.
+function has_pattern() {
+  local pattern="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q "$pattern"
+  else
+    grep -qE "$pattern"
+  fi
+}
+
+function filter_pattern() {
+  local pattern="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg "$pattern"
+  else
+    grep -E "$pattern"
+  fi
+}
+
 # Default versions for the fhevm stack.
 
 # KMS connector services.
@@ -96,7 +115,7 @@ function usage {
 function collect_coprocessor_topology_logs() {
   echo -e "${LIGHT_BLUE}${BOLD}[LOGS] Collecting coprocessor topology logs (last 10m)...${RESET}"
   local containers
-  containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor[0-9-]*-(host-listener|gw-listener|tfhe-worker|sns-worker|transaction-sender)$' || true)
+  containers=$(docker ps --format '{{.Names}}' | filter_pattern '^coprocessor[0-9-]*-(host-listener|gw-listener|tfhe-worker|sns-worker|transaction-sender)$' || true)
   if [ -z "$containers" ]; then
     echo -e "${YELLOW}[WARN]${RESET} No coprocessor containers found"
     return
@@ -119,7 +138,7 @@ function wait_for_coprocessor_key_bootstrap() {
     local total_count=0
     local pending=""
     local containers
-    containers=$(docker ps --format '{{.Names}}' | rg '^coprocessor([0-9]+)?-sns-worker$' || true)
+    containers=$(docker ps --format '{{.Names}}' | filter_pattern '^coprocessor([0-9]+)?-sns-worker$' || true)
     if [ -z "$containers" ]; then
       echo -e "${YELLOW}[WARN]${RESET} No sns-worker containers found yet"
       sleep "$poll_interval"
@@ -130,7 +149,7 @@ function wait_for_coprocessor_key_bootstrap() {
     while IFS= read -r container; do
       [ -z "$container" ] && continue
       total_count=$((total_count + 1))
-      if docker logs --since=20m "$container" 2>&1 | rg -q "Fetched keyset"; then
+      if docker logs --since=20m "$container" 2>&1 | has_pattern "Fetched keyset"; then
         ready_count=$((ready_count + 1))
       else
         pending="${pending} ${container}"
@@ -139,7 +158,7 @@ function wait_for_coprocessor_key_bootstrap() {
 
     local configured_threshold=""
     if [ -f "test-suite/fhevm/env/staging/.env.host-sc.local" ]; then
-      configured_threshold=$(rg '^COPROCESSOR_THRESHOLD=' test-suite/fhevm/env/staging/.env.host-sc.local -N | tail -n1 | cut -d'=' -f2 || true)
+      configured_threshold=$(filter_pattern '^COPROCESSOR_THRESHOLD=' test-suite/fhevm/env/staging/.env.host-sc.local | tail -n1 | cut -d'=' -f2 || true)
     fi
     if ! [[ "$configured_threshold" =~ ^[0-9]+$ ]] || [ "$configured_threshold" -lt 1 ]; then
       configured_threshold="$total_count"
