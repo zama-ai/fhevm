@@ -164,6 +164,8 @@ async fn run_uploader_loop(
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
+                    // Cross-boundary: spawned task; restore the OTel context
+                    // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3", operation = "upload_s3");
                     upload_span.set_parent(item.otel.context());
                     match upload_ciphertexts(trx, item, &client, &conf)

@@ -395,10 +395,10 @@ async fn fetch_and_execute_sns_tasks(
         update_computations_status(trx, &tasks).await?;
 
         let batch_store_span = tracing::info_span!(
+            parent: &t,
             "batch_store_ciphertext128",
             operation = "batch_store_ciphertext128"
         );
-        batch_store_span.set_parent(t.context());
         let batch_store = async {
             update_ciphertext128(trx, &tasks).await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
@@ -569,6 +569,8 @@ fn compute_task(
 ) {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
+    // Cross-boundary: compute_task runs on a thread-pool worker;
+    // restore the OTel context that was captured when the task was enqueued.
     let span = error_span!("compute", thread_id = %thread_id);
     span.set_parent(task.otel.context());
     let _enter = span.enter();
