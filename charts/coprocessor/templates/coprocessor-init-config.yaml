@@ -12,14 +12,6 @@ data:
   create-secrets.sh: |
     #!/bin/sh
     set -e
-    API_KEY_SECRET_NAME="{{ .Values.config.apiKey.secret.name }}"
-    API_KEY_SECRET_KEY="{{ .Values.config.apiKey.secret.key }}"
-    if ! kubectl get secret ${API_KEY_SECRET_NAME}; then
-      COPROCESSOR_API_KEY_VALUE=$(uuidgen)
-      kubectl create secret generic ${API_KEY_SECRET_NAME} --from-literal ${API_KEY_SECRET_KEY}=${COPROCESSOR_API_KEY_VALUE}
-    else
-      echo "skipping: secret ${API_KEY_SECRET_NAME} already exists" 2>&1
-    fi
     apk update && apk add openssl
     COPROCESSOR_KEY_SECRET_NAME="{{ .Values.config.coprocessorKey.secret.name }}"
     COPROCESSOR_KEY_SECRET_KEY="{{ .Values.config.coprocessorKey.secret.key }}"

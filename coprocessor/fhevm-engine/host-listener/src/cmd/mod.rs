@@ -8,7 +8,6 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use futures_util::stream::StreamExt;
 use rustls;
-use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
@@ -24,8 +23,9 @@ use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::database::ingest::{ingest_block_logs, BlockLogs};
-use crate::database::tfhe_event_propagate::{ChainId, Database};
+use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use fhevm_engine_common::chain_id::ChainId;
 
 pub mod block_history;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
@@ -70,9 +70,6 @@ pub struct Args {
         allow_hyphen_values = true
     )]
     pub end_at_block: Option<i64>,
-
-    #[arg(long, help = "A Coprocessor API key is needed for database access")]
-    pub coprocessor_api_key: Option<Uuid>,
 
     #[arg(
         long,
@@ -266,7 +263,7 @@ impl InfiniteLogIter {
             provider.get_chain_id(),
         )
         .await??;
-        Ok(chain_id)
+        Ok(ChainId::try_from(chain_id)?)
     }
 
     /// Resolves `end_at_block` to an absolute block number.
@@ -915,7 +912,7 @@ impl InfiniteLogIter {
 }
 
 async fn db_insert_block(
-    chain_id: u64,
+    chain_id: ChainId,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
@@ -1034,38 +1031,14 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
-    info!(chain_id = chain_id, "Chain ID");
+    info!(chain_id = %chain_id, "Chain ID");
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
-    let Some(coprocessor_api_key) = args.coprocessor_api_key else {
-        error!("A Coprocessor API key is required to access the database");
-        panic!("A Coprocessor API key is required to access the database");
-    };
-    let mut db = Database::new(
-        &args.database_url,
-        &coprocessor_api_key,
-        args.dependence_cache_size,
-    )
-    .await?;
-
-    if chain_id != db.chain_id {
-        error!(
-            chain_id_blockchain = ?chain_id,
-            chain_id_db = ?db.chain_id,
-            tenant_id = ?db.tenant_id,
-            coprocessor_api_key = ?coprocessor_api_key,
-            "Chain ID mismatch with database",
-        );
-        return Err(anyhow!(
-            "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
-            chain_id,
-            db.chain_id,
-            db.tenant_id,
-            coprocessor_api_key
-        ));
-    }
+    let mut db =
+        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
+            .await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),

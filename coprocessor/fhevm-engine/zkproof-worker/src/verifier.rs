@@ -1,19 +1,20 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::crs::{Crs, CrsCache};
+use fhevm_engine_common::db_keys::DbKey;
+use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry::{self};
-use fhevm_engine_common::tenant_keys::TfheTenantKeys;
-use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use hex::encode;
-use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
-use std::num::NonZero;
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
@@ -32,7 +33,7 @@ use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-const MAX_CACHED_TENANT_KEYS: usize = 100;
+pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
@@ -128,10 +129,15 @@ pub async fn execute_verify_proofs_loop(
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, conf = %conf, "Starting with config");
 
-    // Tenants key cache is shared amongst all workers
-    let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
-        NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
-    )));
+    // DB key cache is shared amongst all workers
+    let db_key_cache =
+        DbKeyCache::new(MAX_CACHED_KEYS).map_err(|err| ExecutionError::Other(err.into()))?;
+
+    let host_chain_cache = Arc::new(
+        HostChainsCache::load(&pool_mngr.pool())
+            .await
+            .map_err(|err| ExecutionError::Other(err.into()))?,
+    );
 
     let t = telemetry::tracer("init_workers", &None);
     let mut s = t.child_span("start_workers");
@@ -140,19 +146,27 @@ pub async fn execute_verify_proofs_loop(
 
     for index in 0..conf.worker_thread_count {
         let conf = conf.clone();
-        let tenant_key_cache = tenant_key_cache.clone();
+        let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
-
+        let host_chain_cache = host_chain_cache.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
-            let tenant_key_cache = tenant_key_cache.clone();
+            let db_key_cache = db_key_cache.clone();
+            let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
             async move {
-                execute_worker(conf, pool, ct, tenant_key_cache, last_active_at)
-                    .await
-                    .map_err(ServiceError::from)
+                execute_worker(
+                    conf,
+                    pool,
+                    ct,
+                    db_key_cache,
+                    host_chain_cache,
+                    last_active_at,
+                )
+                .await
+                .map_err(ServiceError::from)
             }
         };
 
@@ -177,7 +191,8 @@ async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
     token: CancellationToken,
-    tenant_key_cache: Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    db_key_cache: DbKeyCache,
+    host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
@@ -187,10 +202,33 @@ async fn execute_worker(
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
+    let latest_key = Arc::new(
+        db_key_cache
+            .fetch_latest(&pool)
+            .await
+            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
+    );
+
+    let latest_crs = Arc::new(
+        CrsCache::load(&pool)
+            .await
+            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?
+            .get_latest()
+            .cloned()
+            .ok_or_else(|| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
+    );
+
     loop {
         update_last_active(last_active_at.clone()).await;
 
-        execute_verify_proof_routine(&pool, &tenant_key_cache, &conf).await?;
+        execute_verify_proof_routine(
+            &pool,
+            latest_key.clone(),
+            latest_crs.clone(),
+            host_chain_cache.as_ref(),
+            &conf,
+        )
+        .await?;
         let count = get_remaining_tasks(&pool).await?;
         if count > 0 {
             info!({ count }, "zkproof requests available");
@@ -222,12 +260,14 @@ async fn execute_worker(
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
-    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    db_key: Arc<DbKey>,
+    crs: Arc<Crs>,
+    host_chain_cache: &HostChainsCache,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, host_chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -239,7 +279,9 @@ async fn execute_verify_proof_routine(
         let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let chain_id: i64 = row.get("chain_id");
+        let host_chain_id_raw: i64 = row.get("host_chain_id");
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
         let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
@@ -247,7 +289,7 @@ async fn execute_verify_proof_routine(
         info!(
             message = "Process zk-verify request",
             request_id,
-            chain_id,
+            %host_chain_id,
             user_address,
             contract_address,
             input_len = format!("{}", input.len()),
@@ -256,24 +298,21 @@ async fn execute_verify_proof_routine(
         let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
         t.set_attribute("request_id", request_id.to_string());
 
-        let s = t.child_span("fetch_keys");
-        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
-            .await
-            .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
-        telemetry::end_span(s);
+        let host_chain = host_chain_cache
+            .get_chain(host_chain_id)
+            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
-        let tenant_id = keys.tenant_id;
-        info!(message = "Keys retrieved", request_id, chain_id);
+        let acl_contract_address = host_chain.acl_contract_address.clone();
 
         let res = tokio::task::spawn_blocking(move || {
             let aux_data = auxiliary::ZkData {
                 contract_address,
                 user_address,
-                chain_id: keys.chain_id,
-                acl_contract_address: keys.acl_contract_address.clone(),
+                chain_id: host_chain_id,
+                acl_contract_address,
             };
 
-            verify_proof(request_id, &keys, &aux_data, &input, t)
+            verify_proof(request_id, &db_key, &crs, &aux_data, &input, t)
         })
         .await?;
 
@@ -296,7 +335,7 @@ async fn execute_verify_proof_routine(
                 });
                 verified = true;
                 let count = cts.len();
-                insert_ciphertexts(&mut txn, tenant_id, cts, blob_hash).await?;
+                insert_ciphertexts(&mut txn, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
                 t.set_attribute("count", count.to_string());
@@ -346,16 +385,17 @@ async fn execute_verify_proof_routine(
 
 pub(crate) fn verify_proof(
     request_id: i64,
-    keys: &FetchTenantKeyResult,
+    key: &DbKey,
+    crs: &Crs,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
     span: telemetry::OtelTracer,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
-    set_server_key(keys.server_key.clone());
+    set_server_key(key.sks.clone());
 
     // Step 1: Deserialize and verify the proof
     let mut s_verify = span.child_span("verify_proof");
-    let verified_list = match verify_proof_only(request_id, raw_ct, keys, aux_data) {
+    let verified_list = match verify_proof_only(request_id, raw_ct, key, crs, aux_data) {
         Ok(list) => {
             telemetry::attribute(&mut s_verify, "list_len", list.len().to_string());
             telemetry::end_span(s_verify);
@@ -402,7 +442,8 @@ pub(crate) fn verify_proof(
 fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
-    keys: &FetchTenantKeyResult,
+    key: &DbKey,
+    crs: &Crs,
     aux_data: &auxiliary::ZkData,
 ) -> Result<tfhe::ProvenCompactCiphertextList, ExecutionError> {
     let aux_data_bytes = aux_data
@@ -412,10 +453,8 @@ fn verify_proof_only(
     let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
         &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            keys.pks.parameters(),
-            &keys.public_params,
-        ),
-    )?;
+            key.pks.parameters(), &crs.crs,
+        ))?;
 
     info!(
         message = "Input list deserialized",
@@ -434,7 +473,7 @@ fn verify_proof_only(
     }
 
     // Verify the ZK proof
-    let verification_result = the_list.verify(&keys.public_params, &keys.pks, &aux_data_bytes);
+    let verification_result = the_list.verify(&crs.crs, &key.pks, &aux_data_bytes);
 
     if verification_result.is_invalid() {
         return Err(ExecutionError::InvalidProof(
@@ -474,9 +513,8 @@ fn create_ciphertext(
         return Err(ExecutionError::TooManyInputs(ct_idx));
     }
 
-    let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
-        .to_owned()
-        .to_be_bytes();
+    let chain_id_bytes: [u8; 32] =
+        alloy_primitives::U256::from(aux_data.chain_id.as_u64()).to_be_bytes();
     let mut handle_hash = Keccak256::new();
     handle_hash.update(HANDLE_HASH_DOMAIN_SEPARATOR);
     handle_hash.update(blob_hash);
@@ -499,8 +537,7 @@ fn create_ciphertext(
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
-    // TODO: change chain ID to be u64
-    handle[22..30].copy_from_slice(&(aux_data.chain_id as u64).to_be_bytes());
+    handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
@@ -553,7 +590,6 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 
 pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
-    tenant_id: i32,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
@@ -561,12 +597,11 @@ pub(crate) async fn insert_ciphertexts(
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type, 
+                handle, ciphertext, ciphertext_version, ciphertext_type, 
                 input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING;
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
-            tenant_id,
             &ct.handle,
             &ct.compressed,
             ct.ct_version,

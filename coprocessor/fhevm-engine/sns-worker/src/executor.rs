@@ -1,5 +1,5 @@
 use crate::aws_upload::check_is_ready;
-use crate::keyset::fetch_keyset;
+use crate::keyset::fetch_latest_keyset;
 use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
 use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
 use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
@@ -13,12 +13,15 @@ use crate::SchedulePolicy;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
+use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -37,7 +40,7 @@ use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::error_span;
 use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -143,7 +146,7 @@ impl SwitchNSquashService {
     }
 
     pub async fn run(&self, pool_mngr: &PostgresPoolManager) {
-        let keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>> = Arc::new(RwLock::new(
+        let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
             lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
         ));
 
@@ -175,19 +178,10 @@ impl SwitchNSquashService {
 
 async fn get_keyset(
     pool: PgPool,
-    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
-    tenant_api_key: &String,
-) -> Result<Option<KeySet>, ExecutionError> {
+    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let _t = telemetry::tracer("fetch_keyset", &None);
-    {
-        let mut cache = keys_cache.write().await;
-        if let Some(keys) = cache.get(tenant_api_key) {
-            info!(tenant_api_key = tenant_api_key, "Keyset found in cache");
-            return Ok(Some(keys.clone()));
-        }
-    }
-    let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
-    Ok(keys)
+    fetch_latest_keyset(&keys_cache, &pool).await
 }
 
 /// Executes the worker logic for the SnS task.
@@ -197,12 +191,11 @@ pub(crate) async fn run_loop(
     pool: PgPool,
     token: CancellationToken,
     last_active_at: Arc<RwLock<SystemTime>>,
-    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
+    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
-    let tenant_api_key = &conf.tenant_api_key;
     let mut listener = PgListener::connect_with(&pool).await?;
     info!("Connected to PostgresDB");
 
@@ -210,7 +203,7 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let mut keys = None;
+    let mut keys: Option<(DbKeyId, KeySet)> = None;
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
     let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
@@ -219,27 +212,31 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        let Some(keys) = keys.as_ref() else {
-            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
-            if keys.is_some() {
-                info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
+        if let Some((key_id_gw, keyset)) = latest_keys {
+            let key_changed = keys
+                .as_ref()
+                .map(|(current_key_id_gw, _)| current_key_id_gw != &key_id_gw)
+                .unwrap_or(true);
+            if key_changed {
+                info!(key_id_gw = hex::encode(&key_id_gw), "Fetched keyset");
                 // Notify that the keys are loaded
                 if let Some(events_tx) = &events_tx {
                     let _ = events_tx.try_send("event_keys_loaded");
                 }
-            } else {
-                warn!(
-                    tenant_api_key = tenant_api_key,
-                    "No keys available, retrying in 5 seconds"
-                );
-                tokio::time::sleep(Duration::from_secs(5)).await;
             }
-
+            keys = Some((key_id_gw, keyset));
+        } else {
+            warn!("No keys available, retrying in 5 seconds");
+            tokio::time::sleep(Duration::from_secs(5)).await;
             if token.is_cancelled() {
                 return Ok(());
             }
             continue;
-        };
+        }
+
+        // keys is guaranteed by the branch above; panic here if that invariant ever regresses.
+        let (_, keys) = keys.as_ref().expect("keyset should be available");
 
         let (maybe_remaining, _tasks_processed) =
             fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
@@ -317,11 +314,10 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     let rows_affected: u64 = sqlx::query!(
         "
         WITH uploaded_ct128 AS (
-            SELECT c.tenant_id, c.handle
+            SELECT c.handle
             FROM ciphertexts128 c
             JOIN ciphertext_digest d
-            ON d.tenant_id = c.tenant_id
-            AND d.handle = c.handle
+            ON d.handle = c.handle
             WHERE d.ciphertext128 IS NOT NULL
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
@@ -329,8 +325,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
         DELETE FROM ciphertexts128 c
         USING uploaded_ct128 r
-        WHERE c.tenant_id = r.tenant_id
-        AND c.handle = r.handle;
+        WHERE c.handle = r.handle;
         ",
         limit as i32
     )
@@ -376,7 +371,9 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
-    if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
+    if let Some(mut tasks) =
+        query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id_gw).await?
+    {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
@@ -394,15 +391,28 @@ async fn fetch_and_execute_sns_tasks(
 
         update_computations_status(trx, &tasks).await?;
 
-        let s = t.child_span("batch_store_ciphertext128");
+        let batch_store_span = tracing::info_span!(
+            "batch_store_ciphertext128",
+            operation = "batch_store_ciphertext128"
+        );
+        batch_store_span.set_parent(t.context().clone());
+        let batch_store = async {
+            update_ciphertext128(trx, &tasks).await?;
+            notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
-        update_ciphertext128(trx, &tasks).await?;
-        notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
-
-        // Try to enqueue the tasks for upload in the DB
-        // This is a best-effort attempt, as the upload worker might not be available
-        enqueue_upload_tasks(trx, &tasks).await?;
-        telemetry::end_span(s);
+            // Try to enqueue the tasks for upload in the DB
+            // This is a best-effort attempt, as the upload worker might not be available
+            enqueue_upload_tasks(trx, &tasks).await?;
+            Ok::<(), ExecutionError>(())
+        };
+        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
+            batch_store_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            return Err(err);
+        }
+        drop(batch_store_span);
 
         db_txn.commit().await?;
 
@@ -424,6 +434,7 @@ pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
     order: Order,
+    key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let start_time = SystemTime::now();
 
@@ -461,13 +472,18 @@ pub async fn query_sns_tasks(
     let tasks = records
         .into_iter()
         .map(|record| {
-            let tenant_id: i32 = record.try_get("tenant_id")?;
+            let host_chain_id_raw: i64 = record.try_get("host_chain_id")?;
+            let host_chain_id = ChainId::try_from(host_chain_id_raw)
+                .map_err(|e| ExecutionError::ConversionError(e.into()))?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
 
             Ok(HandleItem {
-                tenant_id,
+                // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
+                // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
+                key_id_gw: key_id_gw.clone(),
+                host_chain_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
@@ -564,10 +580,18 @@ fn compute_task(
         return; // Skip empty ciphertexts
     }
 
-    let s = task.otel.child_span("decompress_ct64");
-
-    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
-    telemetry::end_span(s);
+    let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
+    let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
+        Ok(ct) => ct,
+        Err(err) => {
+            decompress_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            error!({ handle = handle, error = %err }, "Failed to decompress ct64");
+            return;
+        }
+    };
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
@@ -607,6 +631,12 @@ fn compute_task(
                 .try_send(UploadJob::Normal(task.clone()))
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
+                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
+                let _send_task_enter = send_task_span.enter();
+                send_task_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 // This could happen if either we are experiencing a burst of tasks
                 // or the upload worker cannot recover the connection to AWS S3
                 //
@@ -616,9 +646,7 @@ fn compute_task(
                 // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
                 // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
                 // 3. The PostgresDB (size: unlimited)
-
                 error!({ action = "review", error = %err }, "Failed to send task to upload worker");
-                telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
             }
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -627,6 +655,10 @@ fn compute_task(
             }
         }
         Err(err) => {
+            squash_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
@@ -644,35 +676,39 @@ async fn update_ciphertext128(
     for task in tasks {
         if !task.ct128.is_empty() {
             let ciphertext128 = task.ct128.bytes();
-            let s = task.otel.child_span("ciphertexts128_insert");
+            let persist_span =
+                tracing::info_span!("ciphertexts128_insert", operation = "ciphertexts128_insert");
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (
-                        tenant_id,
                         handle,
                         ciphertext
                 )
-                VALUES ($1, $2, $3)",
-                task.tenant_id,
+                VALUES ($1, $2)",
                 task.handle,
                 ciphertext128,
             )
             .execute(db_txn.as_mut())
+            .instrument(persist_span.clone())
             .await;
 
             match res {
                 Ok(val) => {
+                    drop(persist_span);
                     info!(
                         handle = to_hex(&task.handle),
                         query_res = format!("{:?}", val),
                         size = ciphertext128.len(),
                         "Persisted ct128 successfully"
                     );
-                    telemetry::end_span(s);
                 }
                 Err(err) => {
+                    persist_span
+                        .context()
+                        .span()
+                        .set_status(Status::error(err.to_string()));
+                    drop(persist_span);
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
-                    telemetry::end_span_with_err(s, err.to_string());
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely
                     return Err(err.into());

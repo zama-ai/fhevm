@@ -19,6 +19,8 @@ use std::{
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
+    chain_id::ChainId,
+    db_keys::DbKeyId,
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
@@ -57,6 +59,7 @@ type ServerKey = tfhe::ServerKey;
 
 #[derive(Clone)]
 pub struct KeySet {
+    pub key_id_gw: DbKeyId,
     /// Optional ClientKey for decrypting on testing
     pub client_key: Option<tfhe::ClientKey>,
     pub server_key: ServerKey,
@@ -110,7 +113,6 @@ pub struct HealthCheckConfig {
 
 #[derive(Clone)]
 pub struct Config {
-    pub tenant_api_key: String,
     pub service_name: String,
     pub db: DBConfig,
     pub s3: S3Config,
@@ -221,7 +223,8 @@ impl std::fmt::Display for Ciphertext128Format {
 
 #[derive(Clone)]
 pub struct HandleItem {
-    pub tenant_id: i32,
+    pub host_chain_id: ChainId,
+    pub key_id_gw: DbKeyId,
     pub handle: Vec<u8>,
 
     /// Compressed 64-bit ciphertext
@@ -248,9 +251,10 @@ impl HandleItem {
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
-            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            self.tenant_id,
+            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            self.host_chain_id.as_i64(),
+            &self.key_id_gw,
             self.handle,
             self.transaction_id,
         )

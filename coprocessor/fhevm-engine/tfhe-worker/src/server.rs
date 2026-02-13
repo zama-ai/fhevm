@@ -1,16 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
-use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-use crate::db_queries::{check_if_api_key_is_valid, fetch_tenant_server_key};
 use crate::server::tfhe_worker::GenericResponse;
-use crate::types::{CoprocessorError, TfheTenantKeys};
+use crate::types::CoprocessorError;
 use crate::utils::sort_computations_by_dependencies;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use alloy::sol_types::{Eip712Domain, SolStruct};
 pub use fhevm_engine_common::common;
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::tfhe_ops::{
     check_fhe_operand_types, current_ciphertext_version, trivial_encrypt_be_bytes,
     try_expand_ciphertext_list, validate_fhe_type,
@@ -81,7 +82,8 @@ lazy_static! {
 struct CoprocessorService {
     pool: sqlx::Pool<sqlx::Postgres>,
     args: crate::daemon_cli::Args,
-    tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+    db_key_cache: DbKeyCache,
+    host_chains_cache: HostChainsCache,
     signer: PrivateKeySigner,
     get_ciphertext_eip712_domain: Eip712Domain,
 }
@@ -118,12 +120,13 @@ pub async fn run_server_iteration(
         .connect(database_url.as_str())
         .await?;
 
-    let tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>> =
-        std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
-            NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
-        )));
+    let db_key_cache = DbKeyCache::new(args.key_cache_size)?;
 
-    let service = CoprocessorService::new(pool, args, tenant_key_cache, signer);
+    let host_chain_cache = HostChainsCache::load(&pool)
+        .await
+        .expect("failed to load host chains cache");
+
+    let service = CoprocessorService::new(pool, args, db_key_cache, host_chain_cache, signer);
 
     Server::builder()
         .add_service(
@@ -283,7 +286,8 @@ impl CoprocessorService {
     fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         args: crate::daemon_cli::Args,
-        tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+        db_key_cache: DbKeyCache,
+        host_chains_cache: HostChainsCache,
         signer: PrivateKeySigner,
     ) -> Self {
         let get_ciphertext_eip712_domain = alloy::sol_types::eip712_domain! {
@@ -293,7 +297,8 @@ impl CoprocessorService {
         CoprocessorService {
             pool,
             args,
-            tenant_key_cache,
+            db_key_cache,
+            host_chains_cache,
             signer,
             get_ciphertext_eip712_domain,
         }
@@ -304,8 +309,6 @@ impl CoprocessorService {
         request: tonic::Request<InputUploadBatch>,
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<InputUploadResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
-
         let req = request.get_ref();
         if req.input_ciphertexts.len() > self.args.maximum_compact_inputs_upload {
             return Err(tonic::Status::from_error(Box::new(
@@ -323,39 +326,45 @@ impl CoprocessorService {
             return Ok(tonic::Response::new(response));
         }
 
-        let fetch_key_response = {
-            fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
-                .await
-                .map_err(tonic::Status::from_error)?
-        };
-        let chain_id = fetch_key_response.chain_id;
-        let chain_id_be = (chain_id as u64).to_be_bytes();
-        let server_key = fetch_key_response.server_key;
-        let verifying_contract_address = fetch_key_response.verifying_contract_address;
+        // This server is supposed to go away and is used for testing only - that's why we use expect() here.
+        let latest_key = self
+            .db_key_cache
+            .fetch_latest(&self.pool)
+            .await
+            .expect("fetch latest db key");
+        let host_chain = self
+            .host_chains_cache
+            .all()
+            .first()
+            .cloned()
+            .expect("no host chains configured");
+
+        let chain_id = host_chain.chain_id;
+        let chain_id_be = chain_id.as_u64().to_be_bytes();
+        let server_key = latest_key.sks.clone();
+        // NOTE: Since we use this for testing only, just reuse the ACL contract address as a verifying one.
+        let verifying_contract_address = host_chain.acl_contract_address.clone();
         let verifying_contract_address =
             alloy::primitives::Address::from_str(&verifying_contract_address).map_err(|e| {
-                tonic::Status::from_error(Box::new(
-                    CoprocessorError::CannotParseTenantEthereumAddress {
-                        bad_address: verifying_contract_address.clone(),
-                        parsing_error: e.to_string(),
-                    },
-                ))
+                tonic::Status::from_error(Box::new(CoprocessorError::CannotParseEthereumAddress {
+                    bad_address: verifying_contract_address.clone(),
+                    parsing_error: e.to_string(),
+                }))
             })?;
-        let acl_contract_address =
-            alloy::primitives::Address::from_str(&fetch_key_response.acl_contract_address)
-                .map_err(|e| {
-                    tonic::Status::from_error(Box::new(
-                        CoprocessorError::CannotParseTenantEthereumAddress {
-                            bad_address: fetch_key_response.acl_contract_address.clone(),
-                            parsing_error: e.to_string(),
-                        },
-                    ))
-                })?;
+        let acl_contract_address = alloy::primitives::Address::from_str(
+            &host_chain.acl_contract_address,
+        )
+        .map_err(|e| {
+            tonic::Status::from_error(Box::new(CoprocessorError::CannotParseEthereumAddress {
+                bad_address: host_chain.acl_contract_address.clone(),
+                parsing_error: e.to_string(),
+            }))
+        })?;
 
         let eip_712_domain = alloy::sol_types::eip712_domain! {
             name: "InputVerifier",
             version: "1",
-            chain_id: chain_id as u64,
+            chain_id: chain_id.as_u64(),
             verifying_contract: verifying_contract_address,
         };
 
@@ -383,11 +392,18 @@ impl CoprocessorService {
             );
         }
 
+        let latest_crs = CrsCache::load(&self.pool)
+            .await
+            .expect("failed to load CRS cache")
+            .get_latest()
+            .cloned()
+            .expect("no CRS available");
+
         for (idx, ci) in req.input_ciphertexts.iter().enumerate() {
             let cloned_input = ci.clone();
             let server_key = server_key.clone();
             let tracer = tracer.clone();
-            let public_params = fetch_key_response.public_params.clone();
+            let public_params = latest_crs.crs.clone();
 
             let mut blocking_span = tracer.child_span("blocking_ciphertext_list_expand");
             blocking_span.set_attributes(vec![KeyValue::new("idx", idx as i64)]);
@@ -476,11 +492,10 @@ impl CoprocessorService {
             // save blob for audits and historical reference
             let _ = sqlx::query!(
                 "
-              INSERT INTO input_blobs(tenant_id, blob_hash, blob_data, blob_ciphertext_count)
-              VALUES($1, $2, $3, $4)
-              ON CONFLICT (tenant_id, blob_hash) DO NOTHING
+              INSERT INTO input_blobs(blob_hash, blob_data, blob_ciphertext_count)
+              VALUES($1, $2, $3)
+              ON CONFLICT (blob_hash) DO NOTHING
             ",
-                tenant_id,
                 &blob_hash,
                 &input_blob.input_payload,
                 corresponding_unpacked.len() as i32
@@ -502,7 +517,7 @@ impl CoprocessorService {
             };
 
             let mut ct_resp = InputCiphertextResponse {
-                acl_address: fetch_key_response.acl_contract_address.clone(),
+                acl_address: host_chain.acl_contract_address.clone(),
                 hash_of_ciphertext: hash_of_ciphertext.to_vec(),
                 input_handles: Vec::with_capacity(corresponding_unpacked.len()),
                 eip712_signature: Vec::new(),
@@ -547,7 +562,6 @@ impl CoprocessorService {
                 let _ = sqlx::query!(
                     "
                     INSERT INTO ciphertexts(
-                        tenant_id,
                         handle,
                         ciphertext,
                         ciphertext_version,
@@ -555,10 +569,9 @@ impl CoprocessorService {
                         input_blob_hash,
                         input_blob_index
                     )
-                    VALUES($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+                    VALUES($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (handle, ciphertext_version) DO NOTHING
                 ",
-                    tenant_id,
                     &handle,
                     &serialized_ct,
                     ciphertext_version,
@@ -614,8 +627,6 @@ impl CoprocessorService {
                 },
             )));
         }
-
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
 
         if req.computations.is_empty() {
             return Ok(tonic::Response::new(GenericResponse { response_code: 0 }));
@@ -677,6 +688,13 @@ impl CoprocessorService {
             .await
             .map_err(Into::<CoprocessorError>::into)?;
 
+        let host_chain = self
+            .host_chains_cache
+            .all()
+            .first()
+            .cloned()
+            .expect("no host chains configured");
+
         for (idx, comp) in sorted_computations.iter().enumerate() {
             let fhe_operation: i16 = comp.operation.try_into().map_err(|_| {
                 CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
@@ -689,7 +707,6 @@ impl CoprocessorService {
             let _ = query!(
                 "
                     INSERT INTO computations(
-                        tenant_id,
                         output_handle,
                         dependencies,
                         fhe_operation,
@@ -697,19 +714,20 @@ impl CoprocessorService {
                         is_scalar,
                         dependence_chain_id,
                         transaction_id,
-                        is_allowed
+                        is_allowed,
+                        host_chain_id
                     )
-                    VALUES($1, $2, $3, $4, false, $5, $6, $7, $8)
-                    ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
+                    VALUES($1, $2, $3, false, $4, $5, $6, $7, $8)
+                    ON CONFLICT (output_handle, transaction_id) DO NOTHING
                 ",
-                tenant_id,
                 comp.output_handle,
                 &computations_inputs[idx],
                 fhe_operation,
                 are_comps_scalar[idx],
                 computation_buckets[idx],
                 comp.transaction_id,
-                comp.is_allowed
+                comp.is_allowed,
+                host_chain.chain_id.as_i64()
             )
             .execute(trx.as_mut())
             .await
@@ -726,7 +744,6 @@ impl CoprocessorService {
         request: tonic::Request<tfhe_worker::TrivialEncryptBatch>,
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<tfhe_worker::GenericResponse>, tonic::Status> {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
         let req = request.get_ref();
 
         let mut unique_handles: BTreeSet<&[u8]> = BTreeSet::new();
@@ -742,12 +759,12 @@ impl CoprocessorService {
         }
 
         let mut span = tracer.child_span("db_query_server_key");
-        let fetch_key_response = {
-            fetch_tenant_server_key(tenant_id, &self.pool, &self.tenant_key_cache)
-                .await
-                .map_err(tonic::Status::from_error)?
-        };
-        let server_key = fetch_key_response.server_key;
+        let latest_key = self
+            .db_key_cache
+            .fetch_latest(&self.pool)
+            .await
+            .expect("fetch latest db key");
+        let server_key = latest_key.sks.clone();
         span.end();
 
         let cloned = req.values.clone();
@@ -791,14 +808,20 @@ impl CoprocessorService {
                 KeyValue::new("handle", format!("0x{}", hex::encode(&handle))),
                 KeyValue::new("ciphertext_type", db_type as i64),
             ]);
-            sqlx::query!("
-                    INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+            sqlx::query!(
+                "
+                    INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (handle, ciphertext_version) DO NOTHING
                 ",
-                tenant_id, handle, db_bytes, current_ciphertext_version(), db_type as i16
+                handle,
+                db_bytes,
+                current_ciphertext_version(),
+                db_type as i16
             )
-            .execute(trx.as_mut()).await.map_err(Into::<CoprocessorError>::into)?;
+            .execute(trx.as_mut())
+            .await
+            .map_err(Into::<CoprocessorError>::into)?;
             span.end();
         }
 
@@ -814,7 +837,6 @@ impl CoprocessorService {
         tracer: &GrpcTracer,
     ) -> std::result::Result<tonic::Response<tfhe_worker::GetCiphertextResponse>, tonic::Status>
     {
-        let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
         let req = request.get_ref();
 
         if req.handles.len() > self.args.server_maximum_ciphertexts_to_get {
@@ -843,10 +865,8 @@ impl CoprocessorService {
             "
                 SELECT handle, ciphertext_type, ciphertext_version, ciphertext
                 FROM ciphertexts
-                WHERE tenant_id = $1
-                AND handle = ANY($2::BYTEA[])
+                WHERE handle = ANY($1::BYTEA[])
             ",
-            tenant_id,
             &cts
         )
         .fetch_all(&self.pool)

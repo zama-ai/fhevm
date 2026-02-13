@@ -25,8 +25,6 @@ use fhevm_engine_common::types::{Handle, SupportedFheOperations};
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
     dependence_counter: AtomicUsize,
-    #[cfg(feature = "gpu")]
-    locality: i32,
 }
 impl std::fmt::Debug for ExecNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -625,8 +623,6 @@ pub struct OpNode {
     opcode: i32,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
-    #[cfg(feature = "gpu")]
-    locality: i32,
     is_allowed: bool,
 }
 impl std::fmt::Debug for OpNode {
@@ -670,8 +666,6 @@ impl DFGraph {
             opcode,
             result_handle: rh,
             inputs,
-            #[cfg(feature = "gpu")]
-            locality: -1,
             is_allowed,
         })
     }
@@ -758,8 +752,6 @@ pub fn partition_preserving_parallelism<TNode, TEdge>(
             let ex_node = execution_graph.add_node(ExecNode {
                 df_nodes: vec![],
                 dependence_counter: AtomicUsize::new(usize::MAX),
-                #[cfg(feature = "gpu")]
-                locality: -1,
             });
             for n in df_nodes.iter() {
                 node_map.insert(*n, ex_node);
@@ -808,8 +800,6 @@ pub fn partition_components<TNode, TEdge>(
                 .add_node(ExecNode {
                     df_nodes,
                     dependence_counter: AtomicUsize::new(0),
-                    #[cfg(feature = "gpu")]
-                    locality: -1,
                 })
                 .index();
         }

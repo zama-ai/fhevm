@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT zk_proof_id, host_chain_id, contract_address, user_address, input, extra_data\n             FROM verify_proofs",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "zk_proof_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "input",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra_data",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7d89c095ae190e947f7a6b8a90875267dd7160a3be4f8265293ca181f01f6023"
+}

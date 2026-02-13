@@ -1,9 +1,7 @@
 use fhevm_engine_common::telemetry::MetricsConfig;
-use fhevm_engine_common::utils::safe_deserialize_key;
 use rand::Rng;
-use sqlx::query;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
+use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tfhe_worker::daemon_cli::Args;
 use tokio::sync::watch::Receiver;
@@ -38,10 +36,6 @@ impl TestInstance {
 
 pub fn default_api_key() -> &'static str {
     "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
-}
-
-pub fn default_tenant_id() -> i32 {
-    1
 }
 
 pub fn random_handle() -> u64 {
@@ -93,7 +87,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_maximum_ciphertexts_to_get: 20000,
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
-        tenant_key_cache_size: 4,
+        key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         maximum_handles_per_input: 255,
         tokio_threads: 32,
@@ -165,7 +159,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
-    setup_test_user(&pool).await?;
+    setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     start_coprocessor(rx, app_port, &db_url).await;
@@ -200,109 +194,6 @@ pub async fn wait_until_all_allowed_handles_computed(
     }
 
     Ok(())
-}
-
-pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
-        (
-            "../fhevm-keys/sks",
-            "../fhevm-keys/cks",
-            "../fhevm-keys/pks",
-            "../fhevm-keys/pp",
-        )
-    } else {
-        (
-            "../fhevm-keys/gpu-csks",
-            "../fhevm-keys/gpu-cks",
-            "../fhevm-keys/gpu-pks",
-            "../fhevm-keys/gpu-pp",
-        )
-    };
-    let sks = tokio::fs::read(sks).await.expect("can't read sks key");
-    let pks = tokio::fs::read(pks).await.expect("can't read pks key");
-    let cks = tokio::fs::read(cks).await.expect("can't read cks key");
-    let public_params = tokio::fs::read(pp).await.expect("can't read public params");
-    sqlx::query!(
-        "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
-            VALUES (
-                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
-                12345,
-                '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',
-                '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
-                $1,
-                $2,
-                $3,
-                $4
-            )
-        ",
-        &pks,
-        &sks,
-        &public_params,
-        &cks,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-pub struct BenchKeys {
-    pub pks: tfhe::CompactPublicKey,
-    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
-    pub cks: tfhe::ClientKey,
-}
-
-pub async fn query_tenant_keys<'a, T>(
-    tenants_to_query: Vec<i32>,
-    conn: T,
-) -> Result<Vec<BenchKeys>, Box<dyn std::error::Error + Send + Sync>>
-where
-    T: sqlx::PgExecutor<'a>,
-{
-    let mut res = Vec::with_capacity(tenants_to_query.len());
-    let keys = query!(
-        "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, public_params, cks_key
-            FROM tenants
-            WHERE tenant_id = ANY($1::INT[])
-        ",
-        &tenants_to_query
-    )
-    .fetch_all(conn)
-    .await?;
-    for key in keys {
-        #[cfg(not(feature = "gpu"))]
-        {
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
-                .expect("We can't deserialize our own validated pks key");
-            let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
-                .expect("We can't deserialize our own validated public params");
-            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
-                .expect("We can't deserialize client key");
-            res.push(BenchKeys {
-                pks,
-                public_params: Arc::new(public_params),
-                cks,
-            });
-        }
-        #[cfg(feature = "gpu")]
-        {
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
-                .expect("We can't deserialize our own validated pks key");
-            let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
-                .expect("We can't deserialize our own validated public params");
-            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
-                .expect("We can't deserialize client key");
-            res.push(BenchKeys {
-                pks,
-                public_params: Arc::new(public_params),
-                cks,
-            });
-        }
-    }
-
-    Ok(res)
 }
 
 use serde::Serialize;
