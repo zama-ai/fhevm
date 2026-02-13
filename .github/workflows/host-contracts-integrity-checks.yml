@@ -6,9 +6,6 @@ name: host-contracts-integrity-checks
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions: {}
 
