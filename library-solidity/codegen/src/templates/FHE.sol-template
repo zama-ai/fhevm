@@ -7,6 +7,7 @@ pragma solidity ^0.8.24;
 //$$ -
 //$$ -----------------------------------------------------------------------
 import "$${ImplDotSol}$$";
+import "./cryptography/ECDSA.sol";
 import {FheType} from "$${FheTypeDotSol}$$";
 //$$ -----------------------------------------------------------------------
 
@@ -22,6 +23,23 @@ interface IKMSVerifier {
         bytes memory decryptedResult,
         bytes memory decryptionProof
     ) external returns (bool);
+    
+    function eip712Domain()
+        external
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        );
+
+    function getThreshold() external view returns (uint256);
+
+    function getKmsSigners() external view returns (address[] memory);
 }
 
 /**
@@ -30,6 +48,31 @@ interface IKMSVerifier {
  *          that interact with the FHEVM protocol.
  */
 library FHE {
+    /// @notice Decryption result typehash.
+    bytes32 private constant DECRYPTION_RESULT_TYPEHASH =
+        keccak256("PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)");
+
+    /// @notice EIP-712 domain  typehash.
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @notice Returned if the deserializing of the decryption proof fails.
+    error DeserializingDecryptionProofFail();
+
+    /// @notice Returned if the decryption proof is empty.
+    error EmptyDecryptionProof();
+
+    /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
+    /// @param invalidSigner Address of the invalid signer.
+    error KMSInvalidSigner(address invalidSigner);
+
+    /// @notice                 Returned if the number of signatures is inferior to the threshold.
+    /// @param numSignatures    Number of signatures.
+    error KMSSignatureThresholdNotReached(uint256 numSignatures);
+
+    /// @notice Returned if the number of signatures is equal to 0.
+    error KMSZeroSignature();
+
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
@@ -251,6 +294,186 @@ library FHE {
             revert InvalidKMSSignatures();
         }
         emit PublicDecryptionVerified(handlesList, abiEncodedCleartexts);
+    }
+
+
+    /// @notice Returns false or reverts if the KMS signatures verification against the provided handles and public decryption data
+    ///         fails. Returns true only if KMS signatures verification pass. This is the `view` variant of `checkSignatures`.
+    /// @dev **WARNING**: Prefer using `checkSignatures` (non-view) over this function whenever possible, for several reasons:
+    ///      1. **Safety** – `checkSignatures` automatically reverts when signatures are invalid, making misuse impossible.
+    ///         In contrast, `isDecryptionResultValid` returns a boolean: if the caller forgets to `require` the returned
+    ///         value, invalid signatures will silently pass, leaving the contract vulnerable to forged decryption results.
+    ///      2. **Front-end integration** – `checkSignatures` emits a `PublicDecryptionVerified` event upon successful
+    ///         verification, which is critical for front-end applications that need to detect when a public decrypt result
+    ///         has been verified on-chain. This view function does not emit any event.
+    ///      3. **Gas efficiency** – `checkSignatures` leverages a transient-storage mapping to cache verification results,
+    ///         making decryption result verification cheaper.
+    ///      Use this view variant only when you explicitly need a read-only call (e.g. off-chain simulation or static call).
+    /// @param handlesList The list of handles as an array of bytes32 to check
+    /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
+    ///                             The ABI-encoded list order must match the `handlesList` order.
+    /// @param decryptionProof The KMS public decryption proof. It includes the KMS signatures, associated metadata,
+    ///                        and the context needed for verification.
+    function isDecryptionResultValid(
+        bytes32[] memory handlesList,
+        bytes memory abiEncodedCleartexts,
+        bytes memory decryptionProof
+    ) internal view returns (bool) {
+        if (decryptionProof.length == 0) {
+            revert EmptyDecryptionProof();
+        }
+
+        /// @dev The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
+        uint256 numSigners = uint256(uint8(decryptionProof[0]));
+
+        /// @dev The extraData is the rest of the decryptionProof bytes after the numSigners + signatures.
+        uint256 extraDataOffset = 1 + 65 * numSigners;
+
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures.
+        if (decryptionProof.length < extraDataOffset) {
+            revert DeserializingDecryptionProofFail();
+        }
+
+        bytes[] memory signatures = new bytes[](numSigners);
+        for (uint256 j = 0; j < numSigners; j++) {
+            signatures[j] = new bytes(65);
+            for (uint256 i = 0; i < 65; i++) {
+                signatures[j][i] = decryptionProof[1 + 65 * j + i];
+            }
+        }
+
+        /// @dev Extract the extraData from the decryptionProof.
+        uint256 extraDataSize = decryptionProof.length - extraDataOffset;
+        bytes memory extraData = new bytes(extraDataSize);
+        for (uint i = 0; i < extraDataSize; i++) {
+            extraData[i] = decryptionProof[extraDataOffset + i];
+        }
+        bytes32 digest = _hashDecryptionResult(handlesList, abiEncodedCleartexts, extraData);
+
+        return _verifySignaturesDigest(digest, signatures);
+    }
+
+    /*
+     * @notice                  Hashes the decryption result.
+     * @param ctHandles         The list of handles as an array of bytes32 to check.
+     * @param decryptedResult   ABI-encoded list of decrypted values
+     * @param extraData         Extra data.
+     * @return hashTypedData    Hash typed data.
+     */
+    function _hashDecryptionResult(
+        bytes32[] memory ctHandles,
+        bytes memory decryptedResult,
+        bytes memory extraData
+    ) private view returns (bytes32) {
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 gatewayCahinId,
+            address verifyingContract,
+            ,
+
+        ) = IKMSVerifier($.KMSVerifierAddress).eip712Domain();
+
+        bytes32 domainHash = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                gatewayCahinId,
+                verifyingContract
+            )
+        );
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                DECRYPTION_RESULT_TYPEHASH,
+                keccak256(abi.encodePacked(ctHandles)),
+                keccak256(decryptedResult),
+                keccak256(abi.encodePacked(extraData))
+            )
+        );
+
+        bytes32 typedDataHash;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, hex"19_01")
+            mstore(add(ptr, 0x02), domainHash)
+            mstore(add(ptr, 0x22), structHash)
+            typedDataHash := keccak256(ptr, 0x42)
+        }
+
+        return typedDataHash;
+    }
+
+    /**
+     * @notice              View function that verifies multiple signatures for a given message at a certain threshold.
+     * @param digest        The hash of the message that was signed by all signers.
+     * @param signatures    An array of signatures to verify.
+     * @return isVerified   true if enough provided signatures are valid, false otherwise.
+     */
+    function _verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) private view returns (bool) {
+        uint256 numSignatures = signatures.length;
+
+        if (numSignatures == 0) {
+            revert KMSZeroSignature();
+        }
+
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+
+        uint256 threshold = IKMSVerifier($.KMSVerifierAddress).getThreshold();
+
+        if (numSignatures < threshold) {
+            revert KMSSignatureThresholdNotReached(numSignatures);
+        }
+
+        address[] memory KMSSigners = IKMSVerifier($.KMSVerifierAddress).getKmsSigners();
+
+        address[] memory recoveredSigners = new address[](numSignatures);
+        uint256 uniqueValidCount;
+        for (uint256 i = 0; i < numSignatures; i++) {
+            address signerRecovered = ECDSA.recover(digest, signatures[i]);
+            if (!_isSigner(signerRecovered, KMSSigners)) {
+                revert KMSInvalidSigner(signerRecovered);
+            }
+            if (!_isSigner(signerRecovered, recoveredSigners)) {
+                recoveredSigners[uniqueValidCount] = signerRecovered;
+                uniqueValidCount++;
+            }
+            if (uniqueValidCount >= threshold) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice              Checks whether a given address is present in an array of signers.
+     * @param signer        The address to look for.
+     * @param signersArray  The array of signer addresses to search.
+     * @return isSigner     true if the address is found, false otherwise.
+     */
+    function _isSigner(address signer, address[] memory signersArray) private pure returns (bool) {
+        uint256 signersArrayLength = signersArray.length;
+        for (uint256 i = 0; i < signersArrayLength; i++) {
+            if (signer == signersArray[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice          Recovers the signer's address from a `signature` and a `message` digest.
+     * @dev             It utilizes ECDSA for actual address recovery. It does not support contract signature (EIP-1271).
+     * @param message   The hash of the message that was signed.
+     * @param signature The signature to verify.
+     * @return signer   The address that supposedly signed the message.
+     */
+    function _recoverSigner(bytes32 message, bytes memory signature) private pure returns (address) {
+        address signerRecovered = ECDSA.recover(message, signature);
+        return signerRecovered;
     }
 
     /// @notice Verifies KMS signatures against the provided handles and public decryption data.
