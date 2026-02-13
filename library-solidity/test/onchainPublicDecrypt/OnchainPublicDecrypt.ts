@@ -7,7 +7,7 @@ import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-describe.only('OnchainPublicDecrypt', function () {
+describe('OnchainPublicDecrypt', function () {
   beforeEach(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -30,6 +30,19 @@ describe.only('OnchainPublicDecrypt', function () {
     const tx2 = await this.contract.callbackDecryption(decryptedResult, decryptionProof);
     await tx2.wait();
     expect(await this.contract.yUint64()).to.equal(42);
+
+    await expect(
+      this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof.slice(0, 40)),
+    ).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error DeserializingDecryptionProofFail()']) },
+      'DeserializingDecryptionProofFail',
+    ); // reverts with selector of DeserializingDecryptionProofFail()
+    await expect(
+      this.contract.callbackDecryption(decryptedResult, decryptionProof.slice(0, 40)),
+    ).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error DeserializingDecryptionProofFail()']) },
+      'DeserializingDecryptionProofFail',
+    );
 
     const decryptionProof2 = convertSignaturesToDecryptionProof([decryptionSignatures[1]]); ///  KMS_SIGNER_ADDRESS_1 is not a signer, so next calls should not pass
     await expect(
@@ -64,6 +77,43 @@ describe.only('OnchainPublicDecrypt', function () {
     await txNewConfig.wait();
     expect(await kmsVerifier.getThreshold()).to.equal(2);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
+
+    const tx = await this.contract.requestDecryption();
+    const receipt = await tx.wait();
+    const { decryptedResult, decryptionSignatures } = await getPublicDecryptionFromReceipt(receipt);
+
+    const decryptionProof = convertSignaturesToDecryptionProof([decryptionSignatures[0]]); /// a single signer is not enough here
+    await expect(
+      this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof),
+    ).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error KMSSignatureThresholdNotReached(uint256)']) },
+      'KMSSignatureThresholdNotReached',
+    ); // reverts with selector of KMSSignatureThresholdNotReached()
+    await expect(this.contract.callbackDecryption(decryptedResult, decryptionProof)).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error KMSSignatureThresholdNotReached(uint256)']) },
+      'KMSSignatureThresholdNotReached',
+    );
+    const decryptionProof2 = convertSignaturesToDecryptionProof([decryptionSignatures[1], decryptionSignatures[2]]); /// 2 of 3, should be good
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof2)).to.be.true;
+    const decryptionProof3 = convertSignaturesToDecryptionProof([decryptionSignatures[0], decryptionSignatures[2]]); /// 2 of 3, should be also good
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof3)).to.be.true;
+    const decryptionProof4 = convertSignaturesToDecryptionProof([
+      decryptionSignatures[0],
+      decryptionSignatures[1],
+      decryptionSignatures[2],
+    ]); /// 3 of 3, more than enough
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof4)).to.be.true;
+    const decryptionProof5 = convertSignaturesToDecryptionProof([decryptionSignatures[1], decryptionSignatures[1]]); /// 1 duplicate, here the view function should return false, but the checkSignatures should still revert!
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof5)).to.be.false;
+    await expect(this.contract.callbackDecryption(decryptedResult, decryptionProof5)).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error InvalidKMSSignatures()']) },
+      'InvalidKMSSignatures',
+    );
+
+    const decryptionProof6 = convertSignaturesToDecryptionProof([decryptionSignatures[0], decryptionSignatures[2]]); /// 2 of 3, should be also good, now we do the tx
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof6)).to.be.true;
+    await this.contract.callbackDecryption(decryptedResult, decryptionProof6);
+    expect(await this.contract.yUint64()).to.equal(42);
 
     const txResetConfig = await kmsVerifier.connect(deployer).defineNewContext([signerAddresses[0]], 1);
     await txResetConfig.wait();
