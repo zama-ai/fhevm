@@ -53,36 +53,18 @@ and backlog slope.
 
 ### Testnet incident runbook (slow lane)
 
-Use this when testnet decryptions stall and you suspect slow-lane side effects.
+Use only when slow lane is likely the cause (do not disable blindly):
+- `rate(host_listener_slow_lane_marked_chains_total[5m])` sustained high,
+- completion throughput flat/low,
+- tfhe-worker shows repeated no-progress/fallback,
+- no DB/RPC/host-listener outage explains the stall.
 
-1) Diagnose before action (do not disable blindly)
-
-- Slow lane is expected to throttle heavy dependent traffic; disabling it during an active DoS can make things worse.
-- Check all three gates in the same 10–15 min window:
-  - `rate(host_listener_slow_lane_marked_chains_total[5m]) > 0` and sustained,
-  - TFHE completion stays flat/low,
-  - tfhe-worker logs show repeated no-progress/fallback,
-  - and there is no DB/RPC/host-listener outage explaining the stall.
-
-2) If all gates hold, disable slow lane in Argo
-
-- Set `--dependent-ops-max-per-chain=0` on **all** host-listener types together:
-  - `main`,
-  - `poller`,
-  - `catchup`.
-- Roll out all three together.
-
-3) Reassess after rollout
-
-- Keep following COP-RB01 health/catchup/capacity checks.
-- If recovery is unclear, keep standard incident flow and investigate other root causes.
-
-Operational note: off mode promotes chains to fast at startup (advisory-lock serialized, batched updates).
+If all gates hold, set `--dependent-ops-max-per-chain=0` in Argo for all host-listener types (`main`, `poller`, `catchup`) and roll out together.
+Then continue COP-RB01 checks and reassess recovery.
 
 ### Local stack notes
 
-Minimal deterministic checks:
-
+Quick local validation:
 ```bash
 cd coprocessor/fhevm-engine
 cargo test -p host-listener --test host_listener_integration_tests \
@@ -90,20 +72,6 @@ cargo test -p host-listener --test host_listener_integration_tests \
   test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally \
   test_slow_lane_off_mode_promotes_all_chains_on_startup_locally -- --nocapture
 ```
-
-Before any stack-level slow-lane validation, ensure key bootstrap is healthy:
-
-```bash
-docker logs --since=20m coprocessor-gw-listener | rg -n 'ActivateKey event successful'
-docker logs --since=20m coprocessor-sns-worker | rg -n 'Fetched keyset|No keys available'
-docker exec -i coprocessor-and-kms-db psql -U postgres -d coprocessor -c "
-SELECT tenant_id, COALESCE(SUM(octet_length(lo.data)), 0) AS sns_pk_bytes
-FROM tenants t
-LEFT JOIN pg_largeobject lo ON lo.loid = t.sns_pk
-GROUP BY tenant_id;"
-```
-
-If bootstrap is not complete, restart only `coprocessor-gw-listener` and re-check.
 
 ## Events in FHEVM
 
