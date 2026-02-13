@@ -521,7 +521,10 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    tracing::Span::current().record("ct_type", serialized_type as i64);
+    tracing::Span::current().record(
+        "ct_type",
+        tracing::field::display(serialized_type.to_string()),
+    );
     tracing::info!(
         request_id,
         handle = %hex::encode(&handle),

@@ -537,6 +537,7 @@ async fn fetch_pending_uploads(
         };
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
+            let handle_hex = to_hex(&handle);
             let item = HandleItem {
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
@@ -544,7 +545,11 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: tracing::info_span!("recovery_task", operation = "recovery_task"),
+                otel: tracing::info_span!(
+                    "recovery_task",
+                    operation = "recovery_task",
+                    handle = %handle_hex
+                ),
                 transaction_id,
             };
 
