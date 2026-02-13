@@ -24,6 +24,7 @@ KMS can be configured to two modes:
   - [Orchestration Source of Truth](#orchestration-source-of-truth)
   - [Troubleshooting Deploy Failures](#troubleshooting-deploy-failures)
   - [Behavior Parity Tests](#behavior-parity-tests)
+  - [CLI Parity Diff Tests](#cli-parity-diff-tests)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -151,17 +152,30 @@ You can combine `--only` or `--resume` with other flags:
 
 ### Orchestration source of truth
 
-The deploy orchestration remains Bash-first. Command entrypoint is still:
+The orchestration is Bun-first with shell entrypoint wrappers:
 
 - `test-suite/fhevm/fhevm-cli`
 - `test-suite/fhevm/scripts/deploy-fhevm-stack.sh`
 
-To keep step/version metadata maintainable, orchestration now uses canonical manifests:
+Canonical deploy/test metadata now lives in one TypeScript source:
 
-- Deploy step/component/service registry: `test-suite/fhevm/scripts/lib/deploy-manifest.sh`
-- Version defaults + version display metadata: `test-suite/fhevm/scripts/lib/version-manifest.sh`
+- `test-suite/fhevm/scripts/bun/manifest.ts`
 
-This keeps `deploy` and `upgrade` on a single version/env source of truth and avoids duplicated step/env registries across code paths.
+Runtime implementation:
+
+- `test-suite/fhevm/scripts/bun/cli.ts`
+- `test-suite/fhevm/scripts/bun/process.ts`
+
+Compatibility snapshots used for parity verification:
+
+- `test-suite/fhevm/fhevm-cli.legacy`
+- `test-suite/fhevm/scripts/deploy-fhevm-stack.legacy.sh`
+
+You can force legacy mode explicitly with:
+
+```sh
+FHEVM_CLI_IMPL=legacy ./fhevm-cli deploy
+```
 
 ### Troubleshooting deploy failures
 
@@ -179,12 +193,22 @@ When deploy fails, the script now surfaces explicit hints for common operational
 
 ### Behavior parity tests
 
-A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, and actionable failure hints) without relying on pinned historical SHAs.
+A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, and actionable failure hints).
 
 Run it with:
 
 ```sh
 ./test-suite/fhevm/scripts/tests/deploy-fhevm-stack.behavior.sh
+```
+
+### CLI parity diff tests
+
+A dry-run parity harness executes legacy Bash and Bun CLI flows under the same mocked Docker environment, then diffs command traces and exit codes for sampled command cases.
+
+Run it with:
+
+```sh
+./test-suite/fhevm/scripts/tests/fhevm-cli-parity-diff.sh
 ```
 
 ## Security policy
