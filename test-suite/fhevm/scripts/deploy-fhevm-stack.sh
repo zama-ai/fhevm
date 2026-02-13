@@ -23,51 +23,45 @@ log_error() {
 PROJECT="fhevm"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Deployment steps registry - defines all steps in execution order
-# These names are used for --resume functionality
-DEPLOYMENT_STEPS=(
-    "minio"
-    "core"
-    "kms-signer"
-    "database"
-    "host-node"
-    "gateway-node"
-    "coprocessor"
-    "kms-connector"
-    "gateway-mocked-payment"
-    "gateway-sc"
-    "host-sc"
-    "relayer"
-    "test-suite"
-)
+DEPLOY_MANIFEST_PATH="${SCRIPT_DIR}/lib/deploy-manifest.sh"
+VERSION_MANIFEST_PATH="${SCRIPT_DIR}/lib/version-manifest.sh"
+
+if [[ ! -f "$DEPLOY_MANIFEST_PATH" ]]; then
+    log_error "Deploy manifest not found: $DEPLOY_MANIFEST_PATH"
+    exit 1
+fi
+if [[ ! -f "$VERSION_MANIFEST_PATH" ]]; then
+    log_error "Version manifest not found: $VERSION_MANIFEST_PATH"
+    exit 1
+fi
+
+source "$DEPLOY_MANIFEST_PATH"
+source "$VERSION_MANIFEST_PATH"
+fhevm_export_default_versions
+
+DEPLOYMENT_STEPS=()
+while IFS= read -r step; do
+    DEPLOYMENT_STEPS+=("$step")
+done < <(fhevm_manifest_step_names)
+
+if [[ ${#DEPLOYMENT_STEPS[@]} -eq 0 ]]; then
+    log_error "Deployment manifest is empty"
+    exit 1
+fi
+
+VALID_STEPS="$(fhevm_manifest_steps_string)"
 
 # Get docker-compose component name for a step
 # kms-signer has no compose file (it's just a script), returns empty
 get_compose_for_step() {
     local step=$1
-    case "$step" in
-        minio|core|database|host-node|gateway-node|coprocessor|kms-connector|gateway-mocked-payment|gateway-sc|host-sc|relayer|test-suite)
-            echo "$step"
-            ;;
-        *)
-            echo ""
-            ;;
-    esac
+    fhevm_manifest_step_field "$step" component || true
 }
 
 # Helper to get index of step in DEPLOYMENT_STEPS array
 get_step_index() {
     local step_name=$1
-    local i=0
-    for step in "${DEPLOYMENT_STEPS[@]}"; do
-        if [[ "$step" == "$step_name" ]]; then
-            echo "$i"
-            return 0
-        fi
-        ((i++))
-    done
-    echo "-1"
-    return 1
+    fhevm_manifest_step_index "$step_name"
 }
 
 # Helper to check if step should be skipped (when resuming or targeting only one step)
@@ -82,8 +76,11 @@ should_skip_step() {
 
     # --resume mode: skip steps before the resume point
     if [[ -n "$RESUME_STEP" ]]; then
-        local resume_index=$(get_step_index "$RESUME_STEP")
-        local current_index=$(get_step_index "$current_step")
+        local resume_index
+        local current_index
+
+        resume_index=$(get_step_index "$RESUME_STEP")
+        current_index=$(get_step_index "$current_step")
         [[ "$current_index" -lt "$resume_index" ]]
         return
     fi
@@ -118,7 +115,7 @@ for arg in "$@"; do
     # Validate step name
     if [[ $(get_step_index "$RESUME_STEP") -eq -1 ]]; then
       log_error "Invalid resume step: $RESUME_STEP"
-      log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+      log_error "Valid steps are: ${VALID_STEPS}"
       exit 1
     fi
     log_info "Resume mode: starting from step '$RESUME_STEP'"
@@ -128,7 +125,7 @@ for arg in "$@"; do
     # Validate step name
     if [[ $(get_step_index "$ONLY_STEP") -eq -1 ]]; then
       log_error "Invalid step: $ONLY_STEP"
-      log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+      log_error "Valid steps are: ${VALID_STEPS}"
       exit 1
     fi
     log_info "Only mode: deploying only step '$ONLY_STEP'"
@@ -140,13 +137,13 @@ done
 # Check for incomplete flags
 if [[ "$RESUME_FLAG_DETECTED" == true ]]; then
   log_error "--resume requires a step name"
-  log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+  log_error "Valid steps are: ${VALID_STEPS}"
   exit 1
 fi
 
 if [[ "$ONLY_FLAG_DETECTED" == true ]]; then
   log_error "--only requires a step name"
-  log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+  log_error "Valid steps are: ${VALID_STEPS}"
   exit 1
 fi
 
@@ -214,10 +211,40 @@ if [ "$LOCAL_BUILD" = true ]; then
     done
 fi
 
+logs_indicate_key_bootstrap_not_ready() {
+    local logs=$1
+
+    echo "$logs" | grep -Eiq "CrsNotGenerated|CrsgenNotRequested|KeygenNotRequested|PrepKeygenNotRequested|key bootstrap[^\n]*not ready|bootstrap key[^\n]*not ready|materials are not ready"
+}
+
+print_service_failure_hints() {
+    local service_name=$1
+    local step_hint=$2
+    local exit_code=$3
+    local oom_killed=$4
+    local logs=$5
+
+    if [[ "$exit_code" == "137" || "$oom_killed" == "true" ]]; then
+        log_error "$service_name looks OOM-killed (exit code: ${exit_code}, OOMKilled: ${oom_killed})."
+        log_error "Action: increase Docker memory and retry from this step: ./fhevm-cli deploy --resume ${step_hint}"
+    fi
+
+    if logs_indicate_key_bootstrap_not_ready "$logs"; then
+        log_error "Detected key-bootstrap-not-ready state while starting $service_name."
+        log_error "Action: wait for gateway keygen/CRS generation to settle, then retry: ./fhevm-cli deploy --resume gateway-sc"
+    fi
+}
+
+print_container_logs() {
+    local container_id=$1
+
+    docker logs "$container_id" 2>&1 || true
+}
+
 # Function to check if services are ready based on expected state
 wait_for_service() {
-    local compose_file=$1
-    local service_name=$2
+    local service_name=$1
+    local step_hint=$2
     local expect_running="${3:-true}"  # By default, expect service to stay running
     local max_retries=30
     local retry_interval=5
@@ -230,7 +257,8 @@ wait_for_service() {
 
     for ((i=1; i<=max_retries; i++)); do
         # Check container status using docker container directly to handle completed containers
-        local container_id=$(docker ps -a --filter name="${service_name}$" --format "{{.ID}}")
+        local container_id
+        container_id=$(docker ps -a --filter name="${service_name}$" --format "{{.ID}}")
 
         if [[ -z "$container_id" ]]; then
             log_warn "Container for $service_name not found, waiting..."
@@ -238,8 +266,14 @@ wait_for_service() {
             continue
         fi
 
-        local status=$(docker inspect --format "{{.State.Status}}" "$container_id")
-        local exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
+        local status
+        local exit_code
+        local oom_killed
+        local service_logs
+
+        status=$(docker inspect --format "{{.State.Status}}" "$container_id")
+        exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
+        oom_killed=$(docker inspect --format "{{.State.OOMKilled}}" "$container_id" 2>/dev/null || echo "false")
 
         # Check if service meets the expected state
         if [[ "$expect_running" == "true" && "$status" == "running" ]]; then
@@ -250,7 +284,11 @@ wait_for_service() {
             return 0
         elif [[ "$status" == "exited" && "$exit_code" != "0" ]]; then
             log_error "$service_name failed with exit code $exit_code"
-            docker logs "$container_id"
+            service_logs=$(print_container_logs "$container_id")
+            print_service_failure_hints "$service_name" "$step_hint" "$exit_code" "$oom_killed" "$service_logs"
+            if [[ -n "$service_logs" ]]; then
+                echo "$service_logs"
+            fi
             return 1
         fi
 
@@ -260,11 +298,16 @@ wait_for_service() {
             sleep "$retry_interval"
         else
             log_error "$service_name failed to reach desired state within the expected time"
-            docker logs "$container_id"
+            service_logs=$(print_container_logs "$container_id")
+            print_service_failure_hints "$service_name" "$step_hint" "$exit_code" "$oom_killed" "$service_logs"
+            if [[ -n "$service_logs" ]]; then
+                echo "$service_logs"
+            fi
             return 1
         fi
     done
 }
+
 # Function to prepare the local environment file for a component
 prepare_local_env_file() {
     local component=$1
@@ -298,15 +341,13 @@ prepare_local_config_relayer() {
     printf "%s" "$local_config_file"
 }
 
-# Add this function after prepare_local_env_file
 prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
-    local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
-
-    for component in "${components[@]}"; do
+    local component
+    while IFS= read -r component; do
         prepare_local_env_file "$component" > /dev/null
-    done
+    done < <(fhevm_manifest_step_components)
 
     log_info "All local environment files prepared successfully"
 }
@@ -315,31 +356,45 @@ prepare_all_env_files() {
 run_compose() {
     local component=$1
     local service_desc=$2
+    local use_build=$3
     local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
     local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
-    shift 2
+    shift 3
 
     local services=("$@")
     local service_states=()
     local service_names=()
 
     # Parse service names and states
+    local arg
     for arg in "${services[@]}"; do
         IFS=':' read -r name state <<< "$arg"
         service_names+=("$name")
         service_states+=("$state")
     done
 
-    log_info "Starting $service_desc using local environment file..."
+    if [[ "$use_build" == "true" ]]; then
+        log_info "Building and starting $service_desc using local environment file..."
+    else
+        log_info "Starting $service_desc using local environment file..."
+    fi
     log_info "Using environment file: $env_file"
 
     # Start all services
-    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up -d; then
-        log_error "Failed to start $service_desc"
-        return 1
+    if [[ "$use_build" == "true" ]]; then
+        if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up --build -d; then
+            log_error "Failed to build and start $service_desc"
+            return 1
+        fi
+    else
+        if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up -d; then
+            log_error "Failed to start $service_desc"
+            return 1
+        fi
     fi
 
     # Wait for each specified service
+    local i
     for i in "${!service_names[@]}"; do
         local name="${service_names[$i]}"
         local expect_running=true
@@ -348,55 +403,37 @@ run_compose() {
             expect_running=false
         fi
 
-        wait_for_service "$compose_file" "$name" "$expect_running"
+        wait_for_service "$name" "$component" "$expect_running"
         if [ $? -ne 0 ]; then
             return 1
         fi
     done
 }
 
-# Function to start an entire docker-compose file with --build and wait for specified services
-run_compose_with_build() {
-    local component=$1
-    local service_desc=$2
-    local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
-    local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
-    shift 2
+run_manifest_step() {
+    local step=$1
+    local component
+    local description
+    local services_raw
+    local buildable
+    local use_build=false
 
-    local services=("$@")
-    local service_states=()
-    local service_names=()
+    component=$(fhevm_manifest_step_field "$step" component)
+    description=$(fhevm_manifest_step_field "$step" description)
+    services_raw=$(fhevm_manifest_step_field "$step" services)
+    buildable=$(fhevm_manifest_step_field "$step" buildable)
 
-    # Parse service names and states
-    for arg in "${services[@]}"; do
-        IFS=':' read -r name state <<< "$arg"
-        service_names+=("$name")
-        service_states+=("$state")
-    done
-
-    log_info "Building and starting $service_desc using local environment file..."
-    log_info "Using environment file: $env_file"
-
-    # Start all services with --build
-    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up --build -d; then
-        log_error "Failed to build and start $service_desc"
-        return 1
+    if [[ "$FORCE_BUILD" == true && "$buildable" == "true" ]]; then
+        use_build=true
     fi
 
-    # Wait for each specified service
-    for i in "${!service_names[@]}"; do
-        local name="${service_names[$i]}"
-        local expect_running=true
+    local services=()
+    if [[ -n "$services_raw" ]]; then
+        # shellcheck disable=SC2206
+        services=($services_raw)
+    fi
 
-        if [[ "${service_states[$i]}" == "complete" ]]; then
-            expect_running=false
-        fi
-
-        wait_for_service "$compose_file" "$name" "$expect_running"
-        if [ $? -ne 0 ]; then
-            return 1
-        fi
-    done
+    run_compose "$component" "$description" "$use_build" "${services[@]}"
 }
 
 get_minio_ip() {
@@ -417,6 +454,43 @@ get_minio_ip() {
     fi
 }
 
+resolve_component_env_file() {
+    local component=$1
+    local local_env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+    local base_env_file="$SCRIPT_DIR/../env/staging/.env.$component"
+
+    if [[ -f "$local_env_file" ]]; then
+        printf '%s\n' "$local_env_file"
+        return 0
+    fi
+
+    if [[ -f "$base_env_file" ]]; then
+        printf '%s\n' "$base_env_file"
+        return 0
+    fi
+
+    return 1
+}
+
+cleanup_component() {
+    local component=$1
+    local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
+
+    if [[ ! -f "$compose_file" ]]; then
+        return 0
+    fi
+
+    local env_file=""
+    if env_file=$(resolve_component_env_file "$component"); then
+        log_info "Stopping $component services..."
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+    else
+        # Fallback for stale/orphaned containers when env files are unavailable.
+        log_warn "Env file missing for $component, attempting cleanup without explicit env file"
+        docker compose -p "${PROJECT}" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+    fi
+}
+
 cleanup() {
     log_warn "Setup new environment, cleaning up..."
     docker compose -p "${PROJECT}" down -v --remove-orphans
@@ -431,36 +505,30 @@ cleanup() {
 # Preserves containers/volumes from earlier steps
 cleanup_from_step() {
     local start_step=$1
-    local start_index=$(get_step_index "$start_step")
+    local start_index
+    start_index=$(get_step_index "$start_step")
 
     log_warn "Resume mode: cleaning up services from '$start_step' onwards..."
 
     # Collect steps to cleanup (from start_step to end)
     local steps_to_cleanup=()
+    local seen_components=" "
+    local i
+
     for ((i=start_index; i<${#DEPLOYMENT_STEPS[@]}; i++)); do
         local step="${DEPLOYMENT_STEPS[$i]}"
-        local compose=$(get_compose_for_step "$step")
-        if [[ -n "$compose" ]]; then
-            steps_to_cleanup+=("$compose")
+        local component
+        component=$(get_compose_for_step "$step")
+
+        if [[ -n "$component" && "$seen_components" != *" $component "* ]]; then
+            steps_to_cleanup+=("$component")
+            seen_components+="$component "
         fi
     done
 
     # Tear down in reverse order (test-suite first, then relayer, etc.)
     for ((i=${#steps_to_cleanup[@]}-1; i>=0; i--)); do
-        local component="${steps_to_cleanup[$i]}"
-        local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
-        local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
-
-        if [[ -f "$compose_file" ]]; then
-            # Use base env file if local doesn't exist yet
-            if [[ ! -f "$env_file" ]]; then
-                env_file="$SCRIPT_DIR/../env/staging/.env.$component"
-            fi
-            if [[ -f "$env_file" ]]; then
-                log_info "Stopping $component services..."
-                docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
-            fi
-        fi
+        cleanup_component "${steps_to_cleanup[$i]}"
     done
 
     log_info "Cleanup complete. Services before '$start_step' preserved."
@@ -469,28 +537,16 @@ cleanup_from_step() {
 # Single step cleanup: tear down only the specified step's services
 cleanup_single_step() {
     local step=$1
-    local compose=$(get_compose_for_step "$step")
+    local component
+    component=$(get_compose_for_step "$step")
 
-    if [[ -z "$compose" ]]; then
+    if [[ -z "$component" ]]; then
         log_info "Step '$step' has no compose file to clean up"
         return 0
     fi
 
     log_warn "Only mode: cleaning up '$step' services..."
-
-    local env_file="$SCRIPT_DIR/../env/staging/.env.$compose.local"
-    local compose_file="$SCRIPT_DIR/../docker-compose/$compose-docker-compose.yml"
-
-    if [[ -f "$compose_file" ]]; then
-        if [[ ! -f "$env_file" ]]; then
-            env_file="$SCRIPT_DIR/../env/staging/.env.$compose"
-        fi
-        if [[ -f "$env_file" ]]; then
-            log_info "Stopping $compose services..."
-            docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
-        fi
-    fi
-
+    cleanup_component "$component"
     log_info "Cleanup complete. Only '$step' was cleaned."
 }
 
@@ -513,158 +569,41 @@ if [ "$FORCE_BUILD" = true ]; then
   BUILD_TAG=" (local build)"
 fi
 
-log_info "FHEVM Stack Versions:"
-log_info "FHEVM Contracts:"
-log_info "  gateway-contracts:${GATEWAY_VERSION}${BUILD_TAG}"
-log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"
-log_info "FHEVM Coprocessor Services:"
-log_info "  coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/poller:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}${BUILD_TAG}"
-log_info "FHEVM KMS Connector Services:"
-log_info "  kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
-log_info "  kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}${BUILD_TAG}"
-log_info "  kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}${BUILD_TAG}"
-log_info "FHEVM Test Suite:"
-log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
-log_info "External Dependencies:"
-log_info "  kms-core-service:${CORE_VERSION}"
-log_info "  fhevm-relayer:${RELAYER_VERSION}"
+fhevm_print_versions log_info "$BUILD_TAG"
 
-# Step 1: minio
-if ! should_skip_step "minio"; then
-    run_compose "minio" "MinIO Services" \
-        "${PROJECT}-minio:running" \
-        "${PROJECT}-minio-setup:complete"
-    get_minio_ip "fhevm-minio"
-else
-    log_info "Skipping step: minio (resuming from $RESUME_STEP)"
-    # Still need minio IP for coprocessor env if container is running
-    if docker ps --filter name=fhevm-minio --format "{{.Names}}" | grep -q fhevm-minio; then
-        get_minio_ip "fhevm-minio"
+# Setup Gateway contracts triggers KMS materials generation.
+# Key generation can still take a few seconds, which is why this step is
+# sequenced before host contracts/relayer/tests.
+for step in "${DEPLOYMENT_STEPS[@]}"; do
+    if should_skip_step "$step"; then
+        if [[ -n "$ONLY_STEP" ]]; then
+            log_info "Skipping step: $step (only mode: $ONLY_STEP)"
+        else
+            log_info "Skipping step: $step (resuming from $RESUME_STEP)"
+        fi
+
+        # Still need minio IP for coprocessor env if container is running
+        if [[ "$step" == "minio" ]]; then
+            if docker ps --filter name=fhevm-minio --format "{{.Names}}" | grep -q fhevm-minio; then
+                get_minio_ip "fhevm-minio"
+            fi
+        fi
+        continue
     fi
-fi
 
-# Step 2: core
-if ! should_skip_step "core"; then
-    run_compose "core" "Core Services" "kms-core:running"
-else
-    log_info "Skipping step: core (resuming from $RESUME_STEP)"
-fi
-
-# Step 3: kms-signer
-if ! should_skip_step "kms-signer"; then
-    sleep 5
-    ${SCRIPT_DIR}/setup-kms-signer-address.sh
-else
-    log_info "Skipping step: kms-signer (resuming from $RESUME_STEP)"
-fi
-
-# Step 4: database
-if ! should_skip_step "database"; then
-    run_compose "database" "Database service" "coprocessor-and-kms-db:running"
-else
-    log_info "Skipping step: database (resuming from $RESUME_STEP)"
-fi
-
-if [ "$FORCE_BUILD" = true ]; then
-    RUN_COMPOSE=run_compose_with_build
-else
-    RUN_COMPOSE=run_compose
-fi
-
-# Step 5: host-node
-if ! should_skip_step "host-node"; then
-    ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
-else
-    log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
-fi
-
-# Step 6: gateway-node
-if ! should_skip_step "gateway-node"; then
-    ${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
-else
-    log_info "Skipping step: gateway-node (resuming from $RESUME_STEP)"
-fi
-
-# Step 7: coprocessor
-if ! should_skip_step "coprocessor"; then
-    ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
-        "coprocessor-and-kms-db:running" \
-        "coprocessor-db-migration:complete" \
-        "coprocessor-host-listener:running" \
-        "coprocessor-gw-listener:running" \
-        "coprocessor-tfhe-worker:running" \
-        "coprocessor-zkproof-worker:running" \
-        "coprocessor-sns-worker:running" \
-        "coprocessor-transaction-sender:running"
-else
-    log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
-fi
-
-# Step 8: kms-connector
-if ! should_skip_step "kms-connector"; then
-    ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
-        "coprocessor-and-kms-db:running" \
-        "kms-connector-db-migration:complete" \
-        "kms-connector-gw-listener:running" \
-        "kms-connector-kms-worker:running" \
-        "kms-connector-tx-sender:running"
-else
-    log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
-fi
-
-# Step 9: gateway-mocked-payment
-if ! should_skip_step "gateway-mocked-payment"; then
-    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-        "gateway-deploy-mocked-zama-oft:complete" \
-        "gateway-set-relayer-mocked-payment:complete"
-else
-    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
-fi
-
-# Step 10: gateway-sc
-# Setup Gateway contracts, which will trigger the KMS materials generation. Note
-# that the key generation may take a few seconds to complete, meaning that executing
-# the e2e tests too soon may fail if the materials are not ready. Hence, the following
-# setup is placed here to favor proper sequencing.
-if ! should_skip_step "gateway-sc"; then
-    ${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
-        "gateway-sc-deploy:complete" \
-        "gateway-sc-add-network:complete" \
-        "gateway-sc-trigger-keygen:complete" \
-        "gateway-sc-trigger-crsgen:complete" \
-        "gateway-sc-add-pausers:complete"
-else
-    log_info "Skipping step: gateway-sc (resuming from $RESUME_STEP)"
-fi
-
-# Step 11: host-sc
-if ! should_skip_step "host-sc"; then
-    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
-else
-    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
-fi
-
-# Step 12: relayer
-if ! should_skip_step "relayer"; then
-    ${RUN_COMPOSE} "relayer" "Relayer Services" \
-        "${PROJECT}-relayer:running"
-else
-    log_info "Skipping step: relayer (resuming from $RESUME_STEP)"
-fi
-
-# Step 13: test-suite
-if ! should_skip_step "test-suite"; then
-    ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
-else
-    log_info "Skipping step: test-suite (resuming from $RESUME_STEP)"
-fi
+    case "$step" in
+        minio)
+            run_manifest_step "$step"
+            get_minio_ip "fhevm-minio"
+            ;;
+        kms-signer)
+            sleep 5
+            "${SCRIPT_DIR}/setup-kms-signer-address.sh"
+            ;;
+        *)
+            run_manifest_step "$step"
+            ;;
+    esac
+done
 
 log_info "All services started successfully!"
