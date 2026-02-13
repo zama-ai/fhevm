@@ -687,7 +687,7 @@ impl DFGraph {
     }
 }
 
-pub fn add_execution_depedences<TNode, TEdge>(
+pub fn add_execution_dependences<TNode, TEdge>(
     graph: &Dag<TNode, TEdge>,
     execution_graph: &mut Dag<ExecNode, ()>,
     node_map: HashMap<NodeIndex, NodeIndex>,
@@ -759,7 +759,7 @@ pub fn partition_preserving_parallelism<TNode, TEdge>(
             execution_graph[ex_node].df_nodes = df_nodes;
         }
     }
-    add_execution_depedences(graph, execution_graph, node_map)
+    add_execution_dependences(graph, execution_graph, node_map)
 }
 
 pub fn partition_components<TNode, TEdge>(
