@@ -35,43 +35,21 @@ If you want to disable TFHE operation events propagation, you can provide an emp
 
 ### Dependent ops throttling (optional)
 
-One flag enables slow‑lane assignment for heavy dependent chains:
+`--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).
 
-- `--dependent-ops-max-per-chain` (0 disables)
+Current behavior:
+- Counter is **per dependence chain, per ingest pass** (block-scoped in normal flow).
+- Count is **unweighted**: `+1` for each newly inserted op that has input handles.
+- `is_allowed` is **not** part of the counter (a non-allowed op can still be required producer work).
+- It is **not** dependency depth and **not** cumulative across past blocks.
 
-What this parameter measures (current behavior):
+If a chain exceeds the cap in that ingest pass, host-listener marks it slow by
+setting `dependence_chain.schedule_priority = 1` (monotonic via `GREATEST` on
+upsert). tfhe-worker picks fast first (`0`) and processes slow when fast is empty.
 
-- Count is **per dependence chain, per ingest pass** (effectively block-scoped in normal flow).
-- Count unit is **unweighted dependent TFHE ops**: `+1` for each event that is:
-  - newly inserted,
-  - and has at least one input handle (depends on previous outputs).
-- It is **not** cumulative across past blocks.
-- It is **not** dependency depth.
-
-`is_allowed` is not used in this counter; producer ops required by allowed downstream
-work are still counted because they are dependent ops in the same ingest pass.
-Note: `is_allowed = false` does **not** mean “not executed”. It only means the
-op output is not ACL-allowed; the op can still be required to compute an
-allowed downstream result.
-
-When enabled, over-limit chains are assigned to a slow lane by setting
-`dependence_chain.schedule_priority = 1`. Priority is monotonic per chain
-(`GREATEST` on upsert, never downgraded by workers). The tfhe-worker always
-prefers priority 0, but still processes slow-lane work when fast lane is empty.
-
-When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
-throttling accounting, and promotes all chains to `schedule_priority = 0` at
-startup.
-
-Tuning guidance:
-
-- Start with `64` on testnet as a conservative default.
-- If slow lane is too aggressive (many normal chains marked), raise gradually (e.g. `64 -> 96 -> 128`).
-- If heavy dependent bursts still dominate fast lane, lower gradually (e.g. `64 -> 48 -> 32`).
-- Validate changes with:
-  - `rate(host_listener_slow_lane_marked_chains_total[5m])`,
-  - completion throughput,
-  - and backlog slope in the same time window.
+Default tuning on testnet: start at `64`, then adjust from metrics/logs:
+`rate(host_listener_slow_lane_marked_chains_total[5m])`, completion throughput,
+and backlog slope.
 
 ### Testnet incident runbook (slow lane)
 
