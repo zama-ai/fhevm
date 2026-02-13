@@ -10,7 +10,6 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
@@ -166,7 +165,7 @@ async fn run_uploader_loop(
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
                     let upload_span = error_span!("upload_s3", operation = "upload_s3");
-                    upload_span.set_parent(item.otel.context().clone());
+                    upload_span.set_parent(item.otel.context());
                     match upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
                         .await
@@ -543,7 +542,7 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: telemetry::tracer_with_handle("recovery_task", handle, &transaction_id),
+                otel: tracing::info_span!("recovery_task", operation = "recovery_task"),
                 transaction_id,
             };
 

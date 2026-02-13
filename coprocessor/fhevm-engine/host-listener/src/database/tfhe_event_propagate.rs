@@ -295,10 +295,8 @@ impl Database {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
 
-        let _t = telemetry::tracer(
-            "handle_tfhe_event",
-            &log.transaction_hash.map(|h| h.to_vec()),
-        );
+        let _span = tracing::info_span!("handle_tfhe_event", operation = "handle_tfhe_event");
+        let _enter = _span.enter();
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -453,7 +451,11 @@ impl Database {
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
 
-        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
+        let _span = tracing::info_span!(
+            "handle_acl_event",
+            operation = "handle_acl_event"
+        );
+        let _enter = _span.enter();
 
         // Record only Allowed or AllowedForDecryption events
         if matches!(

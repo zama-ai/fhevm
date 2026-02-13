@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::{ops::DerefMut, time::Duration};
 
@@ -25,8 +25,6 @@ use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use fhevm_engine_common::telemetry;
-
 use super::TransactionOperation;
 
 pub type BlockHash = FixedBytes<32>;
@@ -48,6 +46,7 @@ pub struct DelegationRow {
     pub host_chain_id: ChainId,
     pub block_hash: Vec<u8>,
     pub block_number: u64,
+    #[allow(dead_code)]
     pub transaction_id: Option<Vec<u8>>,
     pub gateway_nb_attempts: u64,
 }
@@ -120,9 +119,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
-        let src_transaction_id = delegation.transaction_id.clone();
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
-        let _t = telemetry::tracer("call_delegate_user_decript", &src_transaction_id);
+        let _span = tracing::info_span!(
+            "call_delegate_user_decrypt",
+            operation = "call_delegate_user_decrypt"
+        );
+        let _enter = _span.enter();
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
         } else {
@@ -395,17 +397,10 @@ where
         {
             error!("Cannot update useless delegations");
         }
-        let mut all_transaction_id = HashSet::<Option<Vec<u8>>>::new();
-        for delegation in &ready_delegations {
-            let tx_id = delegation.transaction_id.clone();
-            all_transaction_id.insert(tx_id);
-        }
         // we don't split by transition_id because delegations have an internal order
         // it's expected that both order are compatible but we don't now the transation_id order
-        let ts = all_transaction_id
-            .iter()
-            .map(|id| telemetry::tracer("prepare_delegate", id))
-            .collect::<Vec<_>>();
+        let _prepare_span = tracing::info_span!("prepare_delegate", operation = "prepare_delegate");
+        let _prepare_enter = _prepare_span.enter();
         let mut requests = Vec::with_capacity(ready_delegations.len());
         let to_transaction = |delegation: &DelegationRow| {
             let is_revoke = delegation.new_expiration_date == 0;
@@ -442,9 +437,8 @@ where
             };
             requests.push((delegation, txn_request));
         }
-        for t in ts {
-            t.end();
-        }
+        drop(_prepare_enter);
+        drop(_prepare_span);
         let mut join_set = JoinSet::new();
         for (delegation, txn_request) in requests.iter() {
             // parallel transaction can fail if any of the transaction fail

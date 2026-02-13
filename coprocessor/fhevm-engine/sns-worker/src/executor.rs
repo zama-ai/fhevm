@@ -180,7 +180,7 @@ async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    let _t = telemetry::tracer("fetch_keyset", &None);
+    let _t = tracing::info_span!("fetch_keyset", operation = "fetch_keyset");
     fetch_latest_keyset(&keys_cache, &pool).await
 }
 
@@ -310,7 +310,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst
     // Skip Locked to prevent concurrent updates
-    let start = SystemTime::now();
+    let _start = SystemTime::now();
     let rows_affected: u64 = sqlx::query!(
         "
         WITH uploaded_ct128 AS (
@@ -334,7 +334,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     .rows_affected();
 
     if rows_affected > 0 {
-        let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
+        let _s = tracing::info_span!("cleanup_ct128", operation = "cleanup_ct128");
         info!(
             rows_affected = rows_affected,
             "Cleaning up old ciphertexts128"
@@ -377,8 +377,11 @@ async fn fetch_and_execute_sns_tasks(
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
-        let t = telemetry::tracer("batch_execution", &None);
-        t.set_attribute("count", tasks.len().to_string());
+        let t = tracing::info_span!(
+            "batch_execution",
+            operation = "batch_execution",
+            count = tasks.len()
+        );
 
         process_tasks(
             &mut tasks,
@@ -395,7 +398,7 @@ async fn fetch_and_execute_sns_tasks(
             "batch_store_ciphertext128",
             operation = "batch_store_ciphertext128"
         );
-        batch_store_span.set_parent(t.context().clone());
+        batch_store_span.set_parent(t.context());
         let batch_store = async {
             update_ciphertext128(trx, &tasks).await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
@@ -436,7 +439,7 @@ pub async fn query_sns_tasks(
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let start_time = SystemTime::now();
+    let _start_time = SystemTime::now();
 
     let query = format!(
         "
@@ -464,9 +467,13 @@ pub async fn query_sns_tasks(
         return Ok(None);
     }
 
-    let t = telemetry::tracer_with_start_time("db_fetch_tasks", start_time);
-    t.set_attribute("count", records.len().to_string());
-    t.end();
+    {
+        let _t = tracing::info_span!(
+            "db_fetch_tasks",
+            operation = "db_fetch_tasks",
+            count = records.len()
+        );
+    }
 
     // Convert the records into HandleItem structs
     let tasks = records
@@ -487,7 +494,7 @@ pub async fn query_sns_tasks(
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: telemetry::tracer_with_handle("task", handle, &transaction_id),
+                otel: tracing::info_span!("task", operation = "task"),
                 transaction_id,
             })
         })
@@ -563,7 +570,7 @@ fn compute_task(
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
     let span = error_span!("compute", thread_id = %thread_id);
-    span.set_parent(task.otel.context().clone());
+    span.set_parent(task.otel.context());
     let _enter = span.enter();
 
     let handle = to_hex(&task.handle);

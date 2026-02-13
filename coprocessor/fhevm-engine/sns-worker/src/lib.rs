@@ -24,7 +24,6 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    telemetry::OtelTracer,
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
@@ -237,7 +236,7 @@ pub struct HandleItem {
     /// The computed 128-bit ciphertext
     pub(crate) ct128: Arc<BigCiphertext>,
 
-    pub otel: OtelTracer,
+    pub otel: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
 }
 
