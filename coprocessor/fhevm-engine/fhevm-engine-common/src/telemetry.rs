@@ -1,7 +1,7 @@
 use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
-use opentelemetry::{global::BoxedSpan, trace::TracerProvider, KeyValue};
+use opentelemetry::{trace::TracerProvider, KeyValue};
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
@@ -14,20 +14,6 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-pub const TXN_ID_ATTR_KEY: &str = "txn_id";
-
-// Sets the txn_id attribute to the span
-// The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
-pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
-    use opentelemetry::trace::Span;
-    let txn_id_short = to_hex(transaction_id)
-        .get(0..10)
-        .unwrap_or_default()
-        .to_owned();
-
-    span.set_attribute(KeyValue::new(TXN_ID_ATTR_KEY, txn_id_short));
-}
 
 /// Calls provider shutdown exactly once when dropped.
 pub struct TracerProviderGuard {
