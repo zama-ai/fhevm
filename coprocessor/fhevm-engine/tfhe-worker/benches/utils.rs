@@ -1,18 +1,25 @@
 use fhevm_engine_common::telemetry::MetricsConfig;
+use fhevm_engine_common::{chain_id::ChainId, types::AllowEvents};
 use rand::Rng;
-use std::sync::atomic::{AtomicU16, Ordering};
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tfhe_worker::daemon_cli::Args;
 use tokio::sync::watch::Receiver;
 use tracing::Level;
 
+use alloy::primitives::{FixedBytes, Log};
+use bigdecimal::num_bigint::BigInt;
+use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::tfhe_event_propagate::{
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+};
+use sqlx::types::time::PrimitiveDateTime;
+
 pub struct TestInstance {
     // just to destroy container
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
     // send message to this on destruction to stop the app
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
-    app_url: String,
     db_url: String,
 }
 
@@ -25,10 +32,6 @@ impl Drop for TestInstance {
 }
 
 impl TestInstance {
-    pub fn app_url(&self) -> &str {
-        self.app_url.as_str()
-    }
-
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
     }
@@ -43,9 +46,7 @@ pub fn random_handle() -> u64 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    if std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok() {
-        setup_test_app_existing_localhost().await
-    } else if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
+    if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
         setup_test_app_existing_db().await
     } else {
         setup_test_app_custom_docker().await
@@ -54,49 +55,30 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>>
-{
-    Ok(TestInstance {
-        _container: None,
-        app_close_channel: None,
-        app_url: "http://127.0.0.1:50051".to_string(),
-        db_url: LOCAL_DB_URL.to_string(),
-    })
-}
-
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let app_port = get_app_port();
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, LOCAL_DB_URL).await;
+    start_coprocessor(rx, LOCAL_DB_URL).await;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
-        app_url: format!("http://127.0.0.1:{app_port}"),
         db_url: LOCAL_DB_URL.to_string(),
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
+async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
     let ecfg = EnvConfig::new();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
-        run_server: true,
         generate_fhe_keys: false,
-        server_maximum_ciphertexts_to_schedule: 20000,
-        server_maximum_ciphertexts_to_get: 20000,
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
-        maximum_handles_per_input: 255,
         tokio_threads: 32,
         pg_pool_max_connections: 2,
-        server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: None,
         database_url: Some(db_url.into()),
-        maximum_compact_inputs_upload: 10,
-        coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
         health_check_port: 8080,
@@ -120,19 +102,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 }
 
-fn get_app_port() -> u16 {
-    static PORT_COUNTER: AtomicU16 = AtomicU16::new(10000);
-
-    let app_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-    // wrap around, if we ever have that many tests?
-    if app_port >= 50000 {
-        PORT_COUNTER.store(10000, Ordering::SeqCst);
-    }
-    app_port
-}
-
 async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let app_port = get_app_port();
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -162,11 +132,10 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, &db_url).await;
+    start_coprocessor(rx, &db_url).await;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
-        app_url: format!("http://127.0.0.1:{app_port}"),
         db_url,
     })
 }
@@ -194,6 +163,93 @@ pub async fn wait_until_all_allowed_handles_computed(
     }
 
     Ok(())
+}
+
+pub fn to_ty(ty: i32) -> ToType {
+    ToType::from(ty as u8)
+}
+
+pub fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
+    let (_, bytes) = big_int.to_bytes_be();
+    ClearConst::from_be_slice(&bytes)
+}
+
+pub fn as_handle(v: u64) -> Handle {
+    let mut out = [0_u8; 32];
+    out[24..32].copy_from_slice(&v.to_be_bytes());
+    Handle::from(out)
+}
+
+pub fn next_handle(counter: &mut u64) -> Handle {
+    let out = as_handle(*counter);
+    *counter += 1;
+    out
+}
+
+pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
+    let address = "0x0000000000000000000000000000000000000000"
+        .parse()
+        .unwrap();
+    Log::<TfheContractEvents> { address, data }
+}
+
+pub async fn listener_event_db(
+    app: &TestInstance,
+) -> Result<ListenerDatabase, Box<dyn std::error::Error>> {
+    Ok(ListenerDatabase::new(
+        &app.db_url().into(),
+        ChainId::try_from(42_u64).unwrap(),
+        default_dependence_cache_size(),
+    )
+    .await?)
+}
+
+pub fn default_dependence_cache_size() -> u16 {
+    128
+}
+
+pub async fn insert_tfhe_event(
+    db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    log: alloy::rpc::types::Log<TfheContractEvents>,
+    tx_hash: Handle,
+    is_allowed: bool,
+) -> Result<bool, sqlx::Error> {
+    let event = LogTfhe {
+        event: log.inner,
+        transaction_hash: Some(tx_hash),
+        is_allowed,
+        block_number: log.block_number.unwrap_or(0),
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: tx_hash,
+        tx_depth_size: 0,
+    };
+    db.insert_tfhe_event(tx, &event).await
+}
+
+pub async fn allow_handle(
+    db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    handle: &Handle,
+) -> Result<bool, sqlx::Error> {
+    db.insert_allowed_handle(
+        tx,
+        handle.to_vec(),
+        String::new(),
+        AllowEvents::AllowedForDecryption,
+        None,
+    )
+    .await
+}
+
+pub fn zero_address() -> alloy::primitives::Address {
+    "0x0000000000000000000000000000000000000000"
+        .parse()
+        .unwrap()
+}
+
+pub fn scalar_flag(is_scalar: bool) -> FixedBytes<1> {
+    FixedBytes::from([if is_scalar { 1_u8 } else { 0_u8 }])
 }
 
 use serde::Serialize;
