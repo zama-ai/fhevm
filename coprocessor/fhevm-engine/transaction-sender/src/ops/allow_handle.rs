@@ -100,15 +100,18 @@ where
                 return Ok(());
             }
             Err(e) => {
-                if let Some(terminal_error) = try_extract_terminal_config_error(&e) {
+                if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
                     ALLOW_HANDLE_FAIL_COUNTER.inc();
                     error!(
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         key = %key,
                         "Detected non-retryable gateway coprocessor config error while allowing handle"
                     );
-                    self.mark_allow_handle_terminal_config_error(key, &terminal_error.db_error)
-                        .await?;
+                    self.mark_allow_handle_terminal_config_error(
+                        key,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
                     return Ok(());
                 }
                 // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
@@ -177,15 +180,18 @@ where
             )
             .await
             {
-                Ok(terminal_error) => {
+                Ok(terminal_config_error) => {
                     error!(
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         transaction_hash = %receipt.transaction_hash,
                         key = %key,
                         "Terminalizing allow_handle due to gateway coprocessor config error from debug trace"
                     );
-                    self.mark_allow_handle_terminal_config_error(key, &terminal_error.db_error)
-                        .await?;
+                    self.mark_allow_handle_terminal_config_error(
+                        key,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
                     return Ok(());
                 }
                 Err(reason) => {

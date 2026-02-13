@@ -4,7 +4,7 @@ use alloy::network::TxSigner;
 use alloy::primitives::{FixedBytes, U256};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
-use common::{CiphertextCommits, TestEnvironment};
+use common::{is_coprocessor_config_error, CiphertextCommits, TestEnvironment};
 
 use common::SignerType;
 use rand::{random, Rng};
@@ -709,7 +709,7 @@ async fn add_ciphertext_terminal_on_gw_config_error(
             && txn_limited_retries_count == conf.add_ciphertexts_max_retries
             && txn_last_error
                 .as_deref()
-                .is_some_and(|err| err.starts_with("gw: "))
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
@@ -732,8 +732,8 @@ async fn add_ciphertext_terminal_on_gw_config_error(
     assert!(
         txn_last_error
             .as_deref()
-            .is_some_and(|err| err.starts_with("gw: ")),
-        "Expected gw-prefixed terminal error, got {:?}",
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
         txn_last_error
     );
 
@@ -861,7 +861,7 @@ async fn add_ciphertext_terminal_on_gw_config_error_after_mined_revert(
             && txn_limited_retries_count == conf.add_ciphertexts_max_retries
             && txn_last_error
                 .as_deref()
-                .is_some_and(|err| err.starts_with("gw: "))
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
@@ -884,8 +884,8 @@ async fn add_ciphertext_terminal_on_gw_config_error_after_mined_revert(
     assert!(
         txn_last_error
             .as_deref()
-            .is_some_and(|err| err.starts_with("gw: ")),
-        "Expected gw-prefixed terminal error from trace classification, got {:?}",
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error from trace classification, got {:?}",
         txn_last_error
     );
 

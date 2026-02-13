@@ -150,19 +150,19 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 return TxResult::IdemPotentError;
             }
             Err(error) => {
-                if let Some(terminal_error) = try_extract_terminal_config_error(&error) {
+                if let Some(terminal_config_error) = try_extract_terminal_config_error(&error) {
                     error!(
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         ?delegation,
                         "{operation} failed with non-retryable gateway coprocessor config error"
                     );
-                    return TxResult::NonRetryableError(terminal_error.db_error);
+                    return TxResult::NonRetryableError(terminal_config_error.to_string());
                 }
                 if is_transient_error(&error) {
                     warn!(
                         %error,
                         ?delegation,
-                        "{operation} sending with transient error. Will retry indefinitively"
+                        "{operation} sending with transient error. Will retry indefinitely"
                     );
                     return TxResult::TransientError;
                 }
@@ -198,14 +198,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
             )
             .await
             {
-                Ok(terminal_error) => {
+                Ok(terminal_config_error) => {
                     error!(
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         ?delegation,
                         transaction_hash = %receipt.transaction_hash,
                         "{operation} terminalized after debug trace matched gateway coprocessor config error"
                     );
-                    TxResult::NonRetryableError(terminal_error.db_error)
+                    TxResult::NonRetryableError(terminal_config_error.to_string())
                 }
                 Err(reason) => TxResult::OtherError(reason),
             }

@@ -29,31 +29,10 @@ pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZ
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct TerminalConfigError {
-    pub(crate) config_error: CoprocessorConfigError,
-    pub(crate) db_error: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CoprocessorConfigError {
     NotCoprocessorSigner(Address),
     NotCoprocessorTxSender(Address),
     CoprocessorSignerDoesNotMatchTxSender { signer: Address, tx_sender: Address },
-}
-
-impl CoprocessorConfigError {
-    pub(crate) fn to_db_error_string(&self) -> String {
-        format!("gw: {self}")
-    }
-}
-
-impl From<CoprocessorConfigError> for TerminalConfigError {
-    fn from(config_error: CoprocessorConfigError) -> Self {
-        Self {
-            db_error: config_error.to_db_error_string(),
-            config_error,
-        }
-    }
 }
 
 impl Display for CoprocessorConfigError {
@@ -108,15 +87,15 @@ fn try_decode_coprocessor_config_error(
 
 pub(crate) fn try_extract_terminal_config_error(
     err: &RpcError<TransportErrorKind>,
-) -> Option<TerminalConfigError> {
-    try_decode_coprocessor_config_error(err).map(Into::into)
+) -> Option<CoprocessorConfigError> {
+    try_decode_coprocessor_config_error(err)
 }
 
 pub(crate) async fn classify_failed_receipt<P>(
     provider: &NonceManagedProvider<P>,
     receipt: &TransactionReceipt,
     trace_timeout: Duration,
-) -> std::result::Result<TerminalConfigError, String>
+) -> std::result::Result<CoprocessorConfigError, String>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
@@ -150,7 +129,7 @@ where
     };
 
     if let Some(config_error) = find_config_error_in_trace(&call_frame) {
-        return Ok(config_error.into());
+        return Ok(config_error);
     }
 
     Err(

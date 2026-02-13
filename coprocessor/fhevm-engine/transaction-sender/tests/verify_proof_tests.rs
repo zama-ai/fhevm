@@ -5,7 +5,7 @@ use alloy::providers::{Provider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{providers::ProviderBuilder, sol};
 use common::SignerType;
-use common::{CiphertextCommits, InputVerification, TestEnvironment};
+use common::{is_coprocessor_config_error, CiphertextCommits, InputVerification, TestEnvironment};
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use rand::random;
@@ -1404,7 +1404,7 @@ async fn verify_proof_terminal_on_gw_config_error(
             && retry_count == Some(conf.verify_proof_resp_max_retries as i32)
             && last_error
                 .as_deref()
-                .is_some_and(|err| err.starts_with("gw: "))
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
@@ -1426,8 +1426,8 @@ async fn verify_proof_terminal_on_gw_config_error(
     assert!(
         last_error
             .as_deref()
-            .is_some_and(|err| err.starts_with("gw: ")),
-        "Expected gw-prefixed terminal error, got {:?}",
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
         last_error
     );
 

@@ -2,7 +2,7 @@ use alloy::network::TxSigner;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{MultichainACL, SignerType, TestEnvironment};
+use common::{is_coprocessor_config_error, MultichainACL, SignerType, TestEnvironment};
 
 use fhevm_engine_common::types::AllowEvents;
 use rand::random;
@@ -476,7 +476,7 @@ async fn allow_handle_terminal_on_gw_config_error(
             && txn_limited_retries_count == conf.allow_handle_max_retries
             && txn_last_error
                 .as_deref()
-                .is_some_and(|err| err.starts_with("gw: "))
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
@@ -499,8 +499,8 @@ async fn allow_handle_terminal_on_gw_config_error(
     assert!(
         txn_last_error
             .as_deref()
-            .is_some_and(|err| err.starts_with("gw: ")),
-        "Expected gw-prefixed terminal error, got {:?}",
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
         txn_last_error
     );
 

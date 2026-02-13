@@ -3,7 +3,7 @@ use alloy::network::TxSigner;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{MultichainACL, SignerType, TestEnvironment};
+use common::{is_coprocessor_config_error, MultichainACL, SignerType, TestEnvironment};
 
 use rstest::*;
 use serial_test::serial;
@@ -480,7 +480,7 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
             && gateway_nb_attempts == (config.delegation_max_retry + 1) as i64
             && gateway_last_error
                 .as_deref()
-                .is_some_and(|err| err.starts_with("gw: "))
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
@@ -506,8 +506,8 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
     assert!(
         gateway_last_error
             .as_deref()
-            .is_some_and(|err| err.starts_with("gw: ")),
-        "Expected gw-prefixed terminal error, got {:?}",
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
         gateway_last_error
     );
 

@@ -160,16 +160,16 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if let Some(terminal_error) = try_extract_terminal_config_error(&e) {
+                } else if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         zk_proof_id = txn_request.0,
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         "Detected non-retryable gateway coprocessor config error while sending verify_proof transaction"
                     );
                     self.mark_verify_proof_terminal_config_error(
                         txn_request.0,
-                        &terminal_error.db_error,
+                        &terminal_config_error.to_string(),
                     )
                     .await?;
                     return Ok(());
@@ -220,16 +220,16 @@ where
             )
             .await
             {
-                Ok(terminal_error) => {
+                Ok(terminal_config_error) => {
                     error!(
                         zk_proof_id = txn_request.0,
                         transaction_hash = %receipt.transaction_hash,
-                        error = %terminal_error.config_error,
+                        error = %terminal_config_error,
                         "Terminalizing verify_proof due to gateway coprocessor config error from debug trace"
                     );
                     self.mark_verify_proof_terminal_config_error(
                         txn_request.0,
-                        &terminal_error.db_error,
+                        &terminal_config_error.to_string(),
                     )
                     .await?;
                     return Ok(());
