@@ -8497,8 +8497,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEbool.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Bool);
-                return ebool.wrap(inputBytes32);
+                return asEbool(false);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return ebool.wrap(inputBytes32);
@@ -8524,8 +8523,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint8.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint8);
-                return euint8.wrap(inputBytes32);
+                return asEuint8(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint8.wrap(inputBytes32);
@@ -8551,8 +8549,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint16.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint16);
-                return euint16.wrap(inputBytes32);
+                return asEuint16(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint16.wrap(inputBytes32);
@@ -8578,8 +8575,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint32.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint32);
-                return euint32.wrap(inputBytes32);
+                return asEuint32(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint32.wrap(inputBytes32);
@@ -8605,8 +8601,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint64.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint64);
-                return euint64.wrap(inputBytes32);
+                return asEuint64(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint64.wrap(inputBytes32);
@@ -8632,8 +8627,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint128.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint128);
-                return euint128.wrap(inputBytes32);
+                return asEuint128(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint128.wrap(inputBytes32);
@@ -8659,8 +8653,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEaddress.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint160);
-                return eaddress.wrap(inputBytes32);
+                return asEaddress(address(0));
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return eaddress.wrap(inputBytes32);
@@ -8686,8 +8679,7 @@ library FHE {
         } else {
             bytes32 inputBytes32 = externalEuint256.unwrap(inputHandle);
             if (inputBytes32 == 0) {
-                inputBytes32 = Impl.trivialEncrypt(0, FheType.Uint256);
-                return euint256.wrap(inputBytes32);
+                return asEuint256(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint256.wrap(inputBytes32);
