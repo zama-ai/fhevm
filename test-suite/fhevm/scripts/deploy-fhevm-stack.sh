@@ -432,6 +432,11 @@ configure_multicoprocessor_envs() {
     set_env_value "$host_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
     set_env_value "$host_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
 
+    # Default 1/1 topology does not require deriving extra coprocessor keys.
+    if [[ "$COPROCESSOR_COUNT" -eq 1 ]]; then
+        return 0
+    fi
+
     local gateway_mnemonic
     gateway_mnemonic=$(get_env_value "$gateway_env" "MNEMONIC")
     if [[ -z "$gateway_mnemonic" ]]; then
