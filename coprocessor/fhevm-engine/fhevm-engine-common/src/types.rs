@@ -15,6 +15,7 @@ use tfhe::{
 };
 
 use crate::utils::{safe_deserialize, safe_serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub enum FhevmError {
@@ -340,7 +341,7 @@ pub enum SupportedFheCiphertexts {
     Scalar(Vec<u8>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumIter, Serialize, Deserialize)]
 #[repr(i8)]
 pub enum SupportedFheOperations {
     FheAdd = 0,
@@ -422,8 +423,12 @@ impl SupportedFheCiphertexts {
             9 => Ok(SupportedFheCiphertexts::FheBytes64(safe_deserialize(
                 bytes,
             )?)),
-            10 => Ok(SupportedFheCiphertexts::FheBytes128(safe_deserialize(bytes)?)),
-            11 => Ok(SupportedFheCiphertexts::FheBytes256(safe_deserialize(bytes)?)),
+            10 => Ok(SupportedFheCiphertexts::FheBytes128(safe_deserialize(
+                bytes,
+            )?)),
+            11 => Ok(SupportedFheCiphertexts::FheBytes256(safe_deserialize(
+                bytes,
+            )?)),
             _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
         }
     }
