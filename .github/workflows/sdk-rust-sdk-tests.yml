@@ -3,8 +3,6 @@ name: sdk-rust-sdk-tests
 
 on:
   pull_request:
-  push:
-    branches: ['main', 'release/*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
