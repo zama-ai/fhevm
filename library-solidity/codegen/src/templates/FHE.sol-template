@@ -301,7 +301,7 @@ library FHE {
     ///         fails. Returns true only if KMS signatures verification pass. This is the `view` variant of `checkSignatures`.
     /// @dev **WARNING**: Prefer using `checkSignatures` (non-view) over this function whenever possible, for several reasons:
     ///      1. **Safety** – `checkSignatures` automatically reverts when signatures are invalid, making misuse impossible.
-    ///         In contrast, `isDecryptionResultValid` returns a boolean: if the caller forgets to `require` the returned
+    ///         In contrast, `isPublicDecryptionResultValid` returns a boolean: if the caller forgets to `require` the returned
     ///         value, invalid signatures will silently pass, leaving the contract vulnerable to forged decryption results.
     ///      2. **Front-end integration** – `checkSignatures` emits a `PublicDecryptionVerified` event upon successful
     ///         verification, which is critical for front-end applications that need to detect when a public decrypt result
@@ -315,7 +315,7 @@ library FHE {
     /// @param decryptionProof The KMS public decryption proof. It includes the KMS signatures, associated metadata,
     ///                        and the context needed for verification.
     /// @return true if the signatures verification succeeds, false otherwise.
-    function isDecryptionResultValid(
+    function isPublicDecryptionResultValid(
         bytes32[] memory handlesList,
         bytes memory abiEncodedCleartexts,
         bytes memory decryptionProof

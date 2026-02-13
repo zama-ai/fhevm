@@ -38,12 +38,12 @@ contract OnchainPublicDecrypt {
     /// @param abiEncodedCleartexts The abi-encoding of the decrypted 64-bit unsigned integer
     /// @param decryptionProof The KMS public decryption proof, which includes the KMS signatures
     /// @return true only if signatures validation succeeds, might return false or revert otherwise.
-    function isDecryptionResultValid(
+    function isPublicDecryptionResultValid(
         bytes memory abiEncodedCleartexts,
         bytes memory decryptionProof
     ) public view returns (bool) {
         bytes32[] memory handlesList = new bytes32[](1);
         handlesList[0] = FHE.toBytes32(xUint64);
-        return FHE.isDecryptionResultValid(handlesList, abiEncodedCleartexts, decryptionProof);
+        return FHE.isPublicDecryptionResultValid(handlesList, abiEncodedCleartexts, decryptionProof);
     }
 }

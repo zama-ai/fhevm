@@ -1,11 +1,13 @@
 import { expect } from 'chai';
+import dotenv from 'dotenv';
+import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
 import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-describe('OnchainPublicDecrypt', function () {
+describe.only('OnchainPublicDecrypt', function () {
   beforeEach(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -18,23 +20,63 @@ describe('OnchainPublicDecrypt', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('original case', async function () {
+  it('One KMS Signer: isPublicDecryptionResultValid (View) and checkSignatures (Non-View)', async function () {
     const tx = await this.contract.requestDecryption();
     const receipt = await tx.wait();
     const { decryptedResult, decryptionSignatures } = await getPublicDecryptionFromReceipt(receipt);
-    const decryptionProof = convertSignaturesToDecryptionProof([decryptionSignatures[0]]);
-    console.log(await this.contract.isDecryptionResultValid(decryptedResult, decryptionProof));
+
+    const decryptionProof = convertSignaturesToDecryptionProof([decryptionSignatures[0]]); /// KMS_SIGNER_ADDRESS_0 is the only signer by default, so next calls should pass
+    expect(await this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof)).to.be.true;
     const tx2 = await this.contract.callbackDecryption(decryptedResult, decryptionProof);
     await tx2.wait();
-    console.log(await this.contract.yUint64());
-    const decryptionProof2 = convertSignaturesToDecryptionProof([decryptionSignatures[1]]);
-    console.log(await this.contract.isDecryptionResultValid(decryptedResult, decryptionProof2));
+    expect(await this.contract.yUint64()).to.equal(42);
+
+    const decryptionProof2 = convertSignaturesToDecryptionProof([decryptionSignatures[1]]); ///  KMS_SIGNER_ADDRESS_1 is not a signer, so next calls should not pass
+    await expect(
+      this.contract.isPublicDecryptionResultValid(decryptedResult, decryptionProof2),
+    ).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error KMSInvalidSigner(address)']) },
+      'KMSInvalidSigner',
+    ); // reverts with selector of KMSInvalidSigner(address)
+    await expect(this.contract.callbackDecryption(decryptedResult, decryptionProof2)).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error KMSInvalidSigner(address)']) },
+      'KMSInvalidSigner',
+    );
+
+    await expect(this.contract.isPublicDecryptionResultValid(decryptedResult, '0x')).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error EmptyDecryptionProof()']) },
+      'EmptyDecryptionProof',
+    ); // reverts with selector of EmptyDecryptionProof()
+    await expect(this.contract.callbackDecryption(decryptedResult, '0x')).to.be.revertedWithCustomError(
+      { interface: new ethers.Interface(['error EmptyDecryptionProof()']) },
+      'EmptyDecryptionProof',
+    );
+  });
+
+  it('3 KMS Signers - threshold of 2: isPublicDecryptionResultValid (View) and checkSignatures (Non-View)', async function () {
+    const parsedEnv = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
+    const kmsAdd = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
+    const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
+    const accounts = await ethers.getSigners();
+    const signerAddresses = [accounts[7], accounts[8], accounts[9]].map((s) => s.address);
+    const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
+    const txNewConfig = await kmsVerifier.connect(deployer).defineNewContext(signerAddresses, 2);
+    await txNewConfig.wait();
+    expect(await kmsVerifier.getThreshold()).to.equal(2);
+    expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
+
+    const txResetConfig = await kmsVerifier.connect(deployer).defineNewContext([signerAddresses[0]], 1);
+    await txResetConfig.wait();
+    expect(await kmsVerifier.getThreshold()).to.equal(1);
+    expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
 });
 
 async function getPublicDecryptionFromReceipt(
   receipt: any,
 ): Promise<{ handles: string[]; decryptedResult: string; decryptionSignatures: string[] }> {
+  /// this will scan the tx receipt for all handles which have been made publicly decryptable and attempt to decrypt + sign them
+  /// decryptionSignatures always contains the 4 signatures from all the KMS_SIGNER_ADDRESS_i
   await awaitCoprocessor();
   const aclIface = new ethers.Interface(['event AllowedForDecryption(address indexed caller, bytes32[] handlesList)']);
   const topic = aclIface.getEvent('AllowedForDecryption')!.topicHash;
@@ -46,7 +88,7 @@ async function getPublicDecryptionFromReceipt(
   const decryptedResult = ethers.AbiCoder.defaultAbiCoder().encode(types, clearTexts.map(BigInt));
 
   const accounts = await ethers.getSigners();
-  const signers = [accounts[7], accounts[8], accounts[9], accounts[10]];
+  const signers = [accounts[7], accounts[8], accounts[9], accounts[10]]; /// those are the KMS_SIGNER_ADDRESS_{i} from the default `.env` (with i between 0 and 3)
   const domain = {
     name: 'Decryption',
     version: '1',
