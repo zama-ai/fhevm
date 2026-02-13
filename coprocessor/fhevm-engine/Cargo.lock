@@ -6320,13 +6320,12 @@ dependencies = [
  "fhevm-engine-common",
  "hex",
  "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "prometheus",
  "rayon",
  "tfhe",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]

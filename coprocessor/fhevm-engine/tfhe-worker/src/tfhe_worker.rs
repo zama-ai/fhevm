@@ -494,7 +494,6 @@ async fn build_transaction_graph_and_execute<'a>(
 
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
-        let otel_ctx = tracing::Span::current().context();
         let mut sched = Scheduler::new(
             &mut tx_graph,
             #[cfg(not(feature = "gpu"))]
@@ -504,7 +503,7 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
         );
-        sched.schedule(&otel_ctx).await?;
+        sched.schedule().await?;
     }
     drop(s_compute);
     Ok(tx_graph)
