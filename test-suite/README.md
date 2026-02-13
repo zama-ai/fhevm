@@ -21,6 +21,9 @@ KMS can be configured to two modes:
   - [Local Developer Optimizations](#local-developer-optimizations)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
+  - [Orchestration Source of Truth](#orchestration-source-of-truth)
+  - [Troubleshooting Deploy Failures](#troubleshooting-deploy-failures)
+  - [Behavior Parity Tests](#behavior-parity-tests)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -144,6 +147,44 @@ You can combine `--only` or `--resume` with other flags:
 ```sh
 # Redeploy only gateway-sc with a local build
 ./fhevm-cli deploy --only gateway-sc --build --local
+```
+
+### Orchestration source of truth
+
+The deploy orchestration remains Bash-first. Command entrypoint is still:
+
+- `test-suite/fhevm/fhevm-cli`
+- `test-suite/fhevm/scripts/deploy-fhevm-stack.sh`
+
+To keep step/version metadata maintainable, orchestration now uses canonical manifests:
+
+- Deploy step/component/service registry: `test-suite/fhevm/scripts/lib/deploy-manifest.sh`
+- Version defaults + version display metadata: `test-suite/fhevm/scripts/lib/version-manifest.sh`
+
+This keeps `deploy` and `upgrade` on a single version/env source of truth and avoids duplicated step/env registries across code paths.
+
+### Troubleshooting deploy failures
+
+When deploy fails, the script now surfaces explicit hints for common operational failure modes.
+
+- OOM-killed critical service:
+  - Symptom: failure includes `looks OOM-killed`.
+  - Action: increase Docker memory and resume from the failed step, for example:
+    - `./fhevm-cli deploy --resume coprocessor`
+
+- Key bootstrap / CRS not ready:
+  - Symptom: failure includes `Detected key-bootstrap-not-ready state`.
+  - Action: wait for keygen/CRS generation to settle, then resume from gateway contracts:
+    - `./fhevm-cli deploy --resume gateway-sc`
+
+### Behavior parity tests
+
+A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, and actionable failure hints) without relying on pinned historical SHAs.
+
+Run it with:
+
+```sh
+./test-suite/fhevm/scripts/tests/deploy-fhevm-stack.behavior.sh
 ```
 
 ## Security policy
