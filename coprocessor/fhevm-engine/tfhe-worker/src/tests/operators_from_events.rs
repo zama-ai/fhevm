@@ -276,7 +276,7 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
 }
 
 #[tokio::test]
-async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     use fhevm_engine_common::types::SupportedFheOperations as S;
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -425,7 +425,7 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
-async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -516,7 +516,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[tokio::test]
-async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -683,7 +683,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
 }
 
 #[tokio::test]
-async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -783,7 +783,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)

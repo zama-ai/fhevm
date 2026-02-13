@@ -1,7 +1,13 @@
 mod dependence_chain;
+mod errors;
+mod event_helpers;
 mod health_check;
+mod inputs;
 mod migrations;
+mod operators;
 mod operators_from_events;
+mod random;
+mod scheduling_bench;
 mod test_cases;
 mod utils;
 
