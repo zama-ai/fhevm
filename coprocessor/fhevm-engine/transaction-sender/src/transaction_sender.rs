@@ -126,7 +126,7 @@ where
                                     error!(
                                         channel = op_channel,
                                         error = %e,
-                                        "Backend gone error, stopping operation and signalling other operations to stop"
+                                        "Backend gone error, stopping operation and signaling other operations to stop"
                                     );
                                     token.cancel();
                                     return Err(e);

@@ -52,7 +52,7 @@ async fn test_parallel_crsgen_picking() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "Not possible to have parallel PRSS Init the only ID currenly allowed is 1"]
+#[ignore = "Not possible to have parallel PRSS Init the only ID currently allowed is 1"]
 async fn test_parallel_prss_init_picking() -> anyhow::Result<()> {
     test_parallel_request_picking(EventType::PrssInit).await
 }

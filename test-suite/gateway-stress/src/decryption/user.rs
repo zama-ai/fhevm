@@ -210,7 +210,7 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
         >,
     >,
 > {
-    debug!("Subcribing to UserDecryptionResponseThresholdReached events...");
+    debug!("Subscribing to UserDecryptionResponseThresholdReached events...");
     let mut response_filter = decryption_contract
         .UserDecryptionResponseThresholdReached_filter()
         .watch()
@@ -219,7 +219,7 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
             anyhow!("Failed to subscribe to UserDecryptionResponseThresholdReached {e}")
         })?;
     debug!(
-        "Subcribed to UserDecryptionResponseThresholdReached events! \
+        "Subscribed to UserDecryptionResponseThresholdReached events! \
         Can start sending UserDecryptionRequests..."
     );
 

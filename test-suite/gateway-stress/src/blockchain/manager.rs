@@ -290,7 +290,7 @@ impl GatewayTestManager {
 ///
 /// - One is used to track when requests are received by the Gateway (tx receipt was received).
 /// - The other is used to track when responses are received by the Gateway (response event was
-///   catched).
+///   caught).
 fn init_progress_bars(
     config: &Config,
     progress_tracker: &MultiProgress,
