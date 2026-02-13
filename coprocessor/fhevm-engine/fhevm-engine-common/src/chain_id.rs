@@ -50,8 +50,8 @@ impl TryFrom<u64> for ChainId {
     type Error = InvalidChainId;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        if i64::try_from(value).is_ok() {
-            Ok(ChainId(value as i64))
+        if let Ok(v) = i64::try_from(value) {
+            Ok(ChainId(v))
         } else {
             Err(InvalidChainId {
                 value: value.to_string(),

@@ -1,11 +1,7 @@
 use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
-use opentelemetry::{
-    global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
-    trace::{SpanBuilder, Status, TraceContextExt, Tracer, TracerProvider},
-    Context, KeyValue,
-};
+use opentelemetry::{global::BoxedSpan, trace::TracerProvider, KeyValue};
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
@@ -14,13 +10,24 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{Arc, LazyLock, OnceLock},
-    time::SystemTime,
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+
+// Sets the txn_id attribute to the span
+// The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
+pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
+    use opentelemetry::trace::Span;
+    let txn_id_short = to_hex(transaction_id)
+        .get(0..10)
+        .unwrap_or_default()
+        .to_owned();
+
+    span.set_attribute(KeyValue::new(TXN_ID_ATTR_KEY, txn_id_short));
+}
 
 /// Calls provider shutdown exactly once when dropped.
 pub struct TracerProviderGuard {
@@ -140,119 +147,6 @@ fn setup_otel_with_tracer(
 
     let tracer = trace_provider.tracer(tracer_name);
     Ok((tracer, trace_provider))
-}
-
-#[derive(Clone)]
-pub struct OtelTracer {
-    ctx: opentelemetry::Context,
-    tracer: Arc<BoxedTracer>,
-}
-
-impl OtelTracer {
-    pub fn child_span(&self, name: &'static str) -> BoxedSpan {
-        self.tracer.start_with_context(name, &self.ctx)
-    }
-
-    pub fn context(&self) -> &Context {
-        &self.ctx
-    }
-
-    /// Sets attribute to the root span
-    pub fn set_attribute(&self, key: &str, value: String) {
-        self.ctx
-            .span()
-            .set_attribute(KeyValue::new(key.to_owned(), value));
-    }
-
-    /// Consumes and ends the tracer with status Ok
-    pub fn end(self) {
-        self.ctx.span().set_status(Status::Ok);
-        self.ctx.span().end();
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct Handle(Vec<u8>);
-#[derive(Debug, PartialEq)]
-struct Transaction(Vec<u8>);
-
-pub fn tracer_with_handle(
-    span_name: &'static str,
-    handle: Vec<u8>,
-    transaction_id: &Option<Vec<u8>>,
-) -> OtelTracer {
-    let tracer = opentelemetry::global::tracer(format!("tracer_{}", span_name));
-    let mut span = tracer.start(span_name);
-
-    if !handle.is_empty() {
-        let handle = to_hex(&handle).get(0..10).unwrap_or_default().to_owned();
-
-        span.set_attribute(KeyValue::new("handle", handle));
-    }
-
-    if let Some(transaction_id) = transaction_id {
-        set_txn_id(&mut span, transaction_id);
-    }
-
-    // Add handle and transaction_id to the context
-    // so that they can be retrieved in the application code, e.g. for logging
-    let mut ctx = Context::default().with_span(span);
-    ctx = ctx.with_value(Handle(handle.clone()));
-    ctx = ctx.with_value(Transaction(transaction_id.clone().unwrap_or_default()));
-
-    OtelTracer {
-        ctx,
-        tracer: Arc::new(tracer),
-    }
-}
-
-// Sets the txn_id attribute to the span
-// The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
-pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
-    let txn_id_short = to_hex(transaction_id)
-        .get(0..10)
-        .unwrap_or_default()
-        .to_owned();
-
-    span.set_attribute(KeyValue::new(TXN_ID_ATTR_KEY, txn_id_short));
-}
-
-/// Create a new span with start and end time
-pub fn tracer_with_start_time(span_name: &'static str, start_time: SystemTime) -> OtelTracer {
-    let tracer = opentelemetry::global::tracer(span_name);
-    let root_span = tracer.build(SpanBuilder::from_name(span_name).with_start_time(start_time));
-    let ctx = opentelemetry::Context::default().with_span(root_span);
-    OtelTracer {
-        ctx,
-        tracer: Arc::new(tracer),
-    }
-}
-
-pub fn tracer(span_name: &'static str, transaction_id: &Option<Vec<u8>>) -> OtelTracer {
-    tracer_with_handle(span_name, vec![], transaction_id)
-}
-
-pub fn attribute(span: &mut BoxedSpan, key: &str, value: String) {
-    span.set_attribute(KeyValue::new(key.to_owned(), value));
-}
-
-/// Ends span with status Ok
-pub fn end_span(mut span: BoxedSpan) {
-    span.set_status(Status::Ok);
-    span.end();
-}
-
-pub fn end_span_with_timestamp(mut span: BoxedSpan, timestamp: SystemTime) {
-    span.set_status(Status::Ok);
-    span.end_with_timestamp(timestamp);
-}
-
-/// Ends span with status Error with description
-pub fn end_span_with_err(mut span: BoxedSpan, desc: String) {
-    span.set_status(Status::Error {
-        description: desc.into(),
-    });
-    span.end();
 }
 
 #[derive(Clone, Copy, Debug)]

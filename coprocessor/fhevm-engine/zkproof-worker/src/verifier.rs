@@ -5,9 +5,10 @@ use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use opentelemetry::trace::TraceContextExt;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use hex::encode;
@@ -86,8 +87,10 @@ impl ZkProofService {
         // Each worker needs at least 3 pg connections
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-        let t = telemetry::tracer("init_service", &None);
-        let _s = t.child_span("pg_connect");
+        let _init_span = tracing::info_span!("init_service", operation = "init_service");
+        let _init_enter = _init_span.enter();
+        let _pg_span = tracing::info_span!("pg_connect", operation = "pg_connect");
+        let _pg_enter = _pg_span.enter();
 
         let Some(pool_mngr) = PostgresPoolManager::connect_pool(
             token.child_token(),
@@ -139,9 +142,13 @@ pub async fn execute_verify_proofs_loop(
             .map_err(|err| ExecutionError::Other(err.into()))?,
     );
 
-    let t = telemetry::tracer("init_workers", &None);
-    let mut s = t.child_span("start_workers");
-    telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
+    let _init_workers_span = tracing::info_span!("init_workers", operation = "init_workers");
+    let _init_workers_enter = _init_workers_span.enter();
+    let _start_workers_span = tracing::info_span!(
+        "start_workers",
+        operation = "start_workers",
+        count = conf.worker_thread_count
+    );
     let mut task_set = JoinSet::new();
 
     for index in 0..conf.worker_thread_count {
@@ -175,7 +182,7 @@ pub async fn execute_verify_proofs_loop(
             .await;
     }
 
-    telemetry::end_span(s);
+    drop(_start_workers_span);
 
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
@@ -284,7 +291,7 @@ async fn execute_verify_proof_routine(
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
-        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
+        let _transaction_id: Option<Vec<u8>> = row.get("transaction_id");
 
         info!(
             message = "Process zk-verify request",
@@ -295,8 +302,11 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        let t = tracing::info_span!(
+            "verify_task",
+            operation = "verify_task",
+            request_id = request_id
+        );
 
         let host_chain = host_chain_cache
             .get_chain(host_chain_id)
@@ -316,8 +326,11 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
-        let t = telemetry::tracer("db_insert", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        let t = tracing::info_span!(
+            "db_insert",
+            operation = "db_insert",
+            request_id = request_id
+        );
 
         let mut verified = false;
         let mut handles_bytes = vec![];
@@ -338,7 +351,7 @@ async fn execute_verify_proof_routine(
                 insert_ciphertexts(&mut txn, cts, blob_hash).await?;
 
                 info!(message = "Ciphertexts inserted", request_id);
-                t.set_attribute("count", count.to_string());
+                tracing::info!(parent: &t, count = count, "ciphertexts inserted");
             }
             Err(err) => {
                 error!(
@@ -349,7 +362,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        t.set_attribute("valid", verified.to_string());
+        tracing::info!(parent: &t, valid = verified, "db_insert result");
 
         // Mark as verified=true/false and set handles, if computed
         sqlx::query(
@@ -389,41 +402,57 @@ pub(crate) fn verify_proof(
     crs: &Crs,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-    span: telemetry::OtelTracer,
+    span: tracing::Span,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(key.sks.clone());
 
     // Step 1: Deserialize and verify the proof
-    let mut s_verify = span.child_span("verify_proof");
-    let verified_list = match verify_proof_only(request_id, raw_ct, key, crs, aux_data) {
-        Ok(list) => {
-            telemetry::attribute(&mut s_verify, "list_len", list.len().to_string());
-            telemetry::end_span(s_verify);
-            info!(message = "Proof verified successfully", request_id);
-            list
-        }
-        Err(err) => {
-            telemetry::end_span_with_err(s_verify, err.to_string());
-            return Err(err);
-        }
-    };
+    let s_verify = tracing::info_span!("verify_proof", operation = "verify_proof");
+    s_verify.set_parent(span.context());
+    let verified_list =
+        match s_verify.in_scope(|| verify_proof_only(request_id, raw_ct, key, crs, aux_data)) {
+            Ok(list) => {
+                tracing::info!(parent: &s_verify, list_len = list.len(), "proof verified");
+                info!(message = "Proof verified successfully", request_id);
+                list
+            }
+            Err(err) => {
+                s_verify
+                    .context()
+                    .span()
+                    .set_status(opentelemetry::trace::Status::Error {
+                        description: err.to_string().into(),
+                    });
+                return Err(err);
+            }
+        };
 
     // Step 2: Expand the verified ciphertext list
-    let mut s_expand = span.child_span("expand_ciphertext_list");
-    let mut cts = match expand_verified_list(request_id, &verified_list) {
+    let s_expand = tracing::info_span!(
+        "expand_ciphertext_list",
+        operation = "expand_ciphertext_list"
+    );
+    s_expand.set_parent(span.context());
+    let mut cts = match s_expand.in_scope(|| expand_verified_list(request_id, &verified_list)) {
         Ok(cts) => {
-            telemetry::attribute(&mut s_expand, "count", cts.len().to_string());
-            telemetry::end_span(s_expand);
+            tracing::info!(parent: &s_expand, count = cts.len(), "ciphertext list expanded");
             info!(message = "Ciphertext list expanded", request_id);
             cts
         }
         Err(err) => {
-            telemetry::end_span_with_err(s_expand, err.to_string());
+            s_expand
+                .context()
+                .span()
+                .set_status(opentelemetry::trace::Status::Error {
+                    description: err.to_string().into(),
+                });
             return Err(err);
         }
     };
 
-    let _s = span.child_span("create_ciphertext");
+    let _s_create_ct = tracing::info_span!("create_ciphertext", operation = "create_ciphertext");
+    _s_create_ct.set_parent(span.context());
+    let _s_create_ct_enter = _s_create_ct.enter();
 
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
@@ -507,7 +536,7 @@ fn create_ciphertext(
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-    span: &telemetry::OtelTracer,
+    span: &tracing::Span,
 ) -> Result<Ciphertext, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
         return Err(ExecutionError::TooManyInputs(ct_idx));
@@ -541,19 +570,23 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    let t = &mut span.child_span("create_handle");
-    telemetry::attribute(t, "request_id", request_id.to_string());
-    telemetry::attribute(t, "handle", hex::encode(handle.clone()));
-    telemetry::attribute(t, "chain_id", aux_data.chain_id.to_string());
-    telemetry::attribute(t, "ct_idx", ct_idx.to_string());
-    telemetry::attribute(t, "user_address", aux_data.user_address.clone());
-    telemetry::attribute(t, "contract_address", aux_data.contract_address.clone());
-    telemetry::attribute(t, "version", current_ciphertext_version().to_string());
-    telemetry::attribute(t, "type", serialized_type.to_string());
-    telemetry::attribute(
-        t,
-        "acl_contract_address",
-        aux_data.acl_contract_address.clone(),
+    let _create_handle_span = tracing::info_span!(
+        "create_handle",
+        operation = "create_handle",
+        ct_type = serialized_type as i64,
+        ct_idx = ct_idx as i64,
+        chain_id = %aux_data.chain_id,
+    );
+    _create_handle_span.set_parent(span.context());
+    let _create_handle_enter = _create_handle_span.enter();
+    tracing::info!(
+        request_id = request_id,
+        handle = %hex::encode(handle.clone()),
+        user_address = %aux_data.user_address,
+        contract_address = %aux_data.contract_address,
+        version = current_ciphertext_version(),
+        acl_contract_address = %aux_data.acl_contract_address,
+        "create_handle details"
     );
 
     info!(handle = ?encode(&handle), "Create new handle");

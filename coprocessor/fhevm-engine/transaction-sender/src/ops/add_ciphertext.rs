@@ -52,7 +52,8 @@ where
         let h = to_hex(handle);
 
         info!(handle = h, "Processing transaction");
-        let _t = telemetry::tracer("call_add_ciphertext", &src_transaction_id);
+        let _span = tracing::info_span!("call_add_ciphertext", operation = "call_add_ciphertext");
+        let _enter = _span.enter();
 
         let receipt = match self
             .provider
@@ -335,7 +336,11 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_add_ciphertext", &transaction_id);
+            let _span = tracing::info_span!(
+                "prepare_add_ciphertext",
+                operation = "prepare_add_ciphertext"
+            );
+            let _enter = _span.enter();
 
             let handle = row.handle.clone();
 
@@ -391,7 +396,8 @@ where
                     .into_transaction_request(),
             };
 
-            t.end();
+            drop(_enter);
+            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {
