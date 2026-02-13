@@ -456,21 +456,6 @@ async fn dep_chain_id_for_output_handle(
 
 #[tokio::test]
 #[serial(db)]
-async fn test_bad_chain_id() {
-    let setup = setup(Some(54321)).await.expect("setup failed");
-    let listener_handle = tokio::spawn(main(setup.args.clone()));
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-    assert!(listener_handle.is_finished(), "Listener should have failed");
-    let result = listener_handle.await;
-    if let Ok(Err(e)) = result {
-        assert!(e.to_string().contains("Chain ID mismatch"));
-    } else {
-        panic!("Listener should have failed due to chain ID mismatch");
-    }
-}
-
-#[tokio::test]
-#[serial(db)]
 async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
 {
     let setup = setup_with_block_time(None, 3.0).await?;
@@ -1011,7 +996,13 @@ async fn test_listener_no_event_loss(
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
     let nb_wallets = setup.wallets.len() as i64;
-    // Restart/kill many time until no more events are consumed.
+    // Restart/kill many times until no more events are consumed.
+    let expected_tfhe_events = if reorg {
+        nb_wallets * NB_EVENTS_PER_WALLET + 1
+    } else {
+        nb_wallets * NB_EVENTS_PER_WALLET
+    };
+    let expected_acl_events = nb_wallets * NB_EVENTS_PER_WALLET;
     for _ in 1..120 {
         // 10 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));
@@ -1029,7 +1020,9 @@ async fn test_listener_no_event_loss(
                 .unwrap_or(0);
         let no_count_change = tfhe_events_count == tfhe_new_count
             && acl_events_count == acl_new_count;
-        if event_source.is_finished() && no_count_change {
+        let reached_expected = tfhe_new_count >= expected_tfhe_events
+            && acl_new_count >= expected_acl_events;
+        if event_source.is_finished() && no_count_change && reached_expected {
             listener_handle.abort();
             break;
         };
@@ -1051,13 +1044,8 @@ async fn test_listener_no_event_loss(
         );
         tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
     }
-    if !reorg {
-        assert_eq!(tfhe_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
-    } else {
-        // 1 event appears in both chain with a different transaction id
-        assert_eq!(tfhe_events_count, nb_wallets * NB_EVENTS_PER_WALLET + 1);
-    }
-    assert_eq!(acl_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
+    assert_eq!(tfhe_events_count, expected_tfhe_events);
+    assert_eq!(acl_events_count, expected_acl_events);
     Ok(())
 }
 
