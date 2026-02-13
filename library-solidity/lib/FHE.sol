@@ -56,9 +56,6 @@ library FHE {
     /// @notice Returned if the decryption proof is empty.
     error EmptyDecryptionProof();
 
-    /// @notice Returned if the KMS signer to add is already a signer.
-    error KMSAlreadySigner();
-
     /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
