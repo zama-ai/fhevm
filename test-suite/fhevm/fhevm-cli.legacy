@@ -14,7 +14,7 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
-VERSION_MANIFEST="${SCRIPT_DIR}/scripts/lib/version-manifest.sh"
+VERSION_MANIFEST="${SCRIPT_DIR}/scripts/legacy/lib/version-manifest.sh"
 if [[ ! -f "$VERSION_MANIFEST" ]]; then
   echo -e "${RED}[ERROR]${RESET} ${BOLD}Version manifest not found: ${VERSION_MANIFEST}${RESET}"
   exit 1

@@ -19,7 +19,7 @@ setup_fixture() {
   TMP_DIR="$(mktemp -d)"
   FIXTURE="${TMP_DIR}/fhevm"
 
-  mkdir -p "${FIXTURE}/scripts" "${FIXTURE}/scripts/bun" "${FIXTURE}/scripts/lib" "${FIXTURE}/scripts/tests"
+  mkdir -p "${FIXTURE}/scripts" "${FIXTURE}/scripts/bun" "${FIXTURE}/scripts/legacy/lib" "${FIXTURE}/scripts/tests"
   mkdir -p "${FIXTURE}/docker-compose" "${FIXTURE}/env/staging" "${FIXTURE}/config/relayer" "${FIXTURE}/mock-bin"
 
   cp "${FHEVM_DIR}/fhevm-cli" "${FIXTURE}/fhevm-cli"
@@ -27,8 +27,8 @@ setup_fixture() {
   cp "${FHEVM_DIR}/scripts/deploy-fhevm-stack.sh" "${FIXTURE}/scripts/deploy-fhevm-stack.sh"
   cp "${FHEVM_DIR}/scripts/deploy-fhevm-stack.legacy.sh" "${FIXTURE}/scripts/deploy-fhevm-stack.legacy.sh"
   cp "${FHEVM_DIR}/scripts/setup-kms-signer-address.sh" "${FIXTURE}/scripts/setup-kms-signer-address.sh"
-  cp "${FHEVM_DIR}/scripts/lib/deploy-manifest.sh" "${FIXTURE}/scripts/lib/deploy-manifest.sh"
-  cp "${FHEVM_DIR}/scripts/lib/version-manifest.sh" "${FIXTURE}/scripts/lib/version-manifest.sh"
+  cp "${FHEVM_DIR}/scripts/legacy/lib/deploy-manifest.sh" "${FIXTURE}/scripts/legacy/lib/deploy-manifest.sh"
+  cp "${FHEVM_DIR}/scripts/legacy/lib/version-manifest.sh" "${FIXTURE}/scripts/legacy/lib/version-manifest.sh"
   cp "${FHEVM_DIR}/scripts/bun/cli.ts" "${FIXTURE}/scripts/bun/cli.ts"
   cp "${FHEVM_DIR}/scripts/bun/process.ts" "${FIXTURE}/scripts/bun/process.ts"
   cp "${FHEVM_DIR}/scripts/bun/manifest.ts" "${FIXTURE}/scripts/bun/manifest.ts"
@@ -49,7 +49,7 @@ relayer: local
 RELAYER
 
   # shellcheck source=/dev/null
-  source "${FIXTURE}/scripts/lib/deploy-manifest.sh"
+  source "${FIXTURE}/scripts/legacy/lib/deploy-manifest.sh"
 
   local component
   while IFS= read -r component; do

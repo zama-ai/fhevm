@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEFAULT_COMPLETE_SERVICES="fhevm-minio-setup coprocessor-db-migration kms-connector-db-migration gateway-deploy-mocked-zama-oft gateway-set-relayer-mocked-payment gateway-sc-deploy gateway-sc-add-network gateway-sc-trigger-keygen gateway-sc-trigger-crsgen gateway-sc-add-pausers host-sc-deploy host-sc-add-pausers"
+COMPONENTS=("minio" "core" "database" "host-node" "gateway-node" "coprocessor" "kms-connector" "gateway-mocked-payment" "gateway-sc" "host-sc" "relayer" "test-suite")
 
 TEST_TMP_DIR=""
 FIXTURE_ROOT=""
@@ -27,7 +28,6 @@ setup_fixture() {
   FIXTURE_ROOT="${TEST_TMP_DIR}/fhevm"
   COMMAND_LOG="${TEST_TMP_DIR}/commands.log"
 
-  mkdir -p "${FIXTURE_ROOT}/scripts/lib"
   mkdir -p "${FIXTURE_ROOT}/scripts/bun"
   mkdir -p "${FIXTURE_ROOT}/env/staging"
   mkdir -p "${FIXTURE_ROOT}/config/relayer"
@@ -35,8 +35,6 @@ setup_fixture() {
   mkdir -p "${FIXTURE_ROOT}/mock-bin"
 
   cp "${SCRIPTS_ROOT}/deploy-fhevm-stack.sh" "${FIXTURE_ROOT}/scripts/deploy-fhevm-stack.sh"
-  cp "${SCRIPTS_ROOT}/lib/deploy-manifest.sh" "${FIXTURE_ROOT}/scripts/lib/deploy-manifest.sh"
-  cp "${SCRIPTS_ROOT}/lib/version-manifest.sh" "${FIXTURE_ROOT}/scripts/lib/version-manifest.sh"
   cp "${SCRIPTS_ROOT}/bun/cli.ts" "${FIXTURE_ROOT}/scripts/bun/cli.ts"
   cp "${SCRIPTS_ROOT}/bun/manifest.ts" "${FIXTURE_ROOT}/scripts/bun/manifest.ts"
   cp "${SCRIPTS_ROOT}/bun/process.ts" "${FIXTURE_ROOT}/scripts/bun/process.ts"
@@ -52,11 +50,8 @@ SETUP
 
   echo "relayer: config" > "${FIXTURE_ROOT}/config/relayer/local.yaml"
 
-  # shellcheck source=/dev/null
-  source "${FIXTURE_ROOT}/scripts/lib/deploy-manifest.sh"
-
   local component
-  while IFS= read -r component; do
+  for component in "${COMPONENTS[@]}"; do
     local env_file="${FIXTURE_ROOT}/env/staging/.env.${component}"
     if [[ "${component}" == "coprocessor" ]]; then
       cat > "${env_file}" <<'ENV'
@@ -71,7 +66,7 @@ ENV
     cat > "${FIXTURE_ROOT}/docker-compose/${component}-docker-compose.yml" <<'YAML'
 services: {}
 YAML
-  done < <(fhevm_manifest_step_components)
+  done
 
   cat > "${FIXTURE_ROOT}/mock-bin/docker" <<'DOCKER'
 #!/bin/bash

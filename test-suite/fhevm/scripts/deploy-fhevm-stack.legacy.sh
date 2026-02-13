@@ -23,8 +23,8 @@ log_error() {
 PROJECT="fhevm"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-DEPLOY_MANIFEST_PATH="${SCRIPT_DIR}/lib/deploy-manifest.sh"
-VERSION_MANIFEST_PATH="${SCRIPT_DIR}/lib/version-manifest.sh"
+DEPLOY_MANIFEST_PATH="${SCRIPT_DIR}/legacy/lib/deploy-manifest.sh"
+VERSION_MANIFEST_PATH="${SCRIPT_DIR}/legacy/lib/version-manifest.sh"
 
 if [[ ! -f "$DEPLOY_MANIFEST_PATH" ]]; then
     log_error "Deploy manifest not found: $DEPLOY_MANIFEST_PATH"
