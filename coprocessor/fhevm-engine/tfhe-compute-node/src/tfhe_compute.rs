@@ -4,15 +4,14 @@ use crate::{
     CiphertextInfo, ComputeError, DeliveryInfo, FheTask, CONSUMER_OVERHEAD, RUNNING_TASKS,
 };
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
-use fhevm_engine_common::types::Handle;
+use fhevm_engine_common::utils::create_recv_channel;
 use futures_util::stream::StreamExt;
-use lapin::Consumer;
-use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
+use lapin::options::*;
 use scheduler::dfg::scheduler;
 use sqlx::types::Uuid;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use tokio::task::{futures, JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -48,7 +47,7 @@ async fn tfhe_compute_cycle(args: &Args, worker_id: Uuid) -> Result<(), ComputeE
     // Never deliver more than prefetch_count un-acked messages to that worker
     // Thus, automatically route jobs to workers with available capacity
     let prefetch_count = 4u16; // TODO:
-    let mut shared_queue = initialize_rmq(
+    let mut shared_queue = create_recv_channel(
         &args.rmq_uri,
         &node_name,
         "shared_tfhe_queue",
@@ -57,7 +56,7 @@ async fn tfhe_compute_cycle(args: &Args, worker_id: Uuid) -> Result<(), ComputeE
     .await?;
 
     let prefetch_count = 1u16; // TODO:
-    let mut local_queue = initialize_rmq(
+    let mut local_queue = create_recv_channel(
         &args.rmq_uri,
         &node_name,
         "local_tfhe_queue",
@@ -111,7 +110,7 @@ async fn tfhe_compute_cycle(args: &Args, worker_id: Uuid) -> Result<(), ComputeE
 
         // Spawn blocking task to execute the partition
         if let Err(e) = spawn_partition_execution(ctx.clone(), &mut set, delivery).await {
-            error!(error = %e, "Failed to spawn partition execution");
+            error!(error = ?e, "Failed to spawn partition execution");
         }
     }
 
@@ -172,7 +171,7 @@ async fn spawn_partition_execution(
             }
         };
        let outputs_count = outputs.0.len();
-       let cts = Vec::new(); // TODO: convert outputs to ciphertexts
+       let mut output_cts = Vec::new(); // TODO: convert outputs to ciphertexts
         for (handle, output) in outputs.0.into_iter() {
             let result = match output {
                 Ok(ct) => ct,
@@ -183,16 +182,17 @@ async fn spawn_partition_execution(
             };
 
             let ct = CiphertextInfo { handle: handle.clone(), ciphertext : result.ct};
-
-            // TODO: Ensure redis always stores successfully
-            // TODO: Consider retries or dead-letter queue on failure
-            ctx.redis_store(ct.clone()).await.unwrap();
-            ctx.cache_store(ct).await;
-            info!( partition_id, handle = %hex::encode(&handle), "Stored computed ciphertext in redis and cache");
+            ctx.cache_store(&ct).await;
+            output_cts.push(ct);
+            info!( partition_id, handle = %hex::encode(&handle), "Stored computed ciphertext in cache");
         }
 
         // batch store to Redis for better performance
-        ctx.redis_batch_store(cts).await.unwrap(); // TODO:
+        // TODO: Ensure redis always stores all outputs
+        // TODO: Consider retries or dead-letter queue on failure
+        ctx.redis_batch_store(output_cts).await.unwrap(); // TODO: handle errors properly
+
+        info!( partition_id, "Stored computed ciphertext in redis");
 
         // Once acknowledged, we can continue to process the next message
         if let Err(err) = delivery.inner.ack(BasicAckOptions::default()).await {
@@ -208,39 +208,4 @@ async fn spawn_partition_execution(
     });
 
     Ok(())
-}
-
-/// Initializes RabbitMQ connection and consumer for the given queue
-async fn initialize_rmq(
-    uri: &str,
-    node_name: &str,
-    queue_name: &str,
-    prefetch_count: u16,
-) -> Result<Consumer, ComputeError> {
-    let conn = Connection::connect(uri, ConnectionProperties::default()).await?;
-    let channel = conn.create_channel().await?;
-
-    // Set prefetch count for fair dispatch
-    channel
-        .basic_qos(prefetch_count, BasicQosOptions::default())
-        .await?;
-
-    let queue = channel
-        .queue_declare(
-            queue_name,
-            QueueDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
-
-    let consumer = channel
-        .basic_consume(
-            queue.name().as_str(),
-            node_name,
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
-
-    Ok(consumer)
 }

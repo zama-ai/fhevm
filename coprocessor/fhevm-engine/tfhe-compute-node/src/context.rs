@@ -110,12 +110,12 @@ impl Context {
         Ok(keys.server_key.clone())
     }
 
-    pub(crate) async fn cache_store(&self, ct: CiphertextInfo) {
+    pub(crate) async fn cache_store(&self, ct: &CiphertextInfo) {
         let mut cache = self.ciphertext_cache.write().await;
         if cache.contains(&ct.handle) {
             return;
         }
-        cache.put(ct.handle.clone(), ct);
+        cache.put(ct.handle.clone(), ct.clone());
     }
 
     pub(crate) async fn cache_get(&self, handle: &Handle) -> Option<CiphertextInfo> {
@@ -213,7 +213,7 @@ impl Context {
             REDIS_HITS_COUNTER.inc();
 
             let ct = self.deserialize_redis_entry(handle.clone(), bytes)?;
-            self.cache_store(ct.clone()).await;
+            self.cache_store(&ct).await;
             return Ok(ct);
         }
 
@@ -240,7 +240,7 @@ impl Context {
 
                 if let Ok(Some(value)) = conn.get::<_, Option<Vec<u8>>>(&key).await {
                     let ct = self.deserialize_redis_entry(handle.clone(), value.clone())?;
-                    self.cache_store(ct.clone()).await;
+                    self.cache_store(&ct).await;
                     return Ok(ct);
                 }
             }
