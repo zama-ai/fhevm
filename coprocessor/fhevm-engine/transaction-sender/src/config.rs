@@ -29,6 +29,8 @@ pub struct ConfigSettings {
 
     pub send_txn_sync_timeout_secs: u16,
 
+    pub debug_trace_timeout_secs: u16,
+
     pub review_after_unlimited_retries: u16,
 
     pub health_check_port: u16,
@@ -62,6 +64,7 @@ impl Default for ConfigSettings {
             allow_handle_batch_limit: 10,
             allow_handle_max_retries: i32::MAX,
             send_txn_sync_timeout_secs: 4,
+            debug_trace_timeout_secs: 30,
             review_after_unlimited_retries: 30,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),

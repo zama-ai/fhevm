@@ -6,7 +6,7 @@ use crate::{
     REVIEW,
 };
 
-use super::common::try_into_array;
+use super::common::{classify_failed_receipt, try_extract_terminal_config_error, try_into_array};
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -74,27 +74,40 @@ where
                     .await?;
                 return Ok(());
             }
-            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
-            // Local usage are included as they might be transient due to external AWS KMS signers.
-            Err(e)
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
-                    || matches!(&e, RpcError::LocalUsageError(_)) =>
-            {
-                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
-                warn!(
-                    error = %e,
-                    handle = h,
-                    "Transaction sending failed with unlimited retry error"
-                );
-                self.increment_txn_unlimited_retries_count(
-                    handle,
-                    &e.to_string(),
-                    current_unlimited_retries_count,
-                )
-                .await?;
-                bail!(e);
-            }
             Err(e) => {
+                if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    error!(
+                        error = %terminal_config_error,
+                        handle = h,
+                        "Detected non-retryable gateway coprocessor config error while adding ciphertext"
+                    );
+                    self.mark_add_ciphertext_terminal_config_error(
+                        handle,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Local usage are included as they might be transient due to external AWS KMS signers.
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_))
+                {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %e,
+                        handle = h,
+                        "Transaction sending failed with unlimited retry error"
+                    );
+                    self.increment_txn_unlimited_retries_count(
+                        handle,
+                        &e.to_string(),
+                        current_unlimited_retries_count,
+                    )
+                    .await?;
+                    bail!(e);
+                }
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
                     error = %e,
@@ -134,19 +147,43 @@ where
                 "addCiphertext txn failed"
             );
 
-            self.increment_txn_limited_retries_count(
-                handle,
-                "receipt status = false",
-                current_limited_retries_count,
+            match classify_failed_receipt(
+                &self.provider,
+                &receipt,
+                Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
-            .await?;
-
-            return Err(anyhow::anyhow!(
-                "Transaction {} failed with status {}, handle: {}",
-                receipt.transaction_hash,
-                receipt.status(),
-                h,
-            ));
+            .await
+            {
+                Ok(terminal_config_error) => {
+                    error!(
+                        error = %terminal_config_error,
+                        transaction_hash = %receipt.transaction_hash,
+                        handle = h,
+                        "Terminalizing addCiphertext due to gateway coprocessor config error from debug trace"
+                    );
+                    self.mark_add_ciphertext_terminal_config_error(
+                        handle,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                Err(reason) => {
+                    self.increment_txn_limited_retries_count(
+                        handle,
+                        &reason,
+                        current_limited_retries_count,
+                    )
+                    .await?;
+                    return Err(anyhow::anyhow!(
+                        "Transaction {} failed with status {}, handle: {}, reason: {}",
+                        receipt.transaction_hash,
+                        receipt.status(),
+                        h,
+                        reason,
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -292,6 +329,32 @@ where
         )
         .execute(&self.db_pool)
         .await?;
+        Ok(())
+    }
+
+    async fn mark_add_ciphertext_terminal_config_error(
+        &self,
+        handle: &[u8],
+        error: &str,
+    ) -> anyhow::Result<()> {
+        let res = sqlx::query(
+            "UPDATE ciphertext_digest
+            SET
+                txn_limited_retries_count = $1,
+                txn_last_error = $2,
+                txn_last_error_at = NOW()
+            WHERE handle = $3",
+        )
+        .bind(self.conf.add_ciphertexts_max_retries)
+        .bind(error)
+        .bind(handle)
+        .execute(&self.db_pool)
+        .await?;
+        anyhow::ensure!(
+            res.rows_affected() != 0,
+            "No rows updated when marking add_ciphertext terminal config error for handle {}",
+            to_hex(handle)
+        );
         Ok(())
     }
 }

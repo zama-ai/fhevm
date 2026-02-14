@@ -1,3 +1,4 @@
+use super::common::{classify_failed_receipt, try_extract_terminal_config_error};
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -159,6 +160,19 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
+                } else if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    error!(
+                        zk_proof_id = txn_request.0,
+                        error = %terminal_config_error,
+                        "Detected non-retryable gateway coprocessor config error while sending verify_proof transaction"
+                    );
+                    self.mark_verify_proof_terminal_config_error(
+                        txn_request.0,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
@@ -199,19 +213,71 @@ where
                 status = receipt.status(),
                 "Transaction failed"
             );
-            self.update_retry_count_by_proof_id(
-                txn_request.0,
-                current_retry_count,
-                "receipt status = false",
+            match classify_failed_receipt(
+                &self.provider,
+                &receipt,
+                Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
-            .await?;
-            return Err(anyhow::anyhow!(
-                "Transaction {} for zk_proof_id {} failed with status {}",
-                receipt.transaction_hash,
-                txn_request.0,
-                receipt.status(),
-            ));
+            .await
+            {
+                Ok(terminal_config_error) => {
+                    error!(
+                        zk_proof_id = txn_request.0,
+                        transaction_hash = %receipt.transaction_hash,
+                        error = %terminal_config_error,
+                        "Terminalizing verify_proof due to gateway coprocessor config error from debug trace"
+                    );
+                    self.mark_verify_proof_terminal_config_error(
+                        txn_request.0,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                Err(reason) => {
+                    self.update_retry_count_by_proof_id(
+                        txn_request.0,
+                        current_retry_count,
+                        &reason,
+                    )
+                    .await?;
+                    return Err(anyhow::anyhow!(
+                        "Transaction {} for zk_proof_id {} failed with status {}, reason: {}",
+                        receipt.transaction_hash,
+                        txn_request.0,
+                        receipt.status(),
+                        reason,
+                    ));
+                }
+            }
         }
+        Ok(())
+    }
+
+    async fn mark_verify_proof_terminal_config_error(
+        &self,
+        zk_proof_id: i64,
+        error: &str,
+    ) -> anyhow::Result<()> {
+        // Intentionally set retry_count to max so existing max-retry cleanup logic can run unchanged when enabled.
+        let res = sqlx::query(
+            "UPDATE verify_proofs
+            SET
+                retry_count = $2,
+                last_error = $3,
+                last_retry_at = NOW()
+            WHERE zk_proof_id = $1",
+        )
+        .bind(zk_proof_id)
+        .bind(self.conf.verify_proof_resp_max_retries as i32)
+        .bind(error)
+        .execute(&self.db_pool)
+        .await?;
+        anyhow::ensure!(
+            res.rows_affected() != 0,
+            "No rows updated when marking verify_proof terminal config error for zk_proof_id {}",
+            zk_proof_id
+        );
         Ok(())
     }
 }
