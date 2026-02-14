@@ -34,8 +34,7 @@ fi
 
 log_info "Signing Key ID: $KEY_SIGNER_ID"
 log_info "Retrieving KMS signer address from $SIGNER_ADDRESS_URL"
-curl -O "$SIGNER_ADDRESS_URL"
-SIGNER_ADDRESS=$(cat "$KEY_SIGNER_ID")
+SIGNER_ADDRESS=$(curl -sSf "$SIGNER_ADDRESS_URL")
 
 # Validate the address format (should be a hex address)
 if [[ ! "$SIGNER_ADDRESS" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
