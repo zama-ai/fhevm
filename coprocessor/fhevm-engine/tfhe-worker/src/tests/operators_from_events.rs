@@ -10,19 +10,23 @@ use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 
-use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
+use crate::tests::test_cases::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_allowed_handles_computed};
 use crate::tests::utils::{setup_test_app, TestInstance};
 
-use crate::tests::operators::BinaryOperatorTestCase;
-use crate::tests::operators::UnaryOperatorTestCase;
+use crate::tests::test_cases::BinaryOperatorTestCase;
+use crate::tests::test_cases::UnaryOperatorTestCase;
 
 use super::utils::default_dependence_cache_size;
 
 pub fn supported_types() -> &'static [i32] {
     &[
         0, // bool
-        8, // 256 bit
+        1, // 4 bit
+        2, // 8 bit
+        3, // 16 bit
+        4, // 32 bit
+        5, // 64 bit
     ]
 }
 
@@ -272,7 +276,7 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
 }
 
 #[tokio::test]
-async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     use fhevm_engine_common::types::SupportedFheOperations as S;
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -421,7 +425,7 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
-async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -512,7 +516,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[tokio::test]
-async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -679,7 +683,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
 }
 
 #[tokio::test]
-async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -779,7 +783,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -878,4 +882,69 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn test_invalid_operation_marks_error() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+
+    let output_handle = next_handle().to_vec();
+    let tx_id = next_handle().to_vec();
+    let dcid = next_handle().to_vec();
+    sqlx::query(
+        r#"
+        INSERT INTO computations (
+            output_handle,
+            dependencies,
+            fhe_operation,
+            is_scalar,
+            dependence_chain_id,
+            transaction_id,
+            is_allowed,
+            created_at,
+            schedule_order,
+            is_completed,
+            host_chain_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
+        "#,
+    )
+    .bind(&output_handle)
+    .bind(Vec::<Vec<u8>>::new())
+    .bind(127_i16)
+    .bind(false)
+    .bind(dcid)
+    .bind(tx_id.clone())
+    .bind(true)
+    .bind(false)
+    .bind(42_i64)
+    .execute(&pool)
+    .await?;
+
+    let mut last_error_message: Option<String> = None;
+    for _ in 0..80 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        let row = sqlx::query_as::<_, (bool, Option<String>)>(
+            "SELECT is_error, error_message FROM computations WHERE output_handle = $1 AND transaction_id = $2",
+        )
+        .bind(&output_handle)
+        .bind(&tx_id)
+        .fetch_one(&pool)
+        .await?;
+        last_error_message = row.1.clone();
+        if row.0 {
+            let msg = row.1.unwrap_or_default();
+            assert!(msg.contains("Unknown fhe operation"));
+            return Ok(());
+        }
+    }
+
+    panic!(
+        "timed out waiting for computation error flag, last error_message={:?}",
+        last_error_message
+    );
 }
