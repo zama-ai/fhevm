@@ -1,0 +1,297 @@
+# Solana Host Listener Testing Tiers
+
+Date: 2026-02-09
+Last synced: 2026-02-12
+Status: Active
+
+## Goal
+
+Define a strict local feedback ladder with increasing confidence and cost:
+
+1. very fast host-program loop (Mollusk)
+2. fast listener mapping loop
+3. DB-level ingestion/replay checks
+4. local validator integration
+5. full e2e extension
+
+## Tier Ladder
+
+```mermaid
+flowchart TD
+  Tm1["Tier -1: Mollusk host-program smoke (<=5s warm)"] --> T0["Tier 0: Mapping unit tests (<=5s)"]
+  T0 --> T1["Tier 1: DB assertions (15-45s)"]
+  T1 --> T2["Tier 2: Local validator + listener (1-3 min)"]
+  T2 --> T3["Tier 3: Full coprocessor e2e (5-10 min)"]
+```
+
+## Tier Matrix
+
+| Tier | Loop | Scope | Required infra | Current status |
+|---|---|---|---|---|
+| T-1 | <=5s (warm) | host-program execution smoke (`request_add`) | none | Implemented (Mollusk) |
+| T0 | <=5s | Event -> canonical mapping only | none | Implemented |
+| T1 | 15-45s | Canonical DB effects + cursor checks | Postgres | Implemented (assert script) |
+| T2 | 1-3 min | Local validator + host program + listener ingest | Postgres + solana-test-validator | Implemented (real finalized RPC source + DB assertions) |
+| T3 | 5-10 min | Scheduler/worker path after ingest + decrypt sanity | full local stack | Implemented (10 localnet ignored tests) |
+
+## T-1: Mollusk Host Smoke
+
+Purpose:
+
+1. Validate host program instruction execution in-process with near-zero setup.
+2. Keep a very fast red/green loop before touching validator/docker tiers.
+
+Command:
+
+```bash
+cd <repo-root>/solana/host-programs
+anchor build
+cargo test -p zama_host --test mollusk_smoke
+```
+
+Notes:
+
+1. `mollusk_smoke` now covers one success path and known HCU revert paths (`InvalidHcuAuthority`, tx HCU cap, depth cap, tracked-handle cap).
+2. Tests use Anchor-generated instruction data (no hardcoded discriminators).
+
+## T0: Fast Mapping Loop
+
+Purpose:
+
+1. Prove mapping contract quickly.
+2. Catch regressions before touching infra.
+
+Command:
+
+```bash
+cd <repo-root>/coprocessor/fhevm-engine
+cargo test -p solana-listener database::ingest::tests
+```
+
+Pass gates:
+
+1. `request_add` maps to one `computations` action.
+2. `allow` maps to one `allowed_handles` and one `pbs_computations` action.
+3. Generic opcode events map to expected TFHE operations (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
+4. `schedule_order` remains deterministic.
+
+Cross-chain parity diff (EVM vs Solana ingest semantics):
+
+1. Script: `<repo-root>/test-suite/fhevm/scripts/solana-evm-parity-diff.sh`
+2. Test: `database::ingest::tests::parity_diff_matches_evm_semantics_for_v0_surface`
+3. Scope: normalized canonical effects for `add/sub/binary/unary/if_then_else/cast/trivial_encrypt/rand/rand_bounded/allow`.
+
+Cross-chain runtime parity slice (`add + allow + decrypt`):
+
+1. Script: `<repo-root>/test-suite/fhevm/scripts/solana-evm-runtime-parity-diff.sh`
+2. Solana source: `localnet_solana_request_add_runtime_parity_value`
+3. EVM source: `test-suite/e2e/scripts/smoke-inputflow.ts` (`SMOKE_DECRYPT_VALUE=...`)
+4. Current comparison contract: both sides must decrypt to `49` for the parity slice.
+
+## T1: DB Assertion Loop
+
+Purpose:
+
+1. Validate exact row-level outcomes.
+2. Validate replay/idempotency behavior.
+
+Script:
+
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh`
+
+Example:
+
+```bash
+<repo-root>/test-suite/fhevm/scripts/solana-poc-tier1-db-assert.sh \
+  --database-url postgresql://postgres:postgres@localhost:5432/coprocessor \
+  --tenant-id 1 \
+  --host-chain-id 4242 \
+  --expected-computations 1 \
+  --expected-allowed 1 \
+  --expected-pbs 1 \
+  --min-cursor 1
+```
+
+Pass gates:
+
+1. Exact expected counts for `computations`, `allowed_handles`, `pbs_computations`.
+2. Cursor exists and `last_caught_up_block >= min_cursor`.
+
+## T2: Localnet Integration Loop
+
+Purpose:
+
+1. Validate host program emission on local validator.
+2. Validate listener ingestion path with restart/replay checks.
+
+Script:
+
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier2-localnet.sh`
+
+Current behavior:
+
+1. validates prerequisites
+2. runs Tier 0 tests
+3. builds Anchor program
+4. starts local validator
+5. prepares localnet environment for Tier 2 listener ingestion checks
+
+Primary in-process runner (Rust + testcontainers):
+
+`<repo-root>/coprocessor/fhevm-engine/solana-listener/tests/localnet_harness_integration.rs`
+
+Command:
+
+```bash
+cd <repo-root>/coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p solana-listener \
+  --features solana-e2e \
+  --test localnet_harness_integration \
+  -- --ignored --nocapture --test-threads=1
+```
+
+Notes:
+
+1. Starts Postgres and Solana validator in Docker via Rust `testcontainers`.
+2. Runs DB migrations and validates finalized RPC readiness.
+3. Builds and mounts host program, submits `request_add` + `allow`, ingests via real finalized RPC source, and asserts DB rows + cursor advancement.
+4. Includes replay idempotency assertion (`new rows = 0`) on emit-only flow.
+5. Includes worker-queue readiness assertion on ingested rows (`is_allowed=true`, `is_completed=false`, non-null `transaction_id`) so data is consumable by `tfhe-worker` dequeue query.
+
+## T3: Full E2E Loop
+
+Purpose:
+
+1. validate post-ingest scheduler/worker behavior
+2. validate end-to-end effect after canonical DB rows are produced
+3. validate semantic correctness via decrypt sanity check
+
+Primary test:
+
+`localnet_solana_request_add_computes_and_decrypts`
+
+Additional tests:
+
+1. `localnet_solana_request_sub_computes_and_decrypts`
+2. `localnet_solana_request_binary_ops_computes_and_decrypts`
+3. `localnet_solana_request_unary_ops_computes_and_decrypts`
+4. `localnet_solana_request_if_then_else_computes_and_decrypts`
+5. `localnet_solana_request_cast_computes_and_decrypts`
+6. `localnet_solana_request_trivial_encrypt_computes_and_decrypts`
+7. `localnet_solana_request_rand_computes_and_decrypts`
+8. `localnet_solana_request_rand_bounded_computes_and_decrypts`
+9. `localnet_acl_gate_blocks_then_allows_compute`
+
+Runner script:
+
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`
+
+Example:
+
+```bash
+<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
+```
+
+Supported `--case` values: `emit | sub | binary | unary | ite | cast | trivial | rand | rand-bounded | acl | all`.
+
+Latest full parity run (2026-02-11):
+
+1. Command: `<repo-root>/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all`
+2. Result: all 10 Tier-3 cases passed (`EXIT_CODE=0`).
+3. Durations:
+   - `add` 62.31s
+   - `sub` 61.98s
+   - `binary` 172.62s
+   - `unary` 104.92s
+   - `if_then_else` 62.16s
+   - `cast` 52.25s
+   - `trivial_encrypt` 45.93s
+   - `rand` 51.24s
+   - `rand_bounded` 49.84s
+   - `acl` 57.25s
+
+Coverage:
+
+1. Seeds tenant keys in DB.
+2. Seeds required ciphertext handles via worker `trivial_encrypt` gRPC (binary/unary/ternary inputs depending on op).
+3. Emits Solana `request_add` / `request_sub` / `request_if_then_else` / `request_cast` and ingests via finalized RPC source.
+4. Asserts worker completes the queued computation and writes output ciphertext.
+5. Decrypts output handle and asserts expected plaintext value.
+6. Asserts DB contract shape for new op tests (`fhe_operation`, `is_scalar`, `dependencies`) before worker completion.
+7. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
+8. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
+9. Binary runtime slice is intentionally scoped to representative fast ops in this harness; `mul` is excluded from Tier-3 fast loop due current per-op runtime budget constraints.
+
+## T2.5: Explorer-Visible CLI Loop
+
+Purpose:
+
+1. Run a direct local validator flow without testcontainers so txs are visible in explorer.
+2. Keep fast demo/instrumentation loop with machine-readable outputs.
+
+Primary script (one command):
+
+`<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh`
+
+Command:
+
+```bash
+<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh
+```
+
+Binary (called by the script):
+
+`<repo-root>/coprocessor/fhevm-engine/solana-listener/src/bin/solana_poc_runner.rs`
+
+Flow:
+
+1. Builds host program + IDL (`anchor build`).
+2. Starts `solana-test-validator` with `--bpf-program <canonical_program_id> <zama_host.so>` unless RPC is already healthy.
+3. Runs `solana_poc_runner` against local RPC.
+4. Runner auto-publishes IDL (`anchor idl init`, fallback `anchor idl upgrade`) for explorer decode, submits `request_add` + `allow`, ingests via finalized RPC source, and prints explorer URLs + DB counters.
+5. Optional Postgres mode remains Docker by default (`--postgres-mode docker`).
+6. Cleanup defaults are fail-safe for disk usage:
+   - validator started by script is stopped on exit
+   - script-created ledger dir is removed
+   - Docker Postgres is removed by runner default
+
+Optional keep flags:
+
+```bash
+<repo-root>/test-suite/fhevm/scripts/solana-poc-explorer-demo.sh --keep-validator --keep-ledger
+```
+
+## Canonical v0 Sanity Acceptance (single flow)
+
+Flow:
+
+1. `request_add -> ingest -> compute -> allow -> decrypt`.
+
+Pass conditions:
+
+1. exactly one `computations` row is inserted for the requested output handle.
+2. row ordering is deterministic (`schedule_order = slot_time + tx_index + op_index`).
+3. exactly one `allowed_handles` row and one `pbs_computations` row are inserted after `allow`.
+4. replaying the same finalized range inserts `0` new rows.
+5. worker completes the output handle (`is_completed=true`, `is_error=false`).
+6. decrypted output plaintext matches expected arithmetic result.
+
+Reference command:
+
+```bash
+cd <repo-root>/coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p solana-listener \
+  --features solana-e2e \
+  --test localnet_harness_integration \
+  localnet_solana_request_add_computes_and_decrypts \
+  -- --ignored --nocapture --test-threads=1
+```
+
+## Hard Gates
+
+For any tier >= T1:
+
+1. `missed_ops = 0`
+2. `duplicate_effects = 0`
+3. deterministic ordering
+4. same DB contract for `emit!`

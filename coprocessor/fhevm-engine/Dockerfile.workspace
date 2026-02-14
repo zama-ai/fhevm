@@ -73,6 +73,7 @@ COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gat
 # Copy Rust sources and dependencies
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
+COPY solana/host-programs ./solana/host-programs
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
