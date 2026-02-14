@@ -113,6 +113,13 @@ struct Args {
         help = "Dependence chain are across blocks"
     )]
     pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast)"
+    )]
+    pub dependent_ops_max_per_chain: u32,
 }
 
 #[tokio::main]
@@ -149,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,
+        dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
     };
 
     run_poller(config).await

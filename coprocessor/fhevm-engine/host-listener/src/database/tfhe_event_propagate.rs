@@ -7,15 +7,19 @@ use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::SchedulePriority;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
@@ -36,10 +40,24 @@ pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
 
+static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
+    || {
+        register_int_counter_vec!(
+            "host_listener_slow_lane_marked_chains_total",
+            "Number of dependence chains marked slow by host-listener classification",
+            &["chain_id"]
+        )
+        .expect("host-listener slow-lane metric must register")
+    },
+);
+
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
+    // Ingest-only metadata for slow-lane inheritance propagation.
+    // Not used by scheduler execution ordering.
+    pub inheritance_parents: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,
@@ -50,7 +68,8 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-
+const SLOW_LANE_RESET_ADVISORY_LOCK_KEY: i64 = 1_907_001;
+const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
@@ -88,6 +107,7 @@ pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
+    chain_id_label: String,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
 }
@@ -122,10 +142,109 @@ impl Database {
         Ok(Database {
             url: url.clone(),
             chain_id,
+            chain_id_label: chain_id.to_string(),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
+    }
+
+    pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
+        if count > 0 {
+            SLOW_LANE_MARKED_CHAINS_TOTAL
+                .with_label_values(&[self.chain_id_label.as_str()])
+                .inc_by(count);
+        }
+    }
+
+    pub async fn promote_all_dep_chains_to_fast_priority(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let mut connection = self.pool().await.acquire().await?;
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+            .execute(connection.deref_mut())
+            .await?;
+
+        let rows = async {
+            let mut total_promoted: u64 = 0;
+            loop {
+                let updated = sqlx::query(
+                    r#"
+                    WITH candidate AS (
+                        SELECT dependence_chain_id
+                        FROM dependence_chain
+                        WHERE schedule_priority <> $1
+                        ORDER BY dependence_chain_id
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE dependence_chain dc
+                    SET schedule_priority = $1
+                    FROM candidate
+                    WHERE dc.dependence_chain_id = candidate.dependence_chain_id
+                    "#,
+                )
+                .bind(i16::from(SchedulePriority::Fast))
+                .bind(SLOW_LANE_RESET_BATCH_SIZE)
+                .execute(connection.deref_mut())
+                .await?
+                .rows_affected();
+
+                total_promoted = total_promoted.saturating_add(updated);
+                if updated == 0 {
+                    break;
+                }
+            }
+            Ok(total_promoted)
+        }
+        .await;
+
+        let unlock_res =
+            sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
+                .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+                .fetch_one(connection.deref_mut())
+                .await;
+        if let Err(err) = unlock_res {
+            warn!(error = %err, "Failed to release slow-lane reset advisory lock");
+        }
+
+        rows
+    }
+
+    pub async fn find_slow_dep_chain_ids(
+        &self,
+        tx: &mut Transaction<'_>,
+        dep_chain_ids: &[Vec<u8>],
+    ) -> Result<HashSet<ChainHash>, SqlxError> {
+        if dep_chain_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT dependence_chain_id
+            FROM dependence_chain
+            WHERE schedule_priority = $1
+              AND dependence_chain_id = ANY($2::bytea[])
+            "#,
+            i16::from(SchedulePriority::Slow),
+            dep_chain_ids as _
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let mut slow_dep_chain_ids =
+            HashSet::with_capacity(rows.len() + dep_chain_ids.len());
+        for row in rows {
+            let dep_chain_id = row.dependence_chain_id;
+            if let Ok(dep_chain_bytes) =
+                <[u8; 32]>::try_from(dep_chain_id.as_slice())
+            {
+                slow_dep_chain_ids.insert(ChainHash::from(dep_chain_bytes));
+            }
+        }
+        Ok(slow_dep_chain_ids)
     }
 
     async fn new_pool(url: &DatabaseURL) -> PgPool {
@@ -261,7 +380,7 @@ impl Database {
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
             log.block_timestamp
-                .saturating_add(time::Duration::microseconds(
+                .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
             !log.is_allowed,
@@ -724,8 +843,15 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
+        slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
+            let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
+            {
+                SchedulePriority::Slow
+            } else {
+                SchedulePriority::Fast
+            };
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -743,9 +869,10 @@ impl Database {
                     dependency_count,
                     dependents,
                     block_hash,
-                    block_height
+                    block_height,
+                    schedule_priority
                 ) VALUES (
-                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6, $7
                 )
                 ON CONFLICT (dependence_chain_id) DO UPDATE
                 SET status = 'updated',
@@ -759,6 +886,11 @@ impl Database {
                             FROM unnest(dependence_chain.dependents || EXCLUDED.dependents) AS d
                         )
                     )
+                    ,
+                    schedule_priority = GREATEST(
+                        dependence_chain.schedule_priority,
+                        EXCLUDED.schedule_priority
+                    )
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
@@ -766,6 +898,7 @@ impl Database {
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,
+                i16::from(schedule_priority),
             )
             .execute(tx.deref_mut())
             .await?;

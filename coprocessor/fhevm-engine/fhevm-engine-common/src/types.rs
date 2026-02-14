@@ -1024,6 +1024,20 @@ pub fn is_ebytes_type(inp: i16) -> bool {
     (9..=11).contains(&inp)
 }
 
+#[repr(i16)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum SchedulePriority {
+    #[default]
+    Fast = 0,
+    Slow = 1,
+}
+
+impl From<SchedulePriority> for i16 {
+    fn from(value: SchedulePriority) -> Self {
+        value as i16
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum AllowEvents {
     AllowedAccount = 0,

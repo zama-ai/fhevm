@@ -83,6 +83,7 @@ pub struct DatabaseChainLock {
     pub last_updated_at: DateTime<Utc>,
     pub block_height: Option<i64>,
     pub block_timestamp: Option<DateTime<Utc>>,
+    pub schedule_priority: i16,
     pub match_reason: String,
 }
 
@@ -101,6 +102,7 @@ impl fmt::Debug for DatabaseChainLock {
             .field("last_updated_at", &self.last_updated_at)
             .field("block_height", &self.block_height)
             .field("block_ts", &self.block_timestamp)
+            .field("schedule_priority", &self.schedule_priority)
             .field("match_reason", &self.match_reason)
             .finish()
     }
@@ -175,7 +177,7 @@ impl LockMngr {
                             AND
                             dependency_count = 0     -- No pending dependencies
                         )
-                ORDER BY last_updated_at ASC        -- FIFO
+                ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -218,7 +220,7 @@ impl LockMngr {
     }
 
     /// Acquire the earliest dependence-chain entry for processing
-    /// sorted by last_updated_at (FIFO). Here we ignore
+    /// sorted by last_updated_at (FIFO), ignoring lane priority. Here we ignore
     /// dependency_count as reorgs can lead to incorrect counts and
     /// set of dependents until we add block hashes to transaction
     /// hashes to uniquely identify transactions.
@@ -241,7 +243,7 @@ impl LockMngr {
                     status = 'updated'      -- Marked as updated by host-listener
                     AND
                     worker_id IS NULL       -- Ensure no other workers own it
-                ORDER BY last_updated_at ASC        -- FIFO
+                ORDER BY last_updated_at ASC, schedule_priority ASC
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -356,7 +358,7 @@ impl LockMngr {
             self.worker_id,
             dep_chain_id,
             mark_as_processed,
-	    update_at,
+            update_at,
         )
         .execute(&self.pool)
         .await?

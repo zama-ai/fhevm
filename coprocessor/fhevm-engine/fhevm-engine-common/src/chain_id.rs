@@ -50,7 +50,7 @@ impl TryFrom<u64> for ChainId {
     type Error = InvalidChainId;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        if value <= i64::MAX as u64 {
+        if i64::try_from(value).is_ok() {
             Ok(ChainId(value as i64))
         } else {
             Err(InvalidChainId {
