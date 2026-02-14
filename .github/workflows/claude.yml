@@ -1,23 +1,20 @@
 name: claude-review
 
-# Triggered by: @claude mention in PR comments (e.g., "@claude /pr-review this function")
+# Triggered by @claude mention in PR comments.
+# The action extracts text after "@claude" as the prompt.
 #
-# How prompt extraction works:
-# The action's `extractUserRequest` function automatically extracts text AFTER "@claude".
-# Example: "@claude /pr-review auth" → "/pr-review auth"
+# Security model:
+#   - Only write/admin users can trigger (enforced by the action)
+#   - Network sandbox: Squid proxy (L7 domain allowlist) + iptables (L3 egress block)
+#   - All dependencies pre-installed before lockdown; action skips its internal installs
 #
-# See: https://github.com/anthropics/claude-code-action/blob/main/src/utils/extract-user-request.ts
+# Why pre-install? The action internally runs setup-bun, bun install, and claude install.
+# These use fetch() which ignores HTTP_PROXY and gets blocked by iptables.
+# We do them beforehand and pass paths via inputs to skip those steps.
 #
-# Security: Only users with write/admin permissions can trigger Claude.
-# External contributors (fork PRs) are automatically blocked by the action.
-# See: https://github.com/anthropics/claude-code-action/blob/main/src/github/validation/permissions.ts
-#
-# Secrets required:
-# - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
-# - CLAUDE_ACCESS_TOKEN: PAT with 'repo' scope for private repos (zama-marketplace, tech-specs)
-#
-# Note: Private marketplaces are cloned in a separate step using a dedicated PAT,
-# then passed as a local path to avoid git auth issues in the action's setup.
+# Secrets:
+#   - CLAUDE_CODE_OAUTH_TOKEN: Anthropic API auth (from `claude setup-token`)
+#   - CLAUDE_ACCESS_TOKEN: PAT with 'repo' scope for cloning private repos (zama-marketplace, tech-spec)
 
 on:
   issue_comment:
@@ -37,12 +34,15 @@ jobs:
       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
     runs-on: ubuntu-latest
     permissions:
-      contents: read # Required for checkout
-      pull-requests: write # Required for PR review and comment actions
-      issues: write # Required for issue comment actions
-      id-token: write # Required for OIDC authentication
-      actions: read # Required for reading CI results
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
     steps:
+
+      # ── Phase 1: Setup (full network) ──────────────────────────────────
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -61,9 +61,7 @@ jobs:
       - name: Build custom system prompt
         id: custom_prompt
         run: |
-          # Extract PR metadata from webhook payload
           if [[ "$EVENT_NAME" == "pull_request" ]] || [[ -n "$ISSUE_PR_URL" ]]; then
-            # For pull_request events
             if [[ "$EVENT_NAME" == "pull_request" ]]; then
               PR_TITLE="$PR_TITLE_INPUT"
               PR_AUTHOR="$PR_AUTHOR_INPUT"
@@ -75,7 +73,6 @@ jobs:
               PR_COMMITS="$PR_COMMITS_INPUT"
               PR_FILES="$PR_FILES_INPUT"
             else
-              # For issue_comment on PRs - need to fetch PR data
               PR_NUMBER="$ISSUE_NUMBER_INPUT"
               PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits)
               PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
@@ -89,7 +86,6 @@ jobs:
               PR_FILES=$(gh pr view "$PR_NUMBER" --json files | jq '.files | length')
             fi
 
-            # Build formatted context
             FORMATTED_CONTEXT="PR Title: ${PR_TITLE}
           PR Author: ${PR_AUTHOR}
           PR Branch: ${PR_HEAD} -> ${PR_BASE}
@@ -98,31 +94,18 @@ jobs:
           PR Deletions: ${PR_DELETIONS}
           Total Commits: ${PR_COMMITS}
           Changed Files: ${PR_FILES} files"
-
-            # Build system prompt
-            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
-
-          <formatted_context>
-          ${FORMATTED_CONTEXT}
-          </formatted_context>"
           else
-            # For issues
-            ISSUE_TITLE="$ISSUE_TITLE_INPUT"
-            ISSUE_AUTHOR="$ISSUE_AUTHOR_INPUT"
-            ISSUE_STATE="$ISSUE_STATE_INPUT"
-
-            FORMATTED_CONTEXT="Issue Title: ${ISSUE_TITLE}
-          Issue Author: ${ISSUE_AUTHOR}
-          Issue State: ${ISSUE_STATE^^}"
-
-            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
-
-          <formatted_context>
-          ${FORMATTED_CONTEXT}
-          </formatted_context>"
+            FORMATTED_CONTEXT="Issue Title: ${ISSUE_TITLE_INPUT}
+          Issue Author: ${ISSUE_AUTHOR_INPUT}
+          Issue State: ${ISSUE_STATE_INPUT^^}"
           fi
 
-          # Save to environment file for next step (using block redirect)
+          SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+
+          <formatted_context>
+          ${FORMATTED_CONTEXT}
+          </formatted_context>"
+
           {
             echo "CUSTOM_SYSTEM_PROMPT<<EOF"
             echo "$SYSTEM_PROMPT"
@@ -132,7 +115,6 @@ jobs:
           GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
-          # Pull request event variables
           PR_TITLE_INPUT: ${{ github.event.pull_request.title }}
           PR_AUTHOR_INPUT: ${{ github.event.pull_request.user.login }}
           PR_HEAD_INPUT: ${{ github.event.pull_request.head.ref }}
@@ -142,23 +124,125 @@ jobs:
           PR_DELETIONS_INPUT: ${{ github.event.pull_request.deletions }}
           PR_COMMITS_INPUT: ${{ github.event.pull_request.commits }}
           PR_FILES_INPUT: ${{ github.event.pull_request.changed_files }}
-          # Issue event variables
           ISSUE_NUMBER_INPUT: ${{ github.event.issue.number }}
           ISSUE_TITLE_INPUT: ${{ github.event.issue.title }}
           ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login }}
           ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
 
+      # ── Phase 2: Pre-install dependencies (before lockdown) ────────────
+      # The action's internal setup-bun, bun install, and claude install all
+      # use fetch() which ignores HTTP_PROXY → blocked by iptables.
+      # Pre-installing and passing paths via inputs skips those steps entirely.
+
+      # OIDC → Anthropic exchange → GitHub App token (normally done inside the action)
+      - name: Exchange OIDC for GitHub App token
+        id: oidc-exchange
+        run: |
+          OIDC_TOKEN=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
+          [ -n "$OIDC_TOKEN" ] && [ "$OIDC_TOKEN" != "null" ] || { echo "::error::OIDC token request failed"; exit 1; }
+
+          APP_TOKEN=$(curl -sf -X POST \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"permissions":{"contents":"write","pull_requests":"write","issues":"write"}}' \
+            "https://api.anthropic.com/api/github/github-app-token-exchange" | jq -r '.token')
+          [ -n "$APP_TOKEN" ] && [ "$APP_TOKEN" != "null" ] || { echo "::error::Token exchange failed"; exit 1; }
+
+          echo "::add-mask::$APP_TOKEN"
+          echo "app_token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+
+      # Bun runtime — needed by the action's TypeScript orchestrator
+      - name: Install Bun
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3
+        with:
+          bun-version: latest
+
+      # Action's node_modules — `bun install` inside the action would need network
+      - name: Pre-install action dependencies
+        id: setup-deps
+        run: |
+          cd "/home/runner/work/_actions/anthropics/claude-code-action/b433f16b30d54063fd3bab6b12f46f3da00e41b6"
+          bun install --production
+          echo "bun_path=$(which bun)" >> "$GITHUB_OUTPUT"
+
+      # Claude Code CLI via npm — native binary ignores HTTP_PROXY (anthropics/claude-code#14165)
+      - name: Install Claude Code (npm)
+        id: setup-claude
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.42
+          echo "path=$(which claude)" >> "$GITHUB_OUTPUT"
+
+      # ── Phase 3: Network sandbox ───────────────────────────────────────
+
+      - name: Start Squid proxy
+        run: |
+          docker run -d --name sandbox-proxy -p 3128:3128 \
+            -v "${{ github.workspace }}/.github/squid/sandbox-proxy-rules.conf:/etc/squid/conf.d/00-sandbox-proxy-rules.conf:ro" \
+            ubuntu/squid
+
+          # Wait for readiness (api.github.com returns 200 without auth, unlike api.anthropic.com)
+          for i in $(seq 1 30); do
+            curl -sf -x http://localhost:3128 -o /dev/null https://api.github.com 2>/dev/null && break
+            [ "$i" -eq 30 ] && { echo "::error::Squid proxy failed to start"; docker logs sandbox-proxy; exit 1; }
+            sleep 2
+          done
+
+          # Verify: allowed domain works, blocked domain is rejected
+          HTTP_CODE=$(curl -s -x http://localhost:3128 -o /dev/null -w '%{http_code}' https://api.github.com)
+          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ] || { echo "::error::Allowed domain returned $HTTP_CODE"; exit 1; }
+          curl -sf -x http://localhost:3128 -o /dev/null https://google.com 2>/dev/null && { echo "::error::Blocked domain reachable!"; exit 1; }
+
+      - name: Lock down iptables
+        run: |
+          RUNNER_UID=$(id -u)
+
+          # Allow established connections, loopback, and Docker bridge
+          sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -d 172.16.0.0/12 -j ACCEPT
+
+          # Block new outbound TCP from runner UID — forces proxy use
+          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p tcp --syn -j REJECT --reject-with tcp-reset
+
+          # Verify: direct blocked, proxy works
+          curl -sf --max-time 5 -o /dev/null https://google.com 2>/dev/null && { echo "::error::Direct connection not blocked!"; exit 1; }
+          curl -sf --max-time 10 -x http://localhost:3128 -o /dev/null https://api.github.com 2>/dev/null || { echo "::error::Proxy broken!"; exit 1; }
+
+      # ── Phase 4: Run Claude Code (sandboxed) ───────────────────────────
+
       - name: Run Claude Code
+        id: run-claude
         uses: anthropics/claude-code-action@b433f16b30d54063fd3bab6b12f46f3da00e41b6 # 2026-02-10
+        env:
+          HTTP_PROXY: http://localhost:3128
+          HTTPS_PROXY: http://localhost:3128
+          NO_PROXY: localhost,127.0.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.oidc-exchange.outputs.app_token }}
+          path_to_bun_executable: ${{ steps.setup-deps.outputs.bun_path }}
+          path_to_claude_code_executable: ${{ steps.setup-claude.outputs.path }}
           plugin_marketplaces: "/tmp/zama-marketplace"
           plugins: |
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
-          # Prompt: empty string for comments (action extracts text after @claude)
           prompt: ""
           claude_args: |
             --model opus
-            --allowedTools "Bash(uv:*),Bash(gh:*),Bash(git:*),Read,Edit,Write,Glob,Grep,Task"
+            --dangerously-skip-permissions
             --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
+
+      # ── Cleanup ────────────────────────────────────────────────────────
+
+      # The action skips token revocation when github_token is provided — do it ourselves
+      - name: Revoke GitHub App token
+        if: always() && steps.oidc-exchange.outputs.app_token != ''
+        run: |
+          curl -sf -X DELETE \
+            -H "Authorization: Bearer $APP_TOKEN" \
+            "${GITHUB_API_URL:-https://api.github.com}/installation/token" \
+            || true
+        env:
+          APP_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
