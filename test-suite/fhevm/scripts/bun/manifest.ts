@@ -30,6 +30,7 @@ export interface TestTypeConfig {
 }
 
 export const PROJECT = "fhevm";
+export const DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT = "http://jaeger:4317";
 
 export const DEFAULT_STACK_VERSION = "v0.11.0-1";
 export const DEFAULT_CORE_VERSION = "v0.13.0-rc.2";
@@ -93,6 +94,7 @@ export const DEPLOYMENT_STEPS: DeploymentStep[] = [
       { service: "coprocessor-and-kms-db", state: "running" },
       { service: "coprocessor-db-migration", state: "complete" },
       { service: "coprocessor-host-listener", state: "running" },
+      { service: "coprocessor-host-listener-poller", state: "running" },
       { service: "coprocessor-gw-listener", state: "running" },
       { service: "coprocessor-tfhe-worker", state: "running" },
       { service: "coprocessor-zkproof-worker", state: "running" },
@@ -325,6 +327,15 @@ export const LOCAL_CACHE_SERVICES: string[] = [
   "host-sc-unpause",
   "kms-connector-db-migration",
   "test-suite-e2e-debug",
+];
+
+export const TELEMETRY_REQUIRED_JAEGER_SERVICES: string[] = [
+  "host-listener",
+  "host-listener-poller",
+  "tfhe-worker",
+  "txn-sender",
+  "sns-executor",
+  "zkproof-worker",
 ];
 
 export const UPGRADE_SERVICES: string[] = [

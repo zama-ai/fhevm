@@ -196,6 +196,18 @@ exit 0
 SLEEP
   chmod +x "${FIXTURE_ROOT}/mock-bin/sleep"
 
+  cat > "${FIXTURE_ROOT}/mock-bin/curl" <<'CURL'
+#!/bin/bash
+set -euo pipefail
+
+if [[ "${MOCK_JAEGER_SERVICES_STATUS:-0}" != "0" ]]; then
+  exit "${MOCK_JAEGER_SERVICES_STATUS}"
+fi
+
+echo "${MOCK_JAEGER_SERVICES_JSON:-{\"data\":[]}}"
+CURL
+  chmod +x "${FIXTURE_ROOT}/mock-bin/curl"
+
   : > "${COMMAND_LOG}"
 }
 
@@ -211,6 +223,21 @@ run_deploy() {
     export DOCKER_MINIO_IP="${DOCKER_MINIO_IP:-172.20.0.2}"
 
     ./deploy-fhevm-stack.sh "$@"
+  ) > "${output_file}" 2>&1
+}
+
+run_cli() {
+  local output_file=$1
+  shift
+
+  (
+    cd "${FIXTURE_ROOT}"
+    export PATH="${FIXTURE_ROOT}/mock-bin:${PATH}"
+    export TEST_COMMAND_LOG="${COMMAND_LOG}"
+    export DOCKER_COMPLETE_SERVICES="${DOCKER_COMPLETE_SERVICES:-${DEFAULT_COMPLETE_SERVICES}}"
+    export DOCKER_MINIO_IP="${DOCKER_MINIO_IP:-172.20.0.2}"
+
+    bun scripts/bun/cli.ts "$@"
   ) > "${output_file}" 2>&1
 }
 
@@ -298,6 +325,7 @@ test_default_flow_and_env_patch() {
   assert_order "${COMMAND_LOG}" "docker inspect -f {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}} fhevm-minio" "coprocessor-docker-compose.yml up -d"
 
   assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.local" "AWS_ENDPOINT_URL=http://172.20.0.2:9000"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.local" "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317"
 
   cleanup_fixture
 }
@@ -431,6 +459,51 @@ test_key_bootstrap_failure_is_actionable() {
   cleanup_fixture
 }
 
+test_strict_otel_requires_jaeger() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/strict-otel.out"
+  if run_deploy "${output_file}" --strict-otel; then
+    echo "Strict OTEL deploy should fail when Jaeger is absent" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Telemetry endpoint http://jaeger:4317 is configured but Jaeger is not running."
+  cleanup_fixture
+}
+
+test_clean_purge_invokes_prunes() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/clean-purge.out"
+  if ! run_cli "${output_file}" clean --purge; then
+    echo "Clean --purge should succeed" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${COMMAND_LOG}" "docker compose -p fhevm down -v --remove-orphans"
+  assert_contains "${COMMAND_LOG}" "docker network ls --format {{.Name}}"
+  assert_contains "${COMMAND_LOG}" "docker image prune -af"
+  assert_contains "${COMMAND_LOG}" "docker builder prune -af"
+  cleanup_fixture
+}
+
+test_telemetry_smoke_requires_jaeger() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/telemetry-smoke.out"
+  if run_cli "${output_file}" telemetry-smoke; then
+    echo "Telemetry smoke should fail when Jaeger is absent" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Jaeger container is not running."
+  cleanup_fixture
+}
+
 main() {
   trap cleanup_fixture EXIT
 
@@ -440,6 +513,9 @@ main() {
   test_build_flag_applies_only_to_buildable_steps
   test_oom_failure_is_actionable
   test_key_bootstrap_failure_is_actionable
+  test_strict_otel_requires_jaeger
+  test_clean_purge_invokes_prunes
+  test_telemetry_smoke_requires_jaeger
 
   echo "All deploy behavior tests passed"
 }

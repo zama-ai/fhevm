@@ -12,7 +12,7 @@ FHEVM_DEPLOYMENT_MANIFEST=(
   "database|database|false|Database service|coprocessor-and-kms-db:running"
   "host-node|host-node|true|Host node service|host-node:running"
   "gateway-node|gateway-node|true|Gateway node service|gateway-node:running"
-  "coprocessor|coprocessor|true|Coprocessor Services|coprocessor-and-kms-db:running coprocessor-db-migration:complete coprocessor-host-listener:running coprocessor-gw-listener:running coprocessor-tfhe-worker:running coprocessor-zkproof-worker:running coprocessor-sns-worker:running coprocessor-transaction-sender:running"
+  "coprocessor|coprocessor|true|Coprocessor Services|coprocessor-and-kms-db:running coprocessor-db-migration:complete coprocessor-host-listener:running coprocessor-host-listener-poller:running coprocessor-gw-listener:running coprocessor-tfhe-worker:running coprocessor-zkproof-worker:running coprocessor-sns-worker:running coprocessor-transaction-sender:running"
   "kms-connector|kms-connector|true|KMS Connector Services|coprocessor-and-kms-db:running kms-connector-db-migration:complete kms-connector-gw-listener:running kms-connector-kms-worker:running kms-connector-tx-sender:running"
   "gateway-mocked-payment|gateway-mocked-payment|true|Gateway mocked payment|gateway-deploy-mocked-zama-oft:complete gateway-set-relayer-mocked-payment:complete"
   "gateway-sc|gateway-sc|true|Gateway contracts|gateway-sc-deploy:complete gateway-sc-add-network:complete gateway-sc-trigger-keygen:complete gateway-sc-trigger-crsgen:complete gateway-sc-add-pausers:complete"

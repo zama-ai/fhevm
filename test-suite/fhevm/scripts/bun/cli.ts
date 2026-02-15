@@ -5,11 +5,13 @@ import path from "node:path";
 import {
   COLORS,
   CORE_VERSION_OVERRIDE_ENV,
+  DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT,
   DEPLOYMENT_STEPS,
   LOCAL_CACHE_SERVICES,
   PROJECT,
   RELAYER_VERSION_OVERRIDE_ENV,
   STACK_VERSION_OVERRIDE_ENV,
+  TELEMETRY_REQUIRED_JAEGER_SERVICES,
   TEST_TYPE_CONFIG,
   UPGRADE_SERVICES,
   VERSION_ENTRIES,
@@ -33,8 +35,16 @@ const EXIT_FAILURE = 1;
 type DeployOptions = {
   forceBuild: boolean;
   localBuild: boolean;
+  telemetrySmoke: boolean;
+  strictOtel: boolean;
   resumeStep?: string;
   onlyStep?: string;
+};
+
+type CleanOptions = {
+  purgeImages: boolean;
+  purgeBuildCache: boolean;
+  purgeNetworks: boolean;
 };
 
 type TestOptions = {
@@ -65,13 +75,14 @@ function usage(): void {
   console.log(`${COLORS.bold}Usage:${COLORS.reset} ${COLORS.yellow}fhevm-cli${COLORS.reset} ${COLORS.cyan}COMMAND [OPTIONS]${COLORS.reset}`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Commands:${COLORS.reset}`);
-  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--resume STEP] [--only STEP]${COLORS.reset}    Deploy the full fhevm stack`);
+  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
   console.log(`  ${COLORS.yellow}pause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Pause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}unpause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Unpause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)`);
   console.log(`  ${COLORS.yellow}upgrade${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}   Upgrade specific service`);
-  console.log(`  ${COLORS.yellow}clean${COLORS.reset}               Remove all containers and volumes`);
+  console.log(`  ${COLORS.yellow}clean${COLORS.reset} ${COLORS.cyan}[--purge] [--purge-images] [--purge-build-cache] [--purge-networks]${COLORS.reset}  Clean stack resources`);
   console.log(`  ${COLORS.yellow}logs${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}      View logs for a specific service`);
+  console.log(`  ${COLORS.yellow}telemetry-smoke${COLORS.reset}     Validate Jaeger telemetry services`);
   console.log(`  ${COLORS.yellow}help${COLORS.reset}                Display this help message`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Test Options:${COLORS.reset}`);
@@ -85,6 +96,7 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli deploy${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --build${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --local${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli deploy --build --telemetry-smoke${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --resume kms-connector${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --only coprocessor${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli test input-proof${COLORS.reset}`);
@@ -94,6 +106,8 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli test public-decrypt-http-mixed -n staging${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli test erc20${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli upgrade coprocessor${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli telemetry-smoke${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli clean --purge${COLORS.reset}`);
   console.log(`${COLORS.blue}============================================================${COLORS.reset}`);
 }
 
@@ -227,6 +241,51 @@ function composeFile(component: string): string {
   return path.resolve(COMPOSE_DIR, `${component}-docker-compose.yml`);
 }
 
+function readEnvValue(filePath: string, key: string): string | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  const lines = fs.readFileSync(filePath, "utf8").split("\n");
+  for (const line of lines) {
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const idx = line.indexOf("=");
+    if (idx <= 0) {
+      continue;
+    }
+    if (line.slice(0, idx).trim() !== key) {
+      continue;
+    }
+    return line.slice(idx + 1).trim();
+  }
+  return undefined;
+}
+
+function upsertEnvValue(filePath: string, key: string, value: string): void {
+  const lines = fs.readFileSync(filePath, "utf8").split("\n");
+  let replaced = false;
+
+  const nextLines = lines.map((line) => {
+    const idx = line.indexOf("=");
+    if (idx <= 0 || line.slice(0, idx).trim() !== key) {
+      return line;
+    }
+    replaced = true;
+    return `${key}=${value}`;
+  });
+
+  if (!replaced) {
+    if (nextLines.length > 0 && nextLines[nextLines.length - 1] !== "") {
+      nextLines.push("");
+    }
+    nextLines.push(`${key}=${value}`);
+  }
+
+  fs.writeFileSync(filePath, `${nextLines.join("\n").replace(/\n*$/, "\n")}`, "utf8");
+}
+
 function prepareLocalEnvFile(component: string): string {
   const baseFile = baseEnvFile(component);
   const localFile = localEnvFile(component);
@@ -261,6 +320,35 @@ function prepareAllEnvFiles(): void {
   }
 
   logInfo("All local environment files prepared successfully");
+}
+
+function ensureCoprocessorTelemetryEnv(validateReachability: boolean): void {
+  const coprocessorLocal = localEnvFile("coprocessor");
+  if (!fs.existsSync(coprocessorLocal)) {
+    throw new Error(`Coprocessor local env file not found: ${coprocessorLocal}`);
+  }
+
+  const key = "OTEL_EXPORTER_OTLP_ENDPOINT";
+  let endpoint = readEnvValue(coprocessorLocal, key);
+
+  if (!endpoint) {
+    endpoint = DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT;
+    upsertEnvValue(coprocessorLocal, key, endpoint);
+    logWarn(`Missing ${key} in ${path.basename(coprocessorLocal)}. Defaulting to ${endpoint}.`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    throw new Error(`Invalid ${key} value in ${path.basename(coprocessorLocal)}: ${endpoint}`);
+  }
+
+  if (validateReachability && parsed.hostname === "jaeger" && !isContainerRunningExact("jaeger")) {
+    throw new Error(
+      `Telemetry endpoint ${endpoint} is configured but Jaeger is not running. Start tracing first: docker compose -f docker-compose/tracing-docker-compose.yml up -d`,
+    );
+  }
 }
 
 function configureLocalBuild(): void {
@@ -426,6 +514,45 @@ function waitForService(serviceName: string, stepHint: string, expected: Service
   }
 }
 
+function isGatewayBuildStep(step: DeploymentStep): boolean {
+  return step.component === "gateway-sc" || step.component === "gateway-mocked-payment";
+}
+
+function detectGatewayImageConflict(logs: string): boolean {
+  return /gateway-contracts:.*already exists/i.test(logs) || /helper image export conflict/i.test(logs);
+}
+
+function removeGatewayConflictImages(): void {
+  const gatewayVersion = process.env.GATEWAY_VERSION;
+  if (!gatewayVersion) {
+    return;
+  }
+
+  const tags = [
+    `gateway-contracts:${gatewayVersion}`,
+    `ghcr.io/zama-ai/fhevm/gateway-contracts:${gatewayVersion}`,
+  ];
+
+  logWarn("Detected gateway helper image export conflict. Removing conflicting local tags and retrying once.");
+  for (const tag of tags) {
+    runCommand(["docker", "image", "rm", "-f", tag], { check: false, allowFailure: true });
+  }
+}
+
+function runComposeUp(command: string[]): { status: number; output: string } {
+  const result = runCommand(command, { capture: true, check: false, allowFailure: true });
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+  return {
+    status: result.status,
+    output: [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n"),
+  };
+}
+
 function runComposeStep(step: DeploymentStep, useBuild: boolean): void {
   if (!step.component) {
     throw new Error(`Step ${step.name} has no compose component`);
@@ -458,7 +585,12 @@ function runComposeStep(step: DeploymentStep, useBuild: boolean): void {
   }
   command.push("-d");
 
-  const upResult = runCommand(command, { check: false, allowFailure: true });
+  let upResult = runComposeUp(command);
+  if (upResult.status !== 0 && useBuild && isGatewayBuildStep(step) && detectGatewayImageConflict(upResult.output)) {
+    removeGatewayConflictImages();
+    upResult = runComposeUp(command);
+  }
+
   if (upResult.status !== 0) {
     if (useBuild) {
       throw new Error(`Failed to build and start ${step.description}`);
@@ -490,8 +622,7 @@ function getMinioIp(containerName: string): void {
   const original = fs.readFileSync(coprocessorLocalEnv, "utf8");
   fs.writeFileSync(`${coprocessorLocalEnv}.bak`, original, "utf8");
 
-  const patched = original.replace(/AWS_ENDPOINT_URL=http:\/\/[^:]*:9000/g, `AWS_ENDPOINT_URL=http://${minioIp}:9000`);
-  fs.writeFileSync(coprocessorLocalEnv, patched, "utf8");
+  upsertEnvValue(coprocessorLocalEnv, "AWS_ENDPOINT_URL", `http://${minioIp}:9000`);
 
   console.log(`Found ${containerName} container IP: ${minioIp}`);
   console.log(`Updated AWS_ENDPOINT_URL to http://${minioIp}:9000`);
@@ -589,10 +720,25 @@ function isContainerRunning(containerName: string): boolean {
     .includes(containerName);
 }
 
+function isContainerRunningExact(containerName: string): boolean {
+  const result = runCommand(["docker", "ps", "--filter", `name=^${containerName}$`, "--format", "{{.Names}}"], {
+    capture: true,
+    check: true,
+  });
+
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .includes(containerName);
+}
+
 function parseDeployArgs(args: string[]): DeployOptions {
   const options: DeployOptions = {
     forceBuild: false,
     localBuild: false,
+    telemetrySmoke: false,
+    strictOtel: false,
   };
 
   let expectResumeStep = false;
@@ -620,6 +766,18 @@ function parseDeployArgs(args: string[]): DeployOptions {
     if (arg === "--local" || arg === "--dev") {
       options.localBuild = true;
       logInfo("Local optimization option detected.");
+      continue;
+    }
+
+    if (arg === "--telemetry-smoke") {
+      options.telemetrySmoke = true;
+      logInfo("Telemetry smoke check enabled.");
+      continue;
+    }
+
+    if (arg === "--strict-otel") {
+      options.strictOtel = true;
+      logInfo("Strict OTEL endpoint reachability enabled.");
       continue;
     }
 
@@ -686,6 +844,7 @@ function deploy(args: string[]): void {
 
   prepareAllEnvFiles();
   prepareLocalConfigRelayer();
+  ensureCoprocessorTelemetryEnv(options.strictOtel || options.telemetrySmoke);
 
   logInfo("Deploying FHEVM Stack...");
 
@@ -720,7 +879,73 @@ function deploy(args: string[]): void {
     }
   }
 
+  if (options.telemetrySmoke) {
+    runTelemetrySmokeCheck(true);
+  }
+
   logInfo("All services started successfully!");
+}
+
+function fetchJaegerServices(): string[] {
+  const result = runCommand(["curl", "-fsS", "http://localhost:16686/api/services"], {
+    capture: true,
+    check: false,
+    allowFailure: true,
+  });
+
+  if (result.status !== 0) {
+    throw new Error(
+      "Unable to query Jaeger services API at http://localhost:16686/api/services. Ensure tracing stack is running.",
+    );
+  }
+
+  const payload = result.stdout.trim();
+  const payloadCandidates = [payload, payload.replace(/\\"/g, "\"")];
+  let parsed: unknown;
+  let parsedOk = false;
+  for (const candidate of payloadCandidates) {
+    try {
+      parsed = JSON.parse(candidate);
+      parsedOk = true;
+      break;
+    } catch {
+      // Try normalized candidate next.
+    }
+  }
+  if (!parsedOk) {
+    throw new Error("Jaeger services API returned invalid JSON");
+  }
+
+  if (!parsed || typeof parsed !== "object" || !("data" in parsed) || !Array.isArray((parsed as { data: unknown }).data)) {
+    throw new Error("Jaeger services API response does not contain a data array");
+  }
+
+  const services = (parsed as { data: unknown[] }).data.filter((entry): entry is string => typeof entry === "string");
+  return services;
+}
+
+function runTelemetrySmokeCheck(strict: boolean): void {
+  if (!isContainerRunningExact("jaeger")) {
+    const message = "Jaeger container is not running. Start it with: docker compose -f docker-compose/tracing-docker-compose.yml up -d";
+    if (strict) {
+      throw new Error(message);
+    }
+    logWarn(message);
+    return;
+  }
+
+  const services = fetchJaegerServices();
+  const missing = TELEMETRY_REQUIRED_JAEGER_SERVICES.filter((service) => !services.includes(service));
+  if (missing.length > 0) {
+    const message = `Telemetry smoke check failed. Missing Jaeger services: ${missing.join(", ")}. Check OTEL_EXPORTER_OTLP_ENDPOINT and coprocessor/kms-connector startup logs.`;
+    if (strict) {
+      throw new Error(message);
+    }
+    logWarn(message);
+    return;
+  }
+
+  logInfo(`Telemetry smoke check passed. Found services: ${TELEMETRY_REQUIRED_JAEGER_SERVICES.join(", ")}`);
 }
 
 function parseTestArgs(args: string[]): { testType: string; options: TestOptions } {
@@ -865,9 +1090,63 @@ function upgrade(service?: string): void {
   console.log(`${COLORS.green}[SUCCESS]${COLORS.reset} ${COLORS.bold}${service} upgraded successfully${COLORS.reset}`);
 }
 
-function clean(): void {
+function parseCleanArgs(args: string[]): CleanOptions {
+  const options: CleanOptions = {
+    purgeImages: false,
+    purgeBuildCache: false,
+    purgeNetworks: false,
+  };
+
+  for (const arg of args) {
+    if (arg === "--purge") {
+      options.purgeImages = true;
+      options.purgeBuildCache = true;
+      options.purgeNetworks = true;
+      continue;
+    }
+    if (arg === "--purge-images") {
+      options.purgeImages = true;
+      continue;
+    }
+    if (arg === "--purge-build-cache") {
+      options.purgeBuildCache = true;
+      continue;
+    }
+    if (arg === "--purge-networks") {
+      options.purgeNetworks = true;
+      continue;
+    }
+    throw new Error(`Unknown option for clean: ${arg}`);
+  }
+
+  return options;
+}
+
+function clean(args: string[]): void {
+  const options = parseCleanArgs(args);
   console.log(`${COLORS.lightBlue}[CLEAN]${COLORS.reset} ${COLORS.bold}Cleaning up FHEVM stack...${COLORS.reset}`);
   runCommand(["docker", "compose", "-p", PROJECT, "down", "-v", "--remove-orphans"], { check: true });
+
+  if (options.purgeNetworks) {
+    const networkList = runCommand(["docker", "network", "ls", "--format", "{{.Name}}"], {
+      capture: true,
+      check: true,
+    });
+    for (const network of networkList.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+      if (network.startsWith(`${PROJECT}_`)) {
+        runCommand(["docker", "network", "rm", network], { check: false, allowFailure: true });
+      }
+    }
+  }
+
+  if (options.purgeImages) {
+    runCommand(["docker", "image", "prune", "-af"], { check: true });
+  }
+
+  if (options.purgeBuildCache) {
+    runCommand(["docker", "builder", "prune", "-af"], { check: true });
+  }
+
   console.log(`${COLORS.green}[SUCCESS]${COLORS.reset} ${COLORS.bold}FHEVM stack cleaned successfully${COLORS.reset}`);
 }
 
@@ -915,10 +1194,13 @@ function main(): number {
         upgrade(args[0]);
         return EXIT_SUCCESS;
       case "clean":
-        clean();
+        clean(args);
         return EXIT_SUCCESS;
       case "logs":
         logs(args[0]);
+        return EXIT_SUCCESS;
+      case "telemetry-smoke":
+        runTelemetrySmokeCheck(true);
         return EXIT_SUCCESS;
       case "help":
       case "-h":

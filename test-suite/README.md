@@ -19,6 +19,7 @@ KMS can be configured to two modes:
   - [Quickstart](#quickstart)
   - [Forcing Local Builds](#wip---forcing-local-builds---build)
   - [Local Developer Optimizations](#local-developer-optimizations)
+  - [Telemetry Checks](#telemetry-checks)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
   - [Orchestration Source of Truth](#orchestration-source-of-truth)
@@ -48,6 +49,9 @@ cd test-suite/fhevm
 # Deploy with local BuildKit cache (disables provenance attestations)
 ./fhevm-cli deploy --local
 
+# Deploy and fail if telemetry services are not visible in Jaeger
+./fhevm-cli deploy --build --telemetry-smoke
+
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
 ./fhevm-cli deploy --resume kms-connector
 
@@ -73,6 +77,9 @@ cd test-suite/fhevm
 
 # Clean up
 ./fhevm-cli clean
+
+# Hard purge for reproducible A/B runs
+./fhevm-cli clean --purge
 ```
 
 ### WIP - Forcing Local Builds (`--build`)
@@ -111,6 +118,8 @@ For faster local iteration, use `--local` to enable a local BuildKit cache (stor
 ./fhevm-cli deploy --local
 ```
 
+For code-path validation, prefer `--build --local` so your local changes are rebuilt while keeping warm cache layers.
+
 When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
 
 ```sh
@@ -148,6 +157,29 @@ You can combine `--only` or `--resume` with other flags:
 ```sh
 # Redeploy only gateway-sc with a local build
 ./fhevm-cli deploy --only gateway-sc --build --local
+```
+
+### Telemetry Checks
+
+The coprocessor env now ensures `OTEL_EXPORTER_OTLP_ENDPOINT` is present.
+If it is missing, deploy defaults it to `http://jaeger:4317` in `.env.coprocessor.local`.
+
+Use strict endpoint validation (requires Jaeger to be up first):
+
+```sh
+./fhevm-cli deploy --strict-otel
+```
+
+Run smoke validation on demand:
+
+```sh
+./fhevm-cli telemetry-smoke
+```
+
+Or include it in deploy:
+
+```sh
+./fhevm-cli deploy --telemetry-smoke
 ```
 
 ### Orchestration source of truth
@@ -212,9 +244,15 @@ When deploy fails, the script now surfaces explicit hints for common operational
   - Action: wait for keygen/CRS generation to settle, then resume from gateway contracts:
     - `./fhevm-cli deploy --resume gateway-sc`
 
+- Gateway helper image export conflict (`already exists`):
+  - Symptom: build fails while starting gateway contracts.
+  - Action: deploy now auto-retries once after removing conflicting `gateway-contracts` tags.
+  - Manual fallback for repeated collisions:
+    - `./fhevm-cli clean --purge-images --purge-build-cache`
+
 ### Behavior parity tests
 
-A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, and actionable failure hints).
+A behavior-level shell test suite validates deploy orchestration outcomes (ordering, `--resume`, `--only`, build semantics, env patch timing, actionable failure hints, strict OTEL checks, purge flags, and telemetry smoke checks).
 
 Run it with:
 
