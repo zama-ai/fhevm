@@ -85,6 +85,8 @@ cd test-suite/fhevm
 ./fhevm-cli clean --purge
 ```
 
+`--purge-images` and `--purge-build-cache` use Docker system-wide prune commands (not fhevm-scoped).
+
 ### WIP - Forcing Local Builds (`--build`)
 
 ⚠️ **IMPORTANT: THIS FEATURE IS STILL A WORK IN PROGRESS!** ⚠️
@@ -178,6 +180,8 @@ Run smoke validation on demand:
 ```sh
 ./fhevm-cli telemetry-smoke
 ```
+
+`telemetry-smoke` retries for a short warm-up window before failing, to reduce false negatives while traces are still starting up.
 
 Or include it in deploy:
 

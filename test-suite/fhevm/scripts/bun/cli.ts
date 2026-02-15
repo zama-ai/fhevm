@@ -548,7 +548,11 @@ function removeGatewayConflictImages(): void {
 
   logWarn("Detected gateway helper image export conflict. Removing conflicting local tags and retrying once.");
   for (const tag of tags) {
-    runCommand(["docker", "image", "rm", "-f", tag], { check: false, allowFailure: true });
+    const result = runCommand(["docker", "image", "rm", "-f", tag], { capture: true, check: false, allowFailure: true });
+    if (result.status !== 0) {
+      const details = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join(" ");
+      logWarn(`Could not remove image tag '${tag}' before retry.${details ? ` Details: ${details}` : ""}`);
+    }
   }
 }
 
@@ -947,18 +951,36 @@ function runTelemetrySmokeCheck(strict: boolean): void {
     return;
   }
 
-  const services = fetchJaegerServices();
-  const missing = TELEMETRY_REQUIRED_JAEGER_SERVICES.filter((service) => !services.includes(service));
-  if (missing.length > 0) {
-    const message = `Telemetry smoke check failed. Missing Jaeger services: ${missing.join(", ")}. Check OTEL_EXPORTER_OTLP_ENDPOINT and coprocessor/kms-connector startup logs.`;
-    if (strict) {
-      throw new Error(message);
+  const maxAttempts = 6;
+  const retryDelaySeconds = 5;
+  let lastMessage = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const services = fetchJaegerServices();
+      const missing = TELEMETRY_REQUIRED_JAEGER_SERVICES.filter((service) => !services.includes(service));
+      if (missing.length === 0) {
+        logInfo(`Telemetry smoke check passed. Found services: ${TELEMETRY_REQUIRED_JAEGER_SERVICES.join(", ")}`);
+        return;
+      }
+      lastMessage = `Missing Jaeger services: ${missing.join(", ")}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastMessage = `Jaeger query failed: ${message}`;
     }
-    logWarn(message);
-    return;
+
+    if (attempt < maxAttempts) {
+      logWarn(`Telemetry smoke attempt ${attempt}/${maxAttempts} not ready (${lastMessage}). Retrying in ${retryDelaySeconds}s...`);
+      sleep(retryDelaySeconds);
+      continue;
+    }
   }
 
-  logInfo(`Telemetry smoke check passed. Found services: ${TELEMETRY_REQUIRED_JAEGER_SERVICES.join(", ")}`);
+  const message = `Telemetry smoke check failed after ${maxAttempts} attempts. ${lastMessage}. Check OTEL_EXPORTER_OTLP_ENDPOINT and coprocessor/kms-connector startup logs.`;
+  if (strict) {
+    throw new Error(message);
+  }
+  logWarn(message);
 }
 
 function parseTestArgs(args: string[]): { testType: string; options: TestOptions } {
@@ -1153,10 +1175,12 @@ function clean(args: string[]): void {
   }
 
   if (options.purgeImages) {
+    logWarn("`clean --purge-images` removes ALL unused Docker images system-wide, not only fhevm images.");
     runCommand(["docker", "image", "prune", "-af"], { check: true });
   }
 
   if (options.purgeBuildCache) {
+    logWarn("`clean --purge-build-cache` removes ALL unused Docker build cache system-wide.");
     runCommand(["docker", "builder", "prune", "-af"], { check: true });
   }
 

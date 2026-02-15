@@ -523,6 +523,8 @@ test_clean_purge_invokes_prunes() {
   assert_contains "${COMMAND_LOG}" "docker network ls --format {{.Name}}"
   assert_contains "${COMMAND_LOG}" "docker image prune -af"
   assert_contains "${COMMAND_LOG}" "docker builder prune -af"
+  assert_contains "${output_file}" "removes ALL unused Docker images system-wide"
+  assert_contains "${output_file}" "removes ALL unused Docker build cache system-wide"
   cleanup_fixture
 }
 
