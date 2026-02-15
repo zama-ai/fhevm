@@ -251,6 +251,8 @@ where
                 "prepare_verify_proof_resp",
                 operation = "prepare_verify_proof_resp"
             );
+            // Use `enter()` in async loops to avoid keeping a non-Send
+            // entered guard across await points.
             let _enter = _span.enter();
 
             let txn_request = match row.verified {
@@ -353,9 +355,6 @@ where
                     continue;
                 }
             };
-
-            drop(_enter);
-            drop(_span);
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;

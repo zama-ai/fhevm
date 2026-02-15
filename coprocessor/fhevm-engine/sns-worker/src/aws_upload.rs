@@ -544,7 +544,11 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: tracing::info_span!("recovery_task", operation = "recovery_task"),
+                otel: tracing::info_span!(
+                    "recovery_task",
+                    operation = "recovery_task",
+                    handle = %to_hex(&handle)
+                ),
                 transaction_id,
             };
 

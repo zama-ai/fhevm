@@ -164,16 +164,26 @@ async fn tfhe_worker_cycle(
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
-            let _dcid_span = tracing::info_span!(parent: &loop_span, "query_dependence_chain", operation = "query_dependence_chain");
+            let _dcid_span = tracing::info_span!(
+                parent: &loop_span,
+                "query_dependence_chain",
+                operation = "query_dependence_chain",
+                dependence_chain_id = tracing::field::Empty
+            );
 
             let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
             immediately_poll_more_work = dependence_chain_id.is_some();
 
-            tracing::info!(
-                parent: &_dcid_span,
-                dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
-                "acquired dependence chain lock"
+            _dcid_span.record(
+                "dependence_chain_id",
+                tracing::field::display(
+                    dependence_chain_id
+                        .as_ref()
+                        .map(hex::encode)
+                        .unwrap_or_else(|| "none".to_string()),
+                ),
             );
+            tracing::info!(parent: &_dcid_span, "acquired dependence chain lock");
             drop(_dcid_span);
 
             continue;
@@ -277,7 +287,8 @@ async fn query_for_work<'a>(
 {
     let _s_dcid = tracing::info_span!(
         "query_dependence_chain",
-        operation = "query_dependence_chain"
+        operation = "query_dependence_chain",
+        dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
     let (dependence_chain_id, locking_reason) =
@@ -302,14 +313,23 @@ async fn query_for_work<'a>(
         info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
-    tracing::info!(
-        parent: &_s_dcid,
-        dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
-        "query dependence chain result"
+    _s_dcid.record(
+        "dependence_chain_id",
+        tracing::field::display(
+            dependence_chain_id
+                .as_ref()
+                .map(hex::encode)
+                .unwrap_or_else(|| "none".to_string()),
+        ),
     );
+    tracing::info!(parent: &_s_dcid, "query dependence chain result");
     drop(_s_dcid);
 
-    let _s_work = tracing::info_span!("query_work_items", operation = "query_work_items");
+    let _s_work = tracing::info_span!(
+        "query_work_items",
+        operation = "query_work_items",
+        count = tracing::field::Empty
+    );
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
     let the_work = query!(
@@ -351,7 +371,8 @@ WHERE c.transaction_id IN (
     })?;
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
-    tracing::info!(parent: &_s_work, count = the_work.len(), "work items queried");
+    _s_work.record("count", the_work.len());
+    tracing::info!(parent: &_s_work, "work items queried");
     drop(_s_work);
     health_check.update_db_access();
     if the_work.is_empty() {

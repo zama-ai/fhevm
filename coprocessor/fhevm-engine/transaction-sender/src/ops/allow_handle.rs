@@ -361,6 +361,8 @@ where
             let src_transaction_id = row.transaction_id.clone();
             let _span =
                 tracing::info_span!("prepare_allow_account", operation = "prepare_allow_account");
+            // Use `enter()` in async loops to avoid keeping a non-Send
+            // entered guard across await points.
             let _enter = _span.enter();
 
             let handle = row.handle.clone();
@@ -429,9 +431,6 @@ where
                 account_addr: account_addr.to_string(),
                 event_type,
             };
-
-            drop(_enter);
-            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {

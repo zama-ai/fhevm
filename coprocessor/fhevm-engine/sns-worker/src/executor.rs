@@ -176,11 +176,11 @@ impl SwitchNSquashService {
     }
 }
 
+#[tracing::instrument(skip_all, fields(operation = "fetch_keyset"))]
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    let _t = tracing::info_span!("fetch_keyset", operation = "fetch_keyset");
     fetch_latest_keyset(&keys_cache, &pool).await
 }
 
@@ -334,11 +334,13 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     .rows_affected();
 
     if rows_affected > 0 {
-        let _s = tracing::info_span!("cleanup_ct128", operation = "cleanup_ct128");
-        info!(
-            rows_affected = rows_affected,
-            "Cleaning up old ciphertexts128"
-        );
+        let _cleanup_span = tracing::info_span!(
+            "cleanup_ct128",
+            operation = "cleanup_ct128",
+            rows_affected = rows_affected
+        )
+        .entered();
+        info!("Cleaning up old ciphertexts128");
     }
 
     Ok(())
@@ -377,25 +379,29 @@ async fn fetch_and_execute_sns_tasks(
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
-        let t = tracing::info_span!(
+        let batch_exec_span = tracing::info_span!(
             "batch_execution",
             operation = "batch_execution",
             count = tasks.len()
         );
 
-        process_tasks(
-            &mut tasks,
-            keys,
-            tx,
-            conf.enable_compression,
-            conf.schedule_policy,
-            token.clone(),
-        )?;
+        batch_exec_span.in_scope(|| {
+            process_tasks(
+                &mut tasks,
+                keys,
+                tx,
+                conf.enable_compression,
+                conf.schedule_policy,
+                token.clone(),
+            )
+        })?;
 
-        update_computations_status(trx, &tasks).await?;
+        update_computations_status(trx, &tasks)
+            .instrument(batch_exec_span.clone())
+            .await?;
 
         let batch_store_span = tracing::info_span!(
-            parent: &t,
+            parent: &batch_exec_span,
             "batch_store_ciphertext128",
             operation = "batch_store_ciphertext128"
         );
@@ -433,6 +439,7 @@ async fn fetch_and_execute_sns_tasks(
 }
 
 /// Queries the database for a fixed number of tasks.
+#[tracing::instrument(skip_all, fields(operation = "db_fetch_tasks", count = tracing::field::Empty))]
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
@@ -462,17 +469,10 @@ pub async fn query_sns_tasks(
         .await?;
 
     info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
+    tracing::Span::current().record("count", records.len());
 
     if records.is_empty() {
         return Ok(None);
-    }
-
-    {
-        let _t = tracing::info_span!(
-            "db_fetch_tasks",
-            operation = "db_fetch_tasks",
-            count = records.len()
-        );
     }
 
     // Convert the records into HandleItem structs
@@ -494,7 +494,11 @@ pub async fn query_sns_tasks(
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: tracing::info_span!("task", operation = "task"),
+                otel: tracing::info_span!(
+                    "task",
+                    operation = "task",
+                    handle = %to_hex(&handle)
+                ),
                 transaction_id,
             })
         })
