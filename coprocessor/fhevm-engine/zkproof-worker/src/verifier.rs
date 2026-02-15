@@ -279,7 +279,7 @@ async fn execute_verify_proof_routine(
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
-        let _transaction_id: Option<Vec<u8>> = row.get("transaction_id");
+        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
 
         info!(
             message = "Process zk-verify request",
@@ -296,7 +296,20 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span = tracing::info_span!("verify_task", operation = "verify_task", request_id);
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            operation = "verify_task",
+            request_id,
+            txn_id = tracing::field::Empty
+        );
+        if let Some(transaction_id) = transaction_id.as_deref() {
+            verify_span.record(
+                "txn_id",
+                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                    transaction_id,
+                )),
+            );
+        }
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
@@ -310,7 +323,20 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
-        let t = tracing::info_span!("db_insert", operation = "db_insert", request_id);
+        let t = tracing::info_span!(
+            "db_insert",
+            operation = "db_insert",
+            request_id,
+            txn_id = tracing::field::Empty
+        );
+        if let Some(transaction_id) = transaction_id.as_deref() {
+            t.record(
+                "txn_id",
+                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                    transaction_id,
+                )),
+            );
+        }
 
         let mut verified = false;
         let mut handles_bytes = vec![];
@@ -376,6 +402,15 @@ async fn execute_verify_proof_routine(
     Ok(())
 }
 
+fn set_current_span_error(err: &ExecutionError) {
+    tracing::Span::current()
+        .context()
+        .span()
+        .set_status(opentelemetry::trace::Status::Error {
+            description: err.to_string().into(),
+        });
+}
+
 pub(crate) fn verify_proof(
     request_id: i64,
     key: &DbKey,
@@ -386,10 +421,12 @@ pub(crate) fn verify_proof(
     set_server_key(key.sks.clone());
 
     // Step 1: Deserialize and verify the proof
-    let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)?;
+    let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
+        .inspect_err(set_current_span_error)?;
 
     // Step 2: Expand the verified ciphertext list
-    let mut cts = expand_verified_list(request_id, &verified_list)?;
+    let mut cts =
+        expand_verified_list(request_id, &verified_list).inspect_err(set_current_span_error)?;
 
     // Step 3: Create ciphertext handles
     let mut h = Keccak256::new();
@@ -401,7 +438,8 @@ pub(crate) fn verify_proof(
         .iter_mut()
         .enumerate()
         .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
-        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
+        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()
+        .inspect_err(set_current_span_error)?;
 
     Ok((cts, blob_hash))
 }
@@ -416,13 +454,16 @@ fn verify_proof_only(
 ) -> Result<tfhe::ProvenCompactCiphertextList, ExecutionError> {
     let aux_data_bytes = aux_data
         .assemble()
-        .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
+        .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
+        .inspect_err(set_current_span_error)?;
 
     let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
         &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
             key.pks.parameters(), &crs.crs,
-        ))?;
+        ))
+        .map_err(ExecutionError::from)
+        .inspect_err(set_current_span_error)?;
 
     info!(
         message = "Input list deserialized",
@@ -437,7 +478,9 @@ fn verify_proof_only(
     }
 
     if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
-        return Err(ExecutionError::TooManyInputs(the_list.len()));
+        let err = ExecutionError::TooManyInputs(the_list.len());
+        set_current_span_error(&err);
+        return Err(err);
     }
 
     // Verify the ZK proof
@@ -446,12 +489,7 @@ fn verify_proof_only(
     if verification_result.is_invalid() {
         let err =
             ExecutionError::InvalidProof(request_id, "ZK proof verification failed".to_string());
-        tracing::Span::current()
-            .context()
-            .span()
-            .set_status(opentelemetry::trace::Status::Error {
-                description: err.to_string().into(),
-            });
+        set_current_span_error(&err);
         return Err(err);
     }
 
@@ -470,9 +508,12 @@ fn expand_verified_list(
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .expand_without_verification()
-        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
+        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
+        .inspect_err(set_current_span_error)?;
 
-    Ok(extract_ct_list(&expanded)?)
+    extract_ct_list(&expanded)
+        .map_err(ExecutionError::from)
+        .inspect_err(set_current_span_error)
 }
 
 /// Creates a ciphertext

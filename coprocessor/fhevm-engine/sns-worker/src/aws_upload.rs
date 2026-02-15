@@ -10,7 +10,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha3::{Digest, Keccak256};
@@ -537,6 +537,17 @@ async fn fetch_pending_uploads(
         };
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
+            let recovery_span = tracing::info_span!(
+                "recovery_task",
+                operation = "recovery_task",
+                txn_id = tracing::field::Empty
+            );
+            if let Some(transaction_id) = transaction_id.as_deref() {
+                recovery_span.record(
+                    "txn_id",
+                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                );
+            }
             let item = HandleItem {
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
@@ -544,11 +555,7 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: tracing::info_span!(
-                    "recovery_task",
-                    operation = "recovery_task",
-                    handle = %to_hex(&handle)
-                ),
+                otel: recovery_span,
                 transaction_id,
             };
 

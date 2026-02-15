@@ -308,11 +308,17 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     info!(count, "Starting garbage collection of ciphertexts128");
 
-    // Limit the number of rows to update in case of a large backlog due to catchup or burst
-    // Skip Locked to prevent concurrent updates
-    let _start = SystemTime::now();
-    let rows_affected: u64 = sqlx::query!(
-        "
+    // Limit the number of rows to update in case of a large backlog due to catchup or burst.
+    // Skip locked to prevent concurrent updates.
+    let cleanup_span = tracing::info_span!(
+        "cleanup_ct128",
+        operation = "cleanup_ct128",
+        rows_affected = tracing::field::Empty
+    );
+    let rows_affected: u64 = async {
+        Ok::<u64, sqlx::Error>(
+            sqlx::query!(
+                "
         WITH uploaded_ct128 AS (
             SELECT c.handle
             FROM ciphertexts128 c
@@ -327,20 +333,22 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         USING uploaded_ct128 r
         WHERE c.handle = r.handle;
         ",
-        limit as i32
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
+                limit as i32
+            )
+            .execute(pool)
+            .await?
+            .rows_affected(),
+        )
+    }
+    .instrument(cleanup_span.clone())
+    .await?;
+    cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
-        let _cleanup_span = tracing::info_span!(
-            "cleanup_ct128",
-            operation = "cleanup_ct128",
-            rows_affected = rows_affected
-        )
-        .entered();
-        info!("Cleaning up old ciphertexts128");
+        info!(parent: &cleanup_span,
+            rows_affected = rows_affected,
+            "Cleaning up old ciphertexts128"
+        );
     }
 
     Ok(())
@@ -446,7 +454,11 @@ pub async fn query_sns_tasks(
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let _start_time = SystemTime::now();
+    let fetch_span = tracing::info_span!(
+        "db_fetch_tasks",
+        operation = "db_fetch_tasks",
+        count = tracing::field::Empty
+    );
 
     let query = format!(
         "
@@ -466,7 +478,9 @@ pub async fn query_sns_tasks(
     let records = sqlx::query(&query)
         .bind(limit as i64)
         .fetch_all(db_txn.as_mut())
+        .instrument(fetch_span.clone())
         .await?;
+    fetch_span.record("count", records.len() as i64);
 
     info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
     tracing::Span::current().record("count", records.len());
@@ -485,6 +499,14 @@ pub async fn query_sns_tasks(
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
+            let task_span =
+                tracing::info_span!("task", operation = "task", txn_id = tracing::field::Empty);
+            if let Some(transaction_id) = transaction_id.as_deref() {
+                task_span.record(
+                    "txn_id",
+                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                );
+            }
 
             Ok(HandleItem {
                 // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
@@ -494,11 +516,7 @@ pub async fn query_sns_tasks(
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: tracing::info_span!(
-                    "task",
-                    operation = "task",
-                    handle = %to_hex(&handle)
-                ),
+                otel: task_span,
                 transaction_id,
             })
         })

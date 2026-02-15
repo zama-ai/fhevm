@@ -397,7 +397,7 @@ impl Database {
     }
 
     #[rustfmt::skip]
-    #[tracing::instrument(skip_all, fields(operation = "handle_tfhe_event"))]
+    #[tracing::instrument(skip_all, fields(operation = "handle_tfhe_event", txn_id = tracing::field::Empty))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -412,6 +412,12 @@ impl Database {
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let fhe_operation = event_to_op_int(event);
+        if let Some(transaction_hash) = log.transaction_hash.as_ref() {
+            tracing::Span::current().record(
+                "txn_id",
+                tracing::field::display(telemetry::short_txn_id(transaction_hash.as_ref())),
+            );
+        }
         let insert_computation = |tx, result, dependencies, scalar_byte| {
             self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
@@ -559,7 +565,7 @@ impl Database {
     }
 
     /// Handles all types of ACL events
-    #[tracing::instrument(skip_all, fields(operation = "handle_acl_event"))]
+    #[tracing::instrument(skip_all, fields(operation = "handle_acl_event", txn_id = tracing::field::Empty))]
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -570,6 +576,14 @@ impl Database {
         block_number: u64,
     ) -> Result<bool, SqlxError> {
         let data = &event.data;
+        if let Some(transaction_hash) = transaction_hash.as_ref() {
+            tracing::Span::current().record(
+                "txn_id",
+                tracing::field::display(telemetry::short_txn_id(
+                    transaction_hash.as_ref(),
+                )),
+            );
+        }
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
 

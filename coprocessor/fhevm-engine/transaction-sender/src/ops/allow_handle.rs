@@ -66,7 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
-    #[tracing::instrument(skip_all, fields(operation = "call_allow_account"))]
+    #[tracing::instrument(skip_all, fields(operation = "call_allow_account", txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -75,6 +75,12 @@ where
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        if let Some(transaction_id) = src_transaction_id.as_deref() {
+            tracing::Span::current().record(
+                "txn_id",
+                tracing::field::display(telemetry::short_txn_id(transaction_id)),
+            );
+        }
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
@@ -359,10 +365,17 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
-            let _span =
-                tracing::info_span!("prepare_allow_account", operation = "prepare_allow_account");
-            // Use `enter()` in async loops to avoid keeping a non-Send
-            // entered guard across await points.
+            let _span = tracing::info_span!(
+                "prepare_allow_account",
+                operation = "prepare_allow_account",
+                txn_id = tracing::field::Empty
+            );
+            if let Some(transaction_id) = src_transaction_id.as_deref() {
+                _span.record(
+                    "txn_id",
+                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                );
+            }
             let _enter = _span.enter();
 
             let handle = row.handle.clone();

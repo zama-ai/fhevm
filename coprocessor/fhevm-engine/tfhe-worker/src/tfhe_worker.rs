@@ -136,12 +136,14 @@ async fn tfhe_worker_cycle(
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
         let loop_span = tracing::info_span!("worker_iteration");
-        let _acq_span = tracing::info_span!(parent: &loop_span, "acquire_connection", operation = "acquire_connection");
-        let mut conn = pool.acquire().await?;
-        drop(_acq_span);
-        let _txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction", operation = "begin_transaction");
-        let mut trx = conn.begin().await?;
-        drop(_txn_span);
+        let acq_span = tracing::info_span!(
+            parent: &loop_span,
+            "acquire_connection",
+            operation = "acquire_connection"
+        );
+        let mut conn = pool.acquire().instrument(acq_span).await?;
+        let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction", operation = "begin_transaction");
+        let mut trx = conn.begin().instrument(txn_span).await?;
 
         // Query for transactions to execute
         let (mut transactions, earliest_computation, has_more_work) = query_for_work(
@@ -164,17 +166,20 @@ async fn tfhe_worker_cycle(
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
-            let _dcid_span = tracing::info_span!(
+            let dcid_span = tracing::info_span!(
                 parent: &loop_span,
                 "query_dependence_chain",
                 operation = "query_dependence_chain",
                 dependence_chain_id = tracing::field::Empty
             );
 
-            let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
+            let (dependence_chain_id, _) = dcid_mngr
+                .acquire_next_lock()
+                .instrument(dcid_span.clone())
+                .await?;
             immediately_poll_more_work = dependence_chain_id.is_some();
 
-            _dcid_span.record(
+            dcid_span.record(
                 "dependence_chain_id",
                 tracing::field::display(
                     dependence_chain_id
@@ -183,8 +188,11 @@ async fn tfhe_worker_cycle(
                         .unwrap_or_else(|| "none".to_string()),
                 ),
             );
-            tracing::info!(parent: &_dcid_span, "acquired dependence chain lock");
-            drop(_dcid_span);
+            tracing::info!(
+                parent: &dcid_span,
+                dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
+                "acquired dependence chain lock"
+            );
 
             continue;
         }
@@ -285,14 +293,14 @@ async fn query_for_work<'a>(
     no_progress_cycles: &mut u32,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), Box<dyn std::error::Error + Send + Sync>>
 {
-    let _s_dcid = tracing::info_span!(
+    let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         operation = "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
-    let (dependence_chain_id, locking_reason) =
-        match deps_chain_mngr.extend_or_release_current_lock(true).await? {
+    let (dependence_chain_id, locking_reason) = async {
+        let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
             Some((id, reason)) => (Some(id), reason),
             None => {
@@ -306,6 +314,10 @@ async fn query_for_work<'a>(
                 }
             }
         };
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(result)
+    }
+    .instrument(s_dcid.clone())
+    .await?;
     if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
         // No dependence chain to lock, so no work to do
         health_check.update_db_access();
@@ -313,7 +325,7 @@ async fn query_for_work<'a>(
         info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
-    _s_dcid.record(
+    s_dcid.record(
         "dependence_chain_id",
         tracing::field::display(
             dependence_chain_id
@@ -322,10 +334,8 @@ async fn query_for_work<'a>(
                 .unwrap_or_else(|| "none".to_string()),
         ),
     );
-    tracing::info!(parent: &_s_dcid, "query dependence chain result");
-    drop(_s_dcid);
-
-    let _s_work = tracing::info_span!(
+    tracing::info!(parent: &s_dcid, "query dependence chain result");
+    let s_work = tracing::info_span!(
         "query_work_items",
         operation = "query_work_items",
         count = tracing::field::Empty
@@ -364,6 +374,7 @@ WHERE c.transaction_id IN (
         transaction_batch_size as i32,
     )
     .fetch_all(trx.as_mut())
+    .instrument(s_work.clone())
     .await
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
@@ -371,9 +382,8 @@ WHERE c.transaction_id IN (
     })?;
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
-    _s_work.record("count", the_work.len());
-    tracing::info!(parent: &_s_work, "work items queried");
-    drop(_s_work);
+    s_work.record("count", the_work.len());
+    tracing::info!(parent: &s_work, "work items queried");
     health_check.update_db_access();
     if the_work.is_empty() {
         if let Some(dependence_chain_id) = &dependence_chain_id {
@@ -385,71 +395,75 @@ WHERE c.transaction_id IN (
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
-    let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
-    let _s_prep = tracing::info_span!(
+    let s_prep = tracing::info_span!(
         "prepare_dataflow_graphs",
         operation = "prepare_dataflow_graphs",
         work_items = the_work.len()
     );
-    // Partition work directly by transaction
-    let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
-        .into_iter()
-        .into_group_map_by(|k| k.transaction_id.clone());
-    // Traverse transactions and build transaction nodes
-    let mut transactions: Vec<ComponentNode> = vec![];
-    for (transaction_id, txwork) in work_by_transaction.iter() {
-        let mut ops = vec![];
-        for w in txwork {
-            let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
-                Ok(op) => op,
-                Err(e) => {
-                    error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
-                    set_computation_error(
-                        &w.output_handle,
-                        transaction_id,
-                        &e,
-                        trx,
-                        deps_chain_mngr,
-                    )
-                    .await?;
-                    continue;
+    let (transactions, earliest_schedule_order) = async {
+        let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
+        // Partition work directly by transaction
+        let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
+            .into_iter()
+            .into_group_map_by(|k| k.transaction_id.clone());
+        // Traverse transactions and build transaction nodes
+        let mut transactions: Vec<ComponentNode> = vec![];
+        for (transaction_id, txwork) in work_by_transaction.iter() {
+            let mut ops = vec![];
+            for w in txwork {
+                let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
+                    Ok(op) => op,
+                    Err(e) => {
+                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
+                        set_computation_error(
+                            &w.output_handle,
+                            transaction_id,
+                            &e,
+                            trx,
+                            deps_chain_mngr,
+                        )
+                        .await?;
+                        continue;
+                    }
+                };
+                let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
+                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
+                for (idx, dh) in w.dependencies.iter().enumerate() {
+                    let is_operand_scalar =
+                        w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                    is_scalar_op_vec.push(is_operand_scalar);
+                    this_comp_inputs.push(dh.clone());
+                    if is_operand_scalar {
+                        inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                            dh.clone(),
+                        )));
+                    } else {
+                        inputs.push(DFGTaskInput::Dependence(dh.clone()));
+                    }
                 }
-            };
-            let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
-            let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
-            let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
-            for (idx, dh) in w.dependencies.iter().enumerate() {
-                let is_operand_scalar =
-                    w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
-                is_scalar_op_vec.push(is_operand_scalar);
-                this_comp_inputs.push(dh.clone());
-                if is_operand_scalar {
-                    inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
-                        dh.clone(),
-                    )));
-                } else {
-                    inputs.push(DFGTaskInput::Dependence(dh.clone()));
+                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
+                    .map_err(CoprocessorError::FhevmError)?;
+                ops.push(DFGOp {
+                    output_handle: w.output_handle.clone(),
+                    fhe_op,
+                    inputs,
+                    is_allowed: w.is_allowed,
+                });
+                if w.schedule_order < earliest_schedule_order && w.is_allowed {
+                    // Only account for allowed to avoid case of reorg
+                    // where trivial encrypts will be in collision in
+                    // the same transaction and old ones are re-used
+                    earliest_schedule_order = w.schedule_order;
                 }
             }
-            check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
-                .map_err(CoprocessorError::FhevmError)?;
-            ops.push(DFGOp {
-                output_handle: w.output_handle.clone(),
-                fhe_op,
-                inputs,
-                is_allowed: w.is_allowed,
-            });
-            if w.schedule_order < earliest_schedule_order && w.is_allowed {
-                // Only account for allowed to avoid case of reorg
-                // where trivial encrypts will be in collision in
-                // the same transaction and old ones are re-used
-                earliest_schedule_order = w.schedule_order;
-            }
+            let (mut components, _) = build_component_nodes(ops, &transaction_id.to_vec())?;
+            transactions.append(&mut components);
         }
-        let (mut components, _) = build_component_nodes(ops, transaction_id)?;
-        transactions.append(&mut components);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>((transactions, earliest_schedule_order))
     }
-    drop(_s_prep);
+    .instrument(s_prep)
+    .await?;
     Ok((transactions, earliest_schedule_order, true))
 }
 
@@ -493,7 +507,7 @@ async fn build_transaction_graph_and_execute<'a>(
     }
     // Execute the DFG
     let s_compute = tracing::info_span!("compute_fhe_ops", operation = "compute_fhe_ops");
-    {
+    async {
         // Fetch the latest key from the database
         let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
             Ok(k) => k,
@@ -502,12 +516,11 @@ async fn build_transaction_graph_and_execute<'a>(
                     reason: err.to_string(),
                 };
                 error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
-                s_compute
-                    .context()
-                    .span()
-                    .set_status(opentelemetry::trace::Status::Error {
+                tracing::Span::current().context().span().set_status(
+                    opentelemetry::trace::Status::Error {
                         description: cerr.to_string().into(),
-                    });
+                    },
+                );
                 WORKER_ERRORS_COUNTER.inc();
                 return Err(cerr.into());
             }
@@ -525,8 +538,10 @@ async fn build_transaction_graph_and_execute<'a>(
             health_check.activity_heartbeat.clone(),
         );
         sched.schedule().await?;
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     }
-    drop(s_compute);
+    .instrument(s_compute)
+    .await?;
     Ok(tx_graph)
 }
 
@@ -606,44 +621,54 @@ async fn upload_transaction_graph_results<'a>(
         }
     }
     if !cts_to_insert.is_empty() {
-        let _s_insert = tracing::info_span!("insert_ct_into_db", operation = "insert_ct_into_db");
-        for (h, (_, (_, db_type))) in cts_to_insert.iter() {
-            tracing::info!(parent: &_s_insert, handle = %format!("0x{}", hex::encode(h)), ciphertext_type = *db_type as i64, "inserting ciphertext");
-        }
-        #[allow(clippy::type_complexity)]
-        let (handles, (ciphertexts, (ciphertext_versions, ciphertext_types))): (
-            Vec<_>,
-            (Vec<_>, (Vec<_>, Vec<_>)),
-        ) = cts_to_insert.into_iter().unzip();
-        let cts_inserted = query!(
-            "
+        let s_insert = tracing::info_span!("insert_ct_into_db", operation = "insert_ct_into_db");
+        let cts_inserted = async {
+            for (h, (_, (_, db_type))) in cts_to_insert.iter() {
+                tracing::info!(
+                    handle = %format!("0x{}", hex::encode(h)),
+                    ciphertext_type = *db_type as i64,
+                    "inserting ciphertext"
+                );
+            }
+            #[allow(clippy::type_complexity)]
+            let (handles, (ciphertexts, (ciphertext_versions, ciphertext_types))): (
+                Vec<_>,
+                (Vec<_>, (Vec<_>, Vec<_>)),
+            ) = cts_to_insert.into_iter().unzip();
+            let cts_inserted = query!(
+                "
             INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
             SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version) DO NOTHING
             ",
-            &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
-            .execute(trx.as_mut())
-            .await.map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
-                err
-            })?.rows_affected();
-        // Notify all workers that new ciphertext is inserted
-        // For now, it's only the SnS workers that are listening for these events
-        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-            .execute(trx.as_mut())
-            .await?;
-        drop(_s_insert);
+                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
+            )
+                .execute(trx.as_mut())
+                .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
+                    err
+                })?.rows_affected();
+            // Notify all workers that new ciphertext is inserted
+            // For now, it's only the SnS workers that are listening for these events
+            let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+                .execute(trx.as_mut())
+                .await?;
+            Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(cts_inserted)
+        }
+        .instrument(s_insert)
+        .await?;
         res |= cts_inserted > 0;
     }
 
     if !handles_to_update.is_empty() {
-        let _s_update = tracing::info_span!("update_computation", operation = "update_computation");
-        for (h, _) in handles_to_update.iter() {
-            tracing::info!(parent: &_s_update, handle = %format!("0x{}", hex::encode(h)), "updating computation");
-        }
-        let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
-        let comp_updated = query!(
-            "
+        let s_update = tracing::info_span!("update_computation", operation = "update_computation");
+        let comp_updated = async {
+            for (h, _) in handles_to_update.iter() {
+                tracing::info!(handle = %format!("0x{}", hex::encode(h)), "updating computation");
+            }
+            let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+            let comp_updated = query!(
+                "
             UPDATE computations
             SET is_completed = true, completed_at = CURRENT_TIMESTAMP
             WHERE is_completed = false
@@ -651,15 +676,18 @@ async fn upload_transaction_graph_results<'a>(
                 SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
             )
             ",
-            &handles_vec,
-            &txn_ids_vec
-        )
-        .execute(trx.as_mut())
-        .await.map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
-            err
-        })?.rows_affected();
-        drop(_s_update);
+                &handles_vec,
+                &txn_ids_vec
+            )
+            .execute(trx.as_mut())
+            .await.map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
+                err
+            })?.rows_affected();
+            Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(comp_updated)
+        }
+        .instrument(s_update)
+        .await?;
         res |= comp_updated > 0;
     }
     Ok(res)

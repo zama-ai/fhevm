@@ -14,7 +14,7 @@ use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
 use std::time::Duration;
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::input_verification::InputVerification::InputVerificationErrors;
@@ -117,13 +117,19 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(operation = "call_verify_proof_resp"))]
+    #[tracing::instrument(skip_all, fields(operation = "call_verify_proof_resp", txn_id = tracing::field::Empty))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        if let Some(transaction_id) = src_transaction_id.as_deref() {
+            tracing::Span::current().record(
+                "txn_id",
+                tracing::field::display(telemetry::short_txn_id(transaction_id)),
+            );
+        }
         info!(zk_proof_id = txn_request.0, "Processing transaction");
 
         let receipt = match self
@@ -247,26 +253,32 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let _span = tracing::info_span!(
+            let span = tracing::info_span!(
                 "prepare_verify_proof_resp",
-                operation = "prepare_verify_proof_resp"
+                operation = "prepare_verify_proof_resp",
+                txn_id = tracing::field::Empty
             );
-            // Use `enter()` in async loops to avoid keeping a non-Send
-            // entered guard across await points.
-            let _enter = _span.enter();
+            if let Some(transaction_id) = transaction_id.as_deref() {
+                span.record(
+                    "txn_id",
+                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                );
+            }
 
             let txn_request = match row.verified {
                 Some(true) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
+                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing verified proof");
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
                     if handles.len() % 32 != 0 {
-                        error!(
+                        error!(parent: &span,
                             handles_len = handles.len(),
                             "Bad handles field, len is not divisible by 32"
                         );
-                        self.remove_proof_by_id(row.zk_proof_id).await?;
+                        self.remove_proof_by_id(row.zk_proof_id)
+                            .instrument(span.clone())
+                            .await?;
                         continue;
                     }
                     let handles: Vec<FixedBytes<32>> = handles
@@ -293,7 +305,11 @@ where
                         extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
-                    let signature = self.signer.sign_hash(&signing_hash).await?;
+                    let signature = self
+                        .signer
+                        .sign_hash(&signing_hash)
+                        .instrument(span.clone())
+                        .await?;
 
                     if let Some(gas) = self.gas {
                         (
@@ -323,7 +339,7 @@ where
                     }
                 }
                 Some(false) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
+                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing rejected proof");
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
@@ -348,7 +364,7 @@ where
                     }
                 }
                 None => {
-                    error!(
+                    error!(parent: &span,
                         zk_proof_id = row.zk_proof_id,
                         "verified field is unexpectedly None for proof"
                     );

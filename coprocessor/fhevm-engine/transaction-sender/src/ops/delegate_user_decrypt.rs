@@ -114,12 +114,20 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
-    #[tracing::instrument(skip_all, fields(operation = "call_delegate_user_decrypt"))]
+    #[tracing::instrument(skip_all, fields(operation = "call_delegate_user_decrypt", txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
+        if let Some(transaction_id) = delegation.transaction_id.as_deref() {
+            tracing::Span::current().record(
+                "txn_id",
+                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                    transaction_id,
+                )),
+            );
+        }
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
