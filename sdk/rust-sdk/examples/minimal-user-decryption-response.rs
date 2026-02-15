@@ -52,7 +52,7 @@ fn main() -> Result<()> {
         .with_signature("eed514aa094b8a9aff0314a749eef12e2d1d36c44484f1814ae1be9aeb8a9eef41e87d2bde2019131f81a25dcc482bcc0d1ed3cc9f65ebda0a44b9fc42f091621b")
         .with_json_response(json_response)
         .with_verification(true)
-        .with_domain("Authorization token")// Be carefull, domain should be Decryption, but this example has been generated with Authorization token
+        .with_domain("Authorization token")// Be careful, domain should be Decryption, but this example has been generated with Authorization token
         .process();
 
     match result {

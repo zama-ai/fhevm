@@ -334,7 +334,7 @@ impl LockMngr {
             }
         };
 
-        // Since UPDATE always aquire a row-level lock internally,
+        // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange
         let rows = if let Some(update_at) = update_at {
             sqlx::query!(

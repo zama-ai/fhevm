@@ -26,7 +26,7 @@ pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> 
         anyhow::bail!("Server key does not have noise squashing");
     }
     if noise_squashing_compression_key.is_none() {
-        anyhow::bail!("Server key does not have noise squashing compresion");
+        anyhow::bail!("Server key does not have noise squashing compression");
     }
     if re_randomization_keyswitching_key.is_none() {
         anyhow::bail!("Server key does not have rerandomisation");

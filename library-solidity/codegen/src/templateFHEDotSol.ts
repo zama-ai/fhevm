@@ -547,8 +547,13 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
         } else {
           bytes32 inputBytes32 = externalE${fheType.type.toLowerCase()}.unwrap(inputHandle);
           if(inputBytes32 == 0){
-            inputBytes32 = Impl.trivialEncrypt(0, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
-            return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
+            return asE${fheType.type.toLowerCase()}(${
+              fheType.type == 'Bool'
+                ? 'false'
+                : fheType.type == 'Address'
+                  ? `${fheType.clearMatchingType.toLowerCase()}(0)`
+                  : 0
+            });
           }
           if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
           return e${fheType.type.toLowerCase()}.wrap(inputBytes32);

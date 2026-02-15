@@ -349,7 +349,7 @@ async fn test_listener_no_event_loss(
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
     let nb_wallets = setup.wallets.len() as i64;
-    // Restart/kill many time until no more events are consumned.
+    // Restart/kill many time until no more events are consumed.
     for _ in 1..120 {
         // 10 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));

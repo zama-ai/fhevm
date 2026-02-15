@@ -48,7 +48,7 @@ pub enum ExecutionError {
     InvalidProof(i64, String),
 
     #[error("Fhevm error: {0}")]
-    FaildFhevm(#[from] FhevmError),
+    FailedFhevm(#[from] FhevmError),
 
     #[error("Server keys not found {0}")]
     ServerKeysNotFound(String),
