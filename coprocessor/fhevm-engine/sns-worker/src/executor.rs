@@ -454,12 +454,6 @@ pub async fn query_sns_tasks(
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let fetch_span = tracing::info_span!(
-        "db_fetch_tasks",
-        operation = "db_fetch_tasks",
-        count = tracing::field::Empty
-    );
-
     let query = format!(
         "
         SELECT a.*, c.ciphertext
@@ -478,9 +472,7 @@ pub async fn query_sns_tasks(
     let records = sqlx::query(&query)
         .bind(limit as i64)
         .fetch_all(db_txn.as_mut())
-        .instrument(fetch_span.clone())
         .await?;
-    fetch_span.record("count", records.len() as i64);
 
     info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
     tracing::Span::current().record("count", records.len());
