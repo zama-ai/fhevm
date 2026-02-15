@@ -429,6 +429,7 @@ test_oom_failure_is_actionable() {
 
   assert_contains "${output_file}" "looks OOM-killed"
   assert_contains "${output_file}" "./fhevm-cli deploy --resume coprocessor"
+  assert_not_contains "${output_file}" "Usage:"
 
   unset DOCKER_FAIL_SERVICE
   unset DOCKER_FAIL_EXIT_CODE
@@ -452,6 +453,7 @@ test_key_bootstrap_failure_is_actionable() {
 
   assert_contains "${output_file}" "Detected key-bootstrap-not-ready state"
   assert_contains "${output_file}" "./fhevm-cli deploy --resume gateway-sc"
+  assert_not_contains "${output_file}" "Usage:"
 
   unset DOCKER_FAIL_SERVICE
   unset DOCKER_FAIL_EXIT_CODE
@@ -470,6 +472,40 @@ test_strict_otel_requires_jaeger() {
   fi
 
   assert_contains "${output_file}" "Telemetry endpoint http://jaeger:4317 is configured but Jaeger is not running."
+  cleanup_fixture
+}
+
+test_quoted_otel_endpoint_is_accepted() {
+  setup_fixture
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.coprocessor" <<'ENV'
+AWS_ENDPOINT_URL=http://minio:9000
+OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4317"
+ENV
+
+  local output_file="${TEST_TMP_DIR}/quoted-otel.out"
+  if ! run_deploy "${output_file}"; then
+    echo "Deploy should accept quoted OTEL endpoint value" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.local" "OTEL_EXPORTER_OTLP_ENDPOINT=\"http://jaeger:4317\""
+  cleanup_fixture
+}
+
+test_usage_is_shown_for_cli_argument_errors() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/usage-error.out"
+  if run_cli "${output_file}" unknown-command; then
+    echo "Unknown command should fail" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Unknown command: unknown-command"
+  assert_contains "${output_file}" "Usage:"
   cleanup_fixture
 }
 
@@ -514,8 +550,10 @@ main() {
   test_oom_failure_is_actionable
   test_key_bootstrap_failure_is_actionable
   test_strict_otel_requires_jaeger
+  test_quoted_otel_endpoint_is_accepted
   test_clean_purge_invokes_prunes
   test_telemetry_smoke_requires_jaeger
+  test_usage_is_shown_for_cli_argument_errors
 
   echo "All deploy behavior tests passed"
 }

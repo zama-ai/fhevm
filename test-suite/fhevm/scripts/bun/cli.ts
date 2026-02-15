@@ -32,6 +32,8 @@ const STEP_BY_NAME = new Map(DEPLOYMENT_STEPS.map((step) => [step.name, step]));
 const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
+class CliUsageError extends Error {}
+
 type DeployOptions = {
   forceBuild: boolean;
   localBuild: boolean;
@@ -121,6 +123,10 @@ function logWarn(message: string): void {
 
 function logError(message: string): void {
   console.error(`${COLORS.red}[ERROR]${COLORS.reset} ${message}`);
+}
+
+function usageError(message: string): never {
+  throw new CliUsageError(message);
 }
 
 function loadDotEnvFile(filePath: string): void {
@@ -258,7 +264,14 @@ function readEnvValue(filePath: string, key: string): string | undefined {
     if (line.slice(0, idx).trim() !== key) {
       continue;
     }
-    return line.slice(idx + 1).trim();
+    let value = line.slice(idx + 1).trim();
+    if (
+      (value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    return value;
   }
   return undefined;
 }
@@ -791,29 +804,29 @@ function parseDeployArgs(args: string[]): DeployOptions {
       continue;
     }
 
-    throw new Error(`Unknown argument for deploy: ${arg}`);
+    usageError(`Unknown argument for deploy: ${arg}`);
   }
 
   const validSteps = stepNames().join(" ");
 
   if (expectResumeStep) {
-    throw new Error(`--resume requires a step name\nValid steps are: ${validSteps}`);
+    usageError(`--resume requires a step name\nValid steps are: ${validSteps}`);
   }
 
   if (expectOnlyStep) {
-    throw new Error(`--only requires a step name\nValid steps are: ${validSteps}`);
+    usageError(`--only requires a step name\nValid steps are: ${validSteps}`);
   }
 
   if (options.resumeStep && stepIndex(options.resumeStep) === -1) {
-    throw new Error(`Invalid resume step: ${options.resumeStep}\nValid steps are: ${validSteps}`);
+    usageError(`Invalid resume step: ${options.resumeStep}\nValid steps are: ${validSteps}`);
   }
 
   if (options.onlyStep && stepIndex(options.onlyStep) === -1) {
-    throw new Error(`Invalid step: ${options.onlyStep}\nValid steps are: ${validSteps}`);
+    usageError(`Invalid step: ${options.onlyStep}\nValid steps are: ${validSteps}`);
   }
 
   if (options.resumeStep && options.onlyStep) {
-    throw new Error("Cannot use --resume and --only together");
+    usageError("Cannot use --resume and --only together");
   }
 
   if (options.resumeStep) {
@@ -970,7 +983,7 @@ function parseTestArgs(args: string[]): { testType: string; options: TestOptions
     if (arg === "-n" || arg === "--network") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
-        throw new Error("Network argument missing");
+        usageError("Network argument missing");
       }
       options.network = value;
       i += 2;
@@ -980,7 +993,7 @@ function parseTestArgs(args: string[]): { testType: string; options: TestOptions
     if (arg === "-g" || arg === "--grep") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
-        throw new Error("Grep pattern missing");
+        usageError("Grep pattern missing");
       }
       options.grep = value;
       i += 2;
@@ -999,7 +1012,7 @@ function parseTestArgs(args: string[]): { testType: string; options: TestOptions
       continue;
     }
 
-    throw new Error(`Unknown option: ${arg}`);
+    usageError(`Unknown option: ${arg}`);
   }
 
   return { testType, options };
@@ -1031,7 +1044,7 @@ function runTests(args: string[]): void {
   } else {
     const config = TEST_TYPE_CONFIG[testType];
     if (!config) {
-      throw new Error(`Unknown test type: ${testType}`);
+      usageError(`Unknown test type: ${testType}`);
     }
 
     if (config.debugShell) {
@@ -1063,7 +1076,7 @@ function runTests(args: string[]): void {
 
 function pauseOrUnpause(command: "pause" | "unpause", contractsArg?: string): void {
   if (contractsArg !== "gateway" && contractsArg !== "host") {
-    throw new Error(`Unknown service: ${contractsArg ?? ""}`);
+    usageError(`Unknown service: ${contractsArg ?? ""}`);
   }
 
   const action = command === "pause" ? "PAUSE" : "UNPAUSE";
@@ -1079,7 +1092,7 @@ function pauseOrUnpause(command: "pause" | "unpause", contractsArg?: string): vo
 
 function upgrade(service?: string): void {
   if (!service || !UPGRADE_SERVICES.includes(service)) {
-    throw new Error(`Unknown service: ${service ?? ""}`);
+    usageError(`Unknown service: ${service ?? ""}`);
   }
 
   const envFile = localEnvFile(service);
@@ -1116,7 +1129,7 @@ function parseCleanArgs(args: string[]): CleanOptions {
       options.purgeNetworks = true;
       continue;
     }
-    throw new Error(`Unknown option for clean: ${arg}`);
+    usageError(`Unknown option for clean: ${arg}`);
   }
 
   return options;
@@ -1152,7 +1165,7 @@ function clean(args: string[]): void {
 
 function logs(service?: string): void {
   if (!service) {
-    throw new Error("Service name is required");
+    usageError("Service name is required");
   }
 
   console.log(`${COLORS.lightBlue}[LOGS]${COLORS.reset} ${COLORS.bold}Showing logs for ${service}...${COLORS.reset}`);
@@ -1208,7 +1221,7 @@ function main(): number {
         usage();
         return EXIT_SUCCESS;
       default:
-        throw new Error(`Unknown command: ${command}`);
+        usageError(`Unknown command: ${command}`);
     }
   } catch (error) {
     if (error instanceof Error) {
@@ -1219,7 +1232,9 @@ function main(): number {
     } else {
       logError(String(error));
     }
-    usage();
+    if (error instanceof CliUsageError) {
+      usage();
+    }
     return EXIT_FAILURE;
   }
 }

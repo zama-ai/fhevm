@@ -42,5 +42,12 @@ export function runCommand(command: string[], options: RunOptions = {}): RunResu
 }
 
 export function sleep(seconds: number): void {
-  runCommand(["sleep", String(seconds)], { check: true });
+  const milliseconds = Math.max(0, Math.floor(seconds * 1000));
+  if (milliseconds === 0) {
+    return;
+  }
+
+  const buffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  const blocker = new Int32Array(buffer);
+  Atomics.wait(blocker, 0, 0, milliseconds);
 }
