@@ -12,8 +12,7 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, Chain,
-    ChainHash, Database, LogTfhe,
+    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -187,11 +186,9 @@ pub async fn ingest_block_logs(
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
-        // Count newly inserted dependent TFHE ops (ops that consume input
-        // handles). This approximates dependent work added to a chain by this
-        // ingest pass.
-        let has_dependencies = !tfhe_inputs_handle(&tfhe_log.event).is_empty();
-        if slow_lane_enabled && inserted && has_dependencies {
+        // Count all newly inserted ops per chain to avoid underestimating
+        // pressure from producer paths that are required by downstream work.
+        if slow_lane_enabled && inserted {
             let total = dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .or_default();

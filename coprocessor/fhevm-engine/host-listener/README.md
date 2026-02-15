@@ -39,7 +39,7 @@ If you want to disable TFHE operation events propagation, you can provide an emp
 
 Current behavior:
 - Counter is **per dependence chain, per ingest pass** (block-scoped in normal flow).
-- Count is **unweighted**: `+1` for each newly inserted op that has input handles.
+- Count is **unweighted**: `+1` for each newly inserted TFHE op in the chain.
 - `is_allowed` is **not** part of the counter (a non-allowed op can still be required producer work).
 - It is **not** dependency depth and **not** cumulative across past blocks.
 
