@@ -409,6 +409,7 @@ WHERE c.transaction_id IN (
         // Traverse transactions and build transaction nodes
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
+            let transaction_id: &Vec<u8> = transaction_id;
             let mut ops = vec![];
             for w in txwork {
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
@@ -457,7 +458,7 @@ WHERE c.transaction_id IN (
                     earliest_schedule_order = w.schedule_order;
                 }
             }
-            let (mut components, _) = build_component_nodes(ops, &transaction_id.to_vec())?;
+            let (mut components, _) = build_component_nodes(ops, transaction_id)?;
             transactions.append(&mut components);
         }
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>((transactions, earliest_schedule_order))
