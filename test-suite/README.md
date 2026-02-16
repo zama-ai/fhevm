@@ -98,12 +98,13 @@ cd test-suite/fhevm
 bun run deploy --network testnet
 bun run test input-proof
 bun run telemetry-smoke
-bun run clean --purge-local-cache
+bun run clean --purge-build-cache
 ```
 
 All `clean` purge flags are fhevm-scoped:
 - `--purge-images` removes images referenced by fhevm compose services.
-- `--purge-build-cache` and `--purge-local-cache` remove local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
+- `--purge-build-cache` removes the local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
+- `--purge-local-cache` is a compatibility alias for `--purge-build-cache`.
 - `--purge-networks` removes Docker networks labeled with the active compose project only.
 
 For `deploy --coprocessors N` with `N > 1`, `cast` (Foundry) must be installed locally to derive per-coprocessor accounts from `MNEMONIC`.
@@ -186,11 +187,11 @@ For agent workflows, prefer explicit command+flag forms from this table.
 | `test` | `-v, --verbose` | Verbose test output. |
 | `test` | `-r, --no-relayer` | Disable Rust relayer in tests. |
 | `test` | `--no-hardhat-compile` | Skip compile when artifacts are already up-to-date. |
-| `clean` | `--purge` | Shorthand for all purge flags below. |
+| `clean` | `--purge` | Shorthand for `--purge-images --purge-build-cache --purge-networks`. |
 | `clean` | `--purge-images` | Remove images referenced by fhevm compose services only. |
 | `clean` | `--purge-build-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
 | `clean` | `--purge-networks` | Remove Docker networks labeled with the active compose project only. |
-| `clean` | `--purge-local-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
+| `clean` | `--purge-local-cache` | Alias of `--purge-build-cache` (kept for compatibility). |
 | `pause` / `unpause` | `host` or `gateway` | Contract pause controls. |
 | `upgrade` | `<service>` | Restart selected service compose stack. |
 | `logs` | `<service>` | Stream container logs for one service. |
@@ -216,6 +217,9 @@ Resume steps (in order):
 When resuming:
 - Services **before** the resume step are preserved (containers + volumes kept)
 - Services **from** the resume step onwards are torn down and redeployed
+
+Multicoprocessor safety note:
+- If you change multicoprocessor topology (`--coprocessors` and/or `--coprocessor-threshold`) while using `--resume` from `coprocessor` or later, the CLI intentionally forces resume from `minio` to reset key material coherently across all coprocessors.
 
 ### Deploying a single step
 

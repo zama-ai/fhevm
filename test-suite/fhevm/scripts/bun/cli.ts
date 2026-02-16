@@ -55,7 +55,6 @@ type CleanOptions = {
   purgeImages: boolean;
   purgeBuildCache: boolean;
   purgeNetworks: boolean;
-  purgeLocalCache: boolean;
 };
 
 type TestOptions = {
@@ -82,6 +81,8 @@ function printLogo(): void {
 }
 
 function usage(): void {
+  const testTypes = Object.keys(TEST_TYPE_CONFIG).join("|");
+
   printLogo();
   console.log(`${COLORS.bold}Usage:${COLORS.reset} ${COLORS.yellow}fhevm-cli${COLORS.reset} ${COLORS.cyan}COMMAND [OPTIONS]${COLORS.reset}`);
   console.log("");
@@ -89,7 +90,7 @@ function usage(): void {
   console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--network testnet|mainnet] [--coprocessors N] [--coprocessor-threshold T] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
   console.log(`  ${COLORS.yellow}pause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Pause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}unpause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Unpause specific contracts (host|gateway)`);
-  console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)`);
+  console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (${testTypes})`);
   console.log(`  ${COLORS.yellow}upgrade${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}   Upgrade specific service`);
   console.log(`  ${COLORS.yellow}clean${COLORS.reset} ${COLORS.cyan}[--purge] [--purge-images] [--purge-build-cache] [--purge-networks] [--purge-local-cache]${COLORS.reset}  Clean stack resources`);
   console.log(`  ${COLORS.yellow}logs${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}      View logs for a specific service`);
@@ -115,11 +116,11 @@ function usage(): void {
   console.log(`  ${COLORS.cyan}--no-hardhat-compile${COLORS.reset}        Skip Hardhat compilation step`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Clean Options:${COLORS.reset}`);
-  console.log(`  ${COLORS.cyan}--purge${COLORS.reset}               Equivalent to --purge-images --purge-build-cache --purge-networks --purge-local-cache`);
+  console.log(`  ${COLORS.cyan}--purge${COLORS.reset}               Equivalent to --purge-images --purge-build-cache --purge-networks`);
   console.log(`  ${COLORS.cyan}--purge-images${COLORS.reset}        Remove images for fhevm compose services only`);
   console.log(`  ${COLORS.cyan}--purge-build-cache${COLORS.reset}   Remove local fhevm Buildx cache directory`);
-  console.log(`  ${COLORS.cyan}--purge-networks${COLORS.reset}      Remove fhevm-prefixed Docker networks`);
-  console.log(`  ${COLORS.cyan}--purge-local-cache${COLORS.reset}   Remove local Buildx cache dir (.buildx-cache or FHEVM_BUILDX_CACHE_DIR)`);
+  console.log(`  ${COLORS.cyan}--purge-networks${COLORS.reset}      Remove networks labeled for the active fhevm compose project only`);
+  console.log(`  ${COLORS.cyan}--purge-local-cache${COLORS.reset}   Alias of --purge-build-cache (kept for compatibility)`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Examples:${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy${COLORS.reset}`);
@@ -139,7 +140,7 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli upgrade coprocessor${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli telemetry-smoke${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli clean --purge${COLORS.reset}`);
-  console.log(`  ${COLORS.purple}./fhevm-cli clean --purge-local-cache${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli clean --purge-build-cache${COLORS.reset}`);
   console.log(`  ${COLORS.purple}FHEVM_DOCKER_PROJECT=fhevm-dev ./fhevm-cli deploy${COLORS.reset}`);
   console.log(`${COLORS.blue}============================================================${COLORS.reset}`);
 }
@@ -2107,7 +2108,7 @@ function resolveEffectiveResumeStep(options: DeployOptions): string | undefined 
     const adjustedStep = "minio";
     if (options.resumeStep !== adjustedStep) {
       logWarn(
-        `Requested resume step '${options.resumeStep}' is too late for multicoprocessor topology changes. Forcing resume from '${adjustedStep}' to reset key material and chain state coherently.`,
+        `Requested resume step '${options.resumeStep}' is too late for multicoprocessor topology changes. Forcing resume from '${adjustedStep}' for a full key-material reset (this intentionally redeploys the full stack to keep key digests coherent).`,
       );
     }
     return adjustedStep;
@@ -2569,7 +2570,6 @@ function parseCleanArgs(args: string[]): CleanOptions {
     purgeImages: false,
     purgeBuildCache: false,
     purgeNetworks: false,
-    purgeLocalCache: false,
   };
 
   for (const arg of args) {
@@ -2577,7 +2577,6 @@ function parseCleanArgs(args: string[]): CleanOptions {
       options.purgeImages = true;
       options.purgeBuildCache = true;
       options.purgeNetworks = true;
-      options.purgeLocalCache = true;
       continue;
     }
     if (arg === "--purge-images") {
@@ -2593,7 +2592,7 @@ function parseCleanArgs(args: string[]): CleanOptions {
       continue;
     }
     if (arg === "--purge-local-cache") {
-      options.purgeLocalCache = true;
+      options.purgeBuildCache = true;
       continue;
     }
     usageError(`Unknown option for clean: ${arg}`);
@@ -2623,11 +2622,7 @@ function clean(args: string[]): void {
   }
 
   if (options.purgeBuildCache) {
-    logInfo("Removing local fhevm Buildx cache only.");
-    purgeLocalBuildxCache();
-  }
-
-  if (options.purgeLocalCache && !options.purgeBuildCache) {
+    logInfo("Removing local fhevm Buildx cache directory.");
     purgeLocalBuildxCache();
   }
 

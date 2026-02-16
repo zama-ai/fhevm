@@ -91,6 +91,36 @@ case "${subcommand}" in
     fi
     exit 0
     ;;
+  exec)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -e)
+          shift 2
+          ;;
+        *)
+          break
+          ;;
+      esac
+    done
+
+    container="${1:-}"
+    shift || true
+
+    if [[ "${1:-}" == "curl" ]]; then
+      if [[ "$*" == *"http://fhevm-relayer:3000/v2/keyurl"* ]]; then
+        cat <<'JSON'
+{"response":{"fheKeyInfo":[{"fhePublicKey":{"urls":["http://mock-fhevm/key"]}}],"crs":{"2048":{"urls":["http://mock-fhevm/crs"]}}}}
+JSON
+        exit 0
+      fi
+
+      if [[ "$*" == *"http://mock-fhevm/key"* || "$*" == *"http://mock-fhevm/crs"* ]]; then
+        exit 0
+      fi
+    fi
+
+    exit 0
+    ;;
   ps)
     if [[ "${1:-}" == "-a" ]]; then
       shift
@@ -127,6 +157,42 @@ case "${subcommand}" in
       for name in "${names[@]}"; do
         echo "${name}"
       done
+    fi
+    exit 0
+    ;;
+  volume)
+    action="${1:-}"
+    shift || true
+    if [[ "${action}" == "ls" ]]; then
+      filter_name=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --filter)
+            if [[ "${2:-}" == name=* ]]; then
+              filter_name="${2#name=}"
+            fi
+            shift 2
+            ;;
+          --format)
+            shift 2
+            ;;
+          *)
+            shift
+            ;;
+        esac
+      done
+
+      names_csv="${DOCKER_VOLUME_NAMES:-fhevm_minio_secrets}"
+      IFS=',' read -r -a names <<< "${names_csv}"
+      exact="${filter_name#^}"
+      exact="${exact%\$}"
+
+      for name in "${names[@]}"; do
+        if [[ -z "${exact}" || "${name}" == "${exact}" ]]; then
+          echo "${name}"
+        fi
+      done
+      exit 0
     fi
     exit 0
     ;;
@@ -298,6 +364,7 @@ run_deploy() {
     export TEST_COMMAND_LOG="${COMMAND_LOG}"
     export DOCKER_COMPLETE_SERVICES="${DOCKER_COMPLETE_SERVICES:-${DEFAULT_COMPLETE_SERVICES}}"
     export DOCKER_MINIO_IP="${DOCKER_MINIO_IP:-172.20.0.2}"
+    export DOCKER_RUNNING_NAMES="${DOCKER_RUNNING_NAMES:-fhevm-relayer,fhevm-test-suite-e2e-debug}"
 
     ./deploy-fhevm-stack.sh "$@"
   ) > "${output_file}" 2>&1
@@ -313,6 +380,7 @@ run_cli() {
     export TEST_COMMAND_LOG="${COMMAND_LOG}"
     export DOCKER_COMPLETE_SERVICES="${DOCKER_COMPLETE_SERVICES:-${DEFAULT_COMPLETE_SERVICES}}"
     export DOCKER_MINIO_IP="${DOCKER_MINIO_IP:-172.20.0.2}"
+    export DOCKER_RUNNING_NAMES="${DOCKER_RUNNING_NAMES:-fhevm-relayer,fhevm-test-suite-e2e-debug}"
 
     bun scripts/bun/cli.ts "$@"
   ) > "${output_file}" 2>&1
@@ -414,8 +482,8 @@ test_default_flow_and_env_patch() {
   assert_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "kms-connector-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "gateway-mocked-payment-docker-compose.yml up -d"
-  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml up -d"
-  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml up -d"
+  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml up --force-recreate -d gateway-sc-deploy"
+  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml up --force-recreate -d host-sc-deploy"
   assert_contains "${COMMAND_LOG}" "relayer-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "test-suite-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "setup-kms-signer"
@@ -453,23 +521,60 @@ test_resume_preserves_prior_steps_and_restarts_tail() {
 
   assert_contains "${COMMAND_LOG}" "kms-connector-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "gateway-mocked-payment-docker-compose.yml up -d"
-  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml up -d"
-  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml up -d"
+  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml up --force-recreate -d gateway-sc-deploy"
+  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml up --force-recreate -d host-sc-deploy"
   assert_contains "${COMMAND_LOG}" "relayer-docker-compose.yml up -d"
   assert_contains "${COMMAND_LOG}" "test-suite-docker-compose.yml up -d"
 
-  assert_contains "${COMMAND_LOG}" "test-suite-docker-compose.yml down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "relayer-docker-compose.yml down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "gateway-mocked-payment-docker-compose.yml down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "kms-connector-docker-compose.yml down -v --remove-orphans"
-  assert_not_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml down -v --remove-orphans"
+  assert_contains "${COMMAND_LOG}" "test-suite-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "relayer-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "host-sc-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "gateway-sc-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "gateway-mocked-payment-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "kms-connector-docker-compose.yml down -v"
+  assert_not_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml down -v"
 
-  assert_order "${COMMAND_LOG}" "test-suite-docker-compose.yml down -v --remove-orphans" "kms-connector-docker-compose.yml down -v --remove-orphans"
+  assert_order "${COMMAND_LOG}" "test-suite-docker-compose.yml down -v" "kms-connector-docker-compose.yml down -v"
   assert_order "${COMMAND_LOG}" "docker inspect -f {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}} fhevm-minio" "kms-connector-docker-compose.yml up -d"
 
   unset DOCKER_RUNNING_NAMES
+  cleanup_fixture
+}
+
+test_multicoprocessor_resume_forces_minio_reset() {
+  setup_fixture
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.gateway-sc" <<'ENV'
+MNEMONIC=test test test test test test test test test test test junk
+COPROCESSOR_THRESHOLD=1
+NUM_COPROCESSORS=1
+COPROCESSOR_TX_SENDER_ADDRESS_0=0x1111111111111111111111111111111111111111
+COPROCESSOR_SIGNER_ADDRESS_0=0x1111111111111111111111111111111111111111
+COPROCESSOR_S3_BUCKET_URL_0=http://minio:9000/ct128
+ENV
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.host-sc" <<'ENV'
+COPROCESSOR_THRESHOLD=1
+NUM_COPROCESSORS=1
+COPROCESSOR_SIGNER_ADDRESS_0=0x1111111111111111111111111111111111111111
+ENV
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.coprocessor" <<'ENV'
+AWS_ENDPOINT_URL=http://minio:9000
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/coprocessor"
+TX_SENDER_PRIVATE_KEY=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ENV
+
+  local output_file="${TEST_TMP_DIR}/multicoprocessor-resume-forced-minio.out"
+  if ! run_deploy "${output_file}" --resume coprocessor --coprocessors 2 --coprocessor-threshold 2; then
+    echo "Deploy with resume+multicoprocessor should succeed" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Forcing resume from 'minio'."
+  assert_contains "${COMMAND_LOG}" "minio-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "minio-docker-compose.yml up -d"
   cleanup_fixture
 }
 
@@ -483,7 +588,7 @@ test_only_runs_single_step() {
     return 1
   fi
 
-  assert_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml down -v --remove-orphans"
+  assert_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml down -v"
   assert_contains "${COMMAND_LOG}" "coprocessor-docker-compose.yml up -d"
   assert_not_contains "${COMMAND_LOG}" "host-node-docker-compose.yml up -d"
   assert_not_contains "${COMMAND_LOG}" "gateway-node-docker-compose.yml up -d"
@@ -727,13 +832,13 @@ test_clean_purge_invokes_prunes() {
     return 1
   fi
 
-  assert_contains "${COMMAND_LOG}" "docker compose -p fhevm down -v --remove-orphans"
-  assert_contains "${COMMAND_LOG}" "docker network ls --format {{.Name}}"
+  assert_contains "${COMMAND_LOG}" "minio-docker-compose.yml down -v"
+  assert_contains "${COMMAND_LOG}" "docker network ls --filter label=com.docker.compose.project=fhevm --format {{.Name}}"
   assert_contains "${COMMAND_LOG}" "down -v --remove-orphans --rmi all"
   assert_not_contains "${COMMAND_LOG}" "docker image prune -af"
   assert_not_contains "${COMMAND_LOG}" "docker builder prune -af"
   assert_contains "${output_file}" "Removing images referenced by fhevm compose services only."
-  assert_contains "${output_file}" "Removing local fhevm Buildx cache only."
+  assert_contains "${output_file}" "Removing local fhevm Buildx cache directory."
   assert_contains "${output_file}" "Removed local Buildx cache directory"
   if [[ -d "${FIXTURE_ROOT}/.buildx-cache" ]]; then
     echo "Assertion failed: .buildx-cache should be removed by clean --purge" >&2
@@ -764,6 +869,9 @@ test_command_and_flag_matrix() {
   export FHEVM_GRAFANA_DASHBOARD_HTML_FILE="${dashboard_fixture}"
 
   run_cli_ok "help-command" help
+  assert_contains "${TEST_TMP_DIR}/help-command.out" "input-proof-compute-decrypt"
+  assert_contains "${TEST_TMP_DIR}/help-command.out" "paused-host-contracts"
+  assert_contains "${TEST_TMP_DIR}/help-command.out" "paused-gateway-contracts"
   run_cli_ok "help-short" -h
   run_cli_ok "help-long" --help
 
@@ -829,6 +937,7 @@ main() {
   test_quoted_otel_endpoint_is_accepted
   test_multicoprocessor_flags_are_validated
   test_multicoprocessor_env_and_extra_instances
+  test_multicoprocessor_resume_forces_minio_reset
   test_clean_purge_invokes_prunes
   test_telemetry_smoke_requires_jaeger
   test_command_and_flag_matrix
