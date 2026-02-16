@@ -643,7 +643,6 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
         env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),

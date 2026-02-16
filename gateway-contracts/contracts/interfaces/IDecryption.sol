@@ -328,24 +328,20 @@ interface IDecryption {
 
     /**
      * @notice Indicates if handles are ready to be decrypted by a user.
-     * @param userAddress The user's address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function isUserDecryptionReady(
-        address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
     ) external view returns (bool);
 
     /**
      * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
-     * @param delegationAccounts The delegator and delegate addresses.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function isDelegatedUserDecryptionReady(
-        DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
     ) external view returns (bool);

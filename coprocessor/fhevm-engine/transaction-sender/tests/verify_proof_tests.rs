@@ -1,7 +1,8 @@
 use alloy::network::TxSigner;
 use alloy::primitives::FixedBytes;
 use alloy::primitives::U256;
-use alloy::providers::WsConnect;
+use alloy::providers::{Provider, WsConnect};
+use alloy::signers::local::PrivateKeySigner;
 use alloy::{providers::ProviderBuilder, sol};
 use common::SignerType;
 use common::{is_coprocessor_config_error, CiphertextCommits, InputVerification, TestEnvironment};
@@ -1326,9 +1327,8 @@ async fn stop_retrying_verify_proof_on_gw_config_error(
 
     let txn_sender = TransactionSender::new(
         env.db_pool.clone(),
-        *input_verification.address(),
-        *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),

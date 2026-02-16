@@ -68,10 +68,6 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
   // set, as they are made owned by the GatewayConfig contract's owner.
   await run("compile:specific", { contract: "contracts/emptyProxy" });
 
-  console.log("Deploying an EmptyUUPS proxy contract for MultichainACL...");
-  const multichainACLAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  setGatewayContractAddress("MultichainACL", multichainACLAddress);
-
   console.log("Deploying an EmptyUUPS proxy contract for CiphertextCommits...");
   const ciphertextCommitsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   setGatewayContractAddress("CiphertextCommits", ciphertextCommitsAddress);
