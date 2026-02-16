@@ -74,6 +74,13 @@ fn propagate_slow_lane_to_dependents(
     }
 }
 
+/// Classifies slow chains by aggregating inserted-op pressure over connected
+/// split-dependency closures.
+///
+/// In no-fork mode, one logical dependent workload can be partitioned into
+/// multiple small dependence chains. This helper keeps scheduling unchanged,
+/// but computes throttling on the undirected closure induced by
+/// `split_dependencies`, then marks every chain in an over-cap closure as slow.
 fn classify_slow_by_split_dependency_closure(
     chains: &[Chain],
     dependent_ops_by_chain: &HashMap<ChainHash, u64>,
