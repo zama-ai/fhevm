@@ -167,7 +167,7 @@ async fn run_uploader_loop(
                     // Cross-boundary: spawned task; restore the OTel context
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3", operation = "upload_s3");
-                    upload_span.set_parent(item.otel.context());
+                    upload_span.set_parent(item.span.context());
                     match upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
                         .await
@@ -543,16 +543,12 @@ async fn fetch_pending_uploads(
                 txn_id = tracing::field::Empty,
                 handle = tracing::field::Empty
             );
-            recovery_span.record(
-                "handle",
-                tracing::field::display(telemetry::short_hex_id(&handle)),
+            telemetry::record_short_hex(&recovery_span, "handle", &handle);
+            telemetry::record_short_hex_if_some(
+                &recovery_span,
+                "txn_id",
+                transaction_id.as_deref(),
             );
-            if let Some(transaction_id) = transaction_id.as_deref() {
-                recovery_span.record(
-                    "txn_id",
-                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
-                );
-            }
             let item = HandleItem {
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
@@ -560,7 +556,7 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: recovery_span,
+                span: recovery_span,
                 transaction_id,
             };
 

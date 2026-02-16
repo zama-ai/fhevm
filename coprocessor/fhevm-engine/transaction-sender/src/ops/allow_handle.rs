@@ -75,12 +75,11 @@ where
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        if let Some(transaction_id) = src_transaction_id.as_deref() {
-            tracing::Span::current().record(
-                "txn_id",
-                tracing::field::display(telemetry::short_hex_id(transaction_id)),
-            );
-        }
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            src_transaction_id.as_deref(),
+        );
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
@@ -370,12 +369,7 @@ where
                 operation = "prepare_allow_account",
                 txn_id = tracing::field::Empty
             );
-            if let Some(transaction_id) = src_transaction_id.as_deref() {
-                _span.record(
-                    "txn_id",
-                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
-                );
-            }
+            telemetry::record_short_hex_if_some(&_span, "txn_id", src_transaction_id.as_deref());
             let _enter = _span.enter();
 
             let handle = row.handle.clone();

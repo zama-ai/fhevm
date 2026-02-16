@@ -412,12 +412,11 @@ impl Database {
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let fhe_operation = event_to_op_int(event);
-        if let Some(transaction_hash) = log.transaction_hash.as_ref() {
-            tracing::Span::current().record(
-                "txn_id",
-                tracing::field::display(telemetry::short_hex_id(transaction_hash.as_ref())),
-            );
-        }
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            log.transaction_hash.as_ref().map(|transaction_hash| transaction_hash.as_ref()),
+        );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
             self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
@@ -576,14 +575,13 @@ impl Database {
         block_number: u64,
     ) -> Result<bool, SqlxError> {
         let data = &event.data;
-        if let Some(transaction_hash) = transaction_hash.as_ref() {
-            tracing::Span::current().record(
-                "txn_id",
-                tracing::field::display(telemetry::short_hex_id(
-                    transaction_hash.as_ref(),
-                )),
-            );
-        }
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            transaction_hash
+                .as_ref()
+                .map(|transaction_hash| transaction_hash.as_ref()),
+        );
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
 

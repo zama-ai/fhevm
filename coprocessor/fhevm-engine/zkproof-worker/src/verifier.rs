@@ -302,14 +302,11 @@ async fn execute_verify_proof_routine(
             request_id,
             txn_id = tracing::field::Empty
         );
-        if let Some(transaction_id) = transaction_id.as_deref() {
-            verify_span.record(
-                "txn_id",
-                tracing::field::display(fhevm_engine_common::telemetry::short_hex_id(
-                    transaction_id,
-                )),
-            );
-        }
+        fhevm_engine_common::telemetry::record_short_hex_if_some(
+            &verify_span,
+            "txn_id",
+            transaction_id.as_deref(),
+        );
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
@@ -329,14 +326,11 @@ async fn execute_verify_proof_routine(
             request_id,
             txn_id = tracing::field::Empty
         );
-        if let Some(transaction_id) = transaction_id.as_deref() {
-            t.record(
-                "txn_id",
-                tracing::field::display(fhevm_engine_common::telemetry::short_hex_id(
-                    transaction_id,
-                )),
-            );
-        }
+        fhevm_engine_common::telemetry::record_short_hex_if_some(
+            &t,
+            "txn_id",
+            transaction_id.as_deref(),
+        );
 
         let mut verified = false;
         let mut handles_bytes = vec![];

@@ -236,7 +236,7 @@ pub struct HandleItem {
     /// The computed 128-bit ciphertext
     pub(crate) ct128: Arc<BigCiphertext>,
 
-    pub otel: tracing::Span,
+    pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
 }
 

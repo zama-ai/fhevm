@@ -622,15 +622,12 @@ async fn upload_transaction_graph_results<'a>(
         }
     }
     if !cts_to_insert.is_empty() {
-        let s_insert = tracing::info_span!("insert_ct_into_db", operation = "insert_ct_into_db");
+        let s_insert = tracing::info_span!(
+            "insert_ct_into_db",
+            operation = "insert_ct_into_db",
+            count = cts_to_insert.len()
+        );
         let cts_inserted = async {
-            for (h, (_, (_, db_type))) in cts_to_insert.iter() {
-                tracing::info!(
-                    handle = %format!("0x{}", hex::encode(h)),
-                    ciphertext_type = *db_type as i64,
-                    "inserting ciphertext"
-                );
-            }
             #[allow(clippy::type_complexity)]
             let (handles, (ciphertexts, (ciphertext_versions, ciphertext_types))): (
                 Vec<_>,
@@ -662,11 +659,12 @@ async fn upload_transaction_graph_results<'a>(
     }
 
     if !handles_to_update.is_empty() {
-        let s_update = tracing::info_span!("update_computation", operation = "update_computation");
+        let s_update = tracing::info_span!(
+            "update_computation",
+            operation = "update_computation",
+            count = handles_to_update.len()
+        );
         let comp_updated = async {
-            for (h, _) in handles_to_update.iter() {
-                tracing::info!(handle = %format!("0x{}", hex::encode(h)), "updating computation");
-            }
             let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
             let comp_updated = query!(
                 "

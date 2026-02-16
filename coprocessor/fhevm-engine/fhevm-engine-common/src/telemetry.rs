@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, Span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Calls provider shutdown exactly once when dropped.
@@ -209,6 +209,16 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
 /// Returns the legacy short-form hex id used by telemetry spans.
 pub fn short_hex_id(value: &[u8]) -> String {
     to_hex(value).get(0..10).unwrap_or_default().to_owned()
+}
+
+pub fn record_short_hex(span: &Span, field: &'static str, value: &[u8]) {
+    span.record(field, tracing::field::display(short_hex_id(value)));
+}
+
+pub fn record_short_hex_if_some(span: &Span, field: &'static str, value: Option<&[u8]>) {
+    if let Some(value) = value {
+        record_short_hex(span, field, value);
+    }
 }
 
 pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =

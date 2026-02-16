@@ -124,12 +124,11 @@ where
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        if let Some(transaction_id) = src_transaction_id.as_deref() {
-            tracing::Span::current().record(
-                "txn_id",
-                tracing::field::display(telemetry::short_hex_id(transaction_id)),
-            );
-        }
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            src_transaction_id.as_deref(),
+        );
         info!(zk_proof_id = txn_request.0, "Processing transaction");
 
         let receipt = match self
@@ -258,12 +257,7 @@ where
                 operation = "prepare_verify_proof_resp",
                 txn_id = tracing::field::Empty
             );
-            if let Some(transaction_id) = transaction_id.as_deref() {
-                span.record(
-                    "txn_id",
-                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
-                );
-            }
+            telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
 
             let txn_request = match row.verified {
                 Some(true) => {

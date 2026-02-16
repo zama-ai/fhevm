@@ -497,16 +497,8 @@ pub async fn query_sns_tasks(
                 txn_id = tracing::field::Empty,
                 handle = tracing::field::Empty
             );
-            task_span.record(
-                "handle",
-                tracing::field::display(telemetry::short_hex_id(&handle)),
-            );
-            if let Some(transaction_id) = transaction_id.as_deref() {
-                task_span.record(
-                    "txn_id",
-                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
-                );
-            }
+            telemetry::record_short_hex(&task_span, "handle", &handle);
+            telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
 
             Ok(HandleItem {
                 // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
@@ -516,7 +508,7 @@ pub async fn query_sns_tasks(
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: task_span,
+                span: task_span,
                 transaction_id,
             })
         })
@@ -594,7 +586,7 @@ fn compute_task(
     // Cross-boundary: compute_task runs on a thread-pool worker;
     // restore the OTel context that was captured when the task was enqueued.
     let span = error_span!("compute", thread_id = %thread_id);
-    span.set_parent(task.otel.context());
+    span.set_parent(task.span.context());
     let _enter = span.enter();
 
     let handle = to_hex(&task.handle);
