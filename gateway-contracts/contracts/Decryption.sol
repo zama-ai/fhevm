@@ -687,8 +687,7 @@ contract Decryption is
             return false;
         }
 
-        // For each handle, check that the ciphertext material represented by it has been added.
-        // ACL checks are performed by the KMS.
+        // Check that ciphertext material has been added for each cthandle.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
                 return false;
@@ -709,8 +708,7 @@ contract Decryption is
             return false;
         }
 
-        // For each ctHandleContractPair, check that the ciphertext material for the handle has been added.
-        // ACL checks (delegation, account permissions) are performed by the KMS.
+        // Check that ciphertext material has been added for each cthandle.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
                 return false;
