@@ -328,10 +328,21 @@ impl InfiniteLogIter {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url)
             .with_config(config)
-            .with_max_retries(0); // disabled, alloy skips events
-        let provider = match ProviderBuilder::new().connect_ws(ws).await {
-            Ok(provider) => provider,
-            Err(_) => anyhow::bail!("Cannot get a provider"),
+            // disabled, retried explicitly later
+            .with_max_retries(0);
+        // Timeout to prevent slow reconnection
+        let provider = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            ProviderBuilder::new().connect_ws(ws),
+        );
+        let provider = match provider.await {
+            Err(_) => {
+                anyhow::bail!("Timeout getting provider for logs range")
+            }
+            Ok(Err(err)) => {
+                anyhow::bail!("Cannot get provider for logs range due to {err}")
+            }
+            Ok(Ok(provider)) => provider,
         };
         // Timeout to prevent hanging indefinitely on buggy node
         match tokio::time::timeout(
