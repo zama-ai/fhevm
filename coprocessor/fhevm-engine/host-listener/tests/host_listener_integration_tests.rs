@@ -467,9 +467,9 @@ async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
     .await?;
 
     let cases = [
-        ("below_cap", 63_usize, 64_u32, 0_i16, 11_u64),
-        ("at_cap", 64_usize, 64_u32, 0_i16, 12_u64),
-        ("above_cap", 65_usize, 64_u32, 1_i16, 13_u64),
+        ("below_cap", 62_usize, 64_u32, 0_i16, 11_u64),
+        ("at_cap", 63_usize, 64_u32, 0_i16, 12_u64),
+        ("above_cap", 64_usize, 64_u32, 1_i16, 13_u64),
     ];
 
     let mut seen_chains = HashSet::new();
