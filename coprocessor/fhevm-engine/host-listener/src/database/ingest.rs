@@ -252,10 +252,10 @@ pub async fn ingest_block_logs(
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
         if slow_lane_enabled && inserted {
-            let total = dependent_ops_by_chain
+            dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
-                .or_default();
-            *total = total.saturating_add(1);
+                .and_modify(|count| *count = count.saturating_add(1))
+                .or_insert(1);
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
