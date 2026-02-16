@@ -111,7 +111,6 @@ pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
-    chain_id_label: String,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
 }
@@ -146,7 +145,6 @@ impl Database {
         Ok(Database {
             url: url.clone(),
             chain_id,
-            chain_id_label: chain_id.to_string(),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
@@ -155,8 +153,9 @@ impl Database {
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
         if count > 0 {
+            let chain_id_label = self.chain_id.to_string();
             SLOW_LANE_MARKED_CHAINS_TOTAL
-                .with_label_values(&[self.chain_id_label.as_str()])
+                .with_label_values(&[chain_id_label.as_str()])
                 .inc_by(count);
         }
     }
