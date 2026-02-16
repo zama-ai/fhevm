@@ -39,6 +39,7 @@ type DeployOptions = {
   localBuild: boolean;
   telemetrySmoke: boolean;
   strictOtel: boolean;
+  networkProfile?: "testnet" | "mainnet";
   resumeStep?: string;
   onlyStep?: string;
 };
@@ -77,7 +78,7 @@ function usage(): void {
   console.log(`${COLORS.bold}Usage:${COLORS.reset} ${COLORS.yellow}fhevm-cli${COLORS.reset} ${COLORS.cyan}COMMAND [OPTIONS]${COLORS.reset}`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Commands:${COLORS.reset}`);
-  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
+  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--network testnet|mainnet] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
   console.log(`  ${COLORS.yellow}pause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Pause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}unpause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Unpause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)`);
@@ -99,6 +100,7 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --build${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --local${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --build --telemetry-smoke${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli deploy --network testnet${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --resume kms-connector${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --only coprocessor${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli test input-proof${COLORS.reset}`);
@@ -202,6 +204,206 @@ function printVersionSummary(buildTag: string): void {
     const suffix = version.appendBuildTag ? buildTag : "";
     logInfo(`  ${version.displayName}:${value}${suffix}`);
   }
+}
+
+type NetworkVersionRow = {
+  name: string;
+  registry: string;
+  repository: string;
+  version: string;
+};
+
+function htmlDecode(raw: string): string {
+  return raw
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function resolveChromiumBinary(): string | undefined {
+  if (process.env.FHEVM_GRAFANA_CHROMIUM_BIN && process.env.FHEVM_GRAFANA_CHROMIUM_BIN.trim() !== "") {
+    const configured = process.env.FHEVM_GRAFANA_CHROMIUM_BIN.trim();
+    if (fs.existsSync(configured)) {
+      return configured;
+    }
+  }
+
+  const homeDir = process.env.HOME ?? "";
+  const candidates: string[] = [];
+
+  if (homeDir) {
+    const playwrightCaches = [
+      path.resolve(homeDir, "Library/Caches/ms-playwright"),
+      path.resolve(homeDir, ".cache/ms-playwright"),
+    ];
+
+    for (const playwrightCache of playwrightCaches) {
+      if (!fs.existsSync(playwrightCache)) {
+        continue;
+      }
+      const chromiumDirs = fs
+        .readdirSync(playwrightCache, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("chromium-"))
+        .map((entry) => entry.name)
+        .sort()
+        .reverse();
+
+      for (const dirName of chromiumDirs) {
+        candidates.push(
+          path.resolve(
+            playwrightCache,
+            dirName,
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+          ),
+        );
+        candidates.push(
+          path.resolve(
+            playwrightCache,
+            dirName,
+            "chrome-mac/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+          ),
+        );
+        candidates.push(path.resolve(playwrightCache, dirName, "chrome-linux/chrome"));
+      }
+    }
+  }
+
+  candidates.push(
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  );
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function loadRenderedDashboardDom(url: string): string {
+  const fixtureFile = process.env.FHEVM_GRAFANA_DASHBOARD_HTML_FILE;
+  if (fixtureFile && fixtureFile.trim() !== "") {
+    const resolved = path.resolve(fixtureFile);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`FHEVM_GRAFANA_DASHBOARD_HTML_FILE does not exist: ${resolved}`);
+    }
+    return fs.readFileSync(resolved, "utf8");
+  }
+
+  const chromium = resolveChromiumBinary();
+  if (!chromium) {
+    throw new Error(
+      "Could not resolve a Chromium binary for dashboard scraping. Set FHEVM_GRAFANA_CHROMIUM_BIN or install Chrome/Chromium.",
+    );
+  }
+
+  const result = runCommand(
+    [
+      chromium,
+      "--headless=new",
+      "--disable-gpu",
+      "--window-size=1920,6000",
+      "--virtual-time-budget=25000",
+      "--dump-dom",
+      url,
+    ],
+    { capture: true, check: false, allowFailure: true },
+  );
+
+  if (result.status !== 0 || !result.stdout.trim()) {
+    const details = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+    throw new Error(`Failed to scrape public Grafana dashboard DOM.${details ? `\n${details}` : ""}`);
+  }
+
+  return result.stdout;
+}
+
+function parsePanelRowsFromDom(dom: string, panelTitle: string): NetworkVersionRow[] {
+  const titleMarker = `Panel header ${panelTitle}`;
+  const panelStart = dom.indexOf(titleMarker);
+  if (panelStart === -1) {
+    throw new Error(`Could not find panel '${panelTitle}' in dashboard DOM`);
+  }
+
+  const panelEnd = dom.indexOf("scene-resize-handle", panelStart);
+  const panelHtml = panelEnd === -1 ? dom.slice(panelStart) : dom.slice(panelStart, panelEnd);
+
+  const gridCellRegex = /role="gridcell"[^>]*>(.*?)<\/div>/g;
+  const cells: string[] = [];
+  for (let match = gridCellRegex.exec(panelHtml); match !== null; match = gridCellRegex.exec(panelHtml)) {
+    const value = htmlDecode(match[1].replace(/<[^>]+>/g, ""));
+    if (value !== "") {
+      cells.push(value);
+    }
+  }
+
+  if (cells.length === 0 || cells.length % 4 !== 0) {
+    throw new Error(`Unexpected panel '${panelTitle}' gridcell layout (${cells.length} cells)`);
+  }
+
+  const rows: NetworkVersionRow[] = [];
+  for (let i = 0; i < cells.length; i += 4) {
+    rows.push({
+      name: cells[i],
+      registry: cells[i + 1],
+      repository: cells[i + 2],
+      version: cells[i + 3],
+    });
+  }
+
+  return rows;
+}
+
+function resolveNetworkVersionRows(networkProfile: "testnet" | "mainnet"): NetworkVersionRow[] {
+  const dashboardUrl = process.env.FHEVM_GRAFANA_PUBLIC_VERSIONS_URL
+    ?? "https://zamablockchain.grafana.net/public-dashboards/4027c482ad1e44ddb1336ec04cc5a1db";
+  const dom = loadRenderedDashboardDom(dashboardUrl);
+  const panelTitle = networkProfile === "testnet" ? "Testnet Currently Deployed Versions" : "Mainnet Currently Deployed Versions";
+  return parsePanelRowsFromDom(dom, panelTitle);
+}
+
+function applyNetworkProfileVersions(networkProfile: "testnet" | "mainnet"): void {
+  const rows = resolveNetworkVersionRows(networkProfile);
+  if (rows.length === 0) {
+    throw new Error(`No version rows found for network profile '${networkProfile}'`);
+  }
+
+  const serviceToEnvVar: Record<string, string> = {
+    "coprocessor-gw-listener": "COPROCESSOR_GW_LISTENER_VERSION",
+    "coprocessor-host-listener-catchup-only": "COPROCESSOR_HOST_LISTENER_VERSION",
+    "coprocessor-host-listener-poller": "COPROCESSOR_HOST_LISTENER_VERSION",
+    "coprocessor-host-listener": "COPROCESSOR_HOST_LISTENER_VERSION",
+    "coprocessor-sns-worker": "COPROCESSOR_SNS_WORKER_VERSION",
+    "coprocessor-tfhe-worker": "COPROCESSOR_TFHE_WORKER_VERSION",
+    "coprocessor-tx-sender": "COPROCESSOR_TX_SENDER_VERSION",
+    "coprocessor-zkproof-worker": "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+    "kms-connector-db-migration": "CONNECTOR_DB_MIGRATION_VERSION",
+    "kms-connector-gw-listener": "CONNECTOR_GW_LISTENER_VERSION",
+    "kms-connector-kms-worker": "CONNECTOR_KMS_WORKER_VERSION",
+    "kms-connector-tx-sender": "CONNECTOR_TX_SENDER_VERSION",
+    "kms-core-enclave": "CORE_VERSION",
+  };
+
+  let applied = 0;
+  for (const row of rows) {
+    const envVar = serviceToEnvVar[row.name];
+    if (!envVar) {
+      continue;
+    }
+    process.env[envVar] = row.version;
+    applied += 1;
+  }
+
+  if (applied === 0) {
+    throw new Error(`No known service versions mapped for network profile '${networkProfile}'`);
+  }
+
+  logInfo(`Applied ${applied} version overrides from '${networkProfile}' public dashboard snapshot.`);
 }
 
 function stepNames(): string[] {
@@ -760,6 +962,7 @@ function parseDeployArgs(args: string[]): DeployOptions {
 
   let expectResumeStep = false;
   let expectOnlyStep = false;
+  let expectNetworkProfile = false;
 
   for (const arg of args) {
     if (expectResumeStep) {
@@ -771,6 +974,15 @@ function parseDeployArgs(args: string[]): DeployOptions {
     if (expectOnlyStep) {
       options.onlyStep = arg;
       expectOnlyStep = false;
+      continue;
+    }
+
+    if (expectNetworkProfile) {
+      if (arg !== "testnet" && arg !== "mainnet") {
+        usageError(`Invalid deploy network profile: ${arg}\nAllowed values: testnet mainnet`);
+      }
+      options.networkProfile = arg;
+      expectNetworkProfile = false;
       continue;
     }
 
@@ -798,6 +1010,11 @@ function parseDeployArgs(args: string[]): DeployOptions {
       continue;
     }
 
+    if (arg === "--network") {
+      expectNetworkProfile = true;
+      continue;
+    }
+
     if (arg === "--resume") {
       expectResumeStep = true;
       continue;
@@ -821,6 +1038,10 @@ function parseDeployArgs(args: string[]): DeployOptions {
     usageError(`--only requires a step name\nValid steps are: ${validSteps}`);
   }
 
+  if (expectNetworkProfile) {
+    usageError("--network requires a profile name (testnet|mainnet)");
+  }
+
   if (options.resumeStep && stepIndex(options.resumeStep) === -1) {
     usageError(`Invalid resume step: ${options.resumeStep}\nValid steps are: ${validSteps}`);
   }
@@ -841,11 +1062,19 @@ function parseDeployArgs(args: string[]): DeployOptions {
     logInfo(`Only mode: deploying only step '${options.onlyStep}'`);
   }
 
+  if (options.networkProfile) {
+    logInfo(`Network profile mode: '${options.networkProfile}' versions will be fetched from the public dashboard.`);
+  }
+
   return options;
 }
 
 function deploy(args: string[]): void {
   const options = parseDeployArgs(args);
+
+  if (options.networkProfile) {
+    applyNetworkProfileVersions(options.networkProfile);
+  }
 
   if (options.localBuild) {
     configureLocalBuild();

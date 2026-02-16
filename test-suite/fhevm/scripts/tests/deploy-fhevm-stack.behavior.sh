@@ -211,6 +211,32 @@ CURL
   : > "${COMMAND_LOG}"
 }
 
+write_network_dashboard_fixture() {
+  local fixture_file=$1
+  cat > "${fixture_file}" <<'HTML'
+<div data-testid="data-testid Panel header Testnet Currently Deployed Versions">Panel header Testnet Currently Deployed Versions</div>
+<div role="gridcell">coprocessor-gw-listener</div><div role="gridcell">ghcr.io</div><div role="gridcell">zama-ai/fhevm/coprocessor/gw-listener</div><div role="gridcell">v0.10.10</div>
+<div role="gridcell">coprocessor-host-listener</div><div role="gridcell">ghcr.io</div><div role="gridcell">zama-ai/fhevm/coprocessor/host-listener</div><div role="gridcell">v0.10.10</div>
+<div role="gridcell">coprocessor-tx-sender</div><div role="gridcell">ghcr.io</div><div role="gridcell">zama-ai/fhevm/coprocessor/tx-sender</div><div role="gridcell">v0.10.10</div>
+<div role="gridcell">kms-connector-db-migration</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/db-migration</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-connector-gw-listener</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/gw-listener</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-connector-kms-worker</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/kms-worker</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-connector-tx-sender</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/tx-sender</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-core-enclave</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/kms/core-service-enclave</div><div role="gridcell">v0.12.7</div>
+<div class="scene-resize-handle"></div>
+<div data-testid="data-testid Panel header Mainnet Currently Deployed Versions">Panel header Mainnet Currently Deployed Versions</div>
+<div role="gridcell">coprocessor-gw-listener</div><div role="gridcell">hub.zama.org</div><div role="gridcell">ghcr/zama-ai/fhevm/coprocessor/gw-listener</div><div role="gridcell">v0.10.5</div>
+<div role="gridcell">coprocessor-host-listener</div><div role="gridcell">hub.zama.org</div><div role="gridcell">internal/zama-ai/fhevm/coprocessor/host-listener</div><div role="gridcell">v0.10.9</div>
+<div role="gridcell">coprocessor-tx-sender</div><div role="gridcell">hub.zama.org</div><div role="gridcell">internal/zama-ai/fhevm/coprocessor/tx-sender</div><div role="gridcell">v0.10.5</div>
+<div role="gridcell">kms-connector-db-migration</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/db-migration</div><div role="gridcell">v0.10.7</div>
+<div role="gridcell">kms-connector-gw-listener</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/gw-listener</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-connector-kms-worker</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/kms-worker</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-connector-tx-sender</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/fhevm/kms-connector/tx-sender</div><div role="gridcell">v0.10.8</div>
+<div role="gridcell">kms-core-enclave</div><div role="gridcell">hub.zama.org</div><div role="gridcell">zama-protocol/zama-ai/kms/core-service-enclave</div><div role="gridcell">v0.12.7</div>
+<div class="scene-resize-handle"></div>
+HTML
+}
+
 run_deploy() {
   local output_file=$1
   shift
@@ -475,6 +501,47 @@ test_strict_otel_requires_jaeger() {
   cleanup_fixture
 }
 
+test_deploy_network_profile_applies_versions() {
+  setup_fixture
+  local dashboard_fixture="${TEST_TMP_DIR}/dashboard.html"
+  write_network_dashboard_fixture "${dashboard_fixture}"
+  export FHEVM_GRAFANA_DASHBOARD_HTML_FILE="${dashboard_fixture}"
+
+  local output_file="${TEST_TMP_DIR}/network-mainnet.out"
+  if ! run_deploy "${output_file}" --network mainnet; then
+    echo "Deploy with --network mainnet should succeed" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Applied 8 version overrides from 'mainnet' public dashboard snapshot."
+  assert_contains "${output_file}" "coprocessor/gw-listener:v0.10.5"
+  assert_contains "${output_file}" "coprocessor/host-listener:v0.10.9"
+  assert_contains "${output_file}" "coprocessor/tx-sender:v0.10.5"
+  assert_contains "${output_file}" "kms-connector/db-migration:v0.10.7"
+  assert_contains "${output_file}" "kms-core-service:v0.12.7"
+
+  unset FHEVM_GRAFANA_DASHBOARD_HTML_FILE
+  cleanup_fixture
+}
+
+test_deploy_network_profile_rejects_invalid_value() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/network-invalid.out"
+  if run_deploy "${output_file}" --network foo; then
+    echo "Deploy with invalid --network value should fail" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Invalid deploy network profile: foo"
+  assert_contains "${output_file}" "Allowed values: testnet mainnet"
+  assert_contains "${output_file}" "Usage:"
+
+  cleanup_fixture
+}
+
 test_quoted_otel_endpoint_is_accepted() {
   setup_fixture
 
@@ -552,6 +619,8 @@ main() {
   test_oom_failure_is_actionable
   test_key_bootstrap_failure_is_actionable
   test_strict_otel_requires_jaeger
+  test_deploy_network_profile_applies_versions
+  test_deploy_network_profile_rejects_invalid_value
   test_quoted_otel_endpoint_is_accepted
   test_clean_purge_invokes_prunes
   test_telemetry_smoke_requires_jaeger

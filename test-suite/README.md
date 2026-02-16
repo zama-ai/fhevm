@@ -52,6 +52,9 @@ cd test-suite/fhevm
 # Deploy and fail if telemetry services are not visible in Jaeger
 ./fhevm-cli deploy --build --telemetry-smoke
 
+# Deploy with versions scraped from the public testnet matrix
+./fhevm-cli deploy --network testnet
+
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
 ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
 
@@ -124,6 +127,20 @@ For faster local iteration, use `--local` to enable a local BuildKit cache (stor
 ```
 
 For code-path validation, prefer `--build --local` so your local changes are rebuilt while keeping warm cache layers.
+
+To align local versions with currently deployed environments, you can ask deploy to scrape the public version dashboard:
+
+```sh
+./fhevm-cli deploy --network testnet
+./fhevm-cli deploy --network mainnet
+```
+
+Notes:
+- This is best-effort scraping from the public Grafana dashboard DOM.
+- It applies known service version env vars (coprocessor services, kms-connector services, `CORE_VERSION`) before deployment.
+- Contract/relayer versions continue to use local defaults unless explicitly overridden.
+- If your Chromium path is custom, set `FHEVM_GRAFANA_CHROMIUM_BIN=/path/to/chromium`.
+- For deterministic testing, set `FHEVM_GRAFANA_DASHBOARD_HTML_FILE=/path/to/dashboard.html`.
 
 When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
 
