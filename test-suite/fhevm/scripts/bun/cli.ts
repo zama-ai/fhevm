@@ -584,6 +584,14 @@ function ensureCoprocessorTelemetryEnv(validateReachability: boolean): void {
   }
 }
 
+function resolveLocalBuildxCacheRoot(): string {
+  const configured = process.env.FHEVM_BUILDX_CACHE_DIR ?? ".buildx-cache";
+  if (path.isAbsolute(configured)) {
+    return configured;
+  }
+  return path.resolve(FHEVM_DIR, configured);
+}
+
 function configureLocalBuild(): void {
   logInfo("Enabling local BuildKit cache and disabling provenance attestations.");
   process.env.DOCKER_BUILDKIT = "1";
@@ -592,7 +600,7 @@ function configureLocalBuild(): void {
   process.env.DOCKER_BUILD_PROVENANCE = "false";
   process.env.FHEVM_CARGO_PROFILE = "local";
 
-  const cacheRoot = process.env.FHEVM_BUILDX_CACHE_DIR ?? ".buildx-cache";
+  const cacheRoot = resolveLocalBuildxCacheRoot();
   process.env.FHEVM_BUILDX_CACHE_DIR = cacheRoot;
   fs.mkdirSync(cacheRoot, { recursive: true });
 
@@ -1438,7 +1446,7 @@ function clean(args: string[]): void {
   }
 
   if (options.purgeLocalCache) {
-    const cacheRoot = path.resolve(process.env.FHEVM_BUILDX_CACHE_DIR ?? ".buildx-cache");
+    const cacheRoot = resolveLocalBuildxCacheRoot();
     if (fs.existsSync(cacheRoot)) {
       fs.rmSync(cacheRoot, { recursive: true, force: true });
       logInfo(`Removed local Buildx cache directory: ${cacheRoot}`);
