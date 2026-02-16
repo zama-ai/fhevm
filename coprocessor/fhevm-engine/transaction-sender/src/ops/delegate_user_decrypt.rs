@@ -123,7 +123,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         if let Some(transaction_id) = delegation.transaction_id.as_deref() {
             tracing::Span::current().record(
                 "txn_id",
-                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                tracing::field::display(fhevm_engine_common::telemetry::short_hex_id(
                     transaction_id,
                 )),
             );

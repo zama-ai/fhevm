@@ -305,7 +305,7 @@ async fn execute_verify_proof_routine(
         if let Some(transaction_id) = transaction_id.as_deref() {
             verify_span.record(
                 "txn_id",
-                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                tracing::field::display(fhevm_engine_common::telemetry::short_hex_id(
                     transaction_id,
                 )),
             );
@@ -332,7 +332,7 @@ async fn execute_verify_proof_routine(
         if let Some(transaction_id) = transaction_id.as_deref() {
             t.record(
                 "txn_id",
-                tracing::field::display(fhevm_engine_common::telemetry::short_txn_id(
+                tracing::field::display(fhevm_engine_common::telemetry::short_hex_id(
                     transaction_id,
                 )),
             );

@@ -127,7 +127,7 @@ where
         if let Some(transaction_id) = src_transaction_id.as_deref() {
             tracing::Span::current().record(
                 "txn_id",
-                tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                tracing::field::display(telemetry::short_hex_id(transaction_id)),
             );
         }
         info!(zk_proof_id = txn_request.0, "Processing transaction");
@@ -261,7 +261,7 @@ where
             if let Some(transaction_id) = transaction_id.as_deref() {
                 span.record(
                     "txn_id",
-                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
                 );
             }
 

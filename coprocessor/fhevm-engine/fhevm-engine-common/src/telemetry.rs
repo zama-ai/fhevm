@@ -206,17 +206,8 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
         .unwrap_or_else(|_| panic!("Failed to register latency histogram: {}", name))
 }
 
-/// Returns the legacy short-form transaction id used by older telemetry helpers.
-pub fn short_txn_id(transaction_id: &[u8]) -> String {
-    short_hex_id(transaction_id)
-}
-
-/// Returns the short-form handle id used by legacy tracer_with_handle spans.
-pub fn short_handle_id(handle: &[u8]) -> String {
-    short_hex_id(handle)
-}
-
-fn short_hex_id(value: &[u8]) -> String {
+/// Returns the legacy short-form hex id used by telemetry spans.
+pub fn short_hex_id(value: &[u8]) -> String {
     to_hex(value).get(0..10).unwrap_or_default().to_owned()
 }
 

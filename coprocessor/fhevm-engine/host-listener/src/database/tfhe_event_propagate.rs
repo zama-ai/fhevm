@@ -415,7 +415,7 @@ impl Database {
         if let Some(transaction_hash) = log.transaction_hash.as_ref() {
             tracing::Span::current().record(
                 "txn_id",
-                tracing::field::display(telemetry::short_txn_id(transaction_hash.as_ref())),
+                tracing::field::display(telemetry::short_hex_id(transaction_hash.as_ref())),
             );
         }
         let insert_computation = |tx, result, dependencies, scalar_byte| {
@@ -579,7 +579,7 @@ impl Database {
         if let Some(transaction_hash) = transaction_hash.as_ref() {
             tracing::Span::current().record(
                 "txn_id",
-                tracing::field::display(telemetry::short_txn_id(
+                tracing::field::display(telemetry::short_hex_id(
                     transaction_hash.as_ref(),
                 )),
             );

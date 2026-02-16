@@ -304,7 +304,7 @@ fn execute_partition(
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
-        let txn_id_short = telemetry::short_txn_id(&tid);
+        let txn_id_short = telemetry::short_hex_id(&tid);
 
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
@@ -513,7 +513,7 @@ fn run_computation(
     gpu_idx: usize,
     transaction_id: &Handle,
 ) -> (usize, OpResult) {
-    let txn_id_short = telemetry::short_txn_id(transaction_id);
+    let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {

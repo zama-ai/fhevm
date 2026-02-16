@@ -499,12 +499,12 @@ pub async fn query_sns_tasks(
             );
             task_span.record(
                 "handle",
-                tracing::field::display(telemetry::short_handle_id(&handle)),
+                tracing::field::display(telemetry::short_hex_id(&handle)),
             );
             if let Some(transaction_id) = transaction_id.as_deref() {
                 task_span.record(
                     "txn_id",
-                    tracing::field::display(telemetry::short_txn_id(transaction_id)),
+                    tracing::field::display(telemetry::short_hex_id(transaction_id)),
                 );
             }
 
