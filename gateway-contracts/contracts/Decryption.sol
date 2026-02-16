@@ -679,13 +679,9 @@ contract Decryption is
      * @dev See {IDecryption-isUserDecryptionReady}.
      */
     function isUserDecryptionReady(
-        address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
-        // Silence unused variable warning
-        userAddress;
-
         // Return false if the list of handles is empty
         if (ctHandleContractPairs.length == 0) {
             return false;
@@ -705,12 +701,9 @@ contract Decryption is
      * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
      */
     function isDelegatedUserDecryptionReady(
-        DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
-        // Silence unused variable warning
-        delegationAccounts;
 
         if (ctHandleContractPairs.length == 0) {
             return false;

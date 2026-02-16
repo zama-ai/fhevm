@@ -1559,7 +1559,7 @@ describe("Decryption", function () {
 
     describe("Checks", function () {
       it("Should be false because ciphertext material has not been added", async function () {
-        expect(await decryption.isUserDecryptionReady(user.address, [newCtHandleContractPair], extraDataV0)).to.be
+        expect(await decryption.isUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be
           .false;
       });
 
@@ -2349,7 +2349,6 @@ describe("Decryption", function () {
         ];
         expect(
           await decryption.isDelegatedUserDecryptionReady(
-            delegationAccounts,
             fakeChainIdCtHandleContractPairs,
             extraDataV0,
           ),
@@ -2358,12 +2357,12 @@ describe("Decryption", function () {
 
       it("Should be false because ciphertext material has not been added", async function () {
         expect(
-          await decryption.isDelegatedUserDecryptionReady(delegationAccounts, [newCtHandleContractPair], extraDataV0),
+          await decryption.isDelegatedUserDecryptionReady([newCtHandleContractPair], extraDataV0),
         ).to.be.false;
       });
 
       it("Should be false because the ctHandleContractPairs list is empty", async function () {
-        expect(await decryption.isDelegatedUserDecryptionReady(delegationAccounts, [], extraDataV0)).to.be.false;
+        expect(await decryption.isDelegatedUserDecryptionReady([], extraDataV0)).to.be.false;
       });
     });
 
