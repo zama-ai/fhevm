@@ -89,12 +89,28 @@ function usage(): void {
   console.log(`  ${COLORS.yellow}telemetry-smoke${COLORS.reset}     Validate Jaeger telemetry services`);
   console.log(`  ${COLORS.yellow}help${COLORS.reset}                Display this help message`);
   console.log("");
+  console.log(`${COLORS.bold}${COLORS.lightBlue}Deploy Options:${COLORS.reset}`);
+  console.log(`  ${COLORS.cyan}--build${COLORS.reset}                Build buildable services before starting`);
+  console.log(`  ${COLORS.cyan}--local | --dev${COLORS.reset}       Enable local BuildKit cache optimizations`);
+  console.log(`  ${COLORS.cyan}--network NAME${COLORS.reset}        Version profile for deploy (${COLORS.green}testnet${COLORS.reset}|${COLORS.green}mainnet${COLORS.reset})`);
+  console.log(`  ${COLORS.cyan}--resume STEP${COLORS.reset}         Redeploy from a specific step onward`);
+  console.log(`  ${COLORS.cyan}--only STEP${COLORS.reset}           Redeploy only one step`);
+  console.log(`  ${COLORS.cyan}--telemetry-smoke${COLORS.reset}     Run Jaeger service smoke-check after deploy`);
+  console.log(`  ${COLORS.cyan}--strict-otel${COLORS.reset}          Fail fast if OTEL endpoint requires unavailable Jaeger`);
+  console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Test Options:${COLORS.reset}`);
   console.log(`  ${COLORS.cyan}-v, --verbose${COLORS.reset}       Enable verbose output`);
   console.log(`  ${COLORS.cyan}-n, --network NAME${COLORS.reset}  Specify network (default: ${COLORS.green}staging${COLORS.reset})`);
   console.log(`  ${COLORS.cyan}-g, --grep PATTERN${COLORS.reset}  Override default test pattern`);
   console.log(`  ${COLORS.cyan}-r, --no-relayer${COLORS.reset}    Disable Rust relayer`);
   console.log(`  ${COLORS.cyan}--no-hardhat-compile${COLORS.reset}        Skip Hardhat compilation step`);
+  console.log("");
+  console.log(`${COLORS.bold}${COLORS.lightBlue}Clean Options:${COLORS.reset}`);
+  console.log(`  ${COLORS.cyan}--purge${COLORS.reset}               Equivalent to --purge-images --purge-build-cache --purge-networks --purge-local-cache`);
+  console.log(`  ${COLORS.cyan}--purge-images${COLORS.reset}        Prune all unused Docker images (system-wide)`);
+  console.log(`  ${COLORS.cyan}--purge-build-cache${COLORS.reset}   Prune all unused Docker build cache (system-wide)`);
+  console.log(`  ${COLORS.cyan}--purge-networks${COLORS.reset}      Remove fhevm-prefixed Docker networks`);
+  console.log(`  ${COLORS.cyan}--purge-local-cache${COLORS.reset}   Remove local Buildx cache dir (.buildx-cache or FHEVM_BUILDX_CACHE_DIR)`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Examples:${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy${COLORS.reset}`);
@@ -113,6 +129,7 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli upgrade coprocessor${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli telemetry-smoke${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli clean --purge${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli clean --purge-local-cache${COLORS.reset}`);
   console.log(`${COLORS.blue}============================================================${COLORS.reset}`);
 }
 

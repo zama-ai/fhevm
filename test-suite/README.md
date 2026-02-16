@@ -19,6 +19,7 @@ KMS can be configured to two modes:
   - [Quickstart](#quickstart)
   - [Forcing Local Builds](#wip---forcing-local-builds---build)
   - [Local Developer Optimizations](#local-developer-optimizations)
+  - [CLI Reference](#cli-reference)
   - [Telemetry Checks](#telemetry-checks)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
@@ -148,6 +149,39 @@ When running tests and you know your Hardhat artifacts are already up to date, y
 ```sh
 ./fhevm-cli test input-proof --no-hardhat-compile
 ```
+
+### CLI Reference
+
+For agent workflows, prefer explicit command+flag forms from this table.
+
+| Command | Flags | Notes |
+| --- | --- | --- |
+| `deploy` | `--build` | Build buildable services before `up -d`. |
+| `deploy` | `--local` / `--dev` | Enable local BuildKit cache (`.buildx-cache` by default). |
+| `deploy` | `--network testnet\|mainnet` | Apply version profile from public dashboard before deploy. |
+| `deploy` | `--resume <step>` | Redeploy from a specific step onward. |
+| `deploy` | `--only <step>` | Redeploy only one step. |
+| `deploy` | `--telemetry-smoke` | Run Jaeger service smoke-check after deployment. |
+| `deploy` | `--strict-otel` | Fail if OTEL endpoint expects Jaeger and Jaeger is not running. |
+| `test` | `-n, --network <name>` | Test-runtime network selection (default: `staging`). |
+| `test` | `-g, --grep <pattern>` | Override test grep pattern. |
+| `test` | `-v, --verbose` | Verbose test output. |
+| `test` | `-r, --no-relayer` | Disable Rust relayer in tests. |
+| `test` | `--no-hardhat-compile` | Skip compile when artifacts are already up-to-date. |
+| `clean` | `--purge` | Shorthand for all purge flags below. |
+| `clean` | `--purge-images` | System-wide Docker image prune. |
+| `clean` | `--purge-build-cache` | System-wide Docker builder prune. |
+| `clean` | `--purge-networks` | Remove `fhevm_*` networks. |
+| `clean` | `--purge-local-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
+| `pause` / `unpause` | `host` or `gateway` | Contract pause controls. |
+| `upgrade` | `<service>` | Restart selected service compose stack. |
+| `logs` | `<service>` | Stream container logs for one service. |
+| `telemetry-smoke` | _none_ | Validate required Jaeger services are present. |
+
+Notes:
+- `--network` on `deploy` selects a **version profile** (`testnet`/`mainnet`).
+- `--network` on `test` selects a **test runtime network** (default `staging`).
+- They are intentionally different and command-scoped.
 
 ### Resuming a deployment
 
