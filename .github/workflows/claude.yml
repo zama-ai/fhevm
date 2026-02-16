@@ -34,11 +34,11 @@ jobs:
       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-      id-token: write
-      actions: read
+      contents: read        # Checkout repository code and read files
+      pull-requests: write  # Post review comments and update PR status
+      issues: write         # Respond to @claude mentions in issue comments
+      id-token: write       # OIDC token for GitHub App token exchange
+      actions: read         # Read workflow run context for action inputs
     steps:
 
       # ── Phase 1: Setup (full network) ──────────────────────────────────
