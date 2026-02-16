@@ -107,8 +107,8 @@ function usage(): void {
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Clean Options:${COLORS.reset}`);
   console.log(`  ${COLORS.cyan}--purge${COLORS.reset}               Equivalent to --purge-images --purge-build-cache --purge-networks --purge-local-cache`);
-  console.log(`  ${COLORS.cyan}--purge-images${COLORS.reset}        Prune all unused Docker images (system-wide)`);
-  console.log(`  ${COLORS.cyan}--purge-build-cache${COLORS.reset}   Prune all unused Docker build cache (system-wide)`);
+  console.log(`  ${COLORS.cyan}--purge-images${COLORS.reset}        Remove images for fhevm compose services only`);
+  console.log(`  ${COLORS.cyan}--purge-build-cache${COLORS.reset}   Remove local fhevm Buildx cache directory`);
   console.log(`  ${COLORS.cyan}--purge-networks${COLORS.reset}      Remove fhevm-prefixed Docker networks`);
   console.log(`  ${COLORS.cyan}--purge-local-cache${COLORS.reset}   Remove local Buildx cache dir (.buildx-cache or FHEVM_BUILDX_CACHE_DIR)`);
   console.log("");
@@ -912,6 +912,49 @@ function cleanupComponent(component: string): void {
   });
 }
 
+function purgeComponentImages(component: string): void {
+  const compose = composeFile(component);
+  if (!fs.existsSync(compose)) {
+    return;
+  }
+
+  const envFile = resolveCleanupEnvFile(component);
+  if (envFile) {
+    runCommand(
+      ["docker", "compose", "-p", PROJECT, "--env-file", envFile, "-f", compose, "down", "-v", "--remove-orphans", "--rmi", "all"],
+      { check: false, allowFailure: true },
+    );
+    return;
+  }
+
+  runCommand(["docker", "compose", "-p", PROJECT, "-f", compose, "down", "-v", "--remove-orphans", "--rmi", "all"], {
+    check: false,
+    allowFailure: true,
+  });
+}
+
+function purgeProjectImages(): void {
+  const seen = new Set<string>();
+  for (const step of DEPLOYMENT_STEPS) {
+    const component = step.component;
+    if (!component || seen.has(component)) {
+      continue;
+    }
+    seen.add(component);
+    purgeComponentImages(component);
+  }
+}
+
+function purgeLocalBuildxCache(): void {
+  const cacheRoot = resolveLocalBuildxCacheRoot();
+  if (fs.existsSync(cacheRoot)) {
+    fs.rmSync(cacheRoot, { recursive: true, force: true });
+    logInfo(`Removed local Buildx cache directory: ${cacheRoot}`);
+  } else {
+    logInfo(`Local Buildx cache directory not found: ${cacheRoot}`);
+  }
+}
+
 function cleanupFull(): void {
   logWarn("Setup new environment, cleaning up...");
   runCommand(["docker", "compose", "-p", PROJECT, "down", "-v", "--remove-orphans"], { check: true });
@@ -1436,23 +1479,17 @@ function clean(args: string[]): void {
   }
 
   if (options.purgeImages) {
-    logWarn("`clean --purge-images` removes ALL unused Docker images system-wide, not only fhevm images.");
-    runCommand(["docker", "image", "prune", "-af"], { check: true });
+    logInfo("Removing images referenced by fhevm compose services only.");
+    purgeProjectImages();
   }
 
   if (options.purgeBuildCache) {
-    logWarn("`clean --purge-build-cache` removes ALL unused Docker build cache system-wide.");
-    runCommand(["docker", "builder", "prune", "-af"], { check: true });
+    logInfo("Removing local fhevm Buildx cache only.");
+    purgeLocalBuildxCache();
   }
 
-  if (options.purgeLocalCache) {
-    const cacheRoot = resolveLocalBuildxCacheRoot();
-    if (fs.existsSync(cacheRoot)) {
-      fs.rmSync(cacheRoot, { recursive: true, force: true });
-      logInfo(`Removed local Buildx cache directory: ${cacheRoot}`);
-    } else {
-      logInfo(`Local Buildx cache directory not found: ${cacheRoot}`);
-    }
+  if (options.purgeLocalCache && !options.purgeBuildCache) {
+    purgeLocalBuildxCache();
   }
 
   console.log(`${COLORS.green}[SUCCESS]${COLORS.reset} ${COLORS.bold}FHEVM stack cleaned successfully${COLORS.reset}`);

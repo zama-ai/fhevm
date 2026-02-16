@@ -99,8 +99,9 @@ bun run telemetry-smoke
 bun run clean --purge-local-cache
 ```
 
-`--purge-images` and `--purge-build-cache` use Docker system-wide prune commands (not fhevm-scoped).
-`--purge` also removes the local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
+All `clean` purge flags are fhevm-scoped:
+- `--purge-images` removes images referenced by fhevm compose services.
+- `--purge-build-cache` and `--purge-local-cache` remove local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
 
 ### WIP - Forcing Local Builds (`--build`)
 
@@ -179,8 +180,8 @@ For agent workflows, prefer explicit command+flag forms from this table.
 | `test` | `-r, --no-relayer` | Disable Rust relayer in tests. |
 | `test` | `--no-hardhat-compile` | Skip compile when artifacts are already up-to-date. |
 | `clean` | `--purge` | Shorthand for all purge flags below. |
-| `clean` | `--purge-images` | System-wide Docker image prune. |
-| `clean` | `--purge-build-cache` | System-wide Docker builder prune. |
+| `clean` | `--purge-images` | Remove images referenced by fhevm compose services only. |
+| `clean` | `--purge-build-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
 | `clean` | `--purge-networks` | Remove `fhevm_*` networks. |
 | `clean` | `--purge-local-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
 | `pause` / `unpause` | `host` or `gateway` | Contract pause controls. |

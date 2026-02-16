@@ -624,10 +624,11 @@ test_clean_purge_invokes_prunes() {
 
   assert_contains "${COMMAND_LOG}" "docker compose -p fhevm down -v --remove-orphans"
   assert_contains "${COMMAND_LOG}" "docker network ls --format {{.Name}}"
-  assert_contains "${COMMAND_LOG}" "docker image prune -af"
-  assert_contains "${COMMAND_LOG}" "docker builder prune -af"
-  assert_contains "${output_file}" "removes ALL unused Docker images system-wide"
-  assert_contains "${output_file}" "removes ALL unused Docker build cache system-wide"
+  assert_contains "${COMMAND_LOG}" "down -v --remove-orphans --rmi all"
+  assert_not_contains "${COMMAND_LOG}" "docker image prune -af"
+  assert_not_contains "${COMMAND_LOG}" "docker builder prune -af"
+  assert_contains "${output_file}" "Removing images referenced by fhevm compose services only."
+  assert_contains "${output_file}" "Removing local fhevm Buildx cache only."
   assert_contains "${output_file}" "Removed local Buildx cache directory"
   if [[ -d "${FIXTURE_ROOT}/.buildx-cache" ]]; then
     echo "Assertion failed: .buildx-cache should be removed by clean --purge" >&2
