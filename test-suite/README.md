@@ -89,6 +89,7 @@ cd test-suite/fhevm
 ```
 
 `--purge-images` and `--purge-build-cache` use Docker system-wide prune commands (not fhevm-scoped).
+`--purge` also removes the local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
 
 ### WIP - Forcing Local Builds (`--build`)
 

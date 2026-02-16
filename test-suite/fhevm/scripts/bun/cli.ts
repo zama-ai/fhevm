@@ -48,6 +48,7 @@ type CleanOptions = {
   purgeImages: boolean;
   purgeBuildCache: boolean;
   purgeNetworks: boolean;
+  purgeLocalCache: boolean;
 };
 
 type TestOptions = {
@@ -83,7 +84,7 @@ function usage(): void {
   console.log(`  ${COLORS.yellow}unpause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Unpause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)`);
   console.log(`  ${COLORS.yellow}upgrade${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}   Upgrade specific service`);
-  console.log(`  ${COLORS.yellow}clean${COLORS.reset} ${COLORS.cyan}[--purge] [--purge-images] [--purge-build-cache] [--purge-networks]${COLORS.reset}  Clean stack resources`);
+  console.log(`  ${COLORS.yellow}clean${COLORS.reset} ${COLORS.cyan}[--purge] [--purge-images] [--purge-build-cache] [--purge-networks] [--purge-local-cache]${COLORS.reset}  Clean stack resources`);
   console.log(`  ${COLORS.yellow}logs${COLORS.reset} ${COLORS.cyan}[SERVICE]${COLORS.reset}      View logs for a specific service`);
   console.log(`  ${COLORS.yellow}telemetry-smoke${COLORS.reset}     Validate Jaeger telemetry services`);
   console.log(`  ${COLORS.yellow}help${COLORS.reset}                Display this help message`);
@@ -1359,6 +1360,7 @@ function parseCleanArgs(args: string[]): CleanOptions {
     purgeImages: false,
     purgeBuildCache: false,
     purgeNetworks: false,
+    purgeLocalCache: false,
   };
 
   for (const arg of args) {
@@ -1366,6 +1368,7 @@ function parseCleanArgs(args: string[]): CleanOptions {
       options.purgeImages = true;
       options.purgeBuildCache = true;
       options.purgeNetworks = true;
+      options.purgeLocalCache = true;
       continue;
     }
     if (arg === "--purge-images") {
@@ -1378,6 +1381,10 @@ function parseCleanArgs(args: string[]): CleanOptions {
     }
     if (arg === "--purge-networks") {
       options.purgeNetworks = true;
+      continue;
+    }
+    if (arg === "--purge-local-cache") {
+      options.purgeLocalCache = true;
       continue;
     }
     usageError(`Unknown option for clean: ${arg}`);
@@ -1411,6 +1418,16 @@ function clean(args: string[]): void {
   if (options.purgeBuildCache) {
     logWarn("`clean --purge-build-cache` removes ALL unused Docker build cache system-wide.");
     runCommand(["docker", "builder", "prune", "-af"], { check: true });
+  }
+
+  if (options.purgeLocalCache) {
+    const cacheRoot = path.resolve(process.env.FHEVM_BUILDX_CACHE_DIR ?? ".buildx-cache");
+    if (fs.existsSync(cacheRoot)) {
+      fs.rmSync(cacheRoot, { recursive: true, force: true });
+      logInfo(`Removed local Buildx cache directory: ${cacheRoot}`);
+    } else {
+      logInfo(`Local Buildx cache directory not found: ${cacheRoot}`);
+    }
   }
 
   console.log(`${COLORS.green}[SUCCESS]${COLORS.reset} ${COLORS.bold}FHEVM stack cleaned successfully${COLORS.reset}`);

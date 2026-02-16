@@ -579,6 +579,9 @@ test_usage_is_shown_for_cli_argument_errors() {
 test_clean_purge_invokes_prunes() {
   setup_fixture
 
+  mkdir -p "${FIXTURE_ROOT}/.buildx-cache/coprocessor"
+  echo "dummy" > "${FIXTURE_ROOT}/.buildx-cache/coprocessor/index.json"
+
   local output_file="${TEST_TMP_DIR}/clean-purge.out"
   if ! run_cli "${output_file}" clean --purge; then
     echo "Clean --purge should succeed" >&2
@@ -592,6 +595,11 @@ test_clean_purge_invokes_prunes() {
   assert_contains "${COMMAND_LOG}" "docker builder prune -af"
   assert_contains "${output_file}" "removes ALL unused Docker images system-wide"
   assert_contains "${output_file}" "removes ALL unused Docker build cache system-wide"
+  assert_contains "${output_file}" "Removed local Buildx cache directory"
+  if [[ -d "${FIXTURE_ROOT}/.buildx-cache" ]]; then
+    echo "Assertion failed: .buildx-cache should be removed by clean --purge" >&2
+    return 1
+  fi
   cleanup_fixture
 }
 
