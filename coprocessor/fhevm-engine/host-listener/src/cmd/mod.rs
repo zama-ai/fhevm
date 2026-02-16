@@ -22,7 +22,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
-use crate::database::ingest::{ingest_block_logs, BlockLogs};
+use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
 use fhevm_engine_common::chain_id::ChainId;
@@ -121,6 +121,13 @@ pub struct Args {
         help = "Dependence chain are across blocks"
     )]
     pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast)"
+    )]
+    pub dependent_ops_max_per_chain: u32,
 
     #[arg(
         long,
@@ -944,8 +951,11 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
-            args.dependence_by_connexity,
-            args.dependence_cross_block,
+            IngestOptions {
+                dependence_by_connexity: args.dependence_by_connexity,
+                dependence_cross_block: args.dependence_cross_block,
+                dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+            },
         )
         .await;
         let Err(err) = res else {
@@ -1050,6 +1060,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
+    if args.dependent_ops_max_per_chain == 0 {
+        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),

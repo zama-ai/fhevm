@@ -175,6 +175,7 @@ async fn poller_catches_up_to_safe_tip(
         dependence_cache_size: 10_000,
         dependence_by_connexity: false,
         dependence_cross_block: false,
+        dependent_ops_max_per_chain: 0,
     };
 
     let poller_handle = tokio::spawn(run_poller(config));
