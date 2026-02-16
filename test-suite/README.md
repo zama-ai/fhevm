@@ -89,6 +89,16 @@ cd test-suite/fhevm
 ./fhevm-cli clean --purge
 ```
 
+If you prefer shorter commands with Bun scripts, you can run the same CLI via:
+
+```sh
+cd test-suite/fhevm
+bun run deploy --network testnet
+bun run test input-proof
+bun run telemetry-smoke
+bun run clean --purge-local-cache
+```
+
 `--purge-images` and `--purge-build-cache` use Docker system-wide prune commands (not fhevm-scoped).
 `--purge` also removes the local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
 
