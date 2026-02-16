@@ -4,6 +4,7 @@ use crate::tests::event_helpers::{
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use serial_test::serial;
 
 fn sample_count(default_count: usize) -> usize {
     std::env::var("FHEVM_TEST_NUM_SAMPLES")
@@ -13,6 +14,7 @@ fn sample_count(default_count: usize) -> usize {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
@@ -138,6 +140,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
@@ -262,6 +265,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
@@ -391,6 +395,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
@@ -435,6 +440,7 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(16);

@@ -43,6 +43,8 @@ pub fn next_handle() -> Handle {
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut out = [0_u8; 32];
+    // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
+    out[0] = 0x80;
     out[24..].copy_from_slice(&v.to_be_bytes());
     Handle::from(out)
 }
