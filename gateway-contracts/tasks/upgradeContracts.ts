@@ -106,43 +106,6 @@ async function checkImplementationArtifacts(
   }
 }
 
-task("task:upgradeMultichainACL")
-  .addParam(
-    "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/MultichainACL.sol:MultichainACL",
-  )
-  .addParam(
-    "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/MultichainACLUpgradedExample.sol:MultichainACLUpgradedExample",
-  )
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .addOptionalParam(
-    "verifyContract",
-    "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    true,
-    types.boolean,
-  )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("MultichainACL", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
-  });
-
 task("task:upgradeCiphertextCommits")
   .addParam(
     "currentImplementation",

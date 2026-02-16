@@ -8,7 +8,6 @@ import {
   GatewayConfigMock,
   InputVerificationMock,
   KMSGenerationMock,
-  MultichainACLMock,
 } from "../../typechain-types";
 import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getKeyReshareId, getPrepKeygenId, toValues } from "../utils";
 
@@ -19,7 +18,6 @@ describe("Mock contracts", function () {
   let gatewayConfigMock: GatewayConfigMock;
   let kmsGenerationMock: KMSGenerationMock;
   let inputVerificationMock: InputVerificationMock;
-  let multichainACLMock: MultichainACLMock;
 
   // Default values
   const DefaultBytes = ethers.hexlify(new Uint8Array(0));
@@ -103,11 +101,7 @@ describe("Mock contracts", function () {
     const kmsGenerationFactory = await ethers.getContractFactory("KMSGenerationMock");
     const kmsGenerationMock = await kmsGenerationFactory.deploy();
 
-    const multichainACLFactory = await ethers.getContractFactory("MultichainACLMock");
-    const multichainACLMock = await multichainACLFactory.deploy();
-
     return {
-      multichainACLMock,
       ciphertextCommitsMock,
       decryptionMock,
       gatewayConfigMock,
@@ -124,7 +118,6 @@ describe("Mock contracts", function () {
     gatewayConfigMock = fixture.gatewayConfigMock;
     kmsGenerationMock = fixture.kmsGenerationMock;
     inputVerificationMock = fixture.inputVerificationMock;
-    multichainACLMock = fixture.multichainACLMock;
   });
 
   describe("CiphertextCommitsMock", async function () {
@@ -386,66 +379,6 @@ describe("Mock contracts", function () {
       await expect(kmsGenerationMock.keyReshareSameSet(keyId))
         .to.emit(kmsGenerationMock, "KeyReshareSameSet")
         .withArgs(prepKeygenId, keyId, keyReshareId, DefaultParamsType);
-    });
-  });
-
-  describe("MultichainACLMock", async function () {
-    it("Should emit AllowPublicDecrypt and AllowPublicDecryptConsensus events on allow public decrypt call", async function () {
-      await expect(multichainACLMock.allowPublicDecrypt(DefaultBytes32, DefaultBytes))
-        .to.emit(multichainACLMock, "AllowPublicDecrypt")
-        .withArgs(DefaultBytes32, DefaultAddress, DefaultBytes)
-        .to.emit(multichainACLMock, "AllowPublicDecryptConsensus")
-        .withArgs(DefaultBytes32, DefaultBytes);
-    });
-
-    it("Should emit AllowAccount and AllowAccountConsensus events on allow account call", async function () {
-      await expect(multichainACLMock.allowAccount(DefaultBytes32, DefaultAddress, DefaultBytes))
-        .to.emit(multichainACLMock, "AllowAccount")
-        .withArgs(DefaultBytes32, DefaultAddress, DefaultAddress, DefaultBytes)
-        .to.emit(multichainACLMock, "AllowAccountConsensus")
-        .withArgs(DefaultBytes32, DefaultAddress, DefaultBytes);
-    });
-
-    it("Should emit DelegateUserDecryption and DelegateUserDecryptionConsensus events on delegate user decryption call", async function () {
-      await expect(
-        multichainACLMock.delegateUserDecryption(
-          DefaultUint256,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultUint256,
-          DefaultUint256,
-        ),
-      )
-        .to.emit(multichainACLMock, "DelegateUserDecryption")
-        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256)
-        .to.emit(multichainACLMock, "DelegateUserDecryptionConsensus")
-        .withArgs(
-          DefaultUint256,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-        );
-    });
-
-    it("Should emit revocation and consensus events on revoke user decryption delegation call", async function () {
-      await expect(
-        multichainACLMock.revokeUserDecryptionDelegation(
-          DefaultUint256,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultUint256,
-          DefaultUint256,
-        ),
-      )
-        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegation")
-        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
-        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegationConsensusReached")
-        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256);
     });
   });
 });

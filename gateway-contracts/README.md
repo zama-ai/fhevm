@@ -10,16 +10,15 @@ The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ci
 
 ## Main features
 
-| Contract            | Description                                                 | Features                                                                                                                          |
-| ------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `CiphertextCommits` | Store ciphertext commitments from all host chains           | - Store regular ciphertext commitments<br>- Store Switch and Squash (SNS) ciphertext commitments                                  |
-| `Decryption`        | Decrypt FHE ciphertexts                                     | - Request a public decryption<br>- Request a user decryption<br>- Request a delegated user decryption                             |
-| `GatewayConfig`     | Administer configuration settings                           | - Register KMS nodes, coprocessors and host chains. <br> - Update KMS nodes, coprocessors and host chains.                        |
-| `InputVerification` | Verify an input's zero-knowledge proof of knowledge (ZKPoK) | - Verify a ZKPoK<br>- Reject a ZKPoK                                                                                              |
-| `KMSGeneration`     | Orchestrate KMS-related materials                           | - Trigger generation of FHE keys<br>- Trigger generation of CRS                                                                   |
-| `MultichainACL`     | Centralize Access Control Lists (ACL) from all host chains  | - Grant account access to ciphertexts<br>- Authorize public decryption of ciphertexts<br>- Delegate account access to ciphertexts |
-| `ProtocolPayment`   | Orchestrate protocol payments                               | - Define operation prices<br>- Transfer protocol fees to FeesSenderToBurner contract fees                                         |
-| `PauserSet`         | Administer pauser role                                      | - Register, remove and swap pauser addresses                                                                                      |
+| Contract            | Description                                                 | Features                                                                                                   |
+| ------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `CiphertextCommits` | Store ciphertext commitments from all host chains           | - Store regular ciphertext commitments<br>- Store Switch and Squash (SNS) ciphertext commitments           |
+| `Decryption`        | Decrypt FHE ciphertexts                                     | - Request a public decryption<br>- Request a user decryption<br>- Request a delegated user decryption      |
+| `GatewayConfig`     | Administer configuration settings                           | - Register KMS nodes, coprocessors and host chains. <br> - Update KMS nodes, coprocessors and host chains. |
+| `InputVerification` | Verify an input's zero-knowledge proof of knowledge (ZKPoK) | - Verify a ZKPoK<br>- Reject a ZKPoK                                                                       |
+| `KMSGeneration`     | Orchestrate KMS-related materials                           | - Trigger generation of FHE keys<br>- Trigger generation of CRS                                            |
+| `ProtocolPayment`   | Orchestrate protocol payments                               | - Define operation prices<br>- Transfer protocol fees to FeesSenderToBurner contract fees                  |
+| `PauserSet`         | Administer pauser role                                      | - Register, remove and swap pauser addresses                                                               |
 
 ## Getting started
 

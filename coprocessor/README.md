@@ -196,14 +196,12 @@ Options:
 
 ```bash
 $ transaction_sender --help
-Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --multichain-acl-address <MULTICHAIN_ACL_ADDRESS> --gateway-url <GATEWAY_URL>
+Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --gateway-url <GATEWAY_URL>
 
 Options:
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
           
   -c, --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS>
-          
-  -m, --multichain-acl-address <MULTICHAIN_ACL_ADDRESS>
           
   -g, --gateway-url <GATEWAY_URL>
           

@@ -565,7 +565,9 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verifyDecryptionEIP712KMSSignatures function fails if the length of the decryption proof is invalid.
      */
-    function test_VerifyDecryptionEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(uint256 randomValue) public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(
+        uint256 randomValue
+    ) public {
         _upgradeProxyWithSigners(3);
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
