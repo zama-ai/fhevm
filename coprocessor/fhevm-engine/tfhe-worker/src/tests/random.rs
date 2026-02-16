@@ -6,9 +6,11 @@ use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use serial_test::serial;
 use std::str::FromStr;
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let tx_id = next_handle();
@@ -83,6 +85,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let tx_id = next_handle();

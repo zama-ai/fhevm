@@ -3,6 +3,7 @@ use crate::tests::event_helpers::{
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use serial_test::serial;
 
 async fn wait_for_error(
     pool: &sqlx::PgPool,
@@ -32,6 +33,7 @@ async fn wait_for_error(
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let output_handle = next_handle().to_vec();
@@ -77,6 +79,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let tx_id = next_handle();

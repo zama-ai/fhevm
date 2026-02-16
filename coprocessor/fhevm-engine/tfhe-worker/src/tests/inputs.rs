@@ -2,8 +2,10 @@ use crate::tests::event_helpers::{
     allow_handle, decrypt_handles, insert_trivial_encrypt, next_handle, setup_event_harness,
     wait_until_computed,
 };
+use serial_test::serial;
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let tx_id = next_handle();
@@ -32,7 +34,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
             value,
             to_type,
             handle,
-            false,
+            true,
         )
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &handle).await?;
