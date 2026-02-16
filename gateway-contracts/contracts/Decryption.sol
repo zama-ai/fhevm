@@ -703,7 +703,6 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
-
         if (ctHandleContractPairs.length == 0) {
             return false;
         }

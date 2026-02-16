@@ -1559,8 +1559,7 @@ describe("Decryption", function () {
 
     describe("Checks", function () {
       it("Should be false because ciphertext material has not been added", async function () {
-        expect(await decryption.isUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be
-          .false;
+        expect(await decryption.isUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be.false;
       });
 
       it("Should be false because the user decryption is not done", async function () {
@@ -2347,18 +2346,12 @@ describe("Decryption", function () {
             ctHandle: fakeChainIdCtHandle,
           },
         ];
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            fakeChainIdCtHandleContractPairs,
-            extraDataV0,
-          ),
-        ).to.be.false;
+        expect(await decryption.isDelegatedUserDecryptionReady(fakeChainIdCtHandleContractPairs, extraDataV0)).to.be
+          .false;
       });
 
       it("Should be false because ciphertext material has not been added", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady([newCtHandleContractPair], extraDataV0),
-        ).to.be.false;
+        expect(await decryption.isDelegatedUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be.false;
       });
 
       it("Should be false because the ctHandleContractPairs list is empty", async function () {
