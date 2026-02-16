@@ -32,6 +32,7 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing::{debug, error, info};
 
 pub const MAX_CACHED_KEYS: usize = 100;
@@ -320,59 +321,65 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
-        let t = tracing::info_span!(
+        let db_insert_span = tracing::info_span!(
             "db_insert",
             operation = "db_insert",
             request_id,
             txn_id = tracing::field::Empty
         );
         fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &t,
+            &db_insert_span,
             "txn_id",
             transaction_id.as_deref(),
         );
 
-        let mut verified = false;
-        let mut handles_bytes = vec![];
-        match res.as_ref() {
-            Ok((cts, blob_hash)) => {
-                info!(
-                    message = "Proof verification successful",
-                    request_id,
-                    cts = format!("{}", cts.len()),
-                );
+        async {
+            let mut verified = false;
+            let mut handles_bytes = vec![];
+            match res.as_ref() {
+                Ok((cts, blob_hash)) => {
+                    info!(
+                        message = "Proof verification successful",
+                        request_id,
+                        cts = format!("{}", cts.len()),
+                    );
 
-                handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
-                    acc.extend_from_slice(ct.handle.as_ref());
-                    acc
-                });
-                verified = true;
-                let count = cts.len();
-                insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
+                        acc.extend_from_slice(ct.handle.as_ref());
+                        acc
+                    });
+                    verified = true;
+                    let count = cts.len();
+                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
 
-                info!(message = "Ciphertexts inserted", request_id);
-                tracing::info!(parent: &t, count = count, "ciphertexts inserted");
+                    info!(message = "Ciphertexts inserted", request_id);
+                    tracing::info!(count = count, "ciphertexts inserted");
+                }
+                Err(err) => {
+                    error!(
+                        message = "Failed to verify proof",
+                        request_id,
+                        err = err.to_string()
+                    );
+                }
             }
-            Err(err) => {
-                error!(
-                    message = "Failed to verify proof",
-                    request_id,
-                    err = err.to_string()
-                );
-            }
+
+            tracing::info!(valid = verified, "db_insert result");
+
+            // Mark as verified=true/false and set handles, if computed
+            sqlx::query(
+                "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
+                WHERE zk_proof_id = $3",
+            )
+            .bind(handles_bytes)
+            .bind(verified)
+            .bind(request_id)
+            .execute(&mut *txn)
+            .await?;
+
+            Ok::<_, ExecutionError>(())
         }
-
-        tracing::info!(parent: &t, valid = verified, "db_insert result");
-
-        // Mark as verified=true/false and set handles, if computed
-        sqlx::query(
-            "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
-            WHERE zk_proof_id = $3",
-        )
-        .bind(handles_bytes)
-        .bind(verified)
-        .bind(request_id)
-        .execute(&mut *txn)
+        .instrument(db_insert_span)
         .await?;
 
         // Notify
