@@ -208,10 +208,16 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
 
 /// Returns the legacy short-form transaction id used by older telemetry helpers.
 pub fn short_txn_id(transaction_id: &[u8]) -> String {
-    to_hex(transaction_id)
-        .get(0..10)
-        .unwrap_or_default()
-        .to_owned()
+    short_hex_id(transaction_id)
+}
+
+/// Returns the short-form handle id used by legacy tracer_with_handle spans.
+pub fn short_handle_id(handle: &[u8]) -> String {
+    short_hex_id(handle)
+}
+
+fn short_hex_id(value: &[u8]) -> String {
+    to_hex(value).get(0..10).unwrap_or_default().to_owned()
 }
 
 pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =

@@ -540,7 +540,12 @@ async fn fetch_pending_uploads(
             let recovery_span = tracing::info_span!(
                 "recovery_task",
                 operation = "recovery_task",
-                txn_id = tracing::field::Empty
+                txn_id = tracing::field::Empty,
+                handle = tracing::field::Empty
+            );
+            recovery_span.record(
+                "handle",
+                tracing::field::display(telemetry::short_handle_id(&handle)),
             );
             if let Some(transaction_id) = transaction_id.as_deref() {
                 recovery_span.record(

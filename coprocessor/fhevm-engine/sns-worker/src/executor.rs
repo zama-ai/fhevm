@@ -491,8 +491,16 @@ pub async fn query_sns_tasks(
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
-            let task_span =
-                tracing::info_span!("task", operation = "task", txn_id = tracing::field::Empty);
+            let task_span = tracing::info_span!(
+                "task",
+                operation = "task",
+                txn_id = tracing::field::Empty,
+                handle = tracing::field::Empty
+            );
+            task_span.record(
+                "handle",
+                tracing::field::display(telemetry::short_handle_id(&handle)),
+            );
             if let Some(transaction_id) = transaction_id.as_deref() {
                 task_span.record(
                     "txn_id",
