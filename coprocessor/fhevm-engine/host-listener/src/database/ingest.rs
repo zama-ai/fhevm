@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -12,13 +12,20 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Database, LogTfhe,
+    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
     pub summary: BlockSummary,
     pub catchup: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IngestOptions {
+    pub dependence_by_connexity: bool,
+    pub dependence_cross_block: bool,
+    pub dependent_ops_max_per_chain: u32,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -37,14 +44,106 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
     PrimitiveDateTime::new(offset.date(), offset.time())
 }
 
+fn propagate_slow_lane_to_dependents(
+    chains: &[Chain],
+    slow_dep_chain_ids: &mut HashSet<ChainHash>,
+) {
+    let mut dependents_by_dependency: HashMap<ChainHash, Vec<ChainHash>> =
+        HashMap::new();
+    for chain in chains {
+        for dependency in &chain.split_dependencies {
+            dependents_by_dependency
+                .entry(*dependency)
+                .or_default()
+                .push(chain.hash);
+        }
+    }
+
+    let mut queue: VecDeque<ChainHash> =
+        slow_dep_chain_ids.iter().cloned().collect();
+    while let Some(slow_dependency) = queue.pop_front() {
+        let Some(dependents) = dependents_by_dependency.get(&slow_dependency)
+        else {
+            continue;
+        };
+        for dependent in dependents {
+            if slow_dep_chain_ids.insert(*dependent) {
+                queue.push_back(*dependent);
+            }
+        }
+    }
+}
+
+/// Marks slow chains by counting inserted ops on linked split chains together.
+///
+/// In no-fork mode, one logical workload can be split into many small chains.
+/// Here we connect chains through `split_dependencies`, sum their inserted-op
+/// counts, and if the sum is above the cap we mark all linked chains as slow.
+fn classify_slow_by_split_dependency_closure(
+    chains: &[Chain],
+    dependent_ops_by_chain: &HashMap<ChainHash, u64>,
+    max_per_chain: u64,
+) -> HashSet<ChainHash> {
+    let chain_ids = chains
+        .iter()
+        .map(|chain| chain.hash)
+        .collect::<HashSet<_>>();
+    let mut neighbors: HashMap<ChainHash, HashSet<ChainHash>> =
+        HashMap::with_capacity(chains.len());
+    for chain in chains {
+        neighbors.entry(chain.hash).or_default();
+        for dependency in &chain.split_dependencies {
+            if !chain_ids.contains(dependency) {
+                continue;
+            }
+            neighbors.entry(chain.hash).or_default().insert(*dependency);
+            neighbors.entry(*dependency).or_default().insert(chain.hash);
+        }
+    }
+
+    let mut visited = HashSet::with_capacity(chains.len());
+    let mut slow_dep_chain_ids = HashSet::new();
+    for chain in chains {
+        if visited.contains(&chain.hash) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut stack = vec![chain.hash];
+        visited.insert(chain.hash);
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            if let Some(next_neighbors) = neighbors.get(&current) {
+                for next in next_neighbors {
+                    if visited.insert(*next) {
+                        stack.push(*next);
+                    }
+                }
+            }
+        }
+
+        let component_ops =
+            component.iter().fold(0_u64, |sum, dep_chain_id| {
+                sum.saturating_add(
+                    dependent_ops_by_chain
+                        .get(dep_chain_id)
+                        .copied()
+                        .unwrap_or(0),
+                )
+            });
+        if component_ops > max_per_chain {
+            slow_dep_chain_ids.extend(component);
+        }
+    }
+    slow_dep_chain_ids
+}
+
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
-    dependence_by_connexity: bool,
-    dependence_cross_block: bool,
+    options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
@@ -140,20 +239,63 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
-        dependence_by_connexity,
-        dependence_cross_block,
+        options.dependence_by_connexity,
+        options.dependence_cross_block,
     )
     .await;
 
+    let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
+    let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
+        // Count all newly inserted ops per chain to avoid underestimating
+        // pressure from producer paths that are required by downstream work.
+        if slow_lane_enabled && inserted {
+            dependent_ops_by_chain
+                .entry(tfhe_log.dependence_chain)
+                .and_modify(|count| *count = count.saturating_add(1))
+                .or_insert(1);
+        }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
             catchup_insertion += 1;
         } else {
             info!(tfhe_log = ?tfhe_log, "TFHE event");
         }
+    }
+
+    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
+    if slow_lane_enabled {
+        let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
+        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            max_per_chain,
+        );
+
+        let parent_dep_chain_ids = chains
+            .iter()
+            .flat_map(|chain| {
+                chain
+                    .split_dependencies
+                    .iter()
+                    .map(|dependency| dependency.to_vec())
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let existing_slow_parents = db
+            .find_slow_dep_chain_ids(&mut tx, &parent_dep_chain_ids)
+            .await?;
+        slow_dep_chain_ids.extend(existing_slow_parents);
+        propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
+
+        let slow_marked_chains = chains
+            .iter()
+            .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
+            .count() as u64;
+        db.record_slow_lane_marked_chains(slow_marked_chains);
     }
 
     if catchup_insertion > 0 {
@@ -174,8 +316,80 @@ pub async fn ingest_block_logs(
             chains,
             block_timestamp,
             &block_logs.summary,
+            &slow_dep_chain_ids,
         )
         .await?;
     }
     tx.commit().await
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::FixedBytes;
+
+    use super::*;
+
+    fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
+        Chain {
+            hash: FixedBytes::<32>::from([hash; 32]),
+            dependencies: dependencies
+                .iter()
+                .map(|dep| FixedBytes::<32>::from([*dep; 32]))
+                .collect(),
+            split_dependencies: dependencies
+                .iter()
+                .map(|dep| FixedBytes::<32>::from([*dep; 32]))
+                .collect(),
+            dependents: vec![],
+            allowed_handle: vec![],
+            size: 1,
+            before_size: 0,
+            new_chain: true,
+        }
+    }
+
+    #[test]
+    fn propagates_slow_lane_transitively_on_known_dependencies() {
+        let chains = vec![
+            fixture_chain(1, &[]),
+            fixture_chain(2, &[1]),
+            fixture_chain(3, &[2]),
+            fixture_chain(4, &[]),
+        ];
+        let mut slow_dep_chain_ids = HashSet::from([chains[0].hash]);
+
+        propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
+
+        assert!(slow_dep_chain_ids.contains(&chains[0].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[1].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[2].hash));
+        assert!(!slow_dep_chain_ids.contains(&chains[3].hash));
+    }
+
+    #[test]
+    fn classifies_slow_by_split_dependency_closure_sum() {
+        let chains = vec![
+            fixture_chain(1, &[]),
+            fixture_chain(2, &[1]),
+            fixture_chain(3, &[2]),
+            fixture_chain(4, &[]),
+        ];
+        let dependent_ops_by_chain = HashMap::from([
+            (chains[0].hash, 30_u64),
+            (chains[1].hash, 20_u64),
+            (chains[2].hash, 20_u64),
+            (chains[3].hash, 10_u64),
+        ]);
+
+        let slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            64,
+        );
+
+        assert!(slow_dep_chain_ids.contains(&chains[0].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[1].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[2].hash));
+        assert!(!slow_dep_chain_ids.contains(&chains[3].hash));
+    }
 }

@@ -1,7 +1,7 @@
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::node_bindings::AnvilInstance;
-use alloy::primitives::U256;
+use alloy::primitives::{keccak256, Address, FixedBytes, U256};
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
@@ -11,7 +11,7 @@ use alloy::providers::{
     Provider, ProviderBuilder, RootProvider, WalletProvider, WsConnect,
 };
 use alloy::rpc::types::anvil::{ReorgOptions, TransactionData};
-use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use fhevm_engine_common::chain_id::ChainId;
@@ -28,6 +28,9 @@ use tracing::{info, warn, Level};
 
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
+use host_listener::database::ingest::{
+    ingest_block_logs, BlockLogs, IngestOptions,
+};
 use host_listener::database::tfhe_event_propagate::{Database, ToType};
 
 // contracts are compiled in build.rs/build_contract() using solc
@@ -176,7 +179,10 @@ struct Setup {
     chain_id: ChainId,
 }
 
-async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
+async fn setup_with_block_time(
+    node_chain_id: Option<u64>,
+    block_time_secs: f64,
+) -> Result<Setup, anyhow::Error> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .compact()
@@ -194,7 +200,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         .await?;
 
     let anvil = Anvil::new()
-        .block_time_f64(1.0)
+        .block_time_f64(block_time_secs)
         .args(["--accounts", "15"])
         .chain_id(node_chain_id.unwrap_or(12345))
         .spawn();
@@ -229,6 +235,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         catchup_finalization_in_blocks: 2,
         dependence_by_connexity: false,
         dependence_cross_block: true,
+        dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
@@ -250,6 +257,645 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         health_check_url,
         chain_id,
     })
+}
+
+async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
+    setup_with_block_time(node_chain_id, 1.0).await
+}
+
+fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity(
+        "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
+    );
+    payload.extend_from_slice("trivialEncrypt".as_bytes());
+    payload.extend_from_slice(&val.to_be_bytes::<32>());
+    payload.push(to_type);
+    keccak256(payload)
+}
+
+fn fhe_add_handle(
+    lhs: FixedBytes<32>,
+    rhs: FixedBytes<32>,
+    scalar_byte: u8,
+) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity(
+        "fheAdd".len()
+            + std::mem::size_of::<[u8; 32]>()
+            + std::mem::size_of::<[u8; 32]>()
+            + 1,
+    );
+    payload.extend_from_slice("fheAdd".as_bytes());
+    payload.extend_from_slice(lhs.as_slice());
+    payload.extend_from_slice(rhs.as_slice());
+    payload.push(scalar_byte);
+    keccak256(payload)
+}
+
+async fn ingest_blocks_for_receipts(
+    db: &mut Database,
+    setup: &Setup,
+    receipts: &[alloy::rpc::types::TransactionReceipt],
+    options: IngestOptions,
+) -> Result<(), anyhow::Error> {
+    let mut blocks: Vec<(u64, FixedBytes<32>)> = receipts
+        .iter()
+        .map(|receipt| {
+            (
+                receipt.block_number.expect("receipt has block number"),
+                receipt.block_hash.expect("receipt has block hash"),
+            )
+        })
+        .collect();
+    blocks.sort_by_key(|(number, _)| *number);
+    blocks.dedup_by_key(|(number, _)| *number);
+
+    let acl_address = Some(*setup.acl_contract.address());
+    let tfhe_address = Some(*setup.tfhe_contract.address());
+
+    let provider = ProviderBuilder::new()
+        .wallet(setup.wallets[0].clone())
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+
+    for (_, block_hash) in blocks {
+        let filter = Filter::new().at_block_hash(block_hash).address(vec![
+            *setup.acl_contract.address(),
+            *setup.tfhe_contract.address(),
+        ]);
+        let logs = provider.get_logs(&filter).await?;
+        let block = provider
+            .get_block_by_hash(block_hash)
+            .await?
+            .expect("block exists");
+        let block_logs = BlockLogs {
+            logs,
+            summary: block.header.into(),
+            catchup: false,
+        };
+        ingest_block_logs(
+            db.chain_id,
+            db,
+            &block_logs,
+            &acl_address,
+            &tfhe_address,
+            options,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn ingest_dependent_burst_seeded(
+    db: &mut Database,
+    setup: &Setup,
+    input_handle: Option<FixedBytes<32>>,
+    depth: usize,
+    seed: u64,
+    dependent_ops_max_per_chain: u32,
+) -> Result<FixedBytes<32>, anyhow::Error> {
+    let (receipts, last_output_handle) =
+        emit_dependent_burst_seeded(setup, input_handle, depth, seed).await?;
+    ingest_blocks_for_receipts(
+        db,
+        setup,
+        &receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain,
+        },
+    )
+    .await?;
+    Ok(last_output_handle)
+}
+
+async fn emit_dependent_burst_seeded(
+    setup: &Setup,
+    input_handle: Option<FixedBytes<32>>,
+    depth: usize,
+    seed: u64,
+) -> Result<
+    (Vec<alloy::rpc::types::TransactionReceipt>, FixedBytes<32>),
+    anyhow::Error,
+> {
+    let provider = ProviderBuilder::new()
+        .wallet(setup.wallets[0].clone())
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    let signer_address: Address = provider
+        .signer_addresses()
+        .next()
+        .expect("anvil signer available");
+
+    let mut pending = Vec::new();
+    let mut current = input_handle
+        .unwrap_or_else(|| trivial_encrypt_handle(U256::from(seed), 4_u8));
+
+    if input_handle.is_none() {
+        let trivial_tx = setup
+            .tfhe_contract
+            .trivialEncrypt(U256::from(seed), 4_u8)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(trivial_tx).await?);
+        let allow_trivial_tx = setup
+            .acl_contract
+            .allow(current, signer_address)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(allow_trivial_tx).await?);
+    }
+
+    for _ in 0..depth {
+        let next = fhe_add_handle(current, current, 0_u8);
+        let add_tx = setup
+            .tfhe_contract
+            .fheAdd(current, current, FixedBytes::<1>::from([0_u8]))
+            .into_transaction_request();
+        pending.push(provider.send_transaction(add_tx).await?);
+        let allow_tx = setup
+            .acl_contract
+            .allow(next, signer_address)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(allow_tx).await?);
+        current = next;
+    }
+
+    let receipts = try_join_all(
+        pending
+            .into_iter()
+            .map(|pending_tx| async move { pending_tx.get_receipt().await }),
+    )
+    .await?;
+    assert!(
+        receipts.iter().all(|receipt| receipt.status()),
+        "every burst tx must succeed"
+    );
+    Ok((receipts, current))
+}
+
+async fn dep_chain_id_for_output_handle(
+    setup: &Setup,
+    output_handle: FixedBytes<32>,
+) -> Result<Vec<u8>, anyhow::Error> {
+    let dep_chain_id = sqlx::query_scalar::<_, Option<Vec<u8>>>(
+        r#"
+        SELECT dependence_chain_id
+        FROM computations
+        WHERE output_handle = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(output_handle.as_slice())
+    .fetch_one(&setup.db_pool)
+    .await?
+    .ok_or_else(|| {
+        anyhow::anyhow!("missing dependence_chain_id for output handle")
+    })?;
+    Ok(dep_chain_id)
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
+{
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let cases = [
+        ("below_cap", 62_usize, 64_u32, 0_i16, 11_u64),
+        ("at_cap", 63_usize, 64_u32, 0_i16, 12_u64),
+        ("above_cap", 64_usize, 64_u32, 1_i16, 13_u64),
+    ];
+
+    let mut seen_chains = HashSet::new();
+    for (name, depth, cap, expected_priority, seed) in cases {
+        let last_handle = ingest_dependent_burst_seeded(
+            &mut db, &setup, None, depth, seed, cap,
+        )
+        .await?;
+        let dep_chain_id =
+            dep_chain_id_for_output_handle(&setup, last_handle).await?;
+        assert!(
+            seen_chains.insert(dep_chain_id.clone()),
+            "matrix case {name} reused an existing dependence chain"
+        );
+
+        let schedule_priority = sqlx::query_scalar::<_, i16>(
+            "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&dep_chain_id)
+        .fetch_one(&setup.db_pool)
+        .await?;
+        assert_eq!(
+            schedule_priority, expected_priority,
+            "case={name} depth={depth} cap={cap}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_schedule_priority_migration_contract() -> Result<(), anyhow::Error>
+{
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
+
+    let db_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(test_instance.db_url())
+        .await?;
+
+    let column_row = sqlx::query_as::<_, (String, String, Option<String>)>(
+        r#"
+        SELECT data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'dependence_chain'
+          AND column_name = 'schedule_priority'
+        "#,
+    )
+    .fetch_one(&db_pool)
+    .await?;
+
+    assert_eq!(column_row.0, "smallint");
+    assert_eq!(column_row.1, "NO");
+    let default_expr = column_row
+        .2
+        .expect("schedule_priority column default must exist");
+    assert!(
+        default_expr.contains('0'),
+        "unexpected schedule_priority default: {default_expr}"
+    );
+
+    let index_def = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT pg_get_indexdef(i.indexrelid)
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'idx_pending_dependence_chain'
+        "#,
+    )
+    .fetch_one(&db_pool)
+    .await?;
+
+    let lowered = index_def.to_lowercase();
+    let pos_schedule = lowered
+        .find("schedule_priority")
+        .expect("index must include schedule_priority");
+    let pos_updated = lowered
+        .find("last_updated_at")
+        .expect("index must include last_updated_at");
+    let pos_dep_chain = lowered
+        .find("dependence_chain_id")
+        .expect("index must include dependence_chain_id");
+    assert!(
+        pos_schedule < pos_updated && pos_updated < pos_dep_chain,
+        "index key order must be schedule_priority, last_updated_at, dependence_chain_id: {index_def}"
+    );
+    for token in [
+        "where",
+        "status",
+        "updated",
+        "worker_id",
+        "is null",
+        "dependency_count",
+        "= 0",
+    ] {
+        assert!(
+            lowered.contains(token),
+            "index predicate missing `{token}` in: {index_def}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let cap = 64_u32;
+    let burst_depth = 8_usize;
+    let rounds = 4_u64;
+
+    let mut current_handle: Option<FixedBytes<32>> = None;
+    let mut seen_block_numbers = HashSet::new();
+
+    for round in 0..rounds {
+        let seed = 101_u64 + round;
+        let (receipts, last_output_handle) = emit_dependent_burst_seeded(
+            &setup,
+            current_handle,
+            burst_depth,
+            seed,
+        )
+        .await?;
+
+        for receipt in &receipts {
+            let block_number =
+                receipt.block_number.expect("receipt has block number");
+            seen_block_numbers.insert(block_number);
+        }
+
+        ingest_blocks_for_receipts(
+            &mut db,
+            &setup,
+            &receipts,
+            IngestOptions {
+                dependence_by_connexity: false,
+                dependence_cross_block: true,
+                dependent_ops_max_per_chain: cap,
+            },
+        )
+        .await?;
+
+        current_handle = Some(last_output_handle);
+        tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+    }
+
+    assert!(
+        seen_block_numbers.len() > 1,
+        "test must span multiple blocks"
+    );
+
+    let dep_chain_id = dep_chain_id_for_output_handle(
+        &setup,
+        current_handle.expect("final output handle exists"),
+    )
+    .await?;
+    let schedule_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+
+    assert_eq!(
+        schedule_priority, 0,
+        "current behavior: below-cap batches do not accumulate into slow lane across blocks"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let slow_parent = FixedBytes::<32>::from([0x11; 32]);
+    let fast_parent = FixedBytes::<32>::from([0x22; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
+        VALUES ($1, 'updated', NOW(), NOW(), 1, 1)
+        "#,
+    )
+    .bind(slow_parent.as_slice())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
+        VALUES ($1, 'updated', NOW(), NOW(), 1, 0)
+        "#,
+    )
+    .bind(fast_parent.as_slice())
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut tx = db.new_transaction().await?;
+    let found = db
+        .find_slow_dep_chain_ids(
+            &mut tx,
+            &[slow_parent.to_vec(), fast_parent.to_vec(), vec![0x33; 32]],
+        )
+        .await?;
+
+    assert!(found.contains(&slow_parent));
+    assert!(!found.contains(&fast_parent));
+    assert_eq!(found.len(), 1);
+    tx.rollback().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let first_output =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 50_u64, 1)
+            .await?;
+    let slow_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, first_output).await?;
+    let initial_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&slow_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(initial_priority, 1, "first pass should mark chain slow");
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+
+    let second_output = ingest_dependent_burst_seeded(
+        &mut db,
+        &setup,
+        Some(first_output),
+        1,
+        51_u64,
+        64,
+    )
+    .await?;
+    let second_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, second_output).await?;
+    assert_eq!(
+        second_dep_chain_id, slow_dep_chain_id,
+        "continuation should stay on the same dependence chain"
+    );
+
+    let final_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&slow_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        final_priority, 1,
+        "priority must not downgrade from slow to fast"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_off_mode_promotes_all_chains_on_startup_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 1_u64, 1)
+            .await?;
+    let initially_slow = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert!(
+        initially_slow > 0,
+        "setup phase should create at least one slow chain"
+    );
+
+    let _ = last_handle;
+    let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+    assert!(promoted > 0, "startup promotion should reset slow chains");
+
+    let remaining_slow = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        remaining_slow, 0,
+        "off mode startup should promote all slow chains back to fast"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_contention_prefers_fast_chain(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let heavy_last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 1_u64, 2)
+            .await?;
+
+    let fast_last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 1, 2_u64, 2)
+            .await?;
+
+    let heavy_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, heavy_last_handle).await?;
+    let fast_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, fast_last_handle).await?;
+    assert_ne!(
+        heavy_dep_chain_id, fast_dep_chain_id,
+        "contention test requires two independent chains"
+    );
+
+    let heavy_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&heavy_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let fast_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&fast_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(heavy_priority, 1, "heavy chain must be marked slow");
+    assert_eq!(fast_priority, 0, "light chain must stay fast");
+
+    let ordered = sqlx::query_as::<_, (Vec<u8>, i16)>(
+        r#"
+        SELECT dependence_chain_id, schedule_priority
+        FROM dependence_chain
+        WHERE status = 'updated'
+          AND worker_id IS NULL
+          AND dependency_count = 0
+        ORDER BY schedule_priority ASC, last_updated_at ASC
+        LIMIT 2
+        "#,
+    )
+    .fetch_all(&setup.db_pool)
+    .await?;
+    assert_eq!(ordered.len(), 2, "expected two schedulable chains");
+    assert_eq!(
+        ordered[0].0, fast_dep_chain_id,
+        "fast chain should be acquired before slow chain under contention"
+    );
+    assert_eq!(ordered[0].1, 0);
+    assert_eq!(ordered[1].0, heavy_dep_chain_id);
+    assert_eq!(ordered[1].1, 1);
+
+    sqlx::query(
+        "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
+    )
+    .bind(&fast_dep_chain_id)
+    .execute(&setup.db_pool)
+    .await?;
+
+    let next = sqlx::query_as::<_, (Vec<u8>, i16)>(
+        r#"
+        SELECT dependence_chain_id, schedule_priority
+        FROM dependence_chain
+        WHERE status = 'updated'
+          AND worker_id IS NULL
+          AND dependency_count = 0
+        ORDER BY schedule_priority ASC, last_updated_at ASC
+        LIMIT 1
+        "#,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        next.0, heavy_dep_chain_id,
+        "slow chain should still progress once fast lane is empty"
+    );
+    assert_eq!(next.1, 1);
+
+    Ok(())
 }
 
 #[tokio::test]
@@ -275,6 +921,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         catchup_loop_sleep_secs: 60,
         dependence_by_connexity: false,
         dependence_cross_block: true,
+        dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
     };
 
@@ -349,7 +996,13 @@ async fn test_listener_no_event_loss(
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
     let nb_wallets = setup.wallets.len() as i64;
-    // Restart/kill many time until no more events are consumed.
+    // Restart/kill many times until no more events are consumed.
+    let expected_tfhe_events = if reorg {
+        nb_wallets * NB_EVENTS_PER_WALLET + 1
+    } else {
+        nb_wallets * NB_EVENTS_PER_WALLET
+    };
+    let expected_acl_events = nb_wallets * NB_EVENTS_PER_WALLET;
     for _ in 1..120 {
         // 10 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));
@@ -367,7 +1020,9 @@ async fn test_listener_no_event_loss(
                 .unwrap_or(0);
         let no_count_change = tfhe_events_count == tfhe_new_count
             && acl_events_count == acl_new_count;
-        if event_source.is_finished() && no_count_change {
+        let reached_expected = tfhe_new_count >= expected_tfhe_events
+            && acl_new_count >= expected_acl_events;
+        if event_source.is_finished() && no_count_change && reached_expected {
             listener_handle.abort();
             break;
         };
@@ -389,13 +1044,8 @@ async fn test_listener_no_event_loss(
         );
         tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
     }
-    if !reorg {
-        assert_eq!(tfhe_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
-    } else {
-        // 1 event appears in both chain with a different transaction id
-        assert_eq!(tfhe_events_count, nb_wallets * NB_EVENTS_PER_WALLET + 1);
-    }
-    assert_eq!(acl_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
+    assert_eq!(tfhe_events_count, expected_tfhe_events);
+    assert_eq!(acl_events_count, expected_acl_events);
     Ok(())
 }
 
