@@ -38,12 +38,14 @@ If you want to disable TFHE operation events propagation, you can provide an emp
 `--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).
 
 Current behavior:
-- Counter is **per dependence chain, per ingest pass** (block-scoped in normal flow).
-- Count is **unweighted**: `+1` for each newly inserted TFHE op in the chain.
+- Count is **per ingest pass** (block-scoped in normal flow).
+- Count unit is **unweighted**: `+1` for each newly inserted TFHE op.
+- Slow-lane threshold is evaluated on split-dependency closures (connected dcids),
+  then applied to all chains in the over-cap closure.
 - `is_allowed` is **not** part of the counter (a non-allowed op can still be required producer work).
 - It is **not** dependency depth and **not** cumulative across past blocks.
 
-If a chain exceeds the cap in that ingest pass, host-listener marks it slow by
+If a closure exceeds the cap in that ingest pass, host-listener marks its chains slow by
 setting `dependence_chain.schedule_priority = 1` (monotonic via `GREATEST` on
 upsert). tfhe-worker picks fast first (`0`) and processes slow when fast is empty.
 

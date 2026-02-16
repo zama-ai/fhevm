@@ -51,7 +51,7 @@ fn propagate_slow_lane_to_dependents(
     let mut dependents_by_dependency: HashMap<ChainHash, Vec<ChainHash>> =
         HashMap::new();
     for chain in chains {
-        for dependency in &chain.inheritance_parents {
+        for dependency in &chain.split_dependencies {
             dependents_by_dependency
                 .entry(*dependency)
                 .or_default()
@@ -72,6 +72,64 @@ fn propagate_slow_lane_to_dependents(
             }
         }
     }
+}
+
+fn classify_slow_by_split_dependency_closure(
+    chains: &[Chain],
+    dependent_ops_by_chain: &HashMap<ChainHash, u64>,
+    max_per_chain: u64,
+) -> HashSet<ChainHash> {
+    let chain_ids = chains
+        .iter()
+        .map(|chain| chain.hash)
+        .collect::<HashSet<_>>();
+    let mut neighbors: HashMap<ChainHash, HashSet<ChainHash>> =
+        HashMap::with_capacity(chains.len());
+    for chain in chains {
+        neighbors.entry(chain.hash).or_default();
+        for dependency in &chain.split_dependencies {
+            if !chain_ids.contains(dependency) {
+                continue;
+            }
+            neighbors.entry(chain.hash).or_default().insert(*dependency);
+            neighbors.entry(*dependency).or_default().insert(chain.hash);
+        }
+    }
+
+    let mut visited = HashSet::with_capacity(chains.len());
+    let mut slow_dep_chain_ids = HashSet::new();
+    for chain in chains {
+        if visited.contains(&chain.hash) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut stack = vec![chain.hash];
+        visited.insert(chain.hash);
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            if let Some(next_neighbors) = neighbors.get(&current) {
+                for next in next_neighbors {
+                    if visited.insert(*next) {
+                        stack.push(*next);
+                    }
+                }
+            }
+        }
+
+        let component_ops =
+            component.iter().fold(0_u64, |sum, dep_chain_id| {
+                sum.saturating_add(
+                    dependent_ops_by_chain
+                        .get(dep_chain_id)
+                        .copied()
+                        .unwrap_or(0),
+                )
+            });
+        if component_ops > max_per_chain {
+            slow_dep_chain_ids.extend(component);
+        }
+    }
+    slow_dep_chain_ids
 }
 
 pub async fn ingest_block_logs(
@@ -205,20 +263,17 @@ pub async fn ingest_block_logs(
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
-        for chain in &chains {
-            if let Some(chain_dep_ops) = dependent_ops_by_chain.get(&chain.hash)
-            {
-                if *chain_dep_ops > max_per_chain {
-                    slow_dep_chain_ids.insert(chain.hash);
-                }
-            }
-        }
+        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            max_per_chain,
+        );
 
         let parent_dep_chain_ids = chains
             .iter()
             .flat_map(|chain| {
                 chain
-                    .inheritance_parents
+                    .split_dependencies
                     .iter()
                     .map(|dependency| dependency.to_vec())
             })
@@ -276,7 +331,7 @@ mod tests {
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
-            inheritance_parents: dependencies
+            split_dependencies: dependencies
                 .iter()
                 .map(|dep| FixedBytes::<32>::from([*dep; 32]))
                 .collect(),
@@ -299,6 +354,33 @@ mod tests {
         let mut slow_dep_chain_ids = HashSet::from([chains[0].hash]);
 
         propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
+
+        assert!(slow_dep_chain_ids.contains(&chains[0].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[1].hash));
+        assert!(slow_dep_chain_ids.contains(&chains[2].hash));
+        assert!(!slow_dep_chain_ids.contains(&chains[3].hash));
+    }
+
+    #[test]
+    fn classifies_slow_by_split_dependency_closure_sum() {
+        let chains = vec![
+            fixture_chain(1, &[]),
+            fixture_chain(2, &[1]),
+            fixture_chain(3, &[2]),
+            fixture_chain(4, &[]),
+        ];
+        let dependent_ops_by_chain = HashMap::from([
+            (chains[0].hash, 30_u64),
+            (chains[1].hash, 20_u64),
+            (chains[2].hash, 20_u64),
+            (chains[3].hash, 10_u64),
+        ]);
+
+        let slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            64,
+        );
 
         assert!(slow_dep_chain_ids.contains(&chains[0].hash));
         assert!(slow_dep_chain_ids.contains(&chains[1].hash));

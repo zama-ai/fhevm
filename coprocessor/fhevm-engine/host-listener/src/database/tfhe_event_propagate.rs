@@ -55,9 +55,9 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
-    // Ingest-only metadata for slow-lane inheritance propagation.
+    // Ingest-only metadata for dependency links split by no_fork grouping.
     // Not used by scheduler execution ordering.
-    pub inheritance_parents: Vec<ChainHash>,
+    pub split_dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,

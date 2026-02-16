@@ -415,7 +415,7 @@ async fn grouping_to_chains_connex(
                     size: tx.size,
                     before_size: 0,
                     dependencies: vec![],
-                    inheritance_parents: vec![],
+                    split_dependencies: vec![],
                     dependents: vec![],
                     allowed_handle: tx.allowed_handle.clone(),
                     new_chain,
@@ -523,7 +523,7 @@ fn grouping_to_chains_no_fork(
                         size: 0,
                         before_size: 0,
                         dependencies: vec![],
-                        inheritance_parents: vec![],
+                        split_dependencies: vec![],
                         dependents: vec![],
                         allowed_handle: tx.allowed_handle.clone(), // needed to publish in cache
                         new_chain: false,
@@ -544,7 +544,7 @@ fn grouping_to_chains_no_fork(
             }
             debug!("Creating new chain for tx {:?} with block dependencies {:?}, outer dependencies {:?}, before_size {}",
 		   tx, dependencies_block, dependencies_outer, before_size);
-            let inheritance_parents =
+            let split_dependencies =
                 [dependencies_block.clone(), dependencies_outer.clone()]
                     .concat();
             let new_chain = Chain {
@@ -552,7 +552,7 @@ fn grouping_to_chains_no_fork(
                 size: tx.size,
                 before_size,
                 dependencies: dependencies_block,
-                inheritance_parents,
+                split_dependencies,
                 dependents: vec![],
                 allowed_handle: tx.allowed_handle.clone(),
                 new_chain: true,
@@ -1022,7 +1022,7 @@ mod tests {
         Chain {
             hash: TransactionHash::with_last_byte(last_byte),
             dependencies: vec![],
-            inheritance_parents: vec![],
+            split_dependencies: vec![],
             dependents: vec![],
             size: 1,
             before_size: 0,
