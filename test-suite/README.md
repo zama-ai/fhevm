@@ -27,6 +27,8 @@ KMS can be configured to two modes:
   - [Troubleshooting Deploy Failures](#troubleshooting-deploy-failures)
   - [Behavior Parity Tests](#behavior-parity-tests)
   - [CLI Parity Diff Tests](#cli-parity-diff-tests)
+  - [Validation Protocol (PR / Manual)](#validation-protocol-pr--manual)
+  - [Docker Project Isolation](#docker-project-isolation)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -102,6 +104,7 @@ bun run clean --purge-local-cache
 All `clean` purge flags are fhevm-scoped:
 - `--purge-images` removes images referenced by fhevm compose services.
 - `--purge-build-cache` and `--purge-local-cache` remove local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
+- `--purge-networks` removes Docker networks labeled with the active compose project only.
 
 For `deploy --coprocessors N` with `N > 1`, `cast` (Foundry) must be installed locally to derive per-coprocessor accounts from `MNEMONIC`.
 
@@ -186,7 +189,7 @@ For agent workflows, prefer explicit command+flag forms from this table.
 | `clean` | `--purge` | Shorthand for all purge flags below. |
 | `clean` | `--purge-images` | Remove images referenced by fhevm compose services only. |
 | `clean` | `--purge-build-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
-| `clean` | `--purge-networks` | Remove `fhevm_*` networks. |
+| `clean` | `--purge-networks` | Remove Docker networks labeled with the active compose project only. |
 | `clean` | `--purge-local-cache` | Remove local Buildx cache dir (`.buildx-cache` or `FHEVM_BUILDX_CACHE_DIR`). |
 | `pause` / `unpause` | `host` or `gateway` | Contract pause controls. |
 | `upgrade` | `<service>` | Restart selected service compose stack. |
@@ -343,6 +346,90 @@ Run it with:
 ```sh
 ./test-suite/fhevm/scripts/tests/fhevm-cli-parity-diff.sh
 ```
+
+### Validation protocol (PR / manual)
+
+Use this when you want high confidence that the CLI is safe and functionally correct.
+
+#### 1) Quick confidence protocol (10-20 min)
+
+```sh
+cd test-suite/fhevm
+
+# Optional but strongly recommended: isolate this run from any other local docker tests.
+export FHEVM_DOCKER_PROJECT=fhevm-pr
+
+# Fresh start
+./fhevm-cli clean --purge
+
+# Bring up stack with testnet profile + telemetry gate
+./fhevm-cli deploy --resume core --network testnet --telemetry-smoke
+
+# Fast deterministic suite
+./fhevm-cli test input-proof --no-hardhat-compile
+./fhevm-cli test user-decryption --no-hardhat-compile
+./fhevm-cli test erc20 --no-hardhat-compile
+
+# Operational commands
+./fhevm-cli pause host
+./fhevm-cli unpause host
+./fhevm-cli pause gateway
+./fhevm-cli unpause gateway
+./fhevm-cli upgrade coprocessor
+
+# Cleanup
+./fhevm-cli clean
+```
+
+#### 2) Full protocol (same matrix used for end-to-end QA)
+
+```sh
+cd /path/to/fhevm
+bash /private/tmp/fhevm_full_qa.sh
+```
+
+Expected outcome:
+- No `[QA][FAIL]` in the generated summary log
+- Final line is `[QA][DONE] artifact_dir=...`
+
+Inspect results:
+
+```sh
+ART_DIR=$(cat /tmp/fhevm-full-qa-last-artifacts.txt)
+cat "$ART_DIR/summary.log"
+```
+
+#### 3) Safety check for cleanup scope (no side effects)
+
+Use sentinels to confirm clean/purge commands do not affect unrelated docker resources.
+
+```sh
+docker run -d --name qa-clean-sentinel alpine:3.20 sleep 36000
+docker network create qa-clean-sentinel-net
+
+cd test-suite/fhevm
+./fhevm-cli clean --purge
+
+docker ps -a --filter name='^qa-clean-sentinel$' --format '{{.Names}}'
+docker network ls --filter name='^qa-clean-sentinel-net$' --format '{{.Name}}'
+
+docker rm -f qa-clean-sentinel
+docker network rm qa-clean-sentinel-net
+```
+
+Both sentinel checks must still return their names after clean/purge.
+
+### Docker project isolation
+
+To avoid collisions with other local Docker-based test workflows, set a dedicated compose project name:
+
+```sh
+export FHEVM_DOCKER_PROJECT=fhevm-dev
+cd test-suite/fhevm
+./fhevm-cli deploy
+```
+
+All deploy/clean/purge operations are then scoped to that project.
 
 ## Security policy
 

@@ -27,9 +27,15 @@ export interface TestTypeConfig {
   grep?: string;
   parallel?: boolean;
   debugShell?: boolean;
+  retryOnProofRejected?: boolean;
+  retryAttempts?: number;
+  retryDelaySeconds?: number;
 }
 
-export const PROJECT = "fhevm";
+const PROJECT_OVERRIDE = process.env.FHEVM_DOCKER_PROJECT?.trim();
+const VALID_PROJECT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+export const PROJECT =
+  PROJECT_OVERRIDE && VALID_PROJECT_NAME.test(PROJECT_OVERRIDE) ? PROJECT_OVERRIDE : "fhevm";
 export const DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT = "http://jaeger:4317";
 
 export const DEFAULT_STACK_VERSION = "v0.11.0-1";
@@ -362,6 +368,9 @@ export const TEST_TYPE_CONFIG: Record<string, TestTypeConfig> = {
   "input-proof-compute-decrypt": {
     logMessage: "[TEST] INPUT PROOF (uint64)",
     grep: "test add 42 to uint64 input and decrypt",
+    retryOnProofRejected: true,
+    retryAttempts: 4,
+    retryDelaySeconds: 10,
   },
   "user-decryption": {
     logMessage: "[TEST] USER DECRYPTION",
