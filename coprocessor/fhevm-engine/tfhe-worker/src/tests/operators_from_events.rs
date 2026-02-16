@@ -1,5 +1,6 @@
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
+use serial_test::serial;
 use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::chain_id::ChainId;
@@ -65,11 +66,6 @@ pub async fn allow_handle(
     let event_type = AllowEvents::AllowedForDecryption;
     db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
         .await
-}
-
-fn as_handle(big_int: &BigInt) -> Handle {
-    let (_, bytes) = big_int.to_bytes_be();
-    Handle::right_padding_from(&bytes)
 }
 
 fn as_scalar_handle(big_int: &BigInt) -> Handle {
@@ -263,7 +259,11 @@ fn next_handle() -> Handle {
     #[expect(non_upper_case_globals)]
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    as_handle(&BigInt::from(v))
+    let mut out = [0_u8; 32];
+    // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
+    out[0] = 0x80;
+    out[24..].copy_from_slice(&v.to_be_bytes());
+    Handle::from(out)
 }
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
@@ -277,7 +277,8 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
 }
 
 #[tokio::test]
-pub(super) async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+#[serial(db)]
+async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     use fhevm_engine_common::types::SupportedFheOperations as S;
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -328,7 +329,8 @@ pub(super) async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std:
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+        allow_handle(&listener_event_to_db, &mut tx, lhs_handle.as_ref()).await?;
         if !op.is_scalar {
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -347,7 +349,8 @@ pub(super) async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std:
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, rhs_handle.as_ref()).await?;
         }
         let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -426,7 +429,8 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
-pub(super) async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+#[serial(db)]
+async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -472,7 +476,8 @@ pub(super) async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+        allow_handle(&listener_event_to_db, &mut tx, input_handle.as_ref()).await?;
 
         let op_event = unary_op_to_event(op, &input_handle, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -517,7 +522,8 @@ pub(super) async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::
 }
 
 #[tokio::test]
-pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
+#[serial(db)]
+async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -605,7 +611,8 @@ pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::er
                 removed: false,
             };
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, left_handle.as_ref()).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -624,7 +631,8 @@ pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::er
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, right_handle.as_ref()).await?;
 
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
@@ -684,7 +692,8 @@ pub(super) async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::er
 }
 
 #[tokio::test]
-pub(super) async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
+#[serial(db)]
+async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -733,7 +742,8 @@ pub(super) async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Err
             };
 
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, input_handle.as_ref()).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
@@ -784,6 +794,53 @@ pub(super) async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Err
 }
 
 #[tokio::test]
+#[serial(db)]
+async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+    let listener_event_to_db = listener_event_to_db(&app).await;
+
+    let tx_id = next_handle();
+    let output = next_handle();
+
+    let mut tx = listener_event_to_db.new_transaction().await?;
+    let log = alloy::rpc::types::Log {
+        inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
+                caller: "0x0000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+                pt: as_scalar_uint(&BigInt::from(123)),
+                toType: to_ty(5),
+                result: output,
+            },
+        )),
+        block_hash: None,
+        block_number: None,
+        block_timestamp: None,
+        transaction_hash: Some(tx_id),
+        transaction_index: Some(0),
+        log_index: None,
+        removed: false,
+    };
+    insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+    allow_handle(&listener_event_to_db, &mut tx, output.as_ref()).await?;
+    tx.commit().await?;
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    let decrypted = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+    assert_eq!(decrypted.len(), 1);
+    assert_eq!(decrypted[0].output_type, 5);
+    assert_eq!(decrypted[0].value, "123");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -886,6 +943,7 @@ pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Err
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_invalid_operation_marks_error() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
