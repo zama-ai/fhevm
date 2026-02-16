@@ -153,6 +153,8 @@ case "${subcommand}" in
         "{{.State.Status}}")
           if [[ -n "${fail_service}" && "${service_name}" == "${fail_service}" ]]; then
             echo "exited"
+          elif [[ "${service_name}" =~ ^coprocessor[0-9]+-db-migration$ ]]; then
+            echo "exited"
           elif [[ "${complete_services}" == *" ${service_name} "* ]]; then
             echo "exited"
           else
@@ -162,6 +164,8 @@ case "${subcommand}" in
         "{{.State.ExitCode}}")
           if [[ -n "${fail_service}" && "${service_name}" == "${fail_service}" ]]; then
             echo "${fail_exit_code}"
+          elif [[ "${service_name}" =~ ^coprocessor[0-9]+-db-migration$ ]]; then
+            echo "0"
           elif [[ "${complete_services}" == *" ${service_name} "* ]]; then
             echo "0"
           else
@@ -215,6 +219,45 @@ fi
 echo "${MOCK_JAEGER_SERVICES_JSON:-{\"data\":[]}}"
 CURL
   chmod +x "${FIXTURE_ROOT}/mock-bin/curl"
+
+  cat > "${FIXTURE_ROOT}/mock-bin/cast" <<'CAST'
+#!/bin/bash
+set -euo pipefail
+
+echo "cast $*" >> "${TEST_COMMAND_LOG}"
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "cast 1.0.0"
+  exit 0
+fi
+
+if [[ "${1:-}" != "wallet" ]]; then
+  exit 1
+fi
+
+kind="${2:-}"
+index="0"
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--mnemonic-index" ]]; then
+    index="${2:-0}"
+    break
+  fi
+  shift
+done
+
+if [[ "${kind}" == "address" ]]; then
+  printf '0x%040x\n' "${index}"
+  exit 0
+fi
+
+if [[ "${kind}" == "private-key" ]]; then
+  printf '0x%064x\n' "${index}"
+  exit 0
+fi
+
+exit 1
+CAST
+  chmod +x "${FIXTURE_ROOT}/mock-bin/cast"
 
   : > "${COMMAND_LOG}"
 }
@@ -594,6 +637,68 @@ ENV
   cleanup_fixture
 }
 
+test_multicoprocessor_flags_are_validated() {
+  setup_fixture
+
+  local output_file="${TEST_TMP_DIR}/multicoprocessor-invalid-threshold.out"
+  if run_deploy "${output_file}" --coprocessors 2 --coprocessor-threshold 3; then
+    echo "Deploy should reject threshold larger than coprocessor count" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Invalid coprocessor threshold: 3 (must be <= --coprocessors 2)"
+  assert_contains "${output_file}" "Usage:"
+  cleanup_fixture
+}
+
+test_multicoprocessor_env_and_extra_instances() {
+  setup_fixture
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.gateway-sc" <<'ENV'
+MNEMONIC=test test test test test test test test test test test junk
+COPROCESSOR_THRESHOLD=1
+NUM_COPROCESSORS=1
+COPROCESSOR_TX_SENDER_ADDRESS_0=0x1111111111111111111111111111111111111111
+COPROCESSOR_SIGNER_ADDRESS_0=0x1111111111111111111111111111111111111111
+COPROCESSOR_S3_BUCKET_URL_0=http://minio:9000/ct128
+ENV
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.host-sc" <<'ENV'
+COPROCESSOR_THRESHOLD=1
+NUM_COPROCESSORS=1
+COPROCESSOR_SIGNER_ADDRESS_0=0x1111111111111111111111111111111111111111
+ENV
+
+  cat > "${FIXTURE_ROOT}/env/staging/.env.coprocessor" <<'ENV'
+AWS_ENDPOINT_URL=http://minio:9000
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/coprocessor"
+TX_SENDER_PRIVATE_KEY=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ENV
+
+  local output_file="${TEST_TMP_DIR}/multicoprocessor-2-2.out"
+  if ! run_deploy "${output_file}" --coprocessors 2 --coprocessor-threshold 2; then
+    echo "Deploy with multicoprocessor topology should succeed" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+
+  assert_contains "${output_file}" "Coprocessor topology: n=2 threshold=2"
+  assert_contains "${COMMAND_LOG}" "cast wallet address --mnemonic test test test test test test test test test test test junk --mnemonic-index 5"
+  assert_contains "${COMMAND_LOG}" "cast wallet private-key --mnemonic test test test test test test test test test test test junk --mnemonic-index 8"
+  assert_contains "${COMMAND_LOG}" "coprocessor-1.generated.yml up -d coprocessor1-db-migration"
+  assert_contains "${COMMAND_LOG}" "coprocessor-1.generated.yml up -d coprocessor1-host-listener coprocessor1-host-listener-poller"
+
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.gateway-sc.local" "NUM_COPROCESSORS=2"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.gateway-sc.local" "COPROCESSOR_THRESHOLD=2"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.gateway-sc.local" "COPROCESSOR_SIGNER_ADDRESS_1=0x0000000000000000000000000000000000000008"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.host-sc.local" "COPROCESSOR_SIGNER_ADDRESS_1=0x0000000000000000000000000000000000000008"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.1.local" "DATABASE_URL=postgresql://postgres:postgres@db:5432/coprocessor_1"
+  assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.1.local" "TX_SENDER_PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000008"
+
+  cleanup_fixture
+}
+
 test_usage_is_shown_for_cli_argument_errors() {
   setup_fixture
 
@@ -722,6 +827,8 @@ main() {
   test_deploy_network_profile_applies_versions
   test_deploy_network_profile_rejects_invalid_value
   test_quoted_otel_endpoint_is_accepted
+  test_multicoprocessor_flags_are_validated
+  test_multicoprocessor_env_and_extra_instances
   test_clean_purge_invokes_prunes
   test_telemetry_smoke_requires_jaeger
   test_command_and_flag_matrix

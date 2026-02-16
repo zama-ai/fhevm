@@ -35,6 +35,8 @@ export const DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT = "http://jaeger:4317";
 export const DEFAULT_STACK_VERSION = "v0.11.0-1";
 export const DEFAULT_CORE_VERSION = "v0.13.0-rc.2";
 export const DEFAULT_RELAYER_VERSION = "v0.9.0-rc.1";
+export const MAX_LOCAL_COPROCESSORS = 5;
+export const COPROCESSOR_ACCOUNT_INDICES: number[] = [5, 8, 9, 10, 11];
 
 export const STACK_VERSION_OVERRIDE_ENV = "FHEVM_STACK_VERSION";
 export const CORE_VERSION_OVERRIDE_ENV = "FHEVM_CORE_VERSION";

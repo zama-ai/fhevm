@@ -15,15 +15,6 @@ should_fallback_to_legacy() {
     return 0
   fi
 
-  # Multicoprocessor deploy flags currently live in legacy path.
-  if [[ "$command" == "deploy" ]]; then
-    for arg in "$@"; do
-      if [[ "$arg" == "--coprocessors" || "$arg" == "--coprocessor-threshold" ]]; then
-        return 0
-      fi
-    done
-  fi
-
   return 1
 }
 

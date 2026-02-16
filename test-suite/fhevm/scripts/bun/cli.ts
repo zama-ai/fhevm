@@ -4,10 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   COLORS,
+  COPROCESSOR_ACCOUNT_INDICES,
   CORE_VERSION_OVERRIDE_ENV,
   DEFAULT_OTEL_EXPORTER_OTLP_ENDPOINT,
   DEPLOYMENT_STEPS,
   LOCAL_CACHE_SERVICES,
+  MAX_LOCAL_COPROCESSORS,
   PROJECT,
   RELAYER_VERSION_OVERRIDE_ENV,
   STACK_VERSION_OVERRIDE_ENV,
@@ -39,6 +41,8 @@ type DeployOptions = {
   localBuild: boolean;
   telemetrySmoke: boolean;
   strictOtel: boolean;
+  coprocessorCount: number;
+  coprocessorThresholdOverride?: number;
   networkProfile?: "testnet" | "mainnet";
   resumeStep?: string;
   onlyStep?: string;
@@ -79,7 +83,7 @@ function usage(): void {
   console.log(`${COLORS.bold}Usage:${COLORS.reset} ${COLORS.yellow}fhevm-cli${COLORS.reset} ${COLORS.cyan}COMMAND [OPTIONS]${COLORS.reset}`);
   console.log("");
   console.log(`${COLORS.bold}${COLORS.lightBlue}Commands:${COLORS.reset}`);
-  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--network testnet|mainnet] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
+  console.log(`  ${COLORS.yellow}deploy${COLORS.reset} ${COLORS.cyan}[--build] [--local] [--network testnet|mainnet] [--coprocessors N] [--coprocessor-threshold T] [--resume STEP] [--only STEP] [--telemetry-smoke] [--strict-otel]${COLORS.reset}    Deploy the full fhevm stack`);
   console.log(`  ${COLORS.yellow}pause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Pause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}unpause${COLORS.reset} ${COLORS.cyan}[CONTRACTS]${COLORS.reset}     Unpause specific contracts (host|gateway)`);
   console.log(`  ${COLORS.yellow}test${COLORS.reset} ${COLORS.cyan}[TYPE]${COLORS.reset}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)`);
@@ -93,6 +97,8 @@ function usage(): void {
   console.log(`  ${COLORS.cyan}--build${COLORS.reset}                Build buildable services before starting`);
   console.log(`  ${COLORS.cyan}--local | --dev${COLORS.reset}       Enable local BuildKit cache optimizations`);
   console.log(`  ${COLORS.cyan}--network NAME${COLORS.reset}        Version profile for deploy (${COLORS.green}testnet${COLORS.reset}|${COLORS.green}mainnet${COLORS.reset})`);
+  console.log(`  ${COLORS.cyan}--coprocessors N${COLORS.reset}      Number of coprocessor instances for local n/t topology`);
+  console.log(`  ${COLORS.cyan}--coprocessor-threshold T${COLORS.reset}  Coprocessor threshold override (must be <= N)`);
   console.log(`  ${COLORS.cyan}--resume STEP${COLORS.reset}         Redeploy from a specific step onward`);
   console.log(`  ${COLORS.cyan}--only STEP${COLORS.reset}           Redeploy only one step`);
   console.log(`  ${COLORS.cyan}--telemetry-smoke${COLORS.reset}     Run Jaeger service smoke-check after deploy`);
@@ -118,6 +124,7 @@ function usage(): void {
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --local${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --build --telemetry-smoke${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --network testnet${COLORS.reset}`);
+  console.log(`  ${COLORS.purple}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --resume kms-connector${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli deploy --only coprocessor${COLORS.reset}`);
   console.log(`  ${COLORS.purple}./fhevm-cli test input-proof${COLORS.reset}`);
@@ -519,6 +526,249 @@ function upsertEnvValue(filePath: string, key: string, value: string): void {
   fs.writeFileSync(filePath, `${nextLines.join("\n").replace(/\n*$/, "\n")}`, "utf8");
 }
 
+function additionalCoprocessorEnvFile(instanceIdx: number): string {
+  return path.resolve(ENV_DIR, `.env.coprocessor.${instanceIdx}.local`);
+}
+
+function generatedCoprocessorComposeFile(instanceIdx: number): string {
+  return path.resolve(COMPOSE_DIR, `coprocessor-${instanceIdx}.generated.yml`);
+}
+
+function parsePositiveInteger(value: string, flagName: string): number {
+  if (!/^[0-9]+$/.test(value)) {
+    usageError(`${flagName} expects a positive integer`);
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (parsed < 1) {
+    usageError(`${flagName} expects a positive integer`);
+  }
+  return parsed;
+}
+
+function coprocessorChecks(): { service: string; state: ServiceState }[] {
+  const step = getStep("coprocessor");
+  return step.serviceChecks.filter((check) => check.service.startsWith("coprocessor-"));
+}
+
+function mapCoprocessorServiceForInstance(service: string, instanceIdx: number): string {
+  return service.replace(/^coprocessor-/, `coprocessor${instanceIdx}-`);
+}
+
+function createGeneratedCoprocessorCompose(instanceIdx: number): string {
+  const sourceCompose = composeFile("coprocessor");
+  if (!fs.existsSync(sourceCompose)) {
+    throw new Error(`Coprocessor compose file not found: ${sourceCompose}`);
+  }
+
+  const source = fs.readFileSync(sourceCompose, "utf8");
+  const replacedEnv = source.replaceAll(
+    "../env/staging/.env.coprocessor.local",
+    `../env/staging/.env.coprocessor.${instanceIdx}.local`,
+  );
+  const renamedServices = replacedEnv.replaceAll("coprocessor-", `coprocessor${instanceIdx}-`);
+  const normalizedArgs = renamedServices.replaceAll(`--coprocessor${instanceIdx}-fhe-threads`, "--coprocessor-fhe-threads");
+
+  const targetCompose = generatedCoprocessorComposeFile(instanceIdx);
+  fs.writeFileSync(targetCompose, normalizedArgs, "utf8");
+  return targetCompose;
+}
+
+function findAdditionalCoprocessorIndices(): number[] {
+  const indices = new Set<number>();
+
+  for (const fileName of fs.readdirSync(ENV_DIR)) {
+    const match = fileName.match(/^\.env\.coprocessor\.(\d+)\.local$/);
+    if (!match) {
+      continue;
+    }
+    const idx = Number.parseInt(match[1], 10);
+    if (Number.isFinite(idx) && idx > 0) {
+      indices.add(idx);
+    }
+  }
+
+  const dockerNames = runCommand(["docker", "ps", "-a", "--format", "{{.Names}}"], {
+    capture: true,
+    check: false,
+    allowFailure: true,
+  });
+  for (const name of dockerNames.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+    const match = name.match(/^coprocessor(\d+)-/);
+    if (!match) {
+      continue;
+    }
+    const idx = Number.parseInt(match[1], 10);
+    if (Number.isFinite(idx) && idx > 0) {
+      indices.add(idx);
+    }
+  }
+
+  return [...indices].sort((a, b) => a - b);
+}
+
+function cleanupGeneratedCoprocessorArtifacts(instanceIdx: number): void {
+  const generatedCompose = generatedCoprocessorComposeFile(instanceIdx);
+  if (fs.existsSync(generatedCompose)) {
+    fs.rmSync(generatedCompose, { force: true });
+  }
+}
+
+function cleanupAdditionalCoprocessorInstances(): void {
+  const indices = findAdditionalCoprocessorIndices();
+  if (indices.length === 0) {
+    return;
+  }
+
+  for (const instanceIdx of indices) {
+    const envFile = additionalCoprocessorEnvFile(instanceIdx);
+    const compose = createGeneratedCoprocessorCompose(instanceIdx);
+    const command = ["docker", "compose", "-p", PROJECT];
+    if (fs.existsSync(envFile)) {
+      command.push("--env-file", envFile);
+    }
+    command.push("-f", compose, "down", "-v", "--remove-orphans");
+    runCommand(command, { check: false, allowFailure: true });
+    cleanupGeneratedCoprocessorArtifacts(instanceIdx);
+  }
+}
+
+function removeStaleAdditionalCoprocessorEnvFiles(): void {
+  for (const instanceIdx of findAdditionalCoprocessorIndices()) {
+    const envFile = additionalCoprocessorEnvFile(instanceIdx);
+    if (fs.existsSync(envFile)) {
+      fs.rmSync(envFile, { force: true });
+    }
+    cleanupGeneratedCoprocessorArtifacts(instanceIdx);
+  }
+}
+
+function castWalletValue(kind: "address" | "private-key", mnemonic: string, mnemonicIndex: number): string {
+  const result = runCommand(
+    ["cast", "wallet", kind, "--mnemonic", mnemonic, "--mnemonic-index", String(mnemonicIndex)],
+    { capture: true, check: true },
+  );
+  const value = result.stdout.trim();
+  if (!value) {
+    throw new Error(`cast wallet ${kind} returned an empty value for mnemonic index ${mnemonicIndex}`);
+  }
+  return value;
+}
+
+function configureMulticoprocessorEnvs(options: DeployOptions): void {
+  const gatewayEnv = localEnvFile("gateway-sc");
+  const hostEnv = localEnvFile("host-sc");
+  const coprocessorEnv = localEnvFile("coprocessor");
+
+  const configuredThresholdRaw = readEnvValue(gatewayEnv, "COPROCESSOR_THRESHOLD");
+  let configuredThreshold = 1;
+  if (configuredThresholdRaw && configuredThresholdRaw !== "") {
+    if (!/^[0-9]+$/.test(configuredThresholdRaw) || Number.parseInt(configuredThresholdRaw, 10) < 1) {
+      throw new Error(`Invalid COPROCESSOR_THRESHOLD value in ${path.basename(gatewayEnv)}: ${configuredThresholdRaw}`);
+    }
+    configuredThreshold = Number.parseInt(configuredThresholdRaw, 10);
+  }
+  if (options.coprocessorThresholdOverride) {
+    configuredThreshold = options.coprocessorThresholdOverride;
+  }
+
+  if (configuredThreshold > options.coprocessorCount) {
+    throw new Error(
+      `Configured coprocessor threshold (${configuredThreshold}) cannot exceed number of coprocessors (${options.coprocessorCount})`,
+    );
+  }
+
+  upsertEnvValue(gatewayEnv, "NUM_COPROCESSORS", String(options.coprocessorCount));
+  upsertEnvValue(gatewayEnv, "COPROCESSOR_THRESHOLD", String(configuredThreshold));
+  upsertEnvValue(hostEnv, "NUM_COPROCESSORS", String(options.coprocessorCount));
+  upsertEnvValue(hostEnv, "COPROCESSOR_THRESHOLD", String(configuredThreshold));
+
+  if (options.coprocessorCount === 1) {
+    removeStaleAdditionalCoprocessorEnvFiles();
+    return;
+  }
+
+  const mnemonic = readEnvValue(gatewayEnv, "MNEMONIC");
+  if (!mnemonic) {
+    throw new Error(`Missing MNEMONIC in ${path.basename(gatewayEnv)}; cannot derive coprocessor accounts`);
+  }
+
+  const castExists = runCommand(["cast", "--version"], { check: false, allowFailure: true });
+  if (castExists.status !== 0) {
+    throw new Error("cast is required to derive coprocessor accounts for multicoprocessor deploys");
+  }
+
+  if (options.coprocessorCount > COPROCESSOR_ACCOUNT_INDICES.length) {
+    throw new Error(`Not enough predefined account indices for ${options.coprocessorCount} coprocessors`);
+  }
+
+  const postgresUser = process.env.POSTGRES_USER ?? "postgres";
+  const postgresPassword = process.env.POSTGRES_PASSWORD ?? "postgres";
+
+  for (let idx = 0; idx < options.coprocessorCount; idx += 1) {
+    const mnemonicIndex = COPROCESSOR_ACCOUNT_INDICES[idx];
+    const cpAddress = castWalletValue("address", mnemonic, mnemonicIndex);
+    const cpPrivateKey = castWalletValue("private-key", mnemonic, mnemonicIndex);
+
+    upsertEnvValue(gatewayEnv, `COPROCESSOR_TX_SENDER_ADDRESS_${idx}`, cpAddress);
+    upsertEnvValue(gatewayEnv, `COPROCESSOR_SIGNER_ADDRESS_${idx}`, cpAddress);
+    upsertEnvValue(gatewayEnv, `COPROCESSOR_S3_BUCKET_URL_${idx}`, "http://minio:9000/ct128");
+    upsertEnvValue(hostEnv, `COPROCESSOR_SIGNER_ADDRESS_${idx}`, cpAddress);
+
+    if (idx === 0) {
+      upsertEnvValue(coprocessorEnv, "TX_SENDER_PRIVATE_KEY", cpPrivateKey);
+      continue;
+    }
+
+    const instanceEnv = additionalCoprocessorEnvFile(idx);
+    fs.copyFileSync(coprocessorEnv, instanceEnv);
+    upsertEnvValue(instanceEnv, "DATABASE_URL", `postgresql://${postgresUser}:${postgresPassword}@db:5432/coprocessor_${idx}`);
+    upsertEnvValue(instanceEnv, "TX_SENDER_PRIVATE_KEY", cpPrivateKey);
+  }
+}
+
+function runAdditionalCoprocessorInstance(instanceIdx: number, useBuild: boolean): void {
+  const envFile = additionalCoprocessorEnvFile(instanceIdx);
+  const compose = createGeneratedCoprocessorCompose(instanceIdx);
+
+  try {
+    const checks = coprocessorChecks();
+    const dbMigration = checks.find((check) => check.service === "coprocessor-db-migration");
+    const runtimeChecks = checks.filter(
+      (check) => check.service !== "coprocessor-db-migration" && check.service !== "coprocessor-and-kms-db",
+    );
+
+    if (!dbMigration) {
+      throw new Error("Coprocessor deployment checks are missing db migration state");
+    }
+
+    const dbMigrationService = mapCoprocessorServiceForInstance(dbMigration.service, instanceIdx);
+    const runtimeServices = runtimeChecks.map((check) => mapCoprocessorServiceForInstance(check.service, instanceIdx));
+
+    logInfo(`Starting additional coprocessor instance #${instanceIdx} (db migration phase)`);
+    const dbMigrationCommand = ["docker", "compose", "-p", PROJECT, "--env-file", envFile, "-f", compose, "up"];
+    if (useBuild) {
+      dbMigrationCommand.push("--build");
+    }
+    dbMigrationCommand.push("-d", dbMigrationService);
+    runCommand(dbMigrationCommand, { check: true });
+    waitForService(dbMigrationService, "coprocessor", dbMigration.state);
+
+    logInfo(`Starting additional coprocessor instance #${instanceIdx} (runtime phase)`);
+    const runtimeCommand = ["docker", "compose", "-p", PROJECT, "--env-file", envFile, "-f", compose, "up"];
+    if (useBuild) {
+      runtimeCommand.push("--build");
+    }
+    runtimeCommand.push("-d", ...runtimeServices);
+    runCommand(runtimeCommand, { check: true });
+
+    for (const runtimeCheck of runtimeChecks) {
+      waitForService(mapCoprocessorServiceForInstance(runtimeCheck.service, instanceIdx), "coprocessor", runtimeCheck.state);
+    }
+  } finally {
+    cleanupGeneratedCoprocessorArtifacts(instanceIdx);
+  }
+}
+
 function prepareLocalEnvFile(component: string): string {
   const baseFile = baseEnvFile(component);
   const localFile = localEnvFile(component);
@@ -859,18 +1109,23 @@ function getMinioIp(containerName: string): void {
     throw new Error(`Could not find IP address for ${containerName} container`);
   }
 
-  const coprocessorLocalEnv = localEnvFile("coprocessor");
-  if (!fs.existsSync(coprocessorLocalEnv)) {
-    throw new Error(`Coprocessor local env file not found: ${coprocessorLocalEnv}`);
+  const coprocessorEnvFiles = [localEnvFile("coprocessor"), ...findAdditionalCoprocessorIndices().map(additionalCoprocessorEnvFile)];
+  if (!fs.existsSync(coprocessorEnvFiles[0])) {
+    throw new Error(`Coprocessor local env file not found: ${coprocessorEnvFiles[0]}`);
+  }
+  let updatedCount = 0;
+  for (const envFile of coprocessorEnvFiles) {
+    if (!fs.existsSync(envFile)) {
+      continue;
+    }
+    const original = fs.readFileSync(envFile, "utf8");
+    fs.writeFileSync(`${envFile}.bak`, original, "utf8");
+    upsertEnvValue(envFile, "AWS_ENDPOINT_URL", `http://${minioIp}:9000`);
+    updatedCount += 1;
   }
 
-  const original = fs.readFileSync(coprocessorLocalEnv, "utf8");
-  fs.writeFileSync(`${coprocessorLocalEnv}.bak`, original, "utf8");
-
-  upsertEnvValue(coprocessorLocalEnv, "AWS_ENDPOINT_URL", `http://${minioIp}:9000`);
-
   console.log(`Found ${containerName} container IP: ${minioIp}`);
-  console.log(`Updated AWS_ENDPOINT_URL to http://${minioIp}:9000`);
+  console.log(`Updated AWS_ENDPOINT_URL to http://${minioIp}:9000 for ${updatedCount} coprocessor env file(s)`);
 }
 
 function resolveCleanupEnvFile(component: string): string | undefined {
@@ -889,6 +1144,10 @@ function resolveCleanupEnvFile(component: string): string | undefined {
 }
 
 function cleanupComponent(component: string): void {
+  if (component === "coprocessor") {
+    cleanupAdditionalCoprocessorInstances();
+  }
+
   const compose = composeFile(component);
   if (!fs.existsSync(compose)) {
     return;
@@ -913,6 +1172,20 @@ function cleanupComponent(component: string): void {
 }
 
 function purgeComponentImages(component: string): void {
+  if (component === "coprocessor") {
+    for (const instanceIdx of findAdditionalCoprocessorIndices()) {
+      const envFile = additionalCoprocessorEnvFile(instanceIdx);
+      const compose = createGeneratedCoprocessorCompose(instanceIdx);
+      const command = ["docker", "compose", "-p", PROJECT];
+      if (fs.existsSync(envFile)) {
+        command.push("--env-file", envFile);
+      }
+      command.push("-f", compose, "down", "-v", "--remove-orphans", "--rmi", "all");
+      runCommand(command, { check: false, allowFailure: true });
+      cleanupGeneratedCoprocessorArtifacts(instanceIdx);
+    }
+  }
+
   const compose = composeFile(component);
   if (!fs.existsSync(compose)) {
     return;
@@ -1027,11 +1300,14 @@ function parseDeployArgs(args: string[]): DeployOptions {
     localBuild: false,
     telemetrySmoke: false,
     strictOtel: false,
+    coprocessorCount: 1,
   };
 
   let expectResumeStep = false;
   let expectOnlyStep = false;
   let expectNetworkProfile = false;
+  let expectCoprocessorCount = false;
+  let expectCoprocessorThreshold = false;
 
   for (const arg of args) {
     if (expectResumeStep) {
@@ -1052,6 +1328,18 @@ function parseDeployArgs(args: string[]): DeployOptions {
       }
       options.networkProfile = arg;
       expectNetworkProfile = false;
+      continue;
+    }
+
+    if (expectCoprocessorCount) {
+      options.coprocessorCount = parsePositiveInteger(arg, "--coprocessors");
+      expectCoprocessorCount = false;
+      continue;
+    }
+
+    if (expectCoprocessorThreshold) {
+      options.coprocessorThresholdOverride = parsePositiveInteger(arg, "--coprocessor-threshold");
+      expectCoprocessorThreshold = false;
       continue;
     }
 
@@ -1084,6 +1372,16 @@ function parseDeployArgs(args: string[]): DeployOptions {
       continue;
     }
 
+    if (arg === "--coprocessors") {
+      expectCoprocessorCount = true;
+      continue;
+    }
+
+    if (arg === "--coprocessor-threshold") {
+      expectCoprocessorThreshold = true;
+      continue;
+    }
+
     if (arg === "--resume") {
       expectResumeStep = true;
       continue;
@@ -1111,6 +1409,14 @@ function parseDeployArgs(args: string[]): DeployOptions {
     usageError("--network requires a profile name (testnet|mainnet)");
   }
 
+  if (expectCoprocessorCount) {
+    usageError("--coprocessors requires a value");
+  }
+
+  if (expectCoprocessorThreshold) {
+    usageError("--coprocessor-threshold requires a value");
+  }
+
   if (options.resumeStep && stepIndex(options.resumeStep) === -1) {
     usageError(`Invalid resume step: ${options.resumeStep}\nValid steps are: ${validSteps}`);
   }
@@ -1121,6 +1427,16 @@ function parseDeployArgs(args: string[]): DeployOptions {
 
   if (options.resumeStep && options.onlyStep) {
     usageError("Cannot use --resume and --only together");
+  }
+
+  if (options.coprocessorThresholdOverride && options.coprocessorThresholdOverride > options.coprocessorCount) {
+    usageError(
+      `Invalid coprocessor threshold: ${options.coprocessorThresholdOverride} (must be <= --coprocessors ${options.coprocessorCount})`,
+    );
+  }
+
+  if (options.coprocessorCount > MAX_LOCAL_COPROCESSORS) {
+    usageError(`This local multicoprocessor mode currently supports up to ${MAX_LOCAL_COPROCESSORS} coprocessors`);
   }
 
   if (options.resumeStep) {
@@ -1134,6 +1450,8 @@ function parseDeployArgs(args: string[]): DeployOptions {
   if (options.networkProfile) {
     logInfo(`Network profile mode: '${options.networkProfile}' versions will be fetched from the public dashboard.`);
   }
+
+  logInfo(`Coprocessor topology: n=${options.coprocessorCount} threshold=${options.coprocessorThresholdOverride ?? "auto"}`);
 
   return options;
 }
@@ -1160,6 +1478,7 @@ function deploy(args: string[]): void {
   prepareAllEnvFiles();
   prepareLocalConfigRelayer();
   ensureCoprocessorTelemetryEnv(options.strictOtel || options.telemetrySmoke);
+  configureMulticoprocessorEnvs(options);
 
   logInfo("Deploying FHEVM Stack...");
 
@@ -1188,6 +1507,12 @@ function deploy(args: string[]): void {
 
     const useBuild = options.forceBuild && step.buildable;
     runComposeStep(step, useBuild);
+
+    if (step.name === "coprocessor") {
+      for (let idx = 1; idx < options.coprocessorCount; idx += 1) {
+        runAdditionalCoprocessorInstance(idx, useBuild);
+      }
+    }
 
     if (step.name === "minio") {
       getMinioIp("fhevm-minio");

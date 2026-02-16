@@ -103,6 +103,8 @@ All `clean` purge flags are fhevm-scoped:
 - `--purge-images` removes images referenced by fhevm compose services.
 - `--purge-build-cache` and `--purge-local-cache` remove local Buildx cache directory (`.buildx-cache` by default, or `FHEVM_BUILDX_CACHE_DIR` if set).
 
+For `deploy --coprocessors N` with `N > 1`, `cast` (Foundry) must be installed locally to derive per-coprocessor accounts from `MNEMONIC`.
+
 ### WIP - Forcing Local Builds (`--build`)
 
 ⚠️ **IMPORTANT: THIS FEATURE IS STILL A WORK IN PROGRESS!** ⚠️
@@ -170,6 +172,8 @@ For agent workflows, prefer explicit command+flag forms from this table.
 | `deploy` | `--build` | Build buildable services before `up -d`. |
 | `deploy` | `--local` / `--dev` | Enable local BuildKit cache (`.buildx-cache` by default). |
 | `deploy` | `--network testnet\|mainnet` | Apply version profile from public dashboard before deploy. |
+| `deploy` | `--coprocessors <n>` | Configure local coprocessor topology size (`n`, max `5`). |
+| `deploy` | `--coprocessor-threshold <t>` | Override topology threshold (`t <= n`). |
 | `deploy` | `--resume <step>` | Redeploy from a specific step onward. |
 | `deploy` | `--only <step>` | Redeploy only one step. |
 | `deploy` | `--telemetry-smoke` | Run Jaeger service smoke-check after deployment. |
