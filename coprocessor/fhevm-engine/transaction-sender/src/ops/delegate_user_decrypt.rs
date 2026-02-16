@@ -426,7 +426,17 @@ where
             }
         };
         for delegation in ready_delegations {
-            let txn_request = to_transaction(&delegation);
+            let prepare_delegate_span = tracing::info_span!(
+                "prepare_delegate",
+                operation = "prepare_delegate",
+                txn_id = tracing::field::Empty
+            );
+            fhevm_engine_common::telemetry::record_short_hex_if_some(
+                &prepare_delegate_span,
+                "txn_id",
+                delegation.transaction_id.as_deref(),
+            );
+            let txn_request = prepare_delegate_span.in_scope(|| to_transaction(&delegation));
             let txn_request = if let Some(gaz_limit) = &self.gas {
                 txn_request.with_gas_limit(*gaz_limit)
             } else {
