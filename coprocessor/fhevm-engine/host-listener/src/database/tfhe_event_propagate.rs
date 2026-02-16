@@ -68,7 +68,7 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-const SLOW_LANE_RESET_ADVISORY_LOCK_KEY: i64 = 1_907_001;
+const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
@@ -78,6 +78,10 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
 type DbErrorCode = std::borrow::Cow<'static, str>;
 const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
+
+fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
+    SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
+}
 
 pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
     let is_transient = match err {
@@ -160,9 +164,10 @@ impl Database {
     pub async fn promote_all_dep_chains_to_fast_priority(
         &self,
     ) -> Result<u64, SqlxError> {
+        let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
         let mut connection = self.pool().await.acquire().await?;
         sqlx::query("SELECT pg_advisory_lock($1)")
-            .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+            .bind(lock_key)
             .execute(connection.deref_mut())
             .await?;
 
@@ -202,7 +207,7 @@ impl Database {
 
         let unlock_res =
             sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
-                .bind(SLOW_LANE_RESET_ADVISORY_LOCK_KEY)
+                .bind(lock_key)
                 .fetch_one(connection.deref_mut())
                 .await;
         if let Err(err) = unlock_res {
