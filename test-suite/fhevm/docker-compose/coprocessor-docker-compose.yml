@@ -227,7 +227,6 @@ services:
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
-      - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --database-pool-size=10
       - --database-polling-interval-secs=20
       - --verify-proof-resp-database-channel=event_zkpok_computed

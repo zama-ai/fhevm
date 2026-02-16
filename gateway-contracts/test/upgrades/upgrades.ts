@@ -15,8 +15,6 @@ import {
   InputVerification__factory,
   KMSGenerationV2Example__factory,
   KMSGeneration__factory,
-  MultichainACLV2Example__factory,
-  MultichainACL__factory,
   ProtocolPaymentV2Example__factory,
   ProtocolPayment__factory,
 } from "../../typechain-types";
@@ -36,8 +34,6 @@ describe("Upgrades", function () {
   let inputVerificationFactoryV2: InputVerificationV2Example__factory;
   let kmsGenerationFactoryV1: KMSGeneration__factory;
   let kmsGenerationFactoryV2: KMSGenerationV2Example__factory;
-  let MultichainACLFactoryV1: MultichainACL__factory;
-  let MultichainACLFactoryV2: MultichainACLV2Example__factory;
   let protocolPaymentFactoryV1: ProtocolPayment__factory;
   let protocolPaymentFactoryV2: ProtocolPaymentV2Example__factory;
 
@@ -61,33 +57,8 @@ describe("Upgrades", function () {
     kmsGenerationFactoryV1 = await ethers.getContractFactory("KMSGeneration", owner);
     kmsGenerationFactoryV2 = await ethers.getContractFactory("KMSGenerationV2Example", owner);
 
-    MultichainACLFactoryV1 = await ethers.getContractFactory("MultichainACL", owner);
-    MultichainACLFactoryV2 = await ethers.getContractFactory("MultichainACLV2Example", owner);
-
     protocolPaymentFactoryV1 = await ethers.getContractFactory("ProtocolPayment", owner);
     protocolPaymentFactoryV2 = await ethers.getContractFactory("ProtocolPaymentV2Example", owner);
-  });
-
-  it("Should deploy upgradable MultichainACL", async function () {
-    const nonceBef = await ethers.provider.getTransactionCount(owner);
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const MultichainACL = await upgrades.upgradeProxy(emptyUUPS, MultichainACLFactoryV1);
-    await MultichainACL.waitForDeployment();
-    const initialVersion = await MultichainACL.getVersion();
-    const MultichainACLV2 = await upgrades.upgradeProxy(MultichainACL, MultichainACLFactoryV2);
-    await MultichainACLV2.waitForDeployment();
-    const newVersion = await MultichainACLV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("MultichainACL v1000.0.0");
-
-    const multichainACLAddress = ethers.getCreateAddress({
-      from: owner.address,
-      nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
-    });
-    expect(multichainACLAddress).to.equal(await MultichainACLV2.getAddress());
   });
 
   it("Should deploy upgradable CiphertextCommits", async function () {
