@@ -191,8 +191,12 @@ jobs:
 
           # Verify: allowed domain works, blocked domain is rejected
           HTTP_CODE=$(curl -s -x http://localhost:3128 -o /dev/null -w '%{http_code}' https://api.github.com)
-          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ] || { echo "::error::Allowed domain returned $HTTP_CODE"; exit 1; }
-          curl -sf -x http://localhost:3128 -o /dev/null https://google.com 2>/dev/null && { echo "::error::Blocked domain reachable!"; exit 1; }
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Allowed domain returned $HTTP_CODE"; exit 1
+          fi
+          if curl -sf -x http://localhost:3128 -o /dev/null https://google.com 2>/dev/null; then
+            echo "::error::Blocked domain reachable!"; exit 1
+          fi
 
       - name: Lock down iptables
         run: |
@@ -207,8 +211,12 @@ jobs:
           sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p tcp --syn -j REJECT --reject-with tcp-reset
 
           # Verify: direct blocked, proxy works
-          curl -sf --max-time 5 -o /dev/null https://google.com 2>/dev/null && { echo "::error::Direct connection not blocked!"; exit 1; }
-          curl -sf --max-time 10 -x http://localhost:3128 -o /dev/null https://api.github.com 2>/dev/null || { echo "::error::Proxy broken!"; exit 1; }
+          if curl -sf --max-time 5 -o /dev/null https://google.com 2>/dev/null; then
+            echo "::error::Direct connection not blocked!"; exit 1
+          fi
+          if ! curl -sf --max-time 10 -x http://localhost:3128 -o /dev/null https://api.github.com 2>/dev/null; then
+            echo "::error::Proxy broken!"; exit 1
+          fi
 
       # ── Phase 4: Run Claude Code (sandboxed) ───────────────────────────
 
@@ -235,14 +243,12 @@ jobs:
             --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
 
       # ── Cleanup ────────────────────────────────────────────────────────
-
       # The action skips token revocation when github_token is provided — do it ourselves
       - name: Revoke GitHub App token
         if: always() && steps.oidc-exchange.outputs.app_token != ''
         run: |
           curl -sf -X DELETE \
             -H "Authorization: Bearer $APP_TOKEN" \
-            "${GITHUB_API_URL:-https://api.github.com}/installation/token" \
-            || true
+            "https://api.github.com/installation/token"
         env:
           APP_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
