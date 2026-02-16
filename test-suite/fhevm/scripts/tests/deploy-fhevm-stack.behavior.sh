@@ -81,6 +81,14 @@ fi
 
 case "${subcommand}" in
   compose)
+    compose_args="$*"
+    if [[ "${compose_args}" == *"core-docker-compose.yml"* && "${compose_args}" == *" up "* ]]; then
+      if [[ -z "${CORE_VERSION:-}" ]]; then
+        echo "time=\"2026-02-16T10:18:13+01:00\" level=warning msg=\"The \\\"CORE_VERSION\\\" variable is not set. Defaulting to a blank string.\"" >&2
+        echo "unable to get image 'ghcr.io/zama-ai/kms/core-service:': Error response from daemon: invalid reference format" >&2
+        exit 1
+      fi
+    fi
     exit 0
     ;;
   ps)
@@ -267,6 +275,30 @@ run_cli() {
   ) > "${output_file}" 2>&1
 }
 
+run_cli_ok() {
+  local label=$1
+  shift
+  local output_file="${TEST_TMP_DIR}/${label}.out"
+  if ! run_cli "${output_file}" "$@"; then
+    echo "Command should succeed: bun scripts/bun/cli.ts $*" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+}
+
+run_cli_fail_contains() {
+  local label=$1
+  local expected=$2
+  shift 2
+  local output_file="${TEST_TMP_DIR}/${label}.out"
+  if run_cli "${output_file}" "$@"; then
+    echo "Command should fail: bun scripts/bun/cli.ts $*" >&2
+    cat "${output_file}" >&2
+    return 1
+  fi
+  assert_contains "${output_file}" "${expected}"
+}
+
 assert_contains() {
   local file=$1
   local pattern=$2
@@ -352,6 +384,7 @@ test_default_flow_and_env_patch() {
 
   assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.local" "AWS_ENDPOINT_URL=http://172.20.0.2:9000"
   assert_contains "${FIXTURE_ROOT}/env/staging/.env.coprocessor.local" "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317"
+  assert_not_contains "${output_file}" "CORE_VERSION variable is not set"
 
   cleanup_fixture
 }
@@ -617,6 +650,64 @@ test_telemetry_smoke_requires_jaeger() {
   cleanup_fixture
 }
 
+test_command_and_flag_matrix() {
+  setup_fixture
+
+  local dashboard_fixture="${TEST_TMP_DIR}/dashboard-matrix.html"
+  write_network_dashboard_fixture "${dashboard_fixture}"
+  export FHEVM_GRAFANA_DASHBOARD_HTML_FILE="${dashboard_fixture}"
+
+  run_cli_ok "help-command" help
+  run_cli_ok "help-short" -h
+  run_cli_ok "help-long" --help
+
+  run_cli_ok "deploy-default-matrix" deploy
+  run_cli_ok "deploy-build-local-matrix" deploy --build --local
+  run_cli_ok "deploy-network-only-matrix" deploy --network testnet --only coprocessor
+  run_cli_ok "deploy-resume-build-matrix" deploy --build --resume kms-connector
+  run_cli_fail_contains "deploy-invalid-network-matrix" "Allowed values: testnet mainnet" deploy --network prod
+  run_cli_fail_contains "deploy-resume-only-conflict-matrix" "Cannot use --resume and --only together" deploy --resume core --only core
+
+  run_cli_ok "pause-host" pause host
+  run_cli_ok "pause-gateway" pause gateway
+  run_cli_ok "unpause-host" unpause host
+  run_cli_ok "unpause-gateway" unpause gateway
+  run_cli_fail_contains "pause-missing" "Unknown service:" pause
+  run_cli_fail_contains "unpause-invalid" "Unknown service: foo" unpause foo
+
+  local test_type
+  for test_type in input-proof input-proof-compute-decrypt user-decryption delegated-user-decryption public-decryption erc20 public-decrypt-http-ebool public-decrypt-http-mixed operators random random-subset paused-host-contracts paused-gateway-contracts debug; do
+    run_cli_ok "test-${test_type}" test "${test_type}"
+  done
+  run_cli_ok "test-options-combo" test input-proof -v -n staging -r --no-hardhat-compile -g "my grep"
+  run_cli_fail_contains "test-unknown" "Unknown test type: unknown-test" test unknown-test
+  run_cli_fail_contains "test-network-missing" "Network argument missing" test input-proof --network
+  run_cli_fail_contains "test-grep-missing" "Grep pattern missing" test input-proof --grep
+
+  local service
+  for service in minio core gateway-node gateway-sc gateway-mocked-payment host-node host-sc kms-connector coprocessor relayer test-suite; do
+    run_cli_ok "upgrade-${service}" upgrade "${service}"
+  done
+  run_cli_fail_contains "upgrade-unknown" "Unknown service: foo" upgrade foo
+
+  run_cli_ok "logs-relayer" logs relayer
+  run_cli_fail_contains "logs-missing" "Service name is required" logs
+
+  run_cli_ok "clean-default" clean
+  run_cli_ok "clean-purge-images" clean --purge-images
+  run_cli_ok "clean-purge-build-cache" clean --purge-build-cache
+  run_cli_ok "clean-purge-networks" clean --purge-networks
+  run_cli_ok "clean-purge-local-cache" clean --purge-local-cache
+  run_cli_ok "clean-purge-combo" clean --purge-networks --purge-local-cache
+  run_cli_ok "clean-purge-all" clean --purge
+  run_cli_fail_contains "clean-invalid" "Unknown option for clean: --bad-flag" clean --bad-flag
+
+  run_cli_fail_contains "telemetry-smoke-missing-jaeger" "Jaeger container is not running." telemetry-smoke
+
+  unset FHEVM_GRAFANA_DASHBOARD_HTML_FILE
+  cleanup_fixture
+}
+
 main() {
   trap cleanup_fixture EXIT
 
@@ -632,6 +723,7 @@ main() {
   test_quoted_otel_endpoint_is_accepted
   test_clean_purge_invokes_prunes
   test_telemetry_smoke_requires_jaeger
+  test_command_and_flag_matrix
   test_usage_is_shown_for_cli_argument_errors
 
   echo "All deploy behavior tests passed"

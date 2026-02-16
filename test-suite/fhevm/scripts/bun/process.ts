@@ -18,7 +18,8 @@ export function runCommand(command: string[], options: RunOptions = {}): RunResu
   const [bin, ...args] = command;
   const spawnOptions: SpawnSyncOptionsWithStringEncoding = {
     cwd: options.cwd,
-    env: options.env,
+    // Bun does not reliably inherit process.env mutations unless env is explicit.
+    env: options.env ?? process.env,
     encoding: "utf8",
     stdio: options.capture ? "pipe" : "inherit",
   };
