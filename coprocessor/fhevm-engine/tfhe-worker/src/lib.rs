@@ -49,27 +49,19 @@ pub fn start_runtime(
 
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
-static OTLP_SETUP_ERROR: OnceLock<String> = OnceLock::new();
 static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::new();
 
 pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
-        let otel_guard =
-            match telemetry::init_json_subscriber(args.log_level, &args.service_name, "otlp-layer")
-            {
-                Ok(guard) => guard,
-                Err(err) => {
-                    let _ = OTLP_SETUP_ERROR.set(err.to_string());
-                    None
-                }
-            };
+        let otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+            args.log_level,
+            &args.service_name,
+            "otlp-layer",
+        );
         let _ = OTEL_GUARD.set(otel_guard);
     });
-    if let Some(err) = OTLP_SETUP_ERROR.get() {
-        error!(error = %err, "Failed to setup OTLP");
-    }
 
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");

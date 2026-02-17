@@ -82,18 +82,11 @@ pub fn parse_args() -> Args {
 async fn main() {
     let args = parse_args();
 
-    let mut otlp_setup_error: Option<String> = None;
-    let _otel_guard =
-        match telemetry::init_json_subscriber(args.log_level, &args.service_name, "otlp-layer") {
-            Ok(guard) => guard,
-            Err(err) => {
-                otlp_setup_error = Some(err.to_string());
-                None
-            }
-        };
-    if let Some(err) = otlp_setup_error {
-        error!(error = %err, "Failed to setup OTLP");
-    }
+    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+        args.log_level,
+        &args.service_name,
+        "otlp-layer",
+    );
 
     let database_url = args.database_url.clone().unwrap_or_default();
 

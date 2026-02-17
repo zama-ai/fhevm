@@ -65,21 +65,11 @@ async fn main() {
     let config: Config = construct_config();
     let parent = CancellationToken::new();
 
-    let mut otlp_setup_error: Option<String> = None;
-
-    let _otel_guard =
-        match telemetry::init_json_subscriber(config.log_level, &config.service_name, "otlp-layer")
-        {
-            Ok(guard) => guard,
-            Err(err) => {
-                otlp_setup_error = Some(err.to_string());
-                None
-            }
-        };
-
-    if let Some(err) = otlp_setup_error {
-        error!(error = %err, "Failed to setup OTLP");
-    }
+    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+        config.log_level,
+        &config.service_name,
+        "otlp-layer",
+    );
 
     // Handle SIGINIT signals
     handle_sigint(parent.clone());

@@ -103,18 +103,11 @@ async fn main() -> anyhow::Result<()> {
 
     let conf = Conf::parse();
 
-    let mut otlp_setup_error: Option<String> = None;
-    let _otel_guard =
-        match telemetry::init_json_subscriber(conf.log_level, &conf.service_name, "otlp-layer") {
-            Ok(guard) => guard,
-            Err(err) => {
-                otlp_setup_error = Some(err.to_string());
-                None
-            }
-        };
-    if let Some(err) = otlp_setup_error {
-        error!(error = %err, "Failed to setup OTLP");
-    }
+    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+        conf.log_level,
+        &conf.service_name,
+        "otlp-layer",
+    );
 
     info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
          retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");

@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, Span};
+use tracing::{debug, error, info, warn, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -107,6 +107,20 @@ pub fn init_json_subscriber(
     base.with(telemetry_layer).try_init()?;
     opentelemetry::global::set_tracer_provider(trace_provider.clone());
     Ok(Some(TracerProviderGuard::new(trace_provider)))
+}
+
+pub fn init_json_subscriber_with_otlp_fallback(
+    log_level: tracing::Level,
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Option<TracerProviderGuard> {
+    match init_json_subscriber(log_level, service_name, tracer_name) {
+        Ok(guard) => guard,
+        Err(err) => {
+            error!(error = %err, "Failed to setup OTLP");
+            None
+        }
+    }
 }
 
 fn setup_otel_with_tracer(
