@@ -74,10 +74,13 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
 
-    - name: Preinstall solc via host-listener build script
+    - name: Install svm
       run: |
-        CARGO_BUILD_JOBS=1 cargo test --release --package host-listener --no-run
-      working-directory: coprocessor/fhevm-engine
+        cargo install svm-rs --locked --version 0.5.23
+
+    - name: Preinstall solc 0.8.28
+      run: |
+        svm install --non-interactive 0.8.28
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
