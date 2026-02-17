@@ -2,13 +2,47 @@ use crate::tests::event_helpers::{
     allow_handle, as_scalar_uint, decrypt_handles, insert_event, next_handle, setup_event_harness,
     to_ty, wait_until_computed, zero_address,
 };
-use crate::tests::operators_from_events::supported_types;
 use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use serial_test::serial;
 use std::str::FromStr;
+
+const RANDOM_SUPPORTED_TYPES_CPU: &[i32] = &[
+    0,  // bool
+    1,  // 4 bit
+    2,  // 8 bit
+    3,  // 16 bit
+    4,  // 32 bit
+    5,  // 64 bit
+    6,  // 128 bit
+    7,  // 160 bit
+    8,  // 256 bit
+    9,  // 512 bit
+    10, // 1024 bit
+    11, // 2048 bit
+];
+
+const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
+    0, // bool
+    1, // 4 bit
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+    6, // 128 bit
+    7, // 160 bit
+    8, // 256 bit
+];
+
+fn random_test_supported_types() -> &'static [i32] {
+    if cfg!(feature = "gpu") {
+        RANDOM_SUPPORTED_TYPES_GPU
+    } else {
+        RANDOM_SUPPORTED_TYPES_CPU
+    }
+}
 
 #[tokio::test]
 #[serial(db)]
@@ -17,7 +51,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::new();
     let mut rand_types = Vec::new();
 
-    for &rand_type in supported_types() {
+    for &rand_type in random_test_supported_types() {
         let tx_id = next_handle();
         let mut tx = harness.listener_db.new_transaction().await?;
 
@@ -105,7 +139,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::new();
     let mut rand_types = Vec::new();
 
-    for &rand_type in supported_types() {
+    for &rand_type in random_test_supported_types() {
         let tx_id = next_handle();
         let mut tx = harness.listener_db.new_transaction().await?;
 
