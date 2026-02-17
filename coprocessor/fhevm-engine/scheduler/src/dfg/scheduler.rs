@@ -17,12 +17,10 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use opentelemetry::trace::{Status, TraceContextExt};
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::{DFComponentGraph, DFGraph, OpNode};
 
@@ -349,7 +347,7 @@ fn execute_partition(
                 Err(e) => {
                     error!(target: "scheduler", {transaction_id = ?hex::encode(&tid), error = ?e },
                            "Error while decompressing inputs");
-                    set_current_span_error(&e);
+                    telemetry::set_current_span_error(&e);
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
@@ -477,7 +475,7 @@ fn try_execute_node(
         if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
                    "Error while re-randomising operation inputs");
-            set_current_span_error(&e);
+            telemetry::set_current_span_error(&e);
             return Err(SchedulerError::ReRandomisationError.into());
         }
         let elapsed = started_at.elapsed();
@@ -496,14 +494,6 @@ fn try_execute_node(
 }
 
 type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
-fn set_current_span_error(error: &impl std::fmt::Display) {
-    tracing::Span::current()
-        .context()
-        .span()
-        .set_status(Status::Error {
-            description: error.to_string().into(),
-        });
-}
 
 fn run_computation(
     operation: i32,
@@ -538,7 +528,7 @@ fn run_computation(
                     )
                 }
                 Err(error) => {
-                    set_current_span_error(&error);
+                    telemetry::set_current_span_error(&error);
                     (graph_node_index, Err(error.into()))
                 }
             }
@@ -582,7 +572,7 @@ fn run_computation(
                                 (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
                             }
                             Err(error) => {
-                                set_current_span_error(&error);
+                                telemetry::set_current_span_error(&error);
                                 (graph_node_index, Err(error.into()))
                             }
                         }
@@ -591,7 +581,7 @@ fn run_computation(
                     }
                 }
                 Err(e) => {
-                    set_current_span_error(&e);
+                    telemetry::set_current_span_error(&e);
                     (graph_node_index, Err(e.into()))
                 }
             }

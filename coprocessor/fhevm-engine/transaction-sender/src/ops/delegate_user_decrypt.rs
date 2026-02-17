@@ -46,7 +46,6 @@ pub struct DelegationRow {
     pub host_chain_id: ChainId,
     pub block_hash: Vec<u8>,
     pub block_number: u64,
-    #[allow(dead_code)]
     pub transaction_id: Option<Vec<u8>>,
     pub gateway_nb_attempts: u64,
 }

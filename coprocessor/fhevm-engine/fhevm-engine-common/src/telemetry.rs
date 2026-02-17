@@ -1,7 +1,7 @@
 use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
-use opentelemetry::{trace::TracerProvider, KeyValue};
+use opentelemetry::{trace::TraceContextExt, trace::TracerProvider, KeyValue};
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
@@ -13,6 +13,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Calls provider shutdown exactly once when dropped.
@@ -223,6 +224,15 @@ pub fn record_short_hex_if_some<T: AsRef<[u8]>>(
     if let Some(value) = value {
         record_short_hex(span, field, value.as_ref());
     }
+}
+
+pub fn set_current_span_error(error: &impl fmt::Display) {
+    tracing::Span::current()
+        .context()
+        .span()
+        .set_status(opentelemetry::trace::Status::Error {
+            description: error.to_string().into(),
+        });
 }
 
 pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =

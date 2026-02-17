@@ -5,10 +5,9 @@ use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
-use opentelemetry::trace::TraceContextExt;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use hex::encode;
@@ -403,15 +402,6 @@ async fn execute_verify_proof_routine(
     Ok(())
 }
 
-fn set_current_span_error(err: &ExecutionError) {
-    tracing::Span::current()
-        .context()
-        .span()
-        .set_status(opentelemetry::trace::Status::Error {
-            description: err.to_string().into(),
-        });
-}
-
 pub(crate) fn verify_proof(
     request_id: i64,
     key: &DbKey,
@@ -423,11 +413,11 @@ pub(crate) fn verify_proof(
 
     // Step 1: Deserialize and verify the proof
     let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
-        .inspect_err(set_current_span_error)?;
+        .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 2: Expand the verified ciphertext list
-    let mut cts =
-        expand_verified_list(request_id, &verified_list).inspect_err(set_current_span_error)?;
+    let mut cts = expand_verified_list(request_id, &verified_list)
+        .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 3: Create ciphertext handles
     let mut h = Keccak256::new();
@@ -440,7 +430,7 @@ pub(crate) fn verify_proof(
         .enumerate()
         .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()
-        .inspect_err(set_current_span_error)?;
+        .inspect_err(telemetry::set_current_span_error)?;
 
     Ok((cts, blob_hash))
 }
@@ -456,7 +446,7 @@ fn verify_proof_only(
     let aux_data_bytes = aux_data
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
-        .inspect_err(set_current_span_error)?;
+        .inspect_err(telemetry::set_current_span_error)?;
 
     let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
@@ -464,7 +454,7 @@ fn verify_proof_only(
             key.pks.parameters(), &crs.crs,
         ))
         .map_err(ExecutionError::from)
-        .inspect_err(set_current_span_error)?;
+        .inspect_err(telemetry::set_current_span_error)?;
 
     info!(
         message = "Input list deserialized",
@@ -480,7 +470,7 @@ fn verify_proof_only(
 
     if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
         let err = ExecutionError::TooManyInputs(the_list.len());
-        set_current_span_error(&err);
+        telemetry::set_current_span_error(&err);
         return Err(err);
     }
 
@@ -490,7 +480,7 @@ fn verify_proof_only(
     if verification_result.is_invalid() {
         let err =
             ExecutionError::InvalidProof(request_id, "ZK proof verification failed".to_string());
-        set_current_span_error(&err);
+        telemetry::set_current_span_error(&err);
         return Err(err);
     }
 
@@ -510,11 +500,11 @@ fn expand_verified_list(
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .expand_without_verification()
         .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
-        .inspect_err(set_current_span_error)?;
+        .inspect_err(telemetry::set_current_span_error)?;
 
     extract_ct_list(&expanded)
         .map_err(ExecutionError::from)
-        .inspect_err(set_current_span_error)
+        .inspect_err(telemetry::set_current_span_error)
 }
 
 /// Creates a ciphertext
