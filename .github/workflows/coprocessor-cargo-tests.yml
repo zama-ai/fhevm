@@ -78,9 +78,25 @@ jobs:
       run: |
         cargo install svm-rs --locked --version 0.5.23
 
-    - name: Preinstall solc 0.8.28
+    - name: Preinstall solc versions used by coprocessor build scripts
       run: |
-        svm install --non-interactive 0.8.28
+        set -euo pipefail
+
+        mapfile -t solc_versions < <(
+          grep -RhoE 'Version::new\([[:space:]]*[0-9]+,[[:space:]]*[0-9]+,[[:space:]]*[0-9]+[[:space:]]*\)' coprocessor/fhevm-engine/*/build.rs \
+            | sed -E 's/Version::new\([[:space:]]*([0-9]+),[[:space:]]*([0-9]+),[[:space:]]*([0-9]+)[[:space:]]*\)/\1.\2.\3/' \
+            | sort -u
+        )
+
+        if [ "${#solc_versions[@]}" -eq 0 ]; then
+          echo "No solc versions found in coprocessor build scripts."
+          exit 1
+        fi
+
+        for version in "${solc_versions[@]}"; do
+          echo "Installing solc ${version} via svm"
+          svm install --non-interactive "${version}"
+        done
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
