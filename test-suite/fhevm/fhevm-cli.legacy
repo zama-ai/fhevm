@@ -1,0 +1,322 @@
+#!/bin/bash
+set -e
+
+BLUE='\033[0;34m'
+LIGHT_BLUE='\033[1;34m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT="fhevm"
+
+VERSION_MANIFEST="${SCRIPT_DIR}/scripts/legacy/lib/version-manifest.sh"
+if [[ ! -f "$VERSION_MANIFEST" ]]; then
+  echo -e "${RED}[ERROR]${RESET} ${BOLD}Version manifest not found: ${VERSION_MANIFEST}${RESET}"
+  exit 1
+fi
+
+source "$VERSION_MANIFEST"
+fhevm_export_default_versions
+
+
+function print_logo() {
+  echo -e "${LIGHT_BLUE}"
+  echo "  ______   _    _   ______  __      __  __  __"
+  echo " |  ____| | |  | | |  ____| \ \    / / |  \/  |"
+  echo " | |__    | |__| | | |__     \ \  / /  | \  / |"
+  echo " |  __|   |  __  | |  __|     \ \/ /   | |\/| |"
+  echo " | |      | |  | | | |____     \  /    | |  | |"
+  echo " |_|      |_|  |_| |______|     \/     |_|  |_|"
+  echo -e "${RESET}"
+}
+
+function usage {
+  print_logo
+  echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
+  echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
+  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)"
+  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
+  echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
+  echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
+  echo -e "  ${YELLOW}help${RESET}                Display this help message"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Test Options:${RESET}"
+  echo -e "  ${CYAN}-v, --verbose${RESET}       Enable verbose output"
+  echo -e "  ${CYAN}-n, --network NAME${RESET}  Specify network (default: ${GREEN}staging${RESET})"
+  echo -e "  ${CYAN}-g, --grep PATTERN${RESET}  Override default test pattern"
+  echo -e "  ${CYAN}-r, --no-relayer${RESET}    Disable Rust relayer"
+  echo -e "  ${CYAN}--no-hardhat-compile${RESET}        Skip Hardhat compilation step"
+  echo
+  echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
+  echo -e "${BLUE}============================================================${RESET}"
+}
+
+COMMAND=$1
+shift
+
+# Show help if no command is provided
+if [ -z "$COMMAND" ]; then
+  usage
+  exit 0
+fi
+
+case $COMMAND in
+  deploy)
+    print_logo
+    echo -e "${LIGHT_BLUE}${BOLD}[DEPLOY] Deploying fhevm stack...${RESET}"
+    DEPLOY_ARGS=()
+    while (( "$#" )); do
+      case "$1" in
+        --build)
+          DEPLOY_ARGS+=("--build")
+          shift
+          ;;
+        --local|--dev)
+          DEPLOY_ARGS+=("--local")
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    done
+    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" "${DEPLOY_ARGS[@]}"
+    echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
+    ;;
+
+  pause)
+    print_logo
+    CONTRACTS=$1
+    if [[ ! $CONTRACTS =~ ^(gateway|host)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $CONTRACTS${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[PAUSE]${RESET} ${BOLD}Pausing $CONTRACTS...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" up -d
+    # Wait for the pause service to complete
+    echo -e "${YELLOW}[WAIT]${RESET} ${BOLD}Waiting for pause operation to complete...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" wait ${CONTRACTS}-sc-pause
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$CONTRACTS paused successfully${RESET}"
+    ;;
+
+  unpause)
+    print_logo
+    CONTRACTS=$1
+    if [[ ! $CONTRACTS =~ ^(gateway|host)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $CONTRACTS${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[UNPAUSE]${RESET} ${BOLD}Unpausing $CONTRACTS...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-unpause-docker-compose.yml" up -d
+    # Wait for the unpause service to complete
+    echo -e "${YELLOW}[WAIT]${RESET} ${BOLD}Waiting for unpause operation to complete...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-unpause-docker-compose.yml" wait ${CONTRACTS}-sc-unpause
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$CONTRACTS unpaused successfully${RESET}"
+    ;;
+
+  test)
+    print_logo
+    TEST_TYPE=$1
+    shift
+
+    VERBOSE=""
+    NETWORK="staging"
+    GREP=""
+    NO_RELAYER=""
+    NO_COMPILE=""
+
+    while (( "$#" )); do
+      case "$1" in
+        -v|--verbose)
+          VERBOSE="-v"
+          shift
+          ;;
+        -n|--network)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            NETWORK="$2"
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Network argument missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        -g|--grep)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            GREP="$2"
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Grep pattern missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        -r|--no-relayer)
+          NO_RELAYER="-r"
+          shift
+          ;;
+        --no-hardhat-compile)
+          NO_COMPILE="--no-hardhat-compile"
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown option: $1${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    done
+
+    docker_args=("./run-tests.sh")
+    if [ -n "$VERBOSE" ]; then
+      docker_args+=("-v")
+    fi
+    docker_args+=("-n" "$NETWORK")
+    if [ -n "$NO_RELAYER" ]; then
+      docker_args+=("-r")
+    fi
+    if [ -n "$NO_COMPILE" ]; then
+      docker_args+=("--no-hardhat-compile")
+    fi
+
+    if [ -n "$GREP" ]; then
+      docker_args+=("-g" "$GREP")
+    else
+      case $TEST_TYPE in
+        input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test user input uint64")
+          ;;
+        input-proof-compute-decrypt)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test add 42 to uint64 input and decrypt")
+          ;;
+        user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test user decrypt")
+          ;;
+        delegated-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] DELEGATED USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test delegated user decrypt")
+          ;;
+        public-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
+          ;;
+        erc20)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
+          docker_args+=("-g" "should transfer tokens between two users.")
+          ;;
+        public-decrypt-http-ebool)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR EBOOL${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt ebool")
+          ;;
+        public-decrypt-http-mixed)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
+          docker_args+=("-g" "test HTTPPublicDecrypt mixed")
+          ;;
+        operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
+          docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
+          ;;
+        random)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
+          docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
+          ;;
+        random-subset)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS (SUBSET)${RESET}"
+          docker_args+=("-g" "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt")
+          ;;
+        paused-host-contracts)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST CONTRACTS${RESET}"
+          docker_args+=("-g" "test paused host.*")
+          ;;
+        paused-gateway-contracts)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED GATEWAY CONTRACTS${RESET}"
+          docker_args+=("-g" "test paused gateway.*")
+          ;;
+        debug)
+          echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
+          docker exec -it fhevm-test-suite-e2e-debug bash
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown test type: $TEST_TYPE${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    fi
+    if [ "$TEST_TYPE" != "debug" ]; then
+      echo -e "${log_message}"
+      docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+    fi
+    ;;
+
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+
+  upgrade)
+    print_logo
+    SERVICE=$1
+    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|gateway-mocked-payment|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[UPGRADE]${RESET} ${BOLD}Upgrading $SERVICE...${RESET}"
+    docker compose -p "${PROJECT}" --env-file "${SCRIPT_DIR}/env/staging/.env.${SERVICE}.local" -f "${SCRIPT_DIR}/docker-compose/${SERVICE}-docker-compose.yml" up -d
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$SERVICE upgraded successfully${RESET}"
+    ;;
+
+  clean)
+    echo -e "${LIGHT_BLUE}[CLEAN]${RESET} ${BOLD}Cleaning up FHEVM stack...${RESET}"
+    docker compose -p "${PROJECT}" down -v --remove-orphans
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}FHEVM stack cleaned successfully${RESET}"
+    ;;
+
+  logs)
+    SERVICE=$1
+    if [ -z "${SERVICE}" ]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Service name is required${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[LOGS]${RESET} ${BOLD}Showing logs for $SERVICE...${RESET}"
+    docker logs "${SERVICE}"
+    ;;
+
+  *)
+    echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown command: ${COMMAND}${RESET}"
+    usage
+    exit 1
+    ;;
+esac

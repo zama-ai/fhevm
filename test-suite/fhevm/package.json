@@ -1,0 +1,15 @@
+{
+  "name": "fhevm-local-cli",
+  "private": true,
+  "scripts": {
+    "help": "bun scripts/bun/cli.ts help",
+    "deploy": "bun scripts/bun/cli.ts deploy",
+    "pause": "bun scripts/bun/cli.ts pause",
+    "unpause": "bun scripts/bun/cli.ts unpause",
+    "test": "bun scripts/bun/cli.ts test",
+    "upgrade": "bun scripts/bun/cli.ts upgrade",
+    "logs": "bun scripts/bun/cli.ts logs",
+    "clean": "bun scripts/bun/cli.ts clean",
+    "telemetry-smoke": "bun scripts/bun/cli.ts telemetry-smoke"
+  }
+}

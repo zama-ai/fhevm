@@ -40,6 +40,11 @@ task("task:addHostChainsToGatewayConfig")
     // Add host chains
     const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
     for (const hostChain of hostChains) {
+      const isAlreadyRegistered = await gatewayConfig.isHostChainRegistered(hostChain.chainId);
+      if (isAlreadyRegistered) {
+        console.log(`Host chain ${hostChain.chainId} already registered, skipping.`);
+        continue;
+      }
       await gatewayConfig.addHostChain(hostChain);
     }
 
