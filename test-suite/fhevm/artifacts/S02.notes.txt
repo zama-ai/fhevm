@@ -1,0 +1,10 @@
+S02: deploy --network testnet --only minio
+- Deploy command recognized and parsed correctly: PASS
+- --only minio accepted: PASS  
+- --network testnet accepted: PASS
+- Version scraping from Grafana dashboard: FAIL - puppeteer/chromium fails running as root without --no-sandbox
+- Docker project name validation: FAIL - uppercase letters in FHEVM_DOCKER_PROJECT rejected by docker compose
+- NOTE: '--no-tracing' is not a recognized flag; deploy has no tracing toggle
+- NOTE: Tracing is handled by separate docker-compose file, not integrated into deploy command
+- Actual error: 'Failed to scrape public Grafana dashboard DOM' - versions cannot be fetched
+- Root cause: Chromium refuses to run as root; this is an environment constraint but CLI should handle gracefully

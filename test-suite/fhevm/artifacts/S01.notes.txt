@@ -1,0 +1,9 @@
+S01: help/discoverability
+- bun run help: PASS - shows full usage including deploy, clean, pause, unpause, test, upgrade, logs, telemetry-smoke
+- deploy --help: PASS - shows help (recognizes --help flag)
+- clean --help: PASS - shows help (recognizes --help flag)
+- trace --help: FAIL - 'trace' is not a recognized command (expected by task spec but NOT implemented in CLI)
+- NOTE: CLI uses 'deploy' not 'up', 'clean' not 'down'. No 'trace' subcommand exists.
+- NOTE: '--no-tracing' flag does not exist in deploy args parser.
+- deploy/clean/telemetry-smoke commands are documented.
+- --strict-otel and --telemetry-smoke documented.

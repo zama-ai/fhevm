@@ -1,0 +1,3 @@
+NETWORK ID     NAME      DRIVER    SCOPE
+26ccf6ddda2e   host      host      local
+d8ac6a46cc77   none      null      local
