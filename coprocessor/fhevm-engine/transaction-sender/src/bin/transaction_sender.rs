@@ -286,11 +286,18 @@ async fn main() -> anyhow::Result<()> {
 
     let conf = parse_args();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_level(true)
-        .with_max_level(conf.log_level)
-        .init();
+    let mut otlp_setup_error: Option<String> = None;
+    let _otel_guard =
+        match telemetry::init_json_subscriber(conf.log_level, &conf.service_name, "otlp-layer") {
+            Ok(guard) => guard,
+            Err(err) => {
+                otlp_setup_error = Some(err.to_string());
+                None
+            }
+        };
+    if let Some(err) = otlp_setup_error {
+        error!(error = %err, "Failed to setup OTLP");
+    }
 
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
@@ -305,14 +312,6 @@ async fn main() -> anyhow::Result<()> {
         _ = cancel_token.cancelled() => {
             info!("Cancellation requested before getting chain ID during startup, exiting");
             return Ok(());
-        }
-    };
-
-    let _otel_guard = match telemetry::init_otel(&conf.service_name) {
-        Ok(otel_guard) => otel_guard,
-        Err(err) => {
-            error!(error = %err, "Failed to setup OTLP");
-            None
         }
     };
 

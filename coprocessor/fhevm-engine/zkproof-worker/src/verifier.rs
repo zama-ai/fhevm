@@ -509,7 +509,7 @@ fn expand_verified_list(
 
 /// Creates a ciphertext
 #[tracing::instrument(skip_all, fields(
-    operation = "create_handle",
+    operation = "create_ciphertext",
     ct_type = tracing::field::Empty,
     ct_idx = ct_idx,
     chain_id = %aux_data.chain_id,

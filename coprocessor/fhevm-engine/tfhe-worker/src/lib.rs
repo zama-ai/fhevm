@@ -3,7 +3,7 @@ use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
 
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
 pub mod daemon_cli;
@@ -49,28 +49,30 @@ pub fn start_runtime(
 
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
+static OTLP_SETUP_ERROR: OnceLock<String> = OnceLock::new();
+static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::new();
 
 pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
-        tracing_subscriber::fmt()
-            .json()
-            .with_level(true)
-            .with_max_level(args.log_level)
-            .init();
+        let otel_guard =
+            match telemetry::init_json_subscriber(args.log_level, &args.service_name, "otlp-layer")
+            {
+                Ok(guard) => guard,
+                Err(err) => {
+                    let _ = OTLP_SETUP_ERROR.set(err.to_string());
+                    None
+                }
+            };
+        let _ = OTEL_GUARD.set(otel_guard);
     });
+    if let Some(err) = OTLP_SETUP_ERROR.get() {
+        error!(error = %err, "Failed to setup OTLP");
+    }
 
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
-
-    let _otel_guard = match telemetry::init_otel(&args.service_name) {
-        Ok(otel_guard) => otel_guard,
-        Err(err) => {
-            error!(error = %err, "Failed to setup OTLP");
-            None
-        }
-    };
 
     let database_url = args.database_url.clone().unwrap_or_default();
     let health_check = health_check::HealthCheck::new(database_url);

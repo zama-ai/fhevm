@@ -3,10 +3,10 @@ use std::time::Duration;
 use alloy::primitives::Address;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
-use tracing::Level;
+use tracing::{error, Level};
 
-use fhevm_engine_common::metrics_server;
 use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::{metrics_server, telemetry};
 use host_listener::cmd::{
     DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
     DEFAULT_DEPENDENCE_CROSS_BLOCK,
@@ -126,11 +126,21 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_level(true)
-        .with_max_level(args.log_level)
-        .init();
+    let mut otlp_setup_error: Option<String> = None;
+    let _otel_guard = match telemetry::init_json_subscriber(
+        args.log_level,
+        &args.service_name,
+        "otlp-layer",
+    ) {
+        Ok(guard) => guard,
+        Err(err) => {
+            otlp_setup_error = Some(err.to_string());
+            None
+        }
+    };
+    if let Some(err) = otlp_setup_error {
+        error!(error = %err, "Failed to setup OTLP");
+    }
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
