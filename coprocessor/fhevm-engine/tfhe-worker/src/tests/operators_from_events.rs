@@ -974,7 +974,8 @@ async fn test_invalid_operation_marks_error() -> Result<(), Box<dyn std::error::
     let output_handle = next_handle().to_vec();
     let tx_id = next_handle().to_vec();
     let dcid = next_handle().to_vec();
-    sqlx::query(
+    let dependencies: Vec<Vec<u8>> = Vec::new();
+    sqlx::query!(
         r#"
         INSERT INTO computations (
             output_handle,
@@ -991,32 +992,32 @@ async fn test_invalid_operation_marks_error() -> Result<(), Box<dyn std::error::
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
         "#,
+        &output_handle,
+        &dependencies,
+        127_i16,
+        false,
+        &dcid,
+        &tx_id,
+        true,
+        false,
+        42_i64
     )
-    .bind(&output_handle)
-    .bind(Vec::<Vec<u8>>::new())
-    .bind(127_i16)
-    .bind(false)
-    .bind(dcid)
-    .bind(tx_id.clone())
-    .bind(true)
-    .bind(false)
-    .bind(42_i64)
     .execute(&pool)
     .await?;
 
     let mut last_error_message: Option<String> = None;
     for _ in 0..80 {
         tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-        let row = sqlx::query_as::<_, (bool, Option<String>)>(
+        let row = sqlx::query!(
             "SELECT is_error, error_message FROM computations WHERE output_handle = $1 AND transaction_id = $2",
+            &output_handle,
+            &tx_id
         )
-        .bind(&output_handle)
-        .bind(&tx_id)
         .fetch_one(&pool)
         .await?;
-        last_error_message = row.1.clone();
-        if row.0 {
-            let msg = row.1.unwrap_or_default();
+        last_error_message = row.error_message.clone();
+        if row.is_error {
+            let msg = row.error_message.unwrap_or_default();
             assert!(msg.contains("Unknown fhe operation"));
             return Ok(());
         }
