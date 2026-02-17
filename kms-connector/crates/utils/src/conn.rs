@@ -105,8 +105,12 @@ where
             .unwrap()
     });
 
-    let provider = provider_builder_new().connect_http(rpc_node_url);
-    info!("Connected to RPC node successfully");
+    let provider = provider_builder_new().connect_http(rpc_node_url.clone());
+    info!(
+        "Connected to RPC node successfully ({})",
+        rpc_node_url.host_str().unwrap_or("unexpected URL format")
+    );
+
     Ok(provider)
 }
 
