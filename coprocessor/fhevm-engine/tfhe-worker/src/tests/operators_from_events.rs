@@ -20,15 +20,38 @@ use crate::tests::test_cases::UnaryOperatorTestCase;
 
 use super::utils::default_dependence_cache_size;
 
+const LOCAL_SUPPORTED_TYPES: &[i32] = &[
+    0, // bool
+    1, // 4 bit
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+];
+
+const FULL_SUPPORTED_TYPES: &[i32] = &[
+    0,  // bool
+    1,  // 4 bit
+    2,  // 8 bit
+    3,  // 16 bit
+    4,  // 32 bit
+    5,  // 64 bit
+    6,  // 128 bit
+    7,  // 160 bit
+    8,  // 256 bit
+    9,  // 512 bit
+    10, // 1024 bit
+    11, // 2048 bit
+];
+
 pub fn supported_types() -> &'static [i32] {
-    &[
-        0, // bool
-        1, // 4 bit
-        2, // 8 bit
-        3, // 16 bit
-        4, // 32 bit
-        5, // 64 bit
-    ]
+    match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
+        Ok(mode) if mode.eq_ignore_ascii_case("full") => FULL_SUPPORTED_TYPES,
+        Ok(mode) if mode.eq_ignore_ascii_case("local") => LOCAL_SUPPORTED_TYPES,
+        Ok(_) => LOCAL_SUPPORTED_TYPES,
+        Err(_) if std::env::var_os("CI").is_some() => FULL_SUPPORTED_TYPES,
+        Err(_) => LOCAL_SUPPORTED_TYPES,
+    }
 }
 
 fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {

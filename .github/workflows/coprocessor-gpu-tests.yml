@@ -185,6 +185,7 @@ jobs:
       - name: Run GPU tests for the worker services.
         run: |
           export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor
+          export TFHE_WORKER_EVENT_TYPE_MATRIX=full
           cargo test \
           -p tfhe-worker \
           -p sns-worker \

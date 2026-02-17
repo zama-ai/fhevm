@@ -103,5 +103,5 @@ jobs:
 
     - name: Run tests
       run: |
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
+        TFHE_WORKER_EVENT_TYPE_MATRIX=full DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
