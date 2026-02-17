@@ -415,7 +415,7 @@ impl Database {
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
-            log.transaction_hash.as_ref().map(|transaction_hash| transaction_hash.as_ref()),
+            log.transaction_hash.as_ref(),
         );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
             self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
@@ -578,9 +578,7 @@ impl Database {
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
-            transaction_hash
-                .as_ref()
-                .map(|transaction_hash| transaction_hash.as_ref()),
+            transaction_hash.as_ref(),
         );
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());

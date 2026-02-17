@@ -215,9 +215,13 @@ pub fn record_short_hex(span: &Span, field: &'static str, value: &[u8]) {
     span.record(field, tracing::field::display(short_hex_id(value)));
 }
 
-pub fn record_short_hex_if_some(span: &Span, field: &'static str, value: Option<&[u8]>) {
+pub fn record_short_hex_if_some<T: AsRef<[u8]>>(
+    span: &Span,
+    field: &'static str,
+    value: Option<T>,
+) {
     if let Some(value) = value {
-        record_short_hex(span, field, value);
+        record_short_hex(span, field, value.as_ref());
     }
 }
 
