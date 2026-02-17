@@ -2,7 +2,6 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use serial_test::serial;
 use sqlx::types::time::PrimitiveDateTime;
-use std::sync::Once;
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
@@ -45,36 +44,11 @@ const FULL_SUPPORTED_TYPES: &[i32] = &[
     11, // 2048 bit
 ];
 
-static SUPPORTED_TYPES_MODE_LOG_ONCE: Once = Once::new();
-
 pub fn supported_types() -> &'static [i32] {
-    let configured_mode = std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX").ok();
-    let (resolved_mode, types) = match configured_mode.as_deref() {
-        Some(mode) if mode.eq_ignore_ascii_case("local") => ("local", LOCAL_SUPPORTED_TYPES),
-        Some(mode) if mode.eq_ignore_ascii_case("full") => ("full", FULL_SUPPORTED_TYPES),
-        Some(_) => ("full", FULL_SUPPORTED_TYPES),
-        None => ("full", FULL_SUPPORTED_TYPES),
-    };
-
-    SUPPORTED_TYPES_MODE_LOG_ONCE.call_once(|| match configured_mode {
-        Some(mode) if mode.eq_ignore_ascii_case("local") || mode.eq_ignore_ascii_case("full") => {
-            eprintln!(
-                "TFHE worker event matrix mode: {resolved_mode} (TFHE_WORKER_EVENT_TYPE_MATRIX={mode})"
-            );
-        }
-        Some(mode) => {
-            eprintln!(
-                "TFHE worker event matrix mode: {resolved_mode} (invalid TFHE_WORKER_EVENT_TYPE_MATRIX={mode}, defaulting to full)"
-            );
-        }
-        None => {
-            eprintln!(
-                "TFHE worker event matrix mode: {resolved_mode} (TFHE_WORKER_EVENT_TYPE_MATRIX unset, defaulting to full)"
-            );
-        }
-    });
-
-    types
+    match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
+        Ok(mode) if mode.eq_ignore_ascii_case("local") => LOCAL_SUPPORTED_TYPES,
+        _ => FULL_SUPPORTED_TYPES,
+    }
 }
 
 fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
