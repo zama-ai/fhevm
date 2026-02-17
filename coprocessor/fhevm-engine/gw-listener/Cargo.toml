@@ -41,6 +41,7 @@ fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 [build-dependencies]
 foundry-compilers = { workspace = true }
 semver = { workspace = true }
+solc-build-utils = { path = "../solc-build-utils" }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["node-bindings"] }

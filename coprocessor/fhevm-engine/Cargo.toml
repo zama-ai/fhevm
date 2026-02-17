@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "solc-build-utils",
     "tfhe-worker",
     "fhevm-engine-common",
     "host-listener",
@@ -46,6 +47,7 @@ clap = { version = "4.5.38", features = ["derive", "env"] }
 daggy = "0.8.1"
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
 futures-util = "0.3.31"
+fs4 = "0.13.1"
 hex = "0.4.3"
 lru = "0.13.0"
 opentelemetry = "0.29.1"

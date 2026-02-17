@@ -51,3 +51,4 @@ tracing-test = { workspace = true }
 foundry-compilers = { workspace = true }
 foundry-compilers-artifacts = "0.13"
 semver = { workspace = true }
+solc-build-utils = { path = "../solc-build-utils" }
