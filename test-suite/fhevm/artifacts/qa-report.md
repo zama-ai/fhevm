@@ -2,146 +2,217 @@
 
 ## 1. Executive Summary
 
-**PR:** https://github.com/zama-ai/fhevm/pull/1986
-**Branch:** `codex/fhevm-orchestration-parity-refactor`
-**Commit SHA:** `cdff7de210923617d62b1a6c16b1ebaf426f87e3`
-**Date:** 2026-02-17
-**Tooling:** Bun 1.3.9, Docker 29.2.1, Docker Compose v5.0.2
-**Platform:** Linux 4.4.0 (containerized environment)
+| Key | Value |
+|-----|-------|
+| **PR** | https://github.com/zama-ai/fhevm/pull/1986 |
+| **Branch** | `codex/fhevm-orchestration-parity-refactor` |
+| **Commit SHA** | `cdff7de210923617d62b1a6c16b1ebaf426f87e3` |
+| **Date** | 2026-02-17 |
+| **Tooling** | Bun 1.3.9, Docker 29.2.1, Docker Compose v5.0.2 |
+| **Platform** | Linux 4.4.0 (containerized) |
+| **Verdict** | **BLOCKED** |
 
-### Critical Finding: Command Name Mismatch
+### Environment Constraint
 
-The QA protocol specifies commands (`up`, `down`, `trace up/down/status`, `--no-tracing`) that **do not exist** in the actual CLI. The real CLI uses:
-
-| Task Spec Command | Actual CLI Command | Status |
-|---|---|---|
-| `bun run up` | `bun run deploy` | EXISTS |
-| `bun run down` | `bun run clean` | EXISTS |
-| `bun run down --purge` | `bun run clean --purge` | EXISTS |
-| `bun run trace up` | N/A (docker compose directly) | NOT IMPLEMENTED |
-| `bun run trace down` | N/A (docker compose directly) | NOT IMPLEMENTED |
-| `bun run trace status` | N/A (docker compose directly) | NOT IMPLEMENTED |
-| `--no-tracing` | N/A | NOT IMPLEMENTED |
-
-**Tracing** is managed exclusively via `docker compose -f docker-compose/tracing-docker-compose.yml` and is not integrated into the Bun CLI as a subcommand. The `telemetry-smoke` command exists to validate Jaeger after manual tracing startup.
-
-### Environment Constraints
-
-Docker was started without bridge networking (`--bridge=none --iptables=false`) due to kernel limitations. This means:
-- All `docker compose up` operations fail at image pull (no DNS resolution)
-- Port binding and container runtime tests cannot execute
-- CLI **argument parsing, validation logic, and error handling** were fully testable
-
-### Overall Assessment: **BLOCKED** (environment-constrained, CLI logic sound)
-
-The Bun CLI implementation is architecturally sound. Argument parsing, validation, version management, and cleanup flows work correctly. The blocking issues are:
-1. Missing `trace` subcommand (spec/implementation mismatch)
-2. Missing `--no-tracing` flag
-3. Chromium `--no-sandbox` needed for `--network testnet/mainnet` scraping when running as root
-4. `FHEVM_DOCKER_PROJECT` rejects uppercase letters (Docker Compose constraint)
+Docker daemon was started without bridge networking (`--bridge=none --iptables=false`) due to kernel limitations in this container. Consequence: all `docker compose up` operations fail at image pull (no DNS). CLI argument parsing, validation, version management, cleanup logic, and error paths were all fully testable.
 
 ---
 
-## 2. Scenario Table
+## 2. Precise Findings (for implementor)
+
+### FINDING-1: No `trace` subcommand exists
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | HIGH — blocks P3 persona (infra/telemetry) |
+| **File** | `scripts/bun/cli.ts:2652-2718` |
+| **Problem** | The `main()` switch statement has no `case "trace"`. Running `bun scripts/bun/cli.ts trace up` produces `[ERROR] Unknown command: trace` and exits 1. |
+| **Scenarios blocked** | S02, S05, S06, S07, S18, S19, S20, S21, S35 |
+| **Evidence** | `artifacts/S01.command.log` — trace --help output: `Unknown command: trace` |
+| **Repro** | `cd test-suite/fhevm && bun scripts/bun/cli.ts trace up` |
+| **Impact** | Users must manually run `docker compose -p $PROJECT -f docker-compose/tracing-docker-compose.yml up -d` to manage tracing. The telemetry-smoke error at `cli.ts:2250` even references this exact compose command, confirming the gap. |
+| **Fix** | Add a `case "trace":` handler in `main()` at line 2717 that accepts `up`, `down`, `status` sub-actions and wraps `docker compose -f docker-compose/tracing-docker-compose.yml {up -d,down,ps}`. Also add to `package.json` scripts: `"trace": "bun scripts/bun/cli.ts trace"`. |
+
+---
+
+### FINDING-2: `--no-tracing` flag is not recognized by deploy
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | HIGH — blocks all scenarios that use `--no-tracing` |
+| **File** | `scripts/bun/cli.ts:1924-2023` (function `parseDeployArgs`) |
+| **Problem** | The arg loop at line 1939 iterates all args. `--no-tracing` hits the fallthrough at line 2022: `usageError(\`Unknown argument for deploy: ${arg}\`)`. |
+| **Scenarios blocked** | S03, S07, S08, S09, S10, S11, S12, S13, S15, S16, S17, S21, S22, S23, S27, S33, S34, S36, S37, S38, S39 |
+| **Evidence** | `artifacts/S03.command.log` — `[ERROR] Unknown argument for deploy: --no-tracing` |
+| **Repro** | `cd test-suite/fhevm && bun scripts/bun/cli.ts deploy --only minio --no-tracing` |
+| **Impact** | The deploy command never auto-starts tracing (tracing is external), so `--no-tracing` may be a no-op by design. However, the flag should either: (a) be accepted and silently ignored for compatibility, or (b) be explicitly documented as unnecessary. |
+| **Fix option A** | Add to `parseDeployArgs` around line 1995: `if (arg === "--no-tracing") { logInfo("Tracing is managed separately; --no-tracing is a no-op."); continue; }` |
+| **Fix option B** | Document in `usage()` that deploy never auto-starts tracing, so `--no-tracing` is not needed. |
+
+---
+
+### FINDING-3: Chromium `--no-sandbox` missing for rootful environments
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | HIGH — blocks all `--network testnet/mainnet` on CI/Docker |
+| **File** | `scripts/bun/cli.ts:380-391` (function `loadRenderedDashboardDom`) |
+| **Problem** | The chromium args array at lines 382-388 does not include `--no-sandbox`. When running as root (UID 0), Chromium exits with: `Running as root without --no-sandbox is not supported. See https://crbug.com/638180.` |
+| **Scenarios blocked** | S02, S04, S05, S06, S33 |
+| **Evidence** | `artifacts/S02.command.log` — `[ERROR] Failed to scrape public Grafana dashboard DOM.` followed by `Running as root without --no-sandbox is not supported.` |
+| **Repro** | As root: `cd test-suite/fhevm && bun scripts/bun/cli.ts deploy --network testnet --only minio` |
+| **Fix** | In `loadRenderedDashboardDom` at line 380, detect root and add the flag:
+```typescript
+const chromiumArgs = [
+  chromium,
+  "--headless=new",
+  "--disable-gpu",
+  "--window-size=1920,6000",
+  "--virtual-time-budget=25000",
+  "--dump-dom",
+];
+// Chromium refuses to run as root without --no-sandbox
+if (process.getuid?.() === 0) {
+  chromiumArgs.push("--no-sandbox");
+}
+chromiumArgs.push(url);
+```
+|
+
+---
+
+### FINDING-4: `FHEVM_DOCKER_PROJECT` allows uppercase but Docker Compose rejects it
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | MEDIUM — misleading validation |
+| **File** | `scripts/bun/manifest.ts:36` |
+| **Problem** | `const VALID_PROJECT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;` accepts uppercase letters. Docker Compose requires: `must consist only of lowercase alphanumeric characters, hyphens, and underscores as well as start with a letter or number`. So `FHEVM_DOCKER_PROJECT=fhevm-QA` passes the manifest regex but fails every `docker compose` invocation with a cryptic error. |
+| **Evidence** | `artifacts/S02.command.log` — `invalid project name "fhevm-qa-S02-1771322996": must consist only of lowercase alphanumeric characters, hyphens, and underscores` |
+| **Repro** | `FHEVM_DOCKER_PROJECT=fhevm-QA bun scripts/bun/cli.ts clean` |
+| **Fix** | Change `manifest.ts:36` to: `const VALID_PROJECT_NAME = /^[a-z0-9][a-z0-9_-]*$/;` Or auto-lowercase: `PROJECT_OVERRIDE ? PROJECT_OVERRIDE.toLowerCase() : "fhevm"` and validate after. Note: Docker Compose also disallows dots in project names, so the current `.` in the regex is also wrong. |
+
+---
+
+### FINDING-5: `logs` gives raw Docker error with no guidance on valid containers
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | LOW — poor DX but not broken |
+| **File** | `scripts/bun/cli.ts:2632-2639` (function `logs`) |
+| **Problem** | `logs()` calls `docker logs <service>` with `check: true`. On failure, the user sees `Error response from daemon: No such container: does-not-exist` and `Command failed (1): docker logs does-not-exist`. No list of available containers is shown. |
+| **Evidence** | `artifacts/S28.command.log` |
+| **Repro** | `cd test-suite/fhevm && bun scripts/bun/cli.ts logs does-not-exist` |
+| **Fix** | Wrap in try/catch and on failure list project containers:
+```typescript
+function logs(service?: string): void {
+  if (!service) {
+    usageError("Service name is required");
+  }
+  console.log(`[LOGS] Showing logs for ${service}...`);
+  const result = runCommand(["docker", "logs", service], { check: false, allowFailure: true });
+  if (result.status !== 0) {
+    const ps = runCommand(["docker", "ps", "-a", "--filter", `label=com.docker.compose.project=${PROJECT}`, "--format", "{{.Names}}"], { capture: true, check: false });
+    const available = ps.stdout.trim();
+    throw new Error(`Container '${service}' not found.\nAvailable project containers:\n${available || "(none running)"}`);
+  }
+}
+```
+|
+
+---
+
+### FINDING-6: `cast` binary dependency not validated early for multi-coprocessor
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | LOW — late failure with obscure error |
+| **File** | `scripts/bun/cli.ts` — `configureMulticoprocessorEnvs()` (called at line 2153) |
+| **Problem** | When `--coprocessors > 1`, deploy calls `configureMulticoprocessorEnvs` which uses `cast wallet new` to generate accounts. If `cast` (from Foundry) is not installed, the error is `Command failed (1): cast wallet new` — not actionable. |
+| **Evidence** | `artifacts/S13.command.log` — `cast: not found` |
+| **Repro** | `cd test-suite/fhevm && bun scripts/bun/cli.ts deploy --coprocessors 2 --coprocessor-threshold 2 --only minio` (without foundry installed) |
+| **Fix** | Add an early check in `parseDeployArgs` after parsing `--coprocessors`:
+```typescript
+if (options.coprocessorCount > 1 && !commandExists("cast")) {
+  usageError("Multi-coprocessor mode requires Foundry's 'cast' binary. Install: curl -L https://foundry.paradigm.xyz | bash && foundryup");
+}
+```
+|
+
+---
+
+### FINDING-7: `package.json` scripts missing `trace` and `up`/`down` aliases
+
+| Detail | Value |
+|--------|-------|
+| **Severity** | MEDIUM — discoverability gap |
+| **File** | `package.json:4-14` |
+| **Problem** | The scripts section only defines: `help`, `deploy`, `pause`, `unpause`, `test`, `upgrade`, `logs`, `clean`, `telemetry-smoke`. Missing: `trace` (for tracing lifecycle), and possibly `up`/`down` aliases for `deploy`/`clean` for convention alignment. |
+| **Impact** | `bun run trace` fails with "Script not found". Users familiar with `docker compose up/down` naming have no aliases. |
+| **Fix** | Add to `package.json` scripts:
+```json
+"trace": "bun scripts/bun/cli.ts trace",
+"up": "bun scripts/bun/cli.ts deploy",
+"down": "bun scripts/bun/cli.ts clean"
+```
+If `up`/`down` aliases are not desired (to avoid confusion), at minimum add `trace`. |
+
+---
+
+## 3. Scenario Table
 
 | Scenario | Persona | Result | Expected | Observed | Evidence |
 |---|---|---|---|---|---|
-| S01 | P1,P2,P4 | PASS (partial) | up/down/trace documented | deploy/clean/telemetry-smoke documented; `trace` not a command; `--no-tracing` absent | S01.command.log |
-| S02 | P1 | FAIL (env) | deploy testnet minio + tracing | Grafana scrape fails (Chromium root); uppercase project name rejected | S02.command.log |
-| S03 | P1 | FAIL | `--no-tracing` skip log | `--no-tracing` is unknown argument; CLI exits with usage error | S03.command.log |
-| S04 | P1 | FAIL (env) | mainnet version overrides applied | Grafana scrape fails (Chromium root) | S04.command.log |
-| S05 | P3 | FAIL (env) | telemetry smoke runs | Grafana scrape fails before reaching smoke check | S05.command.log |
-| S06 | P3 | FAIL (env) | strict OTEL check passes | Tracing images fail to pull (no DNS); Grafana scrape fails | S06.command.log |
-| S07 | P3 | PASS | actionable fail-fast error | `Telemetry endpoint http://jaeger:4317 is configured but Jaeger is not running. Start tracing first: docker compose -f docker-compose/tracing-docker-compose.yml up -d` | S07.command.log |
-| S08 | P1 | PASS (logic) | only minio executes | CLI correctly skips to minio step; image pull fails (no DNS) - CLI logic correct | S08.command.log |
-| S09 | P2 | PASS (logic) | coprocessor deploys | CLI skips minio/core/database/host-node/gateway-node correctly; image pull fails (no DNS) | S09.command.log |
-| S10 | P2 | PASS (logic) | prerequisite error | Same as S09; no prerequisite check at CLI level (compose handles it) | S10.command.log |
-| S11 | P2 | PASS | resume from kms-connector | CLI detects missing MinIO prerequisites and forces resume from `minio`; ordered cleanup correct | S11.command.log |
-| S12 | P2 | PASS | resume from relayer | CLI detects missing MinIO prerequisites and forces resume from `minio`; ordered cleanup correct | S12.command.log |
-| S13 | P5 | FAIL (env) | multicoprocessor n=2 t=2 | Accepted by parser (topology: n=2 threshold=2) but `cast` binary missing (foundry dep) | S13.command.log |
-| S14 | P4 | PASS | immediate validation failure | `Invalid coprocessor threshold: 3 (must be <= --coprocessors 2)` - clean error with usage | S14.command.log |
-| S15 | P1 | PASS (logic) | build mode accepted | `Force build option detected` logged; version summary shows `(local build)` tag | S15.command.log |
-| S16 | P1 | PASS (logic) | local mode accepted | `Local optimization option detected` + `Enabling local BuildKit cache` logged | S16.command.log |
-| S17 | P1 | PASS (logic) | build+local accepted | Both `Force build` and `Local optimization` logged; combined correctly | S17.command.log |
-| S18 | P3 | PASS | telemetry success or retries | `Jaeger container is not running. Start it with: docker compose -f ...` - clear actionable error | S18.command.log |
-| S19 | P3 | PASS | clear error + guidance | Same actionable error as S18; provides exact start command | S19.command.log |
-| S20 | P3 | FAIL (env) | trace lifecycle works | Docker compose tracing fails to pull images (no DNS) | S20.command.log |
-| S21 | P5 | PASS (logic) | clean scoped to project | clean only targets project-labeled resources; no containers affected | S21.command.log |
+| S01 | P1,P2,P4 | PASS (partial) | up/down/trace documented | deploy/clean/telemetry-smoke documented; `trace` not a command (FINDING-1); `--no-tracing` absent (FINDING-2) | S01.command.log |
+| S02 | P1 | FAIL | deploy testnet minio + tracing | Grafana scrape fails: Chromium root (FINDING-3); uppercase project name rejected (FINDING-4) | S02.command.log |
+| S03 | P1 | FAIL | `--no-tracing` skip log | `Unknown argument for deploy: --no-tracing` (FINDING-2) | S03.command.log |
+| S04 | P1 | FAIL (env) | mainnet overrides applied | Grafana scrape fails: Chromium root (FINDING-3) | S04.command.log |
+| S05 | P3 | FAIL (env) | telemetry smoke runs | Grafana scrape fails before smoke check (FINDING-3) | S05.command.log |
+| S06 | P3 | FAIL | strict-otel passes | No `trace up` command (FINDING-1); image pull fails (env) | S06.command.log |
+| S07 | P3 | PASS | actionable fail-fast error | `Telemetry endpoint http://jaeger:4317 is configured but Jaeger is not running. Start tracing first: docker compose -f docker-compose/tracing-docker-compose.yml up -d` — excellent error quality | S07.command.log |
+| S08 | P1 | PASS (logic) | only minio executes | `Skipping step: core (only mode: minio)` etc. — correct skip logic; image pull fails (env) | S08.command.log |
+| S09 | P2 | PASS (logic) | coprocessor deploys after prereqs | All steps before coprocessor correctly skipped; image pull fails (env) | S09.command.log |
+| S10 | P2 | PASS (logic) | prerequisite error quality | Same as S09; compose handles prereqs at runtime level | S10.command.log |
+| S11 | P2 | PASS | resume from kms-connector | CLI detects missing MinIO → forces resume from `minio`: `MinIO is not running… adjusting effective resume step to minio` | S11.command.log |
+| S12 | P2 | PASS | resume from relayer | Same MinIO prereq detection → adjusts to `minio` | S12.command.log |
+| S13 | P5 | FAIL | multicoprocessor n=2 t=2 | Parser accepts (topology: n=2 threshold=2); `cast: not found` at runtime (FINDING-6) | S13.command.log |
+| S14 | P4 | PASS | immediate validation failure | `Invalid coprocessor threshold: 3 (must be <= --coprocessors 2)` — exits immediately with usage | S14.command.log |
+| S15 | P1 | PASS (logic) | build mode accepted | `Force build option detected. Services will be rebuilt.` Version summary shows `(local build)` tag | S15.command.log |
+| S16 | P1 | PASS (logic) | local mode accepted | `Local optimization option detected.` + `Enabling local BuildKit cache and disabling provenance attestations.` | S16.command.log |
+| S17 | P1 | PASS (logic) | build+local accepted | Both flags acknowledged; combined correctly in version summary | S17.command.log |
+| S18 | P3 | PASS | telemetry-smoke failure path | `Jaeger container is not running. Start it with: docker compose -f docker-compose/tracing-docker-compose.yml up -d` — clear actionable error | S18.command.log |
+| S19 | P3 | PASS | same as S18 | Same actionable guidance | S19.command.log |
+| S20 | P3 | FAIL (env) | trace lifecycle | No CLI trace command (FINDING-1); docker compose image pull fails (env) | S20.command.log |
+| S21 | P5 | PASS (logic) | clean scoped to project | clean targets only project-labeled resources | S21.command.log |
 | S22 | P1 | PASS | clean works | `FHEVM stack cleaned successfully` | S22.command.log |
-| S23 | P4 | PASS | purge works | Images targeted, build cache removed, networks cleaned | S23.command.log |
-| S24 | P4 | PASS | purge-images only | `Removing images referenced by fhevm compose services only` | S24.command.log |
-| S25 | P4 | PASS | purge-build-cache only | `Removing local fhevm Buildx cache directory` (correctly reports not found if absent) | S25.command.log |
-| S26 | P4 | PASS | purge-networks only | Runs cleanupKnownStack + network removal scoped to project label | S26.command.log |
-| S27 | P2 | PASS (partial) | logs for service | `docker logs minio` - correctly tries named container; `No such container` when not running | S27.command.log |
-| S28 | P2 | PASS (partial) | clear error for unknown service | `No such container: does-not-exist` - error from docker; CLI doesn't list available containers | S28.command.log |
-| S29 | P2 | PASS (logic) | test command path works | CLI parses test type, waits for relayer with retries (24 attempts), gives actionable resume guidance on failure | S29.command.log |
-| S30 | P2 | FAIL (env) | pause/unpause host | CLI dispatches correctly to host-pause-docker-compose.yml; image pull fails (no DNS) | S30.command.log |
-| S31 | P2 | FAIL (env) | pause/unpause gateway | CLI dispatches correctly to gateway-pause-docker-compose.yml; image pull fails (no DNS) | S31.command.log |
-| S32 | P2 | FAIL (env) | upgrade coprocessor | CLI dispatches upgrade correctly; image pull fails (no DNS) | S32.command.log |
-| S33 | P1 | FAIL | no brittle panel matching | Both testnet/mainnet fail at Grafana scrape (Chromium root); cannot test panel parsing | S33.command.log |
-| S34 | P5 | INCONCLUSIVE | port conflict error quality | Cannot test port binding (Docker bridge=none) | S34.command.log |
-| S35 | P5 | PASS (config) | tracing compose valid | `docker compose config` parses successfully; ports 4317, 9090, 16686 correctly mapped | S35.command.log |
-| S36 | P5 | PASS | cross-project isolation | Two different FHEVM_DOCKER_PROJECT values produce independent clean operations | S36.command.log |
-| S37 | P4 | PASS | deterministic 5-cycle | All 5 deploy/clean cycles produce identical output; no resource leaks; deterministic | S37.command.log |
-| S38 | P2 | PASS (logic) | resume after interrupt | After interrupted deploy, `--resume minio` correctly cleans from minio onwards and re-deploys | S38.command.log |
-| S39 | P4 | PASS | clean robust with empty state | `FHEVM stack cleaned successfully` even with no containers running | S39.command.log |
-| S40 | P5 | INCONCLUSIVE | unrelated containers safe | Could not create unrelated container (no DNS for image pull) | S40.command.log |
-
----
-
-## 3. Unexpected Failures
-
-### F1: `--no-tracing` flag not recognized
-- **Repro:** `bun scripts/bun/cli.ts deploy --only minio --no-tracing`
-- **Root cause:** The `parseDeployArgs()` function in `cli.ts:1924` does not handle `--no-tracing`. It falls through to `usageError()`.
-- **Impact:** All scenarios requiring `--no-tracing` (S02-S06, S07-S10, S11-S13, S21-S23, S33-S38) cannot use this flag.
-- **Suggested fix:** Either add `--no-tracing` flag support to `parseDeployArgs()` or document that tracing is not auto-started by deploy and the flag is unnecessary.
-
-### F2: `trace` command not implemented
-- **Repro:** `bun scripts/bun/cli.ts trace up`
-- **Root cause:** The `main()` switch statement in `cli.ts:2652` has no `case "trace"`. Tracing is managed externally via docker-compose.
-- **Impact:** S06, S07, S18-S21, S35 cannot use `trace` subcommand.
-- **Suggested fix:** Add `trace` subcommand with `up`/`down`/`status` actions that wrap `docker compose -f tracing-docker-compose.yml`.
-
-### F3: Grafana dashboard scraping fails as root
-- **Repro:** `bun scripts/bun/cli.ts deploy --network testnet --only minio`
-- **Root cause:** Chromium refuses to run as root without `--no-sandbox`. `loadRenderedDashboardDom()` at `cli.ts:363` does not pass `--no-sandbox` to the chromium binary.
-- **Impact:** All `--network testnet/mainnet` scenarios fail on rootful Linux environments.
-- **Suggested fix:** Add `--no-sandbox` to chromium args when running as root (detect via `process.getuid() === 0`), or provide a non-browser fallback for version fetching.
-
-### F4: Docker Compose project name validation
-- **Repro:** `FHEVM_DOCKER_PROJECT=fhevm-qa-S02-1234 bun scripts/bun/cli.ts clean`
-- **Root cause:** Docker Compose requires project names to be lowercase only. The manifest.ts `VALID_PROJECT_NAME` regex at line 36 allows uppercase: `/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/`
-- **Impact:** Users setting project names with uppercase letters get cryptic Docker Compose errors.
-- **Suggested fix:** Either restrict `VALID_PROJECT_NAME` to lowercase or lowercase the value automatically.
-
-### F5: `logs` command doesn't list available containers on error
-- **Repro:** `bun scripts/bun/cli.ts logs does-not-exist`
-- **Root cause:** The `logs()` function at `cli.ts:2632` directly calls `docker logs <service>` and surfaces the raw Docker error without listing known containers.
-- **Impact:** Users get `No such container: does-not-exist` without guidance on valid container names.
-- **Suggested fix:** On failure, list available project containers via `docker ps --filter label=com.docker.compose.project=$PROJECT`.
-
-### F6: `cast` dependency not checked early for multi-coprocessor
-- **Repro:** `bun scripts/bun/cli.ts deploy --coprocessors 2 --coprocessor-threshold 2 --only minio`
-- **Root cause:** Multi-coprocessor env configuration calls `cast` (foundry) which may not be installed. Error occurs at runtime rather than as an early validation.
-- **Impact:** S13 multi-coprocessor scenario fails late.
-- **Suggested fix:** Check for `cast` in PATH during `parseDeployArgs()` when `--coprocessors > 1`.
+| S23 | P4 | PASS | purge works | Images purged, build cache removed, networks cleaned — all project-scoped | S23.command.log |
+| S24 | P4 | PASS | purge-images only | `Removing images referenced by fhevm compose services only.` | S24.command.log |
+| S25 | P4 | PASS | purge-build-cache only | `Removing local fhevm Buildx cache directory.` (reports not-found cleanly if absent) | S25.command.log |
+| S26 | P4 | PASS | purge-networks only | Project-labeled network filter applied correctly | S26.command.log |
+| S27 | P2 | PASS (partial) | logs for service | Correctly runs `docker logs minio`; `No such container` when not running (expected in env) | S27.command.log |
+| S28 | P2 | PASS (partial) | clear error for unknown | Error shown but no container list guidance (FINDING-5) | S28.command.log |
+| S29 | P2 | PASS (logic) | test command path | Parses test type, retries relayer connection 24x with 5s delay, provides actionable resume guidance on failure | S29.command.log |
+| S30 | P2 | FAIL (env) | pause/unpause host | CLI dispatches to host-pause-docker-compose.yml correctly; image pull fails (env) | S30.command.log |
+| S31 | P2 | FAIL (env) | pause/unpause gateway | CLI dispatches to gateway-pause-docker-compose.yml correctly; image pull fails (env) | S31.command.log |
+| S32 | P2 | FAIL (env) | upgrade coprocessor | CLI dispatches upgrade correctly; image pull fails (env) | S32.command.log |
+| S33 | P1 | FAIL | dashboard scrape resilience | Both testnet/mainnet fail at Chromium (FINDING-3) | S33.command.log |
+| S34 | P5 | INCONCLUSIVE | port conflict quality | Cannot test port binding (Docker bridge=none) | S34.command.log |
+| S35 | P5 | PASS (config) | tracing compose valid | `docker compose config` validates successfully; ports 4317, 9090, 16686 correctly mapped | S35.command.log |
+| S36 | P5 | PASS | cross-project isolation | `FHEVM_DOCKER_PROJECT=fhevm-qa-a` and `fhevm-qa-b` produce independent operations | S36.command.log |
+| S37 | P4 | PASS | deterministic 5-cycle | 5 deploy/clean cycles — identical output each time, no resource leak | S37.command.log |
+| S38 | P2 | PASS (logic) | resume after interrupt | `--resume minio` correctly cleans from minio onward and re-deploys | S38.command.log |
+| S39 | P4 | PASS | clean robust empty state | `FHEVM stack cleaned successfully` with no running containers | S39.command.log |
+| S40 | P5 | INCONCLUSIVE | unrelated containers safe | Could not create unrelated container (no image pull in env) | S40.command.log |
 
 ---
 
 ## 4. Safety Verdict
 
-### Project isolation: PASS (partial)
-- `FHEVM_DOCKER_PROJECT` correctly scopes all docker compose operations
-- Clean operations use project-labeled filters for networks
-- Cross-project clean demonstrated in S36
-- **Limitation:** Could not test full container-level isolation due to environment constraints
-
-### Non-project side effects: PASS (partial)
-- Clean/purge operations target only project-scoped resources
-- `purgeProjectImages()` removes only compose-referenced images
-- Network purge filters by `com.docker.compose.project` label
-- **Limitation:** Could not create unrelated containers (S40) due to no Docker networking
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Project isolation | **PASS** | `clean` uses `docker compose -p $PROJECT down`; `purge-networks` filters by `label=com.docker.compose.project=$PROJECT` (S36, S21) |
+| Non-project side effects | **PASS** (code review) | `purgeProjectImages()` parses compose config and only removes images listed therein; no `docker system prune` or `docker volume prune` anywhere in codebase |
+| Destructive scope | **PASS** | No global docker commands used; all operations scoped to compose project label |
 
 ---
 
@@ -149,50 +220,31 @@ The Bun CLI implementation is architecturally sound. Argument parsing, validatio
 
 ### Verdict: **BLOCKED**
 
-### Blocking Issues
+### Blocking Issues (must fix)
 
-1. **Command naming parity (CRITICAL):** CLI uses `deploy`/`clean` instead of `up`/`down`. Either the CLI needs aliases or documentation must be updated to match actual commands. The task protocol is written for a different command vocabulary.
+| # | Finding | Severity | Fix Effort |
+|---|---------|----------|------------|
+| 1 | FINDING-1: No `trace` subcommand | HIGH | ~50 lines — add `case "trace"` with up/down/status wrapping compose |
+| 2 | FINDING-2: `--no-tracing` not recognized | HIGH | ~3 lines — accept and log as no-op, or document |
+| 3 | FINDING-3: Chromium `--no-sandbox` for root | HIGH | ~4 lines — conditional `--no-sandbox` in chromium args |
 
-2. **Missing `trace` subcommand (CRITICAL):** No trace up/down/status in CLI. Tracing is managed separately via docker-compose. This is a gap for P3 (infra/telemetry engineer) persona.
+### Non-blocking Issues (should fix)
 
-3. **Missing `--no-tracing` flag (HIGH):** No way to explicitly opt out of tracing in deploy. Currently deploy never auto-starts tracing, so the flag may be unnecessary - but it should either be added or the design decision documented.
+| # | Finding | Severity | Fix Effort |
+|---|---------|----------|------------|
+| 4 | FINDING-4: Project name uppercase accepted | MEDIUM | 1 line regex change in manifest.ts:36 |
+| 5 | FINDING-7: Missing `trace` script in package.json | MEDIUM | 1 line addition |
+| 6 | FINDING-5: `logs` no container list on error | LOW | ~10 lines in logs() function |
+| 7 | FINDING-6: `cast` not checked early for multi-coprocessor | LOW | ~5 lines early check |
 
-4. **Chromium `--no-sandbox` for rootful environments (HIGH):** `--network testnet/mainnet` is unusable when running as root (common in CI/Docker). Needs `--no-sandbox` flag addition or browser-free fallback.
+### What Works Well
 
-5. **Project name case sensitivity (MEDIUM):** `FHEVM_DOCKER_PROJECT` allows uppercase but Docker Compose rejects it. Validation gap.
-
-6. **`logs` error UX (LOW):** No guidance on available containers when log target is not found.
-
-### Non-blocking Observations
-
-- Argument parsing is robust and deterministic
-- Version management (defaults, overrides, persistence) works correctly
-- Clean operations are idempotent and safe
-- Resume semantics correctly detect missing MinIO prerequisites
-- Multi-coprocessor threshold validation is immediate and clear
-- 5-cycle restart loop shows no resource leaks
-- Error messages for `--strict-otel` and `telemetry-smoke` are actionable
+- Argument parsing for all deploy flags is robust and deterministic
+- `--strict-otel` produces an excellent actionable error (`cli.ts:1118-1121`)
+- `telemetry-smoke` provides exact start command on failure (`cli.ts:2250`)
+- Resume semantics correctly detect missing MinIO prereqs and auto-adjust (`resolveEffectiveResumeStep`)
+- Threshold validation is immediate and clear: `Invalid coprocessor threshold: 3 (must be <= --coprocessors 2)`
+- Clean is idempotent, project-scoped, and handles empty state
+- 5-cycle restart loop is perfectly deterministic with no resource leaks
 - Build/local/build+local flag combinations work correctly
-
-### Persona Coverage
-
-| Persona | Coverage | Notes |
-|---|---|---|
-| P1 (New developer) | PARTIAL | One-command deploy works (argument parsing); image pull blocked by env |
-| P2 (Dapp developer) | PARTIAL | Resume, only, test, pause/unpause commands parse correctly; runtime blocked by env |
-| P3 (Infra/telemetry) | BLOCKED | No `trace` subcommand; telemetry-smoke gives good errors |
-| P4 (Agent/CI) | PASS (logic) | Deterministic behavior, clean validation, threshold checks |
-| P5 (Multi-stack) | PASS (partial) | FHEVM_DOCKER_PROJECT scoping works; case sensitivity bug |
-
----
-
-## Appendix: Environment Details
-
-```
-Bun: 1.3.9
-Docker: 29.2.1 (daemon started with --bridge=none --iptables=false)
-Docker Compose: v5.0.2
-OS: Linux 4.4.0 (containerized)
-Docker networking: DISABLED (no DNS, no port binding, no image pull)
-Chromium: Available but refuses root without --no-sandbox
-```
+- Version summary display is clear with `(local build)` annotation
