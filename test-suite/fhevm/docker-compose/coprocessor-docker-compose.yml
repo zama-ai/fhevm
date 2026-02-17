@@ -235,12 +235,6 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
-      - --host-chain-url=${RPC_WS_URL}
-      - --delegation-block-delay=10
-      - --delegation-clear-after-n-blocks=648000
-      - --delegation-fallback-polling=30
-      - --delegation-max-retry=100000
-      - --retry-immediately-on-nonce-error=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
