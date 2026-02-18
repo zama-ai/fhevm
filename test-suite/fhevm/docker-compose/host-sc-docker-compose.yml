@@ -1,6 +1,6 @@
 services:
   host-sc-deploy:
-    container_name: host-sc-deploy
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-host-sc-deploy
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
       context: ../../..
@@ -17,7 +17,7 @@ services:
       - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   host-sc-add-pausers:
-    container_name: host-sc-add-pausers
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-host-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
       context: ../../..

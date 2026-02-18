@@ -1,6 +1,6 @@
 services:
   host-sc-pause:
-    container_name: host-sc-pause
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-host-sc-pause
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
       context: ../../../host-contracts

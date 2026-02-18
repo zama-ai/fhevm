@@ -1,6 +1,6 @@
 services:
   relayer-db:
-    container_name: fhevm-relayer-db
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-fhevm-relayer-db
     platform: linux/amd64
     image: postgres:17
     environment:
@@ -13,12 +13,12 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5433:5432"
+      - "${RELAYER_DB_EXPOSE_PORT:-5433}:5432"
     volumes:
       - relayer_postgres_data:/var/lib/postgresql/data
 
   relayer-db-migration:
-    container_name: relayer-db-migration
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-relayer-db-migration
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}
     env_file:
@@ -26,13 +26,13 @@ services:
     command:
     - /bin/server
     ports:
-      - "3001:3001"
+      - "${RELAYER_MIGRATE_PORT:-3001}:3001"
     depends_on:
       relayer-db:
         condition: service_healthy
 
   relayer:
-    container_name: fhevm-relayer
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-fhevm-relayer
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
     env_file:
@@ -43,7 +43,7 @@ services:
     volumes:
       - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
-      - "3000:3000"
+      - "${RELAYER_API_PORT:-3000}:3000"
     depends_on:
       relayer-db:
         condition: service_healthy

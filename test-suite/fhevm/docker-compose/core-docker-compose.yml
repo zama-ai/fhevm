@@ -1,7 +1,7 @@
 services:
 
   kms-core:
-    container_name: kms-core
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
     env_file:
       - ../env/staging/.env.core.local
@@ -17,17 +17,18 @@ services:
         echo '=================STARTING KMS SERVICE================='
         kms-server --config-file config/config.toml
     volumes:
-      - fhevm_minio_secrets:/minio_secrets
+      - minio_secrets:/minio_secrets
       - ../config/kms-core/config.toml:/app/kms/core/service/config/config.toml
     ports:
-      - "50051:50051"
+      - "${KMS_CORE_GRPC_PORT:-50051}:50051"
     healthcheck:
-      test: "grpc_health_probe --addr=localhost:50051"
-      interval: 1s
-      timeout: 1s
-      retries: 5
-      start_period: 1s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9646/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 volumes:
-  fhevm_minio_secrets:
+  minio_secrets:
+    name: ${FHEVM_DOCKER_PROJECT:-fhevm}_minio_secrets
     external: true

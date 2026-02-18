@@ -16,7 +16,7 @@
 
 services:
   kms-connector-db-migration:
-    container_name: kms-connector-db-migration
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-kms-connector-db-migration
     image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -32,7 +32,7 @@ services:
       - ../env/staging/.env.kms-connector.local
 
   kms-connector-gw-listener:
-    container_name: kms-connector-gw-listener
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-kms-connector-gw-listener
     image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -41,6 +41,7 @@ services:
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
       cache_to:
@@ -52,7 +53,7 @@ services:
         condition: service_completed_successfully
 
   kms-connector-kms-worker:
-    container_name: kms-connector-kms-worker
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-kms-connector-kms-worker
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
     build:
       context: ../../..
@@ -61,6 +62,7 @@ services:
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
@@ -70,7 +72,7 @@ services:
         condition: service_completed_successfully
 
   kms-connector-tx-sender:
-    container_name: kms-connector-tx-sender
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-kms-connector-tx-sender
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -79,6 +81,7 @@ services:
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:

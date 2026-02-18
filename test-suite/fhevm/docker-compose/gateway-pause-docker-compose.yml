@@ -1,6 +1,6 @@
 services:
   gateway-sc-pause:
-    container_name: gateway-sc-pause
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-pause
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts

@@ -17,7 +17,7 @@ services:
   # =============================================================================
 
   coprocessor-db-migration:
-    container_name: coprocessor-db-migration
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -25,6 +25,7 @@ services:
       target: db-migration
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -38,7 +39,7 @@ services:
 
   ####################### COPROCESSOR SERVICES #######################
   coprocessor-host-listener:
-    container_name: coprocessor-host-listener
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -46,6 +47,7 @@ services:
       target: host-listener
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -62,7 +64,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-host-listener-poller:
-    container_name: coprocessor-host-listener-poller
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -70,6 +72,7 @@ services:
       target: host-listener
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -85,7 +88,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-gw-listener:
-    container_name: coprocessor-gw-listener
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -93,10 +96,11 @@ services:
       target: gw-listener
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
+      test: ["CMD", "gw_listener", "--version"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -117,7 +121,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-tfhe-worker:
-    container_name: coprocessor-tfhe-worker
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
     build:
       context: ../../..
@@ -125,6 +129,7 @@ services:
       target: tfhe-worker
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
       cache_to:
@@ -146,7 +151,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-zkproof-worker:
-    container_name: coprocessor-zkproof-worker
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
@@ -154,6 +159,7 @@ services:
       target: zkproof-worker
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -171,7 +177,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-sns-worker:
-    container_name: coprocessor-sns-worker
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
     build:
       context: ../../..
@@ -179,6 +185,7 @@ services:
       target: sns-worker
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -208,7 +215,7 @@ services:
         condition: service_completed_successfully
 
   coprocessor-transaction-sender:
-    container_name: coprocessor-transaction-sender
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -216,6 +223,7 @@ services:
       target: transaction-sender
       args:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        BUILD_ID: ${FHEVM_BUILD_ID:-unknown}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:

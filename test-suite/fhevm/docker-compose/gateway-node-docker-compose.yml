@@ -1,6 +1,6 @@
 services:
   gateway-node:
-    container_name: gateway-node
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-node
     image: ghcr.io/foundry-rs/foundry:v1.3.5
     env_file:
       - ../env/staging/.env.gateway-node.local
@@ -19,4 +19,4 @@ services:
       - --mnemonic
       - "${MNEMONIC}"
     ports:
-      - "8546:8546"
+      - "${GATEWAY_NODE_RPC_PORT:-8546}:8546"

@@ -1,6 +1,6 @@
 services:
   gateway-sc-deploy:
-    container_name: gateway-sc-deploy
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-deploy
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -17,7 +17,7 @@ services:
       - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-network:
-    container_name: gateway-sc-add-network
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-add-network
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -39,7 +39,7 @@ services:
       - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-pausers:
-    container_name: gateway-sc-add-pausers
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -61,7 +61,7 @@ services:
       - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-keygen:
-    container_name: gateway-sc-trigger-keygen
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-trigger-keygen
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -86,7 +86,7 @@ services:
       - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-crsgen:
-    container_name: gateway-sc-trigger-crsgen
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-sc-trigger-crsgen
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts

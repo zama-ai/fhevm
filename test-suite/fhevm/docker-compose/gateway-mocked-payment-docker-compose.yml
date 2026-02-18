@@ -1,6 +1,6 @@
 services:
   gateway-deploy-mocked-zama-oft:
-    container_name: gateway-deploy-mocked-zama-oft
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-deploy-mocked-zama-oft
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -16,7 +16,7 @@ services:
 
 
   gateway-set-relayer-mocked-payment:
-    container_name: gateway-set-relayer-mocked-payment
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-gateway-set-relayer-mocked-payment
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts

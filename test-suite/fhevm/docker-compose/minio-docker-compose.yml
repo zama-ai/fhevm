@@ -1,12 +1,12 @@
 services:
   minio:
-    container_name: fhevm-minio
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-fhevm-minio
     image: quay.io/minio/minio
     env_file:
       - ../env/staging/.env.minio.local
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     entrypoint: >
       minio server /data --console-address ":9001"
     healthcheck:
@@ -16,7 +16,7 @@ services:
       retries: 10
 
   minio-setup:
-    container_name: fhevm-minio-setup
+    container_name: ${FHEVM_DOCKER_PROJECT:-fhevm}-fhevm-minio-setup
     image: quay.io/minio/mc
     env_file:
       - ../env/staging/.env.minio.local
@@ -48,3 +48,4 @@ services:
 
 volumes:
   minio_secrets:
+    name: ${FHEVM_DOCKER_PROJECT:-fhevm}_minio_secrets
