@@ -1,5 +1,5 @@
 use crate::scheduler::messages::{self as msg};
-use fhevm_engine_common::rmq_utils::{
+use fhevm_engine_common::msg_broker::{
     create_recv_channel, create_send_channel, extract_delivery, try_decode,
 };
 use lapin::options::BasicAckOptions;

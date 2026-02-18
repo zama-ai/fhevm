@@ -1,4 +1,4 @@
-use fhevm_engine_common::rmq_utils::create_send_channel;
+use fhevm_engine_common::msg_broker::create_send_channel;
 use fhevm_engine_common::tenant_keys::{
     fetch_tenant_server_key, FetchTenantKeyResult, TfheTenantKeys,
 };

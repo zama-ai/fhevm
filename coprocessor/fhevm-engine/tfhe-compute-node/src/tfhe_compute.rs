@@ -2,7 +2,7 @@ use crate::cli::Args;
 use crate::context::Context;
 use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
 use fhevm_engine_common::common::FheOperation;
-use fhevm_engine_common::rmq_utils::{create_recv_channel, extract_delivery, try_decode};
+use fhevm_engine_common::msg_broker::{create_recv_channel, extract_delivery, try_decode};
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
