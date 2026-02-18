@@ -17,5 +17,15 @@ remappings = [
 # The number of fuzz runs for fuzz tests
 runs = 2560
 
+[profile.default.invariant]
+runs = 96
+depth = 24
+fail_on_revert = false
+
+[profile.invariant_stress.invariant]
+runs = 256
+depth = 64
+fail_on_revert = false
+
 [dependencies]
 forge-std = "1.11.0"
