@@ -10,7 +10,6 @@ use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list}
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
-use hex::encode;
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
@@ -563,8 +562,6 @@ fn create_ciphertext(
         acl_contract_address = %aux_data.acl_contract_address,
         "create_handle details"
     );
-
-    info!(handle = ?encode(&handle), "Create new handle");
 
     Ok(Ciphertext {
         handle,
