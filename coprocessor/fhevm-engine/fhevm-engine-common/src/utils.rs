@@ -10,8 +10,6 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::types::FhevmError;
-use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
-use lapin::{Channel, Consumer};
 
 pub const SAFE_SER_DESER_LIMIT: u64 = 1024 * 1024 * 16;
 pub const SAFE_SER_DESER_KEY_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
@@ -269,56 +267,4 @@ fn log_backend_impl() -> bool {
 fn log_backend_impl() -> bool {
     tracing::info!("GPU feature is disabled, using CPU backend");
     false
-}
-
-/// Initializes a RabbitMQ consumer channel
-pub async fn create_recv_channel(
-    uri: &str,
-    node_name: &str,
-    queue_name: &str,
-    prefetch_count: u16,
-) -> lapin::Result<Consumer> {
-    let conn = Connection::connect(uri, ConnectionProperties::default()).await?;
-    let channel = conn.create_channel().await?;
-
-    // Set prefetch count for fair dispatch
-    channel
-        .basic_qos(prefetch_count, BasicQosOptions::default())
-        .await?;
-
-    let queue = channel
-        .queue_declare(
-            queue_name,
-            QueueDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
-
-    let consumer = channel
-        .basic_consume(
-            queue.name().as_str(),
-            node_name,
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
-
-    Ok(consumer)
-}
-
-/// Initializes a RabbitMQ publishing channel
-pub async fn create_send_channel(uri: &str, queue_name: &str) -> lapin::Result<Channel> {
-    let conn = Connection::connect(uri, ConnectionProperties::default()).await?;
-    let channel = conn.create_channel().await?;
-
-    // Ensure queue exists (safe if already declared)
-    channel
-        .queue_declare(
-            queue_name,
-            QueueDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
-
-    Ok(channel)
 }

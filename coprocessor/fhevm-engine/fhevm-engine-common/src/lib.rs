@@ -4,6 +4,7 @@ pub mod healthz_server;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
+pub mod msg_broker;
 pub mod telemetry;
 pub mod tenant_keys;
 pub mod tfhe_ops;
