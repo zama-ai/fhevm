@@ -97,6 +97,11 @@ pub fn init_json_subscriber(
     Ok(Some(TracerProviderGuard::new(trace_provider)))
 }
 
+/// Initializes tracing with JSON logs and best-effort OTLP export.
+///
+/// Fallback here means "logs-only mode": if OTLP setup fails, we keep
+/// JSON logging enabled and continue execution without an OTLP exporter.
+/// It does not try alternate OTLP endpoints.
 pub fn init_json_subscriber_with_otlp_fallback(
     log_level: tracing::Level,
     service_name: &str,
