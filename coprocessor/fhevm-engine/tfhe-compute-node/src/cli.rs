@@ -11,11 +11,11 @@ pub struct Args {
     pub database_url: Option<DatabaseURL>,
 
     /// Redis URL  
-    #[arg(long)]
+    #[arg(long, default_value = "redis://localhost:6379")]
     pub redis_url: String,
 
     /// RabbitMQ URI
-    #[arg(long, default_value = "amqp://guest:guest@localhost:5672/%2f")]
+    #[arg(long, default_value = "amqp://admin:admin@localhost:5672/%2f")]
     pub rmq_uri: String,
 
     /// Tenant key cache size

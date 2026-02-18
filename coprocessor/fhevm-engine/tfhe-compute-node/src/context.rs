@@ -1,3 +1,4 @@
+use fhevm_engine_common::rmq_utils::create_send_channel;
 use fhevm_engine_common::tenant_keys::{
     fetch_tenant_server_key, FetchTenantKeyResult, TfheTenantKeys,
 };
@@ -8,7 +9,6 @@ use redis::{AsyncCommands, Client};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
-use tfhe::ServerKey;
 
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -25,6 +25,9 @@ pub(crate) struct Context {
 
     pool: sqlx::PgPool,
 
+    // RabbitMQ channel for sending messages about completed partitions back to the dispatcher
+    complete_partition_channel: lapin::Channel,
+
     // caches
     key_cache: Arc<RwLock<lru::LruCache<i64, TfheTenantKeys>>>,
     ciphertext_cache: Arc<RwLock<lru::LruCache<Handle, CiphertextInfo>>>,
@@ -39,6 +42,7 @@ impl Context {
     pub(crate) async fn create(
         db_url: &str,
         redis_url: &str,
+        rmq_uri: &str,
         tenant_key_cache_size: i32,
         ciphertext_cache_size: i32,
     ) -> Result<Self, ComputeError> {
@@ -60,6 +64,8 @@ impl Context {
         let redis = Client::open(redis_url)?;
         let multiplexed_conn = redis.get_multiplexed_async_connection().await?;
 
+        let complete_partition_channel = create_send_channel(&rmq_uri, "shared_tfhe_queue").await?;
+
         Ok(Self {
             redis,
             multiplexed_conn,
@@ -68,6 +74,7 @@ impl Context {
             ciphertext_cache,
             otel_ctx,
             current_key_id: Arc::new(RwLock::new(None)),
+            complete_partition_channel,
         })
     }
 
@@ -105,11 +112,6 @@ impl Context {
         Ok(keys)
     }
 
-    pub(crate) async fn get_sks_key(&self, key_id: i64) -> Result<ServerKey, ComputeError> {
-        let keys: FetchTenantKeyResult = self.get_keys_cache(key_id).await?;
-        Ok(keys.server_key.clone())
-    }
-
     pub(crate) async fn cache_store(&self, ct: &CiphertextInfo) {
         let mut cache = self.ciphertext_cache.write().await;
         if cache.contains(&ct.handle) {
@@ -123,6 +125,8 @@ impl Context {
         cache.peek(handle).cloned()
     }
 
+    /// Store the given ciphertext in Redis with the handle as the key.
+    #[allow(dead_code)]
     pub(crate) async fn redis_store(&self, ct: CiphertextInfo) -> Result<(), ComputeError> {
         let key = hex::encode(&ct.handle);
         let entry = RedisCiphertextRecord {
@@ -137,10 +141,18 @@ impl Context {
         Ok(())
     }
 
-    pub(crate) async fn redis_batch_store(
+    /// Batch store ciphertexts in Redis using pipelining for better performance.
+    ///
+    /// For backwards compatibility, it can store in PostgreSQL as well
+    pub(crate) async fn batch_store_ciphertexts(
         &self,
         cts: Vec<CiphertextInfo>,
     ) -> Result<(), ComputeError> {
+        self.redis_batch_store(cts).await
+        // TODO: Spawn a task to insert new ciphertexts into PostgreSQL for backwards compatibility.
+    }
+
+    async fn redis_batch_store(&self, cts: Vec<CiphertextInfo>) -> Result<(), ComputeError> {
         let start_time = Instant::now();
 
         let mut conn = self.multiplexed_conn.clone();
@@ -151,9 +163,10 @@ impl Context {
                 raw_ct: Some(ct.ciphertext.serialize().1),
                 compressed_ct: None,
             })?;
-            pipe.set(hex::encode(&ct.handle), bytes).ignore(); // TODO: ingored?
+            pipe.set(hex::encode(&ct.handle), bytes);
         }
-        pipe.query_async(&mut conn).await?;
+
+        pipe.query_async::<()>(&mut conn).await?;
 
         let elapsed = start_time.elapsed();
         REDIS_BATCH_STORE_OVERHEAD.observe(elapsed.as_secs_f64());
@@ -258,5 +271,23 @@ impl Context {
         Err(ComputeError::Other(
             "Stream ended before key was set".to_string(),
         ))
+    }
+
+    pub async fn send_partition_complete(&self, payload: Vec<u8>) -> Result<(), ComputeError> {
+        let confirm = self
+            .complete_partition_channel
+            .basic_publish(
+                "",
+                "fhe_partition_execution_complete_queue",
+                lapin::options::BasicPublishOptions::default(),
+                &payload,
+                lapin::BasicProperties::default(),
+            )
+            .await?;
+
+        let confirm = confirm.await?;
+        info!(confirm = ?confirm, "Sent partition complete message to dispatcher");
+
+        Ok(())
     }
 }

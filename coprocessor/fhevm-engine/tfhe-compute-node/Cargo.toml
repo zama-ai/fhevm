@@ -49,7 +49,6 @@ uuid = { version = "1", features = ["v4"] }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
-scheduler = { path = "../scheduler" }
 lapin = "3.7.2"
 futures-util.workspace = true
 redis = {version = "1.0.3", features = ["tokio-comp", "aio", "connection-manager"] }
@@ -60,7 +59,7 @@ thiserror.workspace = true
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
-gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu"]
+gpu = ["tfhe/gpu", "fhevm-engine-common/gpu"]
 bench = []
 latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]

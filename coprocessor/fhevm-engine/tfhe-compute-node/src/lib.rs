@@ -1,15 +1,17 @@
 use ::tracing::{error, info};
+use lapin::options::BasicRejectOptions;
+use tracing::debug;
 
-use fhevm_engine_common::types::SupportedFheCiphertexts;
-use fhevm_engine_common::{metrics_server, telemetry};
+use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use std::sync::atomic::Ordering;
 use std::sync::Once;
 use std::time::Instant;
 use thiserror::Error;
-use tokio::task::JoinSet;
 
 pub mod cli;
 pub mod context;
@@ -17,6 +19,8 @@ pub mod tfhe_compute;
 
 #[derive(Error, Debug)]
 pub enum ComputeError {
+    #[error("FHEVM error: {0}")]
+    Fhevm(#[from] FhevmError),
     #[error("Redis error: {0}")]
     Redis(#[from] redis::RedisError),
     #[error("Postgres error: {0}")]
@@ -39,12 +43,6 @@ pub enum ComputeError {
     Other(String),
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct FheTask {
-    key_id: i32, // tenant id in old  impl
-    partition_id: i32,
-}
-
 #[derive(Clone)]
 struct CiphertextInfo {
     handle: Vec<u8>,
@@ -52,9 +50,57 @@ struct CiphertextInfo {
 }
 
 #[derive(Debug, PartialEq)]
-struct DeliveryInfo {
-    inner: lapin::message::Delivery,
+struct Execution {
+    partition_id: String,
+
+    // Delivery info from lapin, needed for ack/nack
+    delivery: lapin::message::Delivery,
     received_at: Instant,
+    is_local: bool,
+}
+
+impl Execution {
+    async fn ack(&self) -> Result<bool, lapin::Error> {
+        let res = self
+            .delivery
+            .ack(lapin::options::BasicAckOptions::default())
+            .await?;
+
+        debug!(
+            routing_key = ?self.delivery.routing_key,
+            "Acknowledged message"
+        );
+
+        Ok(res)
+    }
+
+    fn begin(&self) {
+        let tc = RUNNING_TASKS.fetch_add(1, Ordering::Relaxed);
+        let pid = self.partition_id.clone();
+        info!(pid = pid, tc = tc, "Starting FHE partition execution");
+    }
+
+    async fn end(&self, transient_error: bool) {
+        if transient_error {
+            let _headers = self.delivery.properties.headers();
+            // TODO: use headers to decrement a retry counter
+            let _ = self
+                .delivery
+                .reject(BasicRejectOptions { requeue: true })
+                .await;
+        } else {
+            let _ = self.ack().await;
+        }
+
+        let pid = self.partition_id.clone();
+        if transient_error {
+            error!(pid = pid, "FHE partition execution failed");
+        } else {
+            info!(pid = pid, "Completed FHE partition execution");
+        }
+
+        RUNNING_TASKS.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -108,37 +154,14 @@ lazy_static::lazy_static! {
     pub static ref RUNNING_TASKS: std::sync::atomic::AtomicU64 =
         std::sync::atomic::AtomicU64::new(0);
 }
-// separate function for testing
-pub fn start_runtime(args: cli::Args, close_recv: Option<tokio::sync::watch::Receiver<bool>>) {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(args.tokio_threads)
-        // not using tokio main to specify max blocking threads
-        .max_blocking_threads(args.blocking_fhe_threads)
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async {
-            if let Some(mut close_recv) = close_recv {
-                tokio::select! {
-                    main = async_main(args) => {
-                        if let Err(e) = main {
-                            error!(target: "main_wchannel", { error = e }, "Runtime error");
-                        }
-                    }
-                    _ = close_recv.changed() => {
-                        info!(target: "main_wchannel", "Service stopped voluntarily");
-                    }
-                }
-            } else if let Err(e) = async_main(args).await {
-                error!(target: "main", { error = e }, "Runtime error");
-            }
-        })
-}
 
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
 
-pub async fn async_main(args: cli::Args) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn async_main(
+    args: cli::Args,
+    cancel_token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         tracing_subscriber::fmt()
             .json()
@@ -147,7 +170,6 @@ pub async fn async_main(args: cli::Args) -> Result<(), Box<dyn std::error::Error
             .init();
     });
 
-    let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
     if !args.service_name.is_empty() {
@@ -156,30 +178,9 @@ pub async fn async_main(args: cli::Args) -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    let mut set = JoinSet::new();
-
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
-    info!(target: "async_main", gpu_enabled,  "Initializing compute-node");
+    info!(target: "async_main", gpu_enabled,  "Initializing tfhe-compute-node");
 
-    set.spawn(tfhe_compute::run_tfhe_compute(args.clone()));
-
-    let metrics_addr = args.metrics_addr.clone();
-    if let Some(fut) = metrics_server::metrics_future(metrics_addr, cancel_token.child_token()) {
-        set.spawn(async {
-            fut.await;
-            Ok(())
-        });
-    }
-
-    if set.is_empty() {
-        panic!("No tasks specified to run");
-    }
-
-    while let Some(res) = set.join_next().await {
-        if let Err(e) = res {
-            panic!("Error background initializing worker: {:?}", e);
-        }
-    }
-
+    tfhe_compute::run_tfhe_compute(args.clone(), cancel_token).await?;
     Ok(())
 }
