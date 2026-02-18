@@ -55,7 +55,7 @@ lapin = "3.7.2"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
-postcard = "1.1.3"
+postcard = { version = "1.1.3",  features = ["alloc"] }
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]

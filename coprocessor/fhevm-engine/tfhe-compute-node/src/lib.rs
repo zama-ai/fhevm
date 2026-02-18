@@ -1,4 +1,5 @@
 use ::tracing::{error, info};
+use fhevm_engine_common::types::Handle;
 use lapin::options::BasicRejectOptions;
 use tracing::debug;
 
@@ -45,7 +46,7 @@ pub enum ComputeError {
 
 #[derive(Clone)]
 struct CiphertextInfo {
-    handle: Vec<u8>,
+    handle: Handle,
     ciphertext: SupportedFheCiphertexts,
 }
 

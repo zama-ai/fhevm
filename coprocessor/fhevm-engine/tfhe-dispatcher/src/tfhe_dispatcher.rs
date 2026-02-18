@@ -1,7 +1,7 @@
-use crate::scheduler::messages::{self as msg};
-use fhevm_engine_common::rmq_utils::{
+use fhevm_engine_common::msg_broker::{
     create_recv_channel, create_send_channel, extract_delivery, try_decode,
 };
+use fhevm_engine_common::protocol::messages as msg;
 use lapin::options::BasicAckOptions;
 
 use tokio_util::sync::CancellationToken;
@@ -43,8 +43,8 @@ async fn tfhe_dispatcher_cycle(
     // Host-listener will push to this queue
     let mut fhe_events_recv_chan = create_recv_channel(
         &args.rmq_uri,
-        "evm_fhe_dispatcher",
-        "batch_fhe_events_queue",
+        &args.consumer_tag_prefix,
+        args.fhe_events_queue_name.as_str(),
         prefetch_count,
     )
     .await?;
@@ -53,8 +53,8 @@ async fn tfhe_dispatcher_cycle(
     // tfhe-compute-nodes will push to this queue after completing execution of a partition
     let mut fhe_partition_complete_recv_chan = create_recv_channel(
         &args.rmq_uri,
-        "evm_fhe_dispatcher",
-        "fhe_partition_execution_complete_queue",
+        &args.consumer_tag_prefix,
+        args.fhe_execution_complete_queue.as_str(),
         prefetch_count,
     )
     .await?;
@@ -103,8 +103,8 @@ async fn setup_dispatcher(
 
     let default_channel = LapinChannel::new(
         sender_channel,
-        "shared_tfhe_queue".to_string(),
-        "shared_tfhe_queue".to_string(),
+        "".to_string(),
+        "queue_fhe_partitions".to_string(),
     );
 
     Ok(Dispatcher::new(default_channel))

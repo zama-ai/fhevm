@@ -1,5 +1,5 @@
-use crate::scheduler::messages as msg;
 use daggy::NodeIndex;
+use fhevm_engine_common::protocol::messages as msg;
 
 pub trait Commands {
     fn retrieve_executable_partitions(&self) -> Vec<msg::ExecutablePartition>;

@@ -1,9 +1,7 @@
-use crate::scheduler::messages as msg;
 use crate::scheduler::utils;
 use crate::scheduler::{
     traits::{Commands, Events},
-    types::{ComputationNode, ExecNode, Status},
-    Handle,
+    types::ExecNode,
 };
 use daggy::{
     petgraph::{
@@ -14,6 +12,9 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
+use fhevm_engine_common::protocol::messages as msg;
+use fhevm_engine_common::protocol::messages::{OpNode, Status};
+use fhevm_engine_common::types::Handle;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use tracing::{info, warn};
@@ -23,9 +24,9 @@ use tracing::{info, warn};
 ///
 /// It provides methods to process incoming FHE log messages, update the graphs incrementally,
 /// and determine which partitions of computations are ready for execution based on their dependencies.
-#[derive(Default)]
 pub struct ComputationScheduler {
-    dataflow_graph: Dag<ComputationNode, ()>,
+    key_id: u64,
+    dataflow_graph: Dag<OpNode, ()>,
     exec_graph: Dag<ExecNode, ()>,
 
     // Mapping between DFG nodes and execution nodes
@@ -39,8 +40,9 @@ pub struct ComputationScheduler {
 }
 
 impl Commands for ComputationScheduler {
+    /// Retrieve executable partitions based on the current state of the ExecGraph and DFG.
     fn retrieve_executable_partitions(&self) -> Vec<msg::ExecutablePartition> {
-        let ready_exec_node: Vec<NodeIndex> = self
+        let ready_exec_nodes: Vec<NodeIndex> = self
             .exec_graph
             .graph()
             .node_indices()
@@ -48,7 +50,7 @@ impl Commands for ComputationScheduler {
             .collect();
 
         let mut partition_set = Vec::new();
-        for exec_idx in ready_exec_node.iter() {
+        for exec_idx in ready_exec_nodes.iter() {
             let computations = self
                 .exec_graph
                 .node_weight(*exec_idx)
@@ -61,14 +63,24 @@ impl Commands for ComputationScheduler {
                         Status::Pending { .. }
                     )
                 })
-                .map(|dfg_idx| (self.dataflow_graph[*dfg_idx].clone(), *dfg_idx))
+                .map(|dfg_idx| {
+                    (
+                        self.dataflow_graph[*dfg_idx].clone(),
+                        *dfg_idx,
+                        self.get_dependencies(*dfg_idx),
+                    )
+                })
                 .collect::<Vec<_>>();
 
             if computations.is_empty() {
                 continue;
             }
 
-            partition_set.push(msg::ExecutablePartition::new(*exec_idx, computations));
+            partition_set.push(msg::ExecutablePartition::new(
+                self.key_id,
+                *exec_idx,
+                computations,
+            ));
         }
 
         partition_set
@@ -76,6 +88,17 @@ impl Commands for ComputationScheduler {
 }
 
 impl ComputationScheduler {
+    pub fn new(key_id: u64) -> Self {
+        Self {
+            key_id,
+            dataflow_graph: Dag::new(),
+            exec_graph: Dag::new(),
+            dfg_to_exec: HashMap::new(),
+            handle_to_node_idx: HashMap::new(),
+            missing_producers: HashSet::new(),
+        }
+    }
+
     fn mark_partition_executed(&mut self, partition: &msg::ExecutablePartition) {
         if partition.is_empty() {
             warn!("Attempting to mark an empty partition as executed");
@@ -83,7 +106,7 @@ impl ComputationScheduler {
         }
 
         // Mark all computations in the partition as computed
-        for (comp, dfg_idx) in &partition.computations {
+        for (comp, dfg_idx, _) in &partition.computations {
             if let Status::Pending { .. } = self.dataflow_graph[*dfg_idx].status {
                 self.dataflow_graph[*dfg_idx].status = Status::Computed {
                     finished_at: SystemTime::now(),
@@ -115,7 +138,7 @@ impl ComputationScheduler {
         self.missing_producers.remove(&log.output_handle);
 
         let uncomputed_deps = log
-            .dependencies
+            .dependence_handles()
             .iter()
             .filter(|handle| match self.handle_to_node_idx.get(*handle) {
                 Some(&producer) => !matches!(
@@ -130,19 +153,21 @@ impl ComputationScheduler {
 
         if self
             .handle_to_node_idx
-            .insert(log.output_handle, node_idx)
+            .insert(log.output_handle.clone(), node_idx)
             .is_some()
         {
             panic!("Handle has multiple producers");
         }
 
-        for dep in &log.dependencies {
+        let dependence_handles = log.dependence_handles();
+
+        for dep in dependence_handles.iter() {
             if let Some(&producer) = self.handle_to_node_idx.get(dep) {
                 self.dataflow_graph
                     .add_edge(producer, node_idx, ())
                     .expect("Cycle detected");
             } else {
-                self.missing_producers.insert(*dep);
+                self.missing_producers.insert(dep.clone());
                 warn!("Missing producer for dependency {:?}", hex::encode(dep));
             }
         }
@@ -151,14 +176,24 @@ impl ComputationScheduler {
     }
 
     fn add_dfg_node(&mut self, log: &msg::FheLog, remaining_deps: usize) -> NodeIndex {
-        self.dataflow_graph.add_node(ComputationNode {
-            key_id: 0, // TODO:
-            output_handle: log.output_handle,
+        let scalar_operands = log
+            .dependencies
+            .iter()
+            .filter_map(|dep| match dep {
+                msg::Dependence::Scalar(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        self.dataflow_graph.add_node(OpNode {
+            key_id: self.key_id,
+            output_handle: log.output_handle.clone(),
             fhe_operation: log.fhe_operation,
             status: Status::Pending { remaining_deps },
             is_scalar: log.is_scalar,
             created_at: log.created_at,
             block_info: log.block_info.clone(),
+            scalar_operands,
         })
     }
 
@@ -268,6 +303,17 @@ impl ComputationScheduler {
         for node in touched {
             exec_graph[node].dependence_counter = exec_graph.edges_directed(node, Incoming).count();
         }
+    }
+
+    /// Gets dependencies for a given DFG node, which are the inputs of the corresponding computation.
+    fn get_dependencies(&self, dfg_idx: NodeIndex) -> Vec<Handle> {
+        self.dataflow_graph
+            .edges_directed(dfg_idx, Incoming)
+            .map(|edge| {
+                let src_idx = edge.source();
+                self.dataflow_graph[src_idx].output_handle()
+            })
+            .collect()
     }
 
     /// Generate DOT files and PNG images for both the DFG and ExecGraph for visualization and debugging.

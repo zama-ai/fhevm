@@ -1,4 +1,4 @@
-use fhevm_engine_common::rmq_utils::create_send_channel;
+use fhevm_engine_common::msg_broker::create_send_channel;
 use fhevm_engine_common::tenant_keys::{
     fetch_tenant_server_key, FetchTenantKeyResult, TfheTenantKeys,
 };
@@ -61,10 +61,13 @@ impl Context {
             .await
             .expect("valid db url");
 
+        info!(db = db_url, "Connected to PostgreSQL database");
+
         let redis = Client::open(redis_url)?;
         let multiplexed_conn = redis.get_multiplexed_async_connection().await?;
 
-        let complete_partition_channel = create_send_channel(&rmq_uri, "shared_tfhe_queue").await?;
+        let complete_partition_channel =
+            create_send_channel(rmq_uri, "queue_fhe_execution_complete").await?;
 
         Ok(Self {
             redis,
@@ -278,7 +281,7 @@ impl Context {
             .complete_partition_channel
             .basic_publish(
                 "",
-                "fhe_partition_execution_complete_queue",
+                "queue_fhe_execution_complete",
                 lapin::options::BasicPublishOptions::default(),
                 &payload,
                 lapin::BasicProperties::default(),

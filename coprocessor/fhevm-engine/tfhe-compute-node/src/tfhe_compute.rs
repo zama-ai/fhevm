@@ -2,15 +2,17 @@ use crate::cli::Args;
 use crate::context::Context;
 use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
 use fhevm_engine_common::common::FheOperation;
-use fhevm_engine_common::rmq_utils::{create_recv_channel, extract_delivery, try_decode};
+use fhevm_engine_common::msg_broker::{create_recv_channel, extract_delivery, try_decode};
+use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::types::SupportedFheCiphertexts;
 use futures_util::stream::StreamExt;
 use lapin::message::Delivery;
-use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
-use std::time::{Duration, Instant, SystemTime};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::time::{Duration, Instant};
+use tfhe::boolean::backward_compatibility::client_key;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -39,50 +41,6 @@ pub async fn run_tfhe_compute(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Status {
-    Pending { remaining_deps: usize },
-    Computing { started_at: SystemTime },
-    Computed { finished_at: SystemTime },
-    Malformed { error_code: u8 },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockContext {
-    pub txn_hash: [u8; 32],
-    pub block_number: u64,
-    pub block_hash: [u8; 32],
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ComputationNode {
-    pub key_id: u64,
-    pub output_handle: Vec<u8>,
-    pub fhe_operation: SupportedFheOperations,
-    pub is_scalar: bool,
-    pub created_at: SystemTime,
-    pub status: Status,
-    pub block_info: BlockContext,
-}
-
-// TODO:
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct PartitionMessage {
-    pub hash: [u8; 32],
-    pub exec_node_idx: usize,
-    pub created_at: usize,
-    pub key_id: i32,
-
-    pub input_handles: Vec<(i16, Vec<u8>)>,
-    pub computations: Vec<ComputationNode>,
-}
-
-impl PartitionMessage {
-    fn id(&self) -> String {
-        hex::encode(self.hash)
-    }
-}
-
 /// The main compute cycle for the TFHE compute node worker
 async fn tfhe_compute_cycle(
     args: &Args,
@@ -108,7 +66,7 @@ async fn tfhe_compute_cycle(
     let mut shared_queue = create_recv_channel(
         &args.rmq_uri,
         &node_name,
-        "shared_tfhe_queue",
+        "queue_fhe_partitions",
         prefetch_count,
     )
     .await?;
@@ -117,7 +75,7 @@ async fn tfhe_compute_cycle(
     let mut local_queue = create_recv_channel(
         &args.rmq_uri,
         &node_name,
-        "local_tfhe_queue",
+        "queue_fhe_partitions_local",
         prefetch_count,
     )
     .await?;
@@ -129,8 +87,9 @@ async fn tfhe_compute_cycle(
             biased;
             // prioritize local queue
             res = local_queue.next() => {
+
                 let delivery = extract_delivery(res, "local")?;
-                let Some(partition) = try_decode::<PartitionMessage>(&delivery).await else {
+                let Some(partition) = try_decode::<ExecutablePartition>(&delivery).await else {
                     continue;
                 };
 
@@ -138,8 +97,10 @@ async fn tfhe_compute_cycle(
 
             },
             res = shared_queue.next() => {
+                info!("Received message on shared queue");
+
                 let delivery = extract_delivery(res, "shared")?;
-                let Some(partition) = try_decode::<PartitionMessage>(&delivery).await else {
+                let Some(partition) = try_decode::<ExecutablePartition>(&delivery).await else {
                     continue;
                 };
                 process_delivery(&ctx, &mut set, delivery, partition, false).await;
@@ -160,7 +121,7 @@ async fn process_delivery(
     ctx: &Context,
     set: &mut JoinSet<()>,
     delivery: Delivery,
-    partition: PartitionMessage,
+    partition: ExecutablePartition,
     is_local: bool,
 ) {
     let exec = Execution {
@@ -179,12 +140,12 @@ async fn process_delivery(
         let res = match prepare_and_execute(ctx.clone(), partition, exec.received_at).await {
             Ok(_) => {
                 let payload = exec.delivery.data.clone();
-                ctx.send_partition_complete(payload).await.is_ok()
+                !ctx.send_partition_complete(payload).await.is_ok()
             }
             Err(err) => {
                 // Errors will cause the partition execution to be retried by this or another compute-node.
                 error!(error = ?err, exec = ?exec, "Error executing partition");
-                false
+                true
             }
         };
 
@@ -197,50 +158,38 @@ async fn process_delivery(
 /// Returns error only on transient failures.
 async fn prepare_and_execute(
     ctx: Context,
-    partition: PartitionMessage,
+    partition: ExecutablePartition,
     received_at: Instant,
 ) -> Result<(), ComputeError> {
     ctx.set_key_id(partition.key_id as i64).await;
 
+    info!(
+        pid = partition.id(),
+        key_id = partition.key_id,
+        "Set context key id for partition execution"
+    );
+
     let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
-    let pid = partition.id();
+
+    info!(
+        pid = partition.id(),
+        key_id = partition.key_id,
+        "Fetched tenant keys for partition execution"
+    );
+
     let _otel_ctx = ctx.get_otel_ctx();
-
-    // query inputs (input ciphertexts) from either Redis or local cache,
-    // or wait for them to be available if not present yet
-    //
-    // TODO: For backwards compatibility,
-    // we should also try to fetch from Postgres if not found in Redis/cache
-    let input_handles = partition.input_handles.clone();
-    futures_util::future::try_join_all(
-        input_handles
-            .iter()
-            .map(|(_ct_type, ct_data)| ctx.get_or_wait_for_handle(ct_data)),
-    )
-    .await?;
-
-    // convert input handles to ciphertexts for execution
-    let mut inputs = Vec::new();
-    for (ct_type, ct_data) in &partition.input_handles {
-        let ct = SupportedFheCiphertexts::deserialize(*ct_type, ct_data).unwrap();
-        inputs.push(ct);
-    }
 
     tfhe::set_server_key(keys.server_key);
 
-    let exec_result = tokio::task::spawn_blocking(move || {
-        // Elapsed time since message was received until the start of execution.
-        // Should be as low as possible
-        let elapsed = received_at.elapsed().as_secs_f64();
-        let pid = partition.id();
+    // Elapsed time since message was received until the start of execution.
+    // Should be as low as possible
+    let elapsed = received_at.elapsed().as_secs_f64();
+    let pid = partition.id();
 
-        info!(pid, elapsed, "Executing partition with scheduler");
-        CONSUMER_OVERHEAD.observe(elapsed);
+    info!(pid, elapsed, "Executing partition with scheduler");
+    CONSUMER_OVERHEAD.observe(elapsed);
 
-        execute_partition(partition, inputs).unwrap()
-    })
-    .await?;
-
+    let exec_result = execute_partition(&ctx, partition).await?;
     try_store_ciphertext(&ctx, pid, exec_result).await?;
 
     Ok(())
@@ -252,7 +201,7 @@ async fn try_store_ciphertext(
     ciphertexts: Vec<CiphertextInfo>,
 ) -> Result<(), ComputeError> {
     for ct in ciphertexts.iter() {
-        ctx.cache_store(&ct).await;
+        ctx.cache_store(ct).await;
         info!(pid, handle = %hex::encode(&ct.handle), "Stored computed ciphertext in cache");
     }
 
@@ -268,36 +217,81 @@ async fn try_store_ciphertext(
 /// Executes the computations in the partition sequentially
 /// Partition is expected to be topologically sorted, so that inputs for each node are available by the time we execute it.
 /// Dispatcher must guarantee that this is the case when it constructs the partition.
-fn execute_partition(
-    partition: PartitionMessage,
-    mut inputs: Vec<SupportedFheCiphertexts>,
+async fn execute_partition(
+    ctx: &Context,
+    partition: ExecutablePartition,
 ) -> Result<Vec<CiphertextInfo>, ComputeError> {
     // TODO: rerandomization will be implemented pending clarification
+    // TODO: determine GPU index to use for this partition execution, if GPU is enabled
 
     let mut computed_cts = Vec::new();
-
-    let gpu_index = 0; // TODO: determine GPU index to use for this partition execution, if GPU is enabled
-
-    for node in &partition.computations {
+    for (op_node, _, inputs) in &partition.computations {
+        let handle = hex::encode(&op_node.output_handle[0..4]);
         info!(
             pid = partition.id(),
-            handle = %hex::encode(&node.output_handle),
-            op = ?node.fhe_operation,
+            output_handle = ?handle,
+            op = ?op_node.fhe_operation,
             "Executing node in partition"
         );
 
-        let result = try_execute_fhe_operation(node, inputs.clone(), false, gpu_index)?;
-        let ct = result.0.clone();
-        inputs.push(ct);
+        // query inputs (input ciphertexts) from either Redis or local cache,
+        // or wait for them to be available if not present yet
+        //
+        // TODO: For backwards compatibility,
+        // we should also try to fetch from Postgres if not found in Redis/cache
+        let dependence_inputs = futures_util::future::try_join_all(
+            inputs
+                .iter()
+                .map(|handle| ctx.get_or_wait_for_handle(handle)),
+        )
+        .await?;
+
+        // scalar operands are expected to be small and thus can be sent along with the partition execution message,
+        // so we can avoid fetching them from Redis
+        let scalar_inputs = op_node
+            .scalar_operands
+            .iter()
+            .map(|s| SupportedFheCiphertexts::Scalar(s.clone()))
+            .collect::<Vec<_>>();
+
+        let mut inputs: Vec<SupportedFheCiphertexts> = dependence_inputs
+            .iter()
+            .map(|ci| ci.ciphertext.clone())
+            .collect();
+
+        inputs.extend(scalar_inputs);
 
         info!(
             pid = partition.id(),
-            handle = %hex::encode(&node.output_handle),
-            "Executed node in partition"
+            output_handle = ?handle,
+            op = ?op_node.fhe_operation,
+            inputs = ?dependence_inputs.iter().map(|i| hex::encode(&i.handle)).collect::<Vec<_>>(),
+            "Fetched input ciphertexts for node in partition"
         );
 
+        let result = try_execute_fhe_operation(op_node, inputs, false, 0)?;
+
+        info!(
+            pid = partition.id(),
+            handle = ?handle,
+             op = ?op_node.fhe_operation,
+             "Completed execution of node in partition"
+        );
+
+        if let Some(client_key) = ctx.get_current_key().await?.client_key {
+            let plaintext = result.0.decrypt(&client_key);
+
+            // Print plaintext, useful for testing and debugging
+            info!(
+                pid = partition.id(),
+                handle = ?handle,
+                plaintext = ?plaintext,
+                "Decrypted result"
+            );
+        }
+
         computed_cts.push(CiphertextInfo {
-            handle: node.output_handle.clone(),
+            handle: op_node.output_handle(),
             ciphertext: result.0,
         });
     }
@@ -306,13 +300,37 @@ fn execute_partition(
 }
 
 fn try_execute_fhe_operation(
-    node: &ComputationNode,
+    node: &OpNode,
     inputs: Vec<SupportedFheCiphertexts>,
     compress_result: bool,
     gpu_index: usize,
 ) -> Result<OpResult, ComputeError> {
     let opcode = node.fhe_operation as i32;
-    run_computation(opcode, inputs, compress_result, gpu_index)
+
+    // TODO: check_fhe_operand_types(opcode, &inputs)?;
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        run_computation(opcode, inputs, compress_result, gpu_index)
+    }));
+
+    match result {
+        Ok(value) => value,
+        Err(panic_payload) => {
+            // Extract panic message if possible
+            let message = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic".to_string()
+            };
+
+            Err(ComputeError::Other(format!(
+                "Panic during FHE operation execution: {}",
+                message
+            )))
+        }
+    }
 }
 
 pub type OpResult = (SupportedFheCiphertexts, Option<(i16, Vec<u8>)>);
@@ -324,6 +342,7 @@ pub fn run_computation(
 ) -> Result<OpResult, ComputeError> {
     let op = FheOperation::try_from(operation);
 
+    info!(operation, gpu_idx, "Performing FHE operation");
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             let (ct_type, ct_bytes) = inputs[0].compress();

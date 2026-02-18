@@ -18,6 +18,10 @@ pub struct Args {
     #[arg(long, default_value = "amqp://admin:admin@localhost:5672/%2f")]
     pub rmq_uri: String,
 
+    /// Queue name for receiving FHE partitions to execute
+    #[arg(long, default_value = "queue_fhe_partitions")]
+    pub queue_fhe_partitions: String,
+
     /// Tenant key cache size
     #[arg(long, default_value_t = 32)]
     pub tenant_key_cache_size: i32,

@@ -1,4 +1,6 @@
-use crate::scheduler::{messages, BlockContext, Handle};
+use fhevm_engine_common::protocol::messages::{BlockContext, FheLog};
+use fhevm_engine_common::types::Handle;
+
 use fhevm_engine_common::types::SupportedFheOperations;
 use std::time::SystemTime;
 
@@ -20,12 +22,12 @@ impl TestContext {
 
     pub fn event_log(
         &self,
-        output_handle: [u8; 32],
-        dependencies: Vec<[u8; 32]>,
+        output_handle: Handle,
+        dependencies: Vec<Handle>,
         op: SupportedFheOperations,
         is_allowed: bool,
-    ) -> messages::FheLog {
-        messages::FheLog {
+    ) -> FheLog {
+        FheLog {
             output_handle,
             fhe_operation: op,
             is_allowed,

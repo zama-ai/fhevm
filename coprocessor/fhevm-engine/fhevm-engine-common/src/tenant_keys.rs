@@ -12,7 +12,7 @@ pub struct TfheTenantKeys {
     pub chain_id: i64,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
-
+    pub client_key: Option<tfhe::ClientKey>,
     #[cfg(not(feature = "gpu"))]
     pub sks: tfhe::ServerKey,
 
@@ -36,6 +36,7 @@ pub struct FetchTenantKeyResult {
 
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
     pub pks: tfhe::CompactPublicKey,
+    pub client_key: Option<tfhe::ClientKey>,
 }
 
 /// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
@@ -49,7 +50,12 @@ where
     T: sqlx::PgExecutor<'a> + Copy,
 {
     // try getting from cache until it succeeds with populating cache
+    let mut retries = 2;
     loop {
+        if retries < 0 {
+            return Err("Failed to fetch tenant keys after multiple retries".into());
+        }
+
         {
             let mut w = tenant_key_cache.write().await;
             if let Some(key) = w.get(&id) {
@@ -61,9 +67,12 @@ where
                     server_key: key.sks.clone(),
                     public_params: key.public_params.clone(),
                     pks: key.pks.clone(),
+                    client_key: key.client_key.clone(),
                 });
             }
         }
+
+        retries -= 1;
 
         populate_cache_with_tenant_keys(vec![id], pool, tenant_key_cache, is_tenant_id).await?;
     }
@@ -105,6 +114,7 @@ where
         let verifying_contract_address: String = row.try_get("verifying_contract_address")?;
         let pks_key: Vec<u8> = row.try_get("pks_key")?;
         let sks_key: Vec<u8> = row.try_get("sks_key")?;
+        let client_key: Option<Vec<u8>> = row.try_get("cks_key")?;
         let public_params_key: Vec<u8> = row.try_get("public_params")?;
 
         // Deserialize binary keys properly
@@ -126,6 +136,10 @@ where
             sks,
             pks,
             public_params: Arc::new(public_params),
+            client_key: match client_key {
+                Some(cks_key) => Some(safe_deserialize_key(&cks_key)?),
+                None => None,
+            },
         });
     }
 
@@ -159,7 +173,7 @@ where
 
         let keys = query_tenant_keys(tenants_to_query, conn, is_tenant_id).await?;
 
-        assert!(
+        debug_assert!(
             !keys.is_empty(),
             "We should have keys here, otherwise our database is corrupt"
         );

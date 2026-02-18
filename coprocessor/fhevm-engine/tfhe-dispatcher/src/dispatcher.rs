@@ -1,8 +1,8 @@
-use crate::scheduler::messages::{self as msg, ExecutablePartition};
 use crate::scheduler::{
     computation_scheduler::ComputationScheduler,
     traits::{Commands, Events},
 };
+use fhevm_engine_common::protocol::messages as msg;
 use lapin::options::BasicPublishOptions;
 use lapin::BasicProperties;
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ impl Channel for LapinChannel {
     }
 
     async fn send_partition(&self, partition: &msg::ExecutablePartition) {
-        let payload = &serde_json::to_vec(partition).expect("Failed to serialize partition");
+        let payload = &postcard::to_allocvec(partition).expect("Failed to serialize partition");
 
         debug!(
             partition_id = %partition.id(),
@@ -96,7 +96,7 @@ pub struct Dispatcher<C: Channel> {
 impl<C: Channel> Dispatcher<C> {
     pub fn new(default_channel: C) -> Self {
         Self {
-            computation_scheduler: ComputationScheduler::default(),
+            computation_scheduler: ComputationScheduler::new(1),
             running_partitions: HashMap::new(),
             default_channel,
             channel_pool: HashMap::new(),
@@ -138,7 +138,7 @@ impl<C: Channel> Dispatcher<C> {
     }
 
     /// This should be called when a worker reports that it has completed executing a partition.
-    pub fn on_partition_execution_complete(&mut self, partition: &ExecutablePartition) {
+    pub fn on_partition_execution_complete(&mut self, partition: &msg::ExecutablePartition) {
         // Inform the scheduler about the completed partition so it can update the DFG
         // and potentially unlock dependent partitions
         self.computation_scheduler.on_partition_completed(partition);
@@ -157,9 +157,9 @@ impl<C: Channel> Dispatcher<C> {
     /// Publishes the given partition to the global default channel.
     /// This dispatch does not enforce worker affinity or locality;
     /// the partition may be processed by any available worker.
-    pub fn publish_to_default_channel(&self, partition: &ExecutablePartition) {
+    pub fn publish_to_default_channel(&self, partition: &msg::ExecutablePartition) {
         let sender_channel = self.default_channel.clone();
-        let p = partition.clone();
+        let p: msg::ExecutablePartition = partition.clone();
 
         tokio::spawn(async move {
             sender_channel.send_partition(&p).await;
