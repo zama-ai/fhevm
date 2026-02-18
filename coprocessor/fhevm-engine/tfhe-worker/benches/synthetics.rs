@@ -3,8 +3,8 @@ mod utils;
 
 use crate::utils::{
     allow_handle, as_scalar_uint, listener_event_db, next_handle, random_handle, scalar_flag,
-    setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed, zero_address,
-    EnvConfig, OperatorType,
+    setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed,
+    write_atomic_u64_bench_params, zero_address, EnvConfig,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -106,10 +106,14 @@ fn log_with_tx(
 async fn counter_increment(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let listener_db = listener_event_db(&app).await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(app.db_url())
+        .await?;
     let mut handle_counter: u64 = random_handle();
     let caller = zero_address();
     let num_samples = sample_count(num_tx);
@@ -208,17 +212,21 @@ async fn counter_increment(
             )
         });
 
-    let _ = OperatorType::Atomic;
+    write_atomic_u64_bench_params(&pool, &bench_id, "counter-increment").await?;
     Ok(())
 }
 
 async fn tree_reduction(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let listener_db = listener_event_db(&app).await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(app.db_url())
+        .await?;
     let mut handle_counter: u64 = random_handle();
     let caller = zero_address();
     let num_samples = sample_count(num_tx).max(2);
@@ -310,5 +318,6 @@ async fn tree_reduction(
             )
         });
 
+    write_atomic_u64_bench_params(&pool, &bench_id, "tree-reduction").await?;
     Ok(())
 }

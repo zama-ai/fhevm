@@ -3,7 +3,8 @@ mod utils;
 
 use crate::utils::{
     as_scalar_uint, listener_event_db, next_handle, random_handle, scalar_flag, setup_test_app,
-    tfhe_event, to_ty, wait_until_all_allowed_handles_computed, zero_address, EnvConfig,
+    tfhe_event, to_ty, wait_until_all_allowed_handles_computed, write_atomic_u64_bench_params,
+    zero_address, EnvConfig,
 };
 use bigdecimal::num_bigint::BigInt;
 use criterion::{
@@ -265,15 +266,25 @@ async fn schedule_dex(
     use_cmux: bool,
     dependent: bool,
     is_claim: bool,
+    bench_id: &str,
+    display_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let listener_db = listener_event_db(&app).await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(app.db_url())
+        .await?;
     let caller = zero_address();
     let num_samples = sample_count(num_tx);
     let mut handle_counter = random_handle();
     let mut tx = listener_db.new_transaction().await?;
     let shared_tx_id = next_handle(&mut handle_counter);
-    let setup_tx_id = next_handle(&mut handle_counter);
+    let setup_tx_id = if dependent {
+        shared_tx_id
+    } else {
+        next_handle(&mut handle_counter)
+    };
 
     if is_claim {
         let pending_0_in = next_handle(&mut handle_counter);
@@ -1207,69 +1218,106 @@ async fn schedule_dex(
             )
         });
 
+    write_atomic_u64_bench_params(&pool, bench_id, display_name).await?;
     Ok(())
 }
 
 async fn swap_request_whitepaper(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, true, false, false).await
+    schedule_dex(
+        bencher,
+        num_tx,
+        true,
+        false,
+        false,
+        &bench_id,
+        "swap-request",
+    )
+    .await
 }
 
 async fn swap_request_no_cmux(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, false, false, false).await
+    schedule_dex(
+        bencher,
+        num_tx,
+        false,
+        false,
+        false,
+        &bench_id,
+        "swap-request",
+    )
+    .await
 }
 
 async fn swap_claim_whitepaper(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, true, false, true).await
+    schedule_dex(bencher, num_tx, true, false, true, &bench_id, "swap-claim").await
 }
 
 async fn swap_claim_no_cmux(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, false, false, true).await
+    schedule_dex(bencher, num_tx, false, false, true, &bench_id, "swap-claim").await
 }
 
 async fn swap_request_whitepaper_dep(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, true, true, false).await
+    schedule_dex(
+        bencher,
+        num_tx,
+        true,
+        true,
+        false,
+        &bench_id,
+        "swap-request",
+    )
+    .await
 }
 
 async fn swap_request_no_cmux_dep(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, false, true, false).await
+    schedule_dex(
+        bencher,
+        num_tx,
+        false,
+        true,
+        false,
+        &bench_id,
+        "swap-request",
+    )
+    .await
 }
 
 async fn swap_claim_whitepaper_dep(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, true, true, true).await
+    schedule_dex(bencher, num_tx, true, true, true, &bench_id, "swap-claim").await
 }
 
 async fn swap_claim_no_cmux_dep(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    _bench_id: String,
+    bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_dex(bencher, num_tx, false, true, true).await
+    schedule_dex(bencher, num_tx, false, true, true, &bench_id, "swap-claim").await
 }
