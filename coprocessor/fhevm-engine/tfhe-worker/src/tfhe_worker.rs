@@ -188,7 +188,7 @@ async fn tfhe_worker_cycle(
                         .unwrap_or_else(|| "none".to_string()),
                 ),
             );
-            tracing::info!(
+            info!(
                 parent: &dcid_span,
                 dependence_chain_id = ?dependence_chain_id.as_ref().map(hex::encode),
                 "acquired dependence chain lock"
@@ -334,7 +334,7 @@ async fn query_for_work<'a>(
                 .unwrap_or_else(|| "none".to_string()),
         ),
     );
-    tracing::info!(parent: &s_dcid, "query dependence chain result");
+    info!(parent: &s_dcid, "query dependence chain result");
     let s_work = tracing::info_span!(
         "query_work_items",
         operation = "query_work_items",
@@ -383,7 +383,7 @@ WHERE c.transaction_id IN (
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s_work.record("count", the_work.len());
-    tracing::info!(parent: &s_work, "work items queried");
+    info!(parent: &s_work, "work items queried");
     health_check.update_db_access();
     if the_work.is_empty() {
         if let Some(dependence_chain_id) = &dependence_chain_id {

@@ -350,8 +350,7 @@ async fn execute_verify_proof_routine(
                     let count = cts.len();
                     insert_ciphertexts(&mut txn, cts, blob_hash).await?;
 
-                    info!(message = "Ciphertexts inserted", request_id);
-                    tracing::info!(count = count, "ciphertexts inserted");
+                    info!(message = "Ciphertexts inserted", request_id, count);
                 }
                 Err(err) => {
                     error!(
@@ -362,7 +361,7 @@ async fn execute_verify_proof_routine(
                 }
             }
 
-            tracing::info!(valid = verified, "db_insert result");
+            info!(valid = verified, "db_insert result");
 
             // Mark as verified=true/false and set handles, if computed
             sqlx::query(
@@ -483,7 +482,7 @@ fn verify_proof_only(
         return Err(err);
     }
 
-    tracing::info!(list_len = the_list.len(), "proof verified");
+    info!(list_len = the_list.len(), "proof verified");
     Ok(the_list)
 }
 
@@ -553,7 +552,7 @@ fn create_ciphertext(
     handle[31] = current_ciphertext_version() as u8;
 
     tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
-    tracing::info!(
+    info!(
         request_id,
         handle = %hex::encode(&handle),
         user_address = %aux_data.user_address,
