@@ -61,18 +61,6 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
-pub fn init_otel(
-    service_name: &str,
-) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    if service_name.is_empty() {
-        return Ok(None);
-    }
-
-    let (_tracer, trace_provider) = setup_otel_with_tracer(service_name, "otlp-layer")?;
-    opentelemetry::global::set_tracer_provider(trace_provider.clone());
-    Ok(Some(TracerProviderGuard::new(trace_provider)))
-}
-
 pub fn init_json_subscriber(
     log_level: tracing::Level,
     service_name: &str,
@@ -537,11 +525,5 @@ mod tests {
         // A second shutdown is a no-op.
         guard.shutdown_once();
         assert!(guard.tracer_provider.is_none());
-    }
-
-    #[test]
-    fn setup_otel_empty_service_name_returns_none() {
-        let otel_guard = init_otel("").unwrap();
-        assert!(otel_guard.is_none());
     }
 }
