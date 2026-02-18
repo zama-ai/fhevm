@@ -82,7 +82,7 @@ pub fn parse_args() -> Args {
 async fn main() {
     let args = parse_args();
 
-    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         args.log_level,
         &args.service_name,
         "otlp-layer",

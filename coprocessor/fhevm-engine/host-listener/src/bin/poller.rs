@@ -126,7 +126,7 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         args.log_level,
         &args.service_name,
         "otlp-layer",

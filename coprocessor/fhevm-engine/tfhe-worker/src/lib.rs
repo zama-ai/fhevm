@@ -55,7 +55,7 @@ pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
-        let otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+        let otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
             args.log_level,
             &args.service_name,
             "otlp-layer",

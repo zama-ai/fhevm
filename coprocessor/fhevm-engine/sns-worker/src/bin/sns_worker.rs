@@ -65,7 +65,7 @@ async fn main() {
     let config: Config = construct_config();
     let parent = CancellationToken::new();
 
-    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         config.log_level,
         &config.service_name,
         "otlp-layer",

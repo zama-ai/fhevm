@@ -102,7 +102,7 @@ pub fn init_json_subscriber(
 /// Fallback here means "logs-only mode": if OTLP setup fails, we keep
 /// JSON logging enabled and continue execution without an OTLP exporter.
 /// It does not try alternate OTLP endpoints.
-pub fn init_json_subscriber_with_otlp_fallback(
+pub fn init_tracing_otel_with_logs_only_fallback(
     log_level: tracing::Level,
     service_name: &str,
     tracer_name: &'static str,

@@ -286,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
 
     let conf = parse_args();
 
-    let _otel_guard = telemetry::init_json_subscriber_with_otlp_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         conf.log_level,
         &conf.service_name,
         "otlp-layer",
