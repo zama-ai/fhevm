@@ -255,7 +255,7 @@ async fn insert_trivial_encrypt(
             toType: to_ty(to_type),
             result,
         }),
-        false,
+        true,
     )
     .await
 }
