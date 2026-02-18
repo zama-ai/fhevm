@@ -6,12 +6,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      test:
-        description: "Run integration tests"
-        required: false
-        default: false
-        type: boolean
   workflow_call:
   release:
     types: [created]
@@ -46,20 +40,6 @@ jobs:
         with:
           token: ${{ github.token }}
           filters: |
-            back:
-              - 'apps/back/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'docker/back/**'
-              - '.github/workflows/docker.yaml'
-            front:
-              - 'apps/front/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'docker/front/**'
-              - '.github/workflows/docker.yaml'
             relayer:
               - 'apps/relayer/**'
               - 'docker/relayer/**'
@@ -67,10 +47,6 @@ jobs:
             relayer-migrate:
               - 'apps/relayer/relayer-migrate/**'
               - 'docker/relayer-migrate/**'
-              - '.github/workflows/docker.yaml'
-            oracle:
-              - 'apps/oracle/**'
-              - 'docker/oracle/**'
               - '.github/workflows/docker.yaml'
 
       - name: Select services to build
@@ -83,11 +59,8 @@ jobs:
           # shellcheck shell=bash
           set -eo pipefail
           SERVICE_MAP='{
-            "back": {"name": "back", "context": ".", "dockerfile": "docker/back/Dockerfile", "target": "runtime"},
-            "front": {"name": "front", "context": ".", "dockerfile": "docker/front/Dockerfile", "target": "runtime"},
             "relayer": {"name": "relayer", "context": ".", "dockerfile": "docker/relayer/Dockerfile", "target": "runtime"},
-            "relayer-migrate": {"name": "relayer-migrate", "context": ".", "dockerfile": "docker/relayer-migrate/Dockerfile", "target": "runtime"},
-            "oracle": {"name": "oracle", "context": ".", "dockerfile": "docker/oracle/Dockerfile", "target": "prod"}
+            "relayer-migrate": {"name": "relayer-migrate", "context": ".", "dockerfile": "docker/relayer-migrate/Dockerfile", "target": "runtime"}
           }'
           if [ -z "$CHANGES_JSON" ]; then
             CHANGES_JSON='[]'
@@ -103,7 +76,7 @@ jobs:
               service="${REF_NAME%%@*}"
               if [ -n "$service" ] && [ "$service" != "$REF_NAME" ]; then
                 case "$service" in
-                  back|front|relayer|relayer-migrate|oracle)
+                  relayer|relayer-migrate)
                     TO_RUN=$(jq -nc \
                       --arg svc "$service" \
                       --argjson service_map "$SERVICE_MAP" \
@@ -123,10 +96,7 @@ jobs:
                 --argjson service_map "$SERVICE_MAP" \
                 '[
                   $service_map["relayer"],
-                  $service_map["relayer-migrate"],
-                  $service_map["back"],
-                  $service_map["front"],
-                  $service_map["oracle"]
+                  $service_map["relayer-migrate"]
                 ]')
               ;;
           esac
@@ -153,17 +123,6 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-
-      - name: Use Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
@@ -214,37 +173,3 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.service.name }}
           cache-to: type=gha,scope=${{ matrix.service.name }},mode=max
-
-
-  # TODO: find out why the test is failing
-  integration-test:
-    name: docker-build-and-push/integration-test
-    runs-on: ubuntu-latest
-    needs: [build-docker]
-    if: ${{ github.event.workflow_dispatch && inputs.test }}
-    steps:
-      - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
-          submodules: recursive
-      - name: Install pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-      - name: Use Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 22
-          cache: "pnpm"
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.BOT_USERNAME }}
-          password: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
-      - name: Test
-        run: |
-          # shellcheck shell=bash
-          DOCKER_TAG=$(git rev-parse --short "$GITHUB_SHA")
-          export DOCKER_TAG
-          bash scripts/integration-tests-compose.sh

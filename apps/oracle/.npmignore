@@ -1,7 +1,0 @@
-*
-!/artifacts/contracts/DecryptionOracle.sol/DecryptionOracle.json
-!contracts/**
-!address/**
-!package.json
-!LICENSE
-!README.md

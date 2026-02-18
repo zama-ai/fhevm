@@ -1,5 +1,0 @@
-# This rule ensures that the env-config.js file is served directly
-/env-config.js    /env-config.js   200
-
-# This is the standard SPA fallback rule for all other routes
-/* /index.html      200

@@ -1,71 +1,20 @@
-# console
+# console — fhevm Relayer
 
-A user-friendly web app to manage your FHE dApps
+This repository hosts the **fhevm Relayer**, a Rust service that bridges fhevm (Fully Homomorphic Encryption Virtual Machine) blockchains with the Zama Gateway.
 
-- apps:
+See [apps/relayer/README.md](apps/relayer/README.md) for full documentation.
 
-  - [apps/front](apps/front/README.md) react
-  - [apps/back](apps/back/README.md) nestjs + prisma + graphql
-  - [apps/orchestrator](apps/orchestrator/README.md) nestjs + xstate
-  - [apps/web3](apps/web3/README.md) nestjs
+## Development
 
-- packages:
+All development commands (build, run, test, lint) are in `apps/relayer/`. See the [relayer README](apps/relayer/README.md) and its `Makefile`.
 
-  - [messages](packages/messages/README.md) queues messages definition
-  - [sqs](packages/sqs/README.md) provides modules to use SQS
-  - [utils](packages/utils/README.md) nodejs-related stuff
-
-## installation
+## Docker
 
 ```bash
-# build & run local aws services and databases
-make console-infra-up
-
-# set up environment
-cp apps/front/.env.template apps/front/.env
-cp apps/back/.env.template apps/back/.env
-cp apps/orchestrator/.env.template apps/orchestrator/.env
-
-# install npm packages
-pnpm install
-
-# build our own packages
-pnpm --filter messages build
-pnpm --filter utils build
+docker build -f docker/relayer/Dockerfile -t console-relayer .
+docker build -f docker/relayer-migrate/Dockerfile -t console-relayer-migrate .
 ```
 
-## develop
+## Contributing
 
-### run services locally
-
-```bash
-# pick what you want to run
-pnpm --filter front start
-pnpm --filter back start
-pnpm --filter orchestrator start
-pnpm --filter web3 start
-```
-
-### run fhevm contracts with events using hardhat
-
-An alternative to running the full stack is to use hardhat.
-This also allows for the use of the latest version of the FHEVM set of smart contracts.
-To do so one can do the following:
-
-1. `make hardhat-run` in a first terminal, that will launch the hardhat node
-2. `make hardhat-listen` in a second terminal will deploy the contracts and launch the event listener
-3. `make hardhat-test` in a third terminal will then launch some tests that will trigger events
-
-## run local env into containers
-
-There are more complicated and fun ways to have a local env, check [tech-specs/local_env](tech-specs/local_env.md)
-
-## Feature flags
-
-There are a few feature flags implemented in the console. Currently, you can change them only setting an environemnt variable, and it accepts `true`, `t`, `yes`, `y` and `1` to enable it, and `false`, `f`, `no`, `n` and `0` to disable it.
-
-The implemented feature flags are:
-
-- `FLAG_API_KEY`: when enabled, it requires an API key header for all http requests to the relayer. Default value: `false`
-- `FLAG_GRAPHQL_PLAYGROUND` : when enabled, it exposes the Graph QL Playground. Default value `true`
-- `FLAG_INVITATIONS`: when enabled, signup is invitations-only (no self served). Default value `true`
+See [CONTRIBUTING.md](CONTRIBUTING.md).

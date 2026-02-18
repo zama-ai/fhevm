@@ -1,5 +1,0 @@
-[
-  { "path": "/dashboard", "label": "Dashboard" },
-  { "path": "/keys", "label": "API Keys" },
-  { "path": "/settings", "label": "Settings" }
-]

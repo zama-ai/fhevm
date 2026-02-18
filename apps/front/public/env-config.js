@@ -1,1 +1,0 @@
-window.VITE_CONFIG = {};
