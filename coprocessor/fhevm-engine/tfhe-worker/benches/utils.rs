@@ -16,6 +16,7 @@ use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
+use sqlx::PgPool;
 
 pub struct TestInstance {
     // just to destroy container
@@ -77,7 +78,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         pg_pool_max_connections: 2,
         metrics_addr: None,
         database_url: Some(db_url.into()),
-        service_name: "coprocessor".to_string(),
+        service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
         log_level: Level::INFO,
         health_check_port: 8080,
         metric_rerand_batch_latency: MetricsConfig::default(),
@@ -720,6 +721,30 @@ pub fn write_to_json<
     params_directory.push("parameters.json");
 
     fs::write(params_directory, serde_json::to_string(&record).unwrap()).unwrap();
+}
+
+pub async fn write_atomic_u64_bench_params(
+    pool: &PgPool,
+    bench_id: &str,
+    display_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db_key_cache = fhevm_engine_common::db_keys::DbKeyCache::new(100)?;
+    let key = db_key_cache.fetch_latest(pool).await?;
+    let params = key
+        .cks
+        .ok_or_else(|| std::io::Error::other("latest key is missing cks"))?
+        .computation_parameters();
+
+    write_to_json::<u64, _>(
+        bench_id,
+        params,
+        "",
+        display_name,
+        &OperatorType::Atomic,
+        64,
+        vec![],
+    );
+    Ok(())
 }
 
 #[allow(dead_code)]
