@@ -1,14 +1,11 @@
 use clap::Parser;
-use fhevm_engine_common::telemetry::MetricsConfig;
-use fhevm_engine_common::utils::DatabaseURL;
 use tracing::Level;
-use uuid::Uuid;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
     /// RabbitMQ URI
-    #[arg(long, default_value = "amqp://guest:guest@localhost:5672/%2f")]
+    #[arg(long, default_value = "amqp://admin:admin@localhost:5672/%2f")]
     pub rmq_uri: String,
 
     /// Coprocessor FHE processing threads

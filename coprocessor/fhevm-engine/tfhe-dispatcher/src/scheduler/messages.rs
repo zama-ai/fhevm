@@ -31,7 +31,7 @@ impl std::fmt::Debug for FheLog {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutablePartition {
     pub hash: [u8; 32],
     pub exec_node_idx: NodeIndex,
@@ -77,6 +77,10 @@ impl ExecutablePartition {
         out[0..2].copy_from_slice(&len_bytes);
 
         out
+    }
+
+    pub fn id(&self) -> String {
+        hex::encode(&self.hash[0..4])
     }
 }
 
