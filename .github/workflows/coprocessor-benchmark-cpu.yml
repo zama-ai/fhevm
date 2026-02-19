@@ -132,7 +132,7 @@ jobs:
                                                                  libclang-dev docker-compose-v2 \
                                                                  docker.io acl
           sudo systemctl start docker
-          cargo install sqlx-cli
+          cargo +stable install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
