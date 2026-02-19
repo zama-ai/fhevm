@@ -135,6 +135,13 @@ license-files = [
     { path = "LICENSE", hash = 0xbd0eed23},
 ]
 
+[[licenses.clarify]]
+crate = "solana-config-interface"
+expression = "Apache-2.0"
+license-files = [
+    { path = "LICENSE", hash = 0xd0891cfa},
+]
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.

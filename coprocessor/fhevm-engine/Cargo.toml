@@ -4,6 +4,7 @@ members = [
     "tfhe-worker",
     "fhevm-engine-common",
     "host-listener",
+    "solana-listener",
     "gw-listener",
     "sns-worker",
     "transaction-sender",
