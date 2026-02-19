@@ -137,6 +137,38 @@ fn bucket_from_domain(url: &Url) -> anyhow::Result<String> {
     Ok(domain_parts[0].to_owned())
 }
 
+fn is_url_suspicious(parsed_url_and_bucket: &Url) -> bool {
+    if parsed_url_and_bucket.query().is_some() || parsed_url_and_bucket.fragment().is_some() {
+        warn!(
+            url = %parsed_url_and_bucket,
+            "S3 bucket URL contains query or fragment, which looks suspicious"
+        );
+        return true;
+    }
+    if parsed_url_and_bucket.username() != "" || parsed_url_and_bucket.password().is_some() {
+        warn!(
+            url = %parsed_url_and_bucket,
+            "S3 bucket URL contains username or password, which looks suspicious"
+        );
+        return true;
+    }
+    if !["https", "http"].contains(&parsed_url_and_bucket.scheme()) {
+        warn!(
+            url = %parsed_url_and_bucket,
+            "S3 bucket URL scheme is neither http nor https, which looks suspicious"
+        );
+        return true;
+    }
+    if parsed_url_and_bucket.host_str().is_none() {
+        warn!(
+            url = %parsed_url_and_bucket,
+            "S3 bucket URL has no host, which looks suspicious"
+        );
+        return true;
+    }
+    false
+}
+
 fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
     // e.g BBBBBB.s3.bla.bli.amazonaws.blu, the bucket is part of the domain
     let s3_bucket_url = if s3_bucket_url.contains("minio:9000") {
@@ -149,6 +181,10 @@ fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
         s3_bucket_url.to_owned()
     };
     let parsed_url_and_bucket = url::Url::parse(&s3_bucket_url)?;
+    if is_url_suspicious(&parsed_url_and_bucket) {
+        error!(s3_bucket_url, "S3 bucket URL looks suspicious");
+        return Err(anyhow::Error::msg("S3 bucket URL looks suspicious"));
+    }
     let mut bucket = parsed_url_and_bucket
         .path()
         .trim_start_matches('/')
