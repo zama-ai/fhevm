@@ -5,12 +5,12 @@ use tracing::debug;
 
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
-use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
+use prometheus::{Histogram, IntCounter, register_histogram, register_int_counter};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use std::sync::atomic::Ordering;
 use std::sync::Once;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use thiserror::Error;
 
@@ -87,7 +87,9 @@ impl Execution {
             // TODO: use headers to decrement a retry counter
             let _ = self
                 .delivery
-                .reject(BasicRejectOptions { requeue: true })
+                .reject(BasicRejectOptions {
+                    requeue: false, /* TODO true */
+                })
                 .await;
         } else {
             let _ = self.ack().await;

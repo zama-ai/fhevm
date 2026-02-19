@@ -3,8 +3,8 @@ use crate::scheduler::{
     traits::{Commands, Events},
 };
 use fhevm_engine_common::protocol::messages as msg;
-use lapin::options::BasicPublishOptions;
 use lapin::BasicProperties;
+use lapin::options::BasicPublishOptions;
 use std::collections::HashMap;
 use std::future::Future;
 use tracing::{debug, info};
@@ -110,7 +110,7 @@ impl<C: Channel> Dispatcher<C> {
     /// Main entry point for processing incoming FHE log batches.
     /// This will update the scheduler's DFG and determine which partitions are now executable.
     /// It will then dispatch those partitions to workers via Message Broker.
-    pub fn dispatch_fhe_partitions(&mut self, batch: &[msg::FheLog]) {
+    pub fn dispatch(&mut self, batch: &[msg::FheLog]) {
         if !batch.is_empty() {
             self.computation_scheduler.on_fhe_log_batch(batch);
         }
@@ -124,8 +124,8 @@ impl<C: Channel> Dispatcher<C> {
 
         let running = self.running_partitions.len();
         info!(
-            dispatched = new_exec_partitions.len(),
-            running, "Dispatching new partitions"
+            count = new_exec_partitions.len(),
+            running, "Dispatching executable partitions"
         );
 
         debug!(partitions =  ?new_exec_partitions, "New executable partitions");
@@ -148,7 +148,7 @@ impl<C: Channel> Dispatcher<C> {
         self.running_partitions.remove(&hash);
 
         info!(
-            partition_id = %hex::encode(hash),
+            pid = %partition.id(),
             known,
             "Partition execution complete"
         );

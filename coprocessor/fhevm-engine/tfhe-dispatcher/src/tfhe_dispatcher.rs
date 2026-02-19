@@ -59,7 +59,7 @@ async fn tfhe_dispatcher_cycle(
     )
     .await?;
 
-    let mut dsp = setup_dispatcher(args).await?;
+    let mut dispatcher = setup_dispatcher(args).await?;
 
     loop {
         tokio::select! {
@@ -70,7 +70,7 @@ async fn tfhe_dispatcher_cycle(
                     continue;
                 };
 
-                dsp.dispatch_fhe_partitions(&batch);
+                dispatcher.dispatch(&batch);
 
                 let _ = d.ack(BasicAckOptions::default()).await;
             },
@@ -80,8 +80,12 @@ async fn tfhe_dispatcher_cycle(
                     continue;
                 };
 
-                dsp.on_partition_execution_complete(&partition);
-                dsp.dispatch_fhe_partitions(&[]);
+                dispatcher.on_partition_execution_complete(&partition);
+
+                // After processing the completed partition,
+                // we want to check if any new partitions have become executable as a result.
+                // If so, dispatch those immediately
+                dispatcher.dispatch(&[]);
 
                 let _ = d.ack(BasicAckOptions::default()).await;
             }

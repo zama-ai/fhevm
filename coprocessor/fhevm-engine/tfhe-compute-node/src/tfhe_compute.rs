@@ -1,6 +1,6 @@
 use crate::cli::Args;
 use crate::context::Context;
-use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
+use crate::{CONSUMER_OVERHEAD, CiphertextInfo, ComputeError, Execution};
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::msg_broker::{create_recv_channel, extract_delivery, try_decode};
 use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
@@ -10,7 +10,7 @@ use fhevm_engine_common::types::SupportedFheCiphertexts;
 use futures_util::stream::StreamExt;
 use lapin::message::Delivery;
 use sqlx::types::Uuid;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 use tfhe::boolean::backward_compatibility::client_key;
 use tokio::task::JoinSet;
@@ -169,8 +169,6 @@ async fn prepare_and_execute(
         "Set context key id for partition execution"
     );
 
-    let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
-
     info!(
         pid = partition.id(),
         key_id = partition.key_id,
@@ -178,8 +176,6 @@ async fn prepare_and_execute(
     );
 
     let _otel_ctx = ctx.get_otel_ctx();
-
-    tfhe::set_server_key(keys.server_key);
 
     // Elapsed time since message was received until the start of execution.
     // Should be as low as possible
@@ -269,6 +265,8 @@ async fn execute_partition(
             "Fetched input ciphertexts for node in partition"
         );
 
+        let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
+        tfhe::set_server_key(keys.server_key);
         let result = try_execute_fhe_operation(op_node, inputs, false, 0)?;
 
         info!(
