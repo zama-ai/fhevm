@@ -447,6 +447,7 @@ gwListener:
     # --replay-from-block BLOCK_NUMBER
     # To go back in time from latest block
     # --replay-from-block -NB_BLOCK
+    # --replay-skip-verify-proof  # Skip VerifyProofRequest events during replay
 
   # Service ports configuration
   ports:

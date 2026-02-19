@@ -8,8 +8,11 @@ pragma solidity ^0.8.20;
  *
  * These functions can be used to verify that a message was signed by the holder
  * of the private keys of a given address.
+ *
+ * @dev This library is forked from OpenZeppelin's ECDSA and renamed to FhevmECDSA
+ * to avoid naming conflicts with the original when both are used in the same project.
  */
-library ECDSA {
+library FhevmECDSA {
     enum RecoverError {
         NoError,
         InvalidSignature,

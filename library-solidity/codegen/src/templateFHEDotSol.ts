@@ -6,15 +6,30 @@ import { OperatorArguments, ReturnType } from './common';
 import { resolveTemplatePath } from './paths';
 import { getUint, removeTemplateComments } from './utils';
 
-export function generateSolidityFHELib(
-  operators: Operator[],
-  fheTypes: FheTypeInfo[],
-  fheTypeDotSol: string,
-  implDotSol: string,
-): string {
+export function generateFhevmECDSALib() {
+  const file = resolveTemplatePath('FhevmECDSA.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateSolidityFHELib({
+  operators,
+  fheTypes,
+  fheTypeDotSol,
+  implDotSol,
+  ecdsaDotSol,
+}: {
+  operators: Operator[];
+  fheTypes: FheTypeInfo[];
+  fheTypeDotSol: string;
+  implDotSol: string;
+  ecdsaDotSol: string;
+}): string {
   // Placeholders:
   // =============
   // $${ImplDotSol}$$
+  // $${EcdsaDotSol}$$
   // $${FheTypeDotSol}$$
   // $${FHEOperators}$$
   // $${ACLFunctions}$$
@@ -25,6 +40,7 @@ export function generateSolidityFHELib(
   let code = removeTemplateComments(template);
 
   code = code.replace('$${ImplDotSol}$$', implDotSol);
+  code = code.replace('$${EcdsaDotSol}$$', ecdsaDotSol);
   code = code.replace('$${FheTypeDotSol}$$', fheTypeDotSol);
 
   // Exclude types that do not support any operators.
@@ -191,9 +207,13 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
 
     res.push(`
     /**
-    * @dev Evaluates ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b)  and returns the result.
+    * @dev Evaluates ${
+      operator.name
+    }(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b)  and returns the result.
     */
-    function ${operator.name}(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (${returnType}) {
+    function ${
+      operator.name
+    }(e${lhsFheType.type.toLowerCase()} a, e${rhsFheType.type.toLowerCase()} b) internal returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asE${lhsFheType.type.toLowerCase()}(0);
         }
@@ -272,7 +292,9 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
   let implExpressionA;
 
   if (fheType.type == 'Bool') {
-    implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
+    implExpressionA = `Impl.${
+      operator.name
+    }(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b?1:0))${scalarFlag})`;
   } else if (fheType.type.startsWith('Int')) {
     throw new Error('Int types are not supported!');
   } else {
@@ -318,9 +340,13 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
   res.push(`
     
     /**
-    * @dev Evaluates ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) and returns the result.
+    * @dev Evaluates ${
+      operator.name
+    }(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) and returns the result.
     */
-    function ${operator.name}(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
+    function ${
+      operator.name
+    }(e${fheType.type.toLowerCase()} a, ${clearMatchingType.toLowerCase()} b) internal returns (${returnType}) {
         if (!isInitialized(a)) {
             a = asE${fheType.type.toLowerCase()}(${
               fheType.type == 'Bool' ? 'false' : fheType.type == 'Address' ? `${clearMatchingType.toLowerCase()}(0)` : 0
@@ -335,9 +361,13 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     res.push(`
 
     /**
-    * @dev Evaluates ${operator.name}(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) and returns the result.
+    * @dev Evaluates ${
+      operator.name
+    }(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) and returns the result.
     */
-    function ${operator.name}(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
+    function ${
+      operator.name
+    }(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
         ${maybeEncryptLeft}
         if (!isInitialized(b)) {
             b = asE${fheType.type.toLowerCase()}(${
@@ -379,7 +409,9 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
 
     const leftExpr = 'a';
     const rightExpr = castRightToLeft ? `asE${fheType.type.toLowerCase()}(b)` : 'b';
-    let implExpression: string = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(${leftExpr}), e${fheType.type.toLowerCase()}.unwrap(${rightExpr})${scalarFlag})`;
+    let implExpression: string = `Impl.${
+      operator.name
+    }(e${fheType.type.toLowerCase()}.unwrap(${leftExpr}), e${fheType.type.toLowerCase()}.unwrap(${rightExpr})${scalarFlag})`;
 
     res.push(`
     /** 
@@ -398,13 +430,17 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
 
     // Code and test for shift(euint{inputBits},uint8}
     scalarFlag = ', true';
-    implExpression = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
+    implExpression = `Impl.${
+      operator.name
+    }(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(b))${scalarFlag})`;
 
     res.push(`
     /** 
      * @dev Evaluates ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(rhsBits)}) and returns the result.
      */
-    function ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(rhsBits)} b) internal returns (e${fheType.type.toLowerCase()}) {
+    function ${operator.name}(e${fheType.type.toLowerCase()} a, ${getUint(
+      rhsBits,
+    )} b) internal returns (e${fheType.type.toLowerCase()}) {
         if (!isInitialized(a)) {
             a = asE${fheType.type.toLowerCase()}(0);
         }
@@ -466,7 +502,9 @@ function handleSolidityTFHECustomCastBetweenTwoEuint(
     */
     function asE${outputFheType.type.toLowerCase()}(e${inputFheType.type.toLowerCase()} value) internal returns (e${outputFheType.type.toLowerCase()}) {
         ${checkInitialized('value', inputFheType.type)}
-        return e${outputFheType.type.toLowerCase()}.wrap(Impl.cast(e${inputFheType.type.toLowerCase()}.unwrap(value), FheType.${outputFheType.type}));
+        return e${outputFheType.type.toLowerCase()}.wrap(Impl.cast(e${inputFheType.type.toLowerCase()}.unwrap(value), FheType.${
+          outputFheType.type
+        }));
     }
     `;
 }
@@ -543,7 +581,9 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
      */
     function fromExternal(externalE${fheType.type.toLowerCase()} inputHandle, bytes memory inputProof) internal returns (e${fheType.type.toLowerCase()}) {
         if (inputProof.length!=0) {
-          return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+          return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${
+            fheType.isAlias ? fheType.aliasType : fheType.type
+          }));
         } else {
           bytes32 inputBytes32 = externalE${fheType.type.toLowerCase()}.unwrap(inputHandle);
           if(inputBytes32 == 0){
@@ -583,8 +623,12 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     /** 
      * @dev Convert a plaintext value to an encrypted e${fheType.type.toLowerCase()} value.
     */
-    function asE${fheType.type.toLowerCase()}(${fheType.clearMatchingType} value) internal returns (e${fheType.type.toLowerCase()}) {
-        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(uint256(${value}), FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+    function asE${fheType.type.toLowerCase()}(${
+      fheType.clearMatchingType
+    } value) internal returns (e${fheType.type.toLowerCase()}) {
+        return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(uint256(${value}), FheType.${
+          fheType.isAlias ? fheType.aliasType : fheType.type
+        }));
     }
 
     `;
@@ -690,7 +734,9 @@ function handleSolidityTFHERand(fheType: AdjustedFheType): string {
     * @dev Generates a random encrypted value.
     */
     function randE${fheType.type.toLowerCase()}() internal returns (e${fheType.type.toLowerCase()}) {
-      return e${fheType.type.toLowerCase()}.wrap(Impl.rand(FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+      return e${fheType.type.toLowerCase()}.wrap(Impl.rand(FheType.${
+        fheType.isAlias ? fheType.aliasType : fheType.type
+      }));
     }
 
     `;
@@ -702,8 +748,12 @@ function handleSolidityTFHERand(fheType: AdjustedFheType): string {
     * @dev Generates a random encrypted ${fheType.bitLength}-bit unsigned integer in the [0, upperBound) range.
     *      The upperBound must be a power of 2.
     */
-    function randE${fheType.type.toLowerCase()}(uint${fheType.bitLength} upperBound) internal returns (e${fheType.type.toLowerCase()}) {
-      return e${fheType.type.toLowerCase()}.wrap(Impl.randBounded(upperBound, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+    function randE${fheType.type.toLowerCase()}(uint${
+      fheType.bitLength
+    } upperBound) internal returns (e${fheType.type.toLowerCase()}) {
+      return e${fheType.type.toLowerCase()}.wrap(Impl.randBounded(upperBound, FheType.${
+        fheType.isAlias ? fheType.aliasType : fheType.type
+      }));
     }
 
     `;

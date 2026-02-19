@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
-import "./cryptography/ECDSA.sol";
+import {FhevmECDSA} from "./cryptography/FhevmECDSA.sol";
 import {FheType} from "./FheType.sol";
 
 import "encrypted-types/EncryptedTypes.sol";
@@ -9646,7 +9646,7 @@ library FHE {
         address[] memory recoveredSigners = new address[](numSignatures);
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
-            address signerRecovered = ECDSA.recover(digest, signatures[i]);
+            address signerRecovered = FhevmECDSA.recover(digest, signatures[i]);
             if (!_isSigner(signerRecovered, KMSSigners)) {
                 revert KMSInvalidSigner(signerRecovered);
             }
@@ -9685,7 +9685,7 @@ library FHE {
      * @return signer   The address that supposedly signed the message.
      */
     function _recoverSigner(bytes32 message, bytes memory signature) private pure returns (address) {
-        address signerRecovered = ECDSA.recover(message, signature);
+        address signerRecovered = FhevmECDSA.recover(message, signature);
         return signerRecovered;
     }
 
