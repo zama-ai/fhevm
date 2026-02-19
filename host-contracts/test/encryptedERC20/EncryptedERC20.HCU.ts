@@ -2,10 +2,14 @@ import { expect } from 'chai';
 
 import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
+import { initializeHCULimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20:HCU', function () {
+  const MAX_HCU_PER_BLOCK_DISABLED = (1n << 192n) - 1n;
+  const MIN_HCU_PER_BLOCK = 20_000_000n;
+
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -16,6 +20,13 @@ describe('EncryptedERC20:HCU', function () {
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
     this.instances = await createInstances(this.signers);
+    this.hcuLimit = await initializeHCULimit();
+  });
+
+  afterEach(async function () {
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.setHCUPerBlock(MAX_HCU_PER_BLOCK_DISABLED);
+    await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
   });
 
   it('should transfer tokens between two users', async function () {
@@ -85,5 +96,76 @@ describe('EncryptedERC20:HCU', function () {
 
     // Le euint64 (149000) + And ebool (25000) + Select euint64 (55000) + Sub euint64 (162000)
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
+  });
+
+  it('should account transferFrom in block meter when cap is enabled', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.add64(1337);
+    const encryptedAllowanceAmount = await inputAlice.encrypt();
+    const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedAllowanceAmount.handles[0],
+      encryptedAllowanceAmount.inputProof,
+    );
+    await approveTx.wait();
+
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK);
+
+    const bobErc20 = this.erc20.connect(this.signers.bob);
+    const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+    inputBob.add64(1337);
+    const encryptedTransferAmount = await inputBob.encrypt();
+
+    const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
+      this.signers.alice.address,
+      this.signers.bob.address,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
+    );
+    const receipt = await tx.wait();
+    expect(receipt?.status).to.eq(1);
+
+    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
+    expect(usedHCU).to.be.greaterThan(0n);
+  });
+
+  it('should bypass block HCU cap for whitelisted encrypted token contract', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    inputAlice.add64(1337);
+    const encryptedAllowanceAmount = await inputAlice.encrypt();
+    const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedAllowanceAmount.handles[0],
+      encryptedAllowanceAmount.inputProof,
+    );
+    await approveTx.wait();
+
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK);
+    await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+
+    const bobErc20 = this.erc20.connect(this.signers.bob);
+    const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+    inputBob.add64(1337);
+    const encryptedTransferAmount = await inputBob.encrypt();
+    const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
+      this.signers.alice.address,
+      this.signers.bob.address,
+      encryptedTransferAmount.handles[0],
+      encryptedTransferAmount.inputProof,
+    );
+
+    const receipt = await tx.wait();
+    expect(receipt?.status).to.eq(1);
+
+    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
+    expect(usedHCU).to.eq(0n);
   });
 });
