@@ -673,6 +673,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if (typeCt == toType) revert InvalidType();
         result = keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
+        _setHCUCallerContext();
         hcuLimit.checkHCUForCast(toType, ct, result);
         acl.allowTransient(result, msg.sender);
         emit Cast(msg.sender, ct, toType, result);
@@ -697,6 +698,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
+        _setHCUCallerContext();
         hcuLimit.checkHCUForTrivialEncrypt(toType, result);
         acl.allowTransient(result, msg.sender);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
@@ -811,6 +813,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
+        _setHCUCallerContext();
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(abi.encodePacked(op, ct, acl, block.chainid));
         FheType typeCt = _typeOf(ct);
@@ -825,6 +828,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes1 scalar,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
+        _setHCUCallerContext();
         /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
         _checkBoolean(scalar);
 
@@ -847,6 +851,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes32 middle,
         bytes32 rhs
     ) internal virtual returns (bytes32 result) {
+        _setHCUCallerContext();
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (!acl.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
         if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
@@ -885,6 +890,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         result = keccak256(abi.encodePacked(Operators.fheRand, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
+        _setHCUCallerContext();
         hcuLimit.checkHCUForFheRand(randType, result);
         acl.allowTransient(result, msg.sender);
     }
@@ -906,8 +912,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         _checkBelowMaxBound(upperBound, randType);
         result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
+        _setHCUCallerContext();
         hcuLimit.checkHCUForFheRandBounded(randType, result);
         acl.allowTransient(result, msg.sender);
+    }
+
+    function _setHCUCallerContext() internal virtual {
+        hcuLimit.setHCUCallerContext(msg.sender);
     }
 
     /**
