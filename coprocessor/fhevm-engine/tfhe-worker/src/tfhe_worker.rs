@@ -1,12 +1,12 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use opentelemetry::trace::TraceContextExt;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -517,11 +516,7 @@ async fn build_transaction_graph_and_execute<'a>(
                     reason: err.to_string(),
                 };
                 error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
-                tracing::Span::current().context().span().set_status(
-                    opentelemetry::trace::Status::Error {
-                        description: cerr.to_string().into(),
-                    },
-                );
+                telemetry::set_current_span_error(&cerr);
                 WORKER_ERRORS_COUNTER.inc();
                 return Err(cerr.into());
             }
@@ -703,12 +698,7 @@ async fn set_computation_error<'a>(
     WORKER_ERRORS_COUNTER.inc();
     let err_string = cerr.to_string();
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
-    tracing::Span::current()
-        .context()
-        .span()
-        .set_status(opentelemetry::trace::Status::Error {
-            description: err_string.clone().into(),
-        });
+    telemetry::set_current_span_error(&err_string);
 
     let _ = query!(
         "
