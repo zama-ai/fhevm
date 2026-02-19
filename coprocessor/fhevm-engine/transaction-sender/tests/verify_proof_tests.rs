@@ -1305,6 +1305,7 @@ async fn verify_proof_max_retries_do_not_remove_entry(
 #[serial(db)]
 async fn verify_proof_terminal_on_gw_config_error(
     #[case] signer_type: SignerType,
+    #[values(1u8, 2, 3)] config_error_mode: u8,
 ) -> anyhow::Result<()> {
     let conf = ConfigSettings {
         verify_proof_resp_max_retries: 2,
@@ -1340,7 +1341,7 @@ async fn verify_proof_terminal_on_gw_config_error(
     provider_deploy
         .send_transaction_sync(
             input_verification
-                .setConfigErrorMode(1)
+                .setConfigErrorMode(config_error_mode)
                 .into_transaction_request(),
         )
         .await?;
