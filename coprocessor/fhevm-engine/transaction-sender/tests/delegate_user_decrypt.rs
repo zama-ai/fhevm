@@ -448,7 +448,8 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
     .execute(&env.db_pool)
     .await?;
 
-    for _ in 0..80 {
+    let mut attempts = 0;
+    let row = loop {
         sqlx::query!(
             "SELECT pg_notify($1, $2)",
             "new_host_block",
@@ -472,19 +473,17 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
                 .as_deref()
                 .is_some_and(is_coprocessor_config_error)
         {
-            break;
+            break row;
         }
+        attempts += 1;
+        assert!(
+            attempts < 80,
+            "timed out waiting for terminal state; gateway_nb_attempts={}, last_error={:?}",
+            row.gateway_nb_attempts,
+            row.gateway_last_error
+        );
         tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-    }
-
-    let row = sqlx::query!(
-        "SELECT on_gateway, gateway_nb_attempts, gateway_last_error
-         FROM delegate_user_decrypt
-         WHERE block_number = $1",
-        start_block as i64,
-    )
-    .fetch_one(&env.db_pool)
-    .await?;
+    };
     assert!(!row.on_gateway);
     assert_eq!(
         row.gateway_nb_attempts,

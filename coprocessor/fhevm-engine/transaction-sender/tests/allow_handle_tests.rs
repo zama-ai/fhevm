@@ -460,7 +460,8 @@ async fn allow_handle_terminal_on_gw_config_error(
     .execute(&env.db_pool)
     .await?;
 
-    for _ in 0..60 {
+    let mut attempts = 0;
+    let row = loop {
         let row = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
              FROM allowed_handles
@@ -476,19 +477,17 @@ async fn allow_handle_terminal_on_gw_config_error(
                 .as_deref()
                 .is_some_and(is_coprocessor_config_error)
         {
-            break;
+            break row;
         }
+        attempts += 1;
+        assert!(
+            attempts < 60,
+            "timed out waiting for terminal state; retries={}, last_error={:?}",
+            row.txn_limited_retries_count,
+            row.txn_last_error
+        );
         sleep(Duration::from_millis(250)).await;
-    }
-
-    let row = sqlx::query!(
-        "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
-         FROM allowed_handles
-         WHERE handle = $1",
-        &handle[..],
-    )
-    .fetch_one(&env.db_pool)
-    .await?;
+    };
     assert!(!row.txn_is_sent);
     assert_eq!(row.txn_limited_retries_count, conf.allow_handle_max_retries);
     assert!(

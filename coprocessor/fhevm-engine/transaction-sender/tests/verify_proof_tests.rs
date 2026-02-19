@@ -1385,7 +1385,8 @@ async fn verify_proof_terminal_on_gw_config_error(
     .execute(&env.db_pool)
     .await?;
 
-    for _ in 0..60 {
+    let mut attempts = 0;
+    let row = loop {
         let row = sqlx::query!(
             "SELECT retry_count, last_error
              FROM verify_proofs
@@ -1400,19 +1401,17 @@ async fn verify_proof_terminal_on_gw_config_error(
                 .as_deref()
                 .is_some_and(is_coprocessor_config_error)
         {
-            break;
+            break row;
         }
+        attempts += 1;
+        assert!(
+            attempts < 60,
+            "timed out waiting for terminal state; retry_count={}, last_error={:?}",
+            row.retry_count,
+            row.last_error
+        );
         sleep(Duration::from_millis(250)).await;
-    }
-
-    let row = sqlx::query!(
-        "SELECT retry_count, last_error
-         FROM verify_proofs
-         WHERE zk_proof_id = $1",
-        proof_id as i64,
-    )
-    .fetch_one(&env.db_pool)
-    .await?;
+    };
     assert_eq!(row.retry_count, conf.verify_proof_resp_max_retries as i32);
     assert!(
         row.last_error
