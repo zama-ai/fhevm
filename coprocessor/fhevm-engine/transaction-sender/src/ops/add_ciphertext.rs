@@ -41,7 +41,7 @@ impl<P> AddCiphertextOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
-    #[tracing::instrument(skip_all, fields(operation = "call_add_ciphertext", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(operation = "call_add_ciphertext", txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         handle: &[u8],

@@ -117,7 +117,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(operation = "call_verify_proof_resp", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(operation = "call_verify_proof_resp", txn_id = tracing::field::Empty))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),

@@ -66,7 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
-    #[tracing::instrument(skip_all, fields(operation = "call_allow_account", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_allow_account", skip_all, fields(operation = "call_allow_account", txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         key: &Key,

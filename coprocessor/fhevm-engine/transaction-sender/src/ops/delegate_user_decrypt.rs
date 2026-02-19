@@ -113,7 +113,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
-    #[tracing::instrument(skip_all, fields(operation = "call_delegate_user_decrypt", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(operation = "call_delegate_user_decrypt", txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,

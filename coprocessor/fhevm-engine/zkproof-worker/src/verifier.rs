@@ -323,7 +323,9 @@ async fn execute_verify_proof_routine(
             "db_insert",
             operation = "db_insert",
             request_id,
-            txn_id = tracing::field::Empty
+            txn_id = tracing::field::Empty,
+            valid = tracing::field::Empty,
+            count = tracing::field::Empty
         );
         fhevm_engine_common::telemetry::record_short_hex_if_some(
             &db_insert_span,
@@ -349,6 +351,7 @@ async fn execute_verify_proof_routine(
                     verified = true;
                     let count = cts.len();
                     insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
                 }
@@ -361,7 +364,7 @@ async fn execute_verify_proof_routine(
                 }
             }
 
-            info!(valid = verified, "db_insert result");
+            tracing::Span::current().record("valid", verified);
 
             // Mark as verified=true/false and set handles, if computed
             sqlx::query(
@@ -433,7 +436,7 @@ pub(crate) fn verify_proof(
     Ok((cts, blob_hash))
 }
 
-#[tracing::instrument(skip_all, fields(operation = "verify_proof"))]
+#[tracing::instrument(skip_all, fields(operation = "verify_proof", list_len = tracing::field::Empty))]
 fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
@@ -482,11 +485,11 @@ fn verify_proof_only(
         return Err(err);
     }
 
-    info!(list_len = the_list.len(), "proof verified");
+    tracing::Span::current().record("list_len", the_list.len());
     Ok(the_list)
 }
 
-#[tracing::instrument(skip_all, fields(operation = "expand_ciphertext_list"))]
+#[tracing::instrument(skip_all, fields(operation = "expand_ciphertext_list", count = tracing::field::Empty))]
 fn expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
@@ -500,9 +503,11 @@ fn expand_verified_list(
         .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
         .inspect_err(telemetry::set_current_span_error)?;
 
-    extract_ct_list(&expanded)
+    let cts = extract_ct_list(&expanded)
         .map_err(ExecutionError::from)
-        .inspect_err(telemetry::set_current_span_error)
+        .inspect_err(telemetry::set_current_span_error)?;
+    tracing::Span::current().record("count", cts.len());
+    Ok(cts)
 }
 
 /// Creates a ciphertext
