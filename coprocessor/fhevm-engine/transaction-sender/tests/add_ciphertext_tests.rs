@@ -617,6 +617,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 #[serial(db)]
 async fn add_ciphertext_terminal_on_gw_config_error(
     #[case] signer_type: SignerType,
+    #[values(1u8, 2, 3)] config_error_mode: u8,
 ) -> anyhow::Result<()> {
     let conf = ConfigSettings {
         add_ciphertexts_max_retries: 3,
@@ -645,7 +646,7 @@ async fn add_ciphertext_terminal_on_gw_config_error(
     provider_deploy
         .send_transaction_sync(
             ciphertext_commits
-                .setConfigErrorMode(1)
+                .setConfigErrorMode(config_error_mode)
                 .into_transaction_request(),
         )
         .await?;
