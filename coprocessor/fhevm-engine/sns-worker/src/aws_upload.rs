@@ -166,7 +166,7 @@ async fn run_uploader_loop(
                 let h = tokio::spawn(async move {
                     // Cross-boundary: spawned task; restore the OTel context
                     // that was captured when the upload item was created.
-                    let upload_span = error_span!("upload_s3", operation = "upload_s3");
+                    let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
                     match upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
@@ -257,7 +257,6 @@ async fn upload_ciphertexts(
 
         let ct128_check_span = tracing::info_span!(
             "ct128_check_s3",
-            operation = "ct128_check_s3",
             ct_type = "ct128",
             exists = tracing::field::Empty,
         );
@@ -280,7 +279,6 @@ async fn upload_ciphertexts(
         if !exists {
             let ct128_upload_span = tracing::info_span!(
                 "ct128_upload_s3",
-                operation = "ct128_upload_s3",
                 ct_type = "ct128",
                 format = %format_as_str,
                 len = ct128_bytes.len(),
@@ -330,7 +328,6 @@ async fn upload_ciphertexts(
 
         let ct64_check_span = tracing::info_span!(
             "ct64_check_s3",
-            operation = "ct64_check_s3",
             ct_type = "ct64",
             exists = tracing::field::Empty,
         );
@@ -353,7 +350,6 @@ async fn upload_ciphertexts(
         if !exists {
             let ct64_upload_span = tracing::info_span!(
                 "ct64_upload_s3",
-                operation = "ct64_upload_s3",
                 ct_type = "ct64",
                 len = ct64_compressed.len(),
             );
@@ -539,7 +535,6 @@ async fn fetch_pending_uploads(
         if !ct64_compressed.is_empty() || !is_ct128_empty {
             let recovery_span = tracing::info_span!(
                 "recovery_task",
-                operation = "recovery_task",
                 txn_id = tracing::field::Empty,
                 handle = tracing::field::Empty
             );

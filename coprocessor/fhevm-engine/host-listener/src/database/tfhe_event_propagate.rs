@@ -397,7 +397,7 @@ impl Database {
     }
 
     #[rustfmt::skip]
-    #[tracing::instrument(skip_all, fields(operation = "handle_tfhe_event", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "handle_tfhe_event", skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -564,7 +564,7 @@ impl Database {
     }
 
     /// Handles all types of ACL events
-    #[tracing::instrument(skip_all, fields(operation = "handle_acl_event", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,

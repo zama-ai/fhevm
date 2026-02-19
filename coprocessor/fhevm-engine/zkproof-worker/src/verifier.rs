@@ -82,7 +82,7 @@ impl HealthCheckService for ZkProofService {
 }
 
 impl ZkProofService {
-    #[tracing::instrument(skip_all, fields(operation = "init_service"))]
+    #[tracing::instrument(name = "init_service", skip_all)]
     pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
         let max_pool_connections =
@@ -295,12 +295,8 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span = tracing::info_span!(
-            "verify_task",
-            operation = "verify_task",
-            request_id,
-            txn_id = tracing::field::Empty
-        );
+        let verify_span =
+            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
         fhevm_engine_common::telemetry::record_short_hex_if_some(
             &verify_span,
             "txn_id",
@@ -321,7 +317,6 @@ async fn execute_verify_proof_routine(
 
         let db_insert_span = tracing::info_span!(
             "db_insert",
-            operation = "db_insert",
             request_id,
             txn_id = tracing::field::Empty,
             valid = tracing::field::Empty,
@@ -436,7 +431,7 @@ pub(crate) fn verify_proof(
     Ok((cts, blob_hash))
 }
 
-#[tracing::instrument(skip_all, fields(operation = "verify_proof", list_len = tracing::field::Empty))]
+#[tracing::instrument(name = "verify_proof", skip_all, fields(list_len = tracing::field::Empty))]
 fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
@@ -489,7 +484,7 @@ fn verify_proof_only(
     Ok(the_list)
 }
 
-#[tracing::instrument(skip_all, fields(operation = "expand_ciphertext_list", count = tracing::field::Empty))]
+#[tracing::instrument(name = "expand_ciphertext_list", skip_all, fields(count = tracing::field::Empty))]
 fn expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
@@ -512,7 +507,6 @@ fn expand_verified_list(
 
 /// Creates a ciphertext
 #[tracing::instrument(skip_all, fields(
-    operation = "create_ciphertext",
     ct_type = tracing::field::Empty,
     ct_idx = ct_idx,
     chain_id = %aux_data.chain_id,

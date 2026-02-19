@@ -137,11 +137,10 @@ async fn tfhe_worker_cycle(
         let loop_span = tracing::info_span!("worker_iteration");
         let acq_span = tracing::info_span!(
             parent: &loop_span,
-            "acquire_connection",
-            operation = "acquire_connection"
+            "acquire_connection"
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
-        let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction", operation = "begin_transaction");
+        let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = conn.begin().instrument(txn_span).await?;
 
         // Query for transactions to execute
@@ -168,7 +167,6 @@ async fn tfhe_worker_cycle(
             let dcid_span = tracing::info_span!(
                 parent: &loop_span,
                 "query_dependence_chain",
-                operation = "query_dependence_chain",
                 dependence_chain_id = tracing::field::Empty
             );
 
@@ -245,7 +243,7 @@ async fn tfhe_worker_cycle(
 }
 
 #[allow(clippy::type_complexity)]
-#[tracing::instrument(skip_all, fields(operation = "query_ciphertext_batch", count = cts_to_query.len()))]
+#[tracing::instrument(name = "query_ciphertext_batch", skip_all, fields(count = cts_to_query.len()))]
 async fn query_ciphertexts<'a>(
     cts_to_query: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -277,7 +275,7 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
-#[tracing::instrument(skip_all, fields(operation = "query_for_work"))]
+#[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
     health_check: &crate::health_check::HealthCheck,
@@ -288,7 +286,6 @@ async fn query_for_work<'a>(
 {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
-        operation = "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
@@ -327,11 +324,7 @@ async fn query_for_work<'a>(
                 .unwrap_or_else(|| "none".to_string()),
         ),
     );
-    let s_work = tracing::info_span!(
-        "query_work_items",
-        operation = "query_work_items",
-        count = tracing::field::Empty
-    );
+    let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
     let the_work = query!(
@@ -386,11 +379,7 @@ WHERE c.transaction_id IN (
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
-    let s_prep = tracing::info_span!(
-        "prepare_dataflow_graphs",
-        operation = "prepare_dataflow_graphs",
-        work_items = the_work.len()
-    );
+    let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
         // Partition work directly by transaction
@@ -459,7 +448,7 @@ WHERE c.transaction_id IN (
     Ok((transactions, earliest_schedule_order, true))
 }
 
-#[tracing::instrument(skip_all, fields(operation = "build_and_execute"))]
+#[tracing::instrument(name = "build_and_execute", skip_all)]
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
     db_key_cache: DbKeyCache,
@@ -498,7 +487,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     // Execute the DFG
-    let s_compute = tracing::info_span!("compute_fhe_ops", operation = "compute_fhe_ops");
+    let s_compute = tracing::info_span!("compute_fhe_ops");
     async {
         // Fetch the latest key from the database
         let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
@@ -533,7 +522,7 @@ async fn build_transaction_graph_and_execute<'a>(
     Ok(tx_graph)
 }
 
-#[tracing::instrument(skip_all, fields(operation = "upload_results"))]
+#[tracing::instrument(name = "upload_results", skip_all)]
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -609,11 +598,7 @@ async fn upload_transaction_graph_results<'a>(
         }
     }
     if !cts_to_insert.is_empty() {
-        let s_insert = tracing::info_span!(
-            "insert_ct_into_db",
-            operation = "insert_ct_into_db",
-            count = cts_to_insert.len()
-        );
+        let s_insert = tracing::info_span!("insert_ct_into_db", count = cts_to_insert.len());
         let cts_inserted = async {
             #[allow(clippy::type_complexity)]
             let (handles, (ciphertexts, (ciphertext_versions, ciphertext_types))): (
@@ -646,11 +631,7 @@ async fn upload_transaction_graph_results<'a>(
     }
 
     if !handles_to_update.is_empty() {
-        let s_update = tracing::info_span!(
-            "update_computation",
-            operation = "update_computation",
-            count = handles_to_update.len()
-        );
+        let s_update = tracing::info_span!("update_computation", count = handles_to_update.len());
         let comp_updated = async {
             let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
             let comp_updated = query!(
@@ -679,7 +660,7 @@ async fn upload_transaction_graph_results<'a>(
     Ok(res)
 }
 
-#[tracing::instrument(skip_all, fields(operation = "set_computation_error"))]
+#[tracing::instrument(skip_all)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],

@@ -113,7 +113,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
-    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(operation = "call_delegate_user_decrypt", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
@@ -425,11 +425,8 @@ where
             }
         };
         for delegation in ready_delegations {
-            let prepare_delegate_span = tracing::info_span!(
-                "prepare_delegate",
-                operation = "prepare_delegate",
-                txn_id = tracing::field::Empty
-            );
+            let prepare_delegate_span =
+                tracing::info_span!("prepare_delegate", txn_id = tracing::field::Empty);
             fhevm_engine_common::telemetry::record_short_hex_if_some(
                 &prepare_delegate_span,
                 "txn_id",

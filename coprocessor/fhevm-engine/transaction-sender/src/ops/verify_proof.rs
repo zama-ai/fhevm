@@ -117,7 +117,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(operation = "call_verify_proof_resp", txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
@@ -252,11 +252,8 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let span = tracing::info_span!(
-                "prepare_verify_proof_resp",
-                operation = "prepare_verify_proof_resp",
-                txn_id = tracing::field::Empty
-            );
+            let span =
+                tracing::info_span!("prepare_verify_proof_resp", txn_id = tracing::field::Empty);
             telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
 
             let txn_request = match row.verified {

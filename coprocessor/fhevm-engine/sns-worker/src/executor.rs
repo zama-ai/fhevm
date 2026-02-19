@@ -176,7 +176,7 @@ impl SwitchNSquashService {
     }
 }
 
-#[tracing::instrument(skip_all, fields(operation = "fetch_keyset"))]
+#[tracing::instrument(name = "fetch_keyset", skip_all)]
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
@@ -310,11 +310,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst.
     // Skip locked to prevent concurrent updates.
-    let cleanup_span = tracing::info_span!(
-        "cleanup_ct128",
-        operation = "cleanup_ct128",
-        rows_affected = tracing::field::Empty
-    );
+    let cleanup_span = tracing::info_span!("cleanup_ct128", rows_affected = tracing::field::Empty);
     let rows_affected: u64 = async {
         Ok::<u64, sqlx::Error>(
             sqlx::query!(
@@ -387,11 +383,7 @@ async fn fetch_and_execute_sns_tasks(
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
-        let batch_exec_span = tracing::info_span!(
-            "batch_execution",
-            operation = "batch_execution",
-            count = tasks.len()
-        );
+        let batch_exec_span = tracing::info_span!("batch_execution", count = tasks.len());
 
         batch_exec_span.in_scope(|| {
             process_tasks(
@@ -410,8 +402,7 @@ async fn fetch_and_execute_sns_tasks(
 
         let batch_store_span = tracing::info_span!(
             parent: &batch_exec_span,
-            "batch_store_ciphertext128",
-            operation = "batch_store_ciphertext128"
+            "batch_store_ciphertext128"
         );
         let batch_store = async {
             update_ciphertext128(trx, &tasks).await?;
@@ -447,7 +438,7 @@ async fn fetch_and_execute_sns_tasks(
 }
 
 /// Queries the database for a fixed number of tasks.
-#[tracing::instrument(skip_all, fields(operation = "db_fetch_tasks", count = tracing::field::Empty))]
+#[tracing::instrument(name = "db_fetch_tasks", skip_all, fields(count = tracing::field::Empty))]
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
@@ -493,7 +484,6 @@ pub async fn query_sns_tasks(
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
             let task_span = tracing::info_span!(
                 "task",
-                operation = "task",
                 txn_id = tracing::field::Empty,
                 handle = tracing::field::Empty
             );
@@ -603,7 +593,7 @@ fn compute_task(
         return; // Skip empty ciphertexts
     }
 
-    let decompress_span = tracing::info_span!("decompress_ct64", operation = "decompress_ct64");
+    let decompress_span = tracing::info_span!("decompress_ct64");
     let ct = match decompress_span.in_scope(|| decompress_ct(&task.handle, ct64_compressed)) {
         Ok(ct) => ct,
         Err(err) => {
@@ -621,8 +611,7 @@ fn compute_task(
 
     let squash_span = tracing::info_span!(
         "squash_noise",
-        ct_type = %ct_type,
-        operation = "squash_noise"
+        ct_type = %ct_type
     );
     let _squash_enter = squash_span.enter();
 
@@ -654,7 +643,7 @@ fn compute_task(
                 .try_send(UploadJob::Normal(task.clone()))
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
-                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
+                let send_task_span = tracing::error_span!("send_task");
                 let _send_task_enter = send_task_span.enter();
                 send_task_span
                     .context()
@@ -699,8 +688,7 @@ async fn update_ciphertext128(
     for task in tasks {
         if !task.ct128.is_empty() {
             let ciphertext128 = task.ct128.bytes();
-            let persist_span =
-                tracing::info_span!("ciphertexts128_insert", operation = "ciphertexts128_insert");
+            let persist_span = tracing::info_span!("ciphertexts128_insert");
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (

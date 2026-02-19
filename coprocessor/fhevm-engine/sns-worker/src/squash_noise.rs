@@ -20,7 +20,6 @@ macro_rules! squash_and_serialize_with_error {
             let span = tracing::info_span!(
                 "squash_noise_fhe",
                 ct_type = %ct_type,
-                operation = "squash_noise_fhe"
             );
 
             let res = {
@@ -45,8 +44,7 @@ macro_rules! squash_and_serialize_with_error {
         if !$enable_compression {
             let span = tracing::info_span!(
                 "serialize",
-                ct_type = %ct_type,
-                operation = "serialize"
+                ct_type = %ct_type
             );
 
             let res = {
@@ -69,8 +67,7 @@ macro_rules! squash_and_serialize_with_error {
         let list = {
             let span = tracing::info_span!(
                 "compress",
-                ct_type = %ct_type,
-                operation = "compress"
+                ct_type = %ct_type
             );
 
             let res = {
@@ -94,8 +91,7 @@ macro_rules! squash_and_serialize_with_error {
 
         let span = tracing::info_span!(
             "serialize",
-            ct_type = %ct_type,
-            operation = "serialize"
+            ct_type = %ct_type
         );
 
         let res = {
