@@ -340,12 +340,18 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let _span = tracing::info_span!(
-                "prepare_add_ciphertext",
-                operation = "prepare_add_ciphertext",
-                txn_id = tracing::field::Empty
-            );
-            telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
+            let transaction_id_short = transaction_id.as_deref().map(telemetry::short_hex_id);
+            let _span = match transaction_id_short.as_deref() {
+                Some(txn_id) => tracing::info_span!(
+                    "prepare_add_ciphertext",
+                    operation = "prepare_add_ciphertext",
+                    txn_id = %txn_id
+                ),
+                None => tracing::info_span!(
+                    "prepare_add_ciphertext",
+                    operation = "prepare_add_ciphertext"
+                ),
+            };
             let _enter = _span.enter();
 
             let handle = row.handle.clone();
