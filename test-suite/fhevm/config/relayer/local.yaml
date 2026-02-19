@@ -1,4 +1,3 @@
-
 gateway:
   blockchain_rpc:
     read_http_url: "http://gateway-node:8546"
@@ -86,24 +85,23 @@ gateway:
       capacity: 11000
       safety_margin: 1000
   contracts:
-    decryption_address: "0x35760912360E875DA50D40a74305575c23D55783"
-    input_verification_address: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+    decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
 log:
-
-  format: "compact"          # compact, pretty, or json
+  format: "compact" # compact, pretty, or json
   show_file_line: true
   show_thread_ids: true
   show_timestamp: true
   show_target: true
 
 keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "http://0.0.0.0:3001/publicKey.bin"
-    crs:
-      data_id: "crs-data-id"
-      url: "http://0.0.0.0:3001/crs2048.bin"
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://0.0.0.0:3001/publicKey.bin"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://0.0.0.0:3001/crs2048.bin"
 
 http:
   endpoint: "0.0.0.0:3000"
