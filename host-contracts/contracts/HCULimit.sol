@@ -1480,7 +1480,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Returns current block counter state.
+     * @notice Returns the effective public block HCU meter for the current block.
+     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
      */
     function getBlockMeter() external view returns (uint64 blockNumber, uint192 usedHCU) {
         (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter(publicBlockMeterPacked);
@@ -1560,8 +1561,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Updates and verifies the HCU block limit.
-     * @param opHCU The HCU for the operation.
+     * @notice Updates and enforces the public block HCU cap for one operation.
+     * @dev No-op if the cap is disabled or caller is whitelisted. Otherwise consumes caller context,
+     *      resets the meter on block rollover, and reverts if `opHCU` would reach/exceed the cap.
+     * @param opHCU HCU cost of the current operation.
      */
     function _updateAndVerifyHCUBlockLimit(uint256 opHCU) internal virtual {
         if (publicHCUCapPerBlock == type(uint192).max) {

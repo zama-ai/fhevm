@@ -98,7 +98,7 @@ describe('EncryptedERC20:HCU', function () {
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
   });
 
-  it('should account transferFrom in block meter when cap is enabled', async function () {
+  it('should account transferFrom in block HCU meter when cap is enabled', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 

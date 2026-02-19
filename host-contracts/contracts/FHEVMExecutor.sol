@@ -917,6 +917,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         acl.allowTransient(result, msg.sender);
     }
 
+    /**
+     * @notice Propagates the original caller to HCULimit for block HCU whitelist checks.
+     * @dev Must be called immediately before each `hcuLimit.checkHCUFor*` path.
+     */
     function _setHCUCallerContext() internal virtual {
         hcuLimit.setHCUCallerContext(msg.sender);
     }
