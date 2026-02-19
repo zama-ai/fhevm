@@ -8,6 +8,7 @@ pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
+pub mod msg_broker;
 pub mod telemetry;
 pub mod tfhe_ops;
 pub mod types;

@@ -38,6 +38,8 @@ prometheus = { workspace = true }
 lazy_static = "1.5.0"
 rand_chacha = "0.3.1"
 futures = "0.3.31"
+lapin = "3.7.2"
+postcard = "1.1.3"
 
 # opentelemetry support
 opentelemetry = { workspace = true }

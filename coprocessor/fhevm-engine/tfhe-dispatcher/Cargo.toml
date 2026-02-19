@@ -1,0 +1,77 @@
+[package]
+name = "tfhe-dispatcher"
+version = "0.7.0"
+default-run = "tfhe_dispatcher"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+alloy = { workspace = true }
+bigdecimal = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+lru = { workspace = true }
+prometheus = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+sha3 = { workspace = true }
+strum = { workspace = true }
+sqlx = { workspace = true }
+tfhe = { workspace = true }
+tfhe-zk-pok = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# opentelemetry support
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+chrono = { workspace = true }
+futures-util.workspace = true
+
+# crates.io dependencies
+actix-web = "4.9.0"
+itertools = "0.13.0"
+lazy_static = "1.5.0"
+regex = "1.10.6"
+tonic-health = "0.12.3"
+tonic-types = "0.12.3"
+tonic-web = "0.12.3"
+uuid = { version = "1", features = ["v4"] }
+xxhash-rust = { version = "0.8.15" , features = ["xxh3"] }
+daggy = { version = "0.8", features = ["serde-1"] }
+petgraph = "0.8.3"
+lapin = "3.7.2"
+
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+postcard = "1.1.3"
+
+[features]
+nightly-avx512 = ["tfhe/nightly-avx512"]
+gpu = ["tfhe/gpu",  "fhevm-engine-common/gpu"]
+ 
+
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[[bin]]
+name = "tfhe_dispatcher"
+path = "src/bin/tfhe_dispatcher.rs"
+
+[[bin]]
+name = "example_client"
+path = "src/bin/example_client.rs"
+ 
+ 
