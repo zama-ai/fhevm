@@ -1386,19 +1386,19 @@ async fn verify_proof_terminal_on_gw_config_error(
     .await?;
 
     for _ in 0..60 {
-        let rows = sqlx::query!(
+        let row = sqlx::query!(
             "SELECT retry_count, last_error
              FROM verify_proofs
              WHERE zk_proof_id = $1",
             proof_id as i64,
         )
-        .fetch_all(&env.db_pool)
+        .fetch_one(&env.db_pool)
         .await?;
-        let retry_count = rows.first().map(|row| row.retry_count);
-        let last_error = rows.first().and_then(|row| row.last_error.as_deref());
-        if rows.len() == 1
-            && retry_count == Some(conf.verify_proof_resp_max_retries as i32)
-            && last_error.is_some_and(is_coprocessor_config_error)
+        if row.retry_count == conf.verify_proof_resp_max_retries as i32
+            && row
+                .last_error
+                .as_deref()
+                .is_some_and(is_coprocessor_config_error)
         {
             break;
         }
