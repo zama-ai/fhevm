@@ -397,14 +397,6 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
         )
         .await?;
 
-    let config = ConfigSettings {
-        delegation_block_delay: 0,
-        delegation_clear_after_n_blocks: 5,
-        delegation_fallback_polling: 1,
-        delegation_max_retry: 3,
-        ..env.conf.clone()
-    };
-
     let txn_sender = TransactionSender::new(
         env.db_pool.clone(),
         PrivateKeySigner::random().address(),
@@ -414,7 +406,7 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
         provider.clone(),
         provider.inner().clone(),
         env.cancel_token.clone(),
-        config.clone(),
+        env.conf.clone(),
         None,
     )
     .await?;
@@ -473,7 +465,7 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
         .fetch_one(&env.db_pool)
         .await?;
         if !row.on_gateway
-            && row.gateway_nb_attempts == (config.delegation_max_retry + 1) as i64
+            && row.gateway_nb_attempts == (env.conf.delegation_max_retry + 1) as i64
             && row
                 .gateway_last_error
                 .as_deref()
@@ -495,7 +487,7 @@ async fn delegate_user_decrypt_terminal_on_gw_config_error(
     assert!(!row.on_gateway);
     assert_eq!(
         row.gateway_nb_attempts,
-        (config.delegation_max_retry + 1) as i64
+        (env.conf.delegation_max_retry + 1) as i64
     );
     assert!(
         row.gateway_last_error
