@@ -1431,13 +1431,5 @@ async fn verify_proof_terminal_on_gw_config_error(
     env.cancel_token.cancel();
     run_handle.await??;
 
-    // Cleanup proof created in this test.
-    sqlx::query!(
-        "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
-        proof_id as i64
-    )
-    .execute(&env.db_pool)
-    .await?;
-
     Ok(())
 }
