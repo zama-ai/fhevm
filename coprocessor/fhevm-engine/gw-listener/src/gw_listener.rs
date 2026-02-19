@@ -196,6 +196,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     }
                     for log in logs {
                         if log.address() == self.input_verification_address {
+                            if replay_from_block.is_some() && self.conf.replay_skip_verify_proof {
+                                debug!(log = ?log, "Skipping VerifyProofRequest during replay");
+                                continue;
+                            }
                             if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
                                 match event.data {
                                     InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
