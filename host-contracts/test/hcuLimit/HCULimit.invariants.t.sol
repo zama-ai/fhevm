@@ -82,6 +82,11 @@ contract HCULimitInvariantHandler is Test {
         _runBurst(WHITELISTED_CALLER, ops);
     }
 
+    /**
+     * @dev Accounting-focused burst:
+     *      - uses `checkHCUForCast` (fixed 32 HCU/op) for deterministic delta checks;
+     *      - keeps bursts small on purpose (not a cap-exhaustion stress test).
+     */
     function _runBurst(address caller, uint256 ops) internal {
         bool isWhitelisted = hcuLimit.blockHCUWhitelist(caller);
         uint192 cap = hcuLimit.publicHCUCapPerBlock();
@@ -158,6 +163,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         // 2) whitelisted callers never consume the public block meter.
         // 3) non-whitelisted accounting is consistent with successful casts.
         // 4) meter resets after block advancement.
+        // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
         address proxy =

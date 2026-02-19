@@ -1218,6 +1218,24 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult);
     }
 
+    function test_blockHCULimitRevertsWhenCastBurstReachesCap() public {
+        // Cast costs 32 HCU per successful op, so cap=96 allows exactly two ops (64)
+        // and rejects the third one because nextHCU would be 96 (>= cap).
+        hcuLimit.setHCUPerBlockUnsafeForTest(96);
+
+        vm.startPrank(fhevmExecutor);
+        hcuLimit.setHCUCallerContext(address(0x1234));
+        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2001)));
+
+        hcuLimit.setHCUCallerContext(address(0x1234));
+        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2002)));
+
+        hcuLimit.setHCUCallerContext(address(0x1234));
+        vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2003)));
+        vm.stopPrank();
+    }
+
     function test_blockHCULimitBypassedForWhitelistedCaller() public {
         address whitelisted = address(0xBEEF);
 
