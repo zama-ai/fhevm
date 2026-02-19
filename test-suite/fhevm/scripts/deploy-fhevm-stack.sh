@@ -356,6 +356,12 @@ prepare_local_env_file() {
     local component=$1
     local base_env_file="$SCRIPT_DIR/../env/staging/.env.$component"
     local local_env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+    local preserved_otlp_endpoint=""
+
+    # Keep locally overridden OTLP endpoint across deploy regenerations.
+    if [[ "$component" == "coprocessor" && -f "$local_env_file" ]]; then
+        preserved_otlp_endpoint=$(awk -F= '$1 == "OTEL_EXPORTER_OTLP_ENDPOINT" {print substr($0, index($0, "=") + 1); exit}' "$local_env_file")
+    fi
 
     if [[ ! -f "$base_env_file" ]]; then
         echo -e "${RED}[ERROR]${NC} Base environment file for $component not found: $base_env_file" >&2
@@ -363,6 +369,15 @@ prepare_local_env_file() {
     else
         echo -e "${GREEN}[INFO]${NC} Creating/updating local environment file for $component..." >&2
         cp "$base_env_file" "$local_env_file"
+    fi
+
+    if [[ "$component" == "coprocessor" ]]; then
+        local otlp_endpoint="${preserved_otlp_endpoint:-http://jaeger:4317}"
+        if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' "$local_env_file"; then
+            sed -i.bak "s|^OTEL_EXPORTER_OTLP_ENDPOINT=.*|OTEL_EXPORTER_OTLP_ENDPOINT=${otlp_endpoint}|" "$local_env_file"
+        else
+            printf '\nOTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$otlp_endpoint" >> "$local_env_file"
+        fi
     fi
 
     printf "%s" "$local_env_file"
