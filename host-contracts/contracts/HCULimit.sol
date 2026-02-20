@@ -69,15 +69,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     bytes32 private constant HCU_CALLER_CONTEXT_SLOT = keccak256("fhevm.hcu.caller.context");
     bytes32 private constant HCU_CALLER_CONTEXT_SET_SLOT = keccak256("fhevm.hcu.caller.context.set");
 
-    /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
-    /// @dev Set to type(uint192).max to disable block-level throttling.
-    uint192 public publicHCUCapPerBlock;
-
-    /// @dev Packed as: [usedHcu:192 | blockNumber:64]
-    uint256 private publicBlockMeterPacked;
-
-    /// @notice Whitelisted callers bypass block-level cap.
-    mapping(address => bool) public blockHCUWhitelist;
+    /// @custom:storage-location erc7201:fhevm.storage.HCULimit
+    struct HCULimitStorage {
+        /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
+        /// @dev Set to type(uint192).max to disable block-level throttling.
+        uint192 publicHCUCapPerBlock;
+        /// @dev Packed as: [usedHcu:192 | blockNumber:64]
+        uint256 publicBlockMeterPacked;
+        /// @notice Whitelisted callers bypass block-level cap.
+        mapping(address => bool) blockHCUWhitelist;
+    }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
@@ -86,6 +87,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
+
+    function _getHCULimitStorage() internal pure virtual returns (HCULimitStorage storage $) {
+        assembly {
+            $.slot := HCULimitStorageLocation
+        }
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -97,7 +104,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        publicHCUCapPerBlock = type(uint192).max;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = type(uint192).max;
         emit HCUPerBlockSet(type(uint192).max);
     }
 
@@ -109,7 +117,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
-        publicHCUCapPerBlock = type(uint192).max;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = type(uint192).max;
         emit HCUPerBlockSet(type(uint192).max);
     }
 
@@ -1424,8 +1433,26 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (hcuPerBlock != type(uint192).max && hcuPerBlock < MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
             revert InvalidHCUPerBlock();
         }
-        publicHCUCapPerBlock = hcuPerBlock;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = hcuPerBlock;
         emit HCUPerBlockSet(hcuPerBlock);
+    }
+
+    /**
+     * @notice Returns the public block HCU cap.
+     */
+    function publicHCUCapPerBlock() public view virtual returns (uint192) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.publicHCUCapPerBlock;
+    }
+
+    /**
+     * @notice Returns whether a caller bypasses the public block HCU cap.
+     * @param account Caller address.
+     */
+    function blockHCUWhitelist(address account) public view virtual returns (bool) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.blockHCUWhitelist[account];
     }
 
     /**
@@ -1484,7 +1511,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
      */
     function getBlockMeter() external view returns (uint64 blockNumber, uint192 usedHCU) {
-        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter(publicBlockMeterPacked);
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
         uint64 currentBlock = uint64(block.number);
         if (storedBlock != currentBlock) {
             return (currentBlock, 0);
@@ -1567,28 +1595,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param opHCU HCU cost of the current operation.
      */
     function _updateAndVerifyHCUBlockLimit(uint256 opHCU) internal virtual {
-        if (publicHCUCapPerBlock == type(uint192).max) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.publicHCUCapPerBlock == type(uint192).max) {
             return;
         }
 
         address caller = _getHCUCallerContext();
         _clearHCUCallerContext();
 
-        if (blockHCUWhitelist[caller]) {
+        if ($.blockHCUWhitelist[caller]) {
             return;
         }
 
-        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter(publicBlockMeterPacked);
+        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
         uint64 currentBlock = uint64(block.number);
         if (storedBlock != currentBlock) {
             storedHCU = 0;
         }
 
         uint256 nextHCU = uint256(storedHCU) + opHCU;
-        if (nextHCU >= uint256(publicHCUCapPerBlock)) {
+        if (nextHCU >= uint256($.publicHCUCapPerBlock)) {
             revert HCUBlockLimitExceeded();
         }
-        publicBlockMeterPacked = _packBlockMeter(currentBlock, uint192(nextHCU));
+        $.publicBlockMeterPacked = _packBlockMeter(currentBlock, uint192(nextHCU));
     }
 
     /**
@@ -1676,7 +1705,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param isWhitelisted Whether caller bypasses the block cap.
      */
     function _setBlockHCUWhitelist(address account, bool isWhitelisted) internal {
-        blockHCUWhitelist[account] = isWhitelisted;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.blockHCUWhitelist[account] = isWhitelisted;
         emit BlockHCUWhitelistSet(account, isWhitelisted);
     }
 

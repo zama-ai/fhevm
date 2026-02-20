@@ -24,7 +24,8 @@ contract MockHCULimit is HCULimit {
     }
 
     function setHCUPerBlockUnsafeForTest(uint192 hcuPerBlock) external {
-        publicHCUCapPerBlock = hcuPerBlock;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = hcuPerBlock;
     }
 }
 
