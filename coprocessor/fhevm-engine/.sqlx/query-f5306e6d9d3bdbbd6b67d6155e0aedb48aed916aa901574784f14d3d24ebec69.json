@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT on_gateway, gateway_nb_attempts, gateway_last_error\n         FROM delegate_user_decrypt\n         WHERE block_number = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "on_gateway",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "gateway_nb_attempts",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "gateway_last_error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f5306e6d9d3bdbbd6b67d6155e0aedb48aed916aa901574784f14d3d24ebec69"
+}
