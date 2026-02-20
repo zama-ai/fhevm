@@ -1,10 +1,8 @@
-use std::error::Error;
-
-use futures::channel;
 use lapin::message::Delivery;
 use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
 use lapin::{Channel, Consumer};
 use serde::de::DeserializeOwned;
+use std::error::Error;
 use tracing::error;
 
 /// Initializes a RabbitMQ consumer channel

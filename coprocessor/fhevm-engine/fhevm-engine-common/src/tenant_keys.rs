@@ -93,7 +93,7 @@ where
 
     let query_str = format!(
         "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params
+            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key
             FROM tenants
             WHERE {} = ANY($1::INT[])
         ",
