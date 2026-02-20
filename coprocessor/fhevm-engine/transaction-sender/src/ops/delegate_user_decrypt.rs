@@ -8,12 +8,11 @@ use crate::metrics::{
 };
 use crate::nonce_managed_provider::NonceManagedProvider;
 
-use alloy::primitives::{Address, FixedBytes};
+use alloy::primitives::Address;
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::transports::{RpcError, TransportErrorKind};
 use alloy::{
-    eips::BlockNumberOrTag,
     network::{Ethereum, TransactionBuilder},
 };
 
@@ -27,7 +26,6 @@ use tracing::{error, info, warn};
 
 use super::TransactionOperation;
 
-pub type BlockHash = FixedBytes<32>;
 pub type DbTransaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 use fhevm_gateway_bindings::multichain_acl::MultichainACL;
@@ -244,29 +242,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
             let block_status = if let Some(status) = blocks_status.get(&delegation.block_number) {
                 *status
             } else {
-                let status = match self.get_block_hash(delegation.block_number).await {
-                    Ok(block_hash) if delegation.block_hash == block_hash.to_vec() => {
-                        BlockStatus::Stable
-                    }
-                    Ok(block_hash) => {
+                let status = self.get_block_status(delegation).await;
+                match status {
+                    BlockStatus::Dismissed => {
                         warn!(
                             delegation_block_hash = ?delegation.block_hash,
-                            block_hash = ?block_hash.to_vec(),
                             block_number = delegation.block_number,
                             "Block hash mismatch for delegation, block was reorged out"
                         );
                         // ignoring delegation due to reorg, will be marked as reorg_out
                         reorg_out_block.push(delegation.block_hash.clone());
-                        BlockStatus::Dismissed
                     }
-                    Err(_) => {
+                    BlockStatus::Unknown => {
                         error!(
                             block_number = delegation.block_number,
                             "Cannot get block hash for delegation, will retry next block"
                         );
                         unsure_block.push(delegation.block_number);
-                        BlockStatus::Unknown
                     }
+                    BlockStatus::Stable => (),
                 };
                 blocks_status.insert(delegation.block_number, status);
                 status
@@ -302,17 +296,32 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         Ok((stable_delegations, reorg_out_block))
     }
 
-    async fn get_block_hash(&self, block_number: u64) -> Result<BlockHash> {
-        let search_block = BlockNumberOrTag::Number(block_number);
-        let some_block = self
-            .host_chain_provider
-            .get_block_by_number(search_block)
-            .await?;
-        let Some(block) = some_block else {
-            error!(block_number, "A past block cannot be found by number");
-            anyhow::bail!("Cannot get past block by number, giving up");
-        };
-        Ok(block.header.hash)
+    async fn get_block_status(&self, delegation: &DelegationRow) -> BlockStatus {
+        let status = sqlx::query!(r#"
+            SELECT block_status
+            FROM host_chain_blocks_valid
+            WHERE block_hash = $2 AND chain_id = $1
+            "#,
+            delegation.host_chain_id.as_i64(),
+            delegation.block_hash, //.as_bytes(),
+        )
+        .fetch_one(&self.db_pool)
+        .await;
+        match status {
+            Ok(record) => match record.block_status.as_str() {
+                "finalized" => BlockStatus::Stable,
+                "orphaned" => BlockStatus::Dismissed,
+                _ => BlockStatus::Unknown,
+            },
+            Err(e) => {
+                error!(
+                    %e,
+                    ?delegation,
+                    "Error querying block status from database"
+                );
+                BlockStatus::Unknown
+            }
+        }
     }
 
     async fn wait_last_block_number(&self) -> Result<u64> {

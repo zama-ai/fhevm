@@ -40,6 +40,7 @@ pub const DEFAULT_DEPENDENCE_BY_CONNEXITY: bool = false;
 pub const DEFAULT_DEPENDENCE_CROSS_BLOCK: bool = true;
 
 const TIMEOUT_REQUEST_ON_WEBSOCKET: u64 = 15;
+pub const MINIMUM_DELAY_FOR_FINALIZATION_IN_BLOCKS: u64 = 5;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -459,6 +460,7 @@ impl InfiniteLogIter {
                 logs: std::mem::take(&mut current_logs),
                 summary,
                 catchup: true,
+                finalized: self.catchup_finalization_in_blocks > MINIMUM_DELAY_FOR_FINALIZATION_IN_BLOCKS,
             };
             blocks_logs.push(block_logs);
         }
@@ -731,6 +733,7 @@ impl InfiniteLogIter {
                 logs,
                 summary: missing_block,
                 catchup: true,
+                finalized: false, // let catchups with finality conditions do the finalize later
             });
             self.block_history.add_block(missing_block);
         }
@@ -825,6 +828,7 @@ impl InfiniteLogIter {
             logs: self.get_logs_at_hash(block_header.hash).await?,
             summary: block_header.into(),
             catchup: false,
+            finalized: false,
         })
     }
 

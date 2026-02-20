@@ -331,6 +331,7 @@ async fn ingest_blocks_for_receipts(
             logs,
             summary: block.header.into(),
             catchup: false,
+            finalized: false,
         };
         ingest_block_logs(
             db.chain_id,
@@ -944,6 +945,56 @@ async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
     test_listener_no_event_loss(true, true).await
 }
 
+async fn check_finalization_status(
+    setup: Setup
+) {
+    let provider = ProviderBuilder::new()
+                .wallet(setup.wallets[0].clone())
+                .connect_ws(WsConnect::new(setup.args.url.to_string()))
+                .await
+                .unwrap();
+    // Verify block finalization status: for each block number, one should be finalized and others orphaned
+    let blocks = sqlx::query!(
+        "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid"
+    )
+    .fetch_all(&setup.db_pool)
+    .await;
+
+    let blocks = blocks.expect("Failed to fetch blocks from database");
+
+    let mut blocks_by_number: std::collections::HashMap<i64, Vec<(Vec<u8>, String)>> = std::collections::HashMap::new();
+    for block in blocks {
+        blocks_by_number
+            .entry(block.block_number)
+            .or_insert_with(Vec::new)
+            .push((block.block_hash, block.block_status));
+    }
+
+    for (block_number, block_variants) in blocks_by_number.iter() {
+        let finalized_count = block_variants.iter().filter(|(_, status)| status == "finalized").count();
+        let orphan_count = block_variants.iter().filter(|(_, status)| status == "orphaned").count();
+        assert_eq!(
+            finalized_count, 1,
+            "Block {} should have exactly one finalized variant, found {}",
+            block_number, finalized_count
+        );
+        let finalized_hash = block_variants.iter().find(|(_, status)| status == "finalized").map(|(hash, _)| hash).unwrap();
+        assert_eq!(
+            orphan_count,
+            block_variants.len() - 1,
+            "Block {} should have remaining variants as orphan",
+            block_number
+        );
+        let expected_hash= provider.get_block_by_number((*block_number as u64).into()).await.unwrap().unwrap().header.hash;
+        assert_eq!(
+            &expected_hash.0,
+            finalized_hash.as_slice(),
+            "Finalized block hash for block {} does not match expected",
+            block_number
+        );
+    }
+}
+
 async fn test_listener_no_event_loss(
     kill: bool,
     reorg: bool,
@@ -1046,6 +1097,8 @@ async fn test_listener_no_event_loss(
     }
     assert_eq!(tfhe_events_count, expected_tfhe_events);
     assert_eq!(acl_events_count, expected_acl_events);
+
+    check_finalization_status(setup).await;
     Ok(())
 }
 
