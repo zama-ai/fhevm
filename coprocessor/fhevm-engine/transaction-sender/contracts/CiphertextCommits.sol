@@ -5,9 +5,7 @@ pragma solidity ^0.8.24;
 /// source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/CiphertextCommits.sol
 contract CiphertextCommits {
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address coprocessorTxSenderAddress);
-    error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
-    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
 
     event AddCiphertextMaterial(
         bytes32 indexed ctHandle,
@@ -21,9 +19,7 @@ contract CiphertextCommits {
 
     enum ConfigErrorMode {
         None,
-        NotCoprocessorSigner,
-        NotCoprocessorTxSender,
-        CoprocessorSignerDoesNotMatchTxSender
+        NotCoprocessorTxSender
     }
 
     constructor(bool _alreadyAddedRevert) {
@@ -31,19 +27,13 @@ contract CiphertextCommits {
     }
 
     function setConfigErrorMode(uint8 mode) external {
-        require(mode <= uint8(ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender), "invalid mode");
+        require(mode <= uint8(ConfigErrorMode.NotCoprocessorTxSender), "invalid mode");
         configErrorMode = ConfigErrorMode(mode);
     }
 
     function maybeRevertConfigError() internal view {
-        if (configErrorMode == ConfigErrorMode.NotCoprocessorSigner) {
-            revert NotCoprocessorSigner(msg.sender);
-        }
         if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
             revert NotCoprocessorTxSender(msg.sender);
-        }
-        if (configErrorMode == ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender) {
-            revert CoprocessorSignerDoesNotMatchTxSender(address(0x1234), msg.sender);
         }
     }
 

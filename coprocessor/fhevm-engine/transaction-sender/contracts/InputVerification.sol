@@ -81,7 +81,9 @@ contract InputVerification {
     }
 
     function rejectProofResponse(uint256 zkProofId, bytes calldata /* extraData */) public {
-        maybeRevertConfigError();
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (otherRevert) {
             revert("Other revert");
         }

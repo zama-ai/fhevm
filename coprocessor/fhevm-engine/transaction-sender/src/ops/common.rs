@@ -20,6 +20,19 @@ pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZ
         .map_err(|_| anyhow!("Failed to convert Vec to array"))
 }
 
+/// Errors that the gateway's [`GatewayConfigChecks`] base contract can emit
+/// when the coprocessor is misconfigured.
+///
+/// These are **non-retryable**: they indicate a permanent mismatch between the
+/// coprocessor's on-chain identity (tx-sender / signer addresses) and what is
+/// registered in `GatewayConfig`, so retrying the same transaction will always
+/// fail.
+///
+/// # Production reachability
+///
+/// - `NotCoprocessorTxSender` — `MultichainACL`, `CiphertextCommits`, `InputVerification`
+/// - `NotCoprocessorSigner` — `InputVerification` only
+/// - `CoprocessorSignerDoesNotMatchTxSender` — `InputVerification` only
 #[derive(Debug, Error)]
 pub(crate) enum CoprocessorConfigError {
     #[error("NotCoprocessorSigner({0})")]
@@ -30,6 +43,17 @@ pub(crate) enum CoprocessorConfigError {
     CoprocessorSignerDoesNotMatchTxSender { signer: Address, tx_sender: Address },
 }
 
+/// Tries to decode a non-retryable coprocessor configuration error from an RPC
+/// failure.
+///
+/// The gateway's `GatewayConfigChecks` contract can revert with three distinct
+/// config errors (see [`CoprocessorConfigError`]).  When the coprocessor's
+/// on-chain identity does not match what is registered in `GatewayConfig`,
+/// these reverts fire *before* any business logic runs, making the transaction
+/// permanently un-sendable.
+///
+/// Returns `Some(error)` when the RPC payload matches one of the known config
+/// errors, `None` otherwise.
 pub(crate) fn try_extract_terminal_config_error(
     err: &RpcError<TransportErrorKind>,
 ) -> Option<CoprocessorConfigError> {

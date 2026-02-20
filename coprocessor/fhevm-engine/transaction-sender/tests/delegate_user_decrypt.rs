@@ -364,8 +364,8 @@ async fn delegate_user_decrypt_idempotent_error_call(
 #[serial(db)]
 async fn delegate_user_decrypt_terminal_on_gw_config_error(
     #[case] signer_type: SignerType,
-    #[values(1u8, 2, 3)] config_error_mode: u8,
 ) -> anyhow::Result<()> {
+    let config_error_mode: u8 = 1;
     let base_conf = ConfigSettings {
         delegation_block_delay: 0,
         delegation_clear_after_n_blocks: 5,

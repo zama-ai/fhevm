@@ -9,9 +9,7 @@ pragma solidity ^0.8.24;
 contract MultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
-    error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
-    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
@@ -21,9 +19,7 @@ contract MultichainACL {
 
     enum ConfigErrorMode {
         None,
-        NotCoprocessorSigner,
-        NotCoprocessorTxSender,
-        CoprocessorSignerDoesNotMatchTxSender
+        NotCoprocessorTxSender
     }
 
     constructor(bool _alreadyAllowedRevert) {
@@ -31,19 +27,13 @@ contract MultichainACL {
     }
 
     function setConfigErrorMode(uint8 mode) external {
-        require(mode <= uint8(ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender), "invalid mode");
+        require(mode <= uint8(ConfigErrorMode.NotCoprocessorTxSender), "invalid mode");
         configErrorMode = ConfigErrorMode(mode);
     }
 
     function maybeRevertConfigError() internal view {
-        if (configErrorMode == ConfigErrorMode.NotCoprocessorSigner) {
-            revert NotCoprocessorSigner(msg.sender);
-        }
         if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
             revert NotCoprocessorTxSender(msg.sender);
-        }
-        if (configErrorMode == ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender) {
-            revert CoprocessorSignerDoesNotMatchTxSender(address(0x1234), msg.sender);
         }
     }
 
