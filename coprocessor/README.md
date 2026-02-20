@@ -283,6 +283,55 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
  - **AWS_SECRET_ACCESS_KEY** (i.e. password)
  - etc.
 
+## Telemetry Style Guide (Tracing + OTEL)
+
+Use `tracing` spans as the default telemetry API.
+
+### Rules
+
+1. Use function/span names as the operation name.
+   - Do not add an `operation = "..."` span field.
+2. Do not attach high-cardinality identifiers to span attributes.
+   - Do not put `txn_id`, `transaction_hash`, or `handle` on spans.
+   - If needed for debugging, log these values in events/log lines.
+3. For async work, instrument futures with `.instrument(...)`.
+   - Do not keep `span.enter()` guards alive across `.await`.
+4. Set OTEL error status on error exits.
+   - Logging an error is not enough for trace error visibility.
+5. Keep span fields low-cardinality and useful for aggregation.
+   - Good examples: `request_id`, counts, booleans, retry bucket, chain id.
+
+### Preferred snippets
+
+```rust
+#[tracing::instrument(skip_all)]
+async fn process_proof(...) -> anyhow::Result<()> {
+    // business logic
+    Ok(())
+}
+```
+
+```rust
+use tracing::Instrument;
+
+let db_insert_span = tracing::info_span!("db_insert", request_id);
+async {
+    sqlx::query("UPDATE ...").execute(pool).await?;
+    Ok::<(), sqlx::Error>(())
+}
+.instrument(db_insert_span.clone())
+.await?;
+```
+
+```rust
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+if let Err(err) = do_work().instrument(span.clone()).await {
+    span.context().span().set_status(opentelemetry::trace::Status::error(err.to_string()));
+    return Err(err.into());
+}
+```
+
 
 ## Resources
 

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::{ops::DerefMut, time::Duration};
 
@@ -24,8 +24,6 @@ use sqlx::types::BigDecimal;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
-
-use fhevm_engine_common::telemetry;
 
 use super::TransactionOperation;
 
@@ -115,14 +113,18 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
+    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
-        let src_transaction_id = delegation.transaction_id.clone();
+        fhevm_engine_common::telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            delegation.transaction_id.as_deref(),
+        );
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
-        let _t = telemetry::tracer("call_delegate_user_decript", &src_transaction_id);
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
         } else {
@@ -395,17 +397,6 @@ where
         {
             error!("Cannot update useless delegations");
         }
-        let mut all_transaction_id = HashSet::<Option<Vec<u8>>>::new();
-        for delegation in &ready_delegations {
-            let tx_id = delegation.transaction_id.clone();
-            all_transaction_id.insert(tx_id);
-        }
-        // we don't split by transition_id because delegations have an internal order
-        // it's expected that both order are compatible but we don't know the transaction_id order
-        let ts = all_transaction_id
-            .iter()
-            .map(|id| telemetry::tracer("prepare_delegate", id))
-            .collect::<Vec<_>>();
         let mut requests = Vec::with_capacity(ready_delegations.len());
         let to_transaction = |delegation: &DelegationRow| {
             let is_revoke = delegation.new_expiration_date == 0;
@@ -434,16 +425,20 @@ where
             }
         };
         for delegation in ready_delegations {
-            let txn_request = to_transaction(&delegation);
+            let prepare_delegate_span =
+                tracing::info_span!("prepare_delegate", txn_id = tracing::field::Empty);
+            fhevm_engine_common::telemetry::record_short_hex_if_some(
+                &prepare_delegate_span,
+                "txn_id",
+                delegation.transaction_id.as_deref(),
+            );
+            let txn_request = prepare_delegate_span.in_scope(|| to_transaction(&delegation));
             let txn_request = if let Some(gaz_limit) = &self.gas {
                 txn_request.with_gas_limit(*gaz_limit)
             } else {
                 txn_request
             };
             requests.push((delegation, txn_request));
-        }
-        for t in ts {
-            t.end();
         }
         let mut join_set = JoinSet::new();
         for (delegation, txn_request) in requests.iter() {

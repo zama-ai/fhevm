@@ -66,6 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
+    #[tracing::instrument(name = "call_allow_account", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -74,10 +75,14 @@ where
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            src_transaction_id.as_deref(),
+        );
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
-        let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
         let receipt = match self
             .provider
@@ -359,7 +364,10 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
+            let _span =
+                tracing::info_span!("prepare_allow_account", txn_id = tracing::field::Empty);
+            telemetry::record_short_hex_if_some(&_span, "txn_id", src_transaction_id.as_deref());
+            let _enter = _span.enter();
 
             let handle = row.handle.clone();
             let chain_id = u64::from_be_bytes(handle[22..30].try_into()?);
@@ -427,8 +435,6 @@ where
                 account_addr: account_addr.to_string(),
                 event_type,
             };
-
-            t.end();
 
             let operation = self.clone();
             join_set.spawn(async move {

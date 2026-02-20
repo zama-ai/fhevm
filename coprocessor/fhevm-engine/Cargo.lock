@@ -6320,13 +6320,12 @@ dependencies = [
  "fhevm-engine-common",
  "hex",
  "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "prometheus",
  "rayon",
  "tfhe",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
@@ -7680,6 +7679,7 @@ dependencies = [
  "tonic-types",
  "tonic-web",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
 ]
@@ -9215,6 +9215,7 @@ dependencies = [
  "hex",
  "humantime",
  "lru 0.13.0",
+ "opentelemetry",
  "prometheus",
  "rand 0.9.2",
  "serial_test",
@@ -9226,6 +9227,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
 ]
 

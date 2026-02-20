@@ -12,12 +12,11 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
+use fhevm_engine_common::common::FheOperation;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use fhevm_engine_common::{common::FheOperation, telemetry};
-use opentelemetry::trace::{Span, Status, TraceContextExt, Tracer};
-use opentelemetry::KeyValue;
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
@@ -79,16 +78,16 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    pub async fn schedule(&mut self, loop_ctx: &'a opentelemetry::Context) -> Result<()> {
+    pub async fn schedule(&mut self) -> Result<()> {
         let schedule_type = std::env::var("FHEVM_DF_SCHEDULE");
         match schedule_type {
             Ok(val) => match val.as_str() {
                 "MAX_PARALLELISM" => {
-                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
+                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
                         .await
                 }
                 "MAX_LOCALITY" => {
-                    self.schedule_coarse_grain(PartitionStrategy::MaxLocality, loop_ctx)
+                    self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
                         .await
                 }
                 unhandled => {
@@ -96,19 +95,19 @@ impl<'a> Scheduler<'a> {
 			   "Scheduling strategy does not exist");
                     info!(target: "scheduler", { },
 			  "Reverting to default (generally best performance) strategy MAX_PARALLELISM");
-                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
+                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
                         .await
                 }
             },
             // Use overall best strategy as default
             #[cfg(not(feature = "gpu"))]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
                     .await
             }
             #[cfg(feature = "gpu")]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
                     .await
             }
         }
@@ -150,11 +149,7 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    async fn schedule_coarse_grain(
-        &mut self,
-        strategy: PartitionStrategy,
-        loop_ctx: &'a opentelemetry::Context,
-    ) -> Result<()> {
+    async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         match strategy {
             PartitionStrategy::MaxLocality => {
@@ -188,8 +183,13 @@ impl<'a> Scheduler<'a> {
                     ));
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-                let loop_ctx = loop_ctx.clone();
-                set.spawn_blocking(move || execute_partition(args, index, 0, sks, cpk, loop_ctx));
+                let parent_span = tracing::Span::current();
+                set.spawn_blocking(move || {
+                    let span_guard = parent_span.enter();
+                    let result = execute_partition(args, index, 0, sks, cpk);
+                    drop(span_guard);
+                    result
+                });
             }
         }
         while let Some(result) = set.join_next().await {
@@ -237,9 +237,12 @@ impl<'a> Scheduler<'a> {
                         ));
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-                    let loop_ctx = loop_ctx.clone();
+                    let parent_span = tracing::Span::current();
                     set.spawn_blocking(move || {
-                        execute_partition(args, dependent_task_index, 0, sks, cpk, loop_ctx)
+                        let span_guard = parent_span.enter();
+                        let result = execute_partition(args, dependent_task_index, 0, sks, cpk);
+                        drop(span_guard);
+                        result
                     });
                 }
             }
@@ -293,14 +296,14 @@ fn execute_partition(
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
-    loop_ctx: opentelemetry::Context,
 ) -> PartitionResult {
     tfhe::set_server_key(sks);
     let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
-    let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
+        let txn_id_short = telemetry::short_hex_id(&tid);
+
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -330,21 +333,21 @@ fn execute_partition(
 
         // Decompress ciphertexts
         {
-            let mut decomp_span = tracer.start_with_context("decompress_ciphertexts", &loop_ctx);
-            telemetry::set_txn_id(&mut decomp_span, &tid);
+            let _guard = tracing::info_span!(
+                "decompress_ciphertexts",
+                txn_id = %txn_id_short,
+                count = tracing::field::Empty,
+            )
+            .entered();
 
             match decompress_transaction_inputs(tx_inputs, gpu_idx) {
                 Ok(count) => {
-                    decomp_span.set_attribute(KeyValue::new("count", count as i64));
-                    decomp_span.end();
+                    tracing::Span::current().record("count", count as i64);
                 }
                 Err(e) => {
                     error!(target: "scheduler", {transaction_id = ?hex::encode(&tid), error = ?e },
                            "Error while decompressing inputs");
-                    decomp_span.set_status(Status::Error {
-                        description: e.to_string().into(),
-                    });
-                    decomp_span.end();
+                    telemetry::set_current_span_error(&e);
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
@@ -363,10 +366,12 @@ fn execute_partition(
         }
 
         // Prime the scheduler with ready ops from the transaction's subgraph
-        let mut s = tracer.start_with_context("execute_transaction", &loop_ctx);
-        telemetry::set_txn_id(&mut s, &tid);
+        let _exec_guard = tracing::info_span!(
+            "execute_transaction",
+            txn_id = %txn_id_short,
+        )
+        .entered();
         let started_at = std::time::Instant::now();
-        let exec_ctx = loop_ctx.with_remote_span_context(s.span_context().clone());
 
         let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
             error!(target: "scheduler", {transaction_id = ?tid },
@@ -391,16 +396,7 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let result = try_execute_node(
-                node,
-                nidx.index(),
-                tx_inputs,
-                gpu_idx,
-                &tid,
-                &cpk,
-                &tracer,
-                &exec_ctx,
-            );
+            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
             match result {
                 Ok(result) => {
                     let nidx = NodeIndex::new(result.0);
@@ -444,14 +440,13 @@ fn execute_partition(
                 }
             }
         }
-        s.end();
+        drop(_exec_guard);
         let elapsed = started_at.elapsed();
         FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     (res, task_id)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn try_execute_node(
     node: &mut OpNode,
     node_index: usize,
@@ -459,8 +454,6 @@ fn try_execute_node(
     gpu_idx: usize,
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
-    tracer: &opentelemetry::global::BoxedTracer,
-    ctx: &opentelemetry::Context,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
@@ -477,20 +470,16 @@ fn try_execute_node(
     }
     // Re-randomize inputs for this operation
     {
-        let mut rerand_span = tracer.start_with_context("rerandomise_op_inputs", ctx);
+        let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
         let started_at = std::time::Instant::now();
         if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
                    "Error while re-randomising operation inputs");
-            rerand_span.set_status(Status::Error {
-                description: e.to_string().into(),
-            });
-            rerand_span.end();
+            telemetry::set_current_span_error(&e);
             return Err(SchedulerError::ReRandomisationError.into());
         }
         let elapsed = started_at.elapsed();
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
-        rerand_span.end();
     }
     let opcode = node.opcode;
     let is_allowed = node.is_allowed;
@@ -501,13 +490,11 @@ fn try_execute_node(
         is_allowed,
         gpu_idx,
         transaction_id,
-        tracer,
-        ctx,
     ))
 }
 
 type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
-#[allow(clippy::too_many_arguments)]
+
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -515,35 +502,33 @@ fn run_computation(
     is_allowed: bool,
     gpu_idx: usize,
     transaction_id: &Handle,
-    tracer: &opentelemetry::global::BoxedTracer,
-    ctx: &opentelemetry::Context,
 ) -> (usize, OpResult) {
+    let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             // Compression span (no FHE here)
-            let mut compress_span = tracer.start_with_context("compress_ciphertext", ctx);
-            telemetry::set_txn_id(&mut compress_span, transaction_id);
-            compress_span.set_attribute(KeyValue::new("ct_type", inputs[0].type_name()));
-            compress_span.set_attribute(KeyValue::new("operation", "FheGetCiphertext"));
+            let _guard = tracing::info_span!(
+                "compress_ciphertext",
+                txn_id = %txn_id_short,
+                ct_type = inputs[0].type_name(),
+                operation = "FheGetCiphertext",
+                compressed_size = tracing::field::Empty,
+            )
+            .entered();
 
             let ct_type = inputs[0].type_num();
             let compressed = inputs[0].compress();
             match compressed {
                 Ok(ct_bytes) => {
-                    compress_span
-                        .set_attribute(KeyValue::new("compressed_size", ct_bytes.len() as i64));
-                    compress_span.end();
+                    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
                     (
                         graph_node_index,
                         Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
                     )
                 }
                 Err(error) => {
-                    compress_span.set_status(Status::Error {
-                        description: error.to_string().into(),
-                    });
-                    compress_span.end();
+                    telemetry::set_current_span_error(&error);
                     (graph_node_index, Err(error.into()))
                 }
             }
@@ -552,41 +537,42 @@ fn run_computation(
             let op_name = fhe_op.as_str_name();
 
             // FHE operation span
-            let mut fhe_span = tracer.start_with_context("fhe_operation", ctx);
-            telemetry::set_txn_id(&mut fhe_span, transaction_id);
-            fhe_span.set_attribute(KeyValue::new("operation", op_name));
-            fhe_span.set_attribute(KeyValue::new("operation_code", operation as i64));
+            let _fhe_guard = tracing::info_span!(
+                "fhe_operation",
+                txn_id = %txn_id_short,
+                operation = op_name,
+                operation_code = operation as i64,
+                input_type = tracing::field::Empty,
+            )
+            .entered();
             if !inputs.is_empty() {
-                fhe_span.set_attribute(KeyValue::new("input_type", inputs[0].type_name()));
+                tracing::Span::current().record("input_type", inputs[0].type_name());
             }
 
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx);
 
-            let op_result = match result {
+            match result {
                 Ok(result) => {
                     if is_allowed {
                         // Compression span
-                        let mut compress_span =
-                            tracer.start_with_context("compress_ciphertext", ctx);
-                        telemetry::set_txn_id(&mut compress_span, transaction_id);
-                        compress_span.set_attribute(KeyValue::new("ct_type", result.type_name()));
-                        compress_span.set_attribute(KeyValue::new("operation", op_name));
+                        let _guard = tracing::info_span!(
+                            "compress_ciphertext",
+                            txn_id = %txn_id_short,
+                            ct_type = result.type_name(),
+                            operation = op_name,
+                            compressed_size = tracing::field::Empty,
+                        )
+                        .entered();
                         let ct_type = result.type_num();
                         let compressed = result.compress();
                         match compressed {
                             Ok(ct_bytes) => {
-                                compress_span.set_attribute(KeyValue::new(
-                                    "compressed_size",
-                                    ct_bytes.len() as i64,
-                                ));
-                                compress_span.end();
+                                tracing::Span::current()
+                                    .record("compressed_size", ct_bytes.len() as i64);
                                 (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
                             }
                             Err(error) => {
-                                compress_span.set_status(Status::Error {
-                                    description: error.to_string().into(),
-                                });
-                                compress_span.end();
+                                telemetry::set_current_span_error(&error);
                                 (graph_node_index, Err(error.into()))
                             }
                         }
@@ -595,14 +581,10 @@ fn run_computation(
                     }
                 }
                 Err(e) => {
-                    fhe_span.set_status(Status::Error {
-                        description: e.to_string().into(),
-                    });
+                    telemetry::set_current_span_error(&e);
                     (graph_node_index, Err(e.into()))
                 }
-            };
-            fhe_span.end();
-            op_result
+            }
         }
         Err(e) => (graph_node_index, Err(e.into())),
     }
