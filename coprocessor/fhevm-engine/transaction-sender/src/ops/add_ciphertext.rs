@@ -94,7 +94,8 @@ where
                     .await?;
                     bail!(e);
                 }
-                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e) {
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e)
+                {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
                         error = %non_retryable_config_error,

@@ -158,7 +158,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                     );
                     return TxResult::TransientError;
                 }
-                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&error) {
+                if let Some(non_retryable_config_error) =
+                    try_extract_non_retryable_config_error(&error)
+                {
                     warn!(
                         error = %non_retryable_config_error,
                         ?delegation,

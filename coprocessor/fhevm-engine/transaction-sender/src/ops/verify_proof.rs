@@ -160,7 +160,9 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e) {
+                } else if let Some(non_retryable_config_error) =
+                    try_extract_non_retryable_config_error(&e)
+                {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     warn!(
                         zk_proof_id = txn_request.0,
