@@ -1,6 +1,5 @@
 use fhevm_engine_common::protocol::messages::{BlockContext, FheLog};
 use fhevm_engine_common::types::Handle;
-
 use fhevm_engine_common::types::SupportedFheOperations;
 use std::time::SystemTime;
 

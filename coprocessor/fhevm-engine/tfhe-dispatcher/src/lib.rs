@@ -20,6 +20,7 @@ pub async fn async_main(
             .json()
             .with_level(true)
             .with_max_level(args.log_level)
+            .with_target(false)
             .init();
     });
 

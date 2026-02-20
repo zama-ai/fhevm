@@ -3,8 +3,8 @@ use crate::scheduler::{
     traits::{Commands, Events},
 };
 use fhevm_engine_common::protocol::messages as msg;
-use lapin::BasicProperties;
 use lapin::options::BasicPublishOptions;
+use lapin::BasicProperties;
 use std::collections::HashMap;
 use std::future::Future;
 use tracing::{debug, info};
@@ -122,6 +122,10 @@ impl<C: Channel> Dispatcher<C> {
             .filter(|p| !self.running_partitions.contains_key(&p.hash))
             .collect::<Vec<_>>();
 
+        // For debugging and visualization purposes
+        #[cfg(feature = "export-graphs")]
+        self.computation_scheduler.export_graphs("./viz");
+
         let running = self.running_partitions.len();
         info!(
             count = new_exec_partitions.len(),
@@ -147,6 +151,9 @@ impl<C: Channel> Dispatcher<C> {
         let known = self.running_partitions.contains_key(&hash);
         self.running_partitions.remove(&hash);
 
+        // Prune unneeded nodes from the scheduler to prevent unbounded memory growth
+        self.computation_scheduler.prune();
+
         info!(
             pid = %partition.id(),
             known,
@@ -155,7 +162,7 @@ impl<C: Channel> Dispatcher<C> {
     }
 
     /// Publishes the given partition to the global default channel.
-    /// This dispatch does not enforce worker affinity or locality;
+    /// This dispatch does not enforce worker affinity or locality
     /// the partition may be processed by any available worker.
     pub fn publish_to_default_channel(&self, partition: &msg::ExecutablePartition) {
         let sender_channel = self.default_channel.clone();

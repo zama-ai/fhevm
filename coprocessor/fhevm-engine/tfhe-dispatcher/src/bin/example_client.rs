@@ -46,7 +46,7 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheTrivialEncrypt,
-        0,
+        handle(0),
         vec![
             Dependence::Scalar(scalar_pt),
             Dependence::Scalar(scalar_type),
@@ -56,7 +56,7 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheAdd,
-        1,
+        handle(1),
         vec![
             Dependence::Reference(handle(0)),
             Dependence::Reference(handle(0)),
@@ -66,7 +66,7 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheMul,
-        2,
+        handle(2),
         vec![
             Dependence::Reference(handle(0)),
             Dependence::Reference(handle(0)),
@@ -78,7 +78,7 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheAdd,
-        3,
+        handle(3),
         vec![
             Dependence::Reference(handle(2)),
             Dependence::Scalar(scalar_pt),
@@ -89,22 +89,24 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheAdd,
-        4,
+        handle(4),
         vec![
             Dependence::Reference(handle(3)),
             Dependence::Scalar(scalar_pt),
         ],
     );
 
+    /*
     let _ = add_log_event(
         &mut batch,
         SupportedFheOperations::FheAdd,
-        5,
+        handle(5),
         vec![
             Dependence::Reference(handle(4)),
-            Dependence::Scalar(handle(4)),
+            Dependence::Reference(handle(4)),
         ],
     );
+     */
 
     let payload: Vec<u8> = postcard::to_allocvec(&batch).unwrap();
 
@@ -145,11 +147,11 @@ pub fn handle(id: u8) -> Handle {
 fn add_log_event(
     batch: &mut Vec<messages::FheLog>,
     fhe_operation: SupportedFheOperations,
-    output_handle: u8,
+    output_handle: Handle,
     dependencies: Vec<messages::Dependence>,
 ) -> messages::FheLog {
     let log = messages::FheLog {
-        output_handle: handle(output_handle),
+        output_handle,
         dependencies,
         fhe_operation,
         is_scalar: true,

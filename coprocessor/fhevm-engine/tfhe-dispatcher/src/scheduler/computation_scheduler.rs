@@ -1,4 +1,3 @@
-use crate::scheduler::utils;
 use crate::scheduler::{
     traits::{Commands, Events},
     types::ExecNode,
@@ -18,7 +17,6 @@ use fhevm_engine_common::types::Handle;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use tracing::{info, warn};
-
 /// The ComputationScheduler is responsible for maintaining the Dataflow Graph (DFG) of computations
 /// and the Execution Graph (ExecGraph) that represents executable partitions of the DFG.
 ///
@@ -207,7 +205,6 @@ impl ComputationScheduler {
         let exec_graph = &mut self.exec_graph;
 
         // First sort the dfg_graph in a schedulable order
-
         let mut visited = dfg_graph.visit_map();
 
         // Mark already partitioned nodes as visited
@@ -316,10 +313,15 @@ impl ComputationScheduler {
             .collect()
     }
 
+    pub fn prune(&mut self) {
+        // TODO: implement
+    }
+
     /// Generate DOT files and PNG images for both the DFG and ExecGraph for visualization and debugging.
+    #[cfg(feature = "export-graphs")]
     pub fn export_graphs(&self, folder: &str) {
-        utils::gen_dot_from_dag(&self.dataflow_graph, folder, "dfg-").unwrap();
-        utils::gen_dot_from_dag(&self.exec_graph, folder, "execgraph-").unwrap();
+        crate::scheduler::utils::gen_dot_from_dag(&self.dataflow_graph, folder, "dfg-").unwrap();
+        crate::scheduler::utils::gen_dot_from_dag(&self.exec_graph, folder, "execgraph-").unwrap();
     }
 }
 
@@ -343,11 +345,23 @@ impl Events for ComputationScheduler {
             .map(|log| self.on_fhe_log_msg(log, false))
             .collect::<Vec<_>>();
 
+        info!(
+            count = node_indices.len(),
+            "Added batch of FHE log messages to the DFG"
+        );
         self.update_exec_graph_with_max_parallelism();
+
+        info!(
+            count = node_indices.len(),
+            "Updated ExecGraph with new computations from the batch"
+        );
+
         node_indices
     }
 
     fn on_partition_completed(&mut self, partition: &msg::ExecutablePartition) {
         self.mark_partition_executed(partition);
+
+        self.prune();
     }
 }

@@ -45,7 +45,7 @@ pub fn gen_dot_from_dag<N: std::fmt::Debug, E: std::fmt::Debug>(
         return Err(format!("dot command failed with status {}", status).into());
     }
 
-    tracing::info!(
+    tracing::debug!(
         "Graphviz output written to '{}' and '{}'",
         dot_filename,
         png_filename
