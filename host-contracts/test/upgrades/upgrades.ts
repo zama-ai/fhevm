@@ -86,7 +86,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.1.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.1.1');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');

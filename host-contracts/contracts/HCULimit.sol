@@ -18,6 +18,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
+    /// @notice Returned if the block exceeds the maximum allowed homomorphic complexity units.
+    error HCUBlockLimitExceeded();
+
+    /// @notice Returned if the caller context was not set for a block-level check.
+    error HCUCallerContextNotSet();
+
+    /// @notice Returned if the block HCU cap is below the supported minimum.
+    error InvalidHCUPerBlock();
+
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
 
@@ -30,6 +39,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
 
+    /// @notice Emitted when the public block HCU cap is updated.
+    /// @param hcuPerBlock New public block HCU cap (`type(uint192).max` disables block throttling).
+    event HCUPerBlockSet(uint192 hcuPerBlock);
+
+    /// @notice Emitted when a caller's block-cap whitelist status is updated.
+    /// @param account Caller address whose whitelist status changed.
+    /// @param isWhitelisted Whether `account` bypasses the public block HCU cap.
+    event BlockHCUWhitelistSet(address indexed account, bool isWhitelisted);
+
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
 
@@ -40,7 +58,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
-    uint256 private constant PATCH_VERSION = 0;
+    uint256 private constant PATCH_VERSION = 1;
 
     /// @notice FHEVMExecutor address.
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
@@ -53,13 +71,33 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @dev This is the maximum number of homomorphic complexity units that can be used in a single transaction.
     uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
+    /// @dev Transient storage slot used to pass the original caller context from FHEVMExecutor.
+    bytes32 private constant HCU_CALLER_CONTEXT_SLOT = keccak256("fhevm.hcu.caller.context");
+
+    /// @custom:storage-location erc7201:fhevm.storage.HCULimit
+    struct HCULimitStorage {
+        /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
+        /// @dev Set to type(uint192).max to disable block-level throttling.
+        uint192 publicHCUCapPerBlock;
+        /// @dev Packed as: [usedHcu:192 | blockNumber:64]
+        uint256 publicBlockMeterPacked;
+        /// @notice Whitelisted callers bypass block-level cap.
+        mapping(address => bool) blockHCUWhitelist;
+    }
+
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
+
+    function _getHCULimitStorage() internal pure virtual returns (HCULimitStorage storage $) {
+        assembly {
+            $.slot := HCULimitStorageLocation
+        }
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -70,15 +108,24 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = type(uint192).max;
+        emit HCUPerBlockSet(type(uint192).max);
+    }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V2.
+     * @dev This must be called when upgrading already-initialized proxies to this implementation,
+     *      so block HCU limiting remains disabled by default (`type(uint192).max`).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = type(uint192).max;
+        emit HCUPerBlockSet(type(uint192).max);
+    }
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
@@ -1383,6 +1430,100 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * @notice Sets the block-level HCU limit for non-whitelisted callers.
+     * @dev Set to type(uint192).max to disable block-level throttling.
+     * @param hcuPerBlock New block-level cap.
+     */
+    function setHCUPerBlock(uint192 hcuPerBlock) external onlyACLOwner {
+        if (hcuPerBlock != type(uint192).max && hcuPerBlock < MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
+            revert InvalidHCUPerBlock();
+        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.publicHCUCapPerBlock = hcuPerBlock;
+        emit HCUPerBlockSet(hcuPerBlock);
+    }
+
+    /**
+     * @notice Returns the public block HCU cap.
+     */
+    function publicHCUCapPerBlock() public view virtual returns (uint192) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.publicHCUCapPerBlock;
+    }
+
+    /**
+     * @notice Returns whether a caller bypasses the public block HCU cap.
+     * @param account Caller address.
+     */
+    function blockHCUWhitelist(address account) public view virtual returns (bool) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.blockHCUWhitelist[account];
+    }
+
+    /**
+     * @notice Adds one caller to the block-cap whitelist.
+     * @param account Caller to whitelist.
+     */
+    function addToBlockHCUWhitelist(address account) external onlyACLOwner {
+        _setBlockHCUWhitelist(account, true);
+    }
+
+    /**
+     * @notice Removes one caller from the block-cap whitelist.
+     * @param account Caller to remove from whitelist.
+     */
+    function removeFromBlockHCUWhitelist(address account) external onlyACLOwner {
+        _setBlockHCUWhitelist(account, false);
+    }
+
+    /**
+     * @notice Adds a batch of callers to the block-cap whitelist.
+     * @param accounts Callers to whitelist.
+     */
+    function addToBlockHCUWhitelistBatch(address[] calldata accounts) external onlyACLOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            _setBlockHCUWhitelist(accounts[i], true);
+        }
+    }
+
+    /**
+     * @notice Removes a batch of callers from the block-cap whitelist.
+     * @param accounts Callers to remove from whitelist.
+     */
+    function removeFromBlockHCUWhitelistBatch(address[] calldata accounts) external onlyACLOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            _setBlockHCUWhitelist(accounts[i], false);
+        }
+    }
+
+    /**
+     * @notice Sets the original caller context for block-level HCU checks.
+     * @dev Must be called by FHEVMExecutor in the same transaction before checkHCUFor*.
+     * @param callerAddress Original FHEVMExecutor caller (EOA or contract).
+     */
+    function setHCUCallerContext(address callerAddress) external {
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
+        assembly {
+            tstore(callerSlot, callerAddress)
+        }
+    }
+
+    /**
+     * @notice Returns the effective public block HCU meter for the current block.
+     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
+     */
+    function getBlockMeter() external view returns (uint64 blockNumber, uint192 usedHCU) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
+        uint64 currentBlock = uint64(block.number);
+        if (storedBlock != currentBlock) {
+            return (currentBlock, 0);
+        }
+        return (storedBlock, storedHCU);
+    }
+
+    /**
      * @notice Adjusts the sequential HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitOneOp(uint256 opHCU, bytes32 op1, bytes32 result) internal virtual {
@@ -1441,11 +1582,45 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param opHCU The HCU for the operation.
      */
     function _updateAndVerifyHCUTransactionLimit(uint256 opHCU) internal virtual {
+        _updateAndVerifyHCUBlockLimit(opHCU);
+
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
         if (transactionHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
             revert HCUTransactionLimitExceeded();
         }
         _setHCUForTransaction(transactionHCU);
+    }
+
+    /**
+     * @notice Updates and enforces the public block HCU cap for one operation.
+     * @dev No-op if the cap is disabled or caller is whitelisted. Otherwise consumes caller context,
+     *      resets the meter on block rollover, and reverts if `opHCU` would reach/exceed the cap.
+     * @param opHCU HCU cost of the current operation.
+     */
+    function _updateAndVerifyHCUBlockLimit(uint256 opHCU) internal virtual {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.publicHCUCapPerBlock == type(uint192).max) {
+            return;
+        }
+
+        address caller = _getHCUCallerContext();
+        _clearHCUCallerContext();
+
+        if ($.blockHCUWhitelist[caller]) {
+            return;
+        }
+
+        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
+        uint64 currentBlock = uint64(block.number);
+        if (storedBlock != currentBlock) {
+            storedHCU = 0;
+        }
+
+        uint256 nextHCU = uint256(storedHCU) + opHCU;
+        if (nextHCU >= uint256($.publicHCUCapPerBlock)) {
+            revert HCUBlockLimitExceeded();
+        }
+        $.publicBlockMeterPacked = _packBlockMeter(currentBlock, uint192(nextHCU));
     }
 
     /**
@@ -1492,6 +1667,43 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         assembly {
             tstore(0, transactionHCU) // to avoid collisions with handles (see _setHCUForHandle)
         }
+    }
+
+    function _packBlockMeter(uint64 blockNumber, uint192 usedHCU) internal pure virtual returns (uint256) {
+        return (uint256(usedHCU) << 64) | uint256(blockNumber);
+    }
+
+    function _unpackBlockMeter(uint256 packed) internal pure virtual returns (uint64 blockNumber, uint192 usedHCU) {
+        blockNumber = uint64(packed);
+        usedHCU = uint192(packed >> 64);
+    }
+
+    function _getHCUCallerContext() internal view virtual returns (address caller) {
+        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
+        uint256 callerUint;
+        assembly {
+            callerUint := tload(callerSlot)
+        }
+        caller = address(uint160(callerUint));
+        if (caller == address(0)) revert HCUCallerContextNotSet();
+    }
+
+    function _clearHCUCallerContext() internal virtual {
+        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
+        assembly {
+            tstore(callerSlot, 0)
+        }
+    }
+
+    /**
+     * @notice Sets whitelist status for one caller.
+     * @param account Caller to update.
+     * @param isWhitelisted Whether caller bypasses the block cap.
+     */
+    function _setBlockHCUWhitelist(address account, bool isWhitelisted) internal {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.blockHCUWhitelist[account] = isWhitelisted;
+        emit BlockHCUWhitelistSet(account, isWhitelisted);
     }
 
     /**

@@ -204,6 +204,8 @@ contract MockInputVerifier {
 /// @dev This contract is a mock implementation of the HCULimit.
 /// It includes a fallback function not to revert.
 contract MockHCULimit {
+    function setHCUCallerContext(address) external {}
+
     fallback() external payable {}
 }
 
