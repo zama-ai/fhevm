@@ -73,7 +73,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// @dev Transient storage slot used to pass the original caller context from FHEVMExecutor.
     bytes32 private constant HCU_CALLER_CONTEXT_SLOT = keccak256("fhevm.hcu.caller.context");
-    bytes32 private constant HCU_CALLER_CONTEXT_SET_SLOT = keccak256("fhevm.hcu.caller.context.set");
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     struct HCULimitStorage {
@@ -1505,10 +1504,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function setHCUCallerContext(address callerAddress) external {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        bytes32 setSlot = HCU_CALLER_CONTEXT_SET_SLOT;
         assembly {
             tstore(callerSlot, callerAddress)
-            tstore(setSlot, 1)
         }
     }
 
@@ -1683,25 +1680,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     function _getHCUCallerContext() internal view virtual returns (address caller) {
         bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        bytes32 setSlot = HCU_CALLER_CONTEXT_SET_SLOT;
-        uint256 isSet;
         uint256 callerUint;
         assembly {
-            isSet := tload(setSlot)
             callerUint := tload(callerSlot)
         }
-        if (isSet == 0) {
-            revert HCUCallerContextNotSet();
-        }
         caller = address(uint160(callerUint));
+        if (caller == address(0)) revert HCUCallerContextNotSet();
     }
 
     function _clearHCUCallerContext() internal virtual {
         bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        bytes32 setSlot = HCU_CALLER_CONTEXT_SET_SLOT;
         assembly {
             tstore(callerSlot, 0)
-            tstore(setSlot, 0)
         }
     }
 
