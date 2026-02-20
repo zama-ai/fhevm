@@ -10,7 +10,15 @@ on:
   release:
     types: [created]
   pull_request:
-    types: [ready_for_review, review_requested, auto_merge_enabled, synchronize, opened, reopened]
+    types:
+      [
+        ready_for_review,
+        review_requested,
+        auto_merge_enabled,
+        synchronize,
+        opened,
+        reopened,
+      ]
 permissions:
   contents: read # required to fetch repository sources for builds
   packages: read # allows pulling existing images and metadata from GHCR
@@ -26,16 +34,19 @@ jobs:
       pull-requests: read # needed for paths-filter to inspect PR changes
       contents: read # required to access repository files for analysis
     outputs:
-      to_run: ${{ steps.select.outputs.services }}
+      relayer: ${{ steps.select.outputs.relayer }}
+      relayer_migrate: ${{ steps.select.outputs.relayer_migrate }}
+      services: ${{ steps.select.outputs.services }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Detect service changes
         id: changes
+        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         with:
           token: ${{ github.token }}
@@ -44,7 +55,7 @@ jobs:
               - 'apps/relayer/**'
               - 'docker/relayer/**'
               - '.github/workflows/docker.yaml'
-            relayer-migrate:
+            relayer_migrate:
               - 'apps/relayer/relayer-migrate/**'
               - 'docker/relayer-migrate/**'
               - '.github/workflows/docker.yaml'
@@ -54,88 +65,83 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
-          CHANGES_JSON: ${{ steps.changes.outputs.changes }}
+          RELAYER_CHANGED: ${{ steps.changes.outputs.relayer }}
+          RELAYER_MIGRATE_CHANGED: ${{ steps.changes.outputs.relayer_migrate }}
         run: |
-          # shellcheck shell=bash
-          set -eo pipefail
-          SERVICE_MAP='{
-            "relayer": {"name": "relayer", "context": ".", "dockerfile": "docker/relayer/Dockerfile", "target": "runtime"},
-            "relayer-migrate": {"name": "relayer-migrate", "context": ".", "dockerfile": "docker/relayer-migrate/Dockerfile", "target": "runtime"}
-          }'
-          if [ -z "$CHANGES_JSON" ]; then
-            CHANGES_JSON='[]'
-          fi
+          set -euo pipefail
+
+          relayer=false
+          relayer_migrate=false
+
           case "$EVENT_NAME" in
             pull_request)
-              TO_RUN=$(jq -nc \
-                --argjson service_map "$SERVICE_MAP" \
-                --argjson changes "$CHANGES_JSON" \
-                '$changes | map($service_map[.]) | map(select(. != null))')
+              relayer="${RELAYER_CHANGED:-false}"
+              relayer_migrate="${RELAYER_MIGRATE_CHANGED:-false}"
               ;;
             release)
-              service="${REF_NAME%%@*}"
-              if [ -n "$service" ] && [ "$service" != "$REF_NAME" ]; then
-                case "$service" in
-                  relayer|relayer-migrate)
-                    TO_RUN=$(jq -nc \
-                      --arg svc "$service" \
-                      --argjson service_map "$SERVICE_MAP" \
-                      '($service_map[$svc] // empty) as $entry | (if $entry == null then [] else [$entry] end)')
-                    ;;
-                  *)
-                    echo "Release ref '$REF_NAME' does not match a known service; skipping build." >&2
-                    TO_RUN='[]'
-                    ;;
-                esac
-              else
-                TO_RUN='[]'
-              fi
+              case "$REF_NAME" in
+                relayer@*)
+                  relayer=true
+                  ;;
+                relayer-migrate@*)
+                  relayer_migrate=true
+                  ;;
+                *)
+                  echo "Release ref '$REF_NAME' does not match a known service; skipping build." >&2
+                  ;;
+              esac
               ;;
             *)
-              TO_RUN=$(jq -nc \
-                --argjson service_map "$SERVICE_MAP" \
-                '[
-                  $service_map["relayer"],
-                  $service_map["relayer-migrate"]
-                ]')
+              relayer=true
+              relayer_migrate=true
               ;;
           esac
 
-          echo "Final to_run value: $TO_RUN"
-          echo "services=${TO_RUN}" >> "$GITHUB_OUTPUT"
+          echo "relayer=$relayer" >> "$GITHUB_OUTPUT"
+          echo "relayer_migrate=$relayer_migrate" >> "$GITHUB_OUTPUT"
+          SERVICES="$(jq -nc \
+            --argjson relayer "$relayer" \
+            --argjson relayer_migrate "$relayer_migrate" \
+            '[
+              (if $relayer then {"name":"relayer","context":".","dockerfile":"docker/relayer/Dockerfile","target":"runtime"} else empty end),
+              (if $relayer_migrate then {"name":"relayer-migrate","context":".","dockerfile":"docker/relayer-migrate/Dockerfile","target":"runtime"} else empty end)
+            ]')"
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+          echo "Selected services -> relayer=$relayer relayer-migrate=$relayer_migrate"
 
-  # Build and push Docker images for services with changes
+  # Build and push Docker images for selected services
   build-docker:
     name: docker-build-and-push/build-docker (bpr)
     needs: [detect-changes]
+    if: needs.detect-changes.outputs.services != '[]'
     strategy:
       fail-fast: true
       matrix:
-        service: ${{ fromJSON(needs.detect-changes.outputs.to_run) }}
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
     runs-on: ubuntu-latest
     permissions:
       packages: write # required to push service images to GHCR
       contents: read # fetch code and Dockerfiles during the build
     steps:
       - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Chainguard Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
@@ -143,7 +149,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/zama-ai/console/${{ matrix.service.name }}
           flavor: |
@@ -159,7 +165,7 @@ jobs:
 
       - name: Docker Build and Push
         id: build
-        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           file: ${{ matrix.service.dockerfile }}
           context: ${{ matrix.service.context }}

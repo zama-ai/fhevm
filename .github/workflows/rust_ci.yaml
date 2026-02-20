@@ -7,7 +7,9 @@ on:
     secrets:
       DEVELOPER_PLATFORM_ACTIONS_TOKEN:
         required: true
-      BOT_USERNAME:
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
         required: true
 permissions:
   contents: read
@@ -20,12 +22,9 @@ jobs:
   format:
     name: rust-ci/format
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        folder: [apps/relayer]
     steps:
       - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
@@ -38,23 +37,20 @@ jobs:
           components: rustfmt
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
         with:
-          workspaces: ${{ matrix.folder }}
+          workspaces: apps/relayer
 
       - name: Check formatting
-        working-directory: ${{ matrix.folder }}
+        working-directory: apps/relayer
         run: cargo fmt --all -- --check
 
   clippy:
     name: rust-ci/clippy
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        folder: [apps/relayer]
     steps:
       - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
@@ -67,79 +63,59 @@ jobs:
           components: clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          workspaces: ${{ matrix.folder }}
+          workspaces: apps/relayer
 
       - name: Clippy
-        working-directory: ${{ matrix.folder }}
+        working-directory: apps/relayer
         run: cargo clippy -- -D warnings
 
   test:
     name: rust-ci/test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        folder: [apps/relayer]
+    services:
+      postgres:
+        image: cgr.dev/zama.ai/postgres:17
+        credentials:
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: relayer_db
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d relayer_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     env:
       SQLX_OFFLINE: true # Use cached queries for compilation (speeds up CI)
-      # Aligned with local dev setup (apps/relayer/dev/docker-compose.yaml)
-      DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
-      APP_STORAGE__SQL_DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
       APP_GLOBAL__MOCK_TEST: true
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: relayer_db
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
-      - name: Setup PostgreSQL
+      - name: Set database URLs
+        env:
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
         run: |
-          # Stop all PostgreSQL instances
-          sudo systemctl stop postgresql || true
-
-          # Install PostgreSQL 17
-          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
-          sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          sudo apt-get update
-          sudo apt-get install -y postgresql-17
-
-          # Drop any existing clusters and create fresh one on port 5433 (aligned with local dev)
-          sudo pg_dropcluster 17 main --stop || true
-          sudo pg_dropcluster 16 main --stop || true
-          sudo pg_dropcluster 14 main --stop || true
-          sudo pg_createcluster 17 main --port=5433
-
-          # Configure max_connections and authentication
-          sudo tee -a /etc/postgresql/17/main/postgresql.conf > /dev/null <<EOF
-          max_connections = 500
-          shared_buffers = 256MB
-          EOF
-
-          # Allow password auth
-          echo "local all postgres trust" | sudo tee /etc/postgresql/17/main/pg_hba.conf
-          echo "host all all 127.0.0.1/32 md5" | sudo tee -a /etc/postgresql/17/main/pg_hba.conf
-          echo "host all all ::1/128 md5" | sudo tee -a /etc/postgresql/17/main/pg_hba.conf
-
-          # Start PostgreSQL
-          sudo pg_ctlcluster 17 main start
-
-          # Wait for PostgreSQL to be ready
-          until pg_isready -h localhost -p 5433; do sleep 1; done
-
-          # Create database and set password (aligned with local: postgres/postgres)
-          sudo -u postgres psql -p 5433 -c "ALTER USER postgres PASSWORD 'postgres';"
-          sudo -u postgres psql -p 5433 -c "CREATE DATABASE relayer_db;"
-
-          # Verify
-          sudo -u postgres psql -p 5433 -c "SHOW max_connections;"
-          echo "PostgreSQL 17 ready on port 5433 with max_connections=500"
+          {
+            echo "DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+            echo "APP_STORAGE__SQL_DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+            echo "TEST_DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+          } >> "$GITHUB_ENV"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
@@ -147,11 +123,11 @@ jobs:
           toolchain: stable
 
       - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          workspaces: ${{ matrix.folder }}
+          workspaces: apps/relayer
           # Separate cache key for build artifacts - only invalidated on Cargo.toml/lock changes
-          key: rust-build-${{ matrix.folder }}
+          key: rust-build-apps/relayer
           # Save target directory to reuse compiled artifacts
           cache-targets: true
           cache-all-crates: true
@@ -167,15 +143,15 @@ jobs:
 
       # 4. Run Migrations (Initializes the DB schema)
       - name: Migrate Database
-        working-directory: ${{ matrix.folder }}/relayer-migrate
+        working-directory: apps/relayer/relayer-migrate
         run: sqlx migrate run
 
       # Build test binaries separately - this gets cached
       - name: Build test binaries
-        working-directory: ${{ matrix.folder }}
+        working-directory: apps/relayer
         run: make test-build
 
       # Run the already-built test binaries
       - name: Run tests
-        working-directory: ${{ matrix.folder }}
+        working-directory: apps/relayer
         run: RUST_BACKTRACE=full make test-run

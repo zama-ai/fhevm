@@ -1,20 +1,21 @@
-name: "Cleanup - Cache"
+name: cleanup-cache
 on:
   schedule:
-    - cron: "0 0 * * 0"
+    - cron: 0 0 * * 0
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-
   delete-caches:
-    name: "Delete Actions caches"
+    name: cleanup-cache/delete-caches
     runs-on: ubuntu-latest
     permissions:
       actions: write # required to delete workflow caches via API
       contents: read
-    
     steps:
-      - name: "Wipe Github Actions cache"
+      - name: Wipe Github Actions cache
         uses: easimon/wipe-cache@e7ab82e64c328fd39c2e96933d426cd72ac2beba # v2

@@ -1,10 +1,3 @@
-# Main CI entrypoint
-#
-# The check-changes job returns a boolean represented as a string if some changes were made to a list of folders
-# Accordingly jobs are then launched or skipped.
-# This allows to have a single entrypoint against which github can accept PR requirements or not.
-# Also this creates less actions and a more coherent view of all checks made for a PR or new commit to main.
-
 name: ci
 
 on:
@@ -16,64 +9,18 @@ on:
 
 permissions:
   contents: read # required for repository checkout
-  pull-requests: read # needed for paths-filter to evaluate PR contents
 concurrency:
-  group: ci-lint-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check-changes:
-    name: ci/check-changes
-    runs-on: ubuntu-latest
-    outputs:
-      # Each output indicates if files in a specific component were modified
-      ci: ${{ steps.filter.outputs.ci }}
-      rust: ${{ steps.filter.outputs.rust }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          # Define paths that trigger specific component workflows
-          # Changes to conf-trace affect multiple components
-          filters: |
-            ci:
-              - '.github/workflows/**'
-            rust:
-              - 'apps/relayer/**'
-
-  # TODO: migrate from per language CI to per-component
-
   rust:
     name: ci/rust (bpr)
-    needs:
-      - check-changes
-    if: >-
-      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' && needs.check-changes.outputs.rust == 'true') ||
-      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'true')
     permissions:
       contents: read # required by the reusable workflow for checkout
-      pull-requests: read # allows annotations on PRs
       checks: write # reusable workflow needs to create check run summaries
     uses: ./.github/workflows/rust_ci.yaml
     secrets:
       DEVELOPER_PLATFORM_ACTIONS_TOKEN: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
-      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
-
-    # TODO: setup S3 cache
-    #   AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
-    #   AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
-
-  # Fake jobs to simulate a run of a Given Ci when there is no change
-  rust-no-changes:
-    name: ci/rust (bpr)
-    needs:
-      - check-changes
-    if: >-
-      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' && needs.check-changes.outputs.rust == 'false') ||
-      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'false')
-    runs-on: ubuntu-latest
-    steps:
-      - run: 'echo "No test required"'
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}

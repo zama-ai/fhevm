@@ -2,6 +2,8 @@ name: zizmor
 
 on:
   pull_request:
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -9,16 +11,16 @@ concurrency:
 jobs:
   zizmor:
     name: zizmor/zizmor (bpr)
-    runs-on: 'ubuntu-latest'
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
       contents: read
       actions: read
     steps:
       - name: Checkout project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: false
 
       - name: Check workflows with zizmor
         uses: zizmorcore/zizmor-action@2520132f44b3ed84916048d32e5c7153fc739fe7 # v0.0.3

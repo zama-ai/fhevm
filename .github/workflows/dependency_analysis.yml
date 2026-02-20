@@ -2,6 +2,8 @@ name: dependency-analysis
 
 on:
   pull_request:
+permissions:
+  contents: read # required to fetch repository sources for analysis
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -14,8 +16,7 @@ jobs:
       run:
         working-directory: apps/relayer
     steps:
-
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
 
@@ -25,7 +26,7 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14
+        uses: cargo-bins/cargo-binstall@7691a5b29cda4f5499b819e5618012ba4b6c3334 # v1.17.5
 
       - name: Install cargo tools
         run: |
@@ -42,6 +43,3 @@ jobs:
 
       - name: Security issue whitelist
         run: cargo-audit audit
-
-permissions:
-  contents: read # required to fetch repository sources for analysis
