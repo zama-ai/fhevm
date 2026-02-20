@@ -27,7 +27,7 @@ target-test/
 /target-debug
 
 # Local config file
-config/local.yaml
+config/local*.yaml
 
 # Advisory db and lock file
 Advisory-db*
