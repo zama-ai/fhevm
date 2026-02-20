@@ -7,7 +7,7 @@ use std::{
 use crate::{
     metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    ops::common::{try_extract_terminal_config_error, try_into_array},
+    ops::common::{try_extract_non_retryable_config_error, try_into_array},
     REVIEW,
 };
 
@@ -119,16 +119,16 @@ where
                     .await?;
                     bail!(e);
                 }
-                if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e) {
                     ALLOW_HANDLE_FAIL_COUNTER.inc();
                     warn!(
-                        error = %terminal_config_error,
+                        error = %non_retryable_config_error,
                         key = %key,
                         "Detected non-retryable gateway coprocessor config error while allowing handle"
                     );
                     self.stop_retrying_allow_handle_on_config_error(
                         key,
-                        &terminal_config_error.to_string(),
+                        &non_retryable_config_error.to_string(),
                     )
                     .await?;
                     return Ok(());

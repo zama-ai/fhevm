@@ -7,7 +7,7 @@ use crate::metrics::{
     DELEGATE_USER_DECRYPT_SUCCESS_COUNTER,
 };
 use crate::nonce_managed_provider::NonceManagedProvider;
-use crate::ops::common::{try_extract_terminal_config_error, CoprocessorConfigError};
+use crate::ops::common::{try_extract_non_retryable_config_error, CoprocessorConfigError};
 
 use alloy::primitives::{Address, FixedBytes};
 use alloy::providers::Provider;
@@ -158,13 +158,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                     );
                     return TxResult::TransientError;
                 }
-                if let Some(terminal_config_error) = try_extract_terminal_config_error(&error) {
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&error) {
                     warn!(
-                        error = %terminal_config_error,
+                        error = %non_retryable_config_error,
                         ?delegation,
                         "{operation} failed with non-retryable gateway coprocessor config error"
                     );
-                    return TxResult::NonRetryableConfigError(terminal_config_error);
+                    return TxResult::NonRetryableConfigError(non_retryable_config_error);
                 }
                 warn!(
                     %error,
@@ -555,7 +555,7 @@ pub async fn delayed_sorted_delegation(
         FOR UPDATE
         "#,
         up_to_block_number as i64,
-        delegation_max_retry as i64, // excludes delegations retired after a terminal config error (set to max_retry + 1)
+        delegation_max_retry as i64, // excludes delegations retired after a non-retryable config error (set to max_retry + 1)
     );
     let delegations_rows = query.fetch_all(tx.deref_mut()).await?;
     let mut delegations = Vec::with_capacity(delegations_rows.len());
@@ -616,7 +616,7 @@ pub async fn stop_retrying_delegation_on_config_error(
     tx: &mut DbTransaction<'_>,
     delegation: &DelegationRow,
     error: &str,
-    terminal_attempts: u64,
+    non_retryable_attempts: u64,
 ) {
     let res = match sqlx::query!(
         r#"
@@ -625,7 +625,7 @@ pub async fn stop_retrying_delegation_on_config_error(
             gateway_last_error = $2
         WHERE key = $3
         "#,
-        terminal_attempts as i64,
+        non_retryable_attempts as i64,
         error,
         delegation.key,
     )
@@ -634,7 +634,7 @@ pub async fn stop_retrying_delegation_on_config_error(
     {
         Ok(res) => res,
         Err(db_err) => {
-            error!(%db_err, ?delegation, "Cannot mark terminal delegation");
+            error!(%db_err, ?delegation, "Cannot mark non-retryable delegation");
             return;
         }
     };
@@ -642,7 +642,7 @@ pub async fn stop_retrying_delegation_on_config_error(
         error!(
             error,
             ?delegation,
-            "No rows updated when marking terminal delegation"
+            "No rows updated when marking non-retryable delegation"
         );
     }
 }

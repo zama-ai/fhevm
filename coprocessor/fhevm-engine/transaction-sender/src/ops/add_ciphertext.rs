@@ -6,7 +6,7 @@ use crate::{
     REVIEW,
 };
 
-use super::common::{try_extract_terminal_config_error, try_into_array};
+use super::common::{try_extract_non_retryable_config_error, try_into_array};
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -94,16 +94,16 @@ where
                     .await?;
                     bail!(e);
                 }
-                if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e) {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
-                        error = %terminal_config_error,
+                        error = %non_retryable_config_error,
                         handle = h,
                         "Non-retryable gateway coprocessor config error while adding ciphertext"
                     );
                     self.stop_retrying_add_ciphertext_on_config_error(
                         handle,
-                        &terminal_config_error.to_string(),
+                        &non_retryable_config_error.to_string(),
                     )
                     .await?;
                     return Ok(());

@@ -54,7 +54,7 @@ pub(crate) enum CoprocessorConfigError {
 ///
 /// Returns `Some(error)` when the RPC payload matches one of the known config
 /// errors, `None` otherwise.
-pub(crate) fn try_extract_terminal_config_error(
+pub(crate) fn try_extract_non_retryable_config_error(
     err: &RpcError<TransportErrorKind>,
 ) -> Option<CoprocessorConfigError> {
     err.as_error_resp()

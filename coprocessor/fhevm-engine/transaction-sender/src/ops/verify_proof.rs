@@ -1,4 +1,4 @@
-use super::common::try_extract_terminal_config_error;
+use super::common::try_extract_non_retryable_config_error;
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -160,16 +160,16 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
-                } else if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                } else if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e) {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     warn!(
                         zk_proof_id = txn_request.0,
-                        error = %terminal_config_error,
+                        error = %non_retryable_config_error,
                         "Non-retryable gateway coprocessor config error while sending verify_proof transaction"
                     );
                     self.stop_retrying_verify_proof_on_config_error(
                         txn_request.0,
-                        &terminal_config_error.to_string(),
+                        &non_retryable_config_error.to_string(),
                     )
                     .await?;
                     return Ok(());

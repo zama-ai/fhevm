@@ -478,7 +478,7 @@ async fn stop_retrying_delegation_on_gw_config_error(
         attempts += 1;
         assert!(
             attempts < 80,
-            "timed out waiting for terminal state; gateway_nb_attempts={}, last_error={:?}",
+            "timed out waiting for non-retryable state; gateway_nb_attempts={}, last_error={:?}",
             row.gateway_nb_attempts,
             row.gateway_last_error
         );
@@ -493,7 +493,7 @@ async fn stop_retrying_delegation_on_gw_config_error(
         row.gateway_last_error
             .as_deref()
             .is_some_and(is_coprocessor_config_error),
-        "Expected terminal gateway config error, got {:?}",
+        "Expected non-retryable gateway config error, got {:?}",
         row.gateway_last_error
     );
 
