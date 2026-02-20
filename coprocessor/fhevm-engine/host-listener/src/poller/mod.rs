@@ -16,7 +16,6 @@ use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::cmd::block_history::BlockSummary;
@@ -90,14 +89,6 @@ pub struct PollerConfig {
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
-    let _otel_guard = match telemetry::init_otel(&config.service_name) {
-        Ok(otel_guard) => otel_guard,
-        Err(err) => {
-            error!(error = %err, "Failed to setup OTLP");
-            None
-        }
-    };
-
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
 

@@ -397,6 +397,7 @@ impl Database {
     }
 
     #[rustfmt::skip]
+    #[tracing::instrument(name = "handle_tfhe_event", skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -411,17 +412,17 @@ impl Database {
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let fhe_operation = event_to_op_int(event);
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            log.transaction_hash.as_ref(),
+        );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
             self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
-
-        let _t = telemetry::tracer(
-            "handle_tfhe_event",
-            &log.transaction_hash.map(|h| h.to_vec()),
-        );
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -563,6 +564,7 @@ impl Database {
     }
 
     /// Handles all types of ACL events
+    #[tracing::instrument(skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -573,10 +575,13 @@ impl Database {
         block_number: u64,
     ) -> Result<bool, SqlxError> {
         let data = &event.data;
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            transaction_hash.as_ref(),
+        );
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
-
-        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
 
         // Record only Allowed or AllowedForDecryption events
         if matches!(

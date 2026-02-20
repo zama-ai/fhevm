@@ -10,8 +10,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
-use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha3::{Digest, Keccak256};
@@ -165,8 +164,10 @@ async fn run_uploader_loop(
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
-                    let upload_span = error_span!("upload_s3", operation = "upload_s3");
-                    upload_span.set_parent(item.otel.context().clone());
+                    // Cross-boundary: spawned task; restore the OTel context
+                    // that was captured when the upload item was created.
+                    let upload_span = error_span!("upload_s3");
+                    upload_span.set_parent(item.span.context());
                     match upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
                         .await
@@ -256,7 +257,6 @@ async fn upload_ciphertexts(
 
         let ct128_check_span = tracing::info_span!(
             "ct128_check_s3",
-            operation = "ct128_check_s3",
             ct_type = "ct128",
             exists = tracing::field::Empty,
         );
@@ -279,7 +279,6 @@ async fn upload_ciphertexts(
         if !exists {
             let ct128_upload_span = tracing::info_span!(
                 "ct128_upload_s3",
-                operation = "ct128_upload_s3",
                 ct_type = "ct128",
                 format = %format_as_str,
                 len = ct128_bytes.len(),
@@ -329,7 +328,6 @@ async fn upload_ciphertexts(
 
         let ct64_check_span = tracing::info_span!(
             "ct64_check_s3",
-            operation = "ct64_check_s3",
             ct_type = "ct64",
             exists = tracing::field::Empty,
         );
@@ -352,7 +350,6 @@ async fn upload_ciphertexts(
         if !exists {
             let ct64_upload_span = tracing::info_span!(
                 "ct64_upload_s3",
-                operation = "ct64_upload_s3",
                 ct_type = "ct64",
                 len = ct64_compressed.len(),
             );
@@ -536,6 +533,17 @@ async fn fetch_pending_uploads(
         };
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
+            let recovery_span = tracing::info_span!(
+                "recovery_task",
+                txn_id = tracing::field::Empty,
+                handle = tracing::field::Empty
+            );
+            telemetry::record_short_hex(&recovery_span, "handle", &handle);
+            telemetry::record_short_hex_if_some(
+                &recovery_span,
+                "txn_id",
+                transaction_id.as_deref(),
+            );
             let item = HandleItem {
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
@@ -543,7 +551,7 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: telemetry::tracer_with_handle("recovery_task", handle, &transaction_id),
+                span: recovery_span,
                 transaction_id,
             };
 

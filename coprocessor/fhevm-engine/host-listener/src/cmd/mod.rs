@@ -18,7 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
@@ -1040,14 +1039,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 anyhow!("Invalid tfhe contract address: {err}")
             })?,
         )
-    };
-
-    let _otel_guard = match telemetry::init_otel(&args.service_name) {
-        Ok(otel_guard) => otel_guard,
-        Err(err) => {
-            error!(error = %err, "Failed to setup OTLP");
-            None
-        }
     };
 
     let mut log_iter = InfiniteLogIter::new(&args);

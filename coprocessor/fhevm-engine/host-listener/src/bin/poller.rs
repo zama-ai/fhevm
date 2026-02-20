@@ -5,8 +5,8 @@ use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
-use fhevm_engine_common::metrics_server;
 use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::{metrics_server, telemetry};
 use host_listener::cmd::{
     DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
     DEFAULT_DEPENDENCE_CROSS_BLOCK,
@@ -126,11 +126,11 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_level(true)
-        .with_max_level(args.log_level)
-        .init();
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        args.log_level,
+        &args.service_name,
+        "otlp-layer",
+    );
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 

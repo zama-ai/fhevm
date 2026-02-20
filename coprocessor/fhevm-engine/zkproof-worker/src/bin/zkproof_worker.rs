@@ -82,13 +82,11 @@ pub fn parse_args() -> Args {
 async fn main() {
     let args = parse_args();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_current_span(true)
-        .with_span_list(false)
-        .with_level(true)
-        .with_max_level(args.log_level)
-        .init();
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        args.log_level,
+        &args.service_name,
+        "otlp-layer",
+    );
 
     let database_url = args.database_url.clone().unwrap_or_default();
 
@@ -101,14 +99,6 @@ async fn main() {
         worker_thread_count: args.worker_thread_count,
         pg_timeout: args.pg_timeout,
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
-    };
-
-    let _otel_guard = match telemetry::init_otel(&args.service_name) {
-        Ok(otel_guard) => otel_guard,
-        Err(err) => {
-            error!(error = %err, "Failed to setup OTLP");
-            None
-        }
     };
 
     let cancel_token = CancellationToken::new();
