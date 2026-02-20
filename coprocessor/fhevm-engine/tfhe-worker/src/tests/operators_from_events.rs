@@ -299,7 +299,6 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -311,8 +310,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         if !supported_types().contains(&op.input_types) {
             continue;
         }
-        let support_bytes = matches!(S::try_from(op.operator).unwrap(), S::FheEq | S::FheNe);
-        if op.bits > 256 && op.is_scalar && !support_bytes {
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
             continue;
         }
         let lhs_handle = next_handle();
@@ -461,6 +460,10 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 
     for op in &ops {
         if !supported_types().contains(&op.operand_types) {
+            continue;
+        }
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
             continue;
         }
         let input_handle = next_handle();
