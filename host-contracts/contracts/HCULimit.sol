@@ -15,9 +15,6 @@ import {FheType} from "./shared/FheType.sol";
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
-    event HCUPerBlockSet(uint192 hcuPerBlock);
-    event BlockHCUWhitelistSet(address indexed account, bool isWhitelisted);
-
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -41,6 +38,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
+
+    /// @notice Emitted when the public block HCU cap is updated.
+    /// @param hcuPerBlock New public block HCU cap (`type(uint192).max` disables block throttling).
+    event HCUPerBlockSet(uint192 hcuPerBlock);
+
+    /// @notice Emitted when a caller's block-cap whitelist status is updated.
+    /// @param account Caller address whose whitelist status changed.
+    /// @param isWhitelisted Whether `account` bypasses the public block HCU cap.
+    event BlockHCUWhitelistSet(address indexed account, bool isWhitelisted);
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
