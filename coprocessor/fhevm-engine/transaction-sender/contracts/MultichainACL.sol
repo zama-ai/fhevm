@@ -31,14 +31,10 @@ contract MultichainACL {
         configErrorMode = ConfigErrorMode(mode);
     }
 
-    function maybeRevertConfigError() internal view {
+    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* extraData */) public {
         if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
             revert NotCoprocessorTxSender(msg.sender);
         }
-    }
-
-    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* extraData */) public {
-        maybeRevertConfigError();
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
@@ -46,7 +42,9 @@ contract MultichainACL {
     }
 
     function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* extraData */) public {
-        maybeRevertConfigError();
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
@@ -83,7 +81,9 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
-        maybeRevertConfigError();
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }
@@ -108,7 +108,9 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
-        maybeRevertConfigError();
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }

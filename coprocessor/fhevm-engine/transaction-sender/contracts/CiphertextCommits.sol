@@ -31,19 +31,15 @@ contract CiphertextCommits {
         configErrorMode = ConfigErrorMode(mode);
     }
 
-    function maybeRevertConfigError() internal view {
-        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
-            revert NotCoprocessorTxSender(msg.sender);
-        }
-    }
-
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 /* keyId */,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) public {
-        maybeRevertConfigError();
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (alreadyAddedRevert) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
