@@ -36,6 +36,8 @@ pub enum ComputeError {
     Json(#[from] serde_json::Error),
     #[error("TFHE error: {0}")]
     Tfhe(String),
+    #[error("Rerand error: {0}")]
+    Rerand(String),
     #[error("Missing current key id in context")]
     MissingKeyId,
     #[error("Unexpected EOF: {0}")]

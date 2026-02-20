@@ -1,6 +1,6 @@
 use crate::cli::Args;
 use crate::context::Context;
-use crate::{CONSUMER_OVERHEAD, CiphertextInfo, ComputeError, Execution};
+use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::msg_broker::{create_recv_channel, extract_delivery, try_decode};
 use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
@@ -10,9 +10,9 @@ use fhevm_engine_common::types::SupportedFheCiphertexts;
 use futures_util::stream::StreamExt;
 use lapin::message::Delivery;
 use sqlx::types::Uuid;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
-use tfhe::boolean::backward_compatibility::client_key;
+use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -186,25 +186,9 @@ async fn prepare_and_execute(
     CONSUMER_OVERHEAD.observe(elapsed);
 
     let exec_result = execute_partition(&ctx, partition).await?;
-    try_store_ciphertext(&ctx, pid, exec_result).await?;
 
-    Ok(())
-}
-
-async fn try_store_ciphertext(
-    ctx: &Context,
-    pid: String,
-    ciphertexts: Vec<CiphertextInfo>,
-) -> Result<(), ComputeError> {
-    for ct in ciphertexts.iter() {
-        ctx.cache_store(ct).await;
-        info!(pid, handle = %hex::encode(&ct.handle), "Stored computed ciphertext in cache");
-    }
-
-    // batch store
-    let count = ciphertexts.len();
-    ctx.batch_store_ciphertexts(ciphertexts).await?;
-
+    let count = exec_result.len();
+    ctx.batch_store_ciphertexts(exec_result).await?;
     info!(pid, count, "Stored computed ciphertexts (data-layer)");
 
     Ok(())
@@ -217,11 +201,11 @@ async fn execute_partition(
     ctx: &Context,
     partition: ExecutablePartition,
 ) -> Result<Vec<CiphertextInfo>, ComputeError> {
-    // TODO: rerandomization will be implemented pending clarification
     // TODO: determine GPU index to use for this partition execution, if GPU is enabled
+    let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
 
     let mut computed_cts = Vec::new();
-    for (op_node, _, inputs) in &partition.computations {
+    for (op_node, dfg_idx, inputs) in &partition.computations {
         let handle = hex::encode(&op_node.output_handle[0..4]);
         info!(
             pid = partition.id(),
@@ -242,8 +226,9 @@ async fn execute_partition(
         )
         .await?;
 
-        // scalar operands are expected to be small and thus can be sent along with the partition execution message,
-        // so we can avoid fetching them from Redis
+        tfhe::set_server_key(keys.server_key.clone());
+
+        // scalar operands are sent along with the partition execution message
         let scalar_inputs = op_node
             .scalar_operands
             .iter()
@@ -255,6 +240,13 @@ async fn execute_partition(
             .map(|ci| ci.ciphertext.clone())
             .collect();
 
+        // Re-randomise the ciphertexts before performing any operation on them.
+        let rerand_seed = [
+            op_node.block_info.txn_hash.as_slice(),
+            &dfg_idx.index().to_be_bytes(),
+        ];
+        re_randomise_inputs(&mut inputs, rerand_seed, keys.pks.clone())?;
+
         inputs.extend(scalar_inputs);
 
         info!(
@@ -265,8 +257,6 @@ async fn execute_partition(
             "Fetched input ciphertexts for node in partition"
         );
 
-        let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
-        tfhe::set_server_key(keys.server_key);
         let result = try_execute_fhe_operation(op_node, inputs, false, 0)?;
 
         info!(
@@ -288,16 +278,24 @@ async fn execute_partition(
             );
         }
 
-        computed_cts.push(CiphertextInfo {
+        let ct = CiphertextInfo {
             handle: op_node.output_handle(),
             ciphertext: result.0,
-        });
+        };
+
+        ctx.cache_store(&ct).await;
+        info!(
+            pid = partition.id(),
+            handle, "Stored computed ciphertext in cache"
+        );
+
+        computed_cts.push(ct);
     }
 
     Ok(computed_cts)
 }
 
-fn try_execute_fhe_operation(
+fn try_execute_fhe_operation<'a>(
     node: &OpNode,
     inputs: Vec<SupportedFheCiphertexts>,
     compress_result: bool,
@@ -340,7 +338,12 @@ pub fn run_computation(
 ) -> Result<OpResult, ComputeError> {
     let op = FheOperation::try_from(operation);
 
-    info!(operation, gpu_idx, "Performing FHE operation");
+    let op_name = op
+        .as_ref()
+        .map(|o| format!("{:?}", o))
+        .unwrap_or_else(|_| format!("Unknown({})", operation));
+
+    info!(op_name, gpu_idx, "Performing FHE operation");
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             let (ct_type, ct_bytes) = inputs[0].compress();
@@ -361,4 +364,35 @@ pub fn run_computation(
 
         Err(e) => Err(ComputeError::Other(e.to_string())),
     }
+}
+
+const TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
+const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+fn re_randomise_inputs<'a>(
+    inputs: &mut Vec<SupportedFheCiphertexts>,
+    seed: impl IntoIterator<Item = &'a [u8]>,
+    cpk: tfhe::CompactPublicKey,
+) -> Result<(), ComputeError> {
+    if inputs.is_empty() {
+        return Ok(());
+    }
+
+    let mut re_rand_context = ReRandomizationContext::new(
+        TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR,
+        seed,
+        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+    );
+    for input in inputs.iter() {
+        input.add_to_re_randomization_context(&mut re_rand_context);
+    }
+    let mut seed_gen = re_rand_context.finalize();
+    for input in inputs.iter_mut() {
+        input.re_randomise(
+            &cpk,
+            seed_gen
+                .next_seed()
+                .map_err(|e| ComputeError::Rerand(e.to_string()))?,
+        )?;
+    }
+    Ok(())
 }
