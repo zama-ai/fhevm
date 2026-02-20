@@ -101,7 +101,7 @@ where
                         handle = h,
                         "Detected non-retryable gateway coprocessor config error while adding ciphertext"
                     );
-                    self.mark_add_ciphertext_terminal_config_error(
+                    self.stop_retrying_add_ciphertext_on_config_error(
                         handle,
                         &terminal_config_error.to_string(),
                     )
@@ -308,7 +308,7 @@ where
         Ok(())
     }
 
-    async fn mark_add_ciphertext_terminal_config_error(
+    async fn stop_retrying_add_ciphertext_on_config_error(
         &self,
         handle: &[u8],
         error: &str,

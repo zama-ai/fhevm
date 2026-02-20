@@ -615,7 +615,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 #[case::private_key(SignerType::PrivateKey)]
 #[tokio::test]
 #[serial(db)]
-async fn add_ciphertext_terminal_on_gw_config_error(
+async fn stop_retrying_add_ciphertext_on_gw_config_error(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let config_error_mode: u8 = 1;

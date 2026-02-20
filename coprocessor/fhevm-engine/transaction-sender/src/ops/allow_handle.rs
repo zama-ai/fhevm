@@ -126,7 +126,7 @@ where
                         key = %key,
                         "Detected non-retryable gateway coprocessor config error while allowing handle"
                     );
-                    self.mark_allow_handle_terminal_config_error(
+                    self.stop_retrying_allow_handle_on_config_error(
                         key,
                         &terminal_config_error.to_string(),
                     )
@@ -338,7 +338,7 @@ where
         Ok(())
     }
 
-    async fn mark_allow_handle_terminal_config_error(
+    async fn stop_retrying_allow_handle_on_config_error(
         &self,
         key: &Key,
         error: &str,

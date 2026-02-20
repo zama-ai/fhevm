@@ -494,7 +494,7 @@ where
                 TxResult::NonRetryableConfigError(e) => {
                     nb_errors += 1;
                     other_error = true;
-                    mark_delegation_terminal_config_error(
+                    stop_retrying_delegation_on_config_error(
                         &mut tx,
                         &delegation,
                         &e.to_string(),
@@ -612,7 +612,7 @@ pub async fn update_error_delegation(
     }
 }
 
-pub async fn mark_delegation_terminal_config_error(
+pub async fn stop_retrying_delegation_on_config_error(
     tx: &mut DbTransaction<'_>,
     delegation: &DelegationRow,
     error: &str,

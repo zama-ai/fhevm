@@ -362,7 +362,7 @@ async fn delegate_user_decrypt_idempotent_error_call(
 #[case::private_key(SignerType::PrivateKey)]
 #[tokio::test]
 #[serial(db)]
-async fn delegate_user_decrypt_terminal_on_gw_config_error(
+async fn stop_retrying_delegation_on_gw_config_error(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let config_error_mode: u8 = 1;

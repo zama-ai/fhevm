@@ -1303,7 +1303,7 @@ async fn verify_proof_max_retries_do_not_remove_entry(
 #[case::private_key(SignerType::PrivateKey)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_terminal_on_gw_config_error(
+async fn stop_retrying_verify_proof_on_gw_config_error(
     #[case] signer_type: SignerType,
     #[values(1u8, 2, 3)] config_error_mode: u8,
 ) -> anyhow::Result<()> {

@@ -167,7 +167,7 @@ where
                         error = %terminal_config_error,
                         "Detected non-retryable gateway coprocessor config error while sending verify_proof transaction"
                     );
-                    self.mark_verify_proof_terminal_config_error(
+                    self.stop_retrying_verify_proof_on_config_error(
                         txn_request.0,
                         &terminal_config_error.to_string(),
                     )
@@ -229,7 +229,7 @@ where
         Ok(())
     }
 
-    async fn mark_verify_proof_terminal_config_error(
+    async fn stop_retrying_verify_proof_on_config_error(
         &self,
         zk_proof_id: i64,
         error: &str,
