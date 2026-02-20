@@ -275,7 +275,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 
     let init_tx = next_handle();
     let mut bald = next_handle();
-    insert_trivial_encrypt(&harness.listener_db, &mut tx, init_tx, 20, 5, bald, false).await?;
+    insert_trivial_encrypt(&harness.listener_db, &mut tx, init_tx, 20, 5, bald, true).await?;
 
     for _ in 0..num_samples {
         let tx_id = next_handle();
