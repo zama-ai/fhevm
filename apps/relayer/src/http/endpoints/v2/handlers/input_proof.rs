@@ -26,6 +26,7 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::repositories::input_proof_repo::{
     InputProofInsertResult, InputProofRepository,
 };
+use axum::http::HeaderMap;
 use axum::{
     body::Bytes,
     extract::{FromRequest, Path},
@@ -128,7 +129,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 "/v2/input-proof/{job_id}",
                 axum::routing::get({
                     let handler = self;
-                    move |path| async move { handler.input_proof_get_v2(path).await }
+                    move |path, headers: HeaderMap| async move {
+                        handler.input_proof_get_v2(path, headers).await
+                    }
                 }),
             )
     }
@@ -139,6 +142,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::InputProof,
             HttpMethod::Post,
             HttpApiVersion::V2,
+            req.headers().clone(),
             async move { self.handle_post(req, &()).await },
         )
         .await
@@ -146,11 +150,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     }
 
     /// GET /v2/input-proof/<job_id> - Check status and get result
-    pub async fn input_proof_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
+    pub async fn input_proof_get_v2(
+        &self,
+        Path(job_id): Path<Uuid>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
         http_metrics::with_http_metrics(
             HttpEndpoint::InputProof,
             HttpMethod::Get,
             HttpApiVersion::V2,
+            headers,
             async move { self.handle_get(job_id).await },
         )
         .await
@@ -627,9 +636,10 @@ where
 pub async fn input_proof_get_v2<D>(
     handler: Arc<InputProofHandler<D>>,
     Path(job_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> impl IntoResponse
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
-    handler.input_proof_get_v2(Path(job_id)).await
+    handler.input_proof_get_v2(Path(job_id), headers).await
 }

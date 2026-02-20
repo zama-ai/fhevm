@@ -1,5 +1,4 @@
-use std::future::Future;
-
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use once_cell::sync::OnceCell;
 use prometheus::{
@@ -7,6 +6,7 @@ use prometheus::{
     HistogramOpts, HistogramVec, Opts, Registry,
 };
 use reqwest::StatusCode;
+use std::future::Future;
 use tokio::time::Instant;
 
 use crate::config::settings::HttpMetricsConfig;
@@ -25,7 +25,13 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
     HTTP_METRICS.get_or_init(|| HttpMetrics {
         requests_total: register_counter_vec_with_registry!(
             Opts::new("relayer_http_requests_total", "Count of HTTP requests"),
-            &["endpoint", "method", "version"],
+            &[
+                "endpoint",
+                "method",
+                "version",
+                "relayer_sdk_name",
+                "relayer_sdk_version"
+            ],
             registry
         )
         .unwrap(),
@@ -49,11 +55,23 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
 }
 
 /// Increment the HTTP requests_total metric.
-pub fn requests_total(endpoint: HttpEndpoint, method: HttpMethod, version: HttpApiVersion) {
+pub fn requests_total(
+    endpoint: HttpEndpoint,
+    method: HttpMethod,
+    version: HttpApiVersion,
+    headers: HeaderMap,
+) {
+    let (sdk_name, sdk_version) = extract_sdk_info(&headers);
     let metrics = HTTP_METRICS.get().expect("HTTP metrics not initialized");
     metrics
         .requests_total
-        .with_label_values(&[endpoint.as_str(), method.as_str(), version.as_str()])
+        .with_label_values(&[
+            endpoint.as_str(),
+            method.as_str(),
+            version.as_str(),
+            sdk_name,
+            sdk_version,
+        ])
         .inc();
 }
 
@@ -178,13 +196,14 @@ pub async fn with_http_metrics<Fut, R>(
     endpoint: HttpEndpoint,
     method: HttpMethod,
     version: HttpApiVersion,
+    headers: HeaderMap,
     fut: Fut,
 ) -> impl IntoResponse
 where
     Fut: Future<Output = R>,
     R: IntoResponse,
 {
-    requests_total(endpoint, method, version);
+    requests_total(endpoint, method, version, headers);
 
     let start = Instant::now();
 
@@ -202,4 +221,16 @@ where
     );
 
     response
+}
+
+fn extract_sdk_info(headers: &HeaderMap) -> (&str, &str) {
+    let sdk_name = headers
+        .get("zama-sdk-name")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+    let sdk_version = headers
+        .get("zama-sdk-version")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+    (sdk_name, sdk_version)
 }

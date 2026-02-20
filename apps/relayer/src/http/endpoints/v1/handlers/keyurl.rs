@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use axum::http::HeaderMap;
 use axum::{response::IntoResponse, Json};
 use tokio::{sync::watch, time::timeout};
 use tracing::{error, info};
@@ -63,15 +64,15 @@ impl KeyUrlHandler {
             "/v1/keyurl",
             axum::routing::get({
                 let handler = self.clone();
-                move || async move {
+                move |header: HeaderMap| async move {
                     let handler = handler.clone();
-                    keyurl_v1(handler).await
+                    keyurl_v1(handler, header).await
                 }
             }),
         )
     }
 
-    pub async fn keyurl_v1(&self) -> impl IntoResponse {
+    pub async fn keyurl_v1(&self, header: HeaderMap) -> impl IntoResponse {
         let mut rx = self.keyurl_rx.clone();
 
         // If not initialized, wait up to 5 seconds for the first update
@@ -90,6 +91,7 @@ impl KeyUrlHandler {
             HttpEndpoint::KeyUrl,
             HttpMethod::Get,
             HttpApiVersion::V1,
+            header,
             async move {
                 match response {
                     Some(keyurl_response) => Json(keyurl_response).into_response(),
@@ -133,6 +135,6 @@ responses(
     (status = 503, description = "Service unavailable - KeyUrl not yet initialized"),
 ),
 )]
-pub async fn keyurl_v1(handler: Arc<KeyUrlHandler>) -> impl IntoResponse {
-    handler.keyurl_v1().await
+pub async fn keyurl_v1(handler: Arc<KeyUrlHandler>, header: HeaderMap) -> impl IntoResponse {
+    handler.keyurl_v1(header).await
 }

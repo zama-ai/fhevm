@@ -57,6 +57,7 @@ where
         HttpEndpoint::UserDecrypt,
         HttpMethod::Post,
         HttpApiVersion::V1,
+        req.headers().clone(),
         async move { handler.handle(req, &()).await },
     )
     .await
@@ -112,6 +113,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::UserDecrypt,
             HttpMethod::Post,
             HttpApiVersion::V1,
+            req.headers().clone(),
             async move { self.handle(req, &()).await },
         )
         .await

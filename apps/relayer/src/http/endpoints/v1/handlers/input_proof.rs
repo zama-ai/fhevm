@@ -74,6 +74,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::InputProof,
             HttpMethod::Post,
             HttpApiVersion::V1,
+            req.headers().clone(),
             async move { self.handle(req, &()).await },
         )
         .await

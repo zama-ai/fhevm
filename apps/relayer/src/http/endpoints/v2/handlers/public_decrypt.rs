@@ -28,6 +28,7 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::repositories::public_decrypt_repo::{
     PublicDecryptInsertResult, PublicDecryptRepository,
 };
+use axum::http::HeaderMap;
 use axum::{
     body::Bytes as AxumBytes,
     extract::{FromRequest, Path},
@@ -133,7 +134,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 "/v2/public-decrypt/{job_id}",
                 axum::routing::get({
                     let handler = self;
-                    move |path| async move { handler.public_decrypt_get_v2(path).await }
+                    move |path, headers: HeaderMap| async move {
+                        handler.public_decrypt_get_v2(path, headers).await
+                    }
                 }),
             )
     }
@@ -147,6 +150,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::PublicDecrypt,
             HttpMethod::Post,
             HttpApiVersion::V2,
+            req.headers().clone(),
             async move { self.handle_post(req, &()).await },
         )
         .await
@@ -154,11 +158,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     }
 
     /// GET /v2/public-decrypt/<job_id> - Check status and get result
-    pub async fn public_decrypt_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
+    pub async fn public_decrypt_get_v2(
+        &self,
+        Path(job_id): Path<Uuid>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
         http_metrics::with_http_metrics(
             HttpEndpoint::PublicDecrypt,
             HttpMethod::Get,
             HttpApiVersion::V2,
+            headers,
             async move { self.handle_get(job_id).await },
         )
         .await
@@ -637,9 +646,10 @@ where
 pub async fn public_decrypt_get_v2<D>(
     handler: Arc<PublicDecryptHandler<D>>,
     Path(job_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> impl IntoResponse
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
-    handler.public_decrypt_get_v2(Path(job_id)).await
+    handler.public_decrypt_get_v2(Path(job_id), headers).await
 }

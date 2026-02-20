@@ -79,6 +79,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::PublicDecrypt,
             HttpMethod::Post,
             HttpApiVersion::V1,
+            req.headers().clone(),
             async move { self.handle(req, &()).await },
         )
         .await

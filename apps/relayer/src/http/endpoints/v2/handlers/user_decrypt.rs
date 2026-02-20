@@ -32,6 +32,7 @@ use crate::store::sql::models::{
 use crate::store::sql::repositories::user_decrypt_repo::{
     UserDecryptInsertResult, UserDecryptRepository,
 };
+use axum::http::HeaderMap;
 use axum::{
     body::Bytes as AxumBytes,
     extract::{FromRequest, Path},
@@ -153,14 +154,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 "/v2/user-decrypt/{job_id}",
                 axum::routing::get({
                     let handler = self.clone();
-                    move |path| async move { handler.user_decrypt_get_v2(path).await }
+                    move |path, headers: HeaderMap| async move {
+                        handler.user_decrypt_get_v2(path, headers).await
+                    }
                 }),
             )
             .route(
                 "/v2/delegated-user-decrypt/{job_id}",
                 axum::routing::get({
                     let handler = self;
-                    move |path| async move { handler.user_decrypt_get_v2(path).await }
+                    move |path, headers: HeaderMap| async move {
+                        handler.user_decrypt_get_v2(path, headers).await
+                    }
                 }),
             )
     }
@@ -171,6 +176,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::UserDecrypt,
             HttpMethod::Post,
             HttpApiVersion::V2,
+            req.headers().clone(),
             async move { self.handle_post(req, &()).await },
         )
         .await
@@ -186,6 +192,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpEndpoint::DelegatedUserDecrypt,
             HttpMethod::Post,
             HttpApiVersion::V2,
+            req.headers().clone(),
             async move { self.handle_delegated_user_decrypt_post(req, &()).await },
         )
         .await
@@ -193,11 +200,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     }
 
     /// GET /v2/user-decrypt/<job_id> - Check status and get result
-    pub async fn user_decrypt_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
+    pub async fn user_decrypt_get_v2(
+        &self,
+        Path(job_id): Path<Uuid>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
         http_metrics::with_http_metrics(
             HttpEndpoint::UserDecrypt,
             HttpMethod::Get,
             HttpApiVersion::V2,
+            headers,
             async move { self.handle_get(job_id).await },
         )
         .await
@@ -899,9 +911,10 @@ where
 pub async fn user_decrypt_get_v2<D>(
     handler: Arc<UserDecryptHandler<D>>,
     Path(job_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> impl IntoResponse
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
-    handler.user_decrypt_get_v2(Path(job_id)).await
+    handler.user_decrypt_get_v2(Path(job_id), headers).await
 }
