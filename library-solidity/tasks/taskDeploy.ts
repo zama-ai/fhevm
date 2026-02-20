@@ -226,7 +226,7 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
+  await upgrades.upgradeProxy(proxy, newImplem);
   console.info('HCULimit code set successfully at address:', proxyAddress);
 });
 
