@@ -138,7 +138,7 @@ jobs:
           sudo usermod -aG docker "$USER"
           newgrp docker
           sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
-          cargo install sqlx-cli
+          cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c

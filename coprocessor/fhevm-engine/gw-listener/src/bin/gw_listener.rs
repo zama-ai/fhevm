@@ -82,6 +82,13 @@ struct Conf {
 
     #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true, alias = "catchup-kms-generation-from-block")]
     pub replay_from_block: Option<i64>,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Skip VerifyProofRequest events during replay"
+    )]
+    pub replay_skip_verify_proof: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -162,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
         replay_from_block: conf.replay_from_block,
+        replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
     };
 

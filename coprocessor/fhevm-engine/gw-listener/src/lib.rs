@@ -52,6 +52,7 @@ pub struct ConfigSettings {
     pub get_logs_poll_interval: Duration,
     pub get_logs_block_batch_size: u64,
     pub replay_from_block: Option<i64>,
+    pub replay_skip_verify_proof: bool,
 
     pub log_last_processed_every_number_of_updates: u64,
 }
@@ -86,6 +87,7 @@ impl Default for ConfigSettings {
             get_logs_poll_interval: Duration::from_millis(500),
             get_logs_block_batch_size: 100,
             replay_from_block: None,
+            replay_skip_verify_proof: false,
             log_last_processed_every_number_of_updates: 50,
         }
     }
