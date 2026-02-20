@@ -28,7 +28,11 @@ rand = "0.9.0"
 indexmap = "2.7"
 
 # Ethereum types with WebSocket support - match relayer version + add needed features
-alloy = { version = "1.0.22", features = ["provider-ws", "rpc-types", "json-rpc"] }
+alloy = { version = "1.7.3", features = [
+  "provider-ws",
+  "rpc-types",
+  "json-rpc",
+] }
 
 # Explicitly add futures for Stream trait
 futures = "0.3"

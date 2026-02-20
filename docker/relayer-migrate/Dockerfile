@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Base from https://docs.docker.com/guides/rust/develop/
-ARG RUST_VERSION=1.90.0
+ARG RUST_VERSION=1.93
 ARG APP_NAME=relayer-migrate
 
 FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build

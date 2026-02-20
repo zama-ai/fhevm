@@ -14,8 +14,13 @@ tracing-chrome = ["dep:tracing-chrome"]
 long-running-tests = []
 
 [dependencies]
-alloy = { version = "1.2.1", features = ["consensus", "json-rpc", "provider-ws", "serde"] }
-alloy-dyn-abi = "1.4.1"
+alloy = { version = "1.7.3", features = [
+  "consensus",
+  "json-rpc",
+  "provider-ws",
+  "serde",
+] }
+alloy-dyn-abi = "1.5.7"
 dashmap = "6.1.0"
 derivative = "2.2"
 eyre = "0.6.12"
@@ -53,7 +58,13 @@ utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 utoipa-rapidoc = { version = "6.0.0", features = ["axum"] }
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
-sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio", "uuid"] }
+sqlx = { version = "0.8.6", features = [
+  "chrono",
+  "macros",
+  "postgres",
+  "runtime-tokio",
+  "uuid",
+] }
 chrono = { version = "0.4.42", features = ["serde"] }
 humantime = "2.3.0"
 governor = "0.10.4"
@@ -70,7 +81,7 @@ built = { version = "0.8", features = [
 
 
 [dev-dependencies]
-alloy-provider = { version = "1.0.22", features = ["anvil-node"] }
+alloy-provider = { version = "1.7.3", features = ["anvil-node"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 tempfile = "3.10.1"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
