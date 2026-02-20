@@ -9,13 +9,11 @@ use tokio::task::JoinSet;
 pub mod daemon_cli;
 pub mod dependence_chain;
 pub mod health_check;
-pub mod server;
 
 #[cfg(test)]
 mod tests;
 pub mod tfhe_worker;
 pub mod types;
-mod utils;
 
 // separate function for testing
 pub fn start_runtime(
@@ -70,11 +68,6 @@ pub async fn async_main(
     let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();
-    if args.run_server {
-        info!(target: "async_main", "Initializing api server");
-        set.spawn(server::run_server(args.clone()));
-    }
-
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
         info!(target: "async_main", gpu_enabled,  "Initializing background worker");

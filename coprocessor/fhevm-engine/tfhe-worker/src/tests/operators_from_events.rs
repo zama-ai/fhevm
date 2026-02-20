@@ -1,5 +1,6 @@
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
+use serial_test::serial;
 use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::chain_id::ChainId;
@@ -10,20 +11,44 @@ use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 
-use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
+use crate::tests::test_cases::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_allowed_handles_computed};
 use crate::tests::utils::{setup_test_app, TestInstance};
 
-use crate::tests::operators::BinaryOperatorTestCase;
-use crate::tests::operators::UnaryOperatorTestCase;
+use crate::tests::test_cases::BinaryOperatorTestCase;
+use crate::tests::test_cases::UnaryOperatorTestCase;
 
 use super::utils::default_dependence_cache_size;
 
+const LOCAL_SUPPORTED_TYPES: &[i32] = &[
+    0, // bool
+    1, // 4 bit
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+];
+
+const FULL_SUPPORTED_TYPES: &[i32] = &[
+    0,  // bool
+    1,  // 4 bit
+    2,  // 8 bit
+    3,  // 16 bit
+    4,  // 32 bit
+    5,  // 64 bit
+    6,  // 128 bit
+    7,  // 160 bit
+    8,  // 256 bit
+    9,  // 512 bit
+    10, // 1024 bit
+    11, // 2048 bit
+];
+
 pub fn supported_types() -> &'static [i32] {
-    &[
-        0, // bool
-        8, // 256 bit
-    ]
+    match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
+        Ok(mode) if mode.eq_ignore_ascii_case("local") => LOCAL_SUPPORTED_TYPES,
+        _ => FULL_SUPPORTED_TYPES,
+    }
 }
 
 fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
@@ -60,11 +85,6 @@ pub async fn allow_handle(
     let event_type = AllowEvents::AllowedForDecryption;
     db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
         .await
-}
-
-fn as_handle(big_int: &BigInt) -> Handle {
-    let (_, bytes) = big_int.to_bytes_be();
-    Handle::right_padding_from(&bytes)
 }
 
 fn as_scalar_handle(big_int: &BigInt) -> Handle {
@@ -258,7 +278,11 @@ fn next_handle() -> Handle {
     #[expect(non_upper_case_globals)]
     static count: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    as_handle(&BigInt::from(v))
+    let mut out = [0_u8; 32];
+    // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
+    out[0] = 0x80;
+    out[24..].copy_from_slice(&v.to_be_bytes());
+    Handle::from(out)
 }
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
@@ -272,8 +296,8 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -285,8 +309,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         if !supported_types().contains(&op.input_types) {
             continue;
         }
-        let support_bytes = matches!(S::try_from(op.operator).unwrap(), S::FheEq | S::FheNe);
-        if op.bits > 256 && op.is_scalar && !support_bytes {
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
             continue;
         }
         let lhs_handle = next_handle();
@@ -323,7 +347,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+        allow_handle(&listener_event_to_db, &mut tx, lhs_handle.as_ref()).await?;
         if !op.is_scalar {
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -342,7 +367,8 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, rhs_handle.as_ref()).await?;
         }
         let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -421,6 +447,7 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
@@ -432,6 +459,10 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 
     for op in &ops {
         if !supported_types().contains(&op.operand_types) {
+            continue;
+        }
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
             continue;
         }
         let input_handle = next_handle();
@@ -467,7 +498,8 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+        allow_handle(&listener_event_to_db, &mut tx, input_handle.as_ref()).await?;
 
         let op_event = unary_op_to_event(op, &input_handle, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -512,6 +544,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -600,7 +633,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 removed: false,
             };
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, left_handle.as_ref()).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -619,7 +653,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, right_handle.as_ref()).await?;
 
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
@@ -679,6 +714,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -728,7 +764,8 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+            allow_handle(&listener_event_to_db, &mut tx, input_handle.as_ref()).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
@@ -779,7 +816,54 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
+#[serial(db)]
+async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+    let listener_event_to_db = listener_event_to_db(&app).await;
+
+    let tx_id = next_handle();
+    let output = next_handle();
+
+    let mut tx = listener_event_to_db.new_transaction().await?;
+    let log = alloy::rpc::types::Log {
+        inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
+                caller: "0x0000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+                pt: as_scalar_uint(&BigInt::from(123)),
+                toType: to_ty(5),
+                result: output,
+            },
+        )),
+        block_hash: None,
+        block_number: None,
+        block_timestamp: None,
+        transaction_hash: Some(tx_id),
+        transaction_index: Some(0),
+        log_index: None,
+        removed: false,
+    };
+    insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
+    allow_handle(&listener_event_to_db, &mut tx, output.as_ref()).await?;
+    tx.commit().await?;
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    let decrypted = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+    assert_eq!(decrypted.len(), 1);
+    assert_eq!(decrypted[0].output_type, 5);
+    assert_eq!(decrypted[0].value, "123");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -878,4 +962,71 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_invalid_operation_marks_error() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+
+    let output_handle = next_handle().to_vec();
+    let tx_id = next_handle().to_vec();
+    let dcid = next_handle().to_vec();
+    let dependencies: Vec<Vec<u8>> = Vec::new();
+    sqlx::query!(
+        r#"
+        INSERT INTO computations (
+            output_handle,
+            dependencies,
+            fhe_operation,
+            is_scalar,
+            dependence_chain_id,
+            transaction_id,
+            is_allowed,
+            created_at,
+            schedule_order,
+            is_completed,
+            host_chain_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
+        "#,
+        &output_handle,
+        &dependencies,
+        127_i16,
+        false,
+        &dcid,
+        &tx_id,
+        true,
+        false,
+        42_i64
+    )
+    .execute(&pool)
+    .await?;
+
+    let mut last_error_message: Option<String> = None;
+    for _ in 0..80 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        let row = sqlx::query!(
+            "SELECT is_error, error_message FROM computations WHERE output_handle = $1 AND transaction_id = $2",
+            &output_handle,
+            &tx_id
+        )
+        .fetch_one(&pool)
+        .await?;
+        last_error_message = row.error_message.clone();
+        if row.is_error {
+            let msg = row.error_message.unwrap_or_default();
+            assert!(msg.contains("Unknown fhe operation"));
+            return Ok(());
+        }
+    }
+
+    panic!(
+        "timed out waiting for computation error flag, last error_message={:?}",
+        last_error_message
+    );
 }
