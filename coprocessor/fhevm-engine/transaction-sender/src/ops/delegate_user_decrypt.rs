@@ -616,7 +616,7 @@ pub async fn stop_retrying_delegation_on_config_error(
     tx: &mut DbTransaction<'_>,
     delegation: &DelegationRow,
     error: &str,
-    non_retryable_attempts: u64,
+    max_attempts: u64,
 ) {
     let res = match sqlx::query!(
         r#"
@@ -625,7 +625,7 @@ pub async fn stop_retrying_delegation_on_config_error(
             gateway_last_error = $2
         WHERE key = $3
         "#,
-        non_retryable_attempts as i64,
+        max_attempts as i64,
         error,
         delegation.key,
     )
