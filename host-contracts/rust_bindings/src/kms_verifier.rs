@@ -585,7 +585,6 @@ error AddressEmptyCode(address target);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -663,7 +662,6 @@ error DeserializingDecryptionProofFail();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -739,7 +737,6 @@ error ECDSAInvalidSignature();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -816,7 +813,6 @@ error ECDSAInvalidSignatureLength(uint256 length);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -901,7 +897,6 @@ error ECDSAInvalidSignatureS(bytes32 s);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -982,7 +977,6 @@ error ERC1967InvalidImplementation(address implementation);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1062,7 +1056,6 @@ error ERC1967NonPayable();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1136,7 +1129,6 @@ error EmptyDecryptionProof();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1210,7 +1202,6 @@ error FailedCall();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1284,7 +1275,6 @@ error InvalidInitialization();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1358,7 +1348,6 @@ error KMSAlreadySigner();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1435,7 +1424,6 @@ error KMSInvalidSigner(address invalidSigner);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1516,7 +1504,6 @@ error KMSSignatureThresholdNotReached(uint256 numSignatures);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1598,7 +1585,6 @@ error KMSSignerNull();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1672,7 +1658,6 @@ error KMSZeroSignature();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1749,7 +1734,6 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1827,7 +1811,6 @@ error NotInitializing();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1901,7 +1884,6 @@ error NotInitializingFromEmptyProxy();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1977,7 +1959,6 @@ error SignersSetIsEmpty();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2051,7 +2032,6 @@ error ThresholdIsAboveNumberOfSigners();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2127,7 +2107,6 @@ error ThresholdIsNull();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2201,7 +2180,6 @@ error UUPSUnauthorizedCallContext();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2280,7 +2258,6 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -2781,7 +2758,6 @@ constructor();
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2857,7 +2833,6 @@ function DECRYPTION_RESULT_TYPEHASH() external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2891,7 +2866,6 @@ function DECRYPTION_RESULT_TYPEHASH() external view returns (bytes32);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -3006,7 +2980,6 @@ function EIP712_PUBLIC_DECRYPT_TYPE() external view returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3040,7 +3013,6 @@ function EIP712_PUBLIC_DECRYPT_TYPE() external view returns (string memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -3155,7 +3127,6 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3189,7 +3160,6 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -3306,7 +3276,6 @@ function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -3349,7 +3318,6 @@ function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3485,7 +3453,6 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3517,7 +3484,6 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::String,
@@ -3691,7 +3657,6 @@ function getKmsSigners() external view returns (address[] memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3723,7 +3688,6 @@ function getKmsSigners() external view returns (address[] memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -3844,7 +3808,6 @@ function getThreshold() external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3876,7 +3839,6 @@ function getThreshold() external view returns (uint256);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -3991,7 +3953,6 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4023,7 +3984,6 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -4142,7 +4102,6 @@ function initializeFromEmptyProxy(address verifyingContractSource, uint64 chainI
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<64>,
@@ -4196,7 +4155,6 @@ function initializeFromEmptyProxy(address verifyingContractSource, uint64 chainI
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4331,7 +4289,6 @@ function isSigner(address account) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -4363,7 +4320,6 @@ function isSigner(address account) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -4480,7 +4436,6 @@ function proxiableUUID() external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4512,7 +4467,6 @@ function proxiableUUID() external view returns (bytes32);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -4623,7 +4577,6 @@ function setThreshold(uint256 threshold) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4657,7 +4610,6 @@ function setThreshold(uint256 threshold) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4771,7 +4723,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
@@ -4814,7 +4765,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4945,7 +4895,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
@@ -4995,7 +4944,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -5099,7 +5047,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         }
     };
     ///Container for all the [`KMSVerifier`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum KMSVerifierCalls {
@@ -5132,6 +5079,7 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         #[allow(missing_docs)]
         verifyDecryptionEIP712KMSSignatures(verifyDecryptionEIP712KMSSignaturesCall),
     }
+    #[automatically_derived]
     impl KMSVerifierCalls {
         /// All the selectors of this enum.
         ///
@@ -5155,60 +5103,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
             [218u8, 83u8, 196u8, 125u8],
             [231u8, 82u8, 53u8, 184u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(getVersion),
-            ::core::stringify!(EIP712_PUBLIC_DECRYPT_TYPE),
-            ::core::stringify!(upgradeToAndCall),
-            ::core::stringify!(proxiableUUID),
-            ::core::stringify!(initializeFromEmptyProxy),
-            ::core::stringify!(verifyDecryptionEIP712KMSSignatures),
-            ::core::stringify!(DECRYPTION_RESULT_TYPEHASH),
-            ::core::stringify!(isSigner),
-            ::core::stringify!(getKmsSigners),
-            ::core::stringify!(eip712Domain),
-            ::core::stringify!(setThreshold),
-            ::core::stringify!(UPGRADE_INTERFACE_VERSION),
-            ::core::stringify!(defineNewContext),
-            ::core::stringify!(getThreshold),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <EIP712_PUBLIC_DECRYPT_TYPECall as alloy_sol_types::SolCall>::SIGNATURE,
-            <upgradeToAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <proxiableUUIDCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <verifyDecryptionEIP712KMSSignaturesCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <DECRYPTION_RESULT_TYPEHASHCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isSignerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <eip712DomainCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <defineNewContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for KMSVerifierCalls {
@@ -5776,7 +5670,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         }
     }
     ///Container for all the [`KMSVerifier`](self) custom errors.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum KMSVerifierErrors {
@@ -5827,6 +5720,7 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         #[allow(missing_docs)]
         UUPSUnsupportedProxiableUUID(UUPSUnsupportedProxiableUUID),
     }
+    #[automatically_derived]
     impl KMSVerifierErrors {
         /// All the selectors of this enum.
         ///
@@ -5859,78 +5753,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
             [252u8, 230u8, 152u8, 247u8],
             [254u8, 222u8, 91u8, 189u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(SignersSetIsEmpty),
-            ::core::stringify!(NotHostOwner),
-            ::core::stringify!(ThresholdIsAboveNumberOfSigners),
-            ::core::stringify!(ERC1967InvalidImplementation),
-            ::core::stringify!(KMSZeroSignature),
-            ::core::stringify!(KMSInvalidSigner),
-            ::core::stringify!(NotInitializingFromEmptyProxy),
-            ::core::stringify!(DeserializingDecryptionProofFail),
-            ::core::stringify!(KMSAlreadySigner),
-            ::core::stringify!(AddressEmptyCode),
-            ::core::stringify!(ThresholdIsNull),
-            ::core::stringify!(KMSSignatureThresholdNotReached),
-            ::core::stringify!(UUPSUnsupportedProxiableUUID),
-            ::core::stringify!(ERC1967NonPayable),
-            ::core::stringify!(FailedCall),
-            ::core::stringify!(ECDSAInvalidSignatureS),
-            ::core::stringify!(NotInitializing),
-            ::core::stringify!(UUPSUnauthorizedCallContext),
-            ::core::stringify!(ECDSAInvalidSignature),
-            ::core::stringify!(InvalidInitialization),
-            ::core::stringify!(EmptyDecryptionProof),
-            ::core::stringify!(ECDSAInvalidSignatureLength),
-            ::core::stringify!(KMSSignerNull),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <SignersSetIsEmpty as alloy_sol_types::SolError>::SIGNATURE,
-            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
-            <ThresholdIsAboveNumberOfSigners as alloy_sol_types::SolError>::SIGNATURE,
-            <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SIGNATURE,
-            <KMSZeroSignature as alloy_sol_types::SolError>::SIGNATURE,
-            <KMSInvalidSigner as alloy_sol_types::SolError>::SIGNATURE,
-            <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
-            <DeserializingDecryptionProofFail as alloy_sol_types::SolError>::SIGNATURE,
-            <KMSAlreadySigner as alloy_sol_types::SolError>::SIGNATURE,
-            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
-            <ThresholdIsNull as alloy_sol_types::SolError>::SIGNATURE,
-            <KMSSignatureThresholdNotReached as alloy_sol_types::SolError>::SIGNATURE,
-            <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
-            <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
-            <FailedCall as alloy_sol_types::SolError>::SIGNATURE,
-            <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::SIGNATURE,
-            <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
-            <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
-            <ECDSAInvalidSignature as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
-            <EmptyDecryptionProof as alloy_sol_types::SolError>::SIGNATURE,
-            <ECDSAInvalidSignatureLength as alloy_sol_types::SolError>::SIGNATURE,
-            <KMSSignerNull as alloy_sol_types::SolError>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for KMSVerifierErrors {
@@ -6817,7 +6639,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         }
     }
     ///Container for all the [`KMSVerifier`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum KMSVerifierEvents {
@@ -6830,6 +6651,7 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
         #[allow(missing_docs)]
         Upgraded(Upgraded),
     }
+    #[automatically_derived]
     impl KMSVerifierEvents {
         /// All the selectors of this enum.
         ///
@@ -6859,40 +6681,6 @@ function verifyDecryptionEIP712KMSSignatures(bytes32[] memory handlesList, bytes
                 33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(EIP712DomainChanged),
-            ::core::stringify!(NewContextSet),
-            ::core::stringify!(Upgraded),
-            ::core::stringify!(Initialized),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <EIP712DomainChanged as alloy_sol_types::SolEvent>::SIGNATURE,
-            <NewContextSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <Upgraded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for KMSVerifierEvents {
@@ -6989,9 +6777,9 @@ See the [wrapper's documentation](`KMSVerifierInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> KMSVerifierInstance<P, N> {
-        KMSVerifierInstance::<P, N>::new(address, __provider)
+        KMSVerifierInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -7003,11 +6791,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<KMSVerifierInstance<P, N>>,
     > {
-        KMSVerifierInstance::<P, N>::deploy(__provider)
+        KMSVerifierInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -7018,8 +6806,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        KMSVerifierInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        KMSVerifierInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`KMSVerifier`](self) instance.
 
@@ -7046,6 +6834,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -7056,11 +6845,11 @@ See the [wrapper's documentation](`KMSVerifierInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -7071,9 +6860,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<KMSVerifierInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -7083,9 +6872,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -7122,6 +6911,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -7268,6 +7058,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
