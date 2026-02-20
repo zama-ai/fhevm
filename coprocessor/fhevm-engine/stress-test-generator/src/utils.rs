@@ -264,6 +264,7 @@ pub async fn generate_trivial_encrypt(
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
+        log_index: None,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
     Ok(handle)
@@ -427,6 +428,7 @@ pub async fn insert_tfhe_event(
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
+        log_index: None,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
 
