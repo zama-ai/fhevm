@@ -121,7 +121,7 @@ where
                 }
                 if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
                     ALLOW_HANDLE_FAIL_COUNTER.inc();
-                    error!(
+                    warn!(
                         error = %terminal_config_error,
                         key = %key,
                         "Detected non-retryable gateway coprocessor config error while allowing handle"

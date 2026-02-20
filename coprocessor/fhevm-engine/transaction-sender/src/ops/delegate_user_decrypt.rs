@@ -159,7 +159,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                     return TxResult::TransientError;
                 }
                 if let Some(terminal_config_error) = try_extract_terminal_config_error(&error) {
-                    error!(
+                    warn!(
                         error = %terminal_config_error,
                         ?delegation,
                         "{operation} failed with non-retryable gateway coprocessor config error"
@@ -618,12 +618,6 @@ pub async fn stop_retrying_delegation_on_config_error(
     error: &str,
     terminal_attempts: u64,
 ) {
-    error!(
-        %error,
-        ?delegation,
-        terminal_attempts,
-        "Updating delegation with terminal gateway config error"
-    );
     let res = match sqlx::query!(
         r#"
         UPDATE delegate_user_decrypt
