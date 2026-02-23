@@ -152,7 +152,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             tx_id,
             TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
                 caller: zero_address(),
-                upperBound: as_scalar_uint(1),
+                upperBound: as_scalar_uint(&BigInt::from(1)),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                 result: output1,
@@ -169,7 +169,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             tx_id,
             TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
                 caller: zero_address(),
-                upperBound: as_scalar_uint(1024),
+                upperBound: as_scalar_uint(&BigInt::from(1024)),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([2_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                 result: output2,

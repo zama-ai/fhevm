@@ -1,17 +1,13 @@
-use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use serial_test::serial;
-use sqlx::types::time::PrimitiveDateTime;
 
-use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
-use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, Transaction,
-};
+use host_listener::database::tfhe_event_propagate::Handle;
 
 use crate::tests::event_helpers::{
-    log_with_tx, next_handle, setup_event_harness, tfhe_event, to_ty, zero_address, EventHarness,
+    allow_handle, as_scalar_uint, insert_event, next_handle, setup_event_harness, to_ty,
+    zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
     generate_binary_test_cases, generate_unary_test_cases, BinaryOperatorTestCase,
@@ -50,36 +46,6 @@ pub fn supported_types() -> &'static [i32] {
     }
 }
 
-async fn insert_tfhe_event(
-    db: &ListenerDatabase,
-    tx: &mut Transaction<'_>,
-    log: alloy::rpc::types::Log<TfheContractEvents>,
-    is_allowed: bool,
-) -> Result<bool, sqlx::Error> {
-    let event = LogTfhe {
-        event: log.inner,
-        transaction_hash: log.transaction_hash,
-        is_allowed,
-        block_number: log.block_number.unwrap_or(0),
-        block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: log.transaction_hash.unwrap_or_default(),
-        tx_depth_size: 0,
-        log_index: log.log_index,
-    };
-    db.insert_tfhe_event(tx, &event).await
-}
-
-async fn allow_handle(
-    db: &ListenerDatabase,
-    tx: &mut Transaction<'_>,
-    handle: &[u8],
-) -> Result<bool, sqlx::Error> {
-    let account_address = String::new();
-    let event_type = AllowEvents::AllowedForDecryption;
-    db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
-        .await
-}
-
 fn as_scalar_handle(big_int: &BigInt) -> Handle {
     let (_, mut bytes) = big_int.to_bytes_le();
     while bytes.len() < 32 {
@@ -87,11 +53,6 @@ fn as_scalar_handle(big_int: &BigInt) -> Handle {
     }
     bytes.reverse();
     Handle::from_slice(&bytes)
-}
-
-fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
-    let (_, bytes) = big_int.to_bytes_be();
-    ClearConst::from_be_slice(&bytes)
 }
 
 fn binary_op_to_event(
@@ -291,40 +252,41 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             op.bits, op.operator, op.is_scalar, op.lhs, op.rhs
         );
         let caller = zero_address();
-        let log = log_with_tx(
-            transaction_id,
-            tfhe_event(TfheContractEvents::TrivialEncrypt(
-                TfheContract::TrivialEncrypt {
-                    caller,
-                    pt: lhs_bytes,
-                    toType: to_ty(op.input_types),
-                    result: lhs_handle,
-                },
-            )),
-        );
 
         let mut tx = listener_db.new_transaction().await?;
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, lhs_handle.as_ref()).await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            transaction_id,
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: lhs_bytes,
+                toType: to_ty(op.input_types),
+                result: lhs_handle,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &lhs_handle).await?;
         if !op.is_scalar {
-            let log = log_with_tx(
+            insert_event(
+                &listener_db,
+                &mut tx,
                 transaction_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller,
-                        pt: rhs_bytes,
-                        toType: to_ty(op.input_types),
-                        result: rhs_handle,
-                    },
-                )),
-            );
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, rhs_handle.as_ref()).await?;
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: rhs_bytes,
+                    toType: to_ty(op.input_types),
+                    result: rhs_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &rhs_handle).await?;
         }
         let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
-        let log = log_with_tx(transaction_id, tfhe_event(op_event));
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
+        insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
+        allow_handle(&listener_db, &mut tx, &output_handle).await?;
         tx.commit().await?;
 
         cases.push((op, output_handle));
@@ -416,26 +378,26 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         );
 
         let caller = zero_address();
-        let log = log_with_tx(
-            transaction_id,
-            tfhe_event(TfheContractEvents::TrivialEncrypt(
-                TfheContract::TrivialEncrypt {
-                    caller,
-                    pt: inp_bytes,
-                    toType: to_ty(op.operand_types),
-                    result: input_handle,
-                },
-            )),
-        );
 
         let mut tx = listener_db.new_transaction().await?;
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, input_handle.as_ref()).await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            transaction_id,
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: inp_bytes,
+                toType: to_ty(op.operand_types),
+                result: input_handle,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &input_handle).await?;
 
         let op_event = unary_op_to_event(op, &input_handle, &output_handle);
-        let log = log_with_tx(transaction_id, tfhe_event(op_event));
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
+        insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
+        allow_handle(&listener_db, &mut tx, &output_handle).await?;
         tx.commit().await?;
 
         cases.push((op, output_handle));
@@ -483,34 +445,36 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
     let true_handle = next_handle();
     let caller = zero_address();
 
-    let log = log_with_tx(
-        transaction_id,
-        tfhe_event(TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
-                caller,
-                pt: as_scalar_uint(&BigInt::from(0)),
-                toType: to_ty(fhe_bool_type),
-                result: false_handle,
-            },
-        )),
-    );
     let mut tx = listener_db.new_transaction().await?;
-    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-    allow_handle(&listener_db, &mut tx, false_handle.as_ref()).await?;
-
-    let log = log_with_tx(
+    insert_event(
+        &listener_db,
+        &mut tx,
         transaction_id,
-        tfhe_event(TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
-                caller,
-                pt: as_scalar_uint(&BigInt::from(1)),
-                toType: to_ty(fhe_bool_type),
-                result: true_handle,
-            },
-        )),
-    );
-    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-    allow_handle(&listener_db, &mut tx, true_handle.as_ref()).await?;
+        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            caller,
+            pt: as_scalar_uint(&BigInt::from(0)),
+            toType: to_ty(fhe_bool_type),
+            result: false_handle,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &false_handle).await?;
+
+    insert_event(
+        &listener_db,
+        &mut tx,
+        transaction_id,
+        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            caller,
+            pt: as_scalar_uint(&BigInt::from(1)),
+            toType: to_ty(fhe_bool_type),
+            result: true_handle,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &true_handle).await?;
     tx.commit().await?;
 
     let mut cases = vec![];
@@ -526,34 +490,36 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             let left_handle = next_handle();
             let right_handle = next_handle();
             let transaction_id = next_handle();
-            let log = log_with_tx(
-                transaction_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller,
-                        pt: as_scalar_uint(&left_input),
-                        toType: to_ty(*input_types),
-                        result: left_handle,
-                    },
-                )),
-            );
             let mut tx = listener_db.new_transaction().await?;
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, left_handle.as_ref()).await?;
-
-            let log = log_with_tx(
+            insert_event(
+                &listener_db,
+                &mut tx,
                 transaction_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller,
-                        pt: as_scalar_uint(&right_input),
-                        toType: to_ty(*input_types),
-                        result: right_handle,
-                    },
-                )),
-            );
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, right_handle.as_ref()).await?;
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: as_scalar_uint(&left_input),
+                    toType: to_ty(*input_types),
+                    result: left_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &left_handle).await?;
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                transaction_id,
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: as_scalar_uint(&right_input),
+                    toType: to_ty(*input_types),
+                    result: right_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &right_handle).await?;
 
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
@@ -567,20 +533,21 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 expected_result.to_string()
             };
 
-            let log = log_with_tx(
+            insert_event(
+                &listener_db,
+                &mut tx,
                 transaction_id,
-                tfhe_event(TfheContractEvents::FheIfThenElse(
-                    TfheContract::FheIfThenElse {
-                        caller,
-                        control: *input_handle,
-                        ifTrue: left_handle,
-                        ifFalse: right_handle,
-                        result: output_handle,
-                    },
-                )),
-            );
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
+                TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                    caller,
+                    control: *input_handle,
+                    ifTrue: left_handle,
+                    ifFalse: right_handle,
+                    result: output_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output_handle).await?;
             tx.commit().await?;
 
             cases.push((output_handle, *input_types, expected_result));
@@ -640,33 +607,36 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 "Encrypting inputs for cast test type from:{type_from} type to:{type_to} input:{input} output:{output}",
             );
 
-            let log = log_with_tx(
-                transaction_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller,
-                        pt: as_scalar_uint(&BigInt::from(input)),
-                        toType: to_ty(*type_from),
-                        result: input_handle,
-                    },
-                )),
-            );
-
             let mut tx = listener_db.new_transaction().await?;
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, input_handle.as_ref()).await?;
-
-            let log = log_with_tx(
+            insert_event(
+                &listener_db,
+                &mut tx,
                 transaction_id,
-                tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: as_scalar_uint(&BigInt::from(input)),
+                    toType: to_ty(*type_from),
+                    result: input_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &input_handle).await?;
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                transaction_id,
+                TfheContractEvents::Cast(TfheContract::Cast {
                     caller,
                     ct: input_handle,
                     toType: to_ty(*type_to),
                     result: output_handle,
-                })),
-            );
-            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-            allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output_handle).await?;
             tx.commit().await?;
 
             cases.push((*type_from, *type_to, input, output, output_handle));
@@ -711,111 +681,76 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
         listener_db,
     } = setup_event_harness().await?;
 
-    let tx_id = next_handle();
-    let output = next_handle();
+    fn bits_for_type(ty: i32) -> u32 {
+        match ty {
+            0 => 1,
+            1 => 4,
+            2 => 8,
+            3 => 16,
+            4 => 32,
+            5 => 64,
+            6 => 128,
+            7 => 160,
+            8 => 256,
+            9 => 512,
+            10 => 1024,
+            11 => 2048,
+            _ => panic!("unknown type {ty}"),
+        }
+    }
 
+    let mut cases: Vec<(Handle, i32, BigInt)> = vec![];
     let mut tx = listener_db.new_transaction().await?;
-    let log = log_with_tx(
-        tx_id,
-        tfhe_event(TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
+    let tx_id = next_handle();
+    for &fhe_type in supported_types() {
+        let bits = bits_for_type(fhe_type);
+        let value = if fhe_type == 0 {
+            BigInt::from(1)
+        } else if bits <= 256 {
+            BigInt::from(1) << (bits - 1)
+        } else {
+            // Types 9-11 (>256-bit): max ClearConst can represent is 256 bits.
+            BigInt::from(1) << 255
+        };
+
+        let output = next_handle();
+        insert_event(
+            &listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                 caller: zero_address(),
-                pt: as_scalar_uint(&BigInt::from(123)),
-                toType: to_ty(5),
+                pt: as_scalar_uint(&value),
+                toType: to_ty(fhe_type),
                 result: output,
-            },
-        )),
-    );
-    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-    allow_handle(&listener_db, &mut tx, output.as_ref()).await?;
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &output).await?;
+        cases.push((output, fhe_type, value));
+    }
     tx.commit().await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
-    let decrypted = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
-    assert_eq!(decrypted.len(), 1);
-    assert_eq!(decrypted[0].output_type, 5);
-    assert_eq!(decrypted[0].value, "123");
 
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
-    let EventHarness {
-        app,
-        pool,
-        listener_db,
-    } = setup_event_harness().await?;
-
-    let mut cases = vec![];
-    for &rand_type in supported_types() {
-        let output1_handle = next_handle();
-        let output2_handle = next_handle();
-        let output3_handle = next_handle();
-        let transaction_id = next_handle();
-
-        let caller = zero_address();
-        let log = log_with_tx(
-            transaction_id,
-            tfhe_event(TfheContractEvents::FheRand(TfheContract::FheRand {
-                caller,
-                randType: to_ty(rand_type),
-                seed: FixedBytes::from([0u8; 16]),
-                result: output1_handle,
-            })),
+    for (output, fhe_type, value) in &cases {
+        let decrypted = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(decrypted.len(), 1);
+        assert_eq!(
+            decrypted[0].output_type, *fhe_type as i16,
+            "type mismatch for fhe_type={fhe_type}"
         );
-
-        let mut tx = listener_db.new_transaction().await?;
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, output1_handle.as_ref()).await?;
-
-        let log = log_with_tx(
-            transaction_id,
-            tfhe_event(TfheContractEvents::FheRand(TfheContract::FheRand {
-                caller,
-                randType: to_ty(rand_type),
-                seed: FixedBytes::from([
-                    1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-                ]),
-                result: output2_handle,
-            })),
+        let expected = if *fhe_type == 0 {
+            // Bool decrypts as "true"/"false"
+            (value > &BigInt::from(0)).to_string()
+        } else {
+            value.to_string()
+        };
+        assert_eq!(
+            decrypted[0].value, expected,
+            "value mismatch for fhe_type={fhe_type}"
         );
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, output2_handle.as_ref()).await?;
-
-        let log = log_with_tx(
-            transaction_id,
-            tfhe_event(TfheContractEvents::FheRandBounded(
-                TfheContract::FheRandBounded {
-                    caller,
-                    upperBound: as_scalar_uint(&BigInt::from(1)),
-                    randType: to_ty(rand_type),
-                    seed: FixedBytes::from([
-                        1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-                        0u8,
-                    ]),
-                    result: output3_handle,
-                },
-            )),
-        );
-        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
-        allow_handle(&listener_db, &mut tx, output3_handle.as_ref()).await?;
-        tx.commit().await?;
-
-        cases.push((rand_type, [output1_handle, output2_handle, output3_handle]));
-    }
-
-    wait_until_all_allowed_handles_computed(&app).await?;
-    for (rand_type, handles) in cases {
-        let decrypt_request = handles.iter().map(|h| h.to_vec()).collect();
-        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-        assert_eq!(resp[0].output_type, rand_type as i16);
-        assert_eq!(resp[1].output_type, rand_type as i16);
-        assert_eq!(resp[2].output_type, rand_type as i16);
-        if rand_type != 0 {
-            assert_eq!(resp[2].value, "0");
-        }
     }
 
     Ok(())

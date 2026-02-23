@@ -61,8 +61,8 @@ pub fn to_ty(ty: i32) -> ToType {
     ToType::from(ty as u8)
 }
 
-pub fn as_scalar_uint(value: u64) -> ClearConst {
-    let (_, bytes) = BigInt::from(value).to_bytes_be();
+pub fn as_scalar_uint(value: &BigInt) -> ClearConst {
+    let (_, bytes) = value.to_bytes_be();
     ClearConst::from_be_slice(&bytes)
 }
 
@@ -135,7 +135,7 @@ pub async fn insert_trivial_encrypt(
         tx_id,
         TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
             caller: zero_address(),
-            pt: as_scalar_uint(value),
+            pt: as_scalar_uint(&BigInt::from(value)),
             toType: to_ty(to_type),
             result,
         }),
