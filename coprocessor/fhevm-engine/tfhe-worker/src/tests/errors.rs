@@ -1,36 +1,10 @@
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, setup_event_harness, to_ty,
+    wait_for_error, TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use serial_test::serial;
-
-async fn wait_for_error(
-    pool: &sqlx::PgPool,
-    output_handle: &[u8],
-    tx_id: &[u8],
-) -> Result<(bool, Option<String>), Box<dyn std::error::Error>> {
-    let mut last_error = None;
-    for _ in 0..80 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-        let row = sqlx::query_as::<_, (bool, bool, Option<String>)>(
-            r#"SELECT is_error, is_completed, error_message
-               FROM computations
-               WHERE output_handle = $1 AND transaction_id = $2"#,
-        )
-        .bind(output_handle)
-        .bind(tx_id)
-        .fetch_optional(pool)
-        .await?;
-        if let Some((is_error, is_completed, msg)) = row {
-            last_error = msg;
-            if is_error || is_completed {
-                return Ok((is_error, last_error));
-            }
-        }
-    }
-    Ok((false, last_error))
-}
 
 #[tokio::test]
 #[serial(db)]
@@ -66,7 +40,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     .bind(tx_id.clone())
     .bind(true)
     .bind(false)
-    .bind(42_i64)
+    .bind(TEST_CHAIN_ID as i64)
     .execute(&harness.pool)
     .await?;
 

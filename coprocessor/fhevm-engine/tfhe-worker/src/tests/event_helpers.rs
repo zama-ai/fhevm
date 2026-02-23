@@ -13,6 +13,8 @@ use crate::tests::utils::{
     wait_until_all_allowed_handles_computed, DecryptionResult, TestInstance,
 };
 
+pub const TEST_CHAIN_ID: u64 = 42;
+
 pub struct EventHarness {
     pub app: TestInstance,
     pub pool: sqlx::PgPool,
@@ -27,7 +29,7 @@ pub async fn setup_event_harness() -> Result<EventHarness, Box<dyn std::error::E
         .await?;
     let listener_db = ListenerDatabase::new(
         &app.db_url().into(),
-        ChainId::try_from(42_u64).unwrap(),
+        ChainId::try_from(TEST_CHAIN_ID).unwrap(),
         default_dependence_cache_size(),
     )
     .await?;
@@ -74,7 +76,7 @@ pub fn scalar_u128_handle(value: u128) -> Handle {
     Handle::from(out)
 }
 
-fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
+pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     Log::<TfheContractEvents> {
         address: zero_address(),
         data,
@@ -169,4 +171,31 @@ pub async fn decrypt_handles(
 
 pub async fn wait_until_computed(app: &TestInstance) -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(app).await
+}
+
+pub async fn wait_for_error(
+    pool: &sqlx::PgPool,
+    output_handle: &[u8],
+    tx_id: &[u8],
+) -> Result<(bool, Option<String>), Box<dyn std::error::Error>> {
+    let mut last_error = None;
+    for _ in 0..80 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        let row = sqlx::query_as::<_, (bool, bool, Option<String>)>(
+            r#"SELECT is_error, is_completed, error_message
+               FROM computations
+               WHERE output_handle = $1 AND transaction_id = $2"#,
+        )
+        .bind(output_handle)
+        .bind(tx_id)
+        .fetch_optional(pool)
+        .await?;
+        if let Some((is_error, is_completed, msg)) = row {
+            last_error = msg;
+            if is_error || is_completed {
+                return Ok((is_error, last_error));
+            }
+        }
+    }
+    Ok((false, last_error))
 }
