@@ -293,6 +293,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             }
             Err(e) => {
                 error!(
+                    int_job_id = ?int_job_id,
                     "Failed to insert/get user decrypt into/from database: {}",
                     e
                 );
@@ -318,6 +319,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(result) => result,
             Err(e) => {
                 error!(
+                    int_job_id = ?int_job_id,
                     "Failed to insert/get user decrypt into/from database: {}",
                     e
                 );
@@ -504,6 +506,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             }
             Err(e) => {
                 error!(
+                    int_job_id = ?int_job_id,
                     "Failed to insert/get delegated user decryption into/from database: {}",
                     e
                 );
@@ -529,6 +532,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(result) => result,
             Err(e) => {
                 error!(
+                    int_job_id = ?int_job_id,
                     "Failed to insert/get delegated user decryption into/from database: {}",
                     e
                 );

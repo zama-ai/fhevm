@@ -6,6 +6,7 @@ use crate::{
     store::sql::{client::PgClient, models::req_status_enum_model::ReqStatus},
 };
 use anyhow::Result;
+use tracing::info;
 
 pub struct ExpiryRepository {
     pool: PgClient,
@@ -66,7 +67,8 @@ impl ExpiryRepository {
                 Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
             }
 
-            total_deleted += delete_result?.rows_affected();
+            let total_deleted_rows = delete_result?.rows_affected();
+            total_deleted += total_deleted_rows;
 
             for row in statuses {
                 metrics::decrement_req_status_count(
@@ -74,30 +76,12 @@ impl ExpiryRepository {
                     row.req_status,
                 );
             }
-        }
 
-        // User Decrypt Shares
-        {
-            let mut conn = self.pool.get_cron_connection().await?;
-            let query_start = Instant::now();
-
-            let result = sqlx::query!(
-                r#"
-                DELETE FROM user_decrypt_share
-                WHERE updated_at < NOW() - make_interval(secs => $1)
-                "#,
-                user_decrypt_expiry_secs
-            )
-            .execute(&mut *conn)
-            .await;
-
-            match &result {
-                Ok(_) => {
-                    metrics::observe_query(metrics::Table::UserDecryptShares, query_start.elapsed())
-                }
-                Err(_) => metrics::increment_error(metrics::Table::UserDecryptShares),
-            }
-            total_deleted += result?.rows_affected();
+            info!(
+                table = metrics::Table::PublicDecryptReq.as_str(),
+                deleted_rows = total_deleted_rows,
+                "Expiry repo successfully cleaned up rows"
+            );
         }
 
         // User Decrypt Requests
@@ -143,7 +127,8 @@ impl ExpiryRepository {
                 Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
             }
 
-            total_deleted += delete_result?.rows_affected();
+            let total_deleted_rows = delete_result?.rows_affected();
+            total_deleted += total_deleted_rows;
 
             for row in statuses {
                 metrics::decrement_req_status_count(
@@ -151,6 +136,44 @@ impl ExpiryRepository {
                     row.req_status,
                 );
             }
+
+            info!(
+                table = metrics::Table::UserDecryptReq.as_str(),
+                deleted_rows = total_deleted_rows,
+                "Expiry repo successfully cleaned up rows"
+            );
+        }
+
+        // User Decrypt Shares
+        {
+            let mut conn = self.pool.get_cron_connection().await?;
+            let query_start = Instant::now();
+
+            let result = sqlx::query!(
+                r#"
+                DELETE FROM user_decrypt_share
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+                user_decrypt_expiry_secs
+            )
+            .execute(&mut *conn)
+            .await;
+
+            match &result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::UserDecryptShares, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::UserDecryptShares),
+            }
+
+            let total_deleted_rows = result?.rows_affected();
+            total_deleted += total_deleted_rows;
+
+            info!(
+                table = metrics::Table::UserDecryptShares.as_str(),
+                deleted_rows = total_deleted_rows,
+                "Expiry repo successfully cleaned up rows"
+            );
         }
 
         // Input Proof Requests
@@ -196,7 +219,8 @@ impl ExpiryRepository {
                 Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
             }
 
-            total_deleted += delete_result?.rows_affected();
+            let total_deleted_rows = delete_result?.rows_affected();
+            total_deleted += total_deleted_rows;
 
             for row in statuses {
                 metrics::decrement_req_status_count(
@@ -204,6 +228,12 @@ impl ExpiryRepository {
                     row.req_status,
                 );
             }
+
+            info!(
+                table = metrics::Table::InputProofReq.as_str(),
+                deleted_rows = total_deleted_rows,
+                "Expiry repo successfully cleaned up rows"
+            );
         }
 
         Ok(total_deleted)
