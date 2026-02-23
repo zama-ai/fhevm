@@ -5,15 +5,85 @@
 # Default target
 all: help
 
-# Colors for help message
-YELLOW := $(shell tput -Txterm setaf 3)
-WHITE  := $(shell tput -Txterm setaf 7)
-RESET  := $(shell tput -Txterm sgr0)
+# Colors for help message (respects NO_COLOR convention)
+ifdef NO_COLOR
+  YELLOW :=
+  WHITE  :=
+  GREEN  :=
+  RED    :=
+  RESET  :=
+else
+  YELLOW := $(shell tput -Txterm setaf 3 2>/dev/null)
+  WHITE  := $(shell tput -Txterm setaf 7 2>/dev/null)
+  GREEN  := $(shell tput -Txterm setaf 2 2>/dev/null)
+  RED    := $(shell tput -Txterm setaf 1 2>/dev/null)
+  RESET  := $(shell tput -Txterm sgr0 2>/dev/null)
+endif
+
 MOCK_RPC_MANIFEST := test-support/ethereum_rpc_mock/Cargo.toml
+COMPOSE_FILE := dev/docker-compose.yaml
+DATABASE_URL := postgresql://postgres:postgres@localhost:5433/relayer_db
+
+# Docker image defaults (override on CLI: make docker-build TAG=v0.9.0-rc.1)
+DOCKER_REGISTRY ?= ghcr.io/zama-ai/console
+RELAYER_IMAGE   ?= relayer
+MIGRATE_IMAGE   ?= relayer-migrate
+TAG             ?= latest
+
+# Network configuration
+DEVNET_RPC        := https://rpc_addr/
+TESTNET_RPC       := https://rpc.testnet.zama.org/
+DEVNET_CONFIG     := config/local.devnet.yaml
+TESTNET_CONFIG    := config/local.testnet.yaml
+ZAMA_TOKEN_DEVNET  := 0xD582Ec82a1758322907DF80dA8A754e12A5acB95
+ZAMA_TOKEN_TESTNET := 0xcE762c7FDaac795D31a266B9247F8958c159c6d4
+MINT_AMOUNT        ?= 10000ether
+
+# ProtocolPayment contract addresses
+PROTOCOL_PAYMENT_DEVNET  := 0x2a770251C390B3464f98B52304135D10525D1961
+PROTOCOL_PAYMENT_TESTNET := 0xAA1d9D4927A62f842F0DE5AD6b8dFDB074Fa62f2
+MAX_UINT256              := 115792089237316195423570985008687907853269984665640564039457584007913129639935
+
+# Preflight prompt control (YES=1 auto-accepts, NO=1 auto-declines)
+YES ?=
+NO  ?=
 
 # Cargo test command without sccache wrapper (avoids permission issues)
 CARGO_TEST := RUSTC_WRAPPER= cargo test
 CARGO_LLVM_COV := RUSTC_WRAPPER= cargo llvm-cov
+
+# ---------------------------------------------------------------------------
+# Internal prerequisite checks
+# ---------------------------------------------------------------------------
+
+_check-docker:
+	@docker info >/dev/null 2>&1 || { echo "$(RED)Error: Docker is not running$(RESET)"; exit 1; }
+
+_check-postgres: _check-docker
+ifndef CI
+	@docker compose -f $(COMPOSE_FILE) ps --status running 2>/dev/null | grep -q postgres || { \
+		echo "$(RED)Error: Postgres is not running. Run: make db-start$(RESET)"; exit 1; }
+endif
+
+_check-cargo-watch:
+	@command -v cargo-watch >/dev/null 2>&1 || { \
+		echo "$(RED)Error: cargo-watch not installed. Run: cargo install cargo-watch$(RESET)"; exit 1; }
+
+_check-cast:
+	@command -v cast >/dev/null 2>&1 || { \
+		echo "$(RED)Error: cast (Foundry) not installed. See https://www.getfoundry.sh/$(RESET)"; exit 1; }
+
+_check-sqlx-cli:
+	@command -v cargo-sqlx >/dev/null 2>&1 || { \
+		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
+
+# Validate that a network config exists and has a non-empty private key.
+# Usage: $(MAKE) _check-network-config NET_CONFIG=config/local.devnet.yaml NET_NAME=Devnet
+_check-network-config:
+	@test -f $(NET_CONFIG) || { \
+		echo "$(RED)Error: $(NET_CONFIG) not found. Run: make init-$(shell echo $(NET_NAME) | tr A-Z a-z)$(RESET)"; exit 1; }
+	@pk=$$(grep 'private_key:' $(NET_CONFIG) | head -1 | sed 's/.*private_key: *"\(.*\)"/\1/'); \
+	test -n "$$pk" || { echo "$(RED)Error: private_key is empty in $(NET_CONFIG)$(RESET)"; exit 1; }
 
 # Check if llvm-cov / jq is installed
 _check-coverage-tools:
@@ -30,22 +100,288 @@ _check-coverage-tools:
 _clean-profraw:
 	@find . -name '*.profraw' -delete
 
-##@ Testing - Unit test coverage with html report
-test-coverage-report-html: _check-coverage-tools  ## Run unit tests with coverage HTML report
-	@$(CARGO_LLVM_COV) --lib --html --no-cfg-coverage --open
-	@$(MAKE) _clean-profraw
+# Wait for Postgres to accept connections (max 30s)
+_db-wait:
+	@echo "Waiting for Postgres to accept connections..."
+	@for i in $$(seq 1 30); do \
+		docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres >/dev/null 2>&1 && { \
+			echo "$(GREEN)Postgres is ready$(RESET)"; exit 0; }; \
+		sleep 1; \
+	done; \
+	echo "$(RED)Error: Postgres did not become ready in 30s$(RESET)"; exit 1
 
-##@ Testing - Unit test coverage with command line report
-test-coverage-report-cmdline: _check-coverage-tools ## Run unit tests with coverage summary
-	@$(CARGO_LLVM_COV) --lib --json --no-cfg-coverage | jq -r -f coverage-format.jq | awk -F'\t' '{printf "%-70s %s\n", $$1, $$2}'
-	@$(MAKE) _clean-profraw
+# ---------------------------------------------------------------------------
+##@ Setup
+# ---------------------------------------------------------------------------
 
+setup: _check-docker ## One-command first-time setup (Postgres + migrations + config)
+	@echo "$(YELLOW)Setting up development environment...$(RESET)"
+	@$(MAKE) db-start
+	@$(MAKE) db-migrate
+	@if [ ! -f config/local.yaml ] && [ -f config/local.yaml.example ]; then \
+		echo "Copying config/local.yaml.example → config/local.yaml"; \
+		cp config/local.yaml.example config/local.yaml; \
+	fi
+	@echo "$(GREEN)Setup complete! Run 'make help' to see available targets.$(RESET)"
+
+# ---------------------------------------------------------------------------
+##@ Onboarding
+# ---------------------------------------------------------------------------
+
+init-devnet: ## Initialize Devnet config (copies example, prompts for private key)
+	@if [ -f $(DEVNET_CONFIG) ]; then \
+		printf "$(YELLOW)$(DEVNET_CONFIG) already exists. Overwrite? [y/N] $(RESET)" && read -r ans && \
+		case "$$ans" in [yY]*) ;; *) echo "Skipped."; exit 0;; esac; \
+	fi
+	@test -f $(DEVNET_CONFIG).example || { echo "$(RED)Error: $(DEVNET_CONFIG).example not found$(RESET)"; exit 1; }
+	@cp $(DEVNET_CONFIG).example $(DEVNET_CONFIG)
+	@printf "$(YELLOW)Enter your wallet private key for Devnet: $(RESET)" && read -rs pk && echo "" && \
+		sed 's|private_key: ""|private_key: "'"$$pk"'"|' $(DEVNET_CONFIG) > $(DEVNET_CONFIG).tmp && \
+		mv $(DEVNET_CONFIG).tmp $(DEVNET_CONFIG)
+	@echo "$(GREEN)Created $(DEVNET_CONFIG)$(RESET)"
+	@echo "Next: run '$(YELLOW)make preflight-devnet$(RESET)' to verify your wallet."
+
+init-testnet: ## Initialize Testnet config (copies example, prompts for private key)
+	@if [ -f $(TESTNET_CONFIG) ]; then \
+		printf "$(YELLOW)$(TESTNET_CONFIG) already exists. Overwrite? [y/N] $(RESET)" && read -r ans && \
+		case "$$ans" in [yY]*) ;; *) echo "Skipped."; exit 0;; esac; \
+	fi
+	@test -f $(TESTNET_CONFIG).example || { echo "$(RED)Error: $(TESTNET_CONFIG).example not found$(RESET)"; exit 1; }
+	@cp $(TESTNET_CONFIG).example $(TESTNET_CONFIG)
+	@printf "$(YELLOW)Enter your wallet private key for Testnet: $(RESET)" && read -rs pk && echo "" && \
+		sed 's|private_key: ""|private_key: "'"$$pk"'"|' $(TESTNET_CONFIG) > $(TESTNET_CONFIG).tmp && \
+		mv $(TESTNET_CONFIG).tmp $(TESTNET_CONFIG)
+	@echo "$(GREEN)Created $(TESTNET_CONFIG)$(RESET)"
+	@echo "Next: run '$(YELLOW)make preflight-testnet$(RESET)' to verify your wallet."
+
+preflight-devnet: NET_NAME=Devnet
+preflight-devnet: NET_CONFIG=$(DEVNET_CONFIG)
+preflight-devnet: NET_RPC=$(DEVNET_RPC)
+preflight-devnet: NET_TOKEN=$(ZAMA_TOKEN_DEVNET)
+preflight-devnet: NET_INIT_TARGET=init-devnet
+preflight-devnet: NO_ETH_MSG=No ETH — you need Devnet ETH to send transactions
+preflight-devnet: ETH_HINT_1=Bridge ETH from Arbitrum Sepolia:
+preflight-devnet: ETH_HINT_2=https://zama-devnet-0-c616b95e3ceb51a9.testnets.rollbridge.app/
+preflight-devnet: ETH_HINT_3=
+preflight-devnet: NO_ZAMA_MSG=run: make mint-zama-devnet
+preflight-devnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_DEVNET)
+preflight-devnet: _preflight ## Verify Devnet config, wallet address, and balances (runs init if needed)
+
+preflight-testnet: NET_NAME=Testnet
+preflight-testnet: NET_CONFIG=$(TESTNET_CONFIG)
+preflight-testnet: NET_RPC=$(TESTNET_RPC)
+preflight-testnet: NET_TOKEN=$(ZAMA_TOKEN_TESTNET)
+preflight-testnet: NET_INIT_TARGET=init-testnet
+preflight-testnet: NO_ETH_MSG=No ETH
+preflight-testnet: ETH_HINT_1=Bridge ETH from Arbitrum Sepolia:
+preflight-testnet: ETH_HINT_2=https://zama-testnet-0-7ce31a60424e6a0a.testnets.rollbridge.app/
+preflight-testnet: ETH_HINT_3=Or use the faucet (requires TailScale): https://gw-faucet-zws-testnet.diplodocus-boa.ts.net/
+preflight-testnet: NO_ZAMA_MSG=ask the team for Testnet \$$ZAMA
+preflight-testnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_TESTNET)
+preflight-testnet: _preflight ## Verify Testnet config, wallet address, and balances (runs init if needed)
+
+_preflight: _check-cast
+	@if [ ! -f $(NET_CONFIG) ]; then $(MAKE) $(NET_INIT_TARGET); fi
+	@$(MAKE) _check-network-config NET_CONFIG=$(NET_CONFIG) NET_NAME=$(NET_NAME)
+	@net_lower=$$(echo "$(NET_NAME)" | tr A-Z a-z); \
+	pk=$$(grep 'private_key:' $(NET_CONFIG) | head -1 | sed 's/.*private_key: *"\(.*\)"/\1/'); \
+	addr=$$(cast wallet address --private-key "$$pk" 2>/dev/null) || { \
+		echo "$(RED)Error: Invalid private key in $(NET_CONFIG)$(RESET)"; exit 1; }; \
+	echo "$(WHITE)$(NET_NAME) Wallet Preflight$(RESET)"; \
+	echo "  Address: $$addr"; \
+	echo ""; \
+	eth=$$(cast balance "$$addr" --ether --rpc-url $(NET_RPC) 2>/dev/null) || { \
+		echo "$(RED)Error: Could not reach $(NET_NAME) RPC at $(NET_RPC)$(RESET)"; exit 1; }; \
+	echo "  ETH balance:      $$eth ETH"; \
+	zama=$$(cast call $(NET_TOKEN) "balanceOf(address)(uint256)" "$$addr" --rpc-url $(NET_RPC) 2>/dev/null); \
+	zama_fmt=$$(cast from-wei "$$zama" 2>/dev/null || echo "$$zama"); \
+	echo "  \$$ZAMA balance:    $$zama_fmt ZAMA"; \
+	allowance=$$(cast call $(NET_TOKEN) "allowance(address,address)(uint256)" "$$addr" "$(NET_PAYMENT)" --rpc-url $(NET_RPC) 2>/dev/null); \
+	allowance_fmt=$$(cast from-wei "$$allowance" 2>/dev/null || echo "$$allowance"); \
+	echo "  Payment approval: $$allowance_fmt ZAMA"; \
+	echo ""; \
+	has_eth=true; has_zama=true; has_approval=true; \
+	if [ "$$eth" = "0.000000000000000000" ]; then \
+		echo "$(RED)  ✗ No ETH — you need $(NET_NAME) ETH to send transactions$(RESET)"; \
+		[ -z "$(ETH_HINT_1)" ] || echo "    $(ETH_HINT_1)"; \
+		[ -z "$(ETH_HINT_2)" ] || echo "    $(ETH_HINT_2)"; \
+		[ -z "$(ETH_HINT_3)" ] || echo "    $(ETH_HINT_3)"; \
+		has_eth=false; \
+	else \
+		echo "$(GREEN)  ✓ ETH$(RESET)"; \
+	fi; \
+	if [ "$$zama" = "0" ]; then \
+		echo "$(RED)  ✗ No \$$ZAMA — $(NO_ZAMA_MSG)$(RESET)"; \
+		has_zama=false; \
+	else \
+		echo "$(GREEN)  ✓ \$$ZAMA$(RESET)"; \
+	fi; \
+	if [ "$$allowance" = "0" ]; then \
+		echo "$(RED)  ✗ No payment approval — run: make approve-payment-$$net_lower$(RESET)"; \
+		has_approval=false; \
+	else \
+		echo "$(GREEN)  ✓ Payment approved$(RESET)"; \
+	fi; \
+	if [ "$$has_eth" = "true" ]; then \
+		if [ "$$has_zama" = "false" ]; then \
+			echo ""; \
+			if [ "$(YES)" = "1" ]; then do_mint=true; \
+			elif [ "$(NO)" = "1" ]; then do_mint=false; \
+			else \
+				printf "$(YELLOW)  Mint \$$ZAMA tokens? [y/N] $(RESET)"; read -r ans; \
+				case "$$ans" in [yY]*) do_mint=true;; *) do_mint=false;; esac; \
+			fi; \
+			if [ "$$do_mint" = "true" ]; then $(MAKE) mint-zama-$$net_lower; fi; \
+		fi; \
+		if [ "$$has_approval" = "false" ]; then \
+			echo ""; \
+			if [ "$(YES)" = "1" ]; then do_approve=true; \
+			elif [ "$(NO)" = "1" ]; then do_approve=false; \
+			else \
+				printf "$(YELLOW)  Approve ProtocolPayment spending? [y/N] $(RESET)"; read -r ans; \
+				case "$$ans" in [yY]*) do_approve=true;; *) do_approve=false;; esac; \
+			fi; \
+			if [ "$$do_approve" = "true" ]; then $(MAKE) approve-payment-$$net_lower; fi; \
+		fi; \
+	fi
+
+mint-zama-devnet: _check-cast ## Mint $ZAMA tokens on Devnet (override: MINT_AMOUNT=50000ether)
+	@$(MAKE) _check-network-config NET_CONFIG=$(DEVNET_CONFIG) NET_NAME=Devnet
+	@pk=$$(grep 'private_key:' $(DEVNET_CONFIG) | head -1 | sed 's/.*private_key: *"\(.*\)"/\1/'); \
+	addr=$$(cast wallet address --private-key "$$pk"); \
+	amount_fmt=$$(cast from-wei $$(cast to-wei $(MINT_AMOUNT)) 2>/dev/null || echo "$(MINT_AMOUNT)"); \
+	echo "Minting $$amount_fmt \$$ZAMA to $$addr on Devnet..."; \
+	cast send $(ZAMA_TOKEN_DEVNET) "mint(address,uint256)" "$$addr" $(MINT_AMOUNT) \
+		--private-key "$$pk" --rpc-url $(DEVNET_RPC) && \
+	echo "$(GREEN)Mint successful!$(RESET)" && \
+	new_bal=$$(cast call $(ZAMA_TOKEN_DEVNET) "balanceOf(address)(uint256)" "$$addr" --rpc-url $(DEVNET_RPC)); \
+	echo "New balance: $$(cast from-wei "$$new_bal" 2>/dev/null || echo "$$new_bal") ZAMA"
+
+mint-zama-testnet: ## How to get $ZAMA tokens on Testnet
+	@echo "$(YELLOW)Testnet \$$ZAMA is not self-service mintable.$(RESET)"
+	@echo ""
+	@echo "Ask the relayer team to send \$$ZAMA to your wallet address."
+	@echo "To find your address: make preflight-testnet"
+
+approve-payment-devnet: NET_CONFIG=$(DEVNET_CONFIG)
+approve-payment-devnet: NET_NAME=Devnet
+approve-payment-devnet: NET_RPC=$(DEVNET_RPC)
+approve-payment-devnet: NET_TOKEN=$(ZAMA_TOKEN_DEVNET)
+approve-payment-devnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_DEVNET)
+approve-payment-devnet: _approve-payment ## Approve ProtocolPayment to spend $ZAMA on Devnet (max approval)
+
+approve-payment-testnet: NET_CONFIG=$(TESTNET_CONFIG)
+approve-payment-testnet: NET_NAME=Testnet
+approve-payment-testnet: NET_RPC=$(TESTNET_RPC)
+approve-payment-testnet: NET_TOKEN=$(ZAMA_TOKEN_TESTNET)
+approve-payment-testnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_TESTNET)
+approve-payment-testnet: _approve-payment ## Approve ProtocolPayment to spend $ZAMA on Testnet (max approval)
+
+_approve-payment: _check-cast
+	@$(MAKE) _check-network-config NET_CONFIG=$(NET_CONFIG) NET_NAME=$(NET_NAME)
+	@pk=$$(grep 'private_key:' $(NET_CONFIG) | head -1 | sed 's/.*private_key: *"\(.*\)"/\1/'); \
+	addr=$$(cast wallet address --private-key "$$pk"); \
+	echo "Approving ProtocolPayment ($(NET_PAYMENT)) to spend \$$ZAMA on behalf of $$addr on $(NET_NAME)..."; \
+	cast send $(NET_TOKEN) "approve(address,uint256)" "$(NET_PAYMENT)" "$(MAX_UINT256)" \
+		--private-key "$$pk" --rpc-url $(NET_RPC) && \
+	echo "$(GREEN)Approval successful!$(RESET)" && \
+	allowance=$$(cast call $(NET_TOKEN) "allowance(address,address)(uint256)" "$$addr" "$(NET_PAYMENT)" --rpc-url $(NET_RPC)); \
+	echo "Allowance: $$(cast from-wei "$$allowance" 2>/dev/null || echo "$$allowance") ZAMA"
+
+# ---------------------------------------------------------------------------
+##@ Database
+# ---------------------------------------------------------------------------
+
+db-start: _check-docker ## Start local Postgres (port 5433)
+	@docker compose -f $(COMPOSE_FILE) up -d
+	@$(MAKE) _db-wait
+
+db-stop: _check-docker ## Stop local Postgres (preserves data)
+	@docker compose -f $(COMPOSE_FILE) down
+
+db-destroy: _check-docker ## Stop local Postgres and wipe all data
+	@docker compose -f $(COMPOSE_FILE) down -v
+
+db-status: _check-docker ## Show Postgres container status and test connection
+	@docker compose -f $(COMPOSE_FILE) ps
+	@echo ""
+	@docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres 2>/dev/null \
+		&& echo "$(GREEN)Connection: OK$(RESET)" \
+		|| echo "$(RED)Connection: FAILED$(RESET)"
+
+db-logs: _check-docker ## Tail Postgres container logs
+	@docker compose -f $(COMPOSE_FILE) logs -f postgres
+
+db-migrate: _check-postgres ## Run database migrations (uses relayer-migrate binary)
+	@DATABASE_URL="$(DATABASE_URL)" MAX_ATTEMPTS=20 \
+		cargo run --manifest-path relayer-migrate/Cargo.toml --bin relayer-migrate
+
+db-reset: _check-docker ## Wipe database and re-run migrations from scratch
+	@echo "$(YELLOW)Destroying and recreating database...$(RESET)"
+	@$(MAKE) db-destroy
+	@$(MAKE) db-start
+	@$(MAKE) db-migrate
+
+db-shell: _check-postgres ## Open psql shell into local database
+	@docker compose -f $(COMPOSE_FILE) exec postgres psql -U postgres -d relayer_db
+
+# ---------------------------------------------------------------------------
+##@ Database - sqlx-cli
+# ---------------------------------------------------------------------------
+
+sqlx-migrate: _check-sqlx-cli _check-postgres ## Run migrations via sqlx-cli
+	@cd relayer-migrate && cargo sqlx migrate run --database-url "$(DATABASE_URL)"
+
+sqlx-prepare: _check-sqlx-cli _check-postgres ## Prepare sqlx offline data for CI (run after schema changes)
+	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets
+
+# ---------------------------------------------------------------------------
+##@ Development
+# ---------------------------------------------------------------------------
+
+run: _check-postgres ## Run the relayer (default config)
+	@cargo run --bin fhevm-relayer
+
+run-devnet: _check-postgres ## Run the relayer against Devnet
+	@$(MAKE) _check-network-config NET_CONFIG=$(DEVNET_CONFIG) NET_NAME=Devnet
+	@cargo run --bin fhevm-relayer -- --config-file $(DEVNET_CONFIG)
+
+run-testnet: _check-postgres ## Run the relayer against Testnet
+	@$(MAKE) _check-network-config NET_CONFIG=$(TESTNET_CONFIG) NET_NAME=Testnet
+	@cargo run --bin fhevm-relayer -- --config-file $(TESTNET_CONFIG)
+
+dev: _check-cargo-watch _check-postgres ## Run with hot-reload (requires cargo-watch)
+	@cargo watch -w src -x 'run --bin fhevm-relayer'
+
+dev-devnet: _check-cargo-watch _check-postgres ## Run against Devnet with hot-reload (requires cargo-watch)
+	@cargo watch -w src -x 'run --bin fhevm-relayer -- --config-file $(DEVNET_CONFIG)'
+
+dev-testnet: _check-cargo-watch _check-postgres ## Run against Testnet with hot-reload (requires cargo-watch)
+	@cargo watch -w src -x 'run --bin fhevm-relayer -- --config-file $(TESTNET_CONFIG)'
+
+health: ## Check relayer health endpoints (requires running relayer)
+	@curl -sf http://localhost:3000/liveness >/dev/null 2>&1 || { \
+		echo "$(RED)Error: Relayer is not reachable at localhost:3000. Is it running? (make run)$(RESET)"; exit 1; }
+	@echo "$(YELLOW)Checking health endpoints...$(RESET)"
+	@echo "\n/liveness:"
+	@curl -sS http://localhost:3000/liveness && echo ""
+	@echo "\n/healthz:"
+	@curl -sS http://localhost:3000/healthz && echo ""
+	@echo "\n/version:"
+	@curl -sS http://localhost:3000/version && echo ""
+	@echo "\n/metrics (first 10 lines):"
+	@curl -sS http://localhost:3000/metrics | head -10
+	@echo "\n"
+
+# ---------------------------------------------------------------------------
 ##@ Testing
-test-unit: ## Run library/unit tests only
+# ---------------------------------------------------------------------------
+
+test-unit: ## Run library/unit tests only (no Postgres needed)
 	@$(CARGO_TEST) --lib
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --lib
 
-test-build: ## Build all test binaries
+test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline data)
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
@@ -58,7 +394,7 @@ test-build: ## Build all test binaries
 	@$(CARGO_TEST) --test health_tests --no-run
 	@$(CARGO_TEST) --test keyurl_test --no-run
 
-test-run: ## Run pre-built test binaries
+test-run: _check-postgres ## Run pre-built test binaries
 	@echo "Running pre-built test binaries..."
 	@$(CARGO_TEST) --lib
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
@@ -71,7 +407,7 @@ test-run: ## Run pre-built test binaries
 	@$(CARGO_TEST) --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --test keyurl_test -- --test-threads=1
 
-test-long-running: ## Run long-running redundancy tests (requires --features long-running-tests)
+test-long-running: _check-postgres ## Run long-running redundancy tests (requires --features long-running-tests)
 	@echo "Running long-running redundancy tests..."
 	@$(CARGO_TEST) --features long-running-tests test_listener_redundancy -- --test-threads=1
 
@@ -79,7 +415,23 @@ test-all: test-build test-run test-long-running ## Build and run all tests inclu
 
 test-all-no-long-running: test-build test-run ## Build and run all tests except long-running tests (unit + integration only)
 
-test-smoke-ok-all-v1: ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
+# ---------------------------------------------------------------------------
+##@ Testing - Coverage
+# ---------------------------------------------------------------------------
+
+test-coverage-report-html: _check-coverage-tools  ## Run unit tests with coverage HTML report
+	@$(CARGO_LLVM_COV) --lib --html --no-cfg-coverage --open
+	@$(MAKE) _clean-profraw
+
+test-coverage-report-cmdline: _check-coverage-tools ## Run unit tests with coverage summary
+	@$(CARGO_LLVM_COV) --lib --json --no-cfg-coverage | jq -r -f coverage-format.jq | awk -F'\t' '{printf "%-70s %s\n", $$1, $$2}'
+	@$(MAKE) _clean-profraw
+
+# ---------------------------------------------------------------------------
+##@ Testing - Smoke V1
+# ---------------------------------------------------------------------------
+
+test-smoke-ok-all-v1: _check-postgres ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
 	@echo "Building v1 tests..."
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v1_test --test user_decrypt_v1_test --test input_proof_v1_test --test health_tests --no-run
 	@echo "Running v1 tests..."
@@ -88,20 +440,23 @@ test-smoke-ok-all-v1: ## Run smoke test on ok (happy path) for v1 endpoints (use
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v1_test test_success_single_request -- --test-threads=4
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test health_tests -- --test-threads=4
 
-test-smoke-ok-input-proof-v1: ## Run smoke test on ok (happy path) for input-proof v1
+test-smoke-ok-input-proof-v1: _check-postgres ## Run smoke test on ok (happy path) for input-proof v1
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v1_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-user-decrypt-v1: ## Run smoke test on ok (happy path) for user-decrypt v1
+test-smoke-ok-user-decrypt-v1: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v1
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v1_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-public-decrypt-v1: ## Run smoke test on ok (happy path) for public-decrypt v1
+test-smoke-ok-public-decrypt-v1: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v1
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v1_test test_success_single_request -- --test-threads=4
 
-test-health-endpoints: ## Run health endpoint tests
+test-health-endpoints: _check-postgres ## Run health endpoint tests
 	@$(CARGO_TEST) --test health_tests -- --test-threads=1
 
-##@ V2 API Testing
-test-smoke-ok-all-v2: ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
+# ---------------------------------------------------------------------------
+##@ Testing - Smoke V2
+# ---------------------------------------------------------------------------
+
+test-smoke-ok-all-v2: _check-postgres ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
 	@echo "Building v2 tests..."
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
 	@echo "Running v2 tests..."
@@ -109,23 +464,52 @@ test-smoke-ok-all-v2: ## Run smoke test on ok (happy path) for v2 endpoints (use
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v2_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-input-proof-v2: ## Run smoke test on ok (happy path) for input-proof v2
+test-smoke-ok-input-proof-v2: _check-postgres ## Run smoke test on ok (happy path) for input-proof v2
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v2_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-user-decrypt-v2: ## Run smoke test on ok (happy path) for user-decrypt v2
+test-smoke-ok-user-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v2
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-public-decrypt-v2: ## Run smoke test on ok (happy path) for public-decrypt v2
+test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v2
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
 
+# ---------------------------------------------------------------------------
 ##@ Combined Testing
+# ---------------------------------------------------------------------------
+
 test-smoke-all-versions: ## Run smoke tests for both v1 and v2 endpoints
 	@echo "Running v1 smoke tests..."
 	@make test-smoke-ok-all-v1
 	@echo "Running v2 smoke tests..."
 	@make test-smoke-ok-all-v2
 
+# ---------------------------------------------------------------------------
+##@ Workflows
+# ---------------------------------------------------------------------------
+
+check: ## Quick pre-push check (fmt + clippy, no tests)
+	@$(MAKE) fmt
+	@$(MAKE) clippy
+
+lint: check ## Alias for 'check'
+
+fix: ## Auto-fix formatting and clippy issues
+	@$(MAKE) fmt-fix
+	@$(MAKE) clippy-fix
+
+ci: ## Reproduce CI locally (lint + test-run)
+	@echo "$(YELLOW)Running full CI pipeline locally...$(RESET)"
+	@$(MAKE) fmt
+	@$(MAKE) clippy
+	@$(MAKE) db-start
+	@$(MAKE) db-migrate
+	@$(MAKE) test-run
+	@echo "$(GREEN)CI pipeline passed!$(RESET)"
+
+# ---------------------------------------------------------------------------
 ##@ Linting
+# ---------------------------------------------------------------------------
+
 clippy: ## Check code with clippy (no fixes)
 	@cargo clippy --all-targets --all-features -- -D warnings
 	@cargo clippy --all-targets --all-features --manifest-path $(MOCK_RPC_MANIFEST) -- -D warnings
@@ -145,14 +529,30 @@ fmt-fix: ## Fix code formatting
 api-lint: ## Validate OpenAPI specification
 	@npx @redocly/cli lint openapi-async-design.yaml
 
-##@ SQL
-sqlx-migrate: ## Run database migrations for relayer database
-	@cd relayer-migrate && cargo sqlx migrate run --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db"
+# ---------------------------------------------------------------------------
+##@ Docker
+# ---------------------------------------------------------------------------
 
-sqlx-prepare: ## Prepare sqlx offline data for CI (run after schema changes)
-	@cargo sqlx prepare --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db" -- --all-targets
+docker-build: _check-docker ## Build relayer image (TAG=v0.9.0-rc.3 to version)
+	@docker build -f ../../docker/relayer/Dockerfile -t $(RELAYER_IMAGE):$(TAG) ../..
 
+docker-build-migrate: _check-docker ## Build relayer-migrate image (TAG=v0.9.0-rc.3 to version)
+	@docker build -f ../../docker/relayer-migrate/Dockerfile -t $(MIGRATE_IMAGE):$(TAG) ../..
+
+docker-build-all: docker-build docker-build-migrate ## Build all Docker images
+
+docker-release: _check-docker ## Build with registry prefix (TAG=v0.9.0-rc.3 required)
+	@test -n "$(filter-out latest,$(TAG))" || { echo "$(RED)Error: TAG is required (e.g. make docker-release TAG=v0.9.0-rc.1)$(RESET)"; exit 1; }
+	@$(MAKE) docker-build RELAYER_IMAGE=$(DOCKER_REGISTRY)/relayer TAG=$(TAG)
+	@$(MAKE) docker-build-migrate MIGRATE_IMAGE=$(DOCKER_REGISTRY)/relayer-migrate TAG=$(TAG)
+	@echo "$(GREEN)Built:$(RESET)"
+	@echo "  $(DOCKER_REGISTRY)/relayer:$(TAG)"
+	@echo "  $(DOCKER_REGISTRY)/relayer-migrate:$(TAG)"
+
+# ---------------------------------------------------------------------------
 ##@ Release
+# ---------------------------------------------------------------------------
+
 release-minor: ## Release minor version bump (no publish, no tag)
 	@cargo release minor --no-publish --no-push --no-tag -x
 
@@ -162,7 +562,9 @@ release-patch: ## Release patch version bump (no publish, no tag)
 release-rc: ## Release candidate version bump (no publish, no tag)
 	@cargo release rc --no-publish --no-push --no-tag -x
 
-
+# ---------------------------------------------------------------------------
 ##@ Help
+# ---------------------------------------------------------------------------
+
 help: ## Display this help message
-	@awk 'BEGIN {FS = ":.*##"; printf "\n$(YELLOW)fhevm-relayer Test Suite$(RESET)\n\nUsage: make <target>\n\nAvailable targets:\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(YELLOW)%-35s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(WHITE)%s$(RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\n$(YELLOW)fhevm-relayer$(RESET)\n\nUsage: make <target>\n\nAvailable targets:\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(YELLOW)%-35s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(WHITE)%s$(RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
