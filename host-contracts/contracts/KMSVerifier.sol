@@ -46,10 +46,27 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     /// @notice Threshold is above number of signers.
     error ThresholdIsAboveNumberOfSigners();
 
+    /// @notice Returned if the KMS context does not exist or has been destroyed.
+    /// @param kmsContextId The non-existent context ID.
+    error InvalidKMSContext(uint256 kmsContextId);
+
+    /// @notice Returned if attempting to destroy the current context.
+    /// @param kmsContextId The current context ID.
+    error CurrentKMSContextCannotBeDestroyed(uint256 kmsContextId);
+
+    /// @notice Returned if the extra data version is unsupported.
+    /// @param version The unsupported version byte.
+    error UnsupportedExtraDataVersion(uint8 version);
+
     /// @notice         Emitted when a context is set or changed.
+    /// @param kmsContextId      The context ID.
     /// @param newKmsSignersSet   The set of new KMS signers.
     /// @param newThreshold   The new threshold set by the owner.
-    event NewContextSet(address[] newKmsSignersSet, uint256 newThreshold);
+    event NewContextSet(uint256 indexed kmsContextId, address[] newKmsSignersSet, uint256 newThreshold);
+
+    /// @notice         Emitted when a KMS context is destroyed.
+    /// @param kmsContextId      The destroyed context ID.
+    event KMSContextDestroyed(uint256 indexed kmsContextId);
 
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
@@ -80,21 +97,38 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
+    /// @notice Base value for KMS context IDs. Format: [0x07 type tag | 31 counter bytes].
+    /// @dev See KMSRequestCounters on Gateway for the shared counter scheme.
+    uint256 private constant KMS_CONTEXT_COUNTER_BASE = uint256(0x07) << 248;
+
     /// @custom:storage-location erc7201:fhevm.storage.KMSVerifier
     struct KMSVerifierStorage {
-        mapping(address => bool) isSigner; /// @notice Mapping to keep track of addresses that are signers
-        address[] signers; /// @notice Array to keep track of all signers
-        uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
+        /// @dev Deprecated. Use `contextIsSigner` instead.
+        mapping(address => bool) isSigner;
+        /// @dev Deprecated. Use `contextSigners` instead.
+        address[] signers;
+        /// @dev Deprecated. Use `contextThreshold` instead.
+        uint256 threshold;
+        /// @notice Current KMS context ID counter.
+        uint256 currentKmsContextId;
+        /// @notice Ordered signer list per context ID.
+        mapping(uint256 => address[]) contextSigners;
+        /// @notice Fast signer membership check per context ID.
+        mapping(uint256 => mapping(address => bool)) contextIsSigner;
+        /// @notice Required signature threshold per context ID.
+        mapping(uint256 => uint256) contextThreshold;
+        /// @notice Whether a context ID has been destroyed.
+        mapping(uint256 => bool) destroyedContexts;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
@@ -120,16 +154,23 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         uint256 initialThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
         defineNewContext(initialSigners, initialThreshold);
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract to V3 with context-aware KMS support.
+     * @dev Migrates existing signers into the first context. The legacy mapping retains its pre-migration
+     *      values and should be considered stale after this call.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
+        defineNewContext($.signers, $.threshold);
+    }
 
     /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
@@ -138,34 +179,18 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
     function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyACLOwner {
-        uint256 newSignersLen = newSignersSet.length;
-        if (newSignersLen == 0) {
+        if (newSignersSet.length == 0) {
             revert SignersSetIsEmpty();
         }
 
-        /// @dev First, we remove the old signers set
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        address[] memory oldSignersSet = $.signers;
-        uint256 oldSignersLen = oldSignersSet.length;
-        for (uint256 i = 0; i < oldSignersLen; i++) {
-            $.isSigner[oldSignersSet[i]] = false;
-            $.signers.pop();
-        }
 
-        /// @dev Next, we add the new set of signers.
-        for (uint256 i = 0; i < newSignersLen; i++) {
-            address signer = newSignersSet[i];
-            if (signer == address(0)) {
-                revert KMSSignerNull();
-            }
-            if ($.isSigner[signer]) {
-                revert KMSAlreadySigner();
-            }
-            $.isSigner[signer] = true;
-            $.signers.push(signer);
-        }
-        _setThreshold(newThreshold);
-        emit NewContextSet(newSignersSet, newThreshold);
+        $.currentKmsContextId++;
+
+        _setContextSigners($.currentKmsContextId, newSignersSet);
+        _setContextThreshold($.currentKmsContextId, newThreshold);
+
+        emit NewContextSet($.currentKmsContextId, newSignersSet, newThreshold);
     }
 
     /**
@@ -174,9 +199,27 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
     function setThreshold(uint256 threshold) public virtual onlyACLOwner {
-        _setThreshold(threshold);
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        emit NewContextSet($.signers, threshold);
+        _setContextThreshold($.currentKmsContextId, threshold);
+        emit NewContextSet($.currentKmsContextId, $.contextSigners[$.currentKmsContextId], threshold);
+    }
+
+    /**
+     * @notice              Destroys a KMS context, preventing it from being used for verification.
+     * @dev                 Only the owner can destroy a context. The current context cannot be destroyed.
+     * @param kmsContextId  The ID of the context to destroy.
+     */
+    function destroyKmsContext(uint256 kmsContextId) public virtual onlyACLOwner {
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        if (kmsContextId == $.currentKmsContextId) {
+            revert CurrentKMSContextCannotBeDestroyed(kmsContextId);
+        }
+        if (!_isValidKmsContext(kmsContextId)) {
+            revert InvalidKMSContext(kmsContextId);
+        }
+        $.destroyedContexts[kmsContextId] = true;
+
+        emit KMSContextDestroyed(kmsContextId);
     }
 
     /**
@@ -229,7 +272,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         );
         bytes32 digest = _hashDecryptionResult(publicDecryptVerification);
 
-        return _verifySignaturesDigest(digest, signatures);
+        uint256 kmsContextId = _extractKmsContextId(extraData);
+        return _verifySignaturesDigestForContext(digest, signatures, kmsContextId);
     }
 
     /**
@@ -239,7 +283,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      */
     function getKmsSigners() public view virtual returns (address[] memory) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        return $.signers;
+        return $.contextSigners[$.currentKmsContextId];
     }
 
     /**
@@ -248,7 +292,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      */
     function getThreshold() public view virtual returns (uint256) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        return $.threshold;
+        return $.contextThreshold[$.currentKmsContextId];
     }
 
     /**
@@ -258,7 +302,59 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      */
     function isSigner(address account) public view virtual returns (bool) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        return $.isSigner[account];
+        return $.contextIsSigner[$.currentKmsContextId][account];
+    }
+
+    /**
+     * @notice              Returns the current KMS context ID.
+     * @return contextId    The current KMS context ID.
+     */
+    function getCurrentKmsContextId() public view virtual returns (uint256) {
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        return $.currentKmsContextId;
+    }
+
+    /**
+     * @notice              Returns the list of signers for a given KMS context.
+     * @param kmsContextId  The context ID.
+     * @return signers      The list of signers for the context, or empty if context doesn't exist or is destroyed.
+     */
+    function getSignersForKmsContext(uint256 kmsContextId) public view virtual returns (address[] memory) {
+        if (!_isValidKmsContext(kmsContextId)) {
+            return new address[](0);
+        }
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        return $.contextSigners[kmsContextId];
+    }
+
+    /**
+     * @notice              Resolves extraData into the context-specific signers and threshold.
+     * @dev                 Parses the version-tagged extraData to extract the context ID, validates
+     *                      that the context exists and is not destroyed, then returns the corresponding
+     *                      signer set and threshold. Reverts on invalid extraData, non-existent, or
+     *                      destroyed contexts.
+     * @param extraData     The extra data bytes from the decryption proof.
+     * @return signers      The list of signers for the resolved context.
+     * @return threshold    The threshold for the resolved context.
+     */
+    function getContextSignersAndThresholdFromExtraData(
+        bytes calldata extraData
+    ) external view virtual returns (address[] memory signers, uint256 threshold) {
+        uint256 kmsContextId = _extractKmsContextId(extraData);
+        if (!_isValidKmsContext(kmsContextId)) {
+            revert InvalidKMSContext(kmsContextId);
+        }
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        return ($.contextSigners[kmsContextId], $.contextThreshold[kmsContextId]);
+    }
+
+    /**
+     * @notice              Validates whether a KMS context exists and is not destroyed.
+     * @param kmsContextId  The context ID.
+     * @return isValid      true if the context exists and is not destroyed, false otherwise.
+     */
+    function isValidKmsContext(uint256 kmsContextId) public view virtual returns (bool) {
+        return _isValidKmsContext(kmsContextId);
     }
 
     /**
@@ -305,37 +401,116 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice          Internal function that sets the minimum number of valid signatures required to accept a transaction.
-     * @dev             External functions using this internal function should be access controlled to owner.
-     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
+     * @notice              Validates and writes a threshold to context-aware storage.
+     * @dev                 Validates against contextSigners[contextId].length.
+     * @param contextId     The context to update.
+     * @param threshold_    The threshold to set. Must be non-zero and <= context signer count.
      */
-    function _setThreshold(uint256 threshold) internal virtual {
-        if (threshold == 0) {
-            revert ThresholdIsNull();
-        }
+    function _setContextThreshold(uint256 contextId, uint256 threshold_) internal virtual {
+        if (threshold_ == 0) revert ThresholdIsNull();
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        if (threshold > $.signers.length) {
+        if (threshold_ > $.contextSigners[contextId].length) {
             revert ThresholdIsAboveNumberOfSigners();
         }
-        $.threshold = threshold;
+        $.contextThreshold[contextId] = threshold_;
     }
 
     /**
-     * @notice              Verifies multiple signatures for a given message at a certain threshold.
-     * @dev                 Calls verifySignature internally.
+     * @notice              Checks whether a KMS context ID is within the allocated range.
+     * @param kmsContextId  The context ID to check.
+     * @return inRange      true if the context ID is within the valid range.
+     */
+    function _contextIdInRange(uint256 kmsContextId) internal view virtual returns (bool) {
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        return kmsContextId >= KMS_CONTEXT_COUNTER_BASE + 1 && kmsContextId <= $.currentKmsContextId;
+    }
+
+    /**
+     * @notice              Checks whether a KMS context ID is within the allocated range and not destroyed.
+     * @param kmsContextId  The context ID to check.
+     * @return              true if the context ID is in range and not destroyed.
+     */
+    function _isValidKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
+        return _contextIdInRange(kmsContextId) && !_getKMSVerifierStorage().destroyedContexts[kmsContextId];
+    }
+
+    /**
+     * @notice              Validates and stores context signers for a given context ID.
+     * @dev                 Reverts on null or duplicate addresses. Must only be called once
+     *                      per contextId (appends without clearing).
+     * @param contextId     The context ID.
+     * @param signersList   The list of signers.
+     */
+    function _setContextSigners(uint256 contextId, address[] memory signersList) internal virtual {
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+        for (uint256 i = 0; i < signersList.length; i++) {
+            address signer = signersList[i];
+            if (signer == address(0)) {
+                revert KMSSignerNull();
+            }
+            if ($.contextIsSigner[contextId][signer]) {
+                revert KMSAlreadySigner();
+            }
+            $.contextSigners[contextId].push(signer);
+            $.contextIsSigner[contextId][signer] = true;
+        }
+    }
+
+    /**
+     * @notice              Extracts the KMS context ID from extra data.
+     * @param extraData     The extra data bytes from the decryption proof.
+     * @return contextId    The extracted KMS context ID.
+     */
+    function _extractKmsContextId(bytes memory extraData) internal view virtual returns (uint256) {
+        // v0 (0x00 prefix or empty): uses the current context. Trailing bytes are
+        // ignored for forward-compatibility with potential v0 extensions.
+        if (extraData.length == 0 || uint8(extraData[0]) == 0x00) {
+            KMSVerifierStorage storage $ = _getKMSVerifierStorage();
+            return $.currentKmsContextId;
+        }
+        uint8 version = uint8(extraData[0]);
+        if (version == 0x01) {
+            // v1 (0x01 prefix): reads a 32-byte context ID starting at byte 1.
+            // Trailing bytes after byte 33 are ignored for forward-compatibility
+            // with potential v1 extensions.
+            if (extraData.length < 33) {
+                revert DeserializingDecryptionProofFail();
+            }
+            uint256 contextId;
+            // Memory layout: [32-byte length][version byte][32-byte contextId][...]
+            // mload(add(extraData, 33)) reads 32 bytes starting at offset 1 (after version byte).
+            assembly {
+                contextId := mload(add(extraData, 33))
+            }
+            return contextId;
+        }
+        revert UnsupportedExtraDataVersion(version);
+    }
+
+    /**
+     * @notice              Verifies multiple signatures for a given message using context-aware verification.
      * @param digest        The hash of the message that was signed by all signers.
      * @param signatures    An array of signatures to verify.
+     * @param kmsContextId  The KMS context ID to verify against.
      * @return isVerified   true if enough provided signatures are valid, false otherwise.
      */
-    function _verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) internal virtual returns (bool) {
+    function _verifySignaturesDigestForContext(
+        bytes32 digest,
+        bytes[] memory signatures,
+        uint256 kmsContextId
+    ) internal virtual returns (bool) {
         uint256 numSignatures = signatures.length;
-
         if (numSignatures == 0) {
             revert KMSZeroSignature();
         }
 
-        uint256 threshold = getThreshold();
+        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
 
+        if (!_isValidKmsContext(kmsContextId)) {
+            revert InvalidKMSContext(kmsContextId);
+        }
+
+        uint256 threshold = $.contextThreshold[kmsContextId];
         if (numSignatures < threshold) {
             revert KMSSignatureThresholdNotReached(numSignatures);
         }
@@ -344,7 +519,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         uint256 uniqueValidCount;
         for (uint256 i = 0; i < numSignatures; i++) {
             address signerRecovered = _recoverSigner(digest, signatures[i]);
-            if (!isSigner(signerRecovered)) {
+            if (!$.contextIsSigner[kmsContextId][signerRecovered]) {
                 revert KMSInvalidSigner(signerRecovered);
             }
             if (!_tload(signerRecovered)) {

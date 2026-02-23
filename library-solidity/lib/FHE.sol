@@ -31,9 +31,9 @@ interface IKMSVerifier {
             uint256[] memory extensions
         );
 
-    function getThreshold() external view returns (uint256);
-
-    function getKmsSigners() external view returns (address[] memory);
+    function getContextSignersAndThresholdFromExtraData(
+        bytes calldata extraData
+    ) external view returns (address[] memory signers, uint256 threshold);
 }
 
 /**
@@ -9563,7 +9563,7 @@ library FHE {
         }
         bytes32 digest = _hashDecryptionResult(handlesList, abiEncodedCleartexts, extraData);
 
-        return _verifySignaturesDigest(digest, signatures);
+        return _verifySignaturesDigest(digest, signatures, extraData);
     }
 
     /*
@@ -9621,12 +9621,19 @@ library FHE {
     }
 
     /**
-     * @notice              View function that verifies multiple signatures for a given message at a certain threshold.
+     * @notice              View function that verifies multiple signatures for a given message using context-aware verification.
+     * @dev                 Delegates extraData parsing and context lookup to KMSVerifier via a single
+     *                      cross-contract call to `getContextSignersAndThresholdFromExtraData`.
      * @param digest        The hash of the message that was signed by all signers.
      * @param signatures    An array of signatures to verify.
+     * @param extraData     The extra data bytes from the decryption proof, used to resolve the KMS context.
      * @return isVerified   true if enough provided signatures are valid, false otherwise.
      */
-    function _verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) private view returns (bool) {
+    function _verifySignaturesDigest(
+        bytes32 digest,
+        bytes[] memory signatures,
+        bytes memory extraData
+    ) private view returns (bool) {
         uint256 numSignatures = signatures.length;
 
         if (numSignatures == 0) {
@@ -9635,13 +9642,12 @@ library FHE {
 
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
 
-        uint256 threshold = IKMSVerifier($.KMSVerifierAddress).getThreshold();
+        (address[] memory KMSSigners, uint256 threshold) = IKMSVerifier($.KMSVerifierAddress)
+            .getContextSignersAndThresholdFromExtraData(extraData);
 
         if (numSignatures < threshold) {
             revert KMSSignatureThresholdNotReached(numSignatures);
         }
-
-        address[] memory KMSSigners = IKMSVerifier($.KMSVerifierAddress).getKmsSigners();
 
         address[] memory recoveredSigners = new address[](numSignatures);
         uint256 uniqueValidCount;
