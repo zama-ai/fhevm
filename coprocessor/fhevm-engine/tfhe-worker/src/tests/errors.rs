@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, setup_event_harness, to_ty,
-    wait_for_error, TEST_CHAIN_ID,
+    wait_for_error, EventHarness, TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -9,7 +9,11 @@ use serial_test::serial;
 #[tokio::test]
 #[serial(db)]
 async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app: _app,
+        pool,
+        listener_db: _listener_db,
+    } = setup_event_harness().await?;
     let output_handle = next_handle().to_vec();
     let tx_id = next_handle().to_vec();
     let dcid = next_handle().to_vec();
@@ -41,10 +45,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     .bind(true)
     .bind(false)
     .bind(TEST_CHAIN_ID as i64)
-    .execute(&harness.pool)
+    .execute(&pool)
     .await?;
 
-    let (is_error, msg) = wait_for_error(&harness.pool, &output_handle, &tx_id).await?;
+    let (is_error, msg) = wait_for_error(&pool, &output_handle, &tx_id).await?;
     assert!(
         is_error,
         "expected unknown operation to fail, last_error_message={msg:?}"
@@ -55,16 +59,20 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 #[tokio::test]
 #[serial(db)]
 async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app: _app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
     let tx_id = next_handle();
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = listener_db.new_transaction().await?;
 
     let input = next_handle();
-    insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 42, 5, input, false).await?;
+    insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 42, 5, input, false).await?;
 
     let output = next_handle();
     insert_event(
-        &harness.listener_db,
+        &listener_db,
         &mut tx,
         tx_id,
         TfheContractEvents::Cast(TfheContract::Cast {
@@ -76,10 +84,10 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         true,
     )
     .await?;
-    allow_handle(&harness.listener_db, &mut tx, &output).await?;
+    allow_handle(&listener_db, &mut tx, &output).await?;
     tx.commit().await?;
 
-    let (is_error, msg) = wait_for_error(&harness.pool, output.as_ref(), tx_id.as_ref()).await?;
+    let (is_error, msg) = wait_for_error(&pool, output.as_ref(), tx_id.as_ref()).await?;
     assert!(
         is_error,
         "expected invalid cast target type to fail, last_error_message={msg:?}"

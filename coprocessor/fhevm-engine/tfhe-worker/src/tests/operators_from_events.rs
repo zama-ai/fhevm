@@ -11,7 +11,7 @@ use host_listener::database::tfhe_event_propagate::{
 };
 
 use crate::tests::event_helpers::{
-    log_with_tx, next_handle, setup_event_harness, tfhe_event, to_ty, zero_address,
+    log_with_tx, next_handle, setup_event_harness, tfhe_event, to_ty, zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
     generate_binary_test_cases, generate_unary_test_cases, BinaryOperatorTestCase,
@@ -264,7 +264,11 @@ fn binary_op_to_event(
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
     let mut cases = vec![];
     for op in generate_binary_test_cases() {
         if !supported_types().contains(&op.input_types) {
@@ -299,9 +303,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             )),
         );
 
-        let mut tx = harness.listener_db.new_transaction().await?;
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, lhs_handle.as_ref()).await?;
+        let mut tx = listener_db.new_transaction().await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, lhs_handle.as_ref()).await?;
         if !op.is_scalar {
             let log = log_with_tx(
                 transaction_id,
@@ -314,22 +318,22 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                     },
                 )),
             );
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, rhs_handle.as_ref()).await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, rhs_handle.as_ref()).await?;
         }
         let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
         let log = log_with_tx(transaction_id, tfhe_event(op_event));
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, output_handle.as_ref()).await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
         tx.commit().await?;
 
         cases.push((op, output_handle));
     }
 
-    wait_until_all_allowed_handles_computed(&harness.app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
     for (op, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
-        let resp = decrypt_ciphertexts(&harness.pool, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         let decr_response = &resp[0];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operator, op.is_scalar, op.lhs, op.rhs, decr_response.value);
@@ -385,7 +389,11 @@ fn unary_op_to_event(
 #[serial(db)]
 async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
 
     for op in &ops {
         if !supported_types().contains(&op.operand_types) {
@@ -419,19 +427,19 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
             )),
         );
 
-        let mut tx = harness.listener_db.new_transaction().await?;
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, input_handle.as_ref()).await?;
+        let mut tx = listener_db.new_transaction().await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, input_handle.as_ref()).await?;
 
         let op_event = unary_op_to_event(op, &input_handle, &output_handle);
         let log = log_with_tx(transaction_id, tfhe_event(op_event));
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, output_handle.as_ref()).await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
         tx.commit().await?;
-        wait_until_all_allowed_handles_computed(&harness.app).await?;
+        wait_until_all_allowed_handles_computed(&app).await?;
 
         let decrypt_request = vec![output_handle.to_vec()];
-        let resp = decrypt_ciphertexts(&harness.pool, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         let decr_response = &resp[0];
         println!(
             "Checking computation for unary test bits:{} op:{} input:{} output:{}",
@@ -458,7 +466,11 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
 
     let transaction_id = next_handle();
     let fhe_bool_type = 0;
@@ -477,9 +489,9 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             },
         )),
     );
-    let mut tx = harness.listener_db.new_transaction().await?;
-    insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-    allow_handle(&harness.listener_db, &mut tx, false_handle.as_ref()).await?;
+    let mut tx = listener_db.new_transaction().await?;
+    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+    allow_handle(&listener_db, &mut tx, false_handle.as_ref()).await?;
 
     let log = log_with_tx(
         transaction_id,
@@ -492,8 +504,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             },
         )),
     );
-    insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-    allow_handle(&harness.listener_db, &mut tx, true_handle.as_ref()).await?;
+    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+    allow_handle(&listener_db, &mut tx, true_handle.as_ref()).await?;
     tx.commit().await?;
 
     for input_types in supported_types() {
@@ -519,9 +531,9 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                     },
                 )),
             );
-            let mut tx = harness.listener_db.new_transaction().await?;
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, left_handle.as_ref()).await?;
+            let mut tx = listener_db.new_transaction().await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, left_handle.as_ref()).await?;
 
             let log = log_with_tx(
                 transaction_id,
@@ -534,8 +546,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                     },
                 )),
             );
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, right_handle.as_ref()).await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, right_handle.as_ref()).await?;
 
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
@@ -561,12 +573,12 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                     },
                 )),
             );
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, output_handle.as_ref()).await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
-            wait_until_all_allowed_handles_computed(&harness.app).await?;
+            wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&harness.pool, decrypt_request).await?;
+            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
             let decr_response = &resp[0];
             println!(
                 "Checking if then else computation for test type:{} control:{} lhs:{} rhs:{} output:{}",
@@ -583,7 +595,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             );
         }
     }
-    wait_until_all_allowed_handles_computed(&harness.app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     Ok(())
 }
@@ -591,7 +603,11 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
 
     let caller = zero_address();
 
@@ -625,9 +641,9 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 )),
             );
 
-            let mut tx = harness.listener_db.new_transaction().await?;
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, input_handle.as_ref()).await?;
+            let mut tx = listener_db.new_transaction().await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, input_handle.as_ref()).await?;
 
             let log = log_with_tx(
                 transaction_id,
@@ -638,13 +654,13 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                     result: output_handle,
                 })),
             );
-            insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-            allow_handle(&harness.listener_db, &mut tx, output_handle.as_ref()).await?;
+            insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+            allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
 
-            wait_until_all_allowed_handles_computed(&harness.app).await?;
+            wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&harness.pool, decrypt_request).await?;
+            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
             let decr_response = &resp[0];
 
             println!(
@@ -674,12 +690,16 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::test]
 #[serial(db)]
 async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
 
     let tx_id = next_handle();
     let output = next_handle();
 
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = listener_db.new_transaction().await?;
     let log = log_with_tx(
         tx_id,
         tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -691,12 +711,12 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
             },
         )),
     );
-    insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-    allow_handle(&harness.listener_db, &mut tx, output.as_ref()).await?;
+    insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+    allow_handle(&listener_db, &mut tx, output.as_ref()).await?;
     tx.commit().await?;
 
-    wait_until_all_allowed_handles_computed(&harness.app).await?;
-    let decrypted = decrypt_ciphertexts(&harness.pool, vec![output.to_vec()]).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
+    let decrypted = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
     assert_eq!(decrypted.len(), 1);
     assert_eq!(decrypted[0].output_type, 5);
     assert_eq!(decrypted[0].value, "123");
@@ -707,7 +727,11 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::test]
 #[serial(db)]
 pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
 
     for &rand_type in supported_types() {
         let output1_handle = next_handle();
@@ -726,9 +750,9 @@ pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Err
             })),
         );
 
-        let mut tx = harness.listener_db.new_transaction().await?;
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, output1_handle.as_ref()).await?;
+        let mut tx = listener_db.new_transaction().await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, output1_handle.as_ref()).await?;
 
         let log = log_with_tx(
             transaction_id,
@@ -741,8 +765,8 @@ pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Err
                 result: output2_handle,
             })),
         );
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, output2_handle.as_ref()).await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, output2_handle.as_ref()).await?;
 
         let log = log_with_tx(
             transaction_id,
@@ -759,18 +783,18 @@ pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Err
                 },
             )),
         );
-        insert_tfhe_event(&harness.listener_db, &mut tx, log, true).await?;
-        allow_handle(&harness.listener_db, &mut tx, output3_handle.as_ref()).await?;
+        insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
+        allow_handle(&listener_db, &mut tx, output3_handle.as_ref()).await?;
         tx.commit().await?;
 
-        wait_until_all_allowed_handles_computed(&harness.app).await?;
+        wait_until_all_allowed_handles_computed(&app).await?;
 
         let decrypt_request = vec![
             output1_handle.to_vec(),
             output2_handle.to_vec(),
             output3_handle.to_vec(),
         ];
-        let resp = decrypt_ciphertexts(&harness.pool, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         assert_eq!(resp[0].output_type, rand_type as i16);
         assert_eq!(resp[1].output_type, rand_type as i16);
         assert_eq!(resp[2].output_type, rand_type as i16);
