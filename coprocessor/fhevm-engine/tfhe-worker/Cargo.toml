@@ -12,16 +12,12 @@ alloy = { workspace = true }
 bigdecimal = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
-lru = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
-rayon = { workspace = true }
 serde_json = { workspace = true }
-sha3 = { workspace = true }
 strum = { workspace = true }
 sqlx = { workspace = true }
 tfhe = { workspace = true }
-tfhe-zk-pok = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -36,10 +32,8 @@ opentelemetry-semantic-conventions = { workspace = true }
 chrono = { workspace = true }
 
 # crates.io dependencies
-actix-web = "4.9.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
-regex = "1.10.6"
 uuid = { version = "1", features = ["v4"] }
 
 # local dependencies

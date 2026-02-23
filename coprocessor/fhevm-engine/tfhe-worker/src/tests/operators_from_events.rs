@@ -395,6 +395,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         listener_db,
     } = setup_event_harness().await?;
 
+    let mut cases = vec![];
     for op in &ops {
         if !supported_types().contains(&op.operand_types) {
             continue;
@@ -436,8 +437,12 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
         allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
         tx.commit().await?;
-        wait_until_all_allowed_handles_computed(&app).await?;
 
+        cases.push((op, output_handle));
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    for (op, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
         let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         let decr_response = &resp[0];
@@ -508,6 +513,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
     allow_handle(&listener_db, &mut tx, true_handle.as_ref()).await?;
     tx.commit().await?;
 
+    let mut cases = vec![];
     for input_types in supported_types() {
         let is_input_bool = *input_types == fhe_bool_type;
         let (left_input, right_input) = if is_input_bool {
@@ -576,26 +582,30 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             insert_tfhe_event(&listener_db, &mut tx, log, true).await?;
             allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
-            wait_until_all_allowed_handles_computed(&app).await?;
-            let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-            let decr_response = &resp[0];
-            println!(
-                "Checking if then else computation for test type:{} control:{} lhs:{} rhs:{} output:{}",
-                *input_types, test_value, left_input, right_input, decr_response.value
-            );
-            assert_eq!(
-                decr_response.output_type, *input_types as i16,
-                "operand types not equal"
-            );
-            assert_eq!(
-                decr_response.value.to_string(),
-                expected_result,
-                "operand output values not equal"
-            );
+
+            cases.push((output_handle, *input_types, expected_result));
         }
     }
+
     wait_until_all_allowed_handles_computed(&app).await?;
+    for (output_handle, expected_type, expected_result) in cases {
+        let decrypt_request = vec![output_handle.to_vec()];
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
+        let decr_response = &resp[0];
+        println!(
+            "Checking if then else computation for type:{} output:{}",
+            expected_type, decr_response.value
+        );
+        assert_eq!(
+            decr_response.output_type, expected_type as i16,
+            "operand types not equal"
+        );
+        assert_eq!(
+            decr_response.value.to_string(),
+            expected_result,
+            "operand output values not equal"
+        );
+    }
 
     Ok(())
 }
@@ -612,6 +622,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let caller = zero_address();
 
     let fhe_bool = 0;
+    let mut cases = vec![];
     for type_from in supported_types() {
         for type_to in supported_types() {
             let input_handle = next_handle();
@@ -658,30 +669,34 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
             allow_handle(&listener_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
 
-            wait_until_all_allowed_handles_computed(&app).await?;
-            let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-            let decr_response = &resp[0];
-
-            println!(
-                "Checking computation for cast test from:{} to:{} input:{} output:{}",
-                type_from, type_to, input, decr_response.value,
-            );
-
-            assert_eq!(
-                decr_response.output_type, *type_to as i16,
-                "operand types not equal"
-            );
-            assert_eq!(
-                decr_response.value.to_string(),
-                if *type_to == fhe_bool {
-                    (output > 0).to_string()
-                } else {
-                    output.to_string()
-                },
-                "operand output values not equal"
-            );
+            cases.push((*type_from, *type_to, input, output, output_handle));
         }
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    for (type_from, type_to, input, output, output_handle) in cases {
+        let decrypt_request = vec![output_handle.to_vec()];
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
+        let decr_response = &resp[0];
+
+        println!(
+            "Checking computation for cast test from:{} to:{} input:{} output:{}",
+            type_from, type_to, input, decr_response.value,
+        );
+
+        assert_eq!(
+            decr_response.output_type, type_to as i16,
+            "operand types not equal"
+        );
+        assert_eq!(
+            decr_response.value.to_string(),
+            if type_to == fhe_bool {
+                (output > 0).to_string()
+            } else {
+                output.to_string()
+            },
+            "operand output values not equal"
+        );
     }
 
     Ok(())
@@ -726,13 +741,14 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 #[serial(db)]
-pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
         pool,
         listener_db,
     } = setup_event_harness().await?;
 
+    let mut cases = vec![];
     for &rand_type in supported_types() {
         let output1_handle = next_handle();
         let output2_handle = next_handle();
@@ -787,13 +803,12 @@ pub(super) async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Err
         allow_handle(&listener_db, &mut tx, output3_handle.as_ref()).await?;
         tx.commit().await?;
 
-        wait_until_all_allowed_handles_computed(&app).await?;
+        cases.push((rand_type, [output1_handle, output2_handle, output3_handle]));
+    }
 
-        let decrypt_request = vec![
-            output1_handle.to_vec(),
-            output2_handle.to_vec(),
-            output3_handle.to_vec(),
-        ];
+    wait_until_all_allowed_handles_computed(&app).await?;
+    for (rand_type, handles) in cases {
+        let decrypt_request = handles.iter().map(|h| h.to_vec()).collect();
         let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         assert_eq!(resp[0].output_type, rand_type as i16);
         assert_eq!(resp[1].output_type, rand_type as i16);
