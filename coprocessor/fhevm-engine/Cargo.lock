@@ -8286,6 +8286,7 @@ dependencies = [
  "sqlx",
  "test-harness",
  "testcontainers",
+ "thiserror 2.0.16",
  "tokio",
  "tokio-util",
  "tower-http 0.5.2",
