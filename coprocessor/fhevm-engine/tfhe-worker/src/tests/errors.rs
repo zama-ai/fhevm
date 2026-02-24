@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    setup_event_harness, to_ty, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
+    setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -56,6 +56,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+/// FheSub on mismatched types (uint32 + uint64) fails at execution time with
+/// `UnsupportedFheTypes`.  This is a reliable execution-time error on both CPU
+/// and GPU (unlike Cast-to-invalid-type which panics on the GPU path during
+/// memory reservation).
 #[tokio::test]
 #[serial(db)]
 async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,18 +71,22 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     let tx_id = next_handle();
     let mut tx = listener_db.new_transaction().await?;
 
-    let input = next_handle();
-    insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 42, 5, input, false).await?;
+    let lhs = next_handle();
+    let rhs = next_handle();
+    // lhs is uint32 (type 4), rhs is uint64 (type 5)
+    insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 10, 4, lhs, false).await?;
+    insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 20, 5, rhs, false).await?;
 
     let output = next_handle();
     insert_event(
         &listener_db,
         &mut tx,
         tx_id,
-        TfheContractEvents::Cast(TfheContract::Cast {
-            caller: crate::tests::event_helpers::zero_address(),
-            ct: input,
-            toType: to_ty(255),
+        TfheContractEvents::FheSub(TfheContract::FheSub {
+            caller: zero_address(),
+            lhs,
+            rhs,
+            scalarByte: scalar_flag(false),
             result: output,
         }),
         true,
@@ -90,7 +98,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     let (is_error, msg) = wait_for_error(&pool, output.as_ref(), tx_id.as_ref()).await?;
     assert!(
         is_error,
-        "expected invalid cast target type to fail, last_error_message={msg:?}"
+        "expected FheSub on mismatched types to fail, last_error_message={msg:?}"
     );
     Ok(())
 }

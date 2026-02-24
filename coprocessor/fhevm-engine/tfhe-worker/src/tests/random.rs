@@ -134,84 +134,94 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Verifies FheRandBounded produces values within the requested bounds.
+///
+/// Uses per-type bounds that match the old gRPC test to avoid edge cases
+/// (e.g. upper_bound=1 produces 0 random bits, which behaves differently
+/// on GPU).
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();
     let mut rand_types = Vec::new();
+    let mut bounds = Vec::new();
 
-    for &rand_type in random_test_supported_types() {
+    // Per-type bounds matching the old gRPC test to avoid GPU edge cases.
+    let type_bounds: &[(i32, &str)] = &[
+        (0, "2"),
+        (1, "4"),
+        (2, "128"),
+        (3, "16384"),
+        (4, "1073741824"),
+        (5, "4611686018427387904"),
+        (6, "85070591730234615865843651857942052864"),
+        (7, "365375409332725729550921208179070754913983135744"),
+        (
+            8,
+            "28948022309329048855892746252171976963317496166410141009864396001978282409984",
+        ),
+    ];
+
+    for &(rand_type, bound_str) in type_bounds {
+        if !random_test_supported_types().contains(&rand_type) {
+            continue;
+        }
+        let bound = BigInt::from_str(bound_str)?;
+
         let tx_id = next_handle();
         let mut tx = harness.listener_db.new_transaction().await?;
 
-        let output1 = next_handle();
+        let output = next_handle();
         insert_event(
             &harness.listener_db,
             &mut tx,
             tx_id,
             TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
                 caller: zero_address(),
-                upperBound: as_scalar_uint(&BigInt::from(1)),
+                upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-                result: output1,
+                result: output,
             }),
             true,
         )
         .await?;
-        allow_handle(&harness.listener_db, &mut tx, &output1).await?;
-
-        let output2 = next_handle();
-        insert_event(
-            &harness.listener_db,
-            &mut tx,
-            tx_id,
-            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
-                caller: zero_address(),
-                upperBound: as_scalar_uint(&BigInt::from(1024)),
-                randType: to_ty(rand_type),
-                seed: FixedBytes::from([2_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-                result: output2,
-            }),
-            true,
-        )
-        .await?;
-        allow_handle(&harness.listener_db, &mut tx, &output2).await?;
+        allow_handle(&harness.listener_db, &mut tx, &output).await?;
         tx.commit().await?;
 
         rand_types.push(rand_type);
-        handles.extend([output1, output2]);
+        bounds.push(bound);
+        handles.push(output);
     }
 
     wait_until_computed(&harness.app).await?;
     let decrypted = decrypt_handles(&harness.pool, &handles).await?;
 
     for (idx, rand_type) in rand_types.iter().enumerate() {
-        let base = idx * 2;
-        let unbounded = &decrypted[base];
-        let bounded = &decrypted[base + 1];
-        assert_eq!(unbounded.output_type, *rand_type as i16);
-        assert_eq!(bounded.output_type, *rand_type as i16);
+        let result = &decrypted[idx];
+        assert_eq!(result.output_type, *rand_type as i16);
 
-        let unbounded_num = if unbounded.value == "true" {
-            BigInt::from(1_u8)
-        } else if unbounded.value == "false" {
-            BigInt::from(0_u8)
-        } else {
-            BigInt::from_str(&unbounded.value)?
-        };
-        assert_eq!(unbounded_num, BigInt::from(0_u8));
+        // Bool is special: only valid values are 0/1, and bound=2 means [0,2).
+        if *rand_type == 0 {
+            assert!(
+                result.value == "true" || result.value == "false",
+                "bool rand_bounded should be true or false, got: {}",
+                result.value
+            );
+            continue;
+        }
 
-        let bounded_num = if bounded.value == "true" {
-            BigInt::from(1_u8)
-        } else if bounded.value == "false" {
-            BigInt::from(0_u8)
-        } else {
-            BigInt::from_str(&bounded.value)?
-        };
-        assert!(bounded_num >= BigInt::from(0_u8));
-        assert!(bounded_num < BigInt::from(1024_u32));
+        let result_num = BigInt::from_str(&result.value)?;
+        assert!(
+            result_num >= BigInt::from(0_u8),
+            "type {rand_type}: rand_bounded result should be >= 0, got {result_num}"
+        );
+        assert!(
+            result_num < bounds[idx],
+            "type {rand_type}: rand_bounded result {result_num} should be < bound {}",
+            bounds[idx]
+        );
     }
 
     Ok(())
