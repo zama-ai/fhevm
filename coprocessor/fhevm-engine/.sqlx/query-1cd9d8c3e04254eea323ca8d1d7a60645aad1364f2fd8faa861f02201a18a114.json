@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE allowed_handles\n            SET\n                txn_limited_retries_count = $1,\n                txn_last_error = $2,\n                txn_last_error_at = NOW()\n            WHERE handle = $3\n            AND account_address = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1cd9d8c3e04254eea323ca8d1d7a60645aad1364f2fd8faa861f02201a18a114"
+}

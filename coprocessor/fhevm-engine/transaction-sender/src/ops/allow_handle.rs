@@ -7,7 +7,7 @@ use std::{
 use crate::{
     metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    ops::common::try_into_array,
+    ops::common::{try_extract_non_retryable_config_error, try_into_array},
     REVIEW,
 };
 
@@ -104,27 +104,41 @@ where
                     .await?;
                 return Ok(());
             }
-            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
-            // Local usage are included as they might be transient due to external AWS KMS signers.
-            Err(e)
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
-                    || matches!(&e, RpcError::LocalUsageError(_)) =>
-            {
-                ALLOW_HANDLE_FAIL_COUNTER.inc();
-                warn!(
-                    error = %e,
-                    handle = h,
-                    "Transaction sending failed with unlimited retry error"
-                );
-                self.increment_txn_unlimited_retries_count(
-                    key,
-                    &e.to_string(),
-                    current_unlimited_retries_count,
-                )
-                .await?;
-                bail!(e);
-            }
             Err(e) => {
+                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Local usage are included as they might be transient due to external AWS KMS signers.
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_))
+                {
+                    ALLOW_HANDLE_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %e,
+                        handle = h,
+                        "Transaction sending failed with unlimited retry error"
+                    );
+                    self.increment_txn_unlimited_retries_count(
+                        key,
+                        &e.to_string(),
+                        current_unlimited_retries_count,
+                    )
+                    .await?;
+                    bail!(e);
+                }
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e)
+                {
+                    ALLOW_HANDLE_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %non_retryable_config_error,
+                        key = %key,
+                        "Detected non-retryable gateway coprocessor config error while allowing handle"
+                    );
+                    self.stop_retrying_allow_handle_on_config_error(
+                        key,
+                        &non_retryable_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
                     error = %e,
@@ -329,6 +343,29 @@ where
         .await?;
         Ok(())
     }
+
+    async fn stop_retrying_allow_handle_on_config_error(
+        &self,
+        key: &Key,
+        error: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query!(
+            "UPDATE allowed_handles
+            SET
+                txn_limited_retries_count = $1,
+                txn_last_error = $2,
+                txn_last_error_at = NOW()
+            WHERE handle = $3
+            AND account_address = $4",
+            self.conf.allow_handle_max_retries,
+            error,
+            &key.handle,
+            &key.account_addr,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -344,8 +381,8 @@ where
         let rows = sqlx::query!(
             "
             SELECT handle, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
-            FROM allowed_handles 
-            WHERE txn_is_sent = false 
+            FROM allowed_handles
+            WHERE txn_is_sent = false
             AND txn_limited_retries_count < $1
             LIMIT $2;
             ",
