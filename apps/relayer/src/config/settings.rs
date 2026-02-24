@@ -357,7 +357,6 @@ pub struct MetricsConfig {
 
     // metrics buckets.
     pub query_duration_histogram_bucket: Vec<f64>,
-    pub pool_wait_duration_seconds_histogram_bucket: Vec<f64>,
     pub request_status_duration_histogram_bucket: Vec<f64>,
     pub transaction_duration_secs_histogram_bucket: Vec<f64>,
     /// Histogram buckets for raw ETA (before clamping) in retry-after computation.

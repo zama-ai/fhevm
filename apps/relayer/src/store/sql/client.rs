@@ -1,11 +1,6 @@
-use crate::{
-    config::settings::{SqlPoolConfig, StorageConfig},
-    metrics,
-};
-use futures::FutureExt;
+use crate::config::settings::{SqlPoolConfig, StorageConfig};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
-use tokio::time::sleep;
 use tracing::info;
 
 #[derive(Debug, Clone)]
@@ -81,69 +76,15 @@ impl PgClient {
     pub async fn get_app_connection(
         &self,
     ) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>, sqlx::Error> {
-        let start = std::time::Instant::now();
         let conn = self.app_pool.acquire().await;
-        metrics::observe_pool_wait(start.elapsed());
         conn
     }
 
     pub async fn get_cron_connection(
         &self,
     ) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>, sqlx::Error> {
-        let start = std::time::Instant::now();
         let conn = self.cron_pool.acquire().await;
-        metrics::observe_pool_wait(start.elapsed());
         conn
-    }
-
-    pub fn create_db_pool_monitor_future(
-        &self,
-    ) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let app_pool = self.app_pool.clone();
-        let cron_pool = self.cron_pool.clone();
-        async move {
-            loop {
-                let result = std::panic::AssertUnwindSafe(async {
-                    info!("Starting DB Pool Monitor loop for both app and cron pools");
-                    loop {
-                        // Monitor app pool
-                        let app_size = app_pool.size();
-                        let app_idle = app_pool.num_idle();
-                        let app_active = app_size.saturating_sub(app_idle as u32);
-
-                        // Monitor cron pool
-                        let cron_size = cron_pool.size();
-                        let cron_idle = cron_pool.num_idle();
-                        let cron_active = cron_size.saturating_sub(cron_idle as u32);
-
-                        // For now, aggregate stats for backward compatibility
-                        // In the future, we could extend metrics to track pools separately
-                        let total_active = app_active + cron_active;
-                        let total_idle = app_idle + cron_idle;
-
-                        // Update the Prometheus Gauges
-                        metrics::sql::update_pool_stats(total_active, total_idle as u32);
-
-                        sleep(Duration::from_secs(5)).await;
-                    }
-                })
-                .catch_unwind()
-                .await;
-
-                match result {
-                    Ok(()) => {
-                        tracing::error!(
-                            "DB Pool Monitor loop exited unexpectedly. Restarting in 2s..."
-                        );
-                    }
-                    Err(_) => {
-                        tracing::error!("DB Pool Monitor loop panicked. Restarting in 2s...");
-                    }
-                }
-
-                sleep(Duration::from_secs(2)).await;
-            }
-        }
     }
 
     /// Gracefully close both pools, waiting for connections to drain.

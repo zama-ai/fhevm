@@ -79,7 +79,7 @@ jobs:
           IMPORT_SARIF: ${{ github.event.inputs.import_sarif_into_github }}
         run: |
           echo "=============== [ Installing Trivy and scan2html plugin ]"
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/7f41822d4f916615c528caf5cbd640183d21a4f8/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.61.0
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/cfa322ed23f2e33ef1632ae3a5a8c7172f06a5c3/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.69.2
           trivy -v
           trivy plugin install github.com/fatihtokus/scan2html
 

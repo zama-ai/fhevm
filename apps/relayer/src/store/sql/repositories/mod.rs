@@ -77,15 +77,6 @@ impl Repositories {
         orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         cron_config: crate::config::settings::CronConfig,
     ) -> anyhow::Result<()> {
-        // Register DB pool monitor
-        orchestrator
-            .spawn_task_and_wait_ready(
-                "db_pool_monitor",
-                self.pg_client.create_db_pool_monitor_future(),
-                async { Ok(()) }, // Ready immediately
-            )
-            .await?;
-
         // Register timeout worker
         orchestrator
             .spawn_task_and_wait_ready(

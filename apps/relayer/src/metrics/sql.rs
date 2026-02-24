@@ -5,9 +5,8 @@
 
 use once_cell::sync::OnceCell;
 use prometheus::{
-    register_counter_vec_with_registry, register_gauge_with_registry,
-    register_histogram_vec_with_registry, register_histogram_with_registry, CounterVec, Gauge,
-    Histogram, HistogramOpts, HistogramVec, Opts, Registry,
+    register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec,
+    HistogramOpts, HistogramVec, Opts, Registry,
 };
 
 use crate::config::settings::MetricsConfig;
@@ -16,11 +15,7 @@ use crate::config::settings::MetricsConfig;
 struct DbMetrics {
     // 1. Query Latency
     query_duration_seconds: HistogramVec,
-    // 2. Pool Stats
-    pool_active_connections: Gauge,
-    pool_idle_connections: Gauge,
-    pool_wait_duration_seconds: Histogram,
-    // 3. Errors
+    // 2. Errors
     db_errors_total: CounterVec,
 }
 
@@ -36,25 +31,6 @@ pub fn init_db_metrics(registry: &Registry, config: MetricsConfig) {
             .buckets(config.query_duration_histogram_bucket.clone()),
             &["table"],
             registry
-        )
-        .unwrap(),
-        pool_active_connections: register_gauge_with_registry!(
-            Opts::new("relayer_db_pool_active", "Active DB connections"),
-            registry,
-        )
-        .unwrap(),
-        pool_idle_connections: register_gauge_with_registry!(
-            Opts::new("relayer_db_pool_idle", "Idle DB connections"),
-            registry,
-        )
-        .unwrap(),
-        pool_wait_duration_seconds: register_histogram_with_registry!(
-            HistogramOpts::new(
-                "relayer_db_pool_wait_duration_seconds",
-                "Time spent waiting for a connection from the pool"
-            )
-            .buckets(config.pool_wait_duration_seconds_histogram_bucket.clone()),
-            registry,
         )
         .unwrap(),
         db_errors_total: register_counter_vec_with_registry!(
@@ -87,7 +63,6 @@ impl Table {
 }
 
 // --- API ---
-
 pub fn observe_query(table: Table, duration: std::time::Duration) {
     let metrics = DB_METRICS.get().expect("DB Metrics not initialized");
     metrics
@@ -102,17 +77,4 @@ pub fn increment_error(table: Table) {
         .db_errors_total
         .with_label_values(&[table.as_str()])
         .inc();
-}
-
-pub fn observe_pool_wait(duration: std::time::Duration) {
-    let metrics = DB_METRICS.get().expect("DB Metrics not initialized");
-    metrics
-        .pool_wait_duration_seconds
-        .observe(duration.as_secs_f64());
-}
-
-pub fn update_pool_stats(active: u32, idle: u32) {
-    let metrics = DB_METRICS.get().expect("DB Metrics not initialized");
-    metrics.pool_active_connections.set(active as f64);
-    metrics.pool_idle_connections.set(idle as f64);
 }

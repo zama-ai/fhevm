@@ -176,7 +176,6 @@ http:
 metrics:
   endpoint: "0.0.0.0:9898"
   query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-  pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
   request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
   transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
   # Raw ETA histogram buckets (before safety margin and clamping) for POST requests only.

@@ -727,13 +727,8 @@ impl UserDecryptRepository {
         //
         // Advisory lock automatically released when transaction commits/rollbacks.
         // See: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS
-        let pool_wait_start = Instant::now();
         let mut tx = match self.pool.get_app_pool().begin().await {
-            Ok(tx) => {
-                // Here we observe pool acquisition timing and increment.
-                metrics::observe_pool_wait(pool_wait_start.elapsed());
-                tx
-            }
+            Ok(tx) => tx,
             Err(e) => {
                 // Failed to acquire connection
                 metrics::increment_error(metrics::Table::UserDecryptReq);
