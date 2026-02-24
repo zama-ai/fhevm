@@ -60,6 +60,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
 
+  // Parse the initial KMS context ID
+  const initialKmsContextId = getRequiredEnvVar("KMS_CONTEXT_ID");
+
   // Parse the MPC threshold
   const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
 
@@ -106,6 +109,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
     });
   }
+  console.log("Initial KMS context ID:", initialKmsContextId);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
@@ -126,6 +130,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
   // as it is made ownable
   await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, true, [
+    initialKmsContextId,
     protocolMetadata,
     thresholds,
     kmsNodes,

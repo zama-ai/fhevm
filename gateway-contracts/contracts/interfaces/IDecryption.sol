@@ -236,6 +236,19 @@ interface IDecryption {
     );
 
     /**
+     * @notice Error indicating that the extraData length is invalid.
+     * @param actualLength The actual length of the extraData.
+     * @param minimumLength The minimum expected length.
+     */
+    error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
+
+    /**
+     * @notice Error indicating that the extraData version is unsupported.
+     * @param version The unsupported version byte.
+     */
+    error UnsupportedExtraDataVersion(uint8 version);
+
+    /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
      * @param decryptionId The decryption request ID.
      */

@@ -212,7 +212,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -364,7 +364,7 @@ contract Decryption is
         bytes calldata decryptedResult,
         bytes calldata signature,
         bytes calldata extraData
-    ) external virtual onlyKmsTxSender {
+    ) external virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated public decryption request:
@@ -384,9 +384,12 @@ contract Decryption is
         // Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
+        // Extract the context ID from the extraData for context-aware verification.
+        uint256 contextId = _extractContextId(extraData);
+
         // Recover the signer address from the signature and validate that corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
 
         // Store the signature for the public decryption response.
         // This list is then used to check the consensus. Important: the mapping considers
@@ -406,7 +409,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(contextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // A "late" valid KMS could still see its transaction sender address be added to the list
@@ -623,7 +626,7 @@ contract Decryption is
         bytes calldata userDecryptedShare,
         bytes calldata signature,
         bytes calldata extraData
-    ) external virtual onlyKmsTxSender {
+    ) external virtual {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated user decryption request:
@@ -646,9 +649,12 @@ contract Decryption is
         // Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
+        // Extract the context ID from the extraData for context-aware verification.
+        uint256 contextId = _extractContextId(extraData);
+
         // Recover the signer address from the signature and validate that it corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
 
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
@@ -671,7 +677,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(contextId, txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
@@ -821,12 +827,44 @@ contract Decryption is
     }
 
     /**
+     * @notice Extracts the context ID from the extraData field.
+     * @param extraData The extraData bytes.
+     * @return contextId The extracted context ID (defaults to current KMS context for legacy/empty extraData).
+     */
+    function _extractContextId(bytes calldata extraData) internal view virtual returns (uint256 contextId) {
+        // Empty extraData -> use current KMS context ID
+        if (extraData.length == 0) {
+            return GATEWAY_CONFIG.getCurrentKmsContextId();
+        }
+
+        uint8 version = uint8(extraData[0]);
+
+        // Version 0 -> use current KMS context ID
+        if (version == 0) {
+            return GATEWAY_CONFIG.getCurrentKmsContextId();
+        }
+
+        // Version 1 -> extract contextId from bytes 1..33
+        if (version == 1) {
+            if (extraData.length < 33) {
+                revert InvalidExtraDataLength(extraData.length, 33);
+            }
+            return uint256(bytes32(extraData[1:33]));
+        }
+
+        // Unsupported version
+        revert UnsupportedExtraDataVersion(version);
+    }
+
+    /**
      * @notice Validates the EIP712 signature for a given decryption response.
      * @param decryptionId The decryption request ID.
      * @param digest The hashed EIP712 struct.
      * @param signature The signature to validate.
+     * @param contextId The context ID for context-aware signer verification.
      */
     function _validateDecryptionResponseEIP712Signature(
+        uint256 contextId,
         uint256 decryptionId,
         bytes32 digest,
         bytes calldata signature
@@ -834,8 +872,9 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
-        _checkKmsSignerMatchesTxSender(signer, msg.sender);
+        // Check that the signer is a KMS signer for the given context, and that it corresponds
+        // to the transaction sender of the same KMS node within that context.
+        _checkKmsContextSignerMatchesTxSender(contextId, signer, msg.sender);
 
         // Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
@@ -1005,20 +1044,28 @@ contract Decryption is
     /**
      * @notice Indicates if the consensus is reached for public decryption.
      * @param numVerifiedResponses The number of public decryption responses that have been verified.
+     * @param contextId The context ID for context-aware threshold lookup.
      * @return Whether the consensus has been reached
      */
-    function _isConsensusReachedPublic(uint256 numVerifiedResponses) internal view virtual returns (bool) {
-        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+    function _isConsensusReachedPublic(
+        uint256 contextId,
+        uint256 numVerifiedResponses
+    ) internal view virtual returns (bool) {
+        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getKmsContextPublicDecryptionThreshold(contextId);
         return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
     /**
      * @notice Indicates if the number of verified user decryption responses has reached the threshold.
      * @param numVerifiedResponses The number of user decryption responses that have been verified.
+     * @param contextId The context ID for context-aware threshold lookup.
      * @return Whether the threshold has been reached.
      */
-    function _isThresholdReachedUser(uint256 numVerifiedResponses) internal view virtual returns (bool) {
-        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
+    function _isThresholdReachedUser(
+        uint256 contextId,
+        uint256 numVerifiedResponses
+    ) internal view virtual returns (bool) {
+        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getKmsContextUserDecryptionThreshold(contextId);
         return numVerifiedResponses >= userDecryptionThreshold;
     }
 

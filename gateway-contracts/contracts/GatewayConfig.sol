@@ -35,7 +35,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -44,7 +44,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /**
      * @notice The address of the all gateway contracts
@@ -64,23 +64,24 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The protocol's metadata
         ProtocolMetadata protocolMetadata;
         // ----------------------------------------------------------------------------------------------
-        // KMS nodes state variables:
+        // Deprecated KMS nodes state variables (replaced by per-context mappings below):
+        // @dev These fields must remain to preserve the storage layout for UUPS proxy upgrades.
         // ----------------------------------------------------------------------------------------------
-        /// @notice The KMS nodes' transaction sender addresses
+        /// @dev Deprecated. Use `isKmsContextTxSender` instead.
         mapping(address kmsTxSenderAddress => bool isTxSender) isKmsTxSender;
-        /// @notice The KMS nodes' signer addresses
+        /// @dev Deprecated. Use `isKmsContextSigner` instead.
         mapping(address kmsSignerAddress => bool isSigner) isKmsSigner;
-        /// @notice The KMS nodes' metadata
+        /// @dev Deprecated. Use `kmsContextNodes` instead.
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
-        /// @notice The KMS nodes' transaction sender address list
+        /// @dev Deprecated. Use `kmsContextTxSenderAddresses` instead.
         address[] kmsTxSenderAddresses;
-        /// @notice The KMS nodes' signer address list
+        /// @dev Deprecated. Use `kmsContextSignerAddresses` instead.
         address[] kmsSignerAddresses;
-        /// @notice The MPC threshold
+        /// @dev Deprecated. Use `kmsContextMpcThreshold` instead.
         uint256 mpcThreshold;
-        /// @notice The threshold to consider for public decryption consensus
+        /// @dev Deprecated. Use `kmsContextPublicDecryptionThreshold` instead.
         uint256 publicDecryptionThreshold;
-        /// @notice The threshold to consider for user decryption consensus
+        /// @dev Deprecated. Use `kmsContextUserDecryptionThreshold` instead.
         uint256 userDecryptionThreshold;
         // ----------------------------------------------------------------------------------------------
         // Coprocessors state variables:
@@ -115,13 +116,36 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianTxSenderAddress => bool isTxSender) isCustodianTxSender;
         /// @notice The custodians' signer addresses
         mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
-        /// @notice The threshold to consider for the KMS public material (FHE key, CRS) generation consensus.
+        /// @dev Deprecated. Use `kmsContextKmsGenThreshold` instead.
         uint256 kmsGenThreshold;
         // ----------------------------------------------------------------------------------------------
         // Coprocessor threshold state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The threshold to consider for coprocessor consensus
         uint256 coprocessorThreshold;
+        // ----------------------------------------------------------------------------------------------
+        // KMS context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The current KMS context ID
+        uint256 currentKmsContextId;
+        /// @notice The KMS nodes' transaction sender addresses per context
+        mapping(uint256 contextId => mapping(address kmsTxSenderAddress => bool isTxSender)) isKmsContextTxSender;
+        /// @notice The KMS nodes' signer addresses per context
+        mapping(uint256 contextId => mapping(address kmsSignerAddress => bool isSigner)) isKmsContextSigner;
+        /// @notice The KMS nodes' metadata per context
+        mapping(uint256 contextId => mapping(address kmsTxSenderAddress => KmsNode kmsNode)) kmsContextNodes;
+        /// @notice The KMS nodes' transaction sender address list per context
+        mapping(uint256 contextId => address[]) kmsContextTxSenderAddresses;
+        /// @notice The KMS nodes' signer address list per context
+        mapping(uint256 contextId => address[]) kmsContextSignerAddresses;
+        /// @notice The public decryption threshold per context
+        mapping(uint256 contextId => uint256) kmsContextPublicDecryptionThreshold;
+        /// @notice The user decryption threshold per context
+        mapping(uint256 contextId => uint256) kmsContextUserDecryptionThreshold;
+        /// @notice The MPC threshold per context
+        mapping(uint256 contextId => uint256) kmsContextMpcThreshold;
+        /// @notice The key and CRS generation threshold per context
+        mapping(uint256 contextId => uint256) kmsContextKmsGenThreshold;
     }
 
     /**
@@ -155,6 +179,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
+        uint256 initialKmsContextId,
         ProtocolMetadata calldata initialMetadata,
         Thresholds calldata initialThresholds,
         KmsNode[] calldata initialKmsNodes,
@@ -162,12 +187,20 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         Custodian[] calldata initialCustodians
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
+        if (initialKmsContextId == 0) {
+            revert InvalidNullKmsContextId();
+        }
 
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        $.protocolMetadata = initialMetadata;
+        // Using scoped block to avoid stack depth error
+        {
+            GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+            $.protocolMetadata = initialMetadata;
+            $.currentKmsContextId = initialKmsContextId;
+        }
 
-        // Set the KMS nodes and their thresholds
-        _setKmsNodes(
+        // Initialize the KMS context with the KMS nodes and all thresholds
+        _setKmsContext(
+            initialKmsContextId,
             initialKmsNodes,
             initialThresholds.mpcThreshold,
             initialThresholds.publicDecryptionThreshold,
@@ -182,6 +215,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setCustodians(initialCustodians);
 
         emit InitializeGatewayConfig(
+            initialKmsContextId,
             initialMetadata,
             initialThresholds,
             initialKmsNodes,
@@ -191,12 +225,40 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        if (initialKmsContextId == 0) {
+            revert InvalidNullKmsContextId();
+        }
+
+        // Migrate existing global KMS nodes to the initial KMS context ID
+        uint256 nKmsNodes = $.kmsTxSenderAddresses.length;
+        for (uint256 i = 0; i < nKmsNodes; i++) {
+            address txSenderAddr = $.kmsTxSenderAddresses[i];
+            address signerAddr = $.kmsSignerAddresses[i];
+
+            $.isKmsContextTxSender[initialKmsContextId][txSenderAddr] = true;
+            $.isKmsContextSigner[initialKmsContextId][signerAddr] = true;
+            $.kmsContextNodes[initialKmsContextId][txSenderAddr] = $.kmsNodes[txSenderAddr];
+            $.kmsContextTxSenderAddresses[initialKmsContextId].push(txSenderAddr);
+            $.kmsContextSignerAddresses[initialKmsContextId].push(signerAddr);
+        }
+
+        // Migrate all thresholds
+        $.kmsContextMpcThreshold[initialKmsContextId] = $.mpcThreshold;
+        $.kmsContextPublicDecryptionThreshold[initialKmsContextId] = $.publicDecryptionThreshold;
+        $.kmsContextUserDecryptionThreshold[initialKmsContextId] = $.userDecryptionThreshold;
+        $.kmsContextKmsGenThreshold[initialKmsContextId] = $.kmsGenThreshold;
+
+        // Set the current context ID
+        $.currentKmsContextId = initialKmsContextId;
+    }
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -206,30 +268,30 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-updateKmsNodes}.
+     * @notice See {IGatewayConfig-updateKmsContext}.
      */
-    function updateKmsNodes(
+    function updateKmsContext(
+        uint256 contextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
     ) public virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
-        // Remove the old KMS nodes
-        uint256 oldKmsTxSenderAddressesLength = $.kmsTxSenderAddresses.length;
-        for (uint256 i = 0; i < oldKmsTxSenderAddressesLength; i++) {
-            $.isKmsTxSender[$.kmsTxSenderAddresses[i]] = false;
-            $.isKmsSigner[$.kmsSignerAddresses[i]] = false;
-            delete $.kmsNodes[$.kmsTxSenderAddresses[i]];
+        if (contextId == 0) {
+            revert InvalidNullKmsContextId();
         }
 
-        delete $.kmsTxSenderAddresses;
-        delete $.kmsSignerAddresses;
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        // Set the new KMS nodes and their thresholds
-        _setKmsNodes(
+        // Validate contextId is strictly greater than the current one
+        if (contextId <= $.currentKmsContextId) {
+            revert KmsContextAlreadyRegistered(contextId, $.currentKmsContextId);
+        }
+
+        // Set the new context-indexed KMS nodes and all thresholds
+        _setKmsContext(
+            contextId,
             newKmsNodes,
             newMpcThreshold,
             newPublicDecryptionThreshold,
@@ -237,7 +299,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             newKmsGenThreshold
         );
 
-        emit UpdateKmsNodes(
+        // Update the current KMS context ID
+        $.currentKmsContextId = contextId;
+
+        emit UpdateKmsContext(
+            contextId,
             newKmsNodes,
             newMpcThreshold,
             newPublicDecryptionThreshold,
@@ -299,7 +365,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateMpcThreshold}.
      */
     function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
-        _setMpcThreshold(newMpcThreshold);
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        _setMpcThreshold($.currentKmsContextId, newMpcThreshold);
         emit UpdateMpcThreshold(newMpcThreshold);
     }
 
@@ -307,7 +374,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updatePublicDecryptionThreshold}.
      */
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
-        _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        _setPublicDecryptionThreshold($.currentKmsContextId, newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
     }
 
@@ -315,7 +383,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateUserDecryptionThreshold}.
      */
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
-        _setUserDecryptionThreshold(newUserDecryptionThreshold);
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        _setUserDecryptionThreshold($.currentKmsContextId, newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
@@ -323,7 +392,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateKmsGenThreshold}.
      */
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
-        _setKmsGenThreshold(newKmsGenThreshold);
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        _setKmsGenThreshold($.currentKmsContextId, newKmsGenThreshold);
         emit UpdateKmsGenThreshold(newKmsGenThreshold);
     }
 
@@ -382,7 +452,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function isKmsTxSender(address txSenderAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isKmsTxSender[txSenderAddress];
+        return $.isKmsContextTxSender[$.currentKmsContextId][txSenderAddress];
     }
 
     /**
@@ -390,7 +460,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function isKmsSigner(address signerAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isKmsSigner[signerAddress];
+        return $.isKmsContextSigner[$.currentKmsContextId][signerAddress];
     }
 
     /**
@@ -446,23 +516,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getMpcThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.mpcThreshold;
-    }
-
-    /**
-     * @notice See {IGatewayConfig-getPublicDecryptionThreshold}.
-     */
-    function getPublicDecryptionThreshold() external view virtual returns (uint256) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.publicDecryptionThreshold;
-    }
-
-    /**
-     * @notice See {IGatewayConfig-getUserDecryptionThreshold}.
-     */
-    function getUserDecryptionThreshold() external view virtual returns (uint256) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.userDecryptionThreshold;
+        return $.kmsContextMpcThreshold[$.currentKmsContextId];
     }
 
     /**
@@ -470,7 +524,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getKmsGenThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsGenThreshold;
+        return $.kmsContextKmsGenThreshold[$.currentKmsContextId];
     }
 
     /**
@@ -486,7 +540,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsNodes[kmsTxSenderAddress];
+        return $.kmsContextNodes[$.currentKmsContextId][kmsTxSenderAddress];
     }
 
     /**
@@ -494,7 +548,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getKmsTxSenders() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsTxSenderAddresses;
+        return $.kmsContextTxSenderAddresses[$.currentKmsContextId];
     }
 
     /**
@@ -502,7 +556,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getKmsSigners() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsSignerAddresses;
+        return $.kmsContextSignerAddresses[$.currentKmsContextId];
     }
 
     /**
@@ -570,6 +624,73 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @notice See {IGatewayConfig-isKmsContextTxSender}.
+     */
+    function isKmsContextTxSender(uint256 contextId, address txSenderAddress) external view virtual returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.isKmsContextTxSender[contextId][txSenderAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isKmsContextSigner}.
+     */
+    function isKmsContextSigner(uint256 contextId, address signerAddress) external view virtual returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.isKmsContextSigner[contextId][signerAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsContextNode}.
+     */
+    function getKmsContextNode(
+        uint256 contextId,
+        address kmsTxSenderAddress
+    ) external view virtual returns (KmsNode memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsContextNodes[contextId][kmsTxSenderAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsContextTxSenders}.
+     */
+    function getKmsContextTxSenders(uint256 contextId) external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsContextTxSenderAddresses[contextId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsContextSigners}.
+     */
+    function getKmsContextSigners(uint256 contextId) external view virtual returns (address[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsContextSignerAddresses[contextId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getCurrentKmsContextId}.
+     */
+    function getCurrentKmsContextId() external view virtual returns (uint256) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.currentKmsContextId;
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsContextPublicDecryptionThreshold}.
+     */
+    function getKmsContextPublicDecryptionThreshold(uint256 contextId) external view virtual returns (uint256) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsContextPublicDecryptionThreshold[contextId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsContextUserDecryptionThreshold}.
+     */
+    function getKmsContextUserDecryptionThreshold(uint256 contextId) external view virtual returns (uint256) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsContextUserDecryptionThreshold[contextId];
+    }
+
+    /**
      * @notice See {IGatewayConfig-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
@@ -588,14 +709,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Sets the KMS nodes and their thresholds.
+     * @notice Sets the KMS context: nodes and all thresholds for a given context ID.
+     * @param contextId The context ID.
      * @param newKmsNodes The new KMS nodes.
-     * @param newMpcThreshold The new MPC threshold.
-     * @param newPublicDecryptionThreshold The new public decryption threshold.
-     * @param newUserDecryptionThreshold The new user decryption threshold.
-     * @param newKmsGenThreshold The new key and CRS generation threshold.
+     * @param newMpcThreshold The new MPC threshold for this context.
+     * @param newPublicDecryptionThreshold The new public decryption threshold for this context.
+     * @param newUserDecryptionThreshold The new user decryption threshold for this context.
+     * @param newKmsGenThreshold The new key and CRS generation threshold for this context.
      */
-    function _setKmsNodes(
+    function _setKmsContext(
+        uint256 contextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -608,37 +731,37 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        // Register the new KMS nodes
+        // Register the new KMS nodes for this context
         for (uint256 i = 0; i < newKmsNodes.length; i++) {
             address newKmsTxSenderAddress = newKmsNodes[i].txSenderAddress;
             address newKmsSignerAddress = newKmsNodes[i].signerAddress;
 
-            // Check for KMS transaction sender and signer duplicates
-            if ($.isKmsTxSender[newKmsTxSenderAddress]) {
+            // Check for KMS transaction sender and signer duplicates within this context
+            if ($.isKmsContextTxSender[contextId][newKmsTxSenderAddress]) {
                 revert KmsTxSenderAlreadyRegistered(newKmsTxSenderAddress);
             }
-            if ($.isKmsSigner[newKmsSignerAddress]) {
+            if ($.isKmsContextSigner[contextId][newKmsSignerAddress]) {
                 revert KmsSignerAlreadyRegistered(newKmsSignerAddress);
             }
 
             // Register transaction sender
-            $.isKmsTxSender[newKmsTxSenderAddress] = true;
-            $.kmsTxSenderAddresses.push(newKmsTxSenderAddress);
+            $.isKmsContextTxSender[contextId][newKmsTxSenderAddress] = true;
+            $.kmsContextTxSenderAddresses[contextId].push(newKmsTxSenderAddress);
 
             // Register KMS node
-            $.kmsNodes[newKmsTxSenderAddress] = newKmsNodes[i];
+            $.kmsContextNodes[contextId][newKmsTxSenderAddress] = newKmsNodes[i];
 
             // Register signer
-            $.isKmsSigner[newKmsSignerAddress] = true;
-            $.kmsSignerAddresses.push(newKmsSignerAddress);
+            $.isKmsContextSigner[contextId][newKmsSignerAddress] = true;
+            $.kmsContextSignerAddresses[contextId].push(newKmsSignerAddress);
         }
 
-        // Setting the thresholds should be done after the KMS nodes have been registered as the functions
-        // reading the `kmsSignerAddresses` array.
-        _setMpcThreshold(newMpcThreshold);
-        _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
-        _setUserDecryptionThreshold(newUserDecryptionThreshold);
-        _setKmsGenThreshold(newKmsGenThreshold);
+        // Setting the thresholds should be done after the KMS nodes have been registered
+        // as the functions validate against the context's node count.
+        _setMpcThreshold(contextId, newMpcThreshold);
+        _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
+        _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
+        _setKmsGenThreshold(contextId, newKmsGenThreshold);
     }
 
     /**
@@ -724,12 +847,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Sets the MPC threshold.
+     * @notice Sets the MPC threshold for a given context.
+     * @param contextId The context ID.
      * @param newMpcThreshold The new MPC threshold.
      */
-    function _setMpcThreshold(uint256 newMpcThreshold) internal virtual {
+    function _setMpcThreshold(uint256 contextId, uint256 newMpcThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+        uint256 nKmsNodes = $.kmsContextSignerAddresses[contextId].length;
 
         // Check that the MPC threshold `t` is valid. It must verify:
         // - `t >= 0` : it is already a uint256 so this is always true
@@ -738,16 +862,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
         }
 
-        $.mpcThreshold = newMpcThreshold;
+        $.kmsContextMpcThreshold[contextId] = newMpcThreshold;
     }
 
     /**
-     * @notice Sets the public decryption threshold.
+     * @notice Sets the public decryption threshold for a given context.
+     * @param contextId The context ID.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
-    function _setPublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) internal virtual {
+    function _setPublicDecryptionThreshold(uint256 contextId, uint256 newPublicDecryptionThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+        uint256 nKmsNodes = $.kmsContextSignerAddresses[contextId].length;
 
         // Check that the public decryption threshold `t` is valid. It must verify:
         // - `t >= 1` : the public decryption consensus should require at least one vote
@@ -759,16 +884,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidHighPublicDecryptionThreshold(newPublicDecryptionThreshold, nKmsNodes);
         }
 
-        $.publicDecryptionThreshold = newPublicDecryptionThreshold;
+        $.kmsContextPublicDecryptionThreshold[contextId] = newPublicDecryptionThreshold;
     }
 
     /**
-     * @notice Sets the user decryption threshold.
+     * @notice Sets the user decryption threshold for a given context.
+     * @param contextId The context ID.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
-    function _setUserDecryptionThreshold(uint256 newUserDecryptionThreshold) internal virtual {
+    function _setUserDecryptionThreshold(uint256 contextId, uint256 newUserDecryptionThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+        uint256 nKmsNodes = $.kmsContextSignerAddresses[contextId].length;
 
         // Check that the user decryption threshold `t` is valid. It must verify:
         // - `t >= 1` : the user decryption consensus should require at least one vote
@@ -780,7 +906,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidHighUserDecryptionThreshold(newUserDecryptionThreshold, nKmsNodes);
         }
 
-        $.userDecryptionThreshold = newUserDecryptionThreshold;
+        $.kmsContextUserDecryptionThreshold[contextId] = newUserDecryptionThreshold;
     }
 
     /**
@@ -805,12 +931,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Sets the key and CRS generation threshold.
+     * @notice Sets the key and CRS generation threshold for a given context.
+     * @param contextId The context ID.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function _setKmsGenThreshold(uint256 newKmsGenThreshold) internal virtual {
+    function _setKmsGenThreshold(uint256 contextId, uint256 newKmsGenThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+        uint256 nKmsNodes = $.kmsContextSignerAddresses[contextId].length;
 
         // Check that the key and CRS generation threshold `t` is valid. It must verify:
         // - `t >= 1` : the key and CRS generation consensus should require at least one vote
@@ -822,7 +949,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidHighKmsGenThreshold(newKmsGenThreshold, nKmsNodes);
         }
 
-        $.kmsGenThreshold = newKmsGenThreshold;
+        $.kmsContextKmsGenThreshold[contextId] = newKmsGenThreshold;
     }
 
     /**

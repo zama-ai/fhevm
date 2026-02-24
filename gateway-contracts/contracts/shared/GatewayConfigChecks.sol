@@ -146,6 +146,26 @@ abstract contract GatewayConfigChecks {
         }
     }
     /**
+     * @notice Checks if the signer is a KMS signer for a given context, and that it corresponds
+     * to the transaction sender of the same KMS node within that context.
+     * @param contextId The context ID to check against.
+     * @param signerAddress The signer address to check.
+     * @param txSenderAddress The address of the KMS transaction sender.
+     */
+    function _checkKmsContextSignerMatchesTxSender(
+        uint256 contextId,
+        address signerAddress,
+        address txSenderAddress
+    ) internal view {
+        if (!GATEWAY_CONFIG.isKmsContextSigner(contextId, signerAddress)) {
+            revert NotKmsSigner(signerAddress);
+        }
+        if (GATEWAY_CONFIG.getKmsContextNode(contextId, txSenderAddress).signerAddress != signerAddress) {
+            revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
+        }
+    }
+
+    /**
      * @notice Checks if the signer is a coprocessor signer, and that it corresponds to the
      * transaction sender of the same coprocessor.
      * @param signerAddress The signer address to check.
