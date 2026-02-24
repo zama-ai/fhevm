@@ -15,11 +15,12 @@ It exposes the following capabilities:
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
-  - [Run the relayer test suite](#run-the-relayer-test-suite)
-  - [Devnet & Testnet](#devnet--testnet)
-  - [Local Stack](#local-stack-recommended-for-testing-version-releases-only)
+  - [First-time setup](#first-time-setup)
+  - [Run the test suite](#run-the-test-suite)
+  - [Testnet & Devnet](#testnet--devnet)
+  - [Local Stack](#local-stack-for-testing-version-releases)
 - [API Endpoints](#api-endpoints)
-- [Observability Policy](#observability-policy)
+- [Observability](#observability)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture
@@ -95,13 +96,11 @@ Makefile                     # Test, lint, and migration helpers
 ## Prerequisites
 
 - Rust toolchain + Cargo
-- Docker + Docker Compose v2 (used for local Postgres and optional full-stack deployment)
-- PostgreSQL (provided via `dev/docker-compose.yaml`; required for integration tests and local runs)
-- Node.js + npm (required for `make api-lint`)
-- Gateway chain information (for Devnet/Testnet/production)
-  - RPC endpoints (HTTP, WSS)
-  - Chain ID
-  - Contract addresses: Decryption, InputVerification
+- Docker + Docker Compose v2
+- [Foundry (`cast`)](https://www.getfoundry.sh/) — only needed for network onboarding (`make preflight-*`, `make mint-zama-*`, `make approve-payment-*`)
+- Node.js + npm (for `make api-lint` only)
+
+Run `make help` to see all available targets.
 
 ### Configuration
 
@@ -114,143 +113,79 @@ Configuration is handled via:
 
 ## Getting Started
 
-For the relayer to work properly (outside unit and integration tests), it must be connected to the Zama protocol. Available options are:
+A local PostgreSQL instance is required for integration tests and running the relayer outside of unit tests; `make setup` handles this automatically.
 
-- Connecting your local relayer instance to a deployed test environment (Devnet, Testnet)
-- Running the complete Zama protocol locally (with the `fhevm-cli` from the fhevm repository)
-
-For active development, connecting to an existing test environment (Devnet or Testnet) is recommended.
-
-### Run the relayer test suite
-
-For testing, linting, and formatting, a Makefile is available:
+### First-time setup
 
 ```bash
-# Display all available commands
-make help
+make setup    # Start Postgres, run migrations, copy config templates
+```
 
-# Quick development loop
+### Run the test suite
+
+```bash
 make test-unit                    # Fast unit tests (no Postgres required)
-make clippy                       # Lint checks
-make fmt                          # Format checks
+make test-all-no-long-running     # Full suite (requires Postgres)
+make ci                           # Reproduce CI locally (lint + db + tests)
 ```
 
-To run the full relayer test suite, complete:
+### Testnet & Devnet
 
-- [Start local Postgres](#shared-start-local-postgres)
-- [Run DB migrations](#shared-run-db-migrations)
+#### 1. Configure and verify wallet readiness
 
-Now you can run all available tests:
+Pre-built config examples are provided in `config/`. The `preflight` target handles everything: it runs `init` (copies the example config + prompts for your private key) if needed, then checks your wallet address, ETH balance, `$ZAMA` balance, and `ProtocolPayment` approval — offering to mint and approve interactively:
 
 ```bash
-make test-all-no-long-running
+make preflight-testnet  # or: make preflight-devnet
 ```
 
-When done, run [Stop local Postgres](#shared-stop-local-postgres).
-
-### Devnet & Testnet
-
-#### Update relayer configuration
-
-##### Pre-built template - Recommended
-
-To configure the relayer for Devnet or Testnet, use the pre-built templates `local.devnet.yaml` and `local.testnet.yaml` available on the Notion page [**Relayer Devnet/Testnet Configuration Templates**](https://www.notion.so/zamaai/Relayer-Devnet-Testnet-Configuration-Template-3095a7358d5e803e94d4d0d52efd9252?source=copy_link).
-
-<details>
-<summary>Manual setup - Not Recommended</summary>
-
-You can still create your own environment specific config from `config/local.yaml.example`.
+Individual targets are also available if needed:
 
 ```bash
-cp config/local.yaml.example config/local.devnet.yaml
-# or
-cp config/local.yaml.example config/local.testnet.yaml
+make init-testnet              # Copy example config, prompt for private key
+make init-devnet
+make mint-zama-testnet         # Instructions for Testnet (not self-service)
+make mint-zama-devnet          # Self-service mint on Devnet
+make approve-payment-testnet   # Approve ProtocolPayment spending on Testnet
+make approve-payment-devnet
 ```
 
-If you choose manual setup, fill the environment-specific values listed below.
-Stable constants are provided inline; sensitive or rotatable values must be sourced from the referenced external systems.
-
-##### Devnet (chain ID: 10900)
-
-| Field                                          | Value                                                                                                                                                                 |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gateway.blockchain_rpc.http_url`              | See Notion ["Blockchain Accesses"](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99?source=copy_link#25c5a7358d5e8099b532e967fe3e82c4) |
-| `gateway.blockchain_rpc.read_http_url`         | See Notion "Blockchain Accesses"                                                                                                                                      |
-| `gateway.listener_pool.listeners[*].url`       | See Notion "Blockchain Accesses"                                                                                                                                      |
-| `gateway.blockchain_rpc.chain_id`              | `10900`                                                                                                                                                               |
-| `gateway.tx_engine.private_key`                | Your wallet private key (never commit)                                                                                                                                |
-| `gateway.contracts.decryption_address`         | `0xA4dc265D54D25D41565c60d36097E8955B03decD`                                                                                                                          |
-| `gateway.contracts.input_verification_address` | `0xf091D9B4C2da7ecd11858cDD1F4515a8a767D755`                                                                                                                          |
-| `keyurl.fhe_public_key.url`                    | See [gitops repository](https://github.com/zama-zws/gitops/blob/75eeacf51e248c5a790b4bcb2b7ce94c4d27f09e/values/relayer/relayer/values-relayer-dev.yaml#L198-L206)    |
-| `keyurl.crs.url`                               | See gitops repository                                                                                                                                                 |
-
-##### Testnet (chain ID: 10901)
-
-| Field                                          | Value                                                                                                                                                                  |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gateway.blockchain_rpc.http_url`              | See Notion ["Blockchain Accesses"](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99?source=copy_link#1c95a7358d5e80d1896ecfb5a814e669)  |
-| `gateway.blockchain_rpc.read_http_url`         | See Notion "Blockchain Accesses"                                                                                                                                       |
-| `gateway.listener_pool.listeners[*].url`       | See Notion "Blockchain Accesses"                                                                                                                                       |
-| `gateway.blockchain_rpc.chain_id`              | `10901`                                                                                                                                                                |
-| `gateway.tx_engine.private_key`                | Your wallet private key (never commit)                                                                                                                                 |
-| `gateway.contracts.decryption_address`         | `0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478`                                                                                                                           |
-| `gateway.contracts.input_verification_address` | `0x483b9dE06E4E4C7D35CCf5837A1668487406D955`                                                                                                                           |
-| `keyurl.fhe_public_key.url`                    | See [gitops repository](https://github.com/zama-zws/gitops/blob/75eeacf51e248c5a790b4bcb2b7ce94c4d27f09e/values/relayer/relayer/values-relayer-testnet.yaml#L219-L227) |
-| `keyurl.crs.url`                               | See gitops repository                                                                                                                                                  |
-
-</details>
-
-##### Wallet Setup
-
-Before starting the relayer, prepare the wallet on your target network.
-
-1. Get funds in your wallet.
-   Use a faucet, or bridge from Arbitrum Sepolia:
-   - Devnet: Bridge & Faucet links displayed on Notion [Blockchain Accesses](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99?source=copy_link#25c5a7358d5e800cbda0dc6cd6edf3c1)
-   - Testnet: Bridge & Faucet links displayed on Notion [Blockchain Accesses](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99?source=copy_link#2a45a7358d5e80ec9e79fb548da3016b)
-2. Mint `$ZAMA` from the token contract explorer.
-   - NOTE: On Devnet you can freely mint $ZAMA. On Testnet, minting is restricted; Ask a team member to transfer $ZAMA to your address.
-   - Open the token explorer link from the table below, then go to `Contract` > `Read/Write Contract` > `Connect Wallet`, and call `mint(address to, uint256 amount)`.
-3. Approve `ProtocolPayment` to spend your `$ZAMA`.
-   - On the same token contract page, go to `Contract` > `Read/Write Contract` > `Connect Wallet`, then call `approve(address spender, uint256 value)`. Use the `ProtocolPayment` address for your target network from the table below.
-
-| Network           | `$ZAMA` token explorer address                                                                                                                 | `ProtocolPayment` contract address           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Devnet (`10900`)  | [`0xD582Ec82a1758322907DF80dA8A754e12A5acB95`](https://explorer-zama-devnet-0.t.conduit.xyz/token/0xD582Ec82a1758322907DF80dA8A754e12A5acB95)  | `0x2a770251c390b3464f98b52304135d10525d1961` |
-| Testnet (`10901`) | [`0xcE762c7FDaac795D31a266B9247F8958c159c6d4`](https://explorer-zama-testnet-0.t.conduit.xyz/token/0xcE762c7FDaac795D31a266B9247F8958c159c6d4) | `0xaa1d9d4927a62f842f0de5ad6b8dfdb074fa62f2` |
-
-#### Deploy a local instance of the relayer
-
-Before starting the relayer, complete:
-
-- [Start local Postgres](#shared-start-local-postgres)
-- [Run DB migrations](#shared-run-db-migrations)
-
-##### Run relayer
+#### 2. Run the relayer
 
 ```bash
-cargo run --bin fhevm-relayer -- --config-file <path/to/your/config/local.devnet.yaml>
-# or
-cargo run --bin fhevm-relayer -- --config-file <path/to/your/config/local.testnet.yaml>
+make run-testnet    # or: make run-devnet
+make dev-testnet    # Hot-reload with cargo-watch (or: make dev-devnet)
 ```
 
-Your relayer is now connected to the Devnet/Testnet environment.
+#### 3. Verify service health
 
-##### Verify service health
+```bash
+make health
+```
 
-Run [Verify service health](#shared-verify-service-health).
+#### 4. Run E2E tests
 
-##### Stop local Postgres
+End-to-end tests live in the [`fhevm` repository](https://github.com/zama-ai/fhevm) under `fhevm/test-suite/e2e`.
 
-Run [Stop local Postgres](#shared-stop-local-postgres).
+To run them against your local relayer:
 
-### Local Stack (Recommended for Testing Version Releases Only)
+1. Follow the [E2E test setup instructions](https://www.notion.so/zamaai/Run-e2e-test-on-Sepolia-testnet-2b05a7358d5e8006999bd0e5433f70d9).
+   - This Notion page primarily targets Testnet. If you target Devnet, follow it using devnet-specific values instead. Check [Blockchain Access](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99) if needed
+2. Set the `RELAYER_URL` environment variable from `fhevm/test-suite/e2e/.env` to point to your local relayer: `RELAYER_URL=http://localhost:3000/v2`. The route version must be provided in the url.
+3. Run the E2E test suite from `fhevm/test-suite/e2e`.
 
-This mode runs the entire Zama protocol locally. Make sure your Docker daemon is running.
+#### 5. Stop local Postgres
+
+```bash
+make db-stop        # Stop Postgres (preserves data)
+make db-destroy     # Stop Postgres and wipe all data
+```
+
+### Local Stack (for testing version releases)
+
+This mode runs the entire Zama protocol locally using the `fhevm-cli` tool from the [`fhevm` repository](https://github.com/zama-ai/fhevm).
 
 #### Deploy the Zama Protocol
-
-Deploy the entire stack using the `fhevm-cli` tool from the [`fhevm` repository](https://github.com/zama-ai/fhevm) (separate from `console`).
 
 ```bash
 git clone git@github.com:zama-ai/fhevm.git
@@ -258,146 +193,60 @@ cd fhevm/test-suite/fhevm
 ./fhevm-cli deploy
 ```
 
-#### Inject a local relayer build into the `fhevm` Docker Compose stack
+#### Inject a local relayer build
 
-The relayer services from `./fhevm-cli deploy` expect:
-
-- `ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}`
-- `ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}`
-
-To use a local relayer build in the stack deployed by `./fhevm-cli`, tag local images with a custom version, then upgrade relayer services to that tag.
-
-##### Build local relayer image with custom tag
+Build local images with registry-prefixed names (`ghcr.io/zama-ai/console/relayer:TAG` and `ghcr.io/zama-ai/console/relayer-migrate:TAG`), which is what the `fhevm-cli` Docker Compose stack expects:
 
 ```bash
-# Make sure you are at the root of the console repository.
-# You can use any tag value.
 LOCAL_RELAYER_TAG=local-relayer-$(date +%Y%m%d%H%M%S)
 
-docker build --platform linux/amd64 -f docker/relayer/Dockerfile -t ghcr.io/zama-ai/console/relayer:${LOCAL_RELAYER_TAG} .
-
-docker build --platform linux/amd64 -f docker/relayer-migrate/Dockerfile -t ghcr.io/zama-ai/console/relayer-migrate:${LOCAL_RELAYER_TAG} .
+make docker-release TAG=${LOCAL_RELAYER_TAG}
 ```
 
-BuildKit notes:
-
-- These Dockerfiles rely on BuildKit features (`RUN --mount`).
-- If BuildKit is disabled, enable it before building:
+Then upgrade the relayer in the fhevm stack:
 
 ```bash
-export DOCKER_BUILDKIT=1
-```
-
-##### Redeploy relayer services in the `fhevm` stack with your local tag
-
-```bash
-# Move to your fhevm/test-suite/fhevm folder
+# From fhevm/test-suite/fhevm
 RELAYER_VERSION=${LOCAL_RELAYER_TAG} \
 RELAYER_MIGRATE_VERSION=${LOCAL_RELAYER_TAG} \
 ./fhevm-cli upgrade relayer
 ```
 
-You now have the full local stack pointing to your custom relayer version.
-
-##### Validate running image tags
+Validate running image tags:
 
 ```bash
 docker inspect fhevm-relayer --format '{{.Config.Image}}'
 docker inspect relayer-db-migration --format '{{.Config.Image}}'
 ```
 
-You can now use the tests available in `./fhevm-cli` to trigger flows within your local relayer instance.
+#### Run E2E tests via fhevm-cli
 
-##### Verify service health
+You can use `./fhevm-cli` to trigger the `fhevm` E2E tests against your local stack:
 
-Run [Verify service health](#shared-verify-service-health).
+```bash
+./fhevm-cli test input-proof
+```
 
-##### Stop local services
-
-To stop the whole local stack:
+#### Stop the local stack
 
 ```bash
 ./fhevm-cli clean
 ```
 
-### Shared Local Runtime Steps (Reference)
-
-Use these commands only when referenced by your workflow.
-
-<a id="shared-start-local-postgres"></a>
-
-#### Start local Postgres
-
-```bash
-docker compose -f dev/docker-compose.yaml up -d
-```
-
-<a id="shared-run-db-migrations"></a>
-
-#### Run DB migrations
-
-You can run the `relayer-migrate` binary directly, or install `sqlx-cli`.
-
-**Option A (no sqlx CLI required):**
-
-```bash
-cp relayer-migrate/.env.example relayer-migrate/.env
-cargo run --manifest-path relayer-migrate/Cargo.toml --bin relayer-migrate
-```
-
-**Option B (with sqlx CLI):**
-
-```bash
-# install once
-cargo install sqlx-cli --no-default-features --features rustls,postgres
-
-make sqlx-migrate
-```
-
-<a id="shared-verify-service-health"></a>
-
-#### Verify service health
-
-```bash
-curl -sS http://localhost:3000/liveness
-curl -sS http://localhost:3000/healthz
-curl -sS http://localhost:3000/version
-curl -sS http://localhost:9898/metrics | head
-```
-
-Expected:
-
-- `/liveness`: HTTP `200` with `{"status":"alive"}`
-- `/healthz`: HTTP `200` with `{"status":"healthy",...}`
-
-OpenAPI docs are available at:
-
-- `http://localhost:3000/docs`
-
-<a id="shared-stop-local-postgres"></a>
-
-#### Stop local Postgres
-
-```bash
-docker compose -f dev/docker-compose.yaml down
-```
-
-Use `-v` only when you intentionally want to delete local Postgres data.
-
 ## API Endpoints
 
-### Service and Docs Endpoints
+### Service Endpoints
 
-- `GET /liveness`
-- `GET /healthz`
-- `GET /version`
-- `GET /docs`
+| Endpoint        | Description              |
+| --------------- | ------------------------ |
+| `GET /liveness` | Liveness probe           |
+| `GET /healthz`  | Readiness / health check |
+| `GET /version`  | Build version info       |
+| `GET /docs`     | OpenAPI documentation    |
 
 ### Production APIs
 
-V1 and V2 APIs are both available. V2 endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls status and returns the result when ready.
-
-Available operations:
+V1 and V2 APIs are both available. V2 endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls for the result.
 
 | Operation                 | V1                        | V2                                |
 | ------------------------- | ------------------------- | --------------------------------- |
@@ -407,60 +256,44 @@ Available operations:
 | Delegated user decryption | --                        | `POST /v2/delegated-user-decrypt` |
 | Key material URLs         | `GET /v1/keyurl`          | `GET /v2/keyurl`                  |
 
-For complete request/response schemas, use:
+For complete schemas, see `GET /docs` or `openapi-current.yaml`.
 
-- Runtime docs: `GET /docs`
-- Source spec: `openapi-current.yaml`
-
-### Admin Endpoints (Optional)
-
-`/admin/config` routes are always mounted:
-
-- When `enable_admin_endpoint: true`, requests are processed normally.
-- When `enable_admin_endpoint: false`, the endpoints return `403 Forbidden`.
-
-Endpoints:
+### Admin Endpoints
 
 ```text
-GET /admin/config
+GET  /admin/config
 POST /admin/config
 ```
 
-Supported runtime parameters include throttler TPS and retry-after tuning fields.
+Controlled by `enable_admin_endpoint` (returns `403 Forbidden` when disabled). Supports runtime tuning of throttler TPS and retry-after fields.
 
-## Observability Policy
-
-For observability operations and implementation details, use these sources:
+## Observability
 
 - Logging and tracing policy: `LOGGING_POLICY.md`
 - Metrics and dashboard guidance: `src/metrics/docs_and_dashboards/http_metrics.md`
-
-Runtime observability endpoints:
-
-- Application metrics: `GET /metrics` on the metrics server endpoint (default `0.0.0.0:9898`)
-- Metrics health: `GET /health` on the metrics server
+- Application metrics: `GET /metrics` on port `9898`
 
 ## Troubleshooting
 
 ### Postgres uses port 5433, not 5432
 
-The local Postgres instance in `dev/docker-compose.yaml` is mapped to **port 5433** to avoid conflicts with any host Postgres. This port is used consistently across `config/local.yaml.example`, `relayer-migrate/.env.example`, test configs, and the Makefile. If you see "connection refused" errors, check you are targeting port 5433.
+The local Postgres in `dev/docker-compose.yaml` maps to **port 5433** to avoid conflicts. If you see "connection refused" errors, check you are targeting port 5433.
 
 ### sqlx offline metadata must stay up to date
 
-The Docker build relies on pre-computed query metadata in the `.sqlx/` directory. If you add or modify SQL queries, run `make sqlx-prepare` to regenerate it before building Docker images.
+The Docker build relies on pre-computed query metadata in `.sqlx/`. After adding or modifying SQL queries, run `make sqlx-prepare` before building Docker images.
 
 ### Git worktrees break the relayer Docker build
 
-The relayer Dockerfile mounts `.git/HEAD`, `.git/objects`, and `.git/refs` for build-time version embedding. In a Git worktree `.git` is a file (not a directory), so the mount fails. Build from a primary clone instead. The `relayer-migrate` Dockerfile does not have this limitation.
+The relayer Dockerfile mounts `.git/HEAD`, `.git/objects`, and `.git/refs` for build-time version embedding. In a Git worktree `.git` is a file (not a directory), so the mount fails. Build from a primary clone instead.
 
 ### Config template contains localhost/mock URLs
 
-`config/local.yaml.example` ships with `localhost:8757` RPC URLs and `0.0.0.0:3001` key URLs that only work against a local mock stack. When targeting Devnet or Testnet, replace all URLs, contract addresses, and the private key with values from the [Devnet & Testnet](#devnet--testnet) section above.
+`config/local.yaml.example` ships with `localhost:8757` RPC URLs and `0.0.0.0:3001` key URLs that only work against a local mock stack. When targeting Devnet or Testnet, use `make preflight-testnet` / `make preflight-devnet` which copies the correct example config automatically.
 
 ### Docker memory for full local stack
 
-Running `./fhevm-cli deploy` (Local Stack mode) requires at least **12 GB** of Docker memory. Check Docker Desktop settings before deploying.
+Running `./fhevm-cli deploy` requires at least **12 GB** of Docker memory.
 
 ## License
 

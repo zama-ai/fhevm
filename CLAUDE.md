@@ -69,8 +69,8 @@ make sqlx-prepare   # Regenerate offline metadata for CI/Docker builds
 
 ```bash
 make run            # Run with default config
-make run-devnet     # Run against Devnet (validates config + private key)
 make run-testnet    # Run against Testnet (validates config + private key)
+make run-devnet     # Run against Devnet (validates config + private key)
 make dev            # Hot-reload with cargo-watch
 make health         # Hit /liveness, /healthz, /version, /metrics
 ```
@@ -78,12 +78,12 @@ make health         # Hit /liveness, /healthz, /version, /metrics
 ### Network Onboarding
 
 ```bash
-make init-devnet        # Copy Devnet config example, prompt for private key
-make init-testnet       # Copy Testnet config example, prompt for private key
-make preflight-devnet   # Verify wallet address + ETH/$ZAMA balances on Devnet
-make preflight-testnet  # Verify wallet address + ETH/$ZAMA balances on Testnet
-make mint-zama-devnet   # Mint $ZAMA on Devnet (self-service)
-make mint-zama-testnet  # Instructions to get $ZAMA on Testnet (not self-service)
+make init-testnet           # Copy Testnet config example, prompt for private key
+make init-devnet            # Copy Devnet config example, prompt for private key
+make preflight-testnet      # Verify wallet address + ETH/$ZAMA balances on Testnet
+make preflight-devnet       # Verify wallet address + ETH/$ZAMA balances on Devnet
+make mint-zama-testnet      # Instructions to get $ZAMA on Testnet (not self-service)
+make mint-zama-devnet       # Mint $ZAMA on Devnet (self-service)
 ```
 
 ### Workflows
