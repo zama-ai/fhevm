@@ -249,13 +249,17 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
+        let ct128_format: i16 = self.ct128.format().into();
+
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO ciphertext_digest
+            (host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             self.host_chain_id.as_i64(),
             &self.key_id_gw,
             self.handle,
             self.transaction_id,
+            ct128_format,
         )
         .execute(db_txn.as_mut())
         .await?;
