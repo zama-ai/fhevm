@@ -95,8 +95,7 @@ contract HCULimitInvariantHandler is Test {
 
         vm.startPrank(fhevmExecutor);
         for (uint256 i; i < ops; ++i) {
-            hcuLimit.setHCUCallerContext(caller);
-            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle()) {}
+            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {}
             catch {
                 if (isWhitelisted) {
                     whitelistViolation = true;

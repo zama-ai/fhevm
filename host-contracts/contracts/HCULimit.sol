@@ -21,9 +21,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the block exceeds the maximum allowed homomorphic complexity units.
     error HCUBlockLimitExceeded();
 
-    /// @notice Returned if the caller context was not set for a block-level check.
-    error HCUCallerContextNotSet();
-
     /// @notice Returned if the block HCU cap is below the supported minimum.
     error InvalidHCUPerBlock();
 
@@ -70,9 +67,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Maximum homomorphic complexity units per transaction.
     /// @dev This is the maximum number of homomorphic complexity units that can be used in a single transaction.
     uint256 private constant MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
-
-    /// @dev Transient storage slot used to pass the original caller context from FHEVMExecutor.
-    bytes32 private constant HCU_CALLER_CONTEXT_SLOT = keccak256("fhevm.hcu.caller.context");
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     struct HCULimitStorage {
@@ -134,13 +128,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheAdd(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -159,7 +155,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 88000;
@@ -175,7 +171,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -186,13 +182,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheSub(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -211,7 +209,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 91000;
@@ -227,7 +225,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -238,13 +236,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheMul(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -263,7 +263,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 150000;
@@ -279,7 +279,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -289,13 +289,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheDiv(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 /*rhs*/,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -314,7 +316,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             revert UnsupportedOperation();
         }
 
-        _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
     }
 
     /**
@@ -323,13 +325,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheRem(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 /*rhs*/,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -348,7 +352,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             revert UnsupportedOperation();
         }
 
-        _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
     }
 
     /**
@@ -358,13 +362,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitAnd(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -387,7 +393,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
                 opHCU = 25000;
@@ -407,7 +413,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -418,13 +424,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitOr(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -447,7 +455,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
                 opHCU = 24000;
@@ -467,7 +475,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -478,13 +486,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitXor(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -507,7 +517,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
                 opHCU = 22000;
@@ -527,7 +537,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -538,13 +548,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheShl(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -565,7 +577,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 92000;
@@ -583,7 +595,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -594,13 +606,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheShr(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -621,7 +635,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 91000;
@@ -639,7 +653,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -650,13 +664,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheRotl(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -677,7 +693,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 91000;
@@ -695,7 +711,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -706,13 +722,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheRotr(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -733,7 +751,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 93000;
@@ -751,7 +769,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -762,13 +780,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheEq(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -793,7 +813,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
                 opHCU = 26000;
@@ -815,7 +835,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -826,13 +846,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheNe(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -857,7 +879,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
                 opHCU = 23000;
@@ -879,7 +901,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -890,13 +912,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheGe(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -915,7 +939,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 63000;
@@ -931,7 +955,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -942,13 +966,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheGt(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -967,7 +993,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 59000;
@@ -983,7 +1009,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -994,13 +1020,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheLe(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -1019,7 +1047,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 58000;
@@ -1035,7 +1063,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -1046,13 +1074,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheLt(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -1071,7 +1101,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 59000;
@@ -1087,7 +1117,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -1098,13 +1128,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheMin(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -1123,7 +1155,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 119000;
@@ -1139,7 +1171,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -1150,13 +1182,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheMax(
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -1175,7 +1209,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 121000;
@@ -1191,7 +1225,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
         }
     }
 
@@ -1199,8 +1233,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheNeg.
      * @param ct The only operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result) external virtual {
+    function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
@@ -1218,15 +1253,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);
     }
 
     /**
      * @notice Check the homomorphic complexity units limit for FheNot.
      * @param ct The only operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result) external virtual {
+    function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
@@ -1246,15 +1282,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);
     }
 
     /**
      * @notice Check the homomorphic complexity units limit for Cast.
      * @param ct The only operand.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result) external virtual {
+    function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
@@ -1274,15 +1311,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
+        _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);
     }
 
     /**
      * @notice Check the homomorphic complexity units limit for TrivialEncrypt.
      * @param resultType Result type.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result) external virtual {
+    function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
@@ -1304,7 +1342,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
         _setHCUForHandle(result, opHCU);
     }
 
@@ -1314,13 +1352,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param middle The middle operand.
      * @param rhs The right-hand side operand.
+     * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForIfThenElse(
         FheType resultType,
         bytes32 lhs,
         bytes32 middle,
         bytes32 rhs,
-        bytes32 result
+        bytes32 result,
+        address caller
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
@@ -1343,15 +1383,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _adjustAndCheckFheTransactionLimitThreeOps(opHCU, lhs, middle, rhs, result);
+        _adjustAndCheckFheTransactionLimitThreeOps(opHCU, caller, lhs, middle, rhs, result);
     }
 
     /**
      * @notice Check the homomorphic complexity units limit for FheRand.
      * @param resultType Result type.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForFheRand(FheType resultType, bytes32 result) external virtual {
+    function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
@@ -1371,7 +1412,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
         _setHCUForHandle(result, opHCU);
     }
 
@@ -1379,8 +1420,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheRandBounded.
      * @param resultType Result type.
      * @param result Result.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function checkHCUForFheRandBounded(FheType resultType, bytes32 result) external virtual {
+    function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
@@ -1398,7 +1440,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
         _setHCUForHandle(result, opHCU);
     }
 
@@ -1497,19 +1539,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Sets the original caller context for block-level HCU checks.
-     * @dev Must be called by FHEVMExecutor in the same transaction before checkHCUFor*.
-     * @param callerAddress Original FHEVMExecutor caller (EOA or contract).
-     */
-    function setHCUCallerContext(address callerAddress) external {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        assembly {
-            tstore(callerSlot, callerAddress)
-        }
-    }
-
-    /**
      * @notice Returns the effective public block HCU meter for the current block.
      * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
      */
@@ -1526,8 +1555,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Adjusts the sequential HCU for the transaction.
      */
-    function _adjustAndCheckFheTransactionLimitOneOp(uint256 opHCU, bytes32 op1, bytes32 result) internal virtual {
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+    function _adjustAndCheckFheTransactionLimitOneOp(
+        uint256 opHCU,
+        address caller,
+        bytes32 op1,
+        bytes32 result
+    ) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _getHCUForHandle(op1);
         if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
@@ -1542,11 +1576,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function _adjustAndCheckFheTransactionLimitTwoOps(
         uint256 opHCU,
+        address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 result
     ) internal virtual {
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
         if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
@@ -1561,12 +1596,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function _adjustAndCheckFheTransactionLimitThreeOps(
         uint256 opHCU,
+        address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 op3,
         bytes32 result
     ) internal virtual {
-        _updateAndVerifyHCUTransactionLimit(opHCU);
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
 
@@ -1580,9 +1616,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Updates and verifies the HCU transaction limit.
      * @param opHCU The HCU for the operation.
+     * @param caller Original caller address for block-level checks.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU) internal virtual {
-        _updateAndVerifyHCUBlockLimit(opHCU);
+    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
+        _updateAndVerifyHCUBlockLimit(opHCU, caller);
 
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
         if (transactionHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
@@ -1593,18 +1630,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Updates and enforces the public block HCU cap for one operation.
-     * @dev No-op if the cap is disabled or caller is whitelisted. Otherwise consumes caller context,
-     *      resets the meter on block rollover, and reverts if `opHCU` would reach/exceed the cap.
+     * @dev No-op if the cap is disabled or caller is whitelisted.
      * @param opHCU HCU cost of the current operation.
+     * @param caller Original caller address from FHEVMExecutor.
      */
-    function _updateAndVerifyHCUBlockLimit(uint256 opHCU) internal virtual {
+    function _updateAndVerifyHCUBlockLimit(uint256 opHCU, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.publicHCUCapPerBlock == type(uint192).max) {
             return;
         }
-
-        address caller = _getHCUCallerContext();
-        _clearHCUCallerContext();
 
         if ($.blockHCUWhitelist[caller]) {
             return;
@@ -1676,23 +1710,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function _unpackBlockMeter(uint256 packed) internal pure virtual returns (uint64 blockNumber, uint192 usedHCU) {
         blockNumber = uint64(packed);
         usedHCU = uint192(packed >> 64);
-    }
-
-    function _getHCUCallerContext() internal view virtual returns (address caller) {
-        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        uint256 callerUint;
-        assembly {
-            callerUint := tload(callerSlot)
-        }
-        caller = address(uint160(callerUint));
-        if (caller == address(0)) revert HCUCallerContextNotSet();
-    }
-
-    function _clearHCUCallerContext() internal virtual {
-        bytes32 callerSlot = HCU_CALLER_CONTEXT_SLOT;
-        assembly {
-            tstore(callerSlot, 0)
-        }
     }
 
     /**
