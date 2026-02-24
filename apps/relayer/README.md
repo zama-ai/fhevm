@@ -21,6 +21,7 @@ It exposes the following capabilities:
   - [Local Stack](#local-stack-for-testing-version-releases)
 - [API Endpoints](#api-endpoints)
 - [Observability](#observability)
+- [Data Retention Policy](#data-retention-policy)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture
@@ -272,6 +273,10 @@ Controlled by `enable_admin_endpoint` (returns `403 Forbidden` when disabled). S
 - Logging and tracing policy: `LOGGING_POLICY.md`
 - Metrics and dashboard guidance: `src/metrics/docs_and_dashboards/http_metrics.md`
 - Application metrics: `GET /metrics` on port `9898`
+
+## Data Retention Policy
+
+The relayer automatically purges stale request data from the database to manage storage growth. Old records for public decryption, user decryption, and input proof verification are periodically **deleted** based on configurable retention windows. This cleanup process runs as a background cron job and is implemented in `src/store/sql/repositories/expiry_repo.rs`.
 
 ## Troubleshooting
 
