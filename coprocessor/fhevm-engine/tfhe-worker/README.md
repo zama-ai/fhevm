@@ -50,7 +50,7 @@ Reload database and apply schemas from scratch
 ```
 make recreate_db
 ```
-Run the server and background fhe worker
+Run the background FHE worker
 
 ```
 cargo run -- --run-bg-worker --worker-polling-interval-ms 1000
