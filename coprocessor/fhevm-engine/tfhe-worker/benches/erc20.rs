@@ -114,6 +114,11 @@ fn sample_count(default_count: usize) -> usize {
         .unwrap_or(default_count)
 }
 
+fn next_log_index() -> u64 {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 fn log_with_tx(
     tx_hash: host_listener::database::tfhe_event_propagate::Handle,
     inner: alloy::primitives::Log<TfheContractEvents>,
@@ -125,7 +130,7 @@ fn log_with_tx(
         block_timestamp: None,
         transaction_hash: Some(tx_hash),
         transaction_index: Some(0),
-        log_index: None,
+        log_index: Some(next_log_index()),
         removed: false,
     }
 }

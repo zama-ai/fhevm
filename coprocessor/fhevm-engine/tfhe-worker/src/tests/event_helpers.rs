@@ -83,6 +83,11 @@ pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     }
 }
 
+fn next_log_index() -> u64 {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn log_with_tx(
     tx_hash: Handle,
     inner: Log<TfheContractEvents>,
@@ -94,7 +99,7 @@ pub fn log_with_tx(
         block_timestamp: None,
         transaction_hash: Some(tx_hash),
         transaction_index: Some(0),
-        log_index: None,
+        log_index: Some(next_log_index()),
         removed: false,
     }
 }
@@ -106,14 +111,16 @@ pub async fn insert_event(
     event: TfheContractEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
+    let log = log_with_tx(tx_id, tfhe_event(event));
     let event = LogTfhe {
-        event: log_with_tx(tx_id, tfhe_event(event)).inner,
+        event: log.inner,
         transaction_hash: Some(tx_id),
         is_allowed,
         block_number: 0,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: tx_id,
         tx_depth_size: 0,
+        log_index: log.log_index,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
     Ok(())
