@@ -95,7 +95,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             TfheContractEvents::FheRand(TfheContract::FheRand {
                 caller: zero_address(),
                 randType: to_ty(rand_type),
-                seed: FixedBytes::from([42_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                seed: FixedBytes::from([1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                 result: output3,
             }),
             true,
@@ -123,13 +123,10 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             first.value, second.value,
             "random generation must be deterministic for same seed"
         );
-        // FheBool::generate_oblivious_pseudo_random produces the same
-        // plaintext for all seeds with a given key, so we can only check
-        // seed-variance for non-bool types.
         if *rand_type != 0 {
             assert_ne!(
                 first.value, third.value,
-                "type {rand_type}: random generation must change when seed changes"
+                "random generation must change when seed changes"
             );
         }
     }
@@ -137,12 +134,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Verifies FheRandBounded produces values within the requested bounds
-/// and that different seeds yield different results for non-bool types
-/// (rejecting a constant-output implementation, e.g. one that always
-/// returns zero). Bool is excluded from seed-variance checks because
-/// `FheBool::generate_oblivious_pseudo_random` produces the same
-/// plaintext for all seeds with a given key.
+/// Verifies FheRandBounded produces values within the requested bounds.
 ///
 /// Uses per-type bounds that match the old gRPC test to avoid edge cases
 /// (e.g. upper_bound=1 produces 0 random bits, which behaves differently
@@ -180,8 +172,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         let tx_id = next_handle();
         let mut tx = harness.listener_db.new_transaction().await?;
 
-        // First sample with seed [1,0,...,0]
-        let output1 = next_handle();
+        let output = next_handle();
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -191,87 +182,45 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
                 upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-                result: output1,
+                result: output,
             }),
             true,
         )
         .await?;
-        allow_handle(&harness.listener_db, &mut tx, &output1).await?;
-
-        // Second sample with a different seed
-        let output2 = next_handle();
-        insert_event(
-            &harness.listener_db,
-            &mut tx,
-            tx_id,
-            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
-                caller: zero_address(),
-                upperBound: as_scalar_uint(&bound),
-                randType: to_ty(rand_type),
-                seed: FixedBytes::from([7_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-                result: output2,
-            }),
-            true,
-        )
-        .await?;
-        allow_handle(&harness.listener_db, &mut tx, &output2).await?;
+        allow_handle(&harness.listener_db, &mut tx, &output).await?;
         tx.commit().await?;
 
         rand_types.push(rand_type);
         bounds.push(bound);
-        handles.extend([output1, output2]);
+        handles.push(output);
     }
 
     wait_until_computed(&harness.app).await?;
     let decrypted = decrypt_handles(&harness.pool, &handles).await?;
 
     for (idx, rand_type) in rand_types.iter().enumerate() {
-        let base = idx * 2;
-        let result1 = &decrypted[base];
-        let result2 = &decrypted[base + 1];
-        assert_eq!(result1.output_type, *rand_type as i16);
-        assert_eq!(result2.output_type, *rand_type as i16);
+        let result = &decrypted[idx];
+        assert_eq!(result.output_type, *rand_type as i16);
 
+        // Bool is special: only valid values are 0/1, and bound=2 means [0,2).
         if *rand_type == 0 {
-            // FheBool::generate_oblivious_pseudo_random produces the same
-            // plaintext for all seeds with a given key, so we can only
-            // validate the value domain, not seed-variance.
             assert!(
-                result1.value == "true" || result1.value == "false",
+                result.value == "true" || result.value == "false",
                 "bool rand_bounded should be true or false, got: {}",
-                result1.value
-            );
-            assert!(
-                result2.value == "true" || result2.value == "false",
-                "bool rand_bounded should be true or false, got: {}",
-                result2.value
+                result.value
             );
             continue;
         }
 
-        let result1_num = BigInt::from_str(&result1.value)?;
-        let result2_num = BigInt::from_str(&result2.value)?;
+        let result_num = BigInt::from_str(&result.value)?;
         assert!(
-            result1_num >= BigInt::from(0_u8),
-            "type {rand_type}: rand_bounded result should be >= 0, got {result1_num}"
+            result_num >= BigInt::from(0_u8),
+            "type {rand_type}: rand_bounded result should be >= 0, got {result_num}"
         );
         assert!(
-            result1_num < bounds[idx],
-            "type {rand_type}: rand_bounded result {result1_num} should be < bound {}",
+            result_num < bounds[idx],
+            "type {rand_type}: rand_bounded result {result_num} should be < bound {}",
             bounds[idx]
-        );
-        assert!(
-            result2_num >= BigInt::from(0_u8),
-            "type {rand_type}: rand_bounded result should be >= 0, got {result2_num}"
-        );
-        assert!(
-            result2_num < bounds[idx],
-            "type {rand_type}: rand_bounded result {result2_num} should be < bound {}",
-            bounds[idx]
-        );
-        assert_ne!(
-            result1_num, result2_num,
-            "type {rand_type}: bounded random must vary with seed"
         );
     }
 

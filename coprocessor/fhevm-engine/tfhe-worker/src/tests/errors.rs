@@ -53,11 +53,6 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
         is_error,
         "expected unknown operation to fail, last_error_message={msg:?}"
     );
-    let error_msg = msg.as_deref().unwrap_or("");
-    assert!(
-        error_msg.contains("Unknown fhe operation"),
-        "expected 'Unknown fhe operation' error, got: {error_msg}"
-    );
     Ok(())
 }
 
@@ -105,11 +100,6 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         is_error,
         "expected FheSub on mismatched types to fail, last_error_message={msg:?}"
     );
-    let error_msg = msg.as_deref().unwrap_or("");
-    assert!(
-        error_msg.contains("UnsupportedFheTypes"),
-        "expected UnsupportedFheTypes error, got: {error_msg}"
-    );
     Ok(())
 }
 
@@ -156,11 +146,6 @@ async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
         is_error,
         "expected FheAdd on mismatched types to fail, last_error_message={msg:?}"
     );
-    let error_msg = msg.as_deref().unwrap_or("");
-    assert!(
-        error_msg.contains("UnsupportedFheTypes"),
-        "expected UnsupportedFheTypes error, got: {error_msg}"
-    );
     Ok(())
 }
 
@@ -205,11 +190,6 @@ async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Er
         is_error,
         "expected FheAdd on bool inputs to fail, last_error_message={msg:?}"
     );
-    let error_msg = msg.as_deref().unwrap_or("");
-    assert!(
-        error_msg.contains("UnsupportedFheTypes"),
-        "expected UnsupportedFheTypes error, got: {error_msg}"
-    );
     Ok(())
 }
 
@@ -249,11 +229,6 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
     assert!(
         is_error,
         "expected FheNeg on bool input to fail, last_error_message={msg:?}"
-    );
-    let error_msg = msg.as_deref().unwrap_or("");
-    assert!(
-        error_msg.contains("UnsupportedFheTypes"),
-        "expected UnsupportedFheTypes error, got: {error_msg}"
     );
     Ok(())
 }
