@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits::CiphertextCommitsErrors;
@@ -428,20 +428,22 @@ where
             };
 
             drop(_enter);
-            drop(_span);
 
             let operation = self.clone();
-            join_set.spawn(async move {
-                operation
-                    .send_transaction(
-                        &row.handle,
-                        txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
-                        transaction_id,
-                    )
-                    .await
-            });
+            join_set.spawn(
+                async move {
+                    operation
+                        .send_transaction(
+                            &row.handle,
+                            txn_request,
+                            row.txn_limited_retries_count,
+                            row.txn_unlimited_retries_count,
+                            transaction_id,
+                        )
+                        .await
+                }
+                .instrument(_span),
+            );
         }
 
         while let Some(res) = join_set.join_next().await {
