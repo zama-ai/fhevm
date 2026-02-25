@@ -5,6 +5,7 @@ pragma solidity ^0.8.24;
 /// source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/CiphertextCommits.sol
 contract CiphertextCommits {
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address coprocessorTxSenderAddress);
+    error NotCoprocessorTxSender(address txSenderAddress);
 
     event AddCiphertextMaterial(
         bytes32 indexed ctHandle,
@@ -14,9 +15,20 @@ contract CiphertextCommits {
     );
 
     bool alreadyAddedRevert;
+    ConfigErrorMode configErrorMode;
+
+    enum ConfigErrorMode {
+        None,
+        NotCoprocessorTxSender
+    }
 
     constructor(bool _alreadyAddedRevert) {
         alreadyAddedRevert = _alreadyAddedRevert;
+    }
+
+    function setConfigErrorMode(uint8 mode) external {
+        require(mode <= uint8(ConfigErrorMode.NotCoprocessorTxSender), "invalid mode");
+        configErrorMode = ConfigErrorMode(mode);
     }
 
     function addCiphertextMaterial(
@@ -25,6 +37,9 @@ contract CiphertextCommits {
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
     ) public {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (alreadyAddedRevert) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }

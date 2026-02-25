@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE delegate_user_decrypt\n        SET gateway_nb_attempts = $1,\n            gateway_last_error = $2\n        WHERE key = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5907c37948a322cde980c602e3ebeb266827abb1f4d4484f94eb6e0565025a7f"
+}

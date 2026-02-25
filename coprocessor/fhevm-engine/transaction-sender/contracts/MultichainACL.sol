@@ -9,17 +9,32 @@ pragma solidity ^0.8.24;
 contract MultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+    error NotCoprocessorTxSender(address txSenderAddress);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
 
     bool alreadyAllowedRevert;
+    ConfigErrorMode configErrorMode;
+
+    enum ConfigErrorMode {
+        None,
+        NotCoprocessorTxSender
+    }
 
     constructor(bool _alreadyAllowedRevert) {
         alreadyAllowedRevert = _alreadyAllowedRevert;
     }
 
+    function setConfigErrorMode(uint8 mode) external {
+        require(mode <= uint8(ConfigErrorMode.NotCoprocessorTxSender), "invalid mode");
+        configErrorMode = ConfigErrorMode(mode);
+    }
+
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* extraData */) public {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
@@ -27,6 +42,9 @@ contract MultichainACL {
     }
 
     function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* extraData */) public {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
@@ -63,6 +81,9 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }
@@ -87,6 +108,9 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }

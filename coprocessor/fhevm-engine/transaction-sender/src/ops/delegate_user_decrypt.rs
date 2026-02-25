@@ -7,6 +7,7 @@ use crate::metrics::{
     DELEGATE_USER_DECRYPT_SUCCESS_COUNTER,
 };
 use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::ops::common::{try_extract_non_retryable_config_error, CoprocessorConfigError};
 
 use alloy::primitives::{Address, FixedBytes};
 use alloy::providers::Provider;
@@ -72,6 +73,7 @@ enum TxResult {
     Success,
     IdemPotentError,
     TransientError,
+    NonRetryableConfigError(CoprocessorConfigError),
     OtherError(String),
 }
 
@@ -149,15 +151,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 );
                 return TxResult::IdemPotentError;
             }
-            Err(error) if is_transient_error(&error) => {
-                warn!(
-                    %error,
-                    ?delegation,
-                    "{operation} sending with transient error. Will retry indefinitely"
-                );
-                return TxResult::TransientError;
-            }
             Err(error) => {
+                if is_transient_error(&error) {
+                    warn!(
+                        %error,
+                        ?delegation,
+                        "{operation} sending with transient error. Will retry indefinitely"
+                    );
+                    return TxResult::TransientError;
+                }
+                if let Some(non_retryable_config_error) =
+                    try_extract_non_retryable_config_error(&error)
+                {
+                    warn!(
+                        error = %non_retryable_config_error,
+                        ?delegation,
+                        "{operation} failed with non-retryable gateway coprocessor config error"
+                    );
+                    return TxResult::NonRetryableConfigError(non_retryable_config_error);
+                }
                 warn!(
                     %error,
                     ?delegation,
@@ -209,7 +221,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         tx: &mut DbTransaction<'_>,
         last_ready_block: u64,
     ) -> Result<(Vec<DelegationRow>, Vec<Vec<u8>>)> {
-        let delegations = delayed_sorted_delegation(tx, last_ready_block).await?;
+        let delegations =
+            delayed_sorted_delegation(tx, last_ready_block, self.conf.delegation_max_retry).await?;
         let nb_ready_delegations = delegations.len();
         if delegations.is_empty() {
             return Ok((vec![], vec![]));
@@ -475,6 +488,17 @@ where
                     transient_error = true;
                     update_error_delegation(&mut tx, &delegation, "transient_error").await;
                 }
+                TxResult::NonRetryableConfigError(e) => {
+                    nb_errors += 1;
+                    other_error = true;
+                    stop_retrying_delegation_on_config_error(
+                        &mut tx,
+                        &delegation,
+                        &e.to_string(),
+                        self.conf.delegation_max_retry + 1,
+                    )
+                    .await;
+                }
                 TxResult::OtherError(e) => {
                     nb_errors += 1;
                     update_error_delegation(&mut tx, &delegation, &e.to_string()).await;
@@ -514,6 +538,7 @@ fn expiration_date_to_u64(value: BigDecimal) -> u64 {
 pub async fn delayed_sorted_delegation(
     tx: &mut DbTransaction<'_>,
     up_to_block_number: u64,
+    delegation_max_retry: u64,
 ) -> Result<Vec<DelegationRow>> {
     let query = sqlx::query!(
         r#"
@@ -522,10 +547,12 @@ pub async fn delayed_sorted_delegation(
         WHERE block_number <= $1
         AND on_gateway = false
         AND reorg_out = false
+        AND gateway_nb_attempts <= $2
         ORDER BY block_number ASC, delegation_counter ASC, transaction_id ASC
         FOR UPDATE
         "#,
         up_to_block_number as i64,
+        delegation_max_retry as i64, // excludes delegations retired after a non-retryable config error (set to max_retry + 1)
     );
     let delegations_rows = query.fetch_all(tx.deref_mut()).await?;
     let mut delegations = Vec::with_capacity(delegations_rows.len());
@@ -578,6 +605,41 @@ pub async fn update_error_delegation(
             error,
             ?delegation,
             "No rows updated when updating error delegation"
+        );
+    }
+}
+
+pub async fn stop_retrying_delegation_on_config_error(
+    tx: &mut DbTransaction<'_>,
+    delegation: &DelegationRow,
+    error: &str,
+    max_attempts: u64,
+) {
+    let res = match sqlx::query!(
+        r#"
+        UPDATE delegate_user_decrypt
+        SET gateway_nb_attempts = $1,
+            gateway_last_error = $2
+        WHERE key = $3
+        "#,
+        max_attempts as i64,
+        error,
+        delegation.key,
+    )
+    .execute(tx.deref_mut())
+    .await
+    {
+        Ok(res) => res,
+        Err(db_err) => {
+            error!(%db_err, ?delegation, "Cannot mark non-retryable delegation");
+            return;
+        }
+    };
+    if res.rows_affected() == 0 {
+        error!(
+            error,
+            ?delegation,
+            "No rows updated when marking non-retryable delegation"
         );
     }
 }
