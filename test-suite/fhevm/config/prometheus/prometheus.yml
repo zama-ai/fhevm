@@ -7,8 +7,20 @@ scrape_configs:
 
     static_configs:
       - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100']
-   
+
   # Coprocessor job configuration
   - job_name: 'coprocessor'
     static_configs:
       - targets: ['coprocessor-transaction-sender:9100', 'coprocessor-gw-listener:9100', 'coprocessor-tfhe-worker:9100', 'coprocessor-sns-worker:9100', 'coprocessor-zkproof-worker:9100']
+
+  # Spanmetrics from OTEL Collector
+  # Scrapes spanmetrics-derived metrics from the OTEL Collector's Prometheus exporter.
+  # OpenMetricsText1.0.0 must be first to enable exemplar ingestion (metric→trace links).
+  - job_name: 'otel-spanmetrics'
+    scrape_interval: 15s
+    scrape_protocols:
+      - OpenMetricsText1.0.0    # Required first: enables exemplar ingestion
+      - PrometheusProto
+      - PrometheusText0.0.4
+    static_configs:
+      - targets: ['otel-collector:8889']

@@ -175,12 +175,13 @@ impl<'a> Scheduler<'a> {
                         .graph
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    args.push((
-                        std::mem::take(&mut tx.graph),
-                        std::mem::take(&mut tx.inputs),
-                        tx.transaction_id.clone(),
-                        tx.component_id,
-                    ));
+                    args.push(PartitionTask {
+                        dfg: std::mem::take(&mut tx.graph),
+                        inputs: std::mem::take(&mut tx.inputs),
+                        transaction_id: tx.transaction_id.clone(),
+                        component_id: tx.component_id,
+                        transaction_pattern_id: tx.transaction_pattern_id,
+                    });
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                 let parent_span = tracing::Span::current();
@@ -229,12 +230,13 @@ impl<'a> Scheduler<'a> {
                         if tx.is_uncomputable {
                             continue;
                         }
-                        args.push((
-                            std::mem::take(&mut tx.graph),
-                            std::mem::take(&mut tx.inputs),
-                            tx.transaction_id.clone(),
-                            tx.component_id,
-                        ));
+                        args.push(PartitionTask {
+                            dfg: std::mem::take(&mut tx.graph),
+                            inputs: std::mem::take(&mut tx.inputs),
+                            transaction_id: tx.transaction_id.clone(),
+                            component_id: tx.component_id,
+                            transaction_pattern_id: tx.transaction_pattern_id,
+                        });
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                     let parent_span = tracing::Span::current();
@@ -288,7 +290,14 @@ fn re_randomise_operation_inputs(
     Ok(())
 }
 
-type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
+struct PartitionTask {
+    dfg: DFGraph,
+    inputs: HashMap<Handle, Option<DFGTxInput>>,
+    transaction_id: Handle,
+    component_id: usize,
+    transaction_pattern_id: [u8; 32],
+}
+type ComponentSet = Vec<PartitionTask>;
 fn execute_partition(
     transactions: ComponentSet,
     task_id: NodeIndex,
@@ -301,9 +310,14 @@ fn execute_partition(
     let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
-    'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
-        let txn_id_short = telemetry::short_hex_id(&tid);
-
+    'tx: for PartitionTask {
+        ref mut dfg,
+        inputs: ref mut tx_inputs,
+        transaction_id: tid,
+        component_id: _cid,
+        ref transaction_pattern_id,
+    } in transactions
+    {
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -333,12 +347,9 @@ fn execute_partition(
 
         // Decompress ciphertexts
         {
-            let _guard = tracing::info_span!(
-                "decompress_ciphertexts",
-                txn_id = %txn_id_short,
-                count = tracing::field::Empty,
-            )
-            .entered();
+            let _guard =
+                tracing::info_span!("decompress_ciphertexts", count = tracing::field::Empty,)
+                    .entered();
 
             match decompress_transaction_inputs(tx_inputs, gpu_idx) {
                 Ok(count) => {
@@ -368,7 +379,7 @@ fn execute_partition(
         // Prime the scheduler with ready ops from the transaction's subgraph
         let _exec_guard = tracing::info_span!(
             "execute_transaction",
-            txn_id = %txn_id_short,
+            transaction_pattern_id = %hex::encode(transaction_pattern_id),
         )
         .entered();
         let started_at = std::time::Instant::now();
@@ -396,7 +407,7 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
+            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &cpk);
             match result {
                 Ok(result) => {
                     let nidx = NodeIndex::new(result.0);
@@ -452,12 +463,13 @@ fn try_execute_node(
     node_index: usize,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
-    transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
+    // Copy the per-op pattern_id before std::mem::take borrows node mutably
+    let operation_pattern_id = *node.operation_pattern_id();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         if let DFGTaskInput::Value(i) = i {
@@ -470,7 +482,7 @@ fn try_execute_node(
     }
     // Re-randomize inputs for this operation
     {
-        let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
+        let _guard = tracing::info_span!("rerandomise_op_inputs", operation_pattern_id = %hex::encode(operation_pattern_id)).entered();
         let started_at = std::time::Instant::now();
         if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
@@ -489,7 +501,7 @@ fn try_execute_node(
         node_index,
         is_allowed,
         gpu_idx,
-        transaction_id,
+        &operation_pattern_id,
     ))
 }
 
@@ -501,18 +513,18 @@ fn run_computation(
     graph_node_index: usize,
     is_allowed: bool,
     gpu_idx: usize,
-    transaction_id: &Handle,
+    operation_pattern_id: &[u8; 32],
 ) -> (usize, OpResult) {
-    let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
+    let operation_pattern_id_hex = hex::encode(operation_pattern_id);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             // Compression span (no FHE here)
             let _guard = tracing::info_span!(
                 "compress_ciphertext",
-                txn_id = %txn_id_short,
                 ct_type = inputs[0].type_name(),
                 operation = "FheGetCiphertext",
+                operation_pattern_id = %operation_pattern_id_hex,
                 compressed_size = tracing::field::Empty,
             )
             .entered();
@@ -539,15 +551,12 @@ fn run_computation(
             // FHE operation span
             let _fhe_guard = tracing::info_span!(
                 "fhe_operation",
-                txn_id = %txn_id_short,
                 operation = op_name,
                 operation_code = operation as i64,
-                input_type = tracing::field::Empty,
+                operation_pattern_id = %operation_pattern_id_hex,
+                input_type = inputs.first().map(|i| i.type_name()).unwrap_or(""),
             )
             .entered();
-            if !inputs.is_empty() {
-                tracing::Span::current().record("input_type", inputs[0].type_name());
-            }
 
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx);
 
@@ -557,9 +566,9 @@ fn run_computation(
                         // Compression span
                         let _guard = tracing::info_span!(
                             "compress_ciphertext",
-                            txn_id = %txn_id_short,
                             ct_type = result.type_name(),
                             operation = op_name,
+                            operation_pattern_id = %operation_pattern_id_hex,
                             compressed_size = tracing::field::Empty,
                         )
                         .entered();

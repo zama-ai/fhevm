@@ -35,7 +35,7 @@ macro_rules! squash_and_serialize_with_error {
                     span.set_status(Status::Error {
                         description: "squash_noise_fhe failed".into(),
                     });
-                    tracing::error!(parent: &span, error = %err, "squash_noise_fhe failed");
+                    span.in_scope(|| tracing::error!(error = %err, "squash_noise_fhe failed"));
                     return Err(err);
                 }
             }
@@ -58,7 +58,7 @@ macro_rules! squash_and_serialize_with_error {
                     span.set_status(Status::Error {
                         description: "serialize failed".into(),
                     });
-                    tracing::error!(parent: &span, error = %err, "serialize failed");
+                    span.in_scope(|| tracing::error!(error = %err, "serialize failed"));
                     Err(err)
                 }
             };
@@ -83,7 +83,7 @@ macro_rules! squash_and_serialize_with_error {
                     span.set_status(Status::Error {
                         description: "compress failed".into(),
                     });
-                    tracing::error!(parent: &span, error = %err, "compress failed");
+                    span.in_scope(|| tracing::error!(error = %err, "compress failed"));
                     return Err(err.into());
                 }
             }
@@ -105,7 +105,7 @@ macro_rules! squash_and_serialize_with_error {
                 span.set_status(Status::Error {
                     description: "serialize failed".into(),
                 });
-                tracing::error!(parent: &span, error = %err, "serialize failed");
+                span.in_scope(|| tracing::error!(error = %err, "serialize failed"));
                 Err(err)
             }
         }

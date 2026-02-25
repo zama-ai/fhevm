@@ -10,7 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
 use std::time::Duration;
@@ -118,18 +118,13 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all)]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        telemetry::record_short_hex_if_some(
-            &tracing::Span::current(),
-            "txn_id",
-            src_transaction_id.as_deref(),
-        );
         info!(zk_proof_id = txn_request.0, "Processing transaction");
 
         let receipt = match self
@@ -290,21 +285,26 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let span =
-                tracing::info_span!("prepare_verify_proof_resp", txn_id = tracing::field::Empty);
-            telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
+            let span = tracing::info_span!(
+                "prepare_verify_proof_resp",
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
+            );
 
             let txn_request = match row.verified {
                 Some(true) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing verified proof");
+                    span.in_scope(|| {
+                        info!(zk_proof_id = row.zk_proof_id, "Processing verified proof")
+                    });
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
                     if handles.len() % 32 != 0 {
-                        error!(parent: &span,
-                            handles_len = handles.len(),
-                            "Bad handles field, len is not divisible by 32"
-                        );
+                        span.in_scope(|| {
+                            error!(
+                                handles_len = handles.len(),
+                                "Bad handles field, len is not divisible by 32"
+                            )
+                        });
                         self.remove_proof_by_id(row.zk_proof_id)
                             .instrument(span.clone())
                             .await?;
@@ -368,7 +368,9 @@ where
                     }
                 }
                 Some(false) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing rejected proof");
+                    span.in_scope(|| {
+                        info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof")
+                    });
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
@@ -393,21 +395,26 @@ where
                     }
                 }
                 None => {
-                    error!(parent: &span,
-                        zk_proof_id = row.zk_proof_id,
-                        "verified field is unexpectedly None for proof"
-                    );
+                    span.in_scope(|| {
+                        error!(
+                            zk_proof_id = row.zk_proof_id,
+                            "verified field is unexpectedly None for proof"
+                        )
+                    });
                     continue;
                 }
             };
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;
-            join_set.spawn(async move {
-                self_clone
-                    .process_proof(txn_request, row.retry_count, src_transaction_id)
-                    .await
-            });
+            join_set.spawn(
+                async move {
+                    self_clone
+                        .process_proof(txn_request, row.retry_count, src_transaction_id)
+                        .await
+                }
+                .instrument(span),
+            );
         }
         while let Some(res) = join_set.join_next().await {
             res??;
