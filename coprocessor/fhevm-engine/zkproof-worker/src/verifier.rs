@@ -295,13 +295,8 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span =
-            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &verify_span,
-            "txn_id",
-            transaction_id.as_deref(),
-        );
+        let verify_span = tracing::info_span!("verify_task");
+        info!(request_id, "verifying zkproof request");
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
@@ -317,15 +312,16 @@ async fn execute_verify_proof_routine(
 
         let db_insert_span = tracing::info_span!(
             "db_insert",
-            request_id,
-            txn_id = tracing::field::Empty,
             valid = tracing::field::Empty,
             count = tracing::field::Empty
         );
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &db_insert_span,
-            "txn_id",
-            transaction_id.as_deref(),
+        info!(
+            request_id,
+            transaction_hash = transaction_id
+                .as_deref()
+                .map(fhevm_engine_common::utils::to_hex)
+                .unwrap_or_default(),
+            "inserting zkproof result"
         );
 
         async {
@@ -507,7 +503,7 @@ fn expand_verified_list(
 
 /// Creates a ciphertext
 #[tracing::instrument(skip_all, fields(
-    ct_type = tracing::field::Empty,
+    ct_type = %the_ct.type_num(),
     ct_idx = ct_idx,
     chain_id = %aux_data.chain_id,
 ))]
@@ -550,7 +546,6 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
     info!(
         request_id,
         handle = %hex::encode(&handle),

@@ -482,13 +482,12 @@ pub async fn query_sns_tasks(
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
-            let task_span = tracing::info_span!(
-                "task",
-                txn_id = tracing::field::Empty,
-                handle = tracing::field::Empty
+            let task_span = tracing::info_span!("task");
+            info!(
+                handle = %to_hex(&handle),
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
+                "processing sns task"
             );
-            telemetry::record_short_hex(&task_span, "handle", &handle);
-            telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
 
             Ok(HandleItem {
                 // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch

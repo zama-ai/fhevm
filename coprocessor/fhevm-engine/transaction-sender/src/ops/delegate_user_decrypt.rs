@@ -41,13 +41,11 @@ pub struct DelegationRow {
     pub delegate: Vec<u8>,
     pub contract_address: Vec<u8>,
     pub delegation_counter: u64,
-    #[allow(dead_code)]
     pub old_expiration_date: u64,
     pub new_expiration_date: u64,
     pub host_chain_id: ChainId,
     pub block_hash: Vec<u8>,
     pub block_number: u64,
-    pub transaction_id: Option<Vec<u8>>,
     pub gateway_nb_attempts: u64,
 }
 
@@ -115,17 +113,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
-    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all)]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &tracing::Span::current(),
-            "txn_id",
-            delegation.transaction_id.as_deref(),
-        );
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
@@ -438,13 +431,7 @@ where
             }
         };
         for delegation in ready_delegations {
-            let prepare_delegate_span =
-                tracing::info_span!("prepare_delegate", txn_id = tracing::field::Empty);
-            fhevm_engine_common::telemetry::record_short_hex_if_some(
-                &prepare_delegate_span,
-                "txn_id",
-                delegation.transaction_id.as_deref(),
-            );
+            let prepare_delegate_span = tracing::info_span!("prepare_delegate");
             let txn_request = prepare_delegate_span.in_scope(|| to_transaction(&delegation));
             let txn_request = if let Some(gaz_limit) = &self.gas {
                 txn_request.with_gas_limit(*gaz_limit)
@@ -542,7 +529,7 @@ pub async fn delayed_sorted_delegation(
 ) -> Result<Vec<DelegationRow>> {
     let query = sqlx::query!(
         r#"
-        SELECT key, delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, host_chain_id, block_number, block_hash, transaction_id, gateway_nb_attempts
+        SELECT key, delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, host_chain_id, block_number, block_hash, gateway_nb_attempts
         FROM delegate_user_decrypt
         WHERE block_number <= $1
         AND on_gateway = false
@@ -569,7 +556,6 @@ pub async fn delayed_sorted_delegation(
                 .map_err(|e| anyhow::anyhow!("invalid host_chain_id in DB: {e}"))?,
             block_hash: delegation.block_hash,
             block_number: delegation.block_number as u64,
-            transaction_id: delegation.transaction_id,
             gateway_nb_attempts: delegation.gateway_nb_attempts as u64,
         };
         delegations.push(delegation);
