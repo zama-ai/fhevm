@@ -54,6 +54,7 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [[bin]]
 name = "tfhe_worker"

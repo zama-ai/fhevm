@@ -5,6 +5,7 @@ mod health_check;
 mod inputs;
 mod migrations;
 mod operators_from_events;
+mod pattern_integration;
 mod random;
 mod scheduling_bench;
 mod test_cases;
