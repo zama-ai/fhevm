@@ -10,7 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
 use std::time::Duration;
@@ -118,7 +118,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(name = "call_verify_proof_resp", skip_all)]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default()))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
