@@ -4,6 +4,7 @@ use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{trace::TraceContextExt, trace::TracerProvider, KeyValue};
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
+use serde_json::Value;
 use sqlx::PgConnection;
 use std::fmt;
 use std::{
@@ -12,9 +13,14 @@ use std::{
     sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn, Subscriber};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    fmt::{format, FmtContext, FormatEvent, FormatFields},
+    layer::SubscriberExt,
+    registry::LookupSpan,
+    util::SubscriberInitExt,
+};
 
 /// Calls provider shutdown exactly once when dropped.
 pub struct TracerProviderGuard {
@@ -61,6 +67,78 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
+/// JSON log formatter that wraps the standard JSON formatter and injects
+/// `trace_id` and `span_id` fields from the current OTel context into every
+/// log event. This enables log→trace correlation in tools like Grafana/Loki.
+///
+/// When no OTel span is active (e.g., during init), the fields are omitted.
+struct OtelJsonFormat {
+    inner: format::Format<format::Json>,
+}
+
+impl OtelJsonFormat {
+    fn new() -> Self {
+        Self {
+            inner: tracing_subscriber::fmt::format()
+                .json()
+                .with_target(false)
+                .with_current_span(true)
+                .with_span_list(false)
+                .with_level(true),
+        }
+    }
+}
+
+/// Injects `trace_id` and `span_id` into a JSON log line.
+///
+/// Parses `buf` as a JSON object, inserts the two fields, and returns the
+/// re-serialized string. Returns `None` if `buf` is not valid JSON.
+///
+/// Using serde_json (rather than raw string surgery) means the function is
+/// correct regardless of how tracing_subscriber serializes the trailing bytes.
+pub(crate) fn inject_otel_fields(buf: &str, trace_id: &str, span_id: &str) -> Option<String> {
+    let mut map: serde_json::Map<String, Value> = serde_json::from_str(buf.trim_end()).ok()?;
+    map.insert("trace_id".to_owned(), Value::String(trace_id.to_owned()));
+    map.insert("span_id".to_owned(), Value::String(span_id.to_owned()));
+    serde_json::to_string(&map).ok()
+}
+
+impl<S, N> FormatEvent<S, N> for OtelJsonFormat
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> fmt::Result {
+        let mut buf = String::new();
+        self.inner
+            .format_event(ctx, format::Writer::new(&mut buf), event)?;
+
+        // Skip injection when the entered span differs from the event's
+        // logical parent (e.g. `parent: &span` in async code) — injecting
+        // the wrong span's context is worse than omitting it.
+        let current_matches =
+            ctx.parent_span().map(|s| s.id()) == ctx.lookup_current().map(|s| s.id());
+        let otel_cx = tracing::Span::current().context();
+        let otel_span = otel_cx.span();
+        let sc = otel_span.span_context();
+
+        if current_matches && sc.is_valid() {
+            if let Some(injected) =
+                inject_otel_fields(&buf, &sc.trace_id().to_string(), &sc.span_id().to_string())
+            {
+                return writeln!(writer, "{}", injected);
+            }
+        }
+
+        write!(writer, "{}", buf)
+    }
+}
+
 pub fn init_json_subscriber(
     log_level: tracing::Level,
     service_name: &str,
@@ -68,11 +146,8 @@ pub fn init_json_subscriber(
 ) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
     let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .json()
-        .with_target(false)
-        .with_current_span(true)
-        .with_span_list(false)
-        .with_level(true);
+        .event_format(OtelJsonFormat::new())
+        .fmt_fields(tracing_subscriber::fmt::format::JsonFields::new());
     let base = tracing_subscriber::registry()
         .with(level_filter)
         .with(fmt_layer);
@@ -212,25 +287,6 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
     let config = config.copied().unwrap_or_default();
     register_histogram!(name, desc, gen_linear_buckets(&config))
         .unwrap_or_else(|_| panic!("Failed to register latency histogram: {}", name))
-}
-
-/// Returns the legacy short-form hex id used by telemetry spans.
-pub fn short_hex_id(value: &[u8]) -> String {
-    to_hex(value).get(0..10).unwrap_or_default().to_owned()
-}
-
-pub fn record_short_hex(span: &Span, field: &'static str, value: &[u8]) {
-    span.record(field, tracing::field::display(short_hex_id(value)));
-}
-
-pub fn record_short_hex_if_some<T: AsRef<[u8]>>(
-    span: &Span,
-    field: &'static str,
-    value: Option<T>,
-) {
-    if let Some(value) = value {
-        record_short_hex(span, field, value.as_ref());
-    }
 }
 
 pub fn set_current_span_error(error: &impl fmt::Display) {
@@ -517,6 +573,45 @@ pub async fn try_end_zkproof_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    /// In-memory writer for capturing formatter output in tests.
+    #[derive(Clone)]
+    struct BufWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl BufWriter {
+        fn new() -> (Self, Arc<Mutex<Vec<u8>>>) {
+            let buf = Arc::new(Mutex::new(Vec::new()));
+            (Self(buf.clone()), buf)
+        }
+    }
+
+    impl std::io::Write for BufWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for BufWriter {
+        type Writer = BufWriter;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    fn test_subscriber(writer: BufWriter) -> impl tracing::Subscriber {
+        tracing_subscriber::fmt::Subscriber::builder()
+            .event_format(OtelJsonFormat::new())
+            .fmt_fields(tracing_subscriber::fmt::format::JsonFields::new())
+            .with_writer(writer)
+            .with_max_level(tracing::Level::INFO)
+            .finish()
+    }
 
     #[test]
     fn otel_guard_shutdown_once_disarms_provider() {
@@ -530,5 +625,91 @@ mod tests {
         // A second shutdown is a no-op.
         guard.shutdown_once();
         assert!(guard.tracer_provider.is_none());
+    }
+
+    // --- inject_otel_fields / OtelJsonFormat tests ---
+
+    #[test]
+    fn inject_otel_fields_adds_trace_and_span_ids() {
+        let buf = r#"{"level":"INFO","message":"test"}"#;
+        let result = inject_otel_fields(buf, "abc123", "def456").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["trace_id"], "abc123");
+        assert_eq!(parsed["span_id"], "def456");
+    }
+
+    #[test]
+    fn inject_otel_fields_preserves_existing_fields() {
+        let buf = r#"{"level":"INFO","message":"hello"}"#;
+        let result = inject_otel_fields(buf, "t", "s").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["level"], "INFO");
+        assert_eq!(parsed["message"], "hello");
+    }
+
+    #[test]
+    fn inject_otel_fields_tolerates_trailing_newline() {
+        // tracing_subscriber currently appends "}\n"; this must keep working even
+        // if the inner formatter changes its trailing whitespace.
+        let buf = "{\"level\":\"INFO\",\"message\":\"test\"}\n";
+        let result = inject_otel_fields(buf, "t", "s").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["trace_id"], "t");
+    }
+
+    #[test]
+    fn inject_otel_fields_returns_none_for_invalid_json() {
+        assert!(inject_otel_fields("not json", "t", "s").is_none());
+        assert!(inject_otel_fields("", "t", "s").is_none());
+    }
+
+    /// Verifies that OtelJsonFormat does NOT inject trace_id/span_id when
+    /// there is no active OTel span (i.e., the span context is invalid).
+    #[test]
+    fn otel_json_format_no_injection_without_active_span() {
+        let (writer, buf) = BufWriter::new();
+        let subscriber = test_subscriber(writer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("no span active");
+        });
+
+        let output = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+        assert!(
+            parsed.get("trace_id").is_none(),
+            "trace_id should be absent when no OTel span is active"
+        );
+        assert!(
+            parsed.get("span_id").is_none(),
+            "span_id should be absent when no OTel span is active"
+        );
+    }
+
+    /// When an event uses `parent: &span` on a non-entered span, the entered
+    /// span differs from the event's logical parent. The formatter should skip
+    /// injection rather than emit the wrong span's context.
+    #[test]
+    fn otel_json_format_skips_injection_for_explicit_parent() {
+        let (writer, buf) = BufWriter::new();
+        let subscriber = test_subscriber(writer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("not_entered");
+            // Log with explicit parent — span is NOT entered, so
+            // parent_span() != lookup_current() and injection is skipped.
+            tracing::info!(parent: &span, "explicit parent");
+        });
+
+        let output = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+        assert!(
+            parsed.get("trace_id").is_none(),
+            "trace_id should be absent when parent span is not entered"
+        );
+        assert!(
+            parsed.get("span_id").is_none(),
+            "span_id should be absent when parent span is not entered"
+        );
     }
 }
