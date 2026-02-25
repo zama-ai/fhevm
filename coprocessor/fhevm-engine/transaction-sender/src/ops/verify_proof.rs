@@ -396,11 +396,14 @@ where
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;
-            join_set.spawn(async move {
-                self_clone
-                    .process_proof(txn_request, row.retry_count, src_transaction_id)
-                    .await
-            });
+            join_set.spawn(
+                async move {
+                    self_clone
+                        .process_proof(txn_request, row.retry_count, src_transaction_id)
+                        .await
+                }
+                .instrument(span),
+            );
         }
         while let Some(res) = join_set.join_next().await {
             res??;

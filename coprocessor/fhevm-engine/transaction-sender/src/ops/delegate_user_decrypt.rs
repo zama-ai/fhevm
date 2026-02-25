@@ -24,7 +24,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use sqlx::types::BigDecimal;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Instrument};
 
 use super::TransactionOperation;
 
@@ -438,22 +438,26 @@ where
             } else {
                 txn_request
             };
-            requests.push((delegation, txn_request));
+            requests.push((delegation, txn_request, prepare_delegate_span));
         }
         let mut join_set = JoinSet::new();
-        for (delegation, txn_request) in requests.iter() {
+        for (delegation, txn_request, prepare_span) in requests.iter() {
             // parallel transaction can fail if any of the transaction fail
             // with a nonce too high error
             // so we maintain the joint set of successful delegations
             let operation = self.clone();
             let delegation = delegation.clone();
             let txn_request = txn_request.clone();
-            join_set.spawn(async move {
-                let tx_result = operation
-                    .send_transaction(&delegation, txn_request.clone())
-                    .await;
-                (delegation.clone(), tx_result)
-            });
+            let span = prepare_span.clone();
+            join_set.spawn(
+                async move {
+                    let tx_result = operation
+                        .send_transaction(&delegation, txn_request.clone())
+                        .await;
+                    (delegation.clone(), tx_result)
+                }
+                .instrument(span),
+            );
         }
         let mut other_error = false;
         let mut transient_error = false;

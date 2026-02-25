@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, types::AllowEvents, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::multichain_acl::MultichainACL;
 use fhevm_gateway_bindings::multichain_acl::MultichainACL::MultichainACLErrors;
@@ -466,18 +466,23 @@ where
                 event_type,
             };
 
+            drop(_enter);
+
             let operation = self.clone();
-            join_set.spawn(async move {
-                operation
-                    .send_transaction(
-                        &key,
-                        txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
-                        src_transaction_id,
-                    )
-                    .await
-            });
+            join_set.spawn(
+                async move {
+                    operation
+                        .send_transaction(
+                            &key,
+                            txn_request,
+                            row.txn_limited_retries_count,
+                            row.txn_unlimited_retries_count,
+                            src_transaction_id,
+                        )
+                        .await
+                }
+                .instrument(_span),
+            );
         }
 
         while let Some(res) = join_set.join_next().await {
