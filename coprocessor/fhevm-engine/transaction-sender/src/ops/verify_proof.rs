@@ -292,15 +292,19 @@ where
 
             let txn_request = match row.verified {
                 Some(true) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing verified proof");
+                    span.in_scope(|| {
+                        info!(zk_proof_id = row.zk_proof_id, "Processing verified proof")
+                    });
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
                     if handles.len() % 32 != 0 {
-                        error!(parent: &span,
-                            handles_len = handles.len(),
-                            "Bad handles field, len is not divisible by 32"
-                        );
+                        span.in_scope(|| {
+                            error!(
+                                handles_len = handles.len(),
+                                "Bad handles field, len is not divisible by 32"
+                            )
+                        });
                         self.remove_proof_by_id(row.zk_proof_id)
                             .instrument(span.clone())
                             .await?;
@@ -364,7 +368,9 @@ where
                     }
                 }
                 Some(false) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing rejected proof");
+                    span.in_scope(|| {
+                        info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof")
+                    });
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
@@ -389,10 +395,12 @@ where
                     }
                 }
                 None => {
-                    error!(parent: &span,
-                        zk_proof_id = row.zk_proof_id,
-                        "verified field is unexpectedly None for proof"
-                    );
+                    span.in_scope(|| {
+                        error!(
+                            zk_proof_id = row.zk_proof_id,
+                            "verified field is unexpectedly None for proof"
+                        )
+                    });
                     continue;
                 }
             };

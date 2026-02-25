@@ -341,10 +341,12 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
-        info!(parent: &cleanup_span,
-            rows_affected = rows_affected,
-            "Cleaning up old ciphertexts128"
-        );
+        cleanup_span.in_scope(|| {
+            info!(
+                rows_affected = rows_affected,
+                "Cleaning up old ciphertexts128"
+            )
+        });
     }
 
     Ok(())
