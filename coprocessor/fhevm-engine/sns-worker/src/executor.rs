@@ -482,11 +482,10 @@ pub async fn query_sns_tasks(
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
-            let task_span = tracing::info_span!("task");
-            info!(
+            let task_span = tracing::info_span!(
+                "task",
                 handle = %to_hex(&handle),
                 transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
-                "processing sns task"
             );
 
             Ok(HandleItem {
