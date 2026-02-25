@@ -167,7 +167,6 @@ async fn tfhe_worker_cycle(
             let dcid_span = tracing::info_span!(
                 parent: &loop_span,
                 "query_dependence_chain",
-                dependence_chain_id = tracing::field::Empty
             );
 
             let (dependence_chain_id, _) = dcid_mngr
@@ -176,14 +175,12 @@ async fn tfhe_worker_cycle(
                 .await?;
             immediately_poll_more_work = dependence_chain_id.is_some();
 
-            dcid_span.record(
-                "dependence_chain_id",
-                tracing::field::display(
-                    dependence_chain_id
-                        .as_ref()
-                        .map(hex::encode)
-                        .unwrap_or_else(|| "none".to_string()),
-                ),
+            info!(
+                dependence_chain_id = %dependence_chain_id
+                    .as_ref()
+                    .map(hex::encode)
+                    .unwrap_or_else(|| "none".to_string()),
+                "acquired dependence chain lock"
             );
             continue;
         }
@@ -284,10 +281,7 @@ async fn query_for_work<'a>(
     no_progress_cycles: &mut u32,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), Box<dyn std::error::Error + Send + Sync>>
 {
-    let s_dcid = tracing::info_span!(
-        "query_dependence_chain",
-        dependence_chain_id = tracing::field::Empty
-    );
+    let s_dcid = tracing::info_span!("query_dependence_chain");
     // Lock dependence chain
     let (dependence_chain_id, locking_reason) = async {
         let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
@@ -315,14 +309,12 @@ async fn query_for_work<'a>(
         info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
-    s_dcid.record(
-        "dependence_chain_id",
-        tracing::field::display(
-            dependence_chain_id
-                .as_ref()
-                .map(hex::encode)
-                .unwrap_or_else(|| "none".to_string()),
-        ),
+    info!(
+        dependence_chain_id = %dependence_chain_id
+            .as_ref()
+            .map(hex::encode)
+            .unwrap_or_else(|| "none".to_string()),
+        "acquired dependence chain lock"
     );
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
@@ -430,6 +422,7 @@ WHERE c.transaction_id IN (
                     fhe_op,
                     inputs,
                     is_allowed: w.is_allowed,
+                    ..Default::default()
                 });
                 if w.schedule_order < earliest_schedule_order && w.is_allowed {
                     // Only account for allowed to avoid case of reorg
