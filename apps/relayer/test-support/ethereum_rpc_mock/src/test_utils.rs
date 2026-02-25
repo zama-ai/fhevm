@@ -9,7 +9,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, RngExt, SeedableRng};
 use std::net::TcpListener;
 
 use crate::{MockConfig, MockServer};

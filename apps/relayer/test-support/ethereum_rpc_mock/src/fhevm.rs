@@ -6,7 +6,7 @@ use crate::{
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
 use alloy::sol_types::{SolCall, SolEvent};
-use rand::{Rng, RngCore};
+use rand::{Rng, RngExt};
 use std::{
     str::FromStr,
     sync::{

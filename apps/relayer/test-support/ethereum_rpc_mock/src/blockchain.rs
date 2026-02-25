@@ -257,7 +257,7 @@ impl BlockchainState {
 
     /// Generate a random hash (static method for use across modules)
     pub fn generate_random_hash() -> B256 {
-        use rand::Rng;
+        use rand::RngExt;
         B256::from(rand::rng().random::<[u8; 32]>())
     }
 
@@ -339,10 +339,6 @@ impl BlockchainState {
         // Send the RPC log object - JsonRPSee will wrap it with subscription ID
         let log_value = serde_json::to_value(rpc_log).context("Failed to serialize log to JSON")?;
 
-        // Create the subscription message once
-        let message = SubscriptionMessage::from_json(&log_value)
-            .context("Failed to create subscription message from JSON")?;
-
         // Use async write lock to send immediately within the lock
         let mut subs = log_subscriptions.write().await;
 
@@ -364,7 +360,13 @@ impl BlockchainState {
         // Note: get_index returns None for out-of-bounds indices (safe handling).
         for index in indices_to_send {
             if let Some((subscription_id, sink)) = subs.get_index(index) {
-                if let Err(err) = sink.send(message.clone()).await {
+                let message = SubscriptionMessage::new(
+                    "eth_subscription",
+                    subscription_id.clone(),
+                    &log_value,
+                )
+                .context("Failed to create subscription message")?;
+                if let Err(err) = sink.send(message).await {
                     debug!(
                         "Failed to send scheduled log event to subscriber {:?}: {}. Will remove dead sink.",
                         subscription_id, err

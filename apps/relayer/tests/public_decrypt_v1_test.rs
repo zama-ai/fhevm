@@ -7,7 +7,7 @@ use crate::common::validation_helper::{
     test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::B256;
-use rand::{rng, Rng};
+use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
 use std::collections::HashMap;

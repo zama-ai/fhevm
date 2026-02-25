@@ -26,7 +26,7 @@ use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::repositories::Repositories;
 use fhevm_relayer::tracing::init_tracing_once;
-use rand::{rng, Rng};
+use rand::{rng, RngExt};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use std::net::TcpListener;

@@ -7,7 +7,7 @@ use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
 
 use alloy::primitives::Address;
-use rand::{rng, Rng};
+use rand::{rng, RngExt};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;

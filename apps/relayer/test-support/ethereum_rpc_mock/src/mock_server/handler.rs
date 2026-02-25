@@ -572,10 +572,6 @@ impl MockRpcHandler {
         event_type: &str,
         target: SubscriptionTarget,
     ) -> anyhow::Result<()> {
-        // Create the subscription message once
-        let message = SubscriptionMessage::from_json(event_value)
-            .context("Failed to create subscription message from JSON")?;
-
         // Use async write lock to send immediately within the lock
         let mut subs = subscribers.write().await;
 
@@ -598,7 +594,13 @@ impl MockRpcHandler {
         // Send to targeted subscribers within the lock
         for index in indices_to_send {
             if let Some((subscription_id, sink)) = subs.get_index(index) {
-                if let Err(err) = sink.send(message.clone()).await {
+                let message = SubscriptionMessage::new(
+                    "eth_subscription",
+                    subscription_id.clone(),
+                    event_value,
+                )
+                .context("Failed to create subscription message")?;
+                if let Err(err) = sink.send(message).await {
                     debug!(
                         "Failed to send {} event to subscriber {:?}: {}. Will remove dead sink.",
                         event_type, subscription_id, err

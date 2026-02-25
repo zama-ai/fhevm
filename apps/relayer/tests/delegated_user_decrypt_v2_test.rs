@@ -14,7 +14,7 @@ use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
 };
 use fhevm_relayer::http::validation_messages as constants_validation;
-use rand::{rng, Rng};
+use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
