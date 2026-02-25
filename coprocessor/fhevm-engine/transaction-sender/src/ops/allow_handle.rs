@@ -66,7 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
-    #[tracing::instrument(name = "call_allow_account", skip_all)]
+    #[tracing::instrument(name = "call_allow_account", skip_all, fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default()))]
     async fn send_transaction(
         &self,
         key: &Key,

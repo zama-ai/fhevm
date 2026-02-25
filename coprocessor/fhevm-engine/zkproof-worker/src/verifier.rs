@@ -295,8 +295,14 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span = tracing::info_span!("verify_task");
-        info!(request_id, "verifying zkproof request");
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            request_id,
+            transaction_hash = transaction_id
+                .as_deref()
+                .map(fhevm_engine_common::utils::to_hex)
+                .unwrap_or_default(),
+        );
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
