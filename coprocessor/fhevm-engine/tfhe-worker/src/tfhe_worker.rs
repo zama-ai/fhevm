@@ -109,12 +109,9 @@ async fn tfhe_worker_cycle(
     dcid_mngr.do_cleanup().await?;
 
     #[cfg(feature = "bench")]
-    db_key_cache
-        .populate(
-            vec![fhevm_engine_common::db_keys::DbKeyId::default()],
-            &pool,
-        )
-        .await?;
+    {
+        let _ = db_key_cache.fetch_latest(&pool).await?;
+    }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
     loop {

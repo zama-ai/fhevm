@@ -33,7 +33,7 @@ rerun:
 .PHONY: clean_run
 clean_run:
 	$(MAKE) recreate_db
-	RUST_BACKTRACE=1 $(DB_URL) cargo run --release -- --run-server --run-bg-worker
+	RUST_BACKTRACE=1 $(DB_URL) cargo run --release -- --run-bg-worker
 
 
 #
