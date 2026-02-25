@@ -64,13 +64,13 @@ interface IGatewayConfig {
     error NotPauser(address account);
 
     event AddHostChain(HostChain hostChain);
-    event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
     event UnpauseAllGatewayContracts();
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
     event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
     event UpdateCustodians(Custodian[] newCustodians);
-    event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
+    event UpdateKmsContext(uint256 indexed newContextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
     event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
     event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -114,7 +114,7 @@ interface IGatewayConfig {
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
     function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
     function updateCustodians(Custodian[] memory newCustodians) external;
-    function updateKmsContext(uint256 contextId, KmsNode[] memory newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold) external;
+    function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold) external;
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
     function updateMpcThreshold(uint256 newMpcThreshold) external;
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
@@ -951,7 +951,7 @@ interface IGatewayConfig {
     "name": "updateKmsContext",
     "inputs": [
       {
-        "name": "contextId",
+        "name": "newContextId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1103,7 +1103,7 @@ interface IGatewayConfig {
     "name": "InitializeGatewayConfig",
     "inputs": [
       {
-        "name": "initialKmsContextId",
+        "name": "kmsContextId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -1332,7 +1332,7 @@ interface IGatewayConfig {
     "name": "UpdateKmsContext",
     "inputs": [
       {
-        "name": "contextId",
+        "name": "newContextId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -5375,7 +5375,7 @@ event AddHostChain(HostChain hostChain);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `InitializeGatewayConfig(uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xf5d9541a4bf6bf4b48fc79d7a8d6bd49eb3435da57dccbea6e525ac86bbf43fe`.
 ```solidity
-event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5386,7 +5386,7 @@ event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetad
     #[derive(Clone)]
     pub struct InitializeGatewayConfig {
         #[allow(missing_docs)]
-        pub initialKmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -5442,7 +5442,7 @@ event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetad
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    initialKmsContextId: topics.1,
+                    kmsContextId: topics.1,
                     metadata: data.0,
                     thresholds: data.1,
                     kmsNodes: data.2,
@@ -5485,7 +5485,7 @@ event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetad
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.initialKmsContextId.clone())
+                (Self::SIGNATURE_HASH.into(), self.kmsContextId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -5500,9 +5500,7 @@ event InitializeGatewayConfig(uint256 indexed initialKmsContextId, ProtocolMetad
                 );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
-                > as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.initialKmsContextId,
-                );
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.kmsContextId);
                 Ok(())
             }
         }
@@ -6068,7 +6066,7 @@ event UpdateCustodians(Custodian[] newCustodians);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdateKmsContext(uint256,(address,address,string,string)[],uint256,uint256,uint256,uint256)` and selector `0xe804757fef94124088109f77eb49e91cb1a091c67b6d7a644a9e3aee4239b5a7`.
 ```solidity
-event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
+event UpdateKmsContext(uint256 indexed newContextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6079,7 +6077,7 @@ event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256
     #[derive(Clone)]
     pub struct UpdateKmsContext {
         #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub newContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub newKmsNodes: alloy::sol_types::private::Vec<
             <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -6131,7 +6129,7 @@ event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    contextId: topics.1,
+                    newContextId: topics.1,
                     newKmsNodes: data.0,
                     newMpcThreshold: data.1,
                     newPublicDecryptionThreshold: data.2,
@@ -6180,7 +6178,7 @@ event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.contextId.clone())
+                (Self::SIGNATURE_HASH.into(), self.newContextId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -6195,7 +6193,7 @@ event UpdateKmsContext(uint256 indexed contextId, KmsNode[] newKmsNodes, uint256
                 );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.newContextId);
                 Ok(())
             }
         }
@@ -12492,13 +12490,13 @@ function updateCustodians(Custodian[] memory newCustodians) external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updateKmsContext(uint256,(address,address,string,string)[],uint256,uint256,uint256,uint256)` and selector `0x3d5d357f`.
 ```solidity
-function updateKmsContext(uint256 contextId, KmsNode[] memory newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold) external;
+function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct updateKmsContextCall {
         #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub newContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub newKmsNodes: alloy::sol_types::private::Vec<
             <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -12562,7 +12560,7 @@ function updateKmsContext(uint256 contextId, KmsNode[] memory newKmsNodes, uint2
             for UnderlyingRustTuple<'_> {
                 fn from(value: updateKmsContextCall) -> Self {
                     (
-                        value.contextId,
+                        value.newContextId,
                         value.newKmsNodes,
                         value.newMpcThreshold,
                         value.newPublicDecryptionThreshold,
@@ -12577,7 +12575,7 @@ function updateKmsContext(uint256 contextId, KmsNode[] memory newKmsNodes, uint2
             for updateKmsContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        contextId: tuple.0,
+                        newContextId: tuple.0,
                         newKmsNodes: tuple.1,
                         newMpcThreshold: tuple.2,
                         newPublicDecryptionThreshold: tuple.3,
@@ -12658,7 +12656,7 @@ function updateKmsContext(uint256 contextId, KmsNode[] memory newKmsNodes, uint2
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.newContextId),
                     <alloy::sol_types::sol_data::Array<
                         KmsNode,
                     > as alloy_sol_types::SolType>::tokenize(&self.newKmsNodes),
@@ -16928,7 +16926,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`updateKmsContext`] function.
         pub fn updateKmsContext(
             &self,
-            contextId: alloy::sol_types::private::primitives::aliases::U256,
+            newContextId: alloy::sol_types::private::primitives::aliases::U256,
             newKmsNodes: alloy::sol_types::private::Vec<
                 <KmsNode as alloy::sol_types::SolType>::RustType,
             >,
@@ -16939,7 +16937,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, updateKmsContextCall, N> {
             self.call_builder(
                 &updateKmsContextCall {
-                    contextId,
+                    newContextId,
                     newKmsNodes,
                     newMpcThreshold,
                     newPublicDecryptionThreshold,

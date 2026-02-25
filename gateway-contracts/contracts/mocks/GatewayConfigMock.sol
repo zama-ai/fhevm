@@ -12,7 +12,7 @@ contract GatewayConfigMock {
     }
 
     event InitializeGatewayConfig(
-        uint256 indexed initialKmsContextId,
+        uint256 indexed kmsContextId,
         ProtocolMetadata metadata,
         Thresholds thresholds,
         KmsNode[] kmsNodes,
@@ -21,7 +21,7 @@ contract GatewayConfigMock {
     );
 
     event UpdateKmsContext(
-        uint256 indexed contextId,
+        uint256 indexed newContextId,
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -57,17 +57,18 @@ contract GatewayConfigMock {
         Coprocessor[] calldata initialCoprocessors,
         Custodian[] calldata initialCustodians
     ) public {
+        uint256 kmsContextId;
         ProtocolMetadata memory metadata;
         Thresholds memory thresholds;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(initialKmsContextId, metadata, thresholds, kmsNodes, coprocessors, custodians);
+        emit InitializeGatewayConfig(kmsContextId, metadata, thresholds, kmsNodes, coprocessors, custodians);
     }
 
     function updateKmsContext(
-        uint256 contextId,
+        uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -75,7 +76,7 @@ contract GatewayConfigMock {
         uint256 newKmsGenThreshold
     ) public {
         emit UpdateKmsContext(
-            contextId,
+            newContextId,
             newKmsNodes,
             newMpcThreshold,
             newPublicDecryptionThreshold,

@@ -227,10 +227,9 @@ describe("Mock contracts", function () {
         kmsGenThreshold: DefaultUint256,
         coprocessorThreshold: DefaultUint256,
       };
-      const contextId = 1;
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
-          contextId,
+          DefaultUint256,
           DefaultProtocolMetadata,
           DefaultThresholds,
           [DefaultKmsNode],
@@ -240,7 +239,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
         .withArgs(
-          contextId,
+          DefaultUint256,
           toValues(DefaultProtocolMetadata),
           toValues(DefaultThresholds),
           toValues([DefaultKmsNode]),
@@ -250,10 +249,9 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit UpdateKmsContext event on update KMS nodes call", async function () {
-      const contextId = 1;
       await expect(
         gatewayConfigMock.updateKmsContext(
-          contextId,
+          DefaultUint256,
           [DefaultKmsNode],
           DefaultUint256,
           DefaultUint256,
@@ -263,7 +261,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(gatewayConfigMock, "UpdateKmsContext")
         .withArgs(
-          contextId,
+          DefaultUint256,
           toValues([DefaultKmsNode]),
           DefaultUint256,
           DefaultUint256,
