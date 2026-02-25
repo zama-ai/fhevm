@@ -65,6 +65,7 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [build-dependencies]
 tonic-build = { workspace = true }

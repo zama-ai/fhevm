@@ -21,6 +21,7 @@ mod inputs;
 mod migrations;
 mod operators;
 mod operators_from_events;
+mod pattern_integration;
 mod random;
 mod scheduling_bench;
 mod utils;
