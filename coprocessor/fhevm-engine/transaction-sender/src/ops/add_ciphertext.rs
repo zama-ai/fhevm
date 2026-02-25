@@ -41,7 +41,7 @@ impl<P> AddCiphertextOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
-    #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default()))]
+    #[tracing::instrument(name = "call_add_ciphertext", skip_all)]
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -370,7 +370,10 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let _span = tracing::info_span!("prepare_add_ciphertext");
+            let _span = tracing::info_span!(
+                "prepare_add_ciphertext",
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
+            );
             let _enter = _span.enter();
 
             let handle = row.handle.clone();
