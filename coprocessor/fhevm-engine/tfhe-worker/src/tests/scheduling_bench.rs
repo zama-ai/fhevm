@@ -1,685 +1,437 @@
-use crate::server::common::FheOperation;
-use crate::server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput};
-use crate::server::tfhe_worker::{
-    fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
-    InputToUpload, InputUploadBatch,
+use crate::tests::event_helpers::{
+    allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
+    scalar_u128_handle, setup_event_harness, wait_until_computed, zero_address,
 };
-use crate::tests::utils::{
-    decrypt_ciphertexts, default_api_key, random_handle, setup_test_app,
-    wait_until_all_allowed_handles_computed,
-};
-use fhevm_engine_common::crs::CrsCache;
-use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::utils::safe_serialize;
-use std::str::FromStr;
-use tonic::metadata::MetadataValue;
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
+use serial_test::serial;
 
-pub fn test_random_user_address() -> String {
-    let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
-    let public_key = "0x1BdA2a485c339C95a9AbfDe52E80ca38e34C199E";
-    public_key.to_string()
-}
-
-pub fn test_random_contract_address() -> String {
-    "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
+fn sample_count(default_count: usize) -> usize {
+    std::env::var("FHEVM_TEST_NUM_SAMPLES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(default_count)
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
+    let harness = setup_event_harness().await?;
+    let num_samples = sample_count(7);
+    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut output_handles = Vec::with_capacity(num_samples * 5);
+    let caller = zero_address();
+
+    for _ in 0..num_samples {
+        let tx_id = next_handle();
+        let bals = next_handle();
+        let trxa = next_handle();
+        let bald = next_handle();
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 20, 5, bald, false).await?;
+
+        let has_funds = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheGe(TfheContract::FheGe {
+                caller,
+                lhs: bals,
+                rhs: trxa,
+                scalarByte: scalar_flag(false),
+                result: has_funds,
+            }),
+            true,
+        )
         .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+        allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
+        output_handles.push(has_funds);
 
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
+        let new_to_target = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller,
+                lhs: bald,
+                rhs: trxa,
+                scalarByte: scalar_flag(false),
+                result: new_to_target,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_to_target).await?;
+        output_handles.push(new_to_target);
 
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 7;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
+        let new_to = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                caller,
+                control: has_funds,
+                ifTrue: new_to_target,
+                ifFalse: bald,
+                result: new_to,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
+        output_handles.push(new_to);
+
+        let new_from_target = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheSub(TfheContract::FheSub {
+                caller,
+                lhs: bals,
+                rhs: trxa,
+                scalarByte: scalar_flag(false),
+                result: new_from_target,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_from_target).await?;
+        output_handles.push(new_from_target);
+
+        let new_from = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                caller,
+                control: has_funds,
+                ifTrue: new_from_target,
+                ifFalse: bals,
+                result: new_from,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_from).await?;
+        output_handles.push(new_from);
     }
+    tx.commit().await?;
 
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .push(20_u64) // Balance destination
-            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 3);
-
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-        let handle_bald = first_resp.input_handles[2].handle.clone();
-        let bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bald.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let new_to_amount_target_handle = next_handle();
-        output_handles.push(new_to_amount_target_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_target_handle = next_handle();
-        output_handles.push(new_from_amount_target_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_target_handle.clone(),
-            inputs: vec![bald.clone(), trxa.clone()],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_to_amount_target_handle.clone())),
-                },
-                bald.clone(),
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_target_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_from_amount_target_handle.clone())),
-                },
-                bals.clone(),
-            ],
-            is_allowed: true,
-        });
-    }
-
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_allowed_handles_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
+    wait_until_computed(&harness.app).await?;
+    let resp = decrypt_handles(&harness.pool, &output_handles).await?;
+    assert_eq!(resp.len(), output_handles.len());
     for (i, r) in resp.iter().enumerate() {
         match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "30" if i % 5 == 1 => (),   // bald + trxa
-            "30" if i % 5 == 2 => (),   // select bald + trxa
-            "90" if i % 5 == 3 => (),   // bals - trxa
-            "90" if i % 5 == 4 => (),   // select bald - trxa
-            s => panic!("unexpected result: {} for output {i}", s),
+            "true" if i % 5 == 0 => (),
+            "30" if i % 5 == 1 => (),
+            "30" if i % 5 == 2 => (),
+            "90" if i % 5 == 3 => (),
+            "90" if i % 5 == 4 => (),
+            s => panic!("unexpected result: {s} for output {i}"),
         }
     }
     Ok(())
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
+    let harness = setup_event_harness().await?;
+    let num_samples = sample_count(7);
+    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut output_handles = Vec::with_capacity(num_samples * 5);
+    let caller = zero_address();
+
+    for _ in 0..num_samples {
+        let tx_id = next_handle();
+        let bals = next_handle();
+        let trxa = next_handle();
+        let bald = next_handle();
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 20, 5, bald, false).await?;
+
+        let has_funds = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheGe(TfheContract::FheGe {
+                caller,
+                lhs: bals,
+                rhs: trxa,
+                scalarByte: scalar_flag(false),
+                result: has_funds,
+            }),
+            true,
+        )
         .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+        allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
+        output_handles.push(has_funds);
 
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
+        let cast_funds = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::Cast(TfheContract::Cast {
+                caller,
+                ct: has_funds,
+                toType: crate::tests::event_helpers::to_ty(5),
+                result: cast_funds,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &cast_funds).await?;
+        output_handles.push(cast_funds);
 
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 7;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
+        let selected = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheMul(TfheContract::FheMul {
+                caller,
+                lhs: trxa,
+                rhs: cast_funds,
+                scalarByte: scalar_flag(false),
+                result: selected,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &selected).await?;
+        output_handles.push(selected);
+
+        let new_to = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller,
+                lhs: bald,
+                rhs: selected,
+                scalarByte: scalar_flag(false),
+                result: new_to,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
+        output_handles.push(new_to);
+
+        let new_from = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheSub(TfheContract::FheSub {
+                caller,
+                lhs: bals,
+                rhs: selected,
+                scalarByte: scalar_flag(false),
+                result: new_from,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_from).await?;
+        output_handles.push(new_from);
     }
+    tx.commit().await?;
 
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .push(20_u64) // Balance destination
-            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 3);
-
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-        let handle_bald = first_resp.input_handles[2].handle.clone();
-        let bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bald.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let cast_has_enough_funds_handle = next_handle();
-        output_handles.push(cast_has_enough_funds_handle.clone());
-        let select_amount_handle = next_handle();
-        output_handles.push(select_amount_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheCast.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: cast_has_enough_funds_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![5u8])),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheMul.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: select_amount_handle.clone(),
-            inputs: vec![
-                trxa.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                bald.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                bals.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-    }
-
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_allowed_handles_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
+    wait_until_computed(&harness.app).await?;
+    let resp = decrypt_handles(&harness.pool, &output_handles).await?;
+    assert_eq!(resp.len(), output_handles.len());
     for (i, r) in resp.iter().enumerate() {
         match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "1" if i % 5 == 1 => (),    // cast
-            "10" if i % 5 == 2 => (),   // select trxa * cast
-            "30" if i % 5 == 3 => (),   // bals + selected trxa
-            "90" if i % 5 == 4 => (),   // bald - selected trxa
-            s => panic!("unexpected result: {} for output {i}", s),
+            "true" if i % 5 == 0 => (),
+            "1" if i % 5 == 1 => (),
+            "10" if i % 5 == 2 => (),
+            "30" if i % 5 == 3 => (),
+            "90" if i % 5 == 4 => (),
+            s => panic!("unexpected result: {s} for output {i}"),
         }
     }
     Ok(())
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
+    let harness = setup_event_harness().await?;
+    let num_samples = sample_count(7);
+    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut output_handles = Vec::with_capacity(num_samples * 5);
+    let caller = zero_address();
+
+    let init_tx = next_handle();
+    let mut bald = next_handle();
+    insert_trivial_encrypt(&harness.listener_db, &mut tx, init_tx, 20, 5, bald, true).await?;
+
+    for _ in 0..num_samples {
+        let tx_id = next_handle();
+        let bals = next_handle();
+        let trxa = next_handle();
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
+
+        let has_funds = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheGe(TfheContract::FheGe {
+                caller,
+                lhs: bals,
+                rhs: trxa,
+                scalarByte: scalar_flag(false),
+                result: has_funds,
+            }),
+            true,
+        )
         .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+        allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
+        output_handles.push(has_funds);
 
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
+        let cast_funds = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::Cast(TfheContract::Cast {
+                caller,
+                ct: has_funds,
+                toType: crate::tests::event_helpers::to_ty(5),
+                result: cast_funds,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &cast_funds).await?;
+        output_handles.push(cast_funds);
 
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 7;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
+        let selected = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheMul(TfheContract::FheMul {
+                caller,
+                lhs: trxa,
+                rhs: cast_funds,
+                scalarByte: scalar_flag(false),
+                result: selected,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &selected).await?;
+        output_handles.push(selected);
+
+        let new_to = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller,
+                lhs: bald,
+                rhs: selected,
+                scalarByte: scalar_flag(false),
+                result: new_to,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
+        output_handles.push(new_to);
+
+        let new_from = next_handle();
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheSub(TfheContract::FheSub {
+                caller,
+                lhs: bals,
+                rhs: selected,
+                scalarByte: scalar_flag(false),
+                result: new_from,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_from).await?;
+        output_handles.push(new_from);
+
+        bald = new_to;
     }
+    tx.commit().await?;
 
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 1);
-    let handle_bald = first_resp.input_handles[0].handle.clone();
-    let mut bald = AsyncComputationInput {
-        input: Some(Input::InputHandle(handle_bald.clone())),
-    };
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-        let the_list = builder
-            .push(100_u64) // Balance source
-            .push(10_u64) // Transfer amount
-            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-
-        let serialized = safe_serialize(&the_list);
-        println!("Encrypting inputs...");
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 2);
-
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let cast_has_enough_funds_handle = next_handle();
-        output_handles.push(cast_has_enough_funds_handle.clone());
-        let select_amount_handle = next_handle();
-        output_handles.push(select_amount_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheCast.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: cast_has_enough_funds_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![5u8])),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheMul.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: select_amount_handle.clone(),
-            inputs: vec![
-                trxa.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                bald.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                bals.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-
-        bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(new_to_amount_handle.clone())),
-        };
-    }
-
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_allowed_handles_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
+    wait_until_computed(&harness.app).await?;
+    let resp = decrypt_handles(&harness.pool, &output_handles).await?;
+    assert_eq!(resp.len(), output_handles.len());
     for (i, r) in resp.iter().enumerate() {
         let to_bal = (20 + (i / 5 + 1) * 10).to_string();
         match r.value.as_str() {
-            "true" if i % 5 == 0 => (), // trxa <= bals true
-            "1" if i % 5 == 1 => (),    // cast
-            "10" if i % 5 == 2 => (),   // select trxa * cast
-            val if i % 5 == 3 => assert_eq!(val, to_bal, "Destination balances don't match."), // bals + selected trxa
-            "90" if i % 5 == 4 => (), // bald - selected trxa
-            s => panic!("unexpected result: {} for output {i}", s),
+            "true" if i % 5 == 0 => (),
+            "1" if i % 5 == 1 => (),
+            "10" if i % 5 == 2 => (),
+            val if i % 5 == 3 => assert_eq!(val, to_bal, "Destination balances don't match."),
+            "90" if i % 5 == 4 => (),
+            s => panic!("unexpected result: {s} for output {i}"),
         }
     }
     Ok(())
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+    let harness = setup_event_harness().await?;
+    let num_samples = sample_count(7);
+    let mut tx = harness.listener_db.new_transaction().await?;
+    let tx_id = next_handle();
 
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
+    let mut counter = next_handle();
+    insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 42, 5, counter, false).await?;
 
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 7;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(42_u64) // Initial counter value
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 1);
-    let handle_counter = first_resp.input_handles[0].handle.clone();
-    let mut counter = AsyncComputationInput {
-        input: Some(Input::InputHandle(handle_counter.clone())),
-    };
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
+    let caller = zero_address();
+    let mut output_handles = Vec::with_capacity(num_samples);
+    for _ in 0..num_samples {
         let new_counter = next_handle();
-        output_handles.push(new_counter.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_counter.clone(),
-            inputs: vec![
-                counter.clone(),
-                // Counter increment
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![7u8])),
-                },
-            ],
-            is_allowed: true,
-        });
-
-        counter = AsyncComputationInput {
-            input: Some(Input::InputHandle(new_counter.clone())),
-        };
+        insert_event(
+            &harness.listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller,
+                lhs: counter,
+                rhs: scalar_u128_handle(7),
+                scalarByte: scalar_flag(true),
+                result: new_counter,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&harness.listener_db, &mut tx, &new_counter).await?;
+        output_handles.push(new_counter);
+        counter = new_counter;
     }
+    tx.commit().await?;
 
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
-
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_allowed_handles_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
+    wait_until_computed(&harness.app).await?;
+    let resp = decrypt_handles(&harness.pool, &output_handles).await?;
+    assert_eq!(resp.len(), output_handles.len());
     for (i, r) in resp.iter().enumerate() {
         let target = (42 + (i + 1) * 7).to_string();
         assert_eq!(r.value.as_str(), target, "Counter value incorrect.");
@@ -688,124 +440,63 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = 16;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
+    let harness = setup_event_harness().await?;
+    let num_samples = sample_count(16);
+    let mut tx = harness.listener_db.new_transaction().await?;
+    let tx_id = next_handle();
+    let caller = zero_address();
 
     let num_levels = (num_samples as f64).log2().ceil() as usize;
-    let mut num_comps_at_level = 2f64.powi((num_levels - 1) as i32) as usize;
-    let target = num_comps_at_level * 2;
-    let mut level_inputs = vec![];
-    let mut level_outputs = vec![];
+    let mut num_comps_at_level = 2_f64.powi((num_levels - 1) as i32) as usize;
+    let expected = num_comps_at_level * 2;
 
+    let mut level_inputs = Vec::with_capacity(num_comps_at_level * 2);
     for _ in 0..num_comps_at_level {
-        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-        let the_list = builder
-            .push(1_u64) // Initial value
-            .push(1_u64) // Initial value
-            .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-            .unwrap();
-        let serialized = safe_serialize(&the_list);
-        let mut input_request = tonic::Request::new(InputUploadBatch {
-            input_ciphertexts: vec![InputToUpload {
-                input_payload: serialized,
-                signatures: Vec::new(),
-                user_address: test_random_user_address(),
-                contract_address: test_random_contract_address(),
-            }],
-        });
-        input_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.upload_inputs(input_request).await?;
-        let resp = resp.get_ref();
-        assert_eq!(resp.upload_responses.len(), 1);
-        let first_resp = &resp.upload_responses[0];
-        assert_eq!(first_resp.input_handles.len(), 2);
-        let lhs_handle = first_resp.input_handles[0].handle.clone();
-        let rhs_handle = first_resp.input_handles[1].handle.clone();
-        level_inputs.push(AsyncComputationInput {
-            input: Some(Input::InputHandle(lhs_handle.clone())),
-        });
-        level_inputs.push(AsyncComputationInput {
-            input: Some(Input::InputHandle(rhs_handle.clone())),
-        });
+        let lhs = next_handle();
+        let rhs = next_handle();
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 1, 5, lhs, false).await?;
+        insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 1, 5, rhs, false).await?;
+        level_inputs.push(lhs);
+        level_inputs.push(rhs);
     }
-    let mut output_handle = next_handle();
-    let transaction_id = next_handle();
+
+    let mut last_output = next_handle();
     for _ in 0..num_levels {
+        let mut level_outputs = Vec::with_capacity(num_comps_at_level);
         for i in 0..num_comps_at_level {
-            output_handle = next_handle();
-            level_outputs.push(AsyncComputationInput {
-                input: Some(Input::InputHandle(output_handle.clone())),
-            });
-            async_computations.push(AsyncComputation {
-                operation: FheOperation::FheAdd.into(),
-                transaction_id: transaction_id.clone(),
-                output_handle: output_handle.clone(),
-                inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
-                is_allowed: true,
-            });
+            let out = next_handle();
+            insert_event(
+                &harness.listener_db,
+                &mut tx,
+                tx_id,
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller,
+                    lhs: level_inputs[2 * i],
+                    rhs: level_inputs[2 * i + 1],
+                    scalarByte: scalar_flag(false),
+                    result: out,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&harness.listener_db, &mut tx, &out).await?;
+            level_outputs.push(out);
+            last_output = out;
         }
         num_comps_at_level /= 2;
         if num_comps_at_level < 1 {
             break;
         }
-        level_inputs = std::mem::take(&mut level_outputs);
+        level_inputs = level_outputs;
     }
-    output_handles.push(output_handle);
+    tx.commit().await?;
 
-    println!("Scheduling computations...");
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.async_compute(compute_request).await?;
+    wait_until_computed(&harness.app).await?;
+    let resp = decrypt_handles(&harness.pool, &[last_output]).await?;
+    assert_eq!(resp.len(), 1);
+    assert_eq!(resp[0].value, expected.to_string(), "Incorrect result.");
 
-    println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_allowed_handles_computed(&app).await?;
-
-    let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-
-    assert_eq!(
-        resp.len(),
-        output_handles.len(),
-        "Outputs length doesn't match"
-    );
-    assert_eq!(
-        resp[0].value.as_str(),
-        target.to_string(),
-        "Incorrect result."
-    );
     Ok(())
 }

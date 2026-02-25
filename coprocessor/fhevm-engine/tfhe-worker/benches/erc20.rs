@@ -1,37 +1,19 @@
 #[path = "./utils.rs"]
 mod utils;
+
 use crate::utils::{
-    default_api_key, random_handle, setup_test_app, wait_until_all_allowed_handles_computed,
-    write_to_json, EnvConfig, OperatorType,
+    allow_handle, as_scalar_uint, listener_event_db, next_handle, random_handle, scalar_flag,
+    setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed,
+    write_atomic_u64_bench_params, zero_address, EnvConfig,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
-use fhevm_engine_common::crs::CrsCache;
-use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::utils::safe_serialize;
-use std::str::FromStr;
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
 use std::time::SystemTime;
-use tfhe_worker::server::common::FheOperation;
-use tfhe_worker::server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput};
-use tfhe_worker::server::tfhe_worker::{
-    fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
-    InputToUpload, InputUploadBatch,
-};
-
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
-use tonic::metadata::MetadataValue;
-
-fn test_random_user_address() -> String {
-    let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
-    let public_key = "0x1BdA2a485c339C95a9AbfDe52E80ca38e34C199E";
-    public_key.to_string()
-}
-
-fn test_random_contract_address() -> String {
-    "0x76c222560Db6b8937B291196eAb4Dad8930043aE".to_string()
-}
 
 fn main() {
     let ecfg = EnvConfig::new();
@@ -105,6 +87,7 @@ fn main() {
                         bench_id.clone(),
                     ));
             });
+
             group.throughput(Throughput::Elements(num_elems));
             let bench_id = format!(
                 "{bench_name}::throughput::dependent_no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
@@ -121,8 +104,342 @@ fn main() {
         }
     }
     group.finish();
-
     c.final_summary();
+}
+
+fn sample_count(default_count: usize) -> usize {
+    std::env::var("FHEVM_TEST_NUM_SAMPLES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(default_count)
+}
+
+fn next_log_index() -> u64 {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+fn log_with_tx(
+    tx_hash: host_listener::database::tfhe_event_propagate::Handle,
+    inner: alloy::primitives::Log<TfheContractEvents>,
+) -> alloy::rpc::types::Log<TfheContractEvents> {
+    alloy::rpc::types::Log {
+        inner,
+        block_hash: None,
+        block_number: None,
+        block_timestamp: None,
+        transaction_hash: Some(tx_hash),
+        transaction_index: Some(0),
+        log_index: Some(next_log_index()),
+        removed: false,
+    }
+}
+
+async fn schedule_erc20(
+    bencher: &mut Bencher<'_, WallTime>,
+    num_tx: usize,
+    use_cmux: bool,
+    dependent: bool,
+    bench_id: &str,
+    display_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let listener_db = listener_event_db(&app).await?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(app.db_url())
+        .await?;
+    let caller = zero_address();
+    let num_samples = sample_count(num_tx);
+    let mut handle_counter = random_handle();
+    let shared_tx_id = next_handle(&mut handle_counter);
+
+    let mut tx = listener_db.new_transaction().await?;
+    let mut prev_from: Option<host_listener::database::tfhe_event_propagate::Handle> = None;
+    let mut prev_to: Option<host_listener::database::tfhe_event_propagate::Handle> = None;
+
+    for i in 0..num_samples {
+        let tx_id = if dependent {
+            shared_tx_id
+        } else {
+            next_handle(&mut handle_counter)
+        };
+        let from_balance = if let Some(h) = prev_from {
+            h
+        } else {
+            let h = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::TrivialEncrypt(
+                        TfheContract::TrivialEncrypt {
+                            caller,
+                            pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(100_u64)),
+                            toType: to_ty(5),
+                            result: h,
+                        },
+                    )),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            h
+        };
+        let to_balance = if let Some(h) = prev_to {
+            h
+        } else {
+            let h = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::TrivialEncrypt(
+                        TfheContract::TrivialEncrypt {
+                            caller,
+                            pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(20_u64)),
+                            toType: to_ty(5),
+                            result: h,
+                        },
+                    )),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            h
+        };
+        let transfer_amount = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
+                tx_id,
+                tfhe_event(TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller,
+                        pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(10_u64)),
+                        toType: to_ty(5),
+                        result: transfer_amount,
+                    },
+                )),
+            ),
+            tx_id,
+            false,
+        )
+        .await?;
+
+        let has_funds = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
+                tx_id,
+                tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
+                    caller,
+                    lhs: from_balance,
+                    rhs: transfer_amount,
+                    scalarByte: scalar_flag(false),
+                    result: has_funds,
+                })),
+            ),
+            tx_id,
+            false,
+        )
+        .await?;
+
+        let new_to;
+        let new_from;
+        if use_cmux {
+            let to_target = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                        caller,
+                        lhs: to_balance,
+                        rhs: transfer_amount,
+                        scalarByte: scalar_flag(false),
+                        result: to_target,
+                    })),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            new_to = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheIfThenElse(
+                        TfheContract::FheIfThenElse {
+                            caller,
+                            control: has_funds,
+                            ifTrue: to_target,
+                            ifFalse: to_balance,
+                            result: new_to,
+                        },
+                    )),
+                ),
+                tx_id,
+                true,
+            )
+            .await?;
+
+            let from_target = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+                        caller,
+                        lhs: from_balance,
+                        rhs: transfer_amount,
+                        scalarByte: scalar_flag(false),
+                        result: from_target,
+                    })),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            new_from = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheIfThenElse(
+                        TfheContract::FheIfThenElse {
+                            caller,
+                            control: has_funds,
+                            ifTrue: from_target,
+                            ifFalse: from_balance,
+                            result: new_from,
+                        },
+                    )),
+                ),
+                tx_id,
+                true,
+            )
+            .await?;
+        } else {
+            let funds_u64 = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+                        caller,
+                        ct: has_funds,
+                        toType: to_ty(5),
+                        result: funds_u64,
+                    })),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            let selected_amount = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+                        caller,
+                        lhs: transfer_amount,
+                        rhs: funds_u64,
+                        scalarByte: scalar_flag(false),
+                        result: selected_amount,
+                    })),
+                ),
+                tx_id,
+                false,
+            )
+            .await?;
+            new_to = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                        caller,
+                        lhs: to_balance,
+                        rhs: selected_amount,
+                        scalarByte: scalar_flag(false),
+                        result: new_to,
+                    })),
+                ),
+                tx_id,
+                true,
+            )
+            .await?;
+            new_from = next_handle(&mut handle_counter);
+            utils::insert_tfhe_event(
+                &listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+                        caller,
+                        lhs: from_balance,
+                        rhs: selected_amount,
+                        scalarByte: scalar_flag(false),
+                        result: new_from,
+                    })),
+                ),
+                tx_id,
+                true,
+            )
+            .await?;
+        }
+
+        if i == num_samples.saturating_sub(1) {
+            allow_handle(&listener_db, &mut tx, &new_to).await?;
+            allow_handle(&listener_db, &mut tx, &new_from).await?;
+        }
+        prev_from = Some(new_from);
+        prev_to = Some(new_to);
+    }
+    tx.commit().await?;
+
+    let app_ref = &app;
+    bencher
+        .to_async(FuturesExecutor)
+        .iter_custom(|iters| async move {
+            let db_url = app_ref.db_url().to_string();
+            let now = SystemTime::now();
+            let _ = tokio::task::spawn_blocking(move || {
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
+                println!(
+                    "Execution time: {} -- {}",
+                    now.elapsed().unwrap().as_millis(),
+                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
+                );
+            })
+            .await;
+            std::time::Duration::from_micros(
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
+            )
+        });
+
+    write_atomic_u64_bench_params(&pool, bench_id, display_name).await?;
+    Ok(())
 }
 
 async fn schedule_erc20_whitepaper(
@@ -130,184 +447,7 @@ async fn schedule_erc20_whitepaper(
     num_tx: usize,
     bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = num_tx;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(100_u64) // Balance source
-        .push(10_u64) // Transfer amount
-        .push(20_u64) // Balance destination
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 3);
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-        let handle_bald = first_resp.input_handles[2].handle.clone();
-        let bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bald.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let new_to_amount_target_handle = next_handle();
-        output_handles.push(new_to_amount_target_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_target_handle = next_handle();
-        output_handles.push(new_from_amount_target_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_target_handle.clone(),
-            inputs: vec![bald.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_to_amount_target_handle.clone())),
-                },
-                bald.clone(),
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_target_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_from_amount_target_handle.clone())),
-                },
-                bals.clone(),
-            ],
-            is_allowed: true,
-        });
-    }
-
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let app_ref = &app;
-    bencher
-        .to_async(FuturesExecutor)
-        .iter_custom(|iters| async move {
-            let db_url = app_ref.db_url().to_string();
-            let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new().unwrap().block_on(async {
-                    wait_until_all_allowed_handles_computed(db_url)
-                        .await
-                        .unwrap()
-                });
-                println!(
-                    "Execution time: {} -- {}",
-                    now.elapsed().unwrap().as_millis(),
-                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
-                );
-            })
-            .await;
-            std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
-            )
-        });
-
-    let params = key.cks.unwrap().computation_parameters();
-    write_to_json::<u64, _>(
-        &bench_id,
-        params,
-        "",
-        "erc20-transfer",
-        &OperatorType::Atomic,
-        64,
-        vec![],
-    );
-
-    Ok(())
+    schedule_erc20(bencher, num_tx, true, false, &bench_id, "erc20-transfer").await
 }
 
 async fn schedule_erc20_no_cmux(
@@ -315,189 +455,7 @@ async fn schedule_erc20_no_cmux(
     num_tx: usize,
     bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = num_tx;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(100_u64) // Balance source
-        .push(10_u64) // Transfer amount
-        .push(20_u64) // Balance destination
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 3);
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-        let handle_bald = first_resp.input_handles[2].handle.clone();
-        let bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bald.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let cast_has_enough_funds_handle = next_handle();
-        output_handles.push(cast_has_enough_funds_handle.clone());
-        let select_amount_handle = next_handle();
-        output_handles.push(select_amount_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheCast.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: cast_has_enough_funds_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![5u8])),
-                },
-            ],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheMul.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: select_amount_handle.clone(),
-            inputs: vec![
-                trxa.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
-                },
-            ],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                bald.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                bals.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-    }
-
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let app_ref = &app;
-    bencher
-        .to_async(FuturesExecutor)
-        .iter_custom(|iters| async move {
-            let db_url = app_ref.db_url().to_string();
-            let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new().unwrap().block_on(async {
-                    wait_until_all_allowed_handles_computed(db_url)
-                        .await
-                        .unwrap()
-                });
-                println!(
-                    "Execution time: {} -- {}",
-                    now.elapsed().unwrap().as_millis(),
-                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
-                );
-            })
-            .await;
-            std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
-            )
-        });
-
-    let params = key.cks.unwrap().computation_parameters();
-    write_to_json::<u64, _>(
-        &bench_id,
-        params,
-        "",
-        "erc20-transfer",
-        &OperatorType::Atomic,
-        64,
-        vec![],
-    );
-    Ok(())
+    schedule_erc20(bencher, num_tx, false, false, &bench_id, "erc20-transfer").await
 }
 
 async fn schedule_dependent_erc20_whitepaper(
@@ -505,211 +463,7 @@ async fn schedule_dependent_erc20_whitepaper(
     num_tx: usize,
     bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = num_tx;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 1);
-    let handle_bald = first_resp.input_handles[0].handle.clone();
-    let mut bald = AsyncComputationInput {
-        input: Some(Input::InputHandle(handle_bald.clone())),
-    };
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(100_u64) // Balance source
-        .push(10_u64) // Transfer amount
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 2);
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let new_to_amount_target_handle = next_handle();
-        output_handles.push(new_to_amount_target_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_target_handle = next_handle();
-        output_handles.push(new_from_amount_target_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_target_handle.clone(),
-            inputs: vec![bald.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_to_amount_target_handle.clone())),
-                },
-                bald.clone(),
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_target_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(new_from_amount_target_handle.clone())),
-                },
-                bals.clone(),
-            ],
-            is_allowed: true,
-        });
-
-        bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(new_to_amount_handle.clone())),
-        };
-    }
-
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let app_ref = &app;
-    bencher
-        .to_async(FuturesExecutor)
-        .iter_custom(|iters| async move {
-            let db_url = app_ref.db_url().to_string();
-            let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new().unwrap().block_on(async {
-                    wait_until_all_allowed_handles_computed(db_url)
-                        .await
-                        .unwrap()
-                });
-                println!(
-                    "Execution time: {} -- {}",
-                    now.elapsed().unwrap().as_millis(),
-                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
-                );
-            })
-            .await;
-            std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
-            )
-        });
-
-    let params = key.cks.unwrap().computation_parameters();
-    write_to_json::<u64, _>(
-        &bench_id,
-        params,
-        "",
-        "erc20-transfer",
-        &OperatorType::Atomic,
-        64,
-        vec![],
-    );
-
-    Ok(())
+    schedule_erc20(bencher, num_tx, true, true, &bench_id, "erc20-transfer").await
 }
 
 async fn schedule_dependent_erc20_no_cmux(
@@ -717,214 +471,5 @@ async fn schedule_dependent_erc20_no_cmux(
     num_tx: usize,
     bench_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-
-    let mut handle_counter: u64 = random_handle();
-    let mut next_handle = || {
-        let out: u64 = handle_counter;
-        handle_counter += 1;
-        out.to_be_bytes().to_vec()
-    };
-    let api_key_header = format!("bearer {}", default_api_key());
-
-    let mut output_handles = vec![];
-    let mut async_computations = vec![];
-    let mut num_samples: usize = num_tx;
-    let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
-    if let Ok(samples) = samples {
-        num_samples = samples.parse::<usize>().unwrap();
-    }
-
-    let db_key_cache = DbKeyCache::new(100).unwrap();
-    let key = db_key_cache.fetch_latest(&pool).await?;
-    let crs_cache = CrsCache::load(&pool).await?;
-    let crs = crs_cache.get_latest().unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(20_u64) // Initial balance destination
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 1);
-    let handle_bald = first_resp.input_handles[0].handle.clone();
-    let mut bald = AsyncComputationInput {
-        input: Some(Input::InputHandle(handle_bald.clone())),
-    };
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&key.pks);
-    let the_list = builder
-        .push(100_u64) // Balance source
-        .push(10_u64) // Transfer amount
-        .build_with_proof_packed(&crs.crs, &[], tfhe::zk::ZkComputeLoad::Proof)
-        .unwrap();
-
-    let serialized = safe_serialize(&the_list);
-    let mut input_request = tonic::Request::new(InputUploadBatch {
-        input_ciphertexts: vec![InputToUpload {
-            input_payload: serialized,
-            signatures: Vec::new(),
-            user_address: test_random_user_address(),
-            contract_address: test_random_contract_address(),
-        }],
-    });
-    input_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let resp = client.upload_inputs(input_request).await?;
-    let resp = resp.get_ref();
-    assert_eq!(resp.upload_responses.len(), 1);
-    let first_resp = &resp.upload_responses[0];
-    assert_eq!(first_resp.input_handles.len(), 2);
-
-    for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
-        let handle_bals = first_resp.input_handles[0].handle.clone();
-        let bals = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_bals.clone())),
-        };
-        let handle_trxa = first_resp.input_handles[1].handle.clone();
-        let trxa = AsyncComputationInput {
-            input: Some(Input::InputHandle(handle_trxa.clone())),
-        };
-
-        let has_enough_funds_handle = next_handle();
-        output_handles.push(has_enough_funds_handle.clone());
-        let cast_has_enough_funds_handle = next_handle();
-        output_handles.push(cast_has_enough_funds_handle.clone());
-        let select_amount_handle = next_handle();
-        output_handles.push(select_amount_handle.clone());
-        let new_to_amount_handle = next_handle();
-        output_handles.push(new_to_amount_handle.clone());
-        let new_from_amount_handle = next_handle();
-        output_handles.push(new_from_amount_handle.clone());
-
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: has_enough_funds_handle.clone(),
-            inputs: vec![bals.clone(), trxa.clone()],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheCast.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: cast_has_enough_funds_handle.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(has_enough_funds_handle.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![5u8])),
-                },
-            ],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheMul.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: select_amount_handle.clone(),
-            inputs: vec![
-                trxa.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
-                },
-            ],
-            is_allowed: false,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_to_amount_handle.clone(),
-            inputs: vec![
-                bald.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-        async_computations.push(AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: transaction_id.clone(),
-            output_handle: new_from_amount_handle.clone(),
-            inputs: vec![
-                bals.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(select_amount_handle.clone())),
-                },
-            ],
-            is_allowed: true,
-        });
-
-        bald = AsyncComputationInput {
-            input: Some(Input::InputHandle(new_to_amount_handle.clone())),
-        };
-    }
-
-    let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-        computations: async_computations,
-    });
-    compute_request.metadata_mut().append(
-        "authorization",
-        MetadataValue::from_str(&api_key_header).unwrap(),
-    );
-    let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let app_ref = &app;
-    bencher
-        .to_async(FuturesExecutor)
-        .iter_custom(|iters| async move {
-            let db_url = app_ref.db_url().to_string();
-            let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new().unwrap().block_on(async {
-                    wait_until_all_allowed_handles_computed(db_url)
-                        .await
-                        .unwrap()
-                });
-                println!(
-                    "Execution time: {} -- {}",
-                    now.elapsed().unwrap().as_millis(),
-                    TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
-                );
-            })
-            .await;
-            std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
-            )
-        });
-
-    let params = key.cks.unwrap().computation_parameters();
-    write_to_json::<u64, _>(
-        &bench_id,
-        params,
-        "",
-        "erc20-transfer",
-        &OperatorType::Atomic,
-        64,
-        vec![],
-    );
-    Ok(())
+    schedule_erc20(bencher, num_tx, false, true, &bench_id, "erc20-transfer").await
 }
