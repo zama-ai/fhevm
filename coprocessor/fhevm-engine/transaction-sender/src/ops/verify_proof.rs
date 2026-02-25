@@ -118,7 +118,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default()))]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all)]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
@@ -285,7 +285,10 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let span = tracing::info_span!("prepare_verify_proof_resp");
+            let span = tracing::info_span!(
+                "prepare_verify_proof_resp",
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
+            );
 
             let txn_request = match row.verified {
                 Some(true) => {

@@ -66,7 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
-    #[tracing::instrument(name = "call_allow_account", skip_all, fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default()))]
+    #[tracing::instrument(name = "call_allow_account", skip_all)]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -396,7 +396,13 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
-            let _span = tracing::info_span!("prepare_allow_account");
+            let _span = tracing::info_span!(
+                "prepare_allow_account",
+                transaction_hash = src_transaction_id
+                    .as_deref()
+                    .map(to_hex)
+                    .unwrap_or_default(),
+            );
             let _enter = _span.enter();
 
             let handle = row.handle.clone();
