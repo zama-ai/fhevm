@@ -37,7 +37,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
-     * @param initialKmsContextId The initial KMS context ID.
+     * @param kmsContextId The KMS context ID.
      * @param metadata Metadata of the protocol.
      * @param thresholds The operator's thresholds.
      * @param kmsNodes List of KMS nodes.
@@ -45,7 +45,7 @@ interface IGatewayConfig {
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
-        uint256 indexed initialKmsContextId,
+        uint256 indexed kmsContextId,
         ProtocolMetadata metadata,
         Thresholds thresholds,
         KmsNode[] kmsNodes,
@@ -55,7 +55,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when the KMS context has been updated.
-     * @param contextId The context ID associated with the KMS nodes.
+     * @param newContextId The new context ID associated with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
@@ -63,7 +63,7 @@ interface IGatewayConfig {
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
     event UpdateKmsContext(
-        uint256 indexed contextId,
+        uint256 indexed newContextId,
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -275,7 +275,7 @@ interface IGatewayConfig {
      * @notice Update the KMS context: nodes and thresholds for a given context ID.
      * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
      * some requests and the contracts should first be paused. It will be deprecated in the future.
-     * @param contextId The context ID to associate with the KMS nodes.
+     * @param newContextId The new context ID to associate with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
@@ -283,7 +283,7 @@ interface IGatewayConfig {
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
     function updateKmsContext(
-        uint256 contextId,
+        uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,

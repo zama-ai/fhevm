@@ -271,27 +271,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateKmsContext}.
      */
     function updateKmsContext(
-        uint256 contextId,
+        uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
     ) public virtual onlyOwner {
-        if (contextId == 0) {
+        if (newContextId == 0) {
             revert InvalidNullKmsContextId();
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        // Validate contextId is strictly greater than the current one
-        if (contextId <= $.currentKmsContextId) {
-            revert KmsContextAlreadyRegistered(contextId, $.currentKmsContextId);
+        // Validate newContextId is strictly greater than the current one
+        if (newContextId <= $.currentKmsContextId) {
+            revert KmsContextAlreadyRegistered(newContextId, $.currentKmsContextId);
         }
 
         // Set the new context-indexed KMS nodes and all thresholds
         _setKmsContext(
-            contextId,
+            newContextId,
             newKmsNodes,
             newMpcThreshold,
             newPublicDecryptionThreshold,
@@ -300,10 +300,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         );
 
         // Update the current KMS context ID
-        $.currentKmsContextId = contextId;
+        $.currentKmsContextId = newContextId;
 
         emit UpdateKmsContext(
-            contextId,
+            newContextId,
             newKmsNodes,
             newMpcThreshold,
             newPublicDecryptionThreshold,
