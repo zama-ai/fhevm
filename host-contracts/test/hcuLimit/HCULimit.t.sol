@@ -23,9 +23,9 @@ contract MockHCULimit is HCULimit {
         _setHCUForTransaction(handleHCU);
     }
 
-    function setHCUPerBlockUnsafeForTest(uint192 hcuPerBlock) external {
+    function setHCUPerBlockUnsafeForTest(uint64 hcuPerBlock) external {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        $.publicHCUCapPerBlock = hcuPerBlock;
+        $.globalHCUCapPerBlock = hcuPerBlock;
     }
 }
 
@@ -39,7 +39,6 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     address internal fhevmExecutor;
 
     uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000 - 1;
-    uint192 internal constant MIN_HCU_PER_BLOCK = 20_000_000;
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -68,7 +67,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()));
+        UnsafeUpgrades.upgradeProxy(
+            proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint64).max))
+        );
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
@@ -94,7 +95,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.1.1")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.2.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1173,28 +1174,32 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRandBounded(FheType(resultType), mockResult, fhevmExecutor);
     }
 
-    function test_setHCUPerBlockRevertsWhenZero() public {
+    function test_setHCUPerBlockAcceptsMaxUint64() public {
         vm.prank(owner);
-        vm.expectRevert(HCULimit.InvalidHCUPerBlock.selector);
-        hcuLimit.setHCUPerBlock(0);
+        hcuLimit.setHCUPerBlock(type(uint64).max);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), type(uint64).max);
     }
 
-    function test_setHCUPerBlockRevertsWhenBelowTransactionMax() public {
+    function test_setHCUPerBlockAcceptsArbitraryValue() public {
         vm.prank(owner);
-        vm.expectRevert(HCULimit.InvalidHCUPerBlock.selector);
-        hcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK - 1);
+        hcuLimit.setHCUPerBlock(42);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 42);
     }
 
-    function test_setHCUPerBlockAcceptsDisableSentinel() public {
-        vm.prank(owner);
-        hcuLimit.setHCUPerBlock(type(uint192).max);
-        assertEq(hcuLimit.publicHCUCapPerBlock(), type(uint192).max);
+    function test_addToBlockHCUWhitelistRevertsIfAlreadyWhitelisted() public {
+        address account = address(0xBEEF);
+        vm.startPrank(owner);
+        hcuLimit.addToBlockHCUWhitelist(account);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.AlreadyBlockHCUWhitelisted.selector, account));
+        hcuLimit.addToBlockHCUWhitelist(account);
+        vm.stopPrank();
     }
 
-    function test_setHCUPerBlockAcceptsTransactionMax() public {
+    function test_removeFromBlockHCUWhitelistRevertsIfNotWhitelisted() public {
+        address account = address(0xBEEF);
         vm.prank(owner);
-        hcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK);
-        assertEq(hcuLimit.publicHCUCapPerBlock(), MIN_HCU_PER_BLOCK);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotBlockHCUWhitelisted.selector, account));
+        hcuLimit.removeFromBlockHCUWhitelist(account);
     }
 
     function test_blockHCULimitRevertsWhenAboveCap() public {
@@ -1282,12 +1287,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         // First op from whitelisted caller: should bypass block meter.
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1001)), whitelistedCaller);
-        (, uint192 usedAfterWhitelisted) = hcuLimit.getBlockMeter();
+        (, uint64 usedAfterWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterWhitelisted, 0);
 
         // Then switch to non-whitelisted caller in the same tx: meter should apply.
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), nonWhitelistedCaller);
-        (, uint192 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
+        (, uint64 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterNonWhitelisted, 84_000);
 
         // A second non-whitelisted op in same block should exceed cap.
@@ -1304,12 +1309,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, address(0x1234));
 
         vm.roll(block.number + 1);
-        (uint64 blockNumber, uint192 usedHCU) = hcuLimit.getBlockMeter();
+        (uint64 blockNumber, uint64 usedHCU) = hcuLimit.getBlockMeter();
         assertEq(blockNumber, uint64(block.number));
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV3SetsDefaultBlockCapOnUpgradePathWithoutInitCall() public {
+    function test_reinitializeV2SetsBlockCapOnUpgradePathWithoutInitCall() public {
         address proxyWithoutInitCall =
             UnsafeUpgrades.deployUUPSProxy(address(new EmptyUUPSProxy()), abi.encodeCall(EmptyUUPSProxy.initialize, ()));
 
@@ -1318,10 +1323,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        assertEq(upgraded.publicHCUCapPerBlock(), 0);
+        assertEq(upgraded.getGlobalHCUCapPerBlock(), 0);
 
-        upgraded.reinitializeV3();
-        assertEq(upgraded.publicHCUCapPerBlock(), type(uint192).max);
+        upgraded.reinitializeV2(type(uint64).max);
+        assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint64).max);
         vm.stopPrank();
     }
 

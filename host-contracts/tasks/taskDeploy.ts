@@ -243,7 +243,9 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: { fn: 'initializeFromEmptyProxy', args: [BigInt('18446744073709551615')] },
+  });
   console.log('HCULimit code set successfully at address:', proxyAddress);
 });
 

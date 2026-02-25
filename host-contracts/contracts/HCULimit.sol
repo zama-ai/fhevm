@@ -21,8 +21,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the block exceeds the maximum allowed homomorphic complexity units.
     error HCUBlockLimitExceeded();
 
-    /// @notice Returned if the block HCU cap is below the supported minimum.
-    error InvalidHCUPerBlock();
+    /// @notice Returned if the address is already block HCU whitelisted.
+    error AlreadyBlockHCUWhitelisted(address account);
+
+    /// @notice Returned if the address is not block HCU whitelisted.
+    error NotBlockHCUWhitelisted(address account);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
@@ -36,9 +39,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
 
-    /// @notice Emitted when the public block HCU cap is updated.
-    /// @param hcuPerBlock New public block HCU cap (`type(uint192).max` disables block throttling).
-    event HCUPerBlockSet(uint192 hcuPerBlock);
+    /// @notice Emitted when the global block HCU cap is updated.
+    /// @param hcuPerBlock New global block HCU cap.
+    event HCUPerBlockSet(uint64 hcuPerBlock);
 
     /// @notice Emitted when a caller's block-cap whitelist status is updated.
     /// @param account Caller address whose whitelist status changed.
@@ -52,10 +55,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
-    uint256 private constant PATCH_VERSION = 1;
+    uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
@@ -71,17 +74,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     struct HCULimitStorage {
         /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
-        /// @dev Set to type(uint192).max to disable block-level throttling.
-        uint192 publicHCUCapPerBlock;
-        /// @dev Packed as: [usedHcu:192 | blockNumber:64]
-        uint256 publicBlockMeterPacked;
+        uint64 globalHCUCapPerBlock;
+        /// @notice Used HCU in the current block for non-whitelisted callers.
+        uint64 usedBlockHCU;
+        /// @notice Last seen block number for the block meter.
+        uint64 lastSeenBlockNumber;
         /// @notice Whitelisted callers bypass block-level cap.
         mapping(address => bool) blockHCUWhitelist;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -100,25 +104,23 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice  Initializes the contract.
+     * @param hcuCapPerBlock Initial global HCU cap per block.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        $.publicHCUCapPerBlock = type(uint192).max;
-        emit HCUPerBlockSet(type(uint192).max);
+    function initializeFromEmptyProxy(
+        uint64 hcuCapPerBlock
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        _setHCUPerBlock(hcuCapPerBlock);
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
-     * @dev This must be called when upgrading already-initialized proxies to this implementation,
-     *      so block HCU limiting remains disabled by default (`type(uint192).max`).
+     * @notice Re-initializes the contract from V1.
+     * @param hcuCapPerBlock New global HCU cap per block.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        $.publicHCUCapPerBlock = type(uint192).max;
-        emit HCUPerBlockSet(type(uint192).max);
+    function reinitializeV2(uint64 hcuCapPerBlock) public virtual reinitializer(REINITIALIZER_VERSION) {
+        _setHCUPerBlock(hcuCapPerBlock);
     }
 
     /**
@@ -128,7 +130,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheAdd(
         FheType resultType,
@@ -182,7 +184,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheSub(
         FheType resultType,
@@ -236,7 +238,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheMul(
         FheType resultType,
@@ -289,7 +291,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheDiv(
         FheType resultType,
@@ -325,7 +327,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param scalarByte Scalar byte.
      * @param lhs The left-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRem(
         FheType resultType,
@@ -362,7 +364,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitAnd(
         FheType resultType,
@@ -424,7 +426,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitOr(
         FheType resultType,
@@ -486,7 +488,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheBitXor(
         FheType resultType,
@@ -548,7 +550,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheShl(
         FheType resultType,
@@ -606,7 +608,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheShr(
         FheType resultType,
@@ -664,7 +666,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRotl(
         FheType resultType,
@@ -722,7 +724,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRotr(
         FheType resultType,
@@ -780,7 +782,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheEq(
         FheType resultType,
@@ -846,7 +848,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheNe(
         FheType resultType,
@@ -912,7 +914,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheGe(
         FheType resultType,
@@ -966,7 +968,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheGt(
         FheType resultType,
@@ -1020,7 +1022,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheLe(
         FheType resultType,
@@ -1074,7 +1076,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheLt(
         FheType resultType,
@@ -1128,7 +1130,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheMin(
         FheType resultType,
@@ -1182,7 +1184,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param rhs The right-hand side operand.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheMax(
         FheType resultType,
@@ -1318,7 +1320,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for TrivialEncrypt.
      * @param resultType Result type.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
@@ -1352,7 +1354,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param lhs The left-hand side operand.
      * @param middle The middle operand.
      * @param rhs The right-hand side operand.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForIfThenElse(
         FheType resultType,
@@ -1390,7 +1392,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheRand.
      * @param resultType Result type.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
@@ -1420,7 +1422,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheRandBounded.
      * @param resultType Result type.
      * @param result Result.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
@@ -1445,61 +1447,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Getter function for the FHEVMExecutor contract address.
-     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
-     */
-    function getFHEVMExecutorAddress() public view virtual returns (address) {
-        return fhevmExecutorAddress;
-    }
-
-    /**
-     * @notice Getter for the name and version of the contract.
-     * @return string Name and the version of the contract.
-     */
-    function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
-    }
-
-    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
-     * @dev Set to type(uint192).max to disable block-level throttling.
      * @param hcuPerBlock New block-level cap.
      */
-    function setHCUPerBlock(uint192 hcuPerBlock) external onlyACLOwner {
-        if (hcuPerBlock != type(uint192).max && hcuPerBlock < MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
-            revert InvalidHCUPerBlock();
-        }
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        $.publicHCUCapPerBlock = hcuPerBlock;
-        emit HCUPerBlockSet(hcuPerBlock);
-    }
-
-    /**
-     * @notice Returns the public block HCU cap.
-     */
-    function publicHCUCapPerBlock() public view virtual returns (uint192) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.publicHCUCapPerBlock;
-    }
-
-    /**
-     * @notice Returns whether a caller bypasses the public block HCU cap.
-     * @param account Caller address.
-     */
-    function blockHCUWhitelist(address account) public view virtual returns (bool) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.blockHCUWhitelist[account];
+    function setHCUPerBlock(uint64 hcuPerBlock) external onlyACLOwner {
+        _setHCUPerBlock(hcuPerBlock);
     }
 
     /**
@@ -1507,7 +1459,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param account Caller to whitelist.
      */
     function addToBlockHCUWhitelist(address account) external onlyACLOwner {
-        _setBlockHCUWhitelist(account, true);
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.blockHCUWhitelist[account]) revert AlreadyBlockHCUWhitelisted(account);
+        $.blockHCUWhitelist[account] = true;
+        emit BlockHCUWhitelistSet(account, true);
     }
 
     /**
@@ -1515,41 +1470,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param account Caller to remove from whitelist.
      */
     function removeFromBlockHCUWhitelist(address account) external onlyACLOwner {
-        _setBlockHCUWhitelist(account, false);
-    }
-
-    /**
-     * @notice Adds a batch of callers to the block-cap whitelist.
-     * @param accounts Callers to whitelist.
-     */
-    function addToBlockHCUWhitelistBatch(address[] calldata accounts) external onlyACLOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            _setBlockHCUWhitelist(accounts[i], true);
-        }
-    }
-
-    /**
-     * @notice Removes a batch of callers from the block-cap whitelist.
-     * @param accounts Callers to remove from whitelist.
-     */
-    function removeFromBlockHCUWhitelistBatch(address[] calldata accounts) external onlyACLOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            _setBlockHCUWhitelist(accounts[i], false);
-        }
-    }
-
-    /**
-     * @notice Returns the effective public block HCU meter for the current block.
-     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
-     */
-    function getBlockMeter() external view returns (uint64 blockNumber, uint192 usedHCU) {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
-        uint64 currentBlock = uint64(block.number);
-        if (storedBlock != currentBlock) {
-            return (currentBlock, 0);
-        }
-        return (storedBlock, storedHCU);
+        if (!$.blockHCUWhitelist[account]) revert NotBlockHCUWhitelisted(account);
+        $.blockHCUWhitelist[account] = false;
+        emit BlockHCUWhitelistSet(account, false);
     }
 
     /**
@@ -1630,31 +1554,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Updates and enforces the public block HCU cap for one operation.
-     * @dev No-op if the cap is disabled or caller is whitelisted.
+     * @dev No-op if caller is whitelisted.
      * @param opHCU HCU cost of the current operation.
-     * @param caller Original caller address from FHEVMExecutor.
+     * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function _updateAndVerifyHCUBlockLimit(uint256 opHCU, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.publicHCUCapPerBlock == type(uint192).max) {
-            return;
-        }
 
         if ($.blockHCUWhitelist[caller]) {
             return;
         }
 
-        (uint64 storedBlock, uint192 storedHCU) = _unpackBlockMeter($.publicBlockMeterPacked);
         uint64 currentBlock = uint64(block.number);
-        if (storedBlock != currentBlock) {
+        uint64 storedHCU = $.usedBlockHCU;
+        if ($.lastSeenBlockNumber != currentBlock) {
             storedHCU = 0;
         }
 
         uint256 nextHCU = uint256(storedHCU) + opHCU;
-        if (nextHCU >= uint256($.publicHCUCapPerBlock)) {
+        if (nextHCU >= uint256($.globalHCUCapPerBlock)) {
             revert HCUBlockLimitExceeded();
         }
-        $.publicBlockMeterPacked = _packBlockMeter(currentBlock, uint192(nextHCU));
+        $.usedBlockHCU = uint64(nextHCU);
+        $.lastSeenBlockNumber = currentBlock;
     }
 
     /**
@@ -1703,24 +1625,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
     }
 
-    function _packBlockMeter(uint64 blockNumber, uint192 usedHCU) internal pure virtual returns (uint256) {
-        return (uint256(usedHCU) << 64) | uint256(blockNumber);
-    }
-
-    function _unpackBlockMeter(uint256 packed) internal pure virtual returns (uint64 blockNumber, uint192 usedHCU) {
-        blockNumber = uint64(packed);
-        usedHCU = uint192(packed >> 64);
-    }
-
     /**
-     * @notice Sets whitelist status for one caller.
-     * @param account Caller to update.
-     * @param isWhitelisted Whether caller bypasses the block cap.
+     * @notice Sets the global HCU cap per block.
+     * @param hcuPerBlock New cap value.
      */
-    function _setBlockHCUWhitelist(address account, bool isWhitelisted) internal {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        $.blockHCUWhitelist[account] = isWhitelisted;
-        emit BlockHCUWhitelistSet(account, isWhitelisted);
+    function _setHCUPerBlock(uint64 hcuPerBlock) internal {
+        _getHCULimitStorage().globalHCUCapPerBlock = hcuPerBlock;
+        emit HCUPerBlockSet(hcuPerBlock);
     }
 
     /**
@@ -1736,5 +1647,62 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function _max(uint256 a, uint256 b) private pure returns (uint256) {
         return a >= b ? a : b;
+    }
+
+    /**
+     * @notice Getter function for the FHEVMExecutor contract address.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
+     */
+    function getFHEVMExecutorAddress() public view virtual returns (address) {
+        return fhevmExecutorAddress;
+    }
+
+    /**
+     * @notice Getter for the name and version of the contract.
+     * @return string Name and the version of the contract.
+     */
+    function getVersion() external pure virtual returns (string memory) {
+        return
+            string(
+                abi.encodePacked(
+                    CONTRACT_NAME,
+                    " v",
+                    Strings.toString(MAJOR_VERSION),
+                    ".",
+                    Strings.toString(MINOR_VERSION),
+                    ".",
+                    Strings.toString(PATCH_VERSION)
+                )
+            );
+    }
+
+    /**
+     * @notice Returns the global block HCU cap.
+     */
+    function getGlobalHCUCapPerBlock() public view virtual returns (uint64) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.globalHCUCapPerBlock;
+    }
+
+    /**
+     * @notice Returns whether a caller bypasses the global block HCU cap.
+     * @param account Caller address.
+     */
+    function isBlockHCUWhitelisted(address account) public view virtual returns (bool) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return $.blockHCUWhitelist[account];
+    }
+
+    /**
+     * @notice Returns the effective public block HCU meter for the current block.
+     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
+     */
+    function getBlockMeter() external view returns (uint64 blockNumber, uint64 usedHCU) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint64 currentBlock = uint64(block.number);
+        if ($.lastSeenBlockNumber != currentBlock) {
+            return (currentBlock, 0);
+        }
+        return (currentBlock, $.usedBlockHCU);
     }
 }

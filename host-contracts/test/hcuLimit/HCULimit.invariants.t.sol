@@ -12,7 +12,6 @@ import {FheType} from "../../contracts/shared/FheType.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract HCULimitInvariantHandler is Test {
-    uint192 internal constant MIN_HCU_PER_BLOCK = 20_000_000;
     HCULimit internal immutable hcuLimit;
     address internal immutable owner;
     address internal immutable fhevmExecutor;
@@ -36,19 +35,16 @@ contract HCULimitInvariantHandler is Test {
         vm.stopPrank();
     }
 
-    function setCap(uint192 cap) external {
-        if (cap == type(uint192).max) {
-            vm.prank(owner);
-            hcuLimit.setHCUPerBlock(type(uint192).max);
-            return;
-        }
-        cap = uint192(bound(uint256(cap), uint256(MIN_HCU_PER_BLOCK), uint256(type(uint192).max - 1)));
+    function setCap(uint64 cap) external {
+        cap = uint64(bound(uint256(cap), 1, uint256(type(uint64).max)));
         vm.prank(owner);
         hcuLimit.setHCUPerBlock(cap);
     }
 
     function setCallerWhitelist(address caller, bool isWhitelisted) external {
         caller = _sanitizeCaller(caller);
+        bool currentlyWhitelisted = hcuLimit.isBlockHCUWhitelisted(caller);
+        if (isWhitelisted == currentlyWhitelisted) return;
         vm.prank(owner);
         if (isWhitelisted) {
             hcuLimit.addToBlockHCUWhitelist(caller);
@@ -60,7 +56,7 @@ contract HCULimitInvariantHandler is Test {
     function mine(uint8 rawBlocks) external {
         uint256 blocks = bound(uint256(rawBlocks), 1, 8);
         vm.roll(block.number + blocks);
-        (, uint192 usedHCU) = hcuLimit.getBlockMeter();
+        (, uint64 usedHCU) = hcuLimit.getBlockMeter();
         if (usedHCU != 0) {
             resetViolation = true;
         }
@@ -88,9 +84,9 @@ contract HCULimitInvariantHandler is Test {
      *      - keeps bursts small on purpose (not a cap-exhaustion stress test).
      */
     function _runBurst(address caller, uint256 ops) internal {
-        bool isWhitelisted = hcuLimit.blockHCUWhitelist(caller);
-        uint192 cap = hcuLimit.publicHCUCapPerBlock();
-        (, uint192 beforeUsedHCU) = hcuLimit.getBlockMeter();
+        bool isWhitelisted = hcuLimit.isBlockHCUWhitelisted(caller);
+        uint64 cap = hcuLimit.getGlobalHCUCapPerBlock();
+        (, uint64 beforeUsedHCU) = hcuLimit.getBlockMeter();
         uint256 successes;
 
         vm.startPrank(fhevmExecutor);
@@ -106,7 +102,7 @@ contract HCULimitInvariantHandler is Test {
         }
         vm.stopPrank();
 
-        (, uint192 afterUsedHCU) = hcuLimit.getBlockMeter();
+        (, uint64 afterUsedHCU) = hcuLimit.getBlockMeter();
 
         if (afterUsedHCU < beforeUsedHCU) {
             nonWhitelistedAccountingViolation = true;
@@ -118,13 +114,6 @@ contract HCULimitInvariantHandler is Test {
         if (isWhitelisted) {
             if (delta != 0 || successes != ops) {
                 whitelistViolation = true;
-            }
-            return;
-        }
-
-        if (cap == type(uint192).max) {
-            if (delta != 0) {
-                nonWhitelistedAccountingViolation = true;
             }
             return;
         }
@@ -170,7 +159,9 @@ contract HCULimitInvariantTest is StdInvariant, Test {
 
         address implementation = address(new HCULimit());
         vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(HCULimit.initializeFromEmptyProxy, ()));
+        UnsafeUpgrades.upgradeProxy(
+            proxy, implementation, abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint64).max))
+        );
         vm.stopPrank();
 
         hcuLimit = HCULimit(proxy);
