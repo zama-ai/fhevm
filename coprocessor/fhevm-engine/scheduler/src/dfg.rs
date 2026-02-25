@@ -1,3 +1,4 @@
+mod pattern; // DFG pattern hashing for OTEL attribution
 pub mod scheduler;
 pub mod types;
 
@@ -46,6 +47,7 @@ pub struct DFGOp {
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
     pub is_allowed: bool,
+    pub operation_pattern_id: [u8; 32],
 }
 impl Default for DFGOp {
     fn default() -> Self {
@@ -54,6 +56,7 @@ impl Default for DFGOp {
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
             is_allowed: false,
+            operation_pattern_id: [0u8; 32],
         }
     }
 }
@@ -72,6 +75,7 @@ pub struct ComponentNode {
     pub transaction_id: Handle,
     pub is_uncomputable: bool,
     pub component_id: usize,
+    pub transaction_pattern_id: [u8; 32], // whole-tx structural fingerprint for OTEL attribution
 }
 
 /// Check if a node is needed by traversing its outgoing edges iteratively.
@@ -199,6 +203,15 @@ pub fn build_component_nodes(
         .into_iter()
         .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
         .collect();
+
+    // Compute logical-operation pattern IDs on the pre-partition graph.
+    let logical_pattern_ids =
+        pattern::compute_logical_pattern_ids(&graph, &operations, &produced_handles);
+
+    // Compute a single transaction-level pattern ID covering the whole graph.
+    let transaction_pattern_id =
+        pattern::compute_transaction_pattern_id(&graph, &operations, &produced_handles);
+
     // Partition the graph and extract sequential components
     let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
     partition_preserving_parallelism(&graph, &mut execution_graph)?;
@@ -213,9 +226,15 @@ pub fn build_component_nodes(
             let op_node = graph
                 .node_weight(*i)
                 .ok_or(SchedulerError::DataflowGraphError)?;
-            component_ops.push(std::mem::take(&mut operations[op_node.1]));
+            let op_idx = op_node.1;
+            // Stamp each op with its own logical pattern_id (zero if not in any cone)
+            operations[op_idx].operation_pattern_id = logical_pattern_ids
+                .get(&op_idx)
+                .copied()
+                .unwrap_or([0u8; 32]);
+            component_ops.push(std::mem::take(&mut operations[op_idx]));
         }
-        component.build(component_ops, transaction_id, idx)?;
+        component.build(component_ops, transaction_id, idx, transaction_pattern_id)?;
         components.push(component);
     }
     Ok((components, unneeded))
@@ -227,6 +246,7 @@ impl ComponentNode {
         mut operations: Vec<DFGOp>,
         transaction_id: &Handle,
         component_id: usize,
+        transaction_pattern_id: [u8; 32],
     ) -> Result<()> {
         self.transaction_id = transaction_id.clone();
         self.component_id = component_id;
@@ -242,7 +262,7 @@ impl ComponentNode {
                 match i {
                     DFGTaskInput::Dependence(dh) => {
                         // Check which dependences are satisfied internally,
-                        // all missing ones are exposed as required inputs at
+                        // all missing ones are exposed as required input at
                         // transaction level.
                         let producer = produced_handles.get(dh);
                         if let Some(producer) = producer {
@@ -265,6 +285,7 @@ impl ComponentNode {
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
                     op.is_allowed,
+                    op.operation_pattern_id,
                 )
                 .index();
             if index != node_idx {
@@ -276,6 +297,7 @@ impl ComponentNode {
             // dependences. This should not be possible.
             self.graph.add_dependence(source, destination, pos)?;
         }
+        self.transaction_pattern_id = transaction_pattern_id;
         Ok(())
     }
     pub fn add_input(&mut self, handle: &[u8], cct: DFGTxInput) {
@@ -624,6 +646,7 @@ pub struct OpNode {
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
     is_allowed: bool,
+    operation_pattern_id: [u8; 32],
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -634,6 +657,11 @@ impl std::fmt::Debug for OpNode {
     }
 }
 impl OpNode {
+    /// Returns the per-operation pattern ID for OTEL attribution.
+    pub(crate) fn operation_pattern_id(&self) -> &[u8; 32] {
+        &self.operation_pattern_id
+    }
+
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             if !matches!(i, DFGTaskInput::Value(_)) {
@@ -661,12 +689,14 @@ impl DFGraph {
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
         is_allowed: bool,
+        operation_pattern_id: [u8; 32],
     ) -> NodeIndex {
         self.graph.add_node(OpNode {
             opcode,
             result_handle: rh,
             inputs,
             is_allowed,
+            operation_pattern_id,
         })
     }
     pub fn add_dependence(
