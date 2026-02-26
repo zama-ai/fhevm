@@ -251,10 +251,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         // Migrate all thresholds
-        $.kmsContextMpcThreshold[initialKmsContextId] = $.mpcThreshold;
-        $.kmsContextPublicDecryptionThreshold[initialKmsContextId] = $.publicDecryptionThreshold;
-        $.kmsContextUserDecryptionThreshold[initialKmsContextId] = $.userDecryptionThreshold;
-        $.kmsContextKmsGenThreshold[initialKmsContextId] = $.kmsGenThreshold;
+        _setMpcThreshold(initialKmsContextId, $.mpcThreshold);
+        _setPublicDecryptionThreshold(initialKmsContextId, $.publicDecryptionThreshold);
+        _setUserDecryptionThreshold(initialKmsContextId, $.userDecryptionThreshold);
+        _setKmsGenThreshold(initialKmsContextId, $.kmsGenThreshold);
 
         // Set the current context ID
         $.currentKmsContextId = initialKmsContextId;

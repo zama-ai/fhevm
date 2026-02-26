@@ -145,6 +145,7 @@ abstract contract GatewayConfigChecks {
             revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }
+
     /**
      * @notice Checks if the signer is a KMS signer for a given context, and that it corresponds
      * to the transaction sender of the same KMS node within that context.

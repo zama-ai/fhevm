@@ -858,10 +858,10 @@ contract Decryption is
 
     /**
      * @notice Validates the EIP712 signature for a given decryption response.
+     * @param contextId The context ID for context-aware signer verification.
      * @param decryptionId The decryption request ID.
      * @param digest The hashed EIP712 struct.
      * @param signature The signature to validate.
-     * @param contextId The context ID for context-aware signer verification.
      */
     function _validateDecryptionResponseEIP712Signature(
         uint256 contextId,
@@ -1043,8 +1043,8 @@ contract Decryption is
 
     /**
      * @notice Indicates if the consensus is reached for public decryption.
-     * @param numVerifiedResponses The number of public decryption responses that have been verified.
      * @param contextId The context ID for context-aware threshold lookup.
+     * @param numVerifiedResponses The number of public decryption responses that have been verified.
      * @return Whether the consensus has been reached
      */
     function _isConsensusReachedPublic(
@@ -1057,8 +1057,8 @@ contract Decryption is
 
     /**
      * @notice Indicates if the number of verified user decryption responses has reached the threshold.
-     * @param numVerifiedResponses The number of user decryption responses that have been verified.
      * @param contextId The context ID for context-aware threshold lookup.
+     * @param numVerifiedResponses The number of user decryption responses that have been verified.
      * @return Whether the threshold has been reached.
      */
     function _isThresholdReachedUser(
