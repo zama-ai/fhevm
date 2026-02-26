@@ -1,4 +1,3 @@
-use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use tfhe::FheTypes;
 
@@ -36,14 +35,4 @@ pub fn extract_chain_id_from_handle(handle: &[u8]) -> anyhow::Result<u64> {
             handle.len()
         ))
     }
-}
-
-/// Converts a U256 request ID to a valid hex format that KMS Core expects.
-///
-/// The KMS Core expects a hex string that decodes to exactly 32 bytes.
-pub fn format_request_id(request_id: U256) -> String {
-    // Convert U256 to big-endian bytes
-    let bytes = request_id.to_be_bytes::<32>();
-    // Encode as hex string
-    hex::encode(bytes)
 }
