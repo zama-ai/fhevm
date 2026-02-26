@@ -1168,8 +1168,9 @@ contract KMSVerifierTest is Test {
         uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
 
         // v0: resolves to current context
-        (address[] memory v0Signers, uint256 v0Threshold) =
-            kmsVerifier.getContextSignersAndThresholdFromExtraData(hex"00");
+        (address[] memory v0Signers, uint256 v0Threshold) = kmsVerifier.getContextSignersAndThresholdFromExtraData(
+            hex"00"
+        );
         assertEq(v0Signers.length, 3);
         assertEq(v0Signers[0], signer0);
         assertEq(v0Threshold, 1);
@@ -1182,8 +1183,7 @@ contract KMSVerifierTest is Test {
 
         // v1 pointing at old context 1 still returns ctx1's signers
         bytes memory v1ExtraData = abi.encodePacked(uint8(0x01), ctx1);
-        (address[] memory oldCtxSigners,) =
-            kmsVerifier.getContextSignersAndThresholdFromExtraData(v1ExtraData);
+        (address[] memory oldCtxSigners, ) = kmsVerifier.getContextSignersAndThresholdFromExtraData(v1ExtraData);
         assertEq(oldCtxSigners.length, 3);
         assertEq(oldCtxSigners[0], signer0);
 
