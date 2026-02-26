@@ -6,7 +6,7 @@ use super::super::types::user_decrypt::{
     UserDecryptErrorResponseJson, UserDecryptPostResponseJson, UserDecryptQueuedResult,
     UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
-use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
+use crate::core::errors::{READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG};
 use crate::core::event::{
     ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, RelayerEvent,
     RelayerEventData, UserDecryptEventData, UserDecryptRequest,
@@ -744,13 +744,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 TIMEOUT_REASON_MISSING_MSG.to_string()
                             }
                         };
+                        let error_value = if error_msg == READINESS_CHECK_TIMEOUT_MSG {
+                            RelayerV2ApiError503::readiness_check_timed_out(&error_msg)
+                        } else {
+                            RelayerV2ApiError503::response_timed_out(&error_msg)
+                        };
                         (
                             StatusCode::SERVICE_UNAVAILABLE,
                             Json(UserDecryptStatusResponseJson {
                                 status: ApiResponseStatus::Failed,
                                 request_id: request_id.to_string(),
                                 result: None,
-                                error: Some(RelayerV2ApiError503::response_timed_out(&error_msg)),
+                                error: Some(error_value),
                             }),
                         )
                             .into_response()
