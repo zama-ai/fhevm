@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+use data_encoding::BASE64URL_NOPAD;
 use opentelemetry::trace::{SpanId, TracerProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
+use scheduler::dfg::pattern::{self, PatternInput};
 use serial_test::serial;
 use tonic::metadata::MetadataValue;
 use tracing_subscriber::layer::SubscriberExt;
@@ -670,6 +672,147 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
         }
         println!("assertion 3 passed: no-cmux has different tx_pattern");
         println!("  no-cmux pattern: {p_nocmux_tx}");
+
+        // ── Assertion 4: encodings are decodable and structurally correct ─
+        //
+        // Pattern IDs in span attributes are base64url-encoded binary
+        // encodings. Decode them and verify the actual DFG structure.
+
+        let decode_b64 = |b64: &str| -> pattern::PatternDescription {
+            let bytes = BASE64URL_NOPAD
+                .decode(b64.as_bytes())
+                .unwrap_or_else(|e| panic!("invalid base64url pattern '{b64}': {e}"));
+            if pattern::is_hashed_pattern(&bytes) {
+                panic!("expected decodable pattern but got hashed pattern '{b64}'");
+            }
+            pattern::decode_pattern(&bytes)
+                .unwrap_or_else(|| panic!("malformed pattern encoding '{b64}'"))
+        };
+
+        // -- Whitepaper single-transfer encoding --
+        //
+        // Expected DFG (5 nodes in topo order):
+        //   [0] FheGe(ext, ext)
+        //   [1] FheAdd(ext, ext)
+        //   [2] FheIfThenElse(ref0, ref1, ext)  ← is_allowed
+        //   [3] FheSub(ext, ext)
+        //   [4] FheIfThenElse(ref0, ref3, ext)  ← is_allowed
+        let wp = decode_b64(&p_single_tx);
+        assert_eq!(wp.nodes.len(), 5, "whitepaper pattern should have 5 nodes");
+
+        let wp_opcodes: Vec<&str> = wp.nodes.iter().map(|n| n.opcode_name).collect();
+        assert_eq!(
+            wp_opcodes,
+            &[
+                "FHE_GE",
+                "FHE_ADD",
+                "FHE_IF_THEN_ELSE",
+                "FHE_SUB",
+                "FHE_IF_THEN_ELSE"
+            ],
+            "whitepaper opcode sequence"
+        );
+
+        // FheGe and FheAdd: 2 external inputs each
+        assert!(wp.nodes[0]
+            .inputs
+            .iter()
+            .all(|i| matches!(i, PatternInput::External)));
+        assert!(wp.nodes[1]
+            .inputs
+            .iter()
+            .all(|i| matches!(i, PatternInput::External)));
+
+        // First FheIfThenElse: refs GE(0) and ADD(1), plus external
+        assert!(matches!(wp.nodes[2].inputs[0], PatternInput::Internal(0)));
+        assert!(matches!(wp.nodes[2].inputs[1], PatternInput::Internal(1)));
+        assert!(matches!(wp.nodes[2].inputs[2], PatternInput::External));
+        assert!(wp.nodes[2].is_allowed);
+
+        // FheSub: 2 external inputs
+        assert!(wp.nodes[3]
+            .inputs
+            .iter()
+            .all(|i| matches!(i, PatternInput::External)));
+
+        // Second FheIfThenElse: refs GE(0) and SUB(3), plus external
+        assert!(matches!(wp.nodes[4].inputs[0], PatternInput::Internal(0)));
+        assert!(matches!(wp.nodes[4].inputs[1], PatternInput::Internal(3)));
+        assert!(matches!(wp.nodes[4].inputs[2], PatternInput::External));
+        assert!(wp.nodes[4].is_allowed);
+
+        println!("assertion 4a passed: whitepaper encoding = {wp}");
+
+        // -- No-cmux single-transfer encoding --
+        //
+        // Expected DFG (5 nodes in topo order):
+        //   [0] FheGe(ext, ext)
+        //   [1] FheCast(ref0, ext)
+        //   [2] FheMul(ext, ref1)
+        //   [3] FheAdd(ext, ref2)  ← is_allowed
+        //   [4] FheSub(ext, ref2)  ← is_allowed
+        let nc = decode_b64(&p_nocmux_tx);
+        assert_eq!(nc.nodes.len(), 5, "no-cmux pattern should have 5 nodes");
+
+        let nc_opcodes: Vec<&str> = nc.nodes.iter().map(|n| n.opcode_name).collect();
+        assert_eq!(
+            nc_opcodes,
+            &["FHE_GE", "FHE_CAST", "FHE_MUL", "FHE_ADD", "FHE_SUB"],
+            "no-cmux opcode sequence"
+        );
+
+        // FheGe: 2 external inputs
+        assert!(nc.nodes[0]
+            .inputs
+            .iter()
+            .all(|i| matches!(i, PatternInput::External)));
+
+        // FheCast: refs GE(0), plus scalar (external)
+        assert!(matches!(nc.nodes[1].inputs[0], PatternInput::Internal(0)));
+        assert!(matches!(nc.nodes[1].inputs[1], PatternInput::External));
+
+        // FheMul: external + ref Cast(1)
+        assert!(matches!(nc.nodes[2].inputs[0], PatternInput::External));
+        assert!(matches!(nc.nodes[2].inputs[1], PatternInput::Internal(1)));
+
+        // FheAdd: external + ref Mul(2), is_allowed
+        assert!(matches!(nc.nodes[3].inputs[0], PatternInput::External));
+        assert!(matches!(nc.nodes[3].inputs[1], PatternInput::Internal(2)));
+        assert!(nc.nodes[3].is_allowed);
+
+        // FheSub: external + ref Mul(2), is_allowed
+        assert!(matches!(nc.nodes[4].inputs[0], PatternInput::External));
+        assert!(matches!(nc.nodes[4].inputs[1], PatternInput::Internal(2)));
+        assert!(nc.nodes[4].is_allowed);
+
+        println!("assertion 4b passed: no-cmux encoding = {nc}");
+
+        // -- Triple-transfer transaction-level encoding --
+        //
+        // The transaction_pattern_id encodes the full 15-op graph.
+        let triple = decode_b64(&p_triple_tx);
+        assert_eq!(
+            triple.nodes.len(),
+            15,
+            "triple transfer tx pattern should have 15 nodes"
+        );
+        // All 15 nodes should use the same opcodes as 3 whitepaper transfers
+        let triple_opcodes: Vec<&str> = triple.nodes.iter().map(|n| n.opcode_name).collect();
+        for chunk in triple_opcodes.chunks(5) {
+            assert_eq!(
+                chunk,
+                &[
+                    "FHE_GE",
+                    "FHE_ADD",
+                    "FHE_IF_THEN_ELSE",
+                    "FHE_SUB",
+                    "FHE_IF_THEN_ELSE"
+                ],
+                "each 5-op chunk in triple tx should match whitepaper opcode sequence"
+            );
+        }
+
+        println!("assertion 4c passed: triple tx encoding = {triple}");
     } else {
         println!("skipping span assertions: global subscriber already set by another test");
     }

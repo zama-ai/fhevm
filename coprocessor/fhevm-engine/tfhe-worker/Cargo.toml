@@ -60,6 +60,7 @@ throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_futures"] }
+data-encoding = { workspace = true }
 host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }

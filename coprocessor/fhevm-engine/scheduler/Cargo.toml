@@ -11,6 +11,7 @@ daggy = { workspace = true }
 hex = { workspace = true }
 opentelemetry = { workspace = true }
 rayon = { workspace = true }
+sha3 = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tfhe = { workspace = true }
 tokio = { workspace = true }

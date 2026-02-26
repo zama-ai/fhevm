@@ -145,18 +145,32 @@
 /// (output handles, transaction IDs, ciphertext data) are excluded.
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Mutex;
 
 use daggy::petgraph::algo::toposort;
 use daggy::{Dag, NodeIndex};
 use data_encoding::BASE64URL_NOPAD;
+use sha3::{Digest, Keccak256};
 
 use super::{DFGOp, OpEdge};
 use crate::dfg::types::DFGTaskInput;
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::types::SupportedFheOperations;
 
-/// Encoding version byte.
+/// Encoding version byte (self-describing, decodable).
 const ENCODING_VERSION: u8 = 0x01;
+
+/// Hash version byte (Keccak-256 truncated, not decodable).
+const HASH_VERSION: u8 = 0x02;
+
+/// Number of bytes to keep from the Keccak-256 digest.
+const HASH_DIGEST_LEN: usize = 20;
+
+/// Default node-count threshold: groups with more nodes than this get hashed.
+const DEFAULT_PATTERN_HASH_THRESHOLD: usize = 25;
+
+/// Dedup cache so we log the full v1 encoding only once per unique hash.
+static HASH_LOG_SEEN: Mutex<Option<HashSet<Vec<u8>>>> = Mutex::new(None);
 
 // ---------------------------------------------------------------------------
 // Pattern encoding / decoding types
@@ -210,9 +224,13 @@ pub fn pattern_to_base64url(bytes: &[u8]) -> String {
 
 /// Decode a binary pattern encoding into a [`PatternDescription`].
 ///
-/// Returns `None` if the encoding is malformed (wrong version, truncated, etc.).
+/// Returns `None` if the encoding is malformed (wrong version, truncated, etc.)
+/// or if the pattern is a hashed v2 form (hashes are not decodable).
 pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
     if bytes.len() < 2 {
+        return None;
+    }
+    if bytes[0] == HASH_VERSION {
         return None;
     }
     if bytes[0] != ENCODING_VERSION {
@@ -273,6 +291,71 @@ pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
 }
 
 // ---------------------------------------------------------------------------
+// Two-tier finalization (encoding vs hash)
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if the pattern bytes represent a hashed (v2) pattern.
+pub fn is_hashed_pattern(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes[0] == HASH_VERSION
+}
+
+/// Read the hash threshold from `FHEVM_PATTERN_HASH_THRESHOLD` env var,
+/// falling back to [`DEFAULT_PATTERN_HASH_THRESHOLD`].
+fn pattern_hash_threshold() -> usize {
+    std::env::var("FHEVM_PATTERN_HASH_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PATTERN_HASH_THRESHOLD)
+}
+
+/// If the v1 encoding has `node_count ≤ threshold`, return it as-is.
+/// Otherwise hash it into a compact 23-byte v2 form and log the full
+/// encoding once (per unique hash) for operator linkability.
+///
+/// ## Hashed pattern binary layout
+///
+/// ```text
+/// Byte 0:     0x02 (HASH_VERSION)
+/// Bytes 1-2:  node_count as u16 big-endian
+/// Bytes 3-22: first 20 bytes of Keccak-256(full_v1_encoding)
+/// Total: 23 bytes
+/// ```
+fn finalize_pattern(encoding: Vec<u8>, threshold: usize) -> Vec<u8> {
+    // The node_count is at byte 1 of the v1 encoding.
+    debug_assert!(encoding.len() >= 2 && encoding[0] == ENCODING_VERSION);
+    let node_count = encoding[1] as usize;
+
+    if node_count <= threshold {
+        return encoding;
+    }
+
+    // Hash the full v1 encoding.
+    let digest = Keccak256::digest(&encoding);
+
+    // Build v2 form: version(1) + node_count_u16(2) + truncated_hash(20) = 23 bytes.
+    let mut buf = Vec::with_capacity(1 + 2 + HASH_DIGEST_LEN);
+    buf.push(HASH_VERSION);
+    buf.extend_from_slice(&(node_count as u16).to_be_bytes());
+    buf.extend_from_slice(&digest[..HASH_DIGEST_LEN]);
+
+    // Log the full encoding once per unique hash for linkability.
+    let mut seen = HASH_LOG_SEEN.lock().unwrap();
+    let set = seen.get_or_insert_with(HashSet::new);
+    if set.insert(buf.clone()) {
+        let b64_hash = BASE64URL_NOPAD.encode(&buf);
+        let b64_full = BASE64URL_NOPAD.encode(&encoding);
+        tracing::info!(
+            pattern_hash = %b64_hash,
+            pattern_full = %b64_full,
+            node_count,
+            "new hashed pattern: full encoding logged for linkability"
+        );
+    }
+
+    buf
+}
+
+// ---------------------------------------------------------------------------
 // Logical-operation pattern IDs
 // ---------------------------------------------------------------------------
 
@@ -327,6 +410,16 @@ fn is_source_op(op: &DFGOp) -> bool {
         .all(|i| !matches!(i, DFGTaskInput::Dependence(_)))
 }
 
+/// Maximum number of nodes that a v1 encoding can represent (node_count is u8).
+const V1_MAX_NODES: usize = 255;
+
+/// Maximum number of inputs per node that a v1 encoding can represent
+/// (3-bit field in the flags byte).
+const V1_MAX_INPUTS_PER_NODE: usize = 7;
+
+/// Maximum topo position that fits in an internal-ref byte (7-bit field).
+const V1_MAX_INTERNAL_REF: usize = 127;
+
 /// Encode a subgraph (a set of node indices within the pre-partition graph)
 /// as a compact self-describing binary structure.
 ///
@@ -335,11 +428,15 @@ fn is_source_op(op: &DFGOp) -> bool {
 /// nodes, allowed nodes from other groups, DB handles) are treated as external
 /// (byte 0x00).
 ///
+/// Returns `None` if the group exceeds the v1 encoding limits (\>255 nodes,
+/// \>7 inputs per node, or \>127 internal-ref position). Callers should treat
+/// `None` the same as an empty pattern (no pattern attribution for this group).
+///
 /// ## Binary layout (version 1)
 ///
 /// ```text
 /// Byte 0:  0x01 (version)
-/// Byte 1:  node_count (u8)
+/// Byte 1:  node_count (u8, max 255)
 ///
 /// Per node in canonical topological order:
 ///   Byte N+0:  opcode (u8, raw SupportedFheOperations repr value: 0-32)
@@ -356,9 +453,9 @@ fn encode_subgraph(
     produced_handles: &HashMap<Vec<u8>, usize>,
     parent_topo: &[NodeIndex],
     graph: &Dag<(bool, usize), OpEdge>,
-) -> Vec<u8> {
+) -> Option<Vec<u8>> {
     if group.is_empty() {
-        return Vec::new();
+        return None;
     }
 
     // Filter the parent graph's topo order to group members. The parent topo
@@ -381,13 +478,16 @@ fn encode_subgraph(
         })
         .collect();
 
+    let node_count = local_topo.len();
+    if node_count > V1_MAX_NODES {
+        return None;
+    }
+
     // Map global op_idx → local topo position for internal refs.
-    let mut topo_pos: HashMap<usize, u8> = HashMap::with_capacity(local_topo.len());
+    let mut topo_pos: HashMap<usize, u8> = HashMap::with_capacity(node_count);
     for (pos, &op_idx) in local_topo.iter().enumerate() {
         topo_pos.insert(op_idx, pos as u8);
     }
-
-    let node_count = local_topo.len();
 
     // Pre-allocate: version(1) + count(1) + per-node ~4 bytes average
     let mut buf: Vec<u8> = Vec::with_capacity(2 + node_count * 4);
@@ -400,11 +500,15 @@ fn encode_subgraph(
     for &global_idx in &local_topo {
         let op = &operations[global_idx];
 
+        if op.inputs.len() > V1_MAX_INPUTS_PER_NODE {
+            return None;
+        }
+
         // Opcode byte
         buf.push(op.fhe_op as u8);
 
         // Flags + input_count byte
-        let input_count = op.inputs.len().min(7) as u8;
+        let input_count = op.inputs.len() as u8;
         let flags = if op.is_allowed { 0x80 } else { 0x00 } | (input_count & 0x07);
         buf.push(flags);
 
@@ -415,7 +519,10 @@ fn encode_subgraph(
                     // Internal dependency only if the producer is in this group
                     if let Some(&producer_idx) = produced_handles.get(h) {
                         if let Some(&src_pos) = topo_pos.get(&producer_idx) {
-                            0x80 | (src_pos & 0x7F)
+                            if src_pos as usize > V1_MAX_INTERNAL_REF {
+                                return None;
+                            }
+                            0x80 | src_pos
                         } else {
                             0x00
                         }
@@ -429,7 +536,7 @@ fn encode_subgraph(
         }
     }
 
-    buf
+    Some(buf)
 }
 
 /// Compute logical-operation pattern IDs on the **pre-partition** graph.
@@ -535,11 +642,22 @@ pub fn compute_logical_pattern_ids(
     }
 
     // Encode each group and assign pattern_ids
+    let threshold = pattern_hash_threshold();
     let mut result: HashMap<usize, Vec<u8>> = HashMap::new();
     for group in groups.values() {
-        let pattern_id = encode_subgraph(operations, group, produced_handles, &topo, graph);
-        for &node in group {
-            result.insert(node, pattern_id.clone());
+        match encode_subgraph(operations, group, produced_handles, &topo, graph) {
+            Some(encoding) => {
+                let pattern_id = finalize_pattern(encoding, threshold);
+                for &node in group {
+                    result.insert(node, pattern_id.clone());
+                }
+            }
+            None => {
+                tracing::warn!(
+                    group_size = group.len(),
+                    "operation pattern encoding skipped: group exceeds v1 encoding limits"
+                );
+            }
         }
     }
 
@@ -588,7 +706,16 @@ pub fn compute_transaction_pattern_id(
         Err(_) => return Vec::new(),
     };
 
-    encode_subgraph(operations, &all_computation, produced_handles, &topo, graph)
+    match encode_subgraph(operations, &all_computation, produced_handles, &topo, graph) {
+        Some(encoding) => finalize_pattern(encoding, pattern_hash_threshold()),
+        None => {
+            tracing::warn!(
+                computation_nodes = all_computation.len(),
+                "transaction pattern encoding skipped: graph exceeds v1 encoding limits"
+            );
+            Vec::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -600,7 +727,9 @@ mod tests {
 
     use data_encoding::BASE64URL_NOPAD;
 
-    use super::{decode_pattern, pattern_to_base64url, ENCODING_VERSION};
+    use super::{
+        decode_pattern, is_hashed_pattern, pattern_to_base64url, ENCODING_VERSION, HASH_VERSION,
+    };
 
     /// Build a pre-partition graph + produced_handles from `Vec<DFGOp>` and call
     /// `compute_logical_pattern_ids` directly. Avoids going through `build_component_nodes`
@@ -649,19 +778,23 @@ mod tests {
             .collect()
     }
 
-    /// Assert that a pattern_id is a valid encoding (starts with version byte,
-    /// has correct structure, and is non-empty).
-    fn assert_valid_encoding(bytes: &[u8]) {
+    /// Assert that a pattern_id is a valid pattern — either a v1 encoding
+    /// (decodable) or a v2 hash (23 bytes, starts with HASH_VERSION).
+    fn assert_valid_pattern(bytes: &[u8]) {
         assert!(!bytes.is_empty(), "pattern_id should not be empty");
-        assert_eq!(
-            bytes[0], ENCODING_VERSION,
-            "pattern_id should start with version byte"
-        );
-        let desc = decode_pattern(bytes).expect("pattern_id should be decodable");
-        assert!(
-            !desc.nodes.is_empty(),
-            "decoded pattern should have at least one node"
-        );
+        match bytes[0] {
+            ENCODING_VERSION => {
+                let desc = decode_pattern(bytes).expect("v1 pattern_id should be decodable");
+                assert!(
+                    !desc.nodes.is_empty(),
+                    "decoded pattern should have at least one node"
+                );
+            }
+            HASH_VERSION => {
+                assert_eq!(bytes.len(), 23, "hashed pattern should be exactly 23 bytes");
+            }
+            other => panic!("unexpected pattern version byte: 0x{other:02x}"),
+        }
     }
 
     /// Build DFGOps matching one ERC20 transferFrom call.
@@ -818,7 +951,7 @@ mod tests {
             "all ops within one transfer should share the same pattern_id"
         );
         let single_pattern = &all_op_patterns[0];
-        assert_valid_encoding(single_pattern);
+        assert_valid_pattern(single_pattern);
 
         // === Three independent transferFrom calls in one tx ===
         let mut all_ops = build_transfer_from_ops(0x10);
@@ -937,7 +1070,7 @@ mod tests {
         // Verify all ops have valid pattern_ids
         for c in &components {
             for pid in collect_op_pattern_ids(c) {
-                assert_valid_encoding(&pid);
+                assert_valid_pattern(&pid);
             }
         }
 
@@ -1593,7 +1726,7 @@ mod tests {
                 !pid.is_empty(),
                 "operation_pattern_id for op {i} should not be empty"
             );
-            assert_valid_encoding(pid);
+            assert_valid_pattern(pid);
         }
 
         let mut unique = op_pids.clone();
@@ -1613,7 +1746,7 @@ mod tests {
             !tx_pid.is_empty(),
             "transaction_pattern_id should not be empty"
         );
-        assert_valid_encoding(tx_pid);
+        assert_valid_pattern(tx_pid);
     }
 
     // -----------------------------------------------------------------------
@@ -1729,6 +1862,199 @@ mod tests {
             b64.len() < 64,
             "base64url for single-node pattern should be shorter than 64 chars, got {}",
             b64.len()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // V1 encoding limit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn oversize_group_returns_no_pattern() {
+        // Build a group with > 255 nodes (V1_MAX_NODES).
+        // All are independent allowed FheAdd ops with external inputs.
+        let n = 256;
+        let ops: Vec<DFGOp> = (0..n)
+            .map(|i| {
+                let mut h = vec![0u8; 32];
+                h[0] = (i >> 8) as u8;
+                h[1] = (i & 0xFF) as u8;
+                DFGOp {
+                    output_handle: h,
+                    fhe_op: SupportedFheOperations::FheAdd,
+                    inputs: vec![
+                        DFGTaskInput::Dependence(handle(0xE0, i as u8)),
+                        DFGTaskInput::Dependence(handle(0xE1, i as u8)),
+                    ],
+                    is_allowed: true,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let ids = compute_logical_ids(ops);
+        // With 256 independent allowed nodes, each is its own group (1 node),
+        // so individual groups are within limits. The overflow applies to
+        // transaction_pattern_id which encodes all 256 as one group.
+        // Verify individual groups still work:
+        assert!(
+            !ids.is_empty(),
+            "individual single-node groups should still encode"
+        );
+
+        // Now test that compute_transaction_pattern_id rejects >255-node groups
+        // (which exceed the v1 encoding u8 node_count limit).
+        let n = 256;
+        let mut ops2: Vec<DFGOp> = Vec::with_capacity(n);
+        // Build a chain: each op depends on the previous, so the whole thing
+        // is one connected component for the tx-level encoding.
+        for i in 0..n {
+            let mut h = vec![0u8; 32];
+            h[0] = (i >> 8) as u8;
+            h[1] = (i & 0xFF) as u8;
+            let inputs = if i == 0 {
+                vec![
+                    DFGTaskInput::Dependence(handle(0xE0, 0)),
+                    DFGTaskInput::Dependence(handle(0xE1, 0)),
+                ]
+            } else {
+                let mut prev_h = vec![0u8; 32];
+                prev_h[0] = ((i - 1) >> 8) as u8;
+                prev_h[1] = ((i - 1) & 0xFF) as u8;
+                vec![
+                    DFGTaskInput::Dependence(prev_h),
+                    DFGTaskInput::Dependence(handle(0xE1, i as u8)),
+                ]
+            };
+            ops2.push(DFGOp {
+                output_handle: h,
+                fhe_op: SupportedFheOperations::FheAdd,
+                inputs,
+                is_allowed: i == n - 1, // only last is allowed
+                ..Default::default()
+            });
+        }
+
+        let tx_id = vec![0xFFu8; 32];
+        let (components, _) = build_component_nodes(ops2, &tx_id).unwrap();
+        // >255 nodes exceeds v1 u8 node_count → empty (encode_subgraph returns None)
+        assert!(
+            components[0].transaction_pattern_id.is_empty(),
+            "256-node tx should produce empty transaction_pattern_id"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Two-tier encoding tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: build a chain of `n` FheAdd ops where each depends on the
+    /// previous (except the first which has external inputs). Only the last
+    /// is `is_allowed`. This creates a single logical group of `n` computation
+    /// nodes. Uses distinct handle prefixes to avoid collisions.
+    fn build_chain(n: usize, prefix: u8) -> Vec<DFGOp> {
+        let mut ops = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut h = vec![0u8; 32];
+            h[0] = prefix;
+            h[1] = (i >> 8) as u8;
+            h[2] = (i & 0xFF) as u8;
+            let inputs = if i == 0 {
+                vec![
+                    DFGTaskInput::Dependence(handle(0xE0, prefix)),
+                    DFGTaskInput::Dependence(handle(0xE1, prefix)),
+                ]
+            } else {
+                let mut prev_h = vec![0u8; 32];
+                prev_h[0] = prefix;
+                prev_h[1] = ((i - 1) >> 8) as u8;
+                prev_h[2] = ((i - 1) & 0xFF) as u8;
+                vec![
+                    DFGTaskInput::Dependence(prev_h),
+                    DFGTaskInput::Dependence(handle(0xE1, (i & 0xFF) as u8)),
+                ]
+            };
+            ops.push(DFGOp {
+                output_handle: h,
+                fhe_op: SupportedFheOperations::FheAdd,
+                inputs,
+                is_allowed: i == n - 1,
+                ..Default::default()
+            });
+        }
+        ops
+    }
+
+    #[test]
+    fn pattern_below_threshold_is_encoding() {
+        // A group with ≤ DEFAULT_PATTERN_HASH_THRESHOLD nodes stays v1.
+        let ops = build_chain(10, 0xA0);
+        let ids = compute_logical_ids(ops);
+        assert!(!ids.is_empty());
+        let pattern = ids.values().next().unwrap();
+        assert_eq!(
+            pattern[0], ENCODING_VERSION,
+            "small group should produce v1 encoding"
+        );
+        assert!(
+            decode_pattern(pattern).is_some(),
+            "v1 encoding should be decodable"
+        );
+        assert!(
+            !is_hashed_pattern(pattern),
+            "v1 encoding should not be identified as hashed"
+        );
+    }
+
+    #[test]
+    fn pattern_above_threshold_is_hashed() {
+        // A group with > DEFAULT_PATTERN_HASH_THRESHOLD nodes gets hashed.
+        // Default threshold is 25, so 30 nodes should trigger hashing.
+        let ops = build_chain(30, 0xB0);
+        let ids = compute_logical_ids(ops);
+        assert!(!ids.is_empty());
+        let pattern = ids.values().next().unwrap();
+        assert_eq!(
+            pattern[0], HASH_VERSION,
+            "large group should produce v2 hashed pattern"
+        );
+        assert_eq!(
+            pattern.len(),
+            23,
+            "hashed pattern should be exactly 23 bytes"
+        );
+        // node_count is encoded as u16 big-endian at bytes 1-2
+        let node_count = u16::from_be_bytes([pattern[1], pattern[2]]);
+        assert_eq!(node_count, 30, "hashed pattern should encode node_count=30");
+        assert!(
+            is_hashed_pattern(pattern),
+            "v2 pattern should be identified as hashed"
+        );
+        assert!(
+            decode_pattern(pattern).is_none(),
+            "hashed pattern should not be decodable"
+        );
+        // Base64url should be at most 31 chars (23 bytes → ceil(23*4/3) = 31)
+        let b64 = pattern_to_base64url(pattern);
+        assert!(
+            b64.len() <= 31,
+            "hashed pattern base64url should be ≤31 chars, got {}",
+            b64.len()
+        );
+    }
+
+    #[test]
+    fn hashed_pattern_deterministic() {
+        // Two chains of the same length with different handles should produce
+        // the same hash (structure is identical, handles don't matter).
+        let ops_a = build_chain(30, 0xC0);
+        let ops_b = build_chain(30, 0xD0);
+        let ids_a = compute_logical_ids(ops_a);
+        let ids_b = compute_logical_ids(ops_b);
+        let pat_a = ids_a.values().next().unwrap();
+        let pat_b = ids_b.values().next().unwrap();
+        assert_eq!(
+            pat_a, pat_b,
+            "same structure with different handles should produce identical hashed pattern"
         );
     }
 }
