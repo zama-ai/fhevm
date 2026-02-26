@@ -4,7 +4,7 @@ name: claude-review
 # The prompt is extracted as the text after "@claude" in the comment body.
 #
 # Security model:
-#   - Only write/admin users can trigger (enforced by permission check on the App token)
+#   - Only write/admin/maintain users can trigger (enforced by explicit collaborator permission gate)
 #   - Network sandbox: Squid proxy (L7 domain allowlist) + iptables (L3 egress block)
 #   - Claude CLI pre-installed before network lockdown
 #
@@ -15,8 +15,6 @@ name: claude-review
 on:
   issue_comment:
     types: [created]
-  pull_request_review_comment:
-    types: [created]
 
 permissions: {}
 
@@ -25,7 +23,7 @@ jobs:
     name: claude-review
     if: |
       contains(github.event.comment.body, '@claude') &&
-      (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
+      github.event.issue.pull_request
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -39,11 +37,31 @@ jobs:
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          # Always use default branch contents for workflow runtime files.
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv # Required by internal skill scripts
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
+
+      - name: Enforce actor repository permissions
+        run: |
+          PERMISSION=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null || echo "none")
+          echo "Actor permission level: ${PERMISSION}"
+
+          case "$PERMISSION" in
+            admin|write|maintain)
+              ;;
+            *)
+              echo "::error::Actor '${ACTOR}' must have write/admin/maintain permission to trigger this workflow (got '${PERMISSION}')"
+              exit 1
+              ;;
+          esac
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
 
       - name: Clone private repositories
         run: |
@@ -54,12 +72,14 @@ jobs:
 
       - name: Fetch PR/issue metadata
         run: |
+          CONTEXT_EOF="CTX_$(openssl rand -hex 8)"
+
           if [[ -n "$ISSUE_PR_URL" ]]; then
             PR_NUMBER="$ISSUE_NUMBER_INPUT"
             PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits,files)
 
             {
-              echo "FORMATTED_CONTEXT<<EOF"
+              echo "FORMATTED_CONTEXT<<${CONTEXT_EOF}"
               echo "PR Title: $(echo "$PR_DATA" | jq -r '.title')"
               echo "PR Author: $(echo "$PR_DATA" | jq -r '.author.login')"
               echo "PR Number: ${PR_NUMBER}"
@@ -69,24 +89,24 @@ jobs:
               echo "PR Deletions: $(echo "$PR_DATA" | jq -r '.deletions')"
               echo "Total Commits: $(echo "$PR_DATA" | jq -r '.commits | length')"
               echo "Changed Files: $(echo "$PR_DATA" | jq '.files | length') files"
-              echo "EOF"
+              echo "${CONTEXT_EOF}"
             } >> "$GITHUB_ENV"
           else
             {
-              echo "FORMATTED_CONTEXT<<EOF"
+              echo "FORMATTED_CONTEXT<<${CONTEXT_EOF}"
               echo "Issue Title: ${ISSUE_TITLE_INPUT}"
               echo "Issue Author: ${ISSUE_AUTHOR_INPUT}"
               echo "Issue State: ${ISSUE_STATE_INPUT^^}"
-              echo "EOF"
+              echo "${CONTEXT_EOF}"
             } >> "$GITHUB_ENV"
           fi
         env:
-          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
-          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
-          ISSUE_NUMBER_INPUT: ${{ github.event.issue.number }}
-          ISSUE_TITLE_INPUT: ${{ github.event.issue.title }}
-          ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login }}
-          ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || github.event.pull_request.url || '' }}
+          ISSUE_NUMBER_INPUT: ${{ github.event.issue.number || github.event.pull_request.number }}
+          ISSUE_TITLE_INPUT: ${{ github.event.issue.title || github.event.pull_request.title || '' }}
+          ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login || github.event.pull_request.user.login || '' }}
+          ISSUE_STATE_INPUT: ${{ github.event.issue.state || github.event.pull_request.state || '' }}
 
       - name: Build custom system prompt
         run: |
@@ -95,11 +115,12 @@ jobs:
           <formatted_context>
           ${FORMATTED_CONTEXT}
           </formatted_context>"
+          PROMPT_EOF="PROMPT_$(openssl rand -hex 8)"
 
           {
-            echo "CUSTOM_SYSTEM_PROMPT<<EOF"
+            echo "CUSTOM_SYSTEM_PROMPT<<${PROMPT_EOF}"
             echo "$SYSTEM_PROMPT"
-            echo "EOF"
+            echo "${PROMPT_EOF}"
           } >> "$GITHUB_ENV"
 
       # ── Phase 2: Authenticate & install CLI (before lockdown) ──────────
@@ -183,10 +204,6 @@ jobs:
 
       - name: Lock down iptables
         run: |
-          RUNNER_UID=$(id -u)
-          # Save current firewall rules so they can be restored during always-run cleanup.
-          sudo iptables-save | tee /tmp/iptables-pre-claude.rules > /dev/null
-
           # Resolve Squid container's IP dynamically to avoid allowing the entire 172.16/12 range
           SQUID_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' sandbox-proxy)
           if [ -z "$SQUID_IP" ]; then
@@ -194,19 +211,26 @@ jobs:
           fi
           echo "Squid IP: $SQUID_IP"
 
-          # Allow established connections and loopback (covers local DNS via 127.0.0.53)
+          # IPv4: allow only proxy traffic, then block all runner egress paths.
           sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -o lo -p tcp --dport 3128 -j ACCEPT
 
           # Allow traffic to Squid container only (single host, port 3128)
           sudo iptables -A OUTPUT -d "$SQUID_IP" -p tcp --dport 3128 -j ACCEPT
 
-          # Block new outbound TCP from runner UID — forces proxy use
-          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p tcp --syn -j REJECT --reject-with tcp-reset
+          # Block all remaining outbound traffic — deny-by-default after explicit proxy allows.
+          sudo iptables -A OUTPUT -p tcp --syn -j REJECT --reject-with tcp-reset
+          sudo iptables -A OUTPUT -p udp -j DROP
+          sudo iptables -A OUTPUT -p icmp -j DROP
 
-          # Block UDP and ICMP from runner UID — prevents DNS tunneling and ICMP exfiltration
-          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p udp -j DROP
-          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p icmp -j DROP
+          # IPv6: mirror egress restrictions if IPv6 tooling is present on the runner.
+          if command -v ip6tables >/dev/null 2>&1; then
+            sudo ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+            sudo ip6tables -A OUTPUT -o lo -p tcp --dport 3128 -j ACCEPT
+            sudo ip6tables -A OUTPUT -p tcp --syn -j REJECT --reject-with tcp-reset
+            sudo ip6tables -A OUTPUT -p udp -j DROP
+            sudo ip6tables -A OUTPUT -p ipv6-icmp -j DROP
+          fi
 
           # Verify: direct blocked, proxy works
           if curl -sf --max-time 5 -o /dev/null https://google.com 2>/dev/null; then
@@ -276,13 +300,15 @@ jobs:
           GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
           HTTPS_PROXY: http://localhost:3128
 
-      - name: Restore iptables
+      - name: Reset iptables for runner teardown
         if: always()
         run: |
-          if [ -f /tmp/iptables-pre-claude.rules ]; then
-            sudo sh -c 'iptables-restore < /tmp/iptables-pre-claude.rules' || echo "::warning::Failed to restore iptables"
-          else
-            echo "::warning::No iptables backup found at /tmp/iptables-pre-claude.rules"
+          # Ephemeral runners are discarded, so we just reopen egress for final runner teardown.
+          sudo iptables -P OUTPUT ACCEPT || true
+          sudo iptables -F OUTPUT || true
+          if command -v ip6tables >/dev/null 2>&1; then
+            sudo ip6tables -P OUTPUT ACCEPT || true
+            sudo ip6tables -F OUTPUT || true
           fi
 
       - name: Stop Squid proxy
