@@ -41,7 +41,7 @@ services:
     - /bin/server
     - --config-file=/app/config/local.yaml
     volumes:
-      - ../config/relayer/local.yaml:/app/config/local.yaml
+      - ../../../.fhevm/config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
     depends_on:

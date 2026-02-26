@@ -1,6 +1,7 @@
 
 gateway:
   blockchain_rpc:
+    http_url: "http://gateway-node:8546"
     read_http_url: "http://gateway-node:8546"
     chain_id: 54321
     ws_health_check_timeout_secs: 5
@@ -167,7 +168,7 @@ metrics:
   retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
 
 storage:
-  sql_database_url: "postgresql://postgres:postgres@relayer-db:5433/relayer_db"
+  sql_database_url: "postgresql://postgres:postgres@fhevm-relayer-db:5432/relayer_db"
   app_pool:
     max_connections: 10
     min_connections: 2
