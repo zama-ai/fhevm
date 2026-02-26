@@ -7,9 +7,6 @@ import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20:HCU', function () {
-  const MAX_HCU_PER_BLOCK_DISABLED = (1n << 48n) - 1n;
-  const MIN_HCU_PER_BLOCK = 20_000_000n;
-
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -24,9 +21,8 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   afterEach(async function () {
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setHCUPerBlock(MAX_HCU_PER_BLOCK_DISABLED);
     if (await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress)) {
+      const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
       await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
     }
   });
@@ -100,7 +96,7 @@ describe('EncryptedERC20:HCU', function () {
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
   });
 
-  it('should account transferFrom in block HCU meter when cap is enabled', async function () {
+  it('should account transferFrom in block HCU meter', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
@@ -113,9 +109,6 @@ describe('EncryptedERC20:HCU', function () {
       encryptedAllowanceAmount.inputProof,
     );
     await approveTx.wait();
-
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK);
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
     const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
@@ -150,7 +143,6 @@ describe('EncryptedERC20:HCU', function () {
     await approveTx.wait();
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setHCUPerBlock(MIN_HCU_PER_BLOCK);
     await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
