@@ -107,20 +107,22 @@ jobs:
       - name: Exchange OIDC for GitHub App token
         id: oidc-exchange
         run: |
-          OIDC_TOKEN=$(curl -sf \
+          OIDC_RESPONSE=$(curl -s \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action")
+          OIDC_TOKEN=$(echo "$OIDC_RESPONSE" | jq -r '.value')
           if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
-            echo "::error::OIDC token request failed"; exit 1
+            echo "::error::OIDC token request failed: $OIDC_RESPONSE"; exit 1
           fi
 
-          APP_TOKEN=$(curl -sf -X POST \
+          EXCHANGE_RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"permissions":{"contents":"write","pull_requests":"write","issues":"write"}}' \
-            "https://api.anthropic.com/api/github/github-app-token-exchange" | jq -r '.token')
+            "https://api.anthropic.com/api/github/github-app-token-exchange")
+          APP_TOKEN=$(echo "$EXCHANGE_RESPONSE" | jq -r '.token')
           if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
-            echo "::error::Token exchange failed"; exit 1
+            echo "::error::Token exchange failed: $EXCHANGE_RESPONSE"; exit 1
           fi
 
           echo "::add-mask::$APP_TOKEN"
@@ -269,9 +271,9 @@ jobs:
       - name: Revoke GitHub App token
         if: always() && steps.oidc-exchange.outputs.app_token != ''
         run: |
-          if ! gh api "installation/token" -X DELETE --silent 2>/dev/null; then
-            echo "::warning::Token revocation failed"
-          fi
+          REVOKE_OUTPUT=$(gh api "installation/token" -X DELETE 2>&1) || {
+            echo "::warning::Token revocation failed: $REVOKE_OUTPUT"
+          }
         env:
           GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
           HTTPS_PROXY: http://localhost:3128
