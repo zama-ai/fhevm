@@ -313,7 +313,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 handle,
         FheType resultType
     ) internal view returns (bytes32 result) {
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, handle, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, handle, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
     }
 
@@ -325,7 +325,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         FheType resultType
     ) internal view returns (bytes32 result) {
         scalar = scalar & 0x01;
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, rhs, scalar, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, rhs, scalar, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
     }
 
@@ -337,7 +337,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         FheType resultType
     ) internal view returns (bytes32 result) {
         scalar = scalar & 0x01;
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, rhs, scalar, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, rhs, scalar, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
     }
 
@@ -348,7 +348,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 rhs,
         FheType middleFheType
     ) internal view returns (bytes32 result) {
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, middle, rhs, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, middle, rhs, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
     }
 
@@ -1117,7 +1117,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 expectedResult = keccak256(
-            abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.trivialEncrypt, pt, FheType(fheType), acl, block.chainid)
+            abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.trivialEncrypt, pt, FheType(fheType), acl, block.chainid, blockhash(block.number - 1))
         );
         expectedResult = _appendMetadataToPrehandle(FheType(fheType), expectedResult, block.chainid, HANDLE_VERSION);
 
@@ -1143,7 +1143,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(handle, sender);
 
         bytes32 expectedResult = keccak256(
-            abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.cast, handle, FheType(fheOutputType), acl, block.chainid)
+            abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.cast, handle, FheType(fheOutputType), acl, block.chainid, blockhash(block.number - 1))
         );
 
         expectedResult = _appendMetadataToPrehandle(
