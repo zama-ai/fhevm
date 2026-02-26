@@ -1,16 +1,12 @@
 name: claude-review
 
 # Triggered by @claude mention in PR comments.
-# The action extracts text after "@claude" as the prompt.
+# The prompt is extracted as the text after "@claude" in the comment body.
 #
 # Security model:
-#   - Only write/admin users can trigger (enforced by the action)
+#   - Only write/admin users can trigger (enforced by permission check on the App token)
 #   - Network sandbox: Squid proxy (L7 domain allowlist) + iptables (L3 egress block)
-#   - All dependencies pre-installed before lockdown; action skips its internal installs
-#
-# Why pre-install? The action internally runs setup-bun, bun install, and claude install.
-# These use fetch() which ignores HTTP_PROXY and gets blocked by iptables.
-# We do them beforehand and pass paths via inputs to skip those steps.
+#   - Claude CLI pre-installed before network lockdown
 #
 # Secrets:
 #   - CLAUDE_CODE_OAUTH_TOKEN: Anthropic API auth (from `claude setup-token`)
@@ -21,24 +17,22 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  pull_request:
-    types: [opened, synchronize]
 
 permissions: {}
 
 jobs:
   claude-review:
-    name: claude-review/respond
+    name: claude-review
     if: |
       contains(github.event.comment.body, '@claude') &&
       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read        # Checkout repository code and read files
       pull-requests: write  # Post review comments and update PR status
       issues: write         # Respond to @claude mentions in issue comments
       id-token: write       # OIDC token for GitHub App token exchange
-      actions: read         # Read workflow run context for action inputs
     steps:
 
       # ── Phase 1: Setup (full network) ──────────────────────────────────
@@ -48,7 +42,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Install uv
+      - name: Install uv # Required by internal skill scripts
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
 
       - name: Clone private repositories
@@ -58,49 +52,45 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
 
-      - name: Build custom system prompt
-        id: custom_prompt
+      - name: Fetch PR/issue metadata
         run: |
-          if [[ "$EVENT_NAME" == "pull_request" ]] || [[ -n "$ISSUE_PR_URL" ]]; then
-            if [[ "$EVENT_NAME" == "pull_request" ]]; then
-              PR_TITLE="$PR_TITLE_INPUT"
-              PR_AUTHOR="$PR_AUTHOR_INPUT"
-              PR_HEAD="$PR_HEAD_INPUT"
-              PR_BASE="$PR_BASE_INPUT"
-              PR_STATE="$PR_STATE_INPUT"
-              PR_ADDITIONS="$PR_ADDITIONS_INPUT"
-              PR_DELETIONS="$PR_DELETIONS_INPUT"
-              PR_COMMITS="$PR_COMMITS_INPUT"
-              PR_FILES="$PR_FILES_INPUT"
-            else
-              PR_NUMBER="$ISSUE_NUMBER_INPUT"
-              PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits)
-              PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
-              PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
-              PR_HEAD=$(echo "$PR_DATA" | jq -r '.headRefName')
-              PR_BASE=$(echo "$PR_DATA" | jq -r '.baseRefName')
-              PR_STATE=$(echo "$PR_DATA" | jq -r '.state')
-              PR_ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
-              PR_DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
-              PR_COMMITS=$(echo "$PR_DATA" | jq -r '.commits | length')
-              PR_FILES=$(gh pr view "$PR_NUMBER" --json files | jq '.files | length')
-            fi
+          if [[ -n "$ISSUE_PR_URL" ]]; then
+            PR_NUMBER="$ISSUE_NUMBER_INPUT"
+            PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits,files)
 
-            FORMATTED_CONTEXT="PR Title: ${PR_TITLE}
-          PR Author: ${PR_AUTHOR}
-          PR Branch: ${PR_HEAD} -> ${PR_BASE}
-          PR State: ${PR_STATE^^}
-          PR Additions: ${PR_ADDITIONS}
-          PR Deletions: ${PR_DELETIONS}
-          Total Commits: ${PR_COMMITS}
-          Changed Files: ${PR_FILES} files"
+            {
+              echo "FORMATTED_CONTEXT<<EOF"
+              echo "PR Title: $(echo "$PR_DATA" | jq -r '.title')"
+              echo "PR Author: $(echo "$PR_DATA" | jq -r '.author.login')"
+              echo "PR Number: ${PR_NUMBER}"
+              echo "PR Branch: $(echo "$PR_DATA" | jq -r '.headRefName') -> $(echo "$PR_DATA" | jq -r '.baseRefName')"
+              echo "PR State: $(echo "$PR_DATA" | jq -r '.state | ascii_upcase')"
+              echo "PR Additions: $(echo "$PR_DATA" | jq -r '.additions')"
+              echo "PR Deletions: $(echo "$PR_DATA" | jq -r '.deletions')"
+              echo "Total Commits: $(echo "$PR_DATA" | jq -r '.commits | length')"
+              echo "Changed Files: $(echo "$PR_DATA" | jq '.files | length') files"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           else
-            FORMATTED_CONTEXT="Issue Title: ${ISSUE_TITLE_INPUT}
-          Issue Author: ${ISSUE_AUTHOR_INPUT}
-          Issue State: ${ISSUE_STATE_INPUT^^}"
+            {
+              echo "FORMATTED_CONTEXT<<EOF"
+              echo "Issue Title: ${ISSUE_TITLE_INPUT}"
+              echo "Issue Author: ${ISSUE_AUTHOR_INPUT}"
+              echo "Issue State: ${ISSUE_STATE_INPUT^^}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           fi
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
+          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
+          ISSUE_NUMBER_INPUT: ${{ github.event.issue.number }}
+          ISSUE_TITLE_INPUT: ${{ github.event.issue.title }}
+          ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login }}
+          ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
 
-          SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+      - name: Build custom system prompt
+        run: |
+          SYSTEM_PROMPT="You are Claude, an AI assistant running in a non-interactive CI environment. You MUST act autonomously: never ask for confirmation, never ask follow-up questions, never wait for user input. Execute the requested task completely and stop.
 
           <formatted_context>
           ${FORMATTED_CONTEXT}
@@ -111,74 +101,59 @@ jobs:
             echo "$SYSTEM_PROMPT"
             echo "EOF"
           } >> "$GITHUB_ENV"
-        env:
-          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
-          PR_TITLE_INPUT: ${{ github.event.pull_request.title }}
-          PR_AUTHOR_INPUT: ${{ github.event.pull_request.user.login }}
-          PR_HEAD_INPUT: ${{ github.event.pull_request.head.ref }}
-          PR_BASE_INPUT: ${{ github.event.pull_request.base.ref }}
-          PR_STATE_INPUT: ${{ github.event.pull_request.state }}
-          PR_ADDITIONS_INPUT: ${{ github.event.pull_request.additions }}
-          PR_DELETIONS_INPUT: ${{ github.event.pull_request.deletions }}
-          PR_COMMITS_INPUT: ${{ github.event.pull_request.commits }}
-          PR_FILES_INPUT: ${{ github.event.pull_request.changed_files }}
-          ISSUE_NUMBER_INPUT: ${{ github.event.issue.number }}
-          ISSUE_TITLE_INPUT: ${{ github.event.issue.title }}
-          ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login }}
-          ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
 
-      # ── Phase 2: Pre-install dependencies (before lockdown) ────────────
-      # The action's internal setup-bun, bun install, and claude install all
-      # use fetch() which ignores HTTP_PROXY → blocked by iptables.
-      # Pre-installing and passing paths via inputs skips those steps entirely.
+      # ── Phase 2: Authenticate & install CLI (before lockdown) ──────────
 
-      # OIDC → Anthropic exchange → GitHub App token (normally done inside the action)
       - name: Exchange OIDC for GitHub App token
         id: oidc-exchange
         run: |
           OIDC_TOKEN=$(curl -sf \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
-          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
-            echo "::error::OIDC token request failed"; exit 1
-          fi
+          [ -n "$OIDC_TOKEN" ] && [ "$OIDC_TOKEN" != "null" ] || { echo "::error::OIDC token request failed"; exit 1; }
 
           APP_TOKEN=$(curl -sf -X POST \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"permissions":{"contents":"write","pull_requests":"write","issues":"write"}}' \
             "https://api.anthropic.com/api/github/github-app-token-exchange" | jq -r '.token')
-          if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
-            echo "::error::Token exchange failed"; exit 1
-          fi
+          [ -n "$APP_TOKEN" ] && [ "$APP_TOKEN" != "null" ] || { echo "::error::Token exchange failed"; exit 1; }
 
           echo "::add-mask::$APP_TOKEN"
           echo "app_token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
 
-      # Bun runtime — needed by the action's TypeScript orchestrator
-      - name: Install Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3
-        with:
-          bun-version: latest
-
-      # Action's node_modules — `bun install` inside the action would need network
-      - name: Pre-install action dependencies
-        id: setup-deps
+      - name: Post tracking comment
+        id: tracking-comment
         run: |
-          cd "/home/runner/work/_actions/anthropics/claude-code-action/b433f16b30d54063fd3bab6b12f46f3da00e41b6"
-          bun install --production
-          echo "bun_path=$(which bun)" >> "$GITHUB_OUTPUT"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ISSUE_NUMBER="${{ github.event.issue.number || github.event.pull_request.number }}"
+          BODY="**Claude is working on @${ACTOR}'s request...** — [View run]($RUN_URL)"
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/comments" \
+            -X POST -f body="$BODY" --jq '.id')
+          echo "comment_id=$COMMENT_ID" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          ACTOR: ${{ github.actor }}
 
-      # Claude Code CLI via npm — native binary ignores HTTP_PROXY (anthropics/claude-code#14165)
-      - name: Install Claude Code (npm)
-        id: setup-claude
-        run: |
-          npm install -g @anthropic-ai/claude-code@2.1.42
-          echo "path=$(which claude)" >> "$GITHUB_OUTPUT"
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.42
 
       # ── Phase 3: Network sandbox ───────────────────────────────────────
+
+      - name: Cache Squid Docker image
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: /tmp/squid-image.tar
+          key: squid-image-ubuntu-squid-latest
+
+      - name: Load or pull Squid image
+        run: |
+          if [ -f /tmp/squid-image.tar ]; then
+            docker load < /tmp/squid-image.tar
+          else
+            docker pull ubuntu/squid
+            docker save ubuntu/squid > /tmp/squid-image.tar
+          fi
 
       - name: Start Squid proxy
         run: |
@@ -205,14 +180,29 @@ jobs:
       - name: Lock down iptables
         run: |
           RUNNER_UID=$(id -u)
+          # Save current firewall rules so they can be restored during always-run cleanup.
+          sudo iptables-save | tee /tmp/iptables-pre-claude.rules > /dev/null
 
-          # Allow established connections, loopback, and Docker bridge
+          # Resolve Squid container's IP dynamically to avoid allowing the entire 172.16/12 range
+          SQUID_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' sandbox-proxy)
+          if [ -z "$SQUID_IP" ]; then
+            echo "::error::Could not determine Squid container IP"; exit 1
+          fi
+          echo "Squid IP: $SQUID_IP"
+
+          # Allow established connections and loopback (covers local DNS via 127.0.0.53)
           sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
           sudo iptables -A OUTPUT -o lo -j ACCEPT
-          sudo iptables -A OUTPUT -d 172.16.0.0/12 -j ACCEPT
+
+          # Allow traffic to Squid container only (single host, port 3128)
+          sudo iptables -A OUTPUT -d "$SQUID_IP" -p tcp --dport 3128 -j ACCEPT
 
           # Block new outbound TCP from runner UID — forces proxy use
           sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p tcp --syn -j REJECT --reject-with tcp-reset
+
+          # Block UDP and ICMP from runner UID — prevents DNS tunneling and ICMP exfiltration
+          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p udp -j DROP
+          sudo iptables -A OUTPUT -m owner --uid-owner "$RUNNER_UID" -p icmp -j DROP
 
           # Verify: direct blocked, proxy works
           if curl -sf --max-time 5 -o /dev/null https://google.com 2>/dev/null; then
@@ -223,36 +213,74 @@ jobs:
           fi
 
       # ── Phase 4: Run Claude Code (sandboxed) ───────────────────────────
+      #
+      # Runs claude directly (no action wrapper) to avoid MCP server processes
+      # that block on stdin and keep the job alive after Claude finishes.
+      # See: https://github.com/anthropics/claude-code-action/issues/865
 
       - name: Run Claude Code
         id: run-claude
-        uses: anthropics/claude-code-action@b433f16b30d54063fd3bab6b12f46f3da00e41b6 # 2026-02-10
+        run: |
+          # Install plugins from local marketplace (no network needed)
+          claude plugin marketplace add /tmp/zama-marketplace
+          claude plugin install project-manager@zama-marketplace
+          claude plugin install zama-developer@zama-marketplace
+
+          # Extract prompt: everything after "@claude" in the comment
+          PROMPT=$(echo "$COMMENT_BODY" | sed 's/.*@claude[[:space:]]*//')
+
+          claude -p "$PROMPT" \
+            --model opus \
+            --dangerously-skip-permissions \
+            --verbose \
+            --system-prompt "$CUSTOM_SYSTEM_PROMPT"
         env:
+          GITHUB_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
           HTTP_PROXY: http://localhost:3128
           HTTPS_PROXY: http://localhost:3128
           NO_PROXY: localhost,127.0.0.1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ steps.oidc-exchange.outputs.app_token }}
-          path_to_bun_executable: ${{ steps.setup-deps.outputs.bun_path }}
-          path_to_claude_code_executable: ${{ steps.setup-claude.outputs.path }}
-          plugin_marketplaces: "/tmp/zama-marketplace"
-          plugins: |
-            project-manager@zama-marketplace
-            zama-developer@zama-marketplace
-          prompt: ""
-          claude_args: |
-            --model opus
-            --dangerously-skip-permissions
-            --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       # ── Cleanup ────────────────────────────────────────────────────────
-      # The action skips token revocation when github_token is provided — do it ourselves
+
+      - name: Update tracking comment
+        if: always() && steps.tracking-comment.outputs.comment_id != ''
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$CLAUDE_OUTCOME" = "success" ]; then
+            BODY="**Claude finished @${ACTOR}'s task** — [View run]($RUN_URL)"
+          else
+            BODY="**Run finished with status: ${CLAUDE_OUTCOME}** — [View run]($RUN_URL)"
+          fi
+          gh api "repos/${{ github.repository }}/issues/comments/${{ steps.tracking-comment.outputs.comment_id }}" \
+            -X PATCH -f body="$BODY"
+        env:
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          HTTPS_PROXY: http://localhost:3128
+          ACTOR: ${{ github.actor }}
+          CLAUDE_OUTCOME: ${{ steps.run-claude.outcome }}
+
       - name: Revoke GitHub App token
         if: always() && steps.oidc-exchange.outputs.app_token != ''
         run: |
-          curl -sf -X DELETE \
-            -H "Authorization: Bearer $APP_TOKEN" \
-            "https://api.github.com/installation/token"
+          if ! gh api "installation/token" -X DELETE --silent 2>/dev/null; then
+            echo "::warning::Token revocation failed"
+          fi
         env:
-          APP_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          HTTPS_PROXY: http://localhost:3128
+
+      - name: Restore iptables
+        if: always()
+        run: |
+          if [ -f /tmp/iptables-pre-claude.rules ]; then
+            sudo sh -c 'iptables-restore < /tmp/iptables-pre-claude.rules' || echo "::warning::Failed to restore iptables"
+          else
+            echo "::warning::No iptables backup found at /tmp/iptables-pre-claude.rules"
+          fi
+
+      - name: Stop Squid proxy
+        if: always()
+        run: docker rm -f sandbox-proxy 2>/dev/null || true
