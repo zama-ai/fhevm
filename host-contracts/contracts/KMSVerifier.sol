@@ -24,6 +24,9 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     /// @notice Returned if the deserializing of the decryption proof fails.
     error DeserializingDecryptionProofFail();
 
+    /// @notice Returned if the deserializing of the extra data fails.
+    error DeserializingExtraDataFail();
+
     /// @notice Returned if the decryption proof is empty.
     error EmptyDecryptionProof();
 
@@ -474,7 +477,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             // Trailing bytes after byte 33 are ignored for forward-compatibility
             // with potential v1 extensions.
             if (extraData.length < 33) {
-                revert DeserializingDecryptionProofFail();
+                revert DeserializingExtraDataFail();
             }
             uint256 contextId;
             // Memory layout: [32-byte length][version byte][32-byte contextId][...]

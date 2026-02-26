@@ -837,7 +837,7 @@ contract KMSVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that verification reverts with DeserializingDecryptionProofFail for malformed v1 extraData
+     * @dev Tests that verification reverts with DeserializingExtraDataFail for malformed v1 extraData
      *      (version byte 0x01 but missing the required 32-byte context ID).
      */
     function test_VerificationFailsWithMalformedV1ExtraData() public {
@@ -852,7 +852,7 @@ contract KMSVerifierTest is Test {
         bytes memory sig = _computeSignature(privateKeySigner0, digest);
         bytes memory decryptionProof = abi.encodePacked(uint8(1), sig, extraData);
 
-        vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
+        vm.expectRevert(KMSVerifier.DeserializingExtraDataFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 
