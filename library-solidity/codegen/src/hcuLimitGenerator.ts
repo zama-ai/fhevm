@@ -40,6 +40,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
 
+    /// @notice Returned if hcuPerBlock < maxHCUPerTx.
+    error HCUPerBlockBelowMaxPerTx();
+
+    /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
+    error MaxHCUPerTxBelowDepth();
+
     /// @notice Returned if the operation is not supported.
     error UnsupportedOperation();
 
@@ -126,8 +132,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         _setHCUPerBlock(hcuCapPerBlock);
-        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
         _setMaxHCUPerTx(maxHCUPerTx);
+        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
     }
 
     /**
@@ -140,8 +146,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual reinitializer(REINITIALIZER_VERSION) {
         _setHCUPerBlock(hcuCapPerBlock);
-        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
         _setMaxHCUPerTx(maxHCUPerTx);
+        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
     }
 
 \n\n`;
@@ -501,27 +507,37 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the global HCU cap per block.
      * @param hcuPerBlock New cap value.
+     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
     function _setHCUPerBlock(uint48 hcuPerBlock) internal {
-        _getHCULimitStorage().globalHCUCapPerBlock = hcuPerBlock;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
+        $.globalHCUCapPerBlock = hcuPerBlock;
         emit HCUPerBlockSet(hcuPerBlock);
     }
 
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit.
+     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) internal {
-        _getHCULimitStorage().maxHCUDepthPerTx = maxHCUDepthPerTx;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
+        $.maxHCUDepthPerTx = maxHCUDepthPerTx;
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }
 
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
+     * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) internal {
-        _getHCULimitStorage().maxHCUPerTx = maxHCUPerTx;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
+        if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
+        $.maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);
     }
 

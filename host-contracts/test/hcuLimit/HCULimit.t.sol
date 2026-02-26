@@ -1182,8 +1182,29 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function test_setHCUPerBlockAcceptsArbitraryValue() public {
         vm.prank(owner);
+        hcuLimit.setHCUPerBlock(25_000_000);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 25_000_000);
+    }
+
+    function test_setHCUPerBlockRevertsIfBelowMaxPerTx() public {
+        vm.prank(owner);
+        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
         hcuLimit.setHCUPerBlock(42);
-        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 42);
+    }
+
+    function test_setMaxHCUPerTxRevertsIfAboveBlockCap() public {
+        // Lower the block cap first, then try to set maxHCUPerTx above it.
+        vm.startPrank(owner);
+        hcuLimit.setHCUPerBlock(25_000_000);
+        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
+        hcuLimit.setMaxHCUPerTx(25_000_001);
+        vm.stopPrank();
+    }
+
+    function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
+        vm.prank(owner);
+        vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
+        hcuLimit.setMaxHCUDepthPerTx(20_000_001);
     }
 
     function test_addToBlockHCUWhitelistRevertsIfAlreadyWhitelisted() public {
