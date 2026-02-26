@@ -508,7 +508,7 @@ impl PublicDecryptRepository {
     /// Update req_status to 'failure' from 'queued' state.
     /// Used when failures happen before the request reaches 'processing'
     /// (e.g., readiness check contract errors, enqueue failures).
-    async fn update_status_to_failure_from_queued(
+    pub async fn update_status_to_failure_from_queued(
         &self,
         int_job_id_bytes: &[u8],
         err_reason: &str,
@@ -565,28 +565,6 @@ impl PublicDecryptRepository {
         } else {
             Ok(0)
         }
-    }
-
-    /// Update req_status to failure when the readiness check fails with a contract error.
-    /// Transitions from 'queued' → 'failure'.
-    pub async fn update_status_to_failure_on_readiness_check_failed(
-        &self,
-        int_job_id_bytes: &[u8],
-        err_reason: &str,
-    ) -> SqlResult<u64> {
-        self.update_status_to_failure_from_queued(int_job_id_bytes, err_reason)
-            .await
-    }
-
-    /// Update req_status to failure when enqueuing the request fails.
-    /// Transitions from 'queued' → 'failure'.
-    pub async fn update_status_to_failure_on_enqueue_failed(
-        &self,
-        int_job_id_bytes: &[u8],
-        err_reason: &str,
-    ) -> SqlResult<u64> {
-        self.update_status_to_failure_from_queued(int_job_id_bytes, err_reason)
-            .await
     }
 
     /// update req_status to failure and apply err_reason by internal_indexer_id

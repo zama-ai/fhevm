@@ -975,10 +975,9 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    // TODO(mano): Review if nested error logging is necessary or can be simplified
                     if let Err(db_err) = self
                         .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
                         error!(
@@ -1001,7 +1000,7 @@ impl GatewayHandler {
 
                     if let Err(db_err) = self
                         .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
                         error!(
@@ -1020,10 +1019,9 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    // TODO(mano): Review if nested error logging is necessary or can be simplified
                     if let Err(db_err) = self
                         .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
                         error!(
@@ -1046,7 +1044,7 @@ impl GatewayHandler {
 
                     if let Err(db_err) = self
                         .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
                         error!(
