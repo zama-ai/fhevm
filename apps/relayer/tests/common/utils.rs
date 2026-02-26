@@ -660,6 +660,11 @@ pub async fn test_v2_timeout_flow(
         error_message.contains("did not respond within the expected timeframe"),
         "Error message should indicate timeout"
     );
+    assert_eq!(
+        status["error"]["label"].as_str(),
+        Some("response_timed_out"),
+        "Expected label 'response_timed_out' for cron-based timeout"
+    );
 }
 
 #[cfg(test)]

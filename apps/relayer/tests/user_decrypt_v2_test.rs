@@ -661,6 +661,13 @@ async fn test_max_retries_exceeded_fails() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("internal_server_error"),
+        "Expected label 'internal_server_error' for max retries exceeded"
+    );
+
     setup.shutdown().await;
 }
 
@@ -962,6 +969,55 @@ async fn test_readiness_contract_error_returns_failure_v2() {
         "Expected 500 for readiness check contract error (RPC error is not a known revert)"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("internal_server_error"),
+        "Expected label 'internal_server_error' for readiness check contract error"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test that a readiness check timeout (ciphertext never ready) correctly returns
+/// HTTP 503 with label "readiness_check_timed_out" so V2 clients can distinguish
+/// readiness timeouts from gateway response timeouts.
+#[tokio::test]
+async fn test_readiness_timeout_returns_503_with_correct_label() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    // Configure readiness checks to always return false (ciphertext never ready)
+    setup.fhevm_mock.set_readiness_failure();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "Expected 503 for readiness check timeout"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("readiness_check_timed_out"),
+        "Expected label 'readiness_check_timed_out' for readiness timeout"
+    );
 
     setup.shutdown().await;
 }

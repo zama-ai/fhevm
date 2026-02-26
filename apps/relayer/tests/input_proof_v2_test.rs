@@ -229,6 +229,13 @@ async fn test_gateway_rejection_fails() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("internal_server_error"),
+        "Expected label 'internal_server_error' for gateway rejection"
+    );
+
     setup.shutdown().await;
 }
 
@@ -284,6 +291,13 @@ async fn test_max_retries_exceeded_fails() {
     assert_ne!(status, reqwest::StatusCode::OK);
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("internal_server_error"),
+        "Expected label 'internal_server_error' for max retries exceeded"
+    );
 
     setup.shutdown().await;
 }
