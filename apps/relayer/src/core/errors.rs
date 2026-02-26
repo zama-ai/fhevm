@@ -12,6 +12,11 @@ use thiserror::Error;
 // Standardized timeout error messages
 pub const READINESS_CHECK_TIMEOUT_MSG: &str =
     "Ciphertext not ready for decryption on the gateway chain";
+
+/// Prefix for host ACL not-allowed errors, used for error classification.
+pub const NOT_ALLOWED_ON_HOST_ACL_PREFIX: &str = "Not allowed on host ACL:";
+/// Prefix for host ACL infra errors (RPC / unsupported chain), used for error classification.
+pub const HOST_ACL_FAILED_PREFIX: &str = "Host ACL check failed:";
 pub const RESPONSE_TIMEOUT_MSG: &str =
     "Gateway chain did not respond within the expected timeframe";
 pub const TIMEOUT_REASON_MISSING_MSG: &str = "Request timed out (reason not available)";
@@ -65,6 +70,12 @@ pub enum EventProcessingError {
 
     #[error("Protocol Overwhelmed: {0}")]
     ProtocolOverload(String),
+
+    #[error("Not allowed on host ACL: {0}")]
+    NotAllowedOnHostAcl(String),
+
+    #[error("Host ACL check failed: {0}")]
+    HostAclFailed(String),
 }
 
 impl From<GatewayTxnError> for EventProcessingError {
@@ -76,9 +87,15 @@ impl From<GatewayTxnError> for EventProcessingError {
 impl From<ReadinessCheckError> for EventProcessingError {
     fn from(e: ReadinessCheckError) -> Self {
         match e {
-            ReadinessCheckError::Timeout => EventProcessingError::ReadinessCheckTimedOut,
-            ReadinessCheckError::ContractError(err) => {
+            ReadinessCheckError::GwTimeout => EventProcessingError::ReadinessCheckTimedOut,
+            ReadinessCheckError::GwContractError(err) => {
                 EventProcessingError::ContractCallFailed(err.to_string())
+            }
+            ReadinessCheckError::NotAllowedOnHostAcl(err) => {
+                EventProcessingError::NotAllowedOnHostAcl(err.to_string())
+            }
+            ReadinessCheckError::HostAclFailed(err) => {
+                EventProcessingError::HostAclFailed(err.to_string())
             }
         }
     }

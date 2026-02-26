@@ -14,8 +14,10 @@ use crate::http::endpoints::{
     },
     version_handler,
 };
+use crate::http::host_chain_validation::HostChainIdChecker;
 use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
+use crate::http::utils::BounceChecker;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
@@ -50,6 +52,7 @@ pub async fn run_http_server<D>(
     repositories: Arc<Repositories>,
     user_decrypt_shares_threshold: u16,
     bouncer_throttlers: BouncerThrottlers,
+    host_chain_id_checker: Arc<HostChainIdChecker>,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -91,30 +94,36 @@ where
         orchestrator.clone(),
         api_version,
         repositories.user_decrypt.clone(),
-        config.api_retry_after_seconds,
-        bouncer_throttlers
-            .tx_throttlers
-            .user_decrypt_tx_throttler
-            .clone(),
-        bouncer_throttlers
-            .readiness_throttling_senders
-            .user_decrypt_readiness_throttler
-            .clone(),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .user_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .user_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
+        host_chain_id_checker.clone(),
     ));
 
     let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
         orchestrator.clone(),
         api_version,
         repositories.public_decrypt.clone(),
-        config.api_retry_after_seconds,
-        bouncer_throttlers
-            .tx_throttlers
-            .public_decrypt_tx_throttler
-            .clone(),
-        bouncer_throttlers
-            .readiness_throttling_senders
-            .public_decrypt_readiness_throttler
-            .clone(),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .public_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .public_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
+        host_chain_id_checker.clone(),
     ));
 
     // Initialize v2 handlers with dynamic retry-after state
@@ -135,36 +144,49 @@ where
         api_version,
         repositories.user_decrypt.clone(),
         user_decrypt_shares_threshold,
-        config.api_retry_after_seconds,
-        bouncer_throttlers
-            .tx_throttlers
-            .user_decrypt_tx_throttler
-            .clone(),
-        bouncer_throttlers
-            .readiness_throttling_senders
-            .user_decrypt_readiness_throttler
-            .clone(),
-        bouncer_throttlers
-            .readiness_throttling_senders
-            .delegated_user_decrypt_readiness_throttler
-            .clone(),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .user_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .user_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .user_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .delegated_user_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
         retry_after_state.clone(),
+        host_chain_id_checker.clone(),
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
         orchestrator.clone(),
         api_version,
         repositories.public_decrypt.clone(),
-        config.api_retry_after_seconds,
-        bouncer_throttlers
-            .tx_throttlers
-            .public_decrypt_tx_throttler
-            .clone(),
-        bouncer_throttlers
-            .readiness_throttling_senders
-            .public_decrypt_readiness_throttler
-            .clone(),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .public_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .public_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
         retry_after_state.clone(),
+        host_chain_id_checker.clone(),
     ));
 
     // Clone orchestrator for health endpoint before using it

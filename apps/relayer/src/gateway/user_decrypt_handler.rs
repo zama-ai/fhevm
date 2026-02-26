@@ -960,6 +960,58 @@ impl GatewayHandler {
                 }
             }
 
+            EventProcessingError::NotAllowedOnHostAcl(_)
+            | EventProcessingError::HostAclFailed(_) => {
+                let err_reason = error.to_string();
+                error!(
+                    job_id = %event.job_id,
+                    error = %err_reason,
+                    "Host ACL check failed"
+                );
+
+                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {
+                    ref decrypt_request,
+                    ..
+                }) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+
+                if let RelayerEventData::DelegatedUserDecrypt(
+                    DelegatedUserDecryptEventData::ReadinessCheckFailed {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+            }
+
             _ => {
                 error!(
                     job_id = %event.job_id,

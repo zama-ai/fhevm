@@ -99,6 +99,14 @@ impl RelayerV2ApiError500 {
         })
         .unwrap()
     }
+
+    pub fn host_acl_failed(message: &str) -> Value {
+        serde_json::to_value(RelayerV2ApiError500 {
+            label: "host_acl_failed".to_string(),
+            message: message.to_string(),
+        })
+        .unwrap()
+    }
 }
 
 impl RelayerV2ApiError404 {
@@ -116,6 +124,25 @@ impl RelayerV2ApiError400NoDetails {
         serde_json::to_value(RelayerV2ApiError400NoDetails {
             label: "request_error".to_string(),
             message: message.to_string(),
+        })
+        .unwrap()
+    }
+
+    pub fn not_allowed_on_host_acl(message: &str) -> Value {
+        serde_json::to_value(RelayerV2ApiError400NoDetails {
+            label: "not_allowed_on_host_acl".to_string(),
+            message: message.to_string(),
+        })
+        .unwrap()
+    }
+
+    pub fn host_chain_id_not_supported(chain_id: u64) -> Value {
+        serde_json::to_value(RelayerV2ApiError400NoDetails {
+            label: "host_chain_id_not_supported".to_string(),
+            message: format!(
+                "Host chain ID {} is not supported by this relayer",
+                chain_id
+            ),
         })
         .unwrap()
     }
@@ -189,6 +216,36 @@ impl RelayerV2ApiError503 {
 
 // Helper methods for RelayerV2ResponseFailed to create consistent V2 error responses
 impl RelayerV2ResponseFailed {
+    /// Creates a host chain ID not supported response (400).
+    pub fn host_chain_id_not_supported(
+        chain_id: u64,
+        request_id: &str,
+    ) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::BAD_REQUEST;
+        let label = "host_chain_id_not_supported";
+        let message = format!(
+            "Host chain ID {} is not supported by this relayer",
+            chain_id
+        );
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label,
+            message = message.as_str(),
+            "HTTP response"
+        );
+
+        (
+            status_code,
+            Json(Self {
+                status: ApiResponseStatus::Failed,
+                request_id: Some(request_id.to_string()),
+                error: RelayerV2ApiError400NoDetails::host_chain_id_not_supported(chain_id),
+            }),
+        )
+    }
+
     /// Creates a request error response (400) for body read failures, etc.
     pub fn request_error(message: &str, request_id: &str) -> (StatusCode, Json<Self>) {
         let status_code = StatusCode::BAD_REQUEST;

@@ -1,9 +1,6 @@
 use crate::gateway::{
     arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender},
-    readiness_check::readiness_throttler::{
-        DelegatedUserDecryptReadinessTask, PublicDecryptReadinessTask, ReadinessSender,
-        UserDecryptReadinessTask,
-    },
+    readiness_check::readiness_throttler::{ReadinessItem, ReadinessSender},
 };
 
 pub async fn bounce_check(tx_throttler: TxThrottlingSender<GatewayTxTask>) -> bool {
@@ -11,31 +8,40 @@ pub async fn bounce_check(tx_throttler: TxThrottlingSender<GatewayTxTask>) -> bo
     tx_full
 }
 
-pub async fn public_decrypt_bounce_check(
+pub struct BounceChecker<R> {
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-) -> bool {
-    let tx_full = tx_throttler.is_queue_full().await;
-    let pub_dec_full = public_decrypt_readiness_throttler.is_queue_full().await;
-    tx_full || pub_dec_full
+    readiness_throttler: ReadinessSender<R>,
+    retry_after_seconds: u32,
 }
 
-pub async fn user_decrypt_bounce_check(
-    tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-) -> bool {
-    let tx_full = tx_throttler.is_queue_full().await;
-    let user_dec_full = user_decrypt_readiness_throttler.is_queue_full().await;
-    tx_full || user_dec_full
-}
+impl<R: ReadinessItem + Send + Sync + 'static> BounceChecker<R> {
+    pub fn new(
+        tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        readiness_throttler: ReadinessSender<R>,
+        retry_after_seconds: u32,
+    ) -> Self {
+        Self {
+            tx_throttler,
+            readiness_throttler,
+            retry_after_seconds,
+        }
+    }
 
-pub async fn delegated_user_decrypt_bounce_check(
-    tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
-) -> bool {
-    let tx_full = tx_throttler.is_queue_full().await;
-    let delegated_user_dec_full = delegated_user_decrypt_readiness_throttler
-        .is_queue_full()
-        .await;
-    tx_full || delegated_user_dec_full
+    /// Returns `Ok(())` if capacity is available, `Err(retry_after_seconds)` if full.
+    pub async fn check(&self) -> Result<(), u32> {
+        if self.tx_throttler.is_queue_full().await || self.readiness_throttler.is_queue_full().await
+        {
+            Err(self.retry_after_seconds)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn readiness_throttler(&self) -> &ReadinessSender<R> {
+        &self.readiness_throttler
+    }
+
+    pub fn tx_throttler(&self) -> &TxThrottlingSender<GatewayTxTask> {
+        &self.tx_throttler
+    }
 }

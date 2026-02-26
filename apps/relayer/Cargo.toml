@@ -48,6 +48,7 @@ rustls = { version = "0.23.36", features = [
   "aws-lc-rs",
 ], default-features = false }
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.10.3", default-features = false }
+fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.11.0", default-features = false }
 utoipa = { version = "5.4.0", features = ["axum_extras"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }

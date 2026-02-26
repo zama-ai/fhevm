@@ -7,11 +7,9 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
-use crate::gateway::readiness_check::readiness_throttler::{
-    ReadinessSender, UserDecryptReadinessTask,
-};
-use crate::http::utils::user_decrypt_bounce_check;
+use crate::gateway::readiness_check::readiness_throttler::UserDecryptReadinessTask;
+use crate::http::host_chain_validation::HostChainIdChecker;
+use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
@@ -71,9 +69,8 @@ where
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
     user_decrypt_repo: Arc<UserDecryptRepository>,
-    retry_after_seconds: u32,
-    tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    bounce_checker: BounceChecker<UserDecryptReadinessTask>,
+    host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -83,17 +80,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
         user_decrypt_repo: Arc<UserDecryptRepository>,
-        retry_after_seconds: u32,
-        tx_throttler: TxThrottlingSender<GatewayTxTask>,
-        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        bounce_checker: BounceChecker<UserDecryptReadinessTask>,
+        host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             user_decrypt_repo,
-            retry_after_seconds,
-            tx_throttler,
-            user_decrypt_readiness_throttler,
+            bounce_checker,
+            host_chain_id_checker,
         }
     }
 
@@ -155,6 +150,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
+        // Check early to avoid filling the queue with handles of unsupported chains
+        if let Err(chain_id) = self
+            .host_chain_id_checker
+            .validate_u256_handles(&user_decrypt_request.ct_handle_contract_pairs)
+        {
+            let mut resp = AppResponse::<()>::host_chain_id_not_supported(chain_id);
+            resp.set_request_id(&request_id.to_string());
+            return resp.into_response();
+        }
+
         let int_job_id: JobId = user_decrypt_request.content_hash().into();
 
         // Queue full Bouncing logic.
@@ -167,12 +172,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    let full = user_decrypt_bounce_check(
-                        self.tx_throttler.clone(),
-                        self.user_decrypt_readiness_throttler.clone(),
-                    )
-                    .await;
-                    if full {
+                    if let Err(retry_after) = self.bounce_checker.check().await {
                         info!(
                             step = %UserDecryptStep::Bounced,
                             int_job_id = %int_job_id,
@@ -182,7 +182,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         // Here return 429
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
-                            &self.retry_after_seconds.to_string(),
+                            &retry_after.to_string(),
                             &request_id.to_string(),
                         )
                         .into_response();
@@ -373,6 +373,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         };
                                         (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
                                     }
+                                    EventProcessingError::NotAllowedOnHostAcl(reason) => (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(UserDecryptErrorResponseJson {
+                                            message: format!("Not allowed on host ACL: {reason}"),
+                                        }),
+                                    )
+                                        .into_response(),
                                     EventProcessingError::ReadinessCheckTimedOut => (
                                         StatusCode::SERVICE_UNAVAILABLE,
                                         Json(UserDecryptErrorResponseJson {

@@ -7,11 +7,9 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
-use crate::gateway::readiness_check::readiness_throttler::{
-    PublicDecryptReadinessTask, ReadinessSender,
-};
-use crate::http::utils::public_decrypt_bounce_check;
+use crate::gateway::readiness_check::readiness_throttler::PublicDecryptReadinessTask;
+use crate::http::host_chain_validation::HostChainIdChecker;
+use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
@@ -37,9 +35,8 @@ where
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
-    retry_after_seconds: u32,
-    tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    bounce_checker: BounceChecker<PublicDecryptReadinessTask>,
+    host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -49,17 +46,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
-        retry_after_seconds: u32,
-        tx_throttler: TxThrottlingSender<GatewayTxTask>,
-        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+        bounce_checker: BounceChecker<PublicDecryptReadinessTask>,
+        host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             public_decrypt_repo,
-            retry_after_seconds,
-            tx_throttler,
-            public_decrypt_readiness_throttler,
+            bounce_checker,
+            host_chain_id_checker,
         }
     }
 
@@ -121,6 +116,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
+        // Check early to avoid filling the queue with handles of unsupported chains
+        if let Err(chain_id) = self
+            .host_chain_id_checker
+            .validate_handles(&request.ct_handles)
+        {
+            let mut resp = AppResponse::<()>::host_chain_id_not_supported(chain_id);
+            resp.set_request_id(&request_id.to_string());
+            return resp.into_response();
+        }
+
         let int_job_id: JobId = request.content_hash().into();
 
         // Queue full Bouncing logic.
@@ -133,12 +138,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    let full = public_decrypt_bounce_check(
-                        self.tx_throttler.clone(),
-                        self.public_decrypt_readiness_throttler.clone(),
-                    )
-                    .await;
-                    if full {
+                    if let Err(retry_after) = self.bounce_checker.check().await {
                         info!(
                             step = %PublicDecryptStep::Bounced,
                             int_job_id = %int_job_id,
@@ -148,7 +148,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         // Here return 429
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
-                            &self.retry_after_seconds.to_string(),
+                            &retry_after.to_string(),
                             &request_id.to_string(),
                         )
                         .into_response();
@@ -334,6 +334,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         StatusCode::BAD_REQUEST,
                                         Json(PublicDecryptErrorResponseJson {
                                             message: format!("Request reverted: {fhevm_error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                    EventProcessingError::NotAllowedOnHostAcl(reason) => (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(PublicDecryptErrorResponseJson {
+                                            message: format!("Not allowed on host ACL: {reason}"),
                                         }),
                                     )
                                         .into_response(),

@@ -1,12 +1,20 @@
 use crate::{
     config::settings::{AppConfigError, GatewayConfig, RetrySettings},
-    core::{errors::EventProcessingError, job_id::JobId},
-    gateway::arbitrum::bindings::Decryption,
+    core::{
+        errors::EventProcessingError,
+        event::{DelegatedUserDecryptRequest, UserDecryptRequest},
+        job_id::JobId,
+    },
+    gateway::{
+        arbitrum::bindings::Decryption,
+        readiness_check::host_acl_checker::{HostAclChecker, HostAclError},
+    },
 };
 use alloy::{
     primitives::{Address, Bytes, FixedBytes},
     providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
 };
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use reqwest::Url;
 use std::fmt;
 use std::str::FromStr;
@@ -36,8 +44,10 @@ impl fmt::Display for ReadinessStep {
 
 #[derive(Debug)]
 pub enum ReadinessCheckError {
-    Timeout,
-    ContractError(alloy::contract::Error),
+    GwTimeout,
+    GwContractError(alloy::contract::Error),
+    NotAllowedOnHostAcl(HostAclError),
+    HostAclFailed(HostAclError),
 }
 
 type Provider = FillProvider<
@@ -58,20 +68,16 @@ type Provider = FillProvider<
     alloy::network::AnyNetwork,
 >;
 
-/// A generic readiness checker for gateway operations.
-///
-/// This struct handles the common pattern of checking if the gateway is ready
-/// for a specific operation, with configurable retry logic.
-pub struct ReadinessChecker {
-    retry_config: RetrySettings,
-    decryption_address: Address,
-    provider: Arc<Provider>,
+type GatewayDecryption = DecryptionInstance<Arc<Provider>, alloy::network::AnyNetwork>;
+
+/// Checks gateway ciphertext readiness (isPublicDecryptionReady / isUserDecryptionReady).
+struct GwCiphertextChecker {
+    gw_retry_config: RetrySettings,
+    gw_decryption: GatewayDecryption,
 }
 
-impl ReadinessChecker {
-    /// Creates a new ReadinessChecker with the given gateway configuration.
-    pub fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
-        // Get decryption address
+impl GwCiphertextChecker {
+    fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
         let decryption_address = Address::from_str(&gateway_config.contracts.decryption_address)
             .map_err(|_| {
                 EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
@@ -79,7 +85,6 @@ impl ReadinessChecker {
                 ))
             })?;
 
-        // Create provider once
         let url = Url::parse(&gateway_config.blockchain_rpc.read_http_url).map_err(|e| {
             EventProcessingError::ValidationFailed {
                 field: "blockchain_rpc_url".to_string(),
@@ -93,40 +98,33 @@ impl ReadinessChecker {
                 .connect_http(url),
         );
 
+        let gw_decryption = Decryption::new(decryption_address, provider);
+
         Ok(Self {
-            retry_config: gateway_config.readiness_checker.retry.clone(),
-            decryption_address,
-            provider,
+            gw_retry_config: gateway_config
+                .readiness_checker
+                .gw_ciphertext_check
+                .retry
+                .clone(),
+            gw_decryption,
         })
     }
 
-    /// Checks if the gateway is ready for public decryption, with retry logic.
-    ///
-    /// # Arguments
-    /// * `job_id` - Job ID for logging
-    /// * `handles` - Vector of handles to decrypt
-    /// * `extra_data` - Extra data for the decryption
-    ///
-    /// # Returns
-    /// * `Ok(())` if the gateway is ready
-    /// * `Err(ReadinessCheckError)` with raw error details
-    pub async fn check_public_decryption_readiness(
+    async fn check_public_decryption_readiness(
         &self,
         job_id: &JobId,
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
-        let decryption = Decryption::new(self.decryption_address, self.provider.clone());
-
         info!(
             step = %ReadinessStep::Started,
             int_job_id = %job_id,
-            "Starting public decryption readiness check"
+            "Starting public decryption gateway ciphertext check"
         );
 
         let result = self
             .check_readiness_internal(job_id, || {
-                let decryption = decryption.clone();
+                let decryption = self.gw_decryption.clone();
                 let handles = handles.clone();
                 let extra_data = extra_data.clone();
                 async move {
@@ -142,48 +140,35 @@ impl ReadinessChecker {
             Ok(()) => info!(
                 step = %ReadinessStep::Passed,
                 int_job_id = %job_id,
-                "Public decryption readiness check passed"
+                "Public decryption gateway ciphertext check passed"
             ),
             Err(e) => error!(
                 step = %ReadinessStep::Failed,
                 int_job_id = %job_id,
                 error = ?e,
-                "Public decryption readiness check failed"
+                "Public decryption gateway ciphertext check failed"
             ),
         }
 
         result
     }
 
-    /// Checks if the gateway is ready for user decryption, with retry logic.
-    ///
-    /// # Arguments
-    /// * `job_id` - Job ID for logging
-    /// * `user_address` - User's address
-    /// * `contract_pairs` - Contract pairs for decryption
-    /// * `extra_data` - Extra data for the decryption
-    ///
-    /// # Returns
-    /// * `Ok(())` if the gateway is ready
-    /// * `Err(ReadinessCheckError)` with raw error details
-    pub async fn check_user_decryption_readiness(
+    async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
         user_address: Address,
         contract_pairs: Vec<Decryption::CtHandleContractPair>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
-        let decryption = Decryption::new(self.decryption_address, self.provider.clone());
-
         info!(
             step = %ReadinessStep::Started,
             int_job_id = %job_id,
-            "Starting user decryption readiness check"
+            "Starting user decryption gateway ciphertext check"
         );
 
         let result = self
             .check_readiness_internal(job_id, || {
-                let decryption = decryption.clone();
+                let decryption = self.gw_decryption.clone();
                 let pairs = contract_pairs.clone();
                 let extra_data = extra_data.clone();
                 async move {
@@ -199,13 +184,13 @@ impl ReadinessChecker {
             Ok(()) => info!(
                 step = %ReadinessStep::Passed,
                 int_job_id = %job_id,
-                "User decryption readiness check passed"
+                "User decryption gateway ciphertext check passed"
             ),
             Err(e) => error!(
                 step = %ReadinessStep::Failed,
                 int_job_id = %job_id,
                 error = ?e,
-                "User decryption readiness check failed"
+                "User decryption gateway ciphertext check failed"
             ),
         }
 
@@ -221,8 +206,8 @@ impl ReadinessChecker {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
     {
-        let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
+        let max_retries = self.gw_retry_config.max_attempts;
+        let retry_interval = Duration::from_millis(self.gw_retry_config.retry_interval_ms);
         let mut retries = 0;
         let mut last_error: Option<alloy::contract::Error> = None;
 
@@ -246,13 +231,13 @@ impl ReadinessChecker {
                 warn!(
                     int_job_id = %job_id,
                     max_retries = max_retries,
-                    retry_interval_ms = self.retry_config.retry_interval_ms,
+                    retry_interval_ms = self.gw_retry_config.retry_interval_ms,
                     "Max retries reached for readiness check"
                 );
                 return if let Some(err) = last_error {
-                    Err(ReadinessCheckError::ContractError(err))
+                    Err(ReadinessCheckError::GwContractError(err))
                 } else {
-                    Err(ReadinessCheckError::Timeout)
+                    Err(ReadinessCheckError::GwTimeout)
                 };
             }
 
@@ -265,5 +250,99 @@ impl ReadinessChecker {
             );
             tokio::time::sleep(retry_interval).await;
         }
+    }
+}
+
+/// Combined readiness checker that orchestrates host ACL checks and gateway
+/// ciphertext readiness checks.
+pub struct ReadinessChecker {
+    host_acl: HostAclChecker,
+    gw_ciphertext: GwCiphertextChecker,
+}
+
+impl ReadinessChecker {
+    pub fn new(
+        host_acl: HostAclChecker,
+        gateway_config: &GatewayConfig,
+    ) -> Result<Self, EventProcessingError> {
+        let gw_ciphertext = GwCiphertextChecker::new(gateway_config)?;
+        Ok(Self {
+            host_acl,
+            gw_ciphertext,
+        })
+    }
+
+    pub async fn check_host_acl_public_decrypt(
+        &self,
+        job_id: &JobId,
+        handles: &[[u8; 32]],
+    ) -> Result<(), ReadinessCheckError> {
+        self.host_acl
+            .check_public_decrypt(job_id, handles)
+            .await
+            .map_err(|e| match &e {
+                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
+                _ => ReadinessCheckError::HostAclFailed(e),
+            })
+    }
+
+    pub async fn check_public_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        handles: Vec<FixedBytes<32>>,
+        extra_data: Bytes,
+    ) -> Result<(), ReadinessCheckError> {
+        self.gw_ciphertext
+            .check_public_decryption_readiness(job_id, handles, extra_data)
+            .await
+    }
+
+    pub async fn check_host_acl_user_decrypt(
+        &self,
+        job_id: &JobId,
+        request: &UserDecryptRequest,
+    ) -> Result<(), ReadinessCheckError> {
+        self.host_acl
+            .check_user_decrypt(
+                job_id,
+                &request.ct_handle_contract_pairs,
+                request.user_address,
+            )
+            .await
+            .map_err(|e| match &e {
+                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
+                _ => ReadinessCheckError::HostAclFailed(e),
+            })
+    }
+
+    pub async fn check_user_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        user_address: Address,
+        contract_pairs: Vec<Decryption::CtHandleContractPair>,
+        extra_data: Bytes,
+    ) -> Result<(), ReadinessCheckError> {
+        self.gw_ciphertext
+            .check_user_decryption_readiness(job_id, user_address, contract_pairs, extra_data)
+            .await
+    }
+
+    pub async fn check_host_acl_delegated_user_decrypt(
+        &self,
+        job_id: &JobId,
+        request: &DelegatedUserDecryptRequest,
+    ) -> Result<(), ReadinessCheckError> {
+        self.host_acl
+            .check_delegated_user_decrypt(
+                job_id,
+                &request.ct_handle_contract_pairs,
+                request.delegator_address,
+                request.delegate_address,
+            )
+            .await
+            .map_err(|e| match &e {
+                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
+                _ => ReadinessCheckError::HostAclFailed(e),
+            })
     }
 }

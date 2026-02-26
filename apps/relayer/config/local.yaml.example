@@ -9,6 +9,12 @@
 
 global:
   test_mock: true
+
+host_chains:
+  - chain_id: 8009
+    url: "http://localhost:8545"
+    acl_address: "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync
@@ -80,9 +86,14 @@ gateway:
         capacity: 11000
         safety_margin: 1000
   readiness_checker:
-    retry:
-      max_attempts: 75
-      retry_interval_ms: 3000
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 75
+        retry_interval_ms: 3000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000

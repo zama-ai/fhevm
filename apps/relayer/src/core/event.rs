@@ -427,7 +427,7 @@ pub enum UserDecryptEventData {
         error: EventProcessingError,
     },
 
-    /// Event representing that readiness check has failed for a public decryption request.
+    /// Event representing that readiness check has failed for a user decryption request.
     ReadinessCheckFailed {
         decrypt_request: UserDecryptRequest,
         error: EventProcessingError,

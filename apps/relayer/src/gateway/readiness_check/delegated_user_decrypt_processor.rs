@@ -61,15 +61,32 @@ impl DelegatedUserDecryptReadinessProcessor {
 
     /// Internal logic to process a single Readiness Check.
     ///
-    /// 1. Calls ReadinessChecker.
-    /// 2. On Success: Dispatches `ReadinessVerified` event (to trigger the Transaction flow).
-    /// 3. On Failure: Dispatches `Failed` event (to notify user/DB).
+    /// 1. Checks host chain ACL permissions (delegated).
+    /// 2. Calls GwCiphertextChecker (via ReadinessChecker).
+    /// 3. On Success: Dispatches `ReadinessCheckPassed` event.
+    /// 4. On Failure: Dispatches appropriate failure event.
     async fn process_single_task(
         checker: Arc<ReadinessChecker>,
         task: DelegatedUserDecryptReadinessTask,
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
-        // Prepare handles
+        // 1. HOST ACL CHECK
+        if let Err(acl_err) = checker
+            .check_host_acl_delegated_user_decrypt(&task.job_id, &task.request)
+            .await
+        {
+            error!(job_id = %task.job_id, error = ?acl_err, "Host ACL check failed");
+            Self::dispatch_failure(
+                &dispatcher,
+                &task.request,
+                task.job_id,
+                EventProcessingError::from(acl_err),
+            )
+            .await;
+            return;
+        }
+
+        // 2. GATEWAY CIPHERTEXT CHECK
         let contract_pairs: Vec<_> = task
             .request
             .ct_handle_contract_pairs
@@ -77,7 +94,6 @@ impl DelegatedUserDecryptReadinessProcessor {
             .map(Decryption::CtHandleContractPair::from)
             .collect();
 
-        // 1. EXECUTE CHECK
         let result = checker
             .check_user_decryption_readiness(
                 &task.job_id,
@@ -87,17 +103,14 @@ impl DelegatedUserDecryptReadinessProcessor {
             )
             .await;
 
-        // 2. DISPATCH RESULT
+        // 3. DISPATCH RESULT
         match result {
-            // --- SUCCESS ---
             Ok(()) => {
                 info!(
                     "DelegatedUserDecryptReadiness check passed for {}",
                     task.job_id
                 );
 
-                // Dispatch Success Event.
-                // The Handler will catch this event to trigger the DB update + Transaction Push.
                 let next_event_data = RelayerEventData::DelegatedUserDecrypt(
                     DelegatedUserDecryptEventData::ReadinessCheckPassed {
                         decrypt_request: task.request,
@@ -118,11 +131,9 @@ impl DelegatedUserDecryptReadinessProcessor {
                 }
             }
 
-            // --- TIMEOUT ---
-            Err(ReadinessCheckError::Timeout) => {
+            Err(ReadinessCheckError::GwTimeout) => {
                 error!(job_id = %task.job_id, "DelegatedUserDecryptReadiness check timed out");
 
-                // Map to EventProcessingError
                 Self::dispatch_timeout(
                     &dispatcher,
                     &task.request,
@@ -132,8 +143,7 @@ impl DelegatedUserDecryptReadinessProcessor {
                 .await;
             }
 
-            // --- CONTRACT ERROR ---
-            Err(ReadinessCheckError::ContractError(e)) => {
+            Err(ReadinessCheckError::GwContractError(e)) => {
                 error!(job_id = %task.job_id, error = ?e, "DelegatedUserDecryptReadiness check contract error");
 
                 Self::dispatch_failure(
@@ -144,10 +154,21 @@ impl DelegatedUserDecryptReadinessProcessor {
                 )
                 .await;
             }
+
+            Err(e @ ReadinessCheckError::NotAllowedOnHostAcl(_))
+            | Err(e @ ReadinessCheckError::HostAclFailed(_)) => {
+                error!(job_id = %task.job_id, error = ?e, "Unexpected ACL error in ciphertext check path");
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
         }
     }
 
-    /// Helper to dispatch timed_out events
     async fn dispatch_timeout(
         dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         decrypt_request: &DelegatedUserDecryptRequest,
@@ -173,7 +194,6 @@ impl DelegatedUserDecryptReadinessProcessor {
         }
     }
 
-    /// Helper to dispatch failure events
     async fn dispatch_failure(
         dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         decrypt_request: &DelegatedUserDecryptRequest,

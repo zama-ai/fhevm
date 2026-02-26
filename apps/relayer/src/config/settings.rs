@@ -3,7 +3,7 @@ use config::{Config, Environment, File};
 use derivative::Derivative;
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
 use std::time::Duration;
@@ -258,9 +258,20 @@ impl TxThrottlingConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ReadinessCheckConfig {
+    pub host_acl_check: HostAclCheckConfig,
+    pub gw_ciphertext_check: GwCiphertextCheckConfig,
     pub public_decrypt: PublicDecryptQueueSettings,
     pub user_decrypt: UserDecryptQueueSettings,
     pub delegated_user_decrypt: UserDecryptQueueSettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct HostAclCheckConfig {
+    pub retry: RetrySettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GwCiphertextCheckConfig {
     pub retry: RetrySettings,
 }
 
@@ -548,6 +559,13 @@ impl Default for GlobalSettings {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct HostChainConfig {
+    pub chain_id: u64,
+    pub url: String,
+    pub acl_address: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.
@@ -567,6 +585,8 @@ pub struct Settings {
     pub metrics: MetricsConfig,
     /// Storage configuration
     pub storage: StorageConfig,
+    /// Host chain configurations (required, at least one entry)
+    pub host_chains: Vec<HostChainConfig>,
 }
 
 // Error type for application-specific configuration errors
@@ -613,6 +633,9 @@ impl Settings {
         // Validate network configurations
         settings.gateway.validate()?;
 
+        // Validate host chains configuration
+        settings.validate_host_chains()?;
+
         // Validate cron startup delay (10% rule)
         settings.storage.cron.validate()?;
 
@@ -625,7 +648,9 @@ impl Settings {
     }
 
     pub fn validate_addresses(&self) -> Result<(), AppConfigError> {
-        // Create a vector of (name, address) pairs to validate
+        use alloy::primitives::Address;
+        use std::str::FromStr;
+
         let addresses = vec![
             ("decryption", &self.gateway.contracts.decryption_address),
             (
@@ -634,11 +659,45 @@ impl Settings {
             ),
         ];
 
-        // Iterate and validate each address
         for (name, address) in addresses {
-            if !address.starts_with("0x") || address.len() != 42 {
+            if Address::from_str(address).is_err() {
                 return Err(AppConfigError::InvalidAddress(format!(
                     "Invalid {name} address: {address}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_host_chains(&self) -> Result<(), AppConfigError> {
+        use alloy::primitives::Address;
+        use std::str::FromStr;
+
+        if self.host_chains.is_empty() {
+            return Err(AppConfigError::Config(
+                "host_chains must have at least one entry".to_string(),
+            ));
+        }
+
+        let mut seen_chain_ids = HashSet::new();
+        for (i, hc) in self.host_chains.iter().enumerate() {
+            if !seen_chain_ids.insert(hc.chain_id) {
+                return Err(AppConfigError::Config(format!(
+                    "host_chains contains duplicate chain_id: {}",
+                    hc.chain_id
+                )));
+            }
+            if !hc.url.starts_with("http://") && !hc.url.starts_with("https://") {
+                return Err(AppConfigError::InvalidNetworkConfig(format!(
+                    "host_chains[{}].url must start with http:// or https://: {}",
+                    i, hc.url
+                )));
+            }
+            if Address::from_str(&hc.acl_address).is_err() {
+                return Err(AppConfigError::InvalidAddress(format!(
+                    "host_chains[{}].acl_address is invalid: {}",
+                    i, hc.acl_address
                 )));
             }
         }

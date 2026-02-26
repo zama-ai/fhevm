@@ -18,6 +18,7 @@ use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
 use crate::gateway::{
     readiness_check::{
         delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
+        host_acl_checker::HostAclChecker,
         public_decrypt_processor::PublicDecryptReadinessProcessor,
         readiness_checker::ReadinessChecker, user_decrypt_processor::UserDecryptReadinessProcessor,
     },
@@ -80,8 +81,17 @@ pub async fn initialize_gateway(
     )
     .await?;
 
-    // Create ReadinessChecker to be shared by decrypt handlers
-    let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
+    // Create ReadinessChecker (host ACL + gateway ciphertext) to be shared by decrypt handlers
+    let host_acl_checker = HostAclChecker::new(
+        &settings.host_chains,
+        settings
+            .gateway
+            .readiness_checker
+            .host_acl_check
+            .retry
+            .clone(),
+    )?;
+    let readiness_checker = Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway)?);
 
     PublicDecryptReadinessProcessor::orchestrator_spawn_task(
         gateway_throttlers

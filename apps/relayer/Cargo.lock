@@ -2078,6 +2078,7 @@ dependencies = [
  "ethereum_rpc_mock",
  "eyre",
  "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3)",
+ "fhevm_host_bindings",
  "futures",
  "governor",
  "hex",
@@ -2121,6 +2122,15 @@ dependencies = [
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
 source = "git+https://github.com/zama-ai/fhevm.git?rev=9c615a75a5467b70b405b72de2cab701df8a0116#9c615a75a5467b70b405b72de2cab701df8a0116"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
+name = "fhevm_host_bindings"
+version = "0.10.0"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.11.0#e446c370002f62f193bbb5eb4075dea5d29a6996"
 dependencies = [
  "alloy",
  "serde",

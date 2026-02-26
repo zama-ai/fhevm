@@ -24,6 +24,7 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{self, throttlers::init_throttlers};
+use crate::http::host_chain_validation::HostChainIdChecker;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -128,6 +129,11 @@ pub async fn run_fhevm_relayer(
             .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
     }
 
+    // Build host chain validator from config
+    let host_chain_id_checker = Arc::new(HostChainIdChecker::new(
+        settings.host_chains.iter().map(|hc| hc.chain_id).collect(),
+    ));
+
     let mut settings = settings;
 
     // === Services Phase ===
@@ -141,6 +147,7 @@ pub async fn run_fhevm_relayer(
             repositories.clone(),
             settings.gateway.contracts.user_decrypt_shares_threshold,
             bouncer_throttlers,
+            host_chain_id_checker,
         )
         .await;
 

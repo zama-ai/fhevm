@@ -60,15 +60,32 @@ impl PublicDecryptReadinessProcessor {
 
     /// Internal logic to process a single Readiness Check.
     ///
-    /// 1. Calls ReadinessChecker.
-    /// 2. On Success: Dispatches `ReadinessVerified` event (to trigger the Transaction flow).
-    /// 3. On Failure: Dispatches `Failed` event (to notify user/DB).
+    /// 1. Checks host chain ACL permissions.
+    /// 2. Calls GwCiphertextChecker (via ReadinessChecker).
+    /// 3. On Success: Dispatches `ReadinessCheckPassed` event.
+    /// 4. On Failure: Dispatches appropriate failure event.
     async fn process_single_task(
         checker: Arc<ReadinessChecker>,
         task: PublicDecryptReadinessTask,
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
-        // Prepare handles
+        // 1. HOST ACL CHECK
+        if let Err(acl_err) = checker
+            .check_host_acl_public_decrypt(&task.job_id, &task.request.ct_handles)
+            .await
+        {
+            error!(job_id = %task.job_id, error = ?acl_err, "Host ACL check failed");
+            Self::dispatch_failure(
+                &dispatcher,
+                &task.request,
+                task.job_id,
+                EventProcessingError::from(acl_err),
+            )
+            .await;
+            return;
+        }
+
+        // 2. GATEWAY CIPHERTEXT CHECK
         let handles_fixed_bytes: Vec<FixedBytes<32>> = task
             .request
             .ct_handles
@@ -76,7 +93,6 @@ impl PublicDecryptReadinessProcessor {
             .map(|bytes| FixedBytes::from(*bytes))
             .collect();
 
-        // 1. EXECUTE CHECK
         let result = checker
             .check_public_decryption_readiness(
                 &task.job_id,
@@ -85,14 +101,11 @@ impl PublicDecryptReadinessProcessor {
             )
             .await;
 
-        // 2. DISPATCH RESULT
+        // 3. DISPATCH RESULT
         match result {
-            // --- SUCCESS ---
             Ok(()) => {
                 info!("Readiness check passed for {}", task.job_id);
 
-                // Dispatch Success Event.
-                // The Handler will catch this event to trigger the DB update + Transaction Push.
                 let next_event_data =
                     RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReadinessCheckPassed {
                         decrypt_request: task.request,
@@ -112,11 +125,9 @@ impl PublicDecryptReadinessProcessor {
                 }
             }
 
-            // --- TIMEOUT ---
-            Err(ReadinessCheckError::Timeout) => {
+            Err(ReadinessCheckError::GwTimeout) => {
                 error!(job_id = %task.job_id, "Readiness check timed out");
 
-                // Map to EventProcessingError
                 Self::dispatch_timeout(
                     &dispatcher,
                     &task.request,
@@ -126,8 +137,7 @@ impl PublicDecryptReadinessProcessor {
                 .await;
             }
 
-            // --- CONTRACT ERROR ---
-            Err(ReadinessCheckError::ContractError(e)) => {
+            Err(ReadinessCheckError::GwContractError(e)) => {
                 error!(job_id = %task.job_id, error = ?e, "Readiness check contract error");
 
                 Self::dispatch_failure(
@@ -138,10 +148,21 @@ impl PublicDecryptReadinessProcessor {
                 )
                 .await;
             }
+
+            Err(e @ ReadinessCheckError::NotAllowedOnHostAcl(_))
+            | Err(e @ ReadinessCheckError::HostAclFailed(_)) => {
+                error!(job_id = %task.job_id, error = ?e, "Unexpected ACL error in ciphertext check path");
+                Self::dispatch_failure(
+                    &dispatcher,
+                    &task.request,
+                    task.job_id,
+                    EventProcessingError::from(e),
+                )
+                .await;
+            }
         }
     }
 
-    /// Helper to dispatch timed_out events
     async fn dispatch_timeout(
         dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         decrypt_request: &PublicDecryptRequest,
@@ -165,7 +186,6 @@ impl PublicDecryptReadinessProcessor {
         }
     }
 
-    /// Helper to dispatch failure events
     async fn dispatch_failure(
         dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         decrypt_request: &PublicDecryptRequest,

@@ -12,14 +12,14 @@ use crate::core::event::{
     RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
 use crate::gateway::readiness_check::readiness_throttler::{
-    DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+    DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask,
 };
 use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
 use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
+use crate::http::host_chain_validation::HostChainIdChecker;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
-use crate::http::utils::{delegated_user_decrypt_bounce_check, user_decrypt_bounce_check};
+use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
@@ -49,6 +49,62 @@ use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
 
+/// Helper to classify error messages and return appropriate HTTP status and error response
+///
+/// Parses error selector from message, classifies the revert reason,
+/// and returns appropriate HTTP status and error response.
+fn classify_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
+    use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
+
+    // Not allowed on host ACL → 400
+    // TODO(Mano): Use structured data in error_message field, probably json and use it for branching.
+    if error_msg.starts_with(crate::core::errors::NOT_ALLOWED_ON_HOST_ACL_PREFIX) {
+        return (
+            StatusCode::BAD_REQUEST,
+            RelayerV2ApiError400NoDetails::not_allowed_on_host_acl(error_msg),
+        );
+    }
+
+    // Host ACL infra failure (RPC / unsupported chain) → 500
+    if error_msg.starts_with(crate::core::errors::HOST_ACL_FAILED_PREFIX) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RelayerV2ApiError500::host_acl_failed(error_msg),
+        );
+    }
+
+    // Parse selector and classify revert reason
+    let reason = if let Some(selector) = extract_revert_selector(error_msg) {
+        classify_revert_selector(&selector)
+    } else {
+        RevertReason::Unknown
+    };
+
+    // Map to HTTP response
+    match reason {
+        RevertReason::ContractPaused => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::protocol_paused(error_msg),
+        ),
+        RevertReason::InsufficientBalance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_balance(error_msg),
+        ),
+        RevertReason::InsufficientAllowance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_allowance(error_msg),
+        ),
+        RevertReason::InvalidSignature => (
+            StatusCode::BAD_REQUEST,
+            RelayerV2ApiError400NoDetails::invalid_signature(),
+        ),
+        RevertReason::Unknown => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RelayerV2ApiError500::internal_server_error(error_msg),
+        ),
+    }
+}
+
 pub struct UserDecryptHandler<D>
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -57,11 +113,10 @@ where
     api_version: ApiVersion,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: u16,
-    retry_after_seconds: u32,
-    tx_throttler: TxThrottlingSender<GatewayTxTask>,
-    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
+    user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
+    delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
+    host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -73,24 +128,20 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         api_version: ApiVersion,
         user_decrypt_repo: Arc<UserDecryptRepository>,
         user_decrypt_shares_threshold: u16,
-        retry_after_seconds: u32,
-        tx_throttler: TxThrottlingSender<GatewayTxTask>,
-        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-        delegated_user_decrypt_readiness_throttler: ReadinessSender<
-            DelegatedUserDecryptReadinessTask,
-        >,
+        user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
+        delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
+        host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             user_decrypt_repo,
             user_decrypt_shares_threshold,
-            retry_after_seconds,
-            tx_throttler,
-            user_decrypt_readiness_throttler,
-            delegated_user_decrypt_readiness_throttler,
+            user_decrypt_queue_checker,
+            delegated_queue_checker,
             retry_after_state,
+            host_chain_id_checker,
         }
     }
 
@@ -220,6 +271,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
+        // Check early to avoid filling the queue with handles of unsupported chains
+        if let Err(chain_id) = self
+            .host_chain_id_checker
+            .validate_u256_handles(&user_decrypt_request.ct_handle_contract_pairs)
+        {
+            return RelayerV2ResponseFailed::host_chain_id_not_supported(
+                chain_id,
+                &request_id.to_string(),
+            )
+            .into_response();
+        }
+
         let int_job_id: JobId = user_decrypt_request.content_hash().into();
 
         // Queue full Bouncing logic.
@@ -232,12 +295,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    let full = user_decrypt_bounce_check(
-                        self.tx_throttler.clone(),
-                        self.user_decrypt_readiness_throttler.clone(),
-                    )
-                    .await;
-                    if full {
+                    if let Err(retry_after) = self.user_decrypt_queue_checker.check().await {
                         info!(
                             step = %UserDecryptStep::Bounced,
                             int_job_id = ?int_job_id,
@@ -245,7 +303,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         );
                         return RelayerV2ResponseFailed::protocol_overloaded(
                             "relayer is currently processing too many requests",
-                            &self.retry_after_seconds.to_string(),
+                            &retry_after.to_string(),
                             &request_id.to_string(),
                         )
                         .into_response();
@@ -333,8 +391,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let request_id_for_response = uuid::Uuid::new_v4();
 
         // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self.user_decrypt_readiness_throttler.get_queue_info().await;
-        let tx_queue_info = self.tx_throttler.get_queue_info().await;
+        let readiness_queue_info = self
+            .user_decrypt_queue_checker
+            .readiness_throttler()
+            .get_queue_info()
+            .await;
+        let tx_queue_info = self
+            .user_decrypt_queue_checker
+            .tx_throttler()
+            .get_queue_info()
+            .await;
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -437,6 +503,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated delegated user decryption request.");
 
+        // Check early to avoid filling the queue with handles of unsupported chains
+        if let Err(chain_id) = self
+            .host_chain_id_checker
+            .validate_u256_handles(&delegated_user_decrypt_request.ct_handle_contract_pairs)
+        {
+            return RelayerV2ResponseFailed::host_chain_id_not_supported(
+                chain_id,
+                &request_id.to_string(),
+            )
+            .into_response();
+        }
+
         let int_job_id: JobId = delegated_user_decrypt_request.content_hash().into();
 
         // Queue full Bouncing logic.
@@ -449,16 +527,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    let full = delegated_user_decrypt_bounce_check(
-                        self.tx_throttler.clone(),
-                        self.delegated_user_decrypt_readiness_throttler.clone(),
-                    )
-                    .await;
-                    if full {
+                    if let Err(retry_after) = self.delegated_queue_checker.check().await {
                         info!("Delegated user decryption v2 is bounced by full queue.");
                         return RelayerV2ResponseFailed::protocol_overloaded(
                             "relayer is currently processing too many requests",
-                            &self.retry_after_seconds.to_string(),
+                            &retry_after.to_string(),
                             &request_id.to_string(),
                         )
                         .into_response();
@@ -550,10 +623,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         // Compute dynamic retry-after based on dual queue state
         let readiness_queue_info = self
-            .delegated_user_decrypt_readiness_throttler
+            .delegated_queue_checker
+            .readiness_throttler()
             .get_queue_info()
             .await;
-        let tx_queue_info = self.tx_throttler.get_queue_info().await;
+        let tx_queue_info = self
+            .delegated_queue_checker
+            .tx_throttler()
+            .get_queue_info()
+            .await;
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -760,9 +838,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
                         // For Queued status, also get queue info for more accurate ETA
                         let decrypt_queue_info = if response_model.req_status == ReqStatus::Queued {
-                            let readiness_queue_info =
-                                self.user_decrypt_readiness_throttler.get_queue_info().await;
-                            let tx_queue_info = self.tx_throttler.get_queue_info().await;
+                            let readiness_queue_info = self
+                                .user_decrypt_queue_checker
+                                .readiness_throttler()
+                                .get_queue_info()
+                                .await;
+                            let tx_queue_info = self
+                                .user_decrypt_queue_checker
+                                .tx_throttler()
+                                .get_queue_info()
+                                .await;
                             Some(DecryptQueueInfo::new(readiness_queue_info, tx_queue_info))
                         } else {
                             None

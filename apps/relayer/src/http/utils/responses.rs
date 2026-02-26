@@ -296,6 +296,19 @@ impl<V: serde::Serialize> AppResponse<V> {
     //     }
     // }
 
+    /// Creates a host chain ID not supported response.
+    pub fn host_chain_id_not_supported(chain_id: u64) -> Self {
+        AppResponse::BadRequest {
+            label: ErrorLabel::HostChainIdNotSupported,
+            message: format!(
+                "Host chain ID {} is not supported by this relayer",
+                chain_id
+            ),
+            details: None,
+            request_id: None,
+        }
+    }
+
     /// Sets the request ID for error responses
     pub fn set_request_id(&mut self, request_id: &str) {
         match self {
@@ -344,6 +357,8 @@ pub enum ErrorLabel {
     InternalServerError,
     /// Protocol Overload used for boucing
     ProtocolOverload,
+    /// Host chain ID not supported
+    HostChainIdNotSupported,
 }
 
 impl ErrorLabel {
@@ -356,6 +371,7 @@ impl ErrorLabel {
             ErrorLabel::RateLimited => "rate_limited",
             ErrorLabel::InternalServerError => "internal_server_error",
             ErrorLabel::ProtocolOverload => "protocol_overload",
+            ErrorLabel::HostChainIdNotSupported => "host_chain_id_not_supported",
         }
     }
 }

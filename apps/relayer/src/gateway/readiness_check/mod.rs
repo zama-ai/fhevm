@@ -1,4 +1,7 @@
 pub mod delegated_user_decrypt_processor;
+pub mod error_redact;
+pub mod handle_chain_id;
+pub mod host_acl_checker;
 pub mod public_decrypt_processor;
 pub mod readiness_checker;
 pub mod readiness_throttler;

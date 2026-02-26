@@ -6,6 +6,12 @@
 
 global:
   test_mock: true
+
+host_chains:
+  - chain_id: 11155111
+    url: "https://ethereum-sepolia-rpc.publicnode.com"
+    acl_address: "0xBCA6F8De823a399Dc431930FD5EE550Bf1C0013e"
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync
@@ -76,9 +82,14 @@ gateway:
         capacity: 11000
         safety_margin: 1000
   readiness_checker:
-    retry:
-      max_attempts: 75
-      retry_interval_ms: 3000
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 75
+        retry_interval_ms: 3000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
