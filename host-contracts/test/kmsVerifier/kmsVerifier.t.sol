@@ -1128,7 +1128,9 @@ contract KMSVerifierTest is Test {
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
         bytes memory decryptedResult = abi.encodePacked(keccak256("v1-current"));
-        bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx);
+        // Trailing bytes after the 33-byte minimum are ignored for context resolution
+        // but included in the EIP-712 digest, so they exercise the full roundtrip.
+        bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx, uint256(12345));
 
         uint256[] memory keys = new uint256[](1);
         keys[0] = privateKeySigner0;
@@ -1154,6 +1156,42 @@ contract KMSVerifierTest is Test {
         bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
 
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+    }
+
+    /**
+     * @dev Tests getContextSignersAndThresholdFromExtraData across a context lifecycle:
+     *      v0 resolves to current context, v1 reaches back to an old context after rotation,
+     *      and v1 reverts once that context is destroyed.
+     */
+    function test_GetContextSignersAndThresholdFromExtraData() public {
+        _upgradeProxyWithSigners(3); // context 1 with signer0, signer1, signer2; threshold 1
+        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+
+        // v0: resolves to current context
+        (address[] memory v0Signers, uint256 v0Threshold) =
+            kmsVerifier.getContextSignersAndThresholdFromExtraData(hex"00");
+        assertEq(v0Signers.length, 3);
+        assertEq(v0Signers[0], signer0);
+        assertEq(v0Threshold, 1);
+
+        // Rotate to context 2
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = signer3;
+        vm.prank(owner);
+        kmsVerifier.defineNewContext(newSigners, 1);
+
+        // v1 pointing at old context 1 still returns ctx1's signers
+        bytes memory v1ExtraData = abi.encodePacked(uint8(0x01), ctx1);
+        (address[] memory oldCtxSigners,) =
+            kmsVerifier.getContextSignersAndThresholdFromExtraData(v1ExtraData);
+        assertEq(oldCtxSigners.length, 3);
+        assertEq(oldCtxSigners[0], signer0);
+
+        // Destroy ctx1 → v1 now reverts
+        vm.prank(owner);
+        kmsVerifier.destroyKmsContext(ctx1);
+        vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, ctx1));
+        kmsVerifier.getContextSignersAndThresholdFromExtraData(v1ExtraData);
     }
 
     /**
