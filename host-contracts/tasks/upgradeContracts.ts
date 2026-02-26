@@ -289,12 +289,32 @@ task('task:upgradeHCULimit')
   )
   .addOptionalParam(
     'hcuCapPerBlock',
-    'Global HCU cap per block passed to reinitializeV2 (default: uint64 max)',
-    '18446744073709551615',
+    'Global HCU cap per block passed to reinitializeV2 (default: uint48 max)',
+    '281474976710655',
+    types.string,
+  )
+  .addOptionalParam(
+    'maxHcuDepthPerTx',
+    'Max sequential HCU depth per transaction (default: 5000000)',
+    '5000000',
+    types.string,
+  )
+  .addOptionalParam(
+    'maxHcuPerTx',
+    'Max total HCU per transaction (default: 20000000)',
+    '20000000',
     types.string,
   )
   .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract, hcuCapPerBlock }: TaskArguments,
+    {
+      currentImplementation,
+      newImplementation,
+      useInternalProxyAddress,
+      verifyContract,
+      hcuCapPerBlock,
+      maxHcuDepthPerTx,
+      maxHcuPerTx,
+    }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -308,5 +328,7 @@ task('task:upgradeHCULimit')
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
       BigInt(hcuCapPerBlock),
+      BigInt(maxHcuDepthPerTx),
+      BigInt(maxHcuPerTx),
     ]);
   });

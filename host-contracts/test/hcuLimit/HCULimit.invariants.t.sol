@@ -35,8 +35,8 @@ contract HCULimitInvariantHandler is Test {
         vm.stopPrank();
     }
 
-    function setCap(uint64 cap) external {
-        cap = uint64(bound(uint256(cap), 1, uint256(type(uint64).max)));
+    function setCap(uint48 cap) external {
+        cap = uint48(bound(uint256(cap), 1, uint256(type(uint48).max)));
         vm.prank(owner);
         hcuLimit.setHCUPerBlock(cap);
     }
@@ -56,7 +56,7 @@ contract HCULimitInvariantHandler is Test {
     function mine(uint8 rawBlocks) external {
         uint256 blocks = bound(uint256(rawBlocks), 1, 8);
         vm.roll(block.number + blocks);
-        (, uint64 usedHCU) = hcuLimit.getBlockMeter();
+        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
         if (usedHCU != 0) {
             resetViolation = true;
         }
@@ -85,8 +85,8 @@ contract HCULimitInvariantHandler is Test {
      */
     function _runBurst(address caller, uint256 ops) internal {
         bool isWhitelisted = hcuLimit.isBlockHCUWhitelisted(caller);
-        uint64 cap = hcuLimit.getGlobalHCUCapPerBlock();
-        (, uint64 beforeUsedHCU) = hcuLimit.getBlockMeter();
+        uint48 cap = hcuLimit.getGlobalHCUCapPerBlock();
+        (, uint48 beforeUsedHCU) = hcuLimit.getBlockMeter();
         uint256 successes;
 
         vm.startPrank(fhevmExecutor);
@@ -102,7 +102,7 @@ contract HCULimitInvariantHandler is Test {
         }
         vm.stopPrank();
 
-        (, uint64 afterUsedHCU) = hcuLimit.getBlockMeter();
+        (, uint48 afterUsedHCU) = hcuLimit.getBlockMeter();
 
         if (afterUsedHCU < beforeUsedHCU) {
             nonWhitelistedAccountingViolation = true;
@@ -160,7 +160,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         address implementation = address(new HCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
-            proxy, implementation, abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint64).max))
+            proxy, implementation, abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
 
@@ -182,8 +182,8 @@ contract HCULimitInvariantTest is StdInvariant, Test {
 
     function invariant_blockMeterMatchesCurrentBlock() public view {
         // Invariant: getBlockMeter must always report the current block number.
-        (uint64 blockNumber,) = hcuLimit.getBlockMeter();
-        assertEq(blockNumber, uint64(block.number));
+        (uint48 blockNumber,) = hcuLimit.getBlockMeter();
+        assertEq(blockNumber, uint48(block.number));
     }
 
     function invariant_whitelistedCallsDoNotConsumePublicMeter() public view {

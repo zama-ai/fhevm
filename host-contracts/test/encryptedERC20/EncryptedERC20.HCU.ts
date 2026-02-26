@@ -7,7 +7,7 @@ import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20:HCU', function () {
-  const MAX_HCU_PER_BLOCK_DISABLED = (1n << 64n) - 1n;
+  const MAX_HCU_PER_BLOCK_DISABLED = (1n << 48n) - 1n;
   const MIN_HCU_PER_BLOCK = 20_000_000n;
 
   before(async function () {

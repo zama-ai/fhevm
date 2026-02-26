@@ -83,7 +83,7 @@ describe('Upgrades', function () {
       kind: 'uups',
     });
     const payment = await upgrades.upgradeProxy(emptyUUPS, paymentFactory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [BigInt('18446744073709551615')] },
+      call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
     });
     await payment.waitForDeployment();
     expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');

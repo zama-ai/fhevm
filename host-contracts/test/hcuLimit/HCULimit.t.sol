@@ -23,7 +23,7 @@ contract MockHCULimit is HCULimit {
         _setHCUForTransaction(handleHCU);
     }
 
-    function setHCUPerBlockUnsafeForTest(uint64 hcuPerBlock) external {
+    function setHCUPerBlockUnsafeForTest(uint48 hcuPerBlock) external {
         HCULimitStorage storage $ = _getHCULimitStorage();
         $.globalHCUCapPerBlock = hcuPerBlock;
     }
@@ -68,7 +68,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
-            proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint64).max))
+            proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
@@ -1174,10 +1174,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRandBounded(FheType(resultType), mockResult, fhevmExecutor);
     }
 
-    function test_setHCUPerBlockAcceptsMaxUint64() public {
+    function test_setHCUPerBlockAcceptsMaxUint48() public {
         vm.prank(owner);
-        hcuLimit.setHCUPerBlock(type(uint64).max);
-        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), type(uint64).max);
+        hcuLimit.setHCUPerBlock(type(uint48).max);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), type(uint48).max);
     }
 
     function test_setHCUPerBlockAcceptsArbitraryValue() public {
@@ -1287,12 +1287,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         // First op from whitelisted caller: should bypass block meter.
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1001)), whitelistedCaller);
-        (, uint64 usedAfterWhitelisted) = hcuLimit.getBlockMeter();
+        (, uint48 usedAfterWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterWhitelisted, 0);
 
         // Then switch to non-whitelisted caller in the same tx: meter should apply.
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), nonWhitelistedCaller);
-        (, uint64 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
+        (, uint48 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterNonWhitelisted, 84_000);
 
         // A second non-whitelisted op in same block should exceed cap.
@@ -1309,8 +1309,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, address(0x1234));
 
         vm.roll(block.number + 1);
-        (uint64 blockNumber, uint64 usedHCU) = hcuLimit.getBlockMeter();
-        assertEq(blockNumber, uint64(block.number));
+        (uint48 blockNumber, uint48 usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(blockNumber, uint48(block.number));
         assertEq(usedHCU, 0);
     }
 
@@ -1325,8 +1325,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
         assertEq(upgraded.getGlobalHCUCapPerBlock(), 0);
 
-        upgraded.reinitializeV2(type(uint64).max);
-        assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint64).max);
+        upgraded.reinitializeV2(type(uint48).max, 5_000_000, 20_000_000);
+        assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint48).max);
         vm.stopPrank();
     }
 
