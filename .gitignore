@@ -40,6 +40,7 @@ logs/
 # Build output & temporary directories (generic)
 .cache/
 .buildx-cache/
+.fhevm/
 temp/
 tmp/
 
