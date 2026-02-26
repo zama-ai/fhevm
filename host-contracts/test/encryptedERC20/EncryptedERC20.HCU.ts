@@ -96,30 +96,17 @@ describe('EncryptedERC20:HCU', function () {
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
   });
 
-  it('should account transferFrom in block HCU meter', async function () {
+  it('should account FHE operations in block HCU meter', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.add64(1337);
-    const encryptedAllowanceAmount = await inputAlice.encrypt();
-    const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
-      encryptedAllowanceAmount.handles[0],
-      encryptedAllowanceAmount.inputProof,
-    );
-    await approveTx.wait();
-
-    const bobErc20 = this.erc20.connect(this.signers.bob);
-    const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
-    inputBob.add64(1337);
-    const encryptedTransferAmount = await inputBob.encrypt();
-
-    const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
-      this.signers.alice.address,
-      this.signers.bob.address,
-      encryptedTransferAmount.handles[0],
-      encryptedTransferAmount.inputProof,
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
     );
     const receipt = await tx.wait();
     expect(receipt?.status).to.eq(1);
@@ -128,34 +115,21 @@ describe('EncryptedERC20:HCU', function () {
     expect(usedHCU).to.be.greaterThan(0n);
   });
 
-  it('should bypass block HCU cap for whitelisted encrypted token contract', async function () {
+  it('should bypass block HCU meter for whitelisted contract', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
-
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.add64(1337);
-    const encryptedAllowanceAmount = await inputAlice.encrypt();
-    const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
-      this.signers.bob.address,
-      encryptedAllowanceAmount.handles[0],
-      encryptedAllowanceAmount.inputProof,
-    );
-    await approveTx.wait();
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
     await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
 
-    const bobErc20 = this.erc20.connect(this.signers.bob);
-    const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
-    inputBob.add64(1337);
-    const encryptedTransferAmount = await inputBob.encrypt();
-    const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
-      this.signers.alice.address,
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
-      encryptedTransferAmount.handles[0],
-      encryptedTransferAmount.inputProof,
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
     );
-
     const receipt = await tx.wait();
     expect(receipt?.status).to.eq(1);
 
