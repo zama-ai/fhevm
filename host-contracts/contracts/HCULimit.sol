@@ -43,10 +43,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @param hcuPerBlock New global block HCU cap.
     event HCUPerBlockSet(uint64 hcuPerBlock);
 
-    /// @notice Emitted when a caller's block-cap whitelist status is updated.
-    /// @param account Caller address whose whitelist status changed.
-    /// @param isWhitelisted Whether `account` bypasses the public block HCU cap.
-    event BlockHCUWhitelistSet(address indexed account, bool isWhitelisted);
+    /// @notice Emitted when a caller is added to the block-cap whitelist.
+    /// @param account Caller address that was whitelisted.
+    event BlockHCUWhitelistAdded(address indexed account);
+
+    /// @notice Emitted when a caller is removed from the block-cap whitelist.
+    /// @param account Caller address that was removed from the whitelist.
+    event BlockHCUWhitelistRemoved(address indexed account);
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
@@ -85,7 +88,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -1462,7 +1465,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.blockHCUWhitelist[account]) revert AlreadyBlockHCUWhitelisted(account);
         $.blockHCUWhitelist[account] = true;
-        emit BlockHCUWhitelistSet(account, true);
+        emit BlockHCUWhitelistAdded(account);
     }
 
     /**
@@ -1473,7 +1476,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (!$.blockHCUWhitelist[account]) revert NotBlockHCUWhitelisted(account);
         $.blockHCUWhitelist[account] = false;
-        emit BlockHCUWhitelistSet(account, false);
+        emit BlockHCUWhitelistRemoved(account);
     }
 
     /**
@@ -1488,7 +1491,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _getHCUForHandle(op1);
-        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+        if (totalHCU > MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
@@ -1508,7 +1511,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
-        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+        if (totalHCU > MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
@@ -1530,7 +1533,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
         uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
 
-        if (totalHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
+        if (totalHCU > MAX_HOMOMORPHIC_COMPUTE_UNITS_DEPTH_PER_TX) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
@@ -1546,7 +1549,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         _updateAndVerifyHCUBlockLimit(opHCU, caller);
 
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
-        if (transactionHCU >= MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
+        if (transactionHCU > MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX) {
             revert HCUTransactionLimitExceeded();
         }
         _setHCUForTransaction(transactionHCU);
@@ -1572,7 +1575,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
 
         uint256 nextHCU = uint256(storedHCU) + opHCU;
-        if (nextHCU >= uint256($.globalHCUCapPerBlock)) {
+        if (nextHCU > uint256($.globalHCUCapPerBlock)) {
             revert HCUBlockLimitExceeded();
         }
         $.usedBlockHCU = uint64(nextHCU);

@@ -38,7 +38,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     address internal implementation;
     address internal fhevmExecutor;
 
-    uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000 - 1;
+    uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -1214,9 +1214,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function test_blockHCULimitRevertsWhenCastBurstReachesCap() public {
-        // Cast costs 32 HCU per successful op, so cap=96 allows exactly two ops (64)
-        // and rejects the third one because nextHCU would be 96 (>= cap).
-        hcuLimit.setHCUPerBlockUnsafeForTest(96);
+        // Cast costs 32 HCU per successful op, so cap=95 allows exactly two ops (64)
+        // and rejects the third one because nextHCU would be 96 (> cap).
+        hcuLimit.setHCUPerBlockUnsafeForTest(95);
 
         vm.startPrank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2001)), address(0x1234));

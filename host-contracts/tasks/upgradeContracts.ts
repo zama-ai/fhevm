@@ -287,8 +287,14 @@ task('task:upgradeHCULimit')
     true,
     types.boolean,
   )
+  .addOptionalParam(
+    'hcuCapPerBlock',
+    'Global HCU cap per block passed to reinitializeV2 (default: uint64 max)',
+    '18446744073709551615',
+    types.string,
+  )
   .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
+    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract, hcuCapPerBlock }: TaskArguments,
     hre,
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
@@ -300,5 +306,7 @@ task('task:upgradeHCULimit')
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      BigInt(hcuCapPerBlock),
+    ]);
   });
