@@ -110,14 +110,18 @@ jobs:
           OIDC_TOKEN=$(curl -sf \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
-          [ -n "$OIDC_TOKEN" ] && [ "$OIDC_TOKEN" != "null" ] || { echo "::error::OIDC token request failed"; exit 1; }
+          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
+            echo "::error::OIDC token request failed"; exit 1
+          fi
 
           APP_TOKEN=$(curl -sf -X POST \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"permissions":{"contents":"write","pull_requests":"write","issues":"write"}}' \
             "https://api.anthropic.com/api/github/github-app-token-exchange" | jq -r '.token')
-          [ -n "$APP_TOKEN" ] && [ "$APP_TOKEN" != "null" ] || { echo "::error::Token exchange failed"; exit 1; }
+          if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
+            echo "::error::Token exchange failed"; exit 1
+          fi
 
           echo "::add-mask::$APP_TOKEN"
           echo "app_token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
