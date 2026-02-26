@@ -500,16 +500,16 @@ interface IGatewayConfig {
     /**
      * @notice Indicates if an address is a registered KMS transaction sender for a given context.
      * @param contextId The context ID to check.
-     * @param kmsTxSenderAddress The address to check.
+     * @param txSenderAddress The address to check.
      */
-    function isKmsContextTxSender(uint256 contextId, address kmsTxSenderAddress) external view returns (bool);
+    function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
 
     /**
      * @notice Indicates if an address is a registered KMS signer for a given context.
      * @param contextId The context ID to check.
      * @param signerAddress The address to check.
      */
-    function isKmsContextSigner(uint256 contextId, address signerAddress) external view returns (bool);
+    function isKmsSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
 
     /**
      * @notice Get the metadata of the KMS node with the given transaction sender address for a given context.
@@ -517,21 +517,21 @@ interface IGatewayConfig {
      * @param kmsTxSenderAddress The KMS transaction sender address.
      * @return The KMS node's metadata.
      */
-    function getKmsContextNode(uint256 contextId, address kmsTxSenderAddress) external view returns (KmsNode memory);
+    function getKmsNodeForContext(uint256 contextId, address kmsTxSenderAddress) external view returns (KmsNode memory);
 
     /**
      * @notice Get the list of all KMS nodes' transaction sender addresses for a given context.
      * @param contextId The context ID.
      * @return The list of KMS nodes' transaction sender addresses.
      */
-    function getKmsContextTxSenders(uint256 contextId) external view returns (address[] memory);
+    function getKmsTxSendersForContext(uint256 contextId) external view returns (address[] memory);
 
     /**
      * @notice Get the list of all KMS nodes' signer addresses for a given context.
      * @param contextId The context ID.
      * @return The list of KMS nodes' signer addresses.
      */
-    function getKmsContextSigners(uint256 contextId) external view returns (address[] memory);
+    function getKmsSignersForContext(uint256 contextId) external view returns (address[] memory);
 
     /**
      * @notice Get the current KMS context ID.

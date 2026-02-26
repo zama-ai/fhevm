@@ -631,13 +631,13 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getKmsSigners()).to.deep.equal([newSignerAddress]);
 
           // Check that the context-indexed state has been updated
-          expect(await gatewayConfig.isKmsContextTxSender(newContextId, newTxSenderAddress)).to.be.true;
-          expect(await gatewayConfig.isKmsContextSigner(newContextId, newSignerAddress)).to.be.true;
-          expect(await gatewayConfig.getKmsContextNode(newContextId, newTxSenderAddress)).to.deep.equal(
+          expect(await gatewayConfig.isKmsTxSenderForContext(newContextId, newTxSenderAddress)).to.be.true;
+          expect(await gatewayConfig.isKmsSignerForContext(newContextId, newSignerAddress)).to.be.true;
+          expect(await gatewayConfig.getKmsNodeForContext(newContextId, newTxSenderAddress)).to.deep.equal(
             toValues(newKmsNode),
           );
-          expect(await gatewayConfig.getKmsContextTxSenders(newContextId)).to.deep.equal([newTxSenderAddress]);
-          expect(await gatewayConfig.getKmsContextSigners(newContextId)).to.deep.equal([newSignerAddress]);
+          expect(await gatewayConfig.getKmsTxSendersForContext(newContextId)).to.deep.equal([newTxSenderAddress]);
+          expect(await gatewayConfig.getKmsSignersForContext(newContextId)).to.deep.equal([newSignerAddress]);
 
           // Check that the active context ID has been updated
           expect(await gatewayConfig.getCurrentKmsContextId()).to.equal(newContextId);
@@ -856,17 +856,17 @@ describe("GatewayConfig", function () {
           await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
 
           // Initial context should still have the original nodes
-          expect(await gatewayConfig.getKmsContextSigners(initialKmsContextId)).to.have.lengthOf(kmsSigners.length);
+          expect(await gatewayConfig.getKmsSignersForContext(initialKmsContextId)).to.have.lengthOf(kmsSigners.length);
           for (const kmsSigner of kmsSigners) {
-            expect(await gatewayConfig.isKmsContextSigner(initialKmsContextId, kmsSigner.address)).to.be.true;
+            expect(await gatewayConfig.isKmsSignerForContext(initialKmsContextId, kmsSigner.address)).to.be.true;
           }
           for (const kmsTxSender of kmsTxSenders) {
-            expect(await gatewayConfig.isKmsContextTxSender(initialKmsContextId, kmsTxSender.address)).to.be.true;
+            expect(await gatewayConfig.isKmsTxSenderForContext(initialKmsContextId, kmsTxSender.address)).to.be.true;
           }
 
           // New context should have the new node
-          expect(await gatewayConfig.isKmsContextSigner(nextKmsContextId, newSignerAddress)).to.be.true;
-          expect(await gatewayConfig.isKmsContextTxSender(nextKmsContextId, newTxSenderAddress)).to.be.true;
+          expect(await gatewayConfig.isKmsSignerForContext(nextKmsContextId, newSignerAddress)).to.be.true;
+          expect(await gatewayConfig.isKmsTxSenderForContext(nextKmsContextId, newTxSenderAddress)).to.be.true;
 
           // Active context should be updated
           expect(await gatewayConfig.getCurrentKmsContextId()).to.equal(nextKmsContextId);

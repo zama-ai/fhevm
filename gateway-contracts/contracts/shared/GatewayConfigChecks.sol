@@ -158,10 +158,10 @@ abstract contract GatewayConfigChecks {
         address signerAddress,
         address txSenderAddress
     ) internal view {
-        if (!GATEWAY_CONFIG.isKmsContextSigner(contextId, signerAddress)) {
+        if (!GATEWAY_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert NotKmsSigner(signerAddress);
         }
-        if (GATEWAY_CONFIG.getKmsContextNode(contextId, txSenderAddress).signerAddress != signerAddress) {
+        if (GATEWAY_CONFIG.getKmsNodeForContext(contextId, txSenderAddress).signerAddress != signerAddress) {
             revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }
