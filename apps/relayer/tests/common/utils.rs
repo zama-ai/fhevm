@@ -33,10 +33,19 @@ impl TestSetup {
     /// This config is used in tests for readiness check timing out.
     #[allow(dead_code)]
     pub async fn new_with_fast_readiness() -> eyre::Result<Self> {
-        // Create temp config with modified readiness settings
         let temp_config_dir = TempDir::new()?;
-        let temp_config_path = create_fast_readiness_config(&temp_config_dir)?;
+        let temp_config_path =
+            create_readiness_config(&temp_config_dir, "fast_readiness.yaml", 4, 250)?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
 
+    /// Create test setup with minimal readiness retries (2 attempts × 50ms = ~100ms total)
+    /// Use when the test doesn't need many retries (e.g., contract errors that fail immediately).
+    #[allow(dead_code)]
+    pub async fn new_with_minimal_readiness() -> eyre::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path =
+            create_readiness_config(&temp_config_dir, "minimal_readiness.yaml", 2, 50)?;
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
@@ -294,8 +303,13 @@ fn create_default_config(temp_dir: &tempfile::TempDir) -> eyre::Result<std::path
 }
 
 /// Create a config file with fast readiness settings (4 attempts × 250ms)
-fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
-    let temp_config_path = temp_dir.path().join("fast_readiness.yaml");
+fn create_readiness_config(
+    temp_dir: &TempDir,
+    filename: &str,
+    max_attempts: u32,
+    retry_interval_ms: u32,
+) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join(filename);
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
@@ -309,9 +323,10 @@ fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
     if let Some(gateway) = config.get_mut("gateway") {
         if let Some(readiness_checker) = gateway.get_mut("readiness_checker") {
             if let Some(retry) = readiness_checker.get_mut("retry") {
-                retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(4));
+                retry["max_attempts"] =
+                    serde_yaml::Value::Number(serde_yaml::Number::from(max_attempts));
                 retry["retry_interval_ms"] =
-                    serde_yaml::Value::Number(serde_yaml::Number::from(250));
+                    serde_yaml::Value::Number(serde_yaml::Number::from(retry_interval_ms));
             }
         }
     }

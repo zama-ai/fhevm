@@ -133,6 +133,34 @@ impl FhevmMockWrapper {
         self.register_readiness_patterns(true);
     }
 
+    /// Configure readiness checks to return a JSON-RPC error (simulating node unavailable / contract error).
+    /// This causes `ReadinessCheckError::ContractError` after max retries, dispatching `ReadinessCheckFailed`.
+    pub fn set_readiness_contract_error(&self) {
+        debug!("Configuring readiness checks to return RPC error");
+
+        let error_response = Response::Error("RPC error: node unavailable".to_string());
+
+        // Register public decryption readiness check error
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isPublicDecryptionReadyCall::SELECTOR,
+            ),
+            error_response.clone(),
+            UsageLimit::Unlimited,
+        );
+
+        // Register user decryption readiness check error
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isUserDecryptionReadyCall::SELECTOR,
+            ),
+            error_response,
+            UsageLimit::Unlimited,
+        );
+    }
+
     /// Queue a sequence of transaction responses for a contract + selector (first-match-wins, Once per response).
     pub fn queue_tx_responses_for_selector(
         &self,
@@ -165,8 +193,30 @@ impl FhevmMockWrapper {
         }
     }
 
+    /// Configure readiness checks to fail `n` times (Once each), then succeed (Unlimited).
+    /// Useful for holding multiple requests in the readiness retry loop so they all
+    /// pass readiness at roughly the same time on the next retry cycle.
+    pub fn set_readiness_success_after_n_failures(&self, n: usize) {
+        debug!(
+            n,
+            "Configuring readiness checks: {} failures then success", n
+        );
+
+        // Register n Once(false) patterns — consumed one per eth_call
+        for _ in 0..n {
+            self.register_readiness_patterns_with_limit(false, UsageLimit::Once);
+        }
+        // Then Unlimited(true) — all subsequent calls succeed
+        self.register_readiness_patterns_with_limit(true, UsageLimit::Unlimited);
+    }
+
     /// Register readiness check patterns directly with the mock server
     fn register_readiness_patterns(&self, ready: bool) {
+        self.register_readiness_patterns_with_limit(ready, UsageLimit::Unlimited);
+    }
+
+    /// Register readiness check patterns with a specific usage limit
+    fn register_readiness_patterns_with_limit(&self, ready: bool, usage_limit: UsageLimit) {
         let response_value = if ready {
             "0x0000000000000000000000000000000000000000000000000000000000000001"
         } else {
@@ -186,7 +236,7 @@ impl FhevmMockWrapper {
                 Decryption::isPublicDecryptionReadyCall::SELECTOR,
             ),
             readiness_response.clone(),
-            UsageLimit::Unlimited,
+            usage_limit,
         );
 
         // Register user decryption readiness check
@@ -196,7 +246,7 @@ impl FhevmMockWrapper {
                 Decryption::isUserDecryptionReadyCall::SELECTOR,
             ),
             readiness_response,
-            UsageLimit::Unlimited,
+            usage_limit,
         );
     }
 

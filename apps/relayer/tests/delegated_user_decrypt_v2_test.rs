@@ -740,6 +740,45 @@ async fn test_retry_after_failure_creates_new_job_id() {
     setup.shutdown().await;
 }
 
+/// Test that a readiness check contract error (RPC node unavailable) correctly
+/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
+/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
+/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+#[tokio::test]
+async fn test_readiness_contract_error_returns_failure_v2() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    // Configure readiness checks to return RPC error (node unavailable)
+    setup.fhevm_mock.set_readiness_contract_error();
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let payload = helpers::create_delegated_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        delegator_address,
+        delegate_address,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+
+    // Poll until terminal state — before fix this would panic with
+    // "Request did not reach terminal state in time" because DB stays 'queued'
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+
+    setup.shutdown().await;
+}
+
 // V2 error format tests
 
 /// Test that malformed JSON returns V2 error format with status and request_id

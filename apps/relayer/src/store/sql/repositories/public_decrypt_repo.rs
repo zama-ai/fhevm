@@ -505,6 +505,90 @@ impl PublicDecryptRepository {
         }
     }
 
+    /// Update req_status to 'failure' from 'queued' state.
+    /// Used when failures happen before the request reaches 'processing'
+    /// (e.g., readiness check contract errors, enqueue failures).
+    async fn update_status_to_failure_from_queued(
+        &self,
+        int_job_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_app_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            WITH old AS (
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $2
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET
+                    req_status = 'failure'::req_status,
+                    err_reason = $1
+                WHERE int_job_id = $2
+                  AND req_status = 'queued'::req_status
+                RETURNING req_status, updated_at
+            )
+            SELECT
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
+            "#,
+            err_reason,
+            int_job_id_bytes
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => {
+                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            }
+            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
+        }
+
+        let record = result?;
+
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::RequestType::PublicDecrypt,
+                r.old_status,
+                ReqStatus::Failure,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Update req_status to failure when the readiness check fails with a contract error.
+    /// Transitions from 'queued' → 'failure'.
+    pub async fn update_status_to_failure_on_readiness_check_failed(
+        &self,
+        int_job_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> SqlResult<u64> {
+        self.update_status_to_failure_from_queued(int_job_id_bytes, err_reason)
+            .await
+    }
+
+    /// Update req_status to failure when enqueuing the request fails.
+    /// Transitions from 'queued' → 'failure'.
+    pub async fn update_status_to_failure_on_enqueue_failed(
+        &self,
+        int_job_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> SqlResult<u64> {
+        self.update_status_to_failure_from_queued(int_job_id_bytes, err_reason)
+            .await
+    }
+
     /// update req_status to failure and apply err_reason by internal_indexer_id
     pub async fn update_status_to_failure_on_tx_failed(
         &self,
