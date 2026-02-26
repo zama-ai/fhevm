@@ -1,4 +1,4 @@
-use alloy::{hex, primitives::U256};
+use alloy::primitives::U256;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::{
@@ -8,12 +8,12 @@ use connector_utils::{
     types::{
         KmsGrpcResponse, KmsResponse, KmsResponseKind,
         db::{KeyDigestDbItem, KeyType},
+        u256_to_request_id,
     },
 };
 use kms_grpc::kms::v1::{
     CrsGenResult, KeyDigest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
-    PublicDecryptionResponsePayload, RequestId, UserDecryptionResponse,
-    UserDecryptionResponsePayload,
+    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
@@ -109,9 +109,7 @@ async fn test_publish_prep_keygen_response() -> anyhow::Result<()> {
     let rand_prep_keygen_id = rand_u256();
     let rand_signature = rand_signature();
     let grpc_response = KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
-        preprocessing_id: Some(RequestId {
-            request_id: hex::encode(rand_prep_keygen_id.to_be_bytes_vec()),
-        }),
+        preprocessing_id: Some(u256_to_request_id(rand_prep_keygen_id)),
         external_signature: rand_signature.clone(),
     });
     let response = KmsResponse::new(
@@ -156,13 +154,9 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
     ];
 
     let grpc_response = KmsGrpcResponse::Keygen(KeyGenResult {
-        request_id: Some(RequestId {
-            request_id: hex::encode(rand_key_id.to_be_bytes_vec()),
-        }),
+        request_id: Some(u256_to_request_id(rand_key_id)),
         external_signature: rand_signature.clone(),
-        preprocessing_id: Some(RequestId {
-            request_id: hex::encode(rand_prep_keygen_id.to_be_bytes_vec()),
-        }),
+        preprocessing_id: Some(u256_to_request_id(rand_prep_keygen_id)),
         key_digests: rand_key_digests.clone(),
     });
     let response = KmsResponse::new(
@@ -204,9 +198,7 @@ async fn test_publish_crsgen_response() -> anyhow::Result<()> {
     let rand_crs_digest = rand_digest().to_vec();
     let rand_signature = rand_signature();
     let grpc_response = KmsGrpcResponse::Crsgen(CrsGenResult {
-        request_id: Some(RequestId {
-            request_id: hex::encode(rand_crs_id.to_be_bytes_vec()),
-        }),
+        request_id: Some(u256_to_request_id(rand_crs_id)),
         crs_digest: rand_crs_digest.clone(),
         external_signature: rand_signature.clone(),
         max_num_bits: 256,
