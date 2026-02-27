@@ -32,7 +32,12 @@ services:
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
-      - /initialize_db.sh
+      - >-
+        /initialize_db.sh 2>&1 ||
+        { echo "Checking if failure is due to existing data...";
+        psql "$$DATABASE_URL" -c "SELECT 1 FROM host_chains LIMIT 1" > /dev/null 2>&1 &&
+        echo "Database already initialized. Continuing." ||
+        { echo "Real initialization failure."; exit 1; }; }
     volumes:
       - keys-cache:/fhevm-keys
 
@@ -112,6 +117,7 @@ services:
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
+      - --replay-from-block=0
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
