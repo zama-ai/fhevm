@@ -1,10 +1,7 @@
 mod common;
 
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
-use alloy::{
-    providers::{ProviderBuilder, mock::Asserter},
-    sol_types::SolValue,
-};
+use alloy::providers::{ProviderBuilder, mock::Asserter};
 use connector_utils::{
     tests::{
         db::requests::{
@@ -45,10 +42,7 @@ async fn test_decryption_acl_failure(#[case] event_type: EventType) -> anyhow::R
         .with_tx_hash(tx_hash);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         match event_type {
-            EventType::PublicDecryptionRequest => {
-                // Mocking isDecryptionDone returns false
-                asserter.push_success(&false.abi_encode());
-            }
+            EventType::PublicDecryptionRequest => (),
             EventType::UserDecryptionRequest => {
                 // Mocking `get_transaction_by_hash` call result
                 let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
