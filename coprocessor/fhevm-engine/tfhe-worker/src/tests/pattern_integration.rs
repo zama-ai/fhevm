@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use data_encoding::BASE64URL_NOPAD;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use opentelemetry::trace::{SpanId, TracerProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use scheduler::dfg::pattern::{self, PatternInput};
@@ -679,7 +679,7 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
         // encodings. Decode them and verify the actual DFG structure.
 
         let decode_b64 = |b64: &str| -> pattern::PatternDescription {
-            let bytes = BASE64URL_NOPAD
+            let bytes = URL_SAFE_NO_PAD
                 .decode(b64.as_bytes())
                 .unwrap_or_else(|e| panic!("invalid base64url pattern '{b64}': {e}"));
             if pattern::is_hashed_pattern(&bytes) {
