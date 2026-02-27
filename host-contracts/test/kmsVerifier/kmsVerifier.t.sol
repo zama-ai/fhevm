@@ -212,26 +212,20 @@ contract KMSVerifierTest is Test {
         return handlesList;
     }
 
-    /**
-     * @dev Builds a complete decryption proof from signer private keys and extra data.
-     * @param signerKeys Array of private keys to sign with.
-     * @param extraData The extra data to include in the proof.
-     * @param handlesList The handles list for digest computation.
-     * @param decryptedResult The decrypted result for digest computation.
-     * @return decryptionProof The assembled decryption proof bytes.
-     */
-    function _buildDecryptionProof(
-        uint256[] memory signerKeys,
-        bytes memory extraData,
-        bytes32[] memory handlesList,
-        bytes memory decryptedResult
-    ) internal view returns (bytes memory) {
+    /// @dev Builds a single-signer decryption proof with mock handles and decrypted result.
+    function _buildSingleSignerProof(
+        uint256 signerKey,
+        bytes memory extraData
+    )
+        internal
+        view
+        returns (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof)
+    {
+        handlesList = _generateMockHandlesList(3);
+        decryptedResult = abi.encodePacked(keccak256("test"));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
-        bytes memory proof = abi.encodePacked(uint8(signerKeys.length));
-        for (uint256 i = 0; i < signerKeys.length; i++) {
-            proof = abi.encodePacked(proof, _computeSignature(signerKeys[i], digest));
-        }
-        return abi.encodePacked(proof, extraData);
+        bytes memory signature = _computeSignature(signerKey, digest);
+        proof = abi.encodePacked(uint8(1), signature, extraData);
     }
 
     /**
@@ -731,15 +725,11 @@ contract KMSVerifierTest is Test {
         (uint256 ctx1,) = _setupTwoContexts();
 
         // Verify with old context's signers using v1 extraData
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"));
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, extraData);
 
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
-
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
 
     /**
@@ -751,16 +741,12 @@ contract KMSVerifierTest is Test {
         vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
 
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"));
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, extraData);
 
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, ctx1));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
     /**
@@ -769,16 +755,12 @@ contract KMSVerifierTest is Test {
     function test_VerificationFailsWithUnsupportedExtraDataVersion() public {
         _upgradeProxyWithSigners(3);
 
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"));
         bytes memory extraData = abi.encodePacked(uint8(0x02)); // unsupported version
-
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, extraData);
 
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.UnsupportedExtraDataVersion.selector, uint8(0x02)));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
     /**
@@ -826,31 +808,24 @@ contract KMSVerifierTest is Test {
     function test_VerificationFailsForInvalidContextWithV1ExtraData() public {
         _upgradeProxyWithSigners(3); // context 1
 
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-
         // Above range: context ID that was never created
         uint256 nonExistentCtx = KMS_CONTEXT_COUNTER_BASE + 999;
-        bytes memory extraData1 = abi.encodePacked(uint8(0x01), nonExistentCtx);
-        bytes memory decryptedResult1 = abi.encodePacked(keccak256("test"));
-        bytes memory proof1 = _buildDecryptionProof(keys, extraData1, handlesList, decryptedResult1);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), nonExistentCtx));
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, nonExistentCtx));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult1, proof1);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
 
         // Off-by-one below range: KMS_CONTEXT_COUNTER_BASE (first valid is BASE + 1)
-        bytes memory extraData2 = abi.encodePacked(uint8(0x01), KMS_CONTEXT_COUNTER_BASE);
-        bytes memory decryptedResult2 = abi.encodePacked(keccak256("test-base"));
-        bytes memory proof2 = _buildDecryptionProof(keys, extraData2, handlesList, decryptedResult2);
+        (handlesList, decryptedResult, proof) =
+            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), KMS_CONTEXT_COUNTER_BASE));
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, KMS_CONTEXT_COUNTER_BASE));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult2, proof2);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
 
         // Zero context ID: default/uninitialized value guard
-        bytes memory extraData3 = abi.encodePacked(uint8(0x01), uint256(0));
-        bytes memory decryptedResult3 = abi.encodePacked(keccak256("test-zero"));
-        bytes memory proof3 = _buildDecryptionProof(keys, extraData3, handlesList, decryptedResult3);
+        (handlesList, decryptedResult, proof) =
+            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), uint256(0)));
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, uint256(0)));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult3, proof3);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
     /**
@@ -860,15 +835,10 @@ contract KMSVerifierTest is Test {
     function test_VerificationSucceedsWithEmptyExtraData() public {
         _upgradeProxyWithSigners(3); // context 1
 
-        bytes32[] memory handlesList = _generateMockHandlesList(2);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("empty"));
-        bytes memory extraData = new bytes(0);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, new bytes(0));
 
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
-
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
 
     /**
@@ -914,13 +884,9 @@ contract KMSVerifierTest is Test {
         (uint256 ctx1,) = _setupTwoContexts();
 
         // Attempt to verify against context 1 using signer3 (only in context 2)
-        bytes32[] memory handlesList = _generateMockHandlesList(2);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("cross-ctx"));
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner3;
-        bytes memory proof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner3, extraData);
 
         vm.expectPartialRevert(KMSVerifier.KMSInvalidSigner.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
@@ -959,17 +925,13 @@ contract KMSVerifierTest is Test {
         _upgradeProxyWithSigners(3); // context 1 with signer0, signer1, signer2
         uint256 currentCtx = kmsVerifier.getCurrentKmsContextId();
 
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("v1-current"));
         // Trailing bytes after the 33-byte minimum are ignored for context resolution
         // but included in the EIP-712 digest, so they exercise the full roundtrip.
         bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx, uint256(12345));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, extraData);
 
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
-
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
 
     /**
@@ -979,16 +941,12 @@ contract KMSVerifierTest is Test {
     function test_V0ExtraDataWithTrailingBytesUsesCurrentContext() public {
         _upgradeProxyWithSigners(3); // context 1
 
-        bytes32[] memory handlesList = _generateMockHandlesList(2);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("trailing"));
         // v0 prefix with arbitrary trailing bytes (uint256(12345))
         bytes memory extraData = abi.encodePacked(uint8(0x00), uint256(12345));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, extraData);
 
-        uint256[] memory keys = new uint256[](1);
-        keys[0] = privateKeySigner0;
-        bytes memory decryptionProof = _buildDecryptionProof(keys, extraData, handlesList, decryptedResult);
-
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
 
     /**
