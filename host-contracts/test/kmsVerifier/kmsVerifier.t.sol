@@ -181,6 +181,17 @@ contract KMSVerifierTest is Test {
         _upgradeProxy(activeSigners);
     }
 
+    /// @dev Sets up two contexts: context 1 with signer0-2 (threshold 1), context 2 with signer3 (threshold 1).
+    function _setupTwoContexts() internal returns (uint256 ctx1, uint256 ctx2) {
+        _upgradeProxyWithSigners(3);
+        ctx1 = kmsVerifier.getCurrentKmsContextId();
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = signer3;
+        vm.prank(owner);
+        kmsVerifier.defineNewContext(newSigners, 1);
+        ctx2 = kmsVerifier.getCurrentKmsContextId();
+    }
+
     function _generateMockHandlesList(uint256 numberHandles) internal pure returns (bytes32[] memory) {
         assert(numberHandles < 250);
         bytes32[] memory handlesList = new bytes32[](numberHandles);
@@ -638,15 +649,10 @@ contract KMSVerifierTest is Test {
      * @dev Tests that getSignersForKmsContext returns an empty array for destroyed and non-existent contexts.
      */
     function test_GetSignersForKmsContextReturnsEmptyForInvalidContexts() public {
-        _upgradeProxyWithSigners(3); // context 1
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+        (uint256 ctx1,) = _setupTwoContexts();
 
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.startPrank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
+        vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
-        vm.stopPrank();
 
         // Destroyed context returns empty
         assertEq(kmsVerifier.getSignersForKmsContext(ctx1).length, 0);
@@ -658,34 +664,23 @@ contract KMSVerifierTest is Test {
      * @dev Tests that destroyKmsContext can only be called by the governance (ACL owner).
      */
     function test_DestroyKmsContextOnlyCallableByGovernance() public {
-        _upgradeProxyWithSigners(3); // context 1
-
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.prank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
+        (uint256 ctx1,) = _setupTwoContexts();
 
         vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(address(0xdead));
-        kmsVerifier.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 1);
+        kmsVerifier.destroyKmsContext(ctx1);
     }
 
     /**
      * @dev Tests that destroyKmsContext marks the context as destroyed and emits KMSContextDestroyed.
      */
     function test_DestroyKmsContextMarksAsDestroyed() public {
-        _upgradeProxyWithSigners(3); // context 1
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
-
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.startPrank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
+        (uint256 ctx1,) = _setupTwoContexts();
 
         vm.expectEmit(true, true, true, true);
         emit KMSVerifier.KMSContextDestroyed(ctx1);
+        vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
-        vm.stopPrank();
 
         assertEq(kmsVerifier.getSignersForKmsContext(ctx1).length, 0);
     }
@@ -722,14 +717,7 @@ contract KMSVerifierTest is Test {
      *      with v1 extraData pointing to that context.
      */
     function test_VerificationSucceedsForOldContextWithOldSigners() public {
-        _upgradeProxyWithSigners(3); // context 1 with signer0, signer1, signer2
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
-
-        // Switch to new context
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.prank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
+        (uint256 ctx1,) = _setupTwoContexts();
 
         // Verify with old context's signers using v1 extraData
         bytes32[] memory handlesList = _generateMockHandlesList(3);
@@ -747,15 +735,10 @@ contract KMSVerifierTest is Test {
      * @dev Tests that verification reverts with InvalidKMSContext when targeting a destroyed context.
      */
     function test_VerificationFailsForDestroyedContext() public {
-        _upgradeProxyWithSigners(3); // context 1
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+        (uint256 ctx1,) = _setupTwoContexts();
 
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.startPrank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
+        vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
-        vm.stopPrank();
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"));
@@ -815,13 +798,9 @@ contract KMSVerifierTest is Test {
      * @dev Tests that destroying an already-destroyed context reverts with InvalidKMSContext.
      */
     function test_CannotDestroyAlreadyDestroyedContext() public {
-        _upgradeProxyWithSigners(3); // context 1
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+        (uint256 ctx1,) = _setupTwoContexts();
 
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
         vm.startPrank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2
         kmsVerifier.destroyKmsContext(ctx1);
 
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, ctx1));
@@ -930,13 +909,7 @@ contract KMSVerifierTest is Test {
      *      This is a critical security property: context isolation must prevent cross-context signing.
      */
     function test_CrossContextSignerRejection() public {
-        _upgradeProxyWithSigners(3); // context 1 with signer0, signer1, signer2
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
-
-        address[] memory newSigners = new address[](1);
-        newSigners[0] = signer3;
-        vm.prank(owner);
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2 with signer3
+        (uint256 ctx1,) = _setupTwoContexts();
 
         // Attempt to verify against context 1 using signer3 (only in context 2)
         bytes32[] memory handlesList = _generateMockHandlesList(2);
