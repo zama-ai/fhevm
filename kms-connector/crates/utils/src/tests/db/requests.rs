@@ -2,7 +2,7 @@ use crate::{
     monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
-        setup::{S3_CT_DIGEST, S3_CT_HANDLE},
+        setup::{S3_CT_DIGEST, S3_CT_HANDLE, TESTING_KMS_CONTEXT},
     },
     types::{
         GatewayEventKind,
@@ -61,7 +61,10 @@ pub async fn insert_rand_public_decryption_request(
             vec![sns_ct]
         }
     };
-    let extra_data = vec![];
+
+    let context_id = options.context_id.unwrap_or(TESTING_KMS_CONTEXT);
+    let mut extra_data = vec![0x01];
+    extra_data.extend(context_id.to_be_bytes_vec());
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
     let sns_ciphertexts_db = sns_cts
@@ -110,7 +113,11 @@ pub async fn insert_rand_user_decryption_request(
     };
     let user_address = rand_address();
     let public_key = rand_public_key();
-    let extra_data = vec![];
+
+    let context_id = options.context_id.unwrap_or(TESTING_KMS_CONTEXT);
+    let mut extra_data = vec![0x01];
+    extra_data.extend(context_id.to_be_bytes_vec());
+
     let status = options.status.unwrap_or(OperationStatus::Pending);
     let sns_ciphertexts_db = sns_cts
         .iter()
@@ -377,6 +384,7 @@ pub struct InsertRequestOptions {
     pub status: Option<OperationStatus>,
     pub tx_hash: Option<FixedBytes<32>>,
     pub sns_ct_materials: Option<Vec<SnsCiphertextMaterial>>,
+    pub context_id: Option<U256>,
 }
 
 impl InsertRequestOptions {
@@ -406,6 +414,11 @@ impl InsertRequestOptions {
 
     pub fn with_sns_ct_materials(mut self, materials: Vec<SnsCiphertextMaterial>) -> Self {
         self.sns_ct_materials = Some(materials);
+        self
+    }
+
+    pub fn with_context_id(mut self, context_id: U256) -> Self {
+        self.context_id = Some(context_id);
         self
     }
 }

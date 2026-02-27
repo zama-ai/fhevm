@@ -1,4 +1,5 @@
-use sqlx::{Pool, Postgres};
+use alloy::primitives::U256;
+use sqlx::{Pool, Postgres, types::chrono::Utc};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tracing::info;
 
@@ -51,6 +52,20 @@ impl DbInstance {
             .await?;
         info!("KMS Connector DB ready!");
 
+        info!("Inserting context #{TESTING_KMS_CONTEXT} for tests...");
+        let now = Utc::now();
+        sqlx::query!(
+            "INSERT INTO kms_context(id, is_valid, created_at, updated_at) \
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            TESTING_KMS_CONTEXT.as_le_slice(),
+            true,
+            now,
+            now,
+        )
+        .execute(&pool)
+        .await?;
+        info!("Context #{TESTING_KMS_CONTEXT} is ready for tests!");
+
         Ok(DbInstance {
             db_container: container,
             db: pool,
@@ -58,3 +73,5 @@ impl DbInstance {
         })
     }
 }
+
+pub const TESTING_KMS_CONTEXT: U256 = U256::ONE;
