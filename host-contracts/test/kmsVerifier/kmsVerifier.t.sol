@@ -192,6 +192,17 @@ contract KMSVerifierTest is Test {
         ctx2 = kmsVerifier.getCurrentKmsContextId();
     }
 
+    /// @dev Deploys a fresh KMSVerifier behind a UUPS proxy without calling any initializer.
+    function _deployUninitializedKMSVerifierProxy() internal returns (address proxyAddr, KMSVerifier kv) {
+        proxyAddr = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        address impl = address(new KMSVerifier());
+        UnsafeUpgrades.upgradeProxy(proxyAddr, impl, "", owner);
+        kv = KMSVerifier(proxyAddr);
+    }
+
     function _generateMockHandlesList(uint256 numberHandles) internal pure returns (bytes32[] memory) {
         assert(numberHandles < 250);
         bytes32[] memory handlesList = new bytes32[](numberHandles);
@@ -866,30 +877,21 @@ contract KMSVerifierTest is Test {
      *      calling reinitializeV2 to migrate into context-aware storage.
      */
     function test_ReinitializeV2MigratesExistingSigners() public {
-        // Deploy a fresh empty proxy
-        address proxy2 = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-
-        // Upgrade to KMSVerifier without calling any initializer
-        address impl = address(new KMSVerifier());
-        UnsafeUpgrades.upgradeProxy(proxy2, impl, "", owner);
-        KMSVerifier kv = KMSVerifier(proxy2);
+        (address proxyAddr, KMSVerifier kv) = _deployUninitializedKMSVerifierProxy();
 
         // Simulate V2 state by manually populating legacy storage.
         // KMSVerifierStorage layout: +0: isSigner mapping, +1: signers array, +2: threshold, +3: currentKmsContextId
         bytes32 signersLenSlot = bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 1);
-        vm.store(proxy2, signersLenSlot, bytes32(uint256(2)));
+        vm.store(proxyAddr, signersLenSlot, bytes32(uint256(2)));
 
         bytes32 signersDataSlot = keccak256(abi.encode(signersLenSlot));
-        vm.store(proxy2, signersDataSlot, bytes32(uint256(uint160(signer0))));
-        vm.store(proxy2, bytes32(uint256(signersDataSlot) + 1), bytes32(uint256(uint160(signer1))));
+        vm.store(proxyAddr, signersDataSlot, bytes32(uint256(uint160(signer0))));
+        vm.store(proxyAddr, bytes32(uint256(signersDataSlot) + 1), bytes32(uint256(uint160(signer1))));
 
-        vm.store(proxy2, bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 2), bytes32(uint256(1)));
+        vm.store(proxyAddr, bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 2), bytes32(uint256(1)));
 
         // Set OZ Initializable _initialized = 2 (simulating completed V2 init)
-        vm.store(proxy2, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
+        vm.store(proxyAddr, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
 
         // Call reinitializeV2 — should migrate legacy signers into context 1
         vm.prank(owner);
@@ -928,25 +930,17 @@ contract KMSVerifierTest is Test {
      * @dev Tests that reinitializeV2 cannot be called twice (reinitializer guard).
      */
     function test_ReinitializeV2CannotBeCalledTwice() public {
-        // Deploy a fresh empty proxy
-        address proxy2 = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-
-        address impl = address(new KMSVerifier());
-        UnsafeUpgrades.upgradeProxy(proxy2, impl, "", owner);
-        KMSVerifier kv = KMSVerifier(proxy2);
+        (address proxyAddr, KMSVerifier kv) = _deployUninitializedKMSVerifierProxy();
 
         // Populate legacy storage so reinitializeV2 succeeds the first time
         bytes32 signersLenSlot = bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 1);
-        vm.store(proxy2, signersLenSlot, bytes32(uint256(1)));
+        vm.store(proxyAddr, signersLenSlot, bytes32(uint256(1)));
         bytes32 signersDataSlot = keccak256(abi.encode(signersLenSlot));
-        vm.store(proxy2, signersDataSlot, bytes32(uint256(uint160(signer0))));
-        vm.store(proxy2, bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 2), bytes32(uint256(1)));
+        vm.store(proxyAddr, signersDataSlot, bytes32(uint256(uint160(signer0))));
+        vm.store(proxyAddr, bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 2), bytes32(uint256(1)));
 
         // Set OZ Initializable _initialized = 2
-        vm.store(proxy2, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
+        vm.store(proxyAddr, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
 
         vm.prank(owner);
         kv.reinitializeV2();
@@ -1037,19 +1031,11 @@ contract KMSVerifierTest is Test {
      * @dev Tests that reinitializeV2 reverts with SignersSetIsEmpty when legacy $.signers is empty.
      */
     function test_ReinitializeV2RevertsWithEmptyLegacySigners() public {
-        // Deploy a fresh empty proxy
-        address proxy2 = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-
-        address impl = address(new KMSVerifier());
-        UnsafeUpgrades.upgradeProxy(proxy2, impl, "", owner);
-        KMSVerifier kv = KMSVerifier(proxy2);
+        (address proxyAddr, KMSVerifier kv) = _deployUninitializedKMSVerifierProxy();
 
         // Set OZ Initializable _initialized = 2 (simulating completed V2 init)
         // but leave legacy signers empty (default)
-        vm.store(proxy2, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
+        vm.store(proxyAddr, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
 
         vm.prank(owner);
         vm.expectRevert(KMSVerifier.SignersSetIsEmpty.selector);
@@ -1061,25 +1047,17 @@ contract KMSVerifierTest is Test {
      *      Exercises the _setContextThreshold validation path.
      */
     function test_ReinitializeV2RevertsWithZeroThreshold() public {
-        // Deploy a fresh empty proxy
-        address proxy2 = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-
-        address impl = address(new KMSVerifier());
-        UnsafeUpgrades.upgradeProxy(proxy2, impl, "", owner);
-        KMSVerifier kv = KMSVerifier(proxy2);
+        (address proxyAddr, KMSVerifier kv) = _deployUninitializedKMSVerifierProxy();
 
         // Populate legacy signers but leave threshold at 0
         bytes32 signersLenSlot = bytes32(uint256(KMS_VERIFIER_STORAGE_SLOT) + 1);
-        vm.store(proxy2, signersLenSlot, bytes32(uint256(1)));
+        vm.store(proxyAddr, signersLenSlot, bytes32(uint256(1)));
         bytes32 signersDataSlot = keccak256(abi.encode(signersLenSlot));
-        vm.store(proxy2, signersDataSlot, bytes32(uint256(uint160(signer0))));
+        vm.store(proxyAddr, signersDataSlot, bytes32(uint256(uint160(signer0))));
         // threshold slot (+2) is left at 0 (default)
 
         // Set OZ Initializable _initialized = 2
-        vm.store(proxy2, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
+        vm.store(proxyAddr, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
 
         vm.prank(owner);
         vm.expectRevert(KMSVerifier.ThresholdIsNull.selector);
