@@ -37,6 +37,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
+     * @param kmsContextId The KMS context ID.
      * @param metadata Metadata of the protocol.
      * @param thresholds The operator's thresholds.
      * @param kmsNodes List of KMS nodes.
@@ -44,6 +45,7 @@ interface IGatewayConfig {
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
+        uint256 indexed kmsContextId,
         ProtocolMetadata metadata,
         Thresholds thresholds,
         KmsNode[] kmsNodes,
@@ -52,14 +54,16 @@ interface IGatewayConfig {
     );
 
     /**
-     * @notice Emitted when the KMS nodes have been updated.
+     * @notice Emitted when the KMS context has been updated.
+     * @param newContextId The new context ID associated with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    event UpdateKmsNodes(
+    event UpdateKmsContext(
+        uint256 indexed newContextId,
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -245,6 +249,18 @@ interface IGatewayConfig {
     error HostChainAlreadyRegistered(uint256 chainId);
 
     /**
+     * @notice Error indicating that a null KMS context ID is not allowed.
+     */
+    error InvalidNullKmsContextId();
+
+    /**
+     * @notice Error emitted when the KMS context ID is not strictly greater than the current one.
+     * @param contextId The provided context ID.
+     * @param currentKmsContextId The current KMS context ID.
+     */
+    error KmsContextAlreadyRegistered(uint256 contextId, uint256 currentKmsContextId);
+
+    /**
      * @notice Error indicating that a null chain ID is not allowed.
      */
     error InvalidNullChainId();
@@ -256,16 +272,18 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Update the list of KMS nodes and their thresholds.
+     * @notice Update the KMS context: nodes and thresholds for a given context ID.
      * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
      * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @param newContextId The new context ID to associate with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function updateKmsNodes(
+    function updateKmsContext(
+        uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
         uint256 newPublicDecryptionThreshold,
@@ -402,18 +420,6 @@ interface IGatewayConfig {
     function getMpcThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the public decryption threshold.
-     * @return The public decryption threshold.
-     */
-    function getPublicDecryptionThreshold() external view returns (uint256);
-
-    /**
-     * @notice Get the user decryption threshold.
-     * @return The user decryption threshold.
-     */
-    function getUserDecryptionThreshold() external view returns (uint256);
-
-    /**
      * @notice Get the key and CRS generation threshold
      * @return The key and CRS generation threshold.
      */
@@ -490,6 +496,62 @@ interface IGatewayConfig {
      * @return The list of custodians' signer addresses.
      */
     function getCustodianSigners() external view returns (address[] memory);
+
+    /**
+     * @notice Indicates if an address is a registered KMS transaction sender for a given context.
+     * @param contextId The context ID to check.
+     * @param txSenderAddress The address to check.
+     */
+    function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
+
+    /**
+     * @notice Indicates if an address is a registered KMS signer for a given context.
+     * @param contextId The context ID to check.
+     * @param signerAddress The address to check.
+     */
+    function isKmsSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
+
+    /**
+     * @notice Get the metadata of the KMS node with the given transaction sender address for a given context.
+     * @param contextId The context ID.
+     * @param kmsTxSenderAddress The KMS transaction sender address.
+     * @return The KMS node's metadata.
+     */
+    function getKmsNodeForContext(uint256 contextId, address kmsTxSenderAddress) external view returns (KmsNode memory);
+
+    /**
+     * @notice Get the list of all KMS nodes' transaction sender addresses for a given context.
+     * @param contextId The context ID.
+     * @return The list of KMS nodes' transaction sender addresses.
+     */
+    function getKmsTxSendersForContext(uint256 contextId) external view returns (address[] memory);
+
+    /**
+     * @notice Get the list of all KMS nodes' signer addresses for a given context.
+     * @param contextId The context ID.
+     * @return The list of KMS nodes' signer addresses.
+     */
+    function getKmsSignersForContext(uint256 contextId) external view returns (address[] memory);
+
+    /**
+     * @notice Get the current KMS context ID.
+     * @return The current KMS context ID.
+     */
+    function getCurrentKmsContextId() external view returns (uint256);
+
+    /**
+     * @notice Get the public decryption threshold for a given context.
+     * @param contextId The context ID.
+     * @return The public decryption threshold.
+     */
+    function getKmsContextPublicDecryptionThreshold(uint256 contextId) external view returns (uint256);
+
+    /**
+     * @notice Get the user decryption threshold for a given context.
+     * @param contextId The context ID.
+     * @return The user decryption threshold.
+     */
+    function getKmsContextUserDecryptionThreshold(uint256 contextId) external view returns (uint256);
 
     /**
      * @notice Returns the versions of the GatewayConfig contract in SemVer format.

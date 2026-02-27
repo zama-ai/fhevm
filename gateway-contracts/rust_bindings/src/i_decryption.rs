@@ -35,12 +35,14 @@ interface IDecryption {
     error EmptyContractAddresses();
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
+    error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
     error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
+    error UnsupportedExtraDataVersion(uint8 version);
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
     error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
 
@@ -862,6 +864,22 @@ interface IDecryption {
   },
   {
     "type": "error",
+    "name": "InvalidExtraDataLength",
+    "inputs": [
+      {
+        "name": "actualLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minimumLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidNullDurationDays",
     "inputs": []
   },
@@ -937,6 +955,17 @@ interface IDecryption {
         "name": "startTimestamp",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedExtraDataVersion",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },
@@ -2999,6 +3028,100 @@ error EmptyCtHandles();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidExtraDataLength(uint256,uint256)` and selector `0x93548a66`.
+```solidity
+error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidExtraDataLength {
+        #[allow(missing_docs)]
+        pub actualLength: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub minimumLength: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidExtraDataLength> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidExtraDataLength) -> Self {
+                (value.actualLength, value.minimumLength)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidExtraDataLength {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    actualLength: tuple.0,
+                    minimumLength: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidExtraDataLength {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidExtraDataLength(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [147u8, 84u8, 138u8, 102u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.actualLength),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.minimumLength),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullDurationDays()` and selector `0xde2859c1`.
 ```solidity
 error InvalidNullDurationDays();
@@ -3517,6 +3640,88 @@ error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.startTimestamp),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `UnsupportedExtraDataVersion(uint8)` and selector `0x2139cc2c`.
+```solidity
+error UnsupportedExtraDataVersion(uint8 version);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct UnsupportedExtraDataVersion {
+        #[allow(missing_docs)]
+        pub version: u8,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<8>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u8,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnsupportedExtraDataVersion>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: UnsupportedExtraDataVersion) -> Self {
+                (value.version,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for UnsupportedExtraDataVersion {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { version: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for UnsupportedExtraDataVersion {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "UnsupportedExtraDataVersion(uint8)";
+            const SELECTOR: [u8; 4] = [33u8, 57u8, 204u8, 44u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.version),
                 )
             }
             #[inline]
@@ -7069,6 +7274,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         EmptyCtHandles(EmptyCtHandles),
         #[allow(missing_docs)]
+        InvalidExtraDataLength(InvalidExtraDataLength),
+        #[allow(missing_docs)]
         InvalidNullDurationDays(InvalidNullDurationDays),
         #[allow(missing_docs)]
         InvalidUserSignature(InvalidUserSignature),
@@ -7080,6 +7287,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         MaxDurationDaysExceeded(MaxDurationDaysExceeded),
         #[allow(missing_docs)]
         StartTimestampInFuture(StartTimestampInFuture),
+        #[allow(missing_docs)]
+        UnsupportedExtraDataVersion(UnsupportedExtraDataVersion),
         #[allow(missing_docs)]
         UserAddressInContractAddresses(UserAddressInContractAddresses),
         #[allow(missing_docs)]
@@ -7094,11 +7303,13 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [33u8, 57u8, 204u8, 44u8],
             [42u8, 135u8, 61u8, 39u8],
             [45u8, 231u8, 84u8, 56u8],
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
             [87u8, 207u8, 162u8, 23u8],
+            [147u8, 84u8, 138u8, 102u8],
             [149u8, 144u8, 233u8, 22u8],
             [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
@@ -7117,7 +7328,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 17usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7148,6 +7359,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::EmptyCtHandles(_) => {
                     <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::InvalidExtraDataLength(_) => {
+                    <InvalidExtraDataLength as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidNullDurationDays(_) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -7165,6 +7379,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::StartTimestampInFuture(_) => {
                     <StartTimestampInFuture as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::UnsupportedExtraDataVersion(_) => {
+                    <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::UserAddressInContractAddresses(_) => {
                     <UserAddressInContractAddresses as alloy_sol_types::SolError>::SELECTOR
@@ -7191,6 +7408,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IDecryptionErrors>] = &[
+                {
+                    fn UnsupportedExtraDataVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::UnsupportedExtraDataVersion)
+                    }
+                    UnsupportedExtraDataVersion
+                },
                 {
                     fn InvalidUserSignature(
                         data: &[u8],
@@ -7245,6 +7473,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::EmptyContractAddresses)
                     }
                     EmptyContractAddresses
+                },
+                {
+                    fn InvalidExtraDataLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::InvalidExtraDataLength)
+                    }
+                    InvalidExtraDataLength
                 },
                 {
                     fn CtHandleChainIdDiffersFromContractChainId(
@@ -7401,6 +7640,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 &[u8],
             ) -> alloy_sol_types::Result<IDecryptionErrors>] = &[
                 {
+                    fn UnsupportedExtraDataVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::UnsupportedExtraDataVersion)
+                    }
+                    UnsupportedExtraDataVersion
+                },
+                {
                     fn InvalidUserSignature(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -7454,6 +7704,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::EmptyContractAddresses)
                     }
                     EmptyContractAddresses
+                },
+                {
+                    fn InvalidExtraDataLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::InvalidExtraDataLength)
+                    }
+                    InvalidExtraDataLength
                 },
                 {
                     fn CtHandleChainIdDiffersFromContractChainId(
@@ -7648,6 +7909,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::InvalidExtraDataLength(inner) => {
+                    <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidNullDurationDays(inner) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7675,6 +7941,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::StartTimestampInFuture(inner) => {
                     <StartTimestampInFuture as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::UnsupportedExtraDataVersion(inner) => {
+                    <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7747,6 +8018,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         out,
                     )
                 }
+                Self::InvalidExtraDataLength(inner) => {
+                    <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidNullDurationDays(inner) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -7779,6 +8056,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::StartTimestampInFuture(inner) => {
                     <StartTimestampInFuture as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::UnsupportedExtraDataVersion(inner) => {
+                    <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
