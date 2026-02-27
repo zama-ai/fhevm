@@ -163,9 +163,9 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice Re-initializes the contract to V3 with context-aware KMS support.
+     * @notice Re-initializes the contract from V1 to V2 with context-aware KMS support.
      * @dev Migrates existing signers into the first context. The legacy mapping retains its pre-migration
-     *      values and should be considered stale after this call.
+     *      values, which should be considered stale after this call.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
