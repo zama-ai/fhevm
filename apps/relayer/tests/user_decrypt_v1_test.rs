@@ -8,7 +8,8 @@ use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
     test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::{Address, Bytes, B256};
+use alloy::primitives::{Address, B256};
+use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
@@ -57,12 +58,6 @@ mod helpers {
             .map(|_| rng.random_range(0..16))
             .map(|digit| format!("{:x}", digit))
             .collect()
-    }
-
-    pub fn random_encrypted_bytes() -> Bytes {
-        let mut rng = rng();
-        let bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
-        Bytes::from(bytes)
     }
 
     pub fn create_user_decrypt_payload(
@@ -122,12 +117,11 @@ async fn test_success_single_request() {
         user_address,
     );
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles,
         user_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -163,12 +157,11 @@ async fn test_consecutive_duplicate_requests_succeed() {
         user_address,
     );
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles.clone(),
         user_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -271,12 +264,11 @@ async fn test_success_concurrent_requests() {
         user_address,
     );
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles,
         user_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -345,15 +337,14 @@ async fn test_listener_redundancy_user_decrypt_matrix() {
                 user_address,
             );
             let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-            let encrypted_bytes = helpers::random_encrypted_bytes();
 
             let per_event_targets =
                 expand_targets(USER_DECRYPT_EVENT_COUNT, &case.targets_per_event);
 
             setup.fhevm_mock.on_user_decrypt_success_with_targets(
+                UserDecryptKind::Direct,
                 handles.clone(),
                 user_address,
-                encrypted_bytes,
                 per_event_targets,
             );
 

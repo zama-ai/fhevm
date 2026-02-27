@@ -7,7 +7,8 @@ use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::{Address, Bytes, B256};
+use alloy::primitives::{Address, B256};
+use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
@@ -32,9 +33,10 @@ mod constants {
     // Timeout test configuration
     pub const TIMEOUT_DURATION_SECS: u64 = 3;
     pub const CRON_INTERVAL_SECS: u64 = 1;
+    pub const INITIAL_POLL_DELAY_MS: u64 = 500;
 
-    pub const USER_DECRYPT_SELECTOR: [u8; 4] =
-        fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequestCall::SELECTOR;
+    pub const DELEGATED_USER_DECRYPT_SELECTOR: [u8; 4] =
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::delegatedUserDecryptionRequestCall::SELECTOR;
 
     // Contract error selectors for testing error classification
     // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs
@@ -116,12 +118,6 @@ mod helpers {
             "publicKey": random_public_key(),
             "extraData": constants::EXTRA_DATA
         })
-    }
-
-    pub fn random_encrypted_bytes() -> Bytes {
-        let mut rng = rng();
-        let bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
-        Bytes::from(bytes)
     }
 
     pub fn extract_ciphertext_handles_from_delegated_payload(
@@ -210,9 +206,9 @@ async fn test_delegated_user_decrypt_success() {
     let handle = alloy::primitives::B256::from_str(handle_str).unwrap();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Delegated,
         vec![handle],
         delegate_address, // For delegated decrypt, the delegate is the user
-        alloy::primitives::Bytes::from(vec![0x01, 0x02, 0x03]),
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -268,9 +264,12 @@ async fn test_delegated_user_decrypt_success() {
     setup.shutdown().await;
 }
 
-/// Test that delegated user decrypt request that times out properly updates database status.
+/// Test that delegated user decrypt request that times out properly updates database status
+/// and returns the correct `response_timed_out` label.
 #[tokio::test]
 async fn test_delegated_user_decrypt_timeout_updates_db_status() {
+    use crate::common::utils::test_v2_timeout_flow;
+
     let temp_config_dir = TempDir::new().expect("Failed to create temp dir");
     let temp_config_path = create_timeout_test_config(
         &temp_config_dir,
@@ -293,19 +292,23 @@ async fn test_delegated_user_decrypt_timeout_updates_db_status() {
         delegate_address,
     );
 
-    // Don't configure mock response - this will cause a timeout
-    let job_id = helpers::submit_request(&setup, &payload).await;
+    // Configure mock to emit request event only (no response) - will timeout
+    let handles = helpers::extract_ciphertext_handles_from_delegated_payload(&payload);
+    setup.fhevm_mock.on_user_decrypt_request_only(
+        UserDecryptKind::Delegated,
+        handles,
+        delegate_address,
+    );
 
-    // Wait for timeout to occur
-    tokio::time::sleep(std::time::Duration::from_secs(
-        constants::TIMEOUT_DURATION_SECS + constants::CRON_INTERVAL_SECS + 2,
-    ))
+    test_v2_timeout_flow(
+        helpers::v2_delegated_user_decrypt_post_url(&setup),
+        |job_id| helpers::v2_delegated_user_decrypt_get_url(&setup, job_id),
+        payload,
+        constants::TIMEOUT_DURATION_SECS,
+        constants::CRON_INTERVAL_SECS,
+        constants::INITIAL_POLL_DELAY_MS,
+    )
     .await;
-
-    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
-
-    assert_ne!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, ApiResponseStatus::Failed);
 
     setup.shutdown().await;
 }
@@ -330,7 +333,7 @@ async fn test_delegated_user_decrypt_max_retries_updates_db_status() {
     setup.fhevm_mock.set_readiness_success();
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
-        constants::USER_DECRYPT_SELECTOR,
+        constants::DELEGATED_USER_DECRYPT_SELECTOR,
         vec![
             ethereum_rpc_mock::Response::error("nonce too low".to_string()),
             ethereum_rpc_mock::Response::error("nonce too low".to_string()),
@@ -368,7 +371,7 @@ async fn test_delegated_user_decrypt_contract_paused_returns_503() {
     setup.fhevm_mock.set_readiness_success();
     setup
         .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_ENFORCED_PAUSE);
+        .on_user_decrypt_revert(UserDecryptKind::Delegated, constants::REVERT_ENFORCED_PAUSE);
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -401,9 +404,10 @@ async fn test_delegated_user_decrypt_invalid_signature_returns_400() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INVALID_SIGNATURE);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Delegated,
+        constants::REVERT_INVALID_SIGNATURE,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -438,9 +442,10 @@ async fn test_insufficient_balance_returns_503() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_BALANCE);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Delegated,
+        constants::REVERT_INSUFFICIENT_BALANCE,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -472,9 +477,10 @@ async fn test_insufficient_allowance_returns_503() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_ALLOWANCE);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Delegated,
+        constants::REVERT_INSUFFICIENT_ALLOWANCE,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -507,9 +513,10 @@ async fn test_delegated_user_decrypt_unknown_error_returns_500() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_UNKNOWN_SELECTOR);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Delegated,
+        constants::REVERT_UNKNOWN_SELECTOR,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -545,12 +552,11 @@ async fn test_consecutive_duplicate_requests_succeed() {
     );
 
     let handles = helpers::extract_ciphertext_handles_from_delegated_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Delegated,
         handles,
         delegate_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -610,13 +616,13 @@ async fn test_nonce_too_low_then_succeeds() {
     // First attempt fails, second succeeds
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
-        constants::USER_DECRYPT_SELECTOR,
+        constants::DELEGATED_USER_DECRYPT_SELECTOR,
         vec![Response::error("nonce too low".to_string())],
     );
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Delegated,
         handles.clone(),
         delegate_address,
-        Bytes::from(vec![0x01]),
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -647,13 +653,13 @@ async fn test_nonce_too_high_then_succeeds() {
     // First attempt fails with nonce-too-high, second attempt succeeds
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
-        constants::USER_DECRYPT_SELECTOR,
+        constants::DELEGATED_USER_DECRYPT_SELECTOR,
         vec![Response::error("nonce too high".to_string())],
     );
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Delegated,
         handles.clone(),
         delegate_address,
-        Bytes::from(vec![0x01]),
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -688,7 +694,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     setup.fhevm_mock.set_readiness_success();
     setup.fhevm_mock.queue_tx_responses_for_selector(
         setup.fhevm_mock.decryption_contract,
-        constants::USER_DECRYPT_SELECTOR,
+        constants::DELEGATED_USER_DECRYPT_SELECTOR,
         vec![
             Response::error("nonce too low".to_string()),
             Response::error("nonce too low".to_string()),

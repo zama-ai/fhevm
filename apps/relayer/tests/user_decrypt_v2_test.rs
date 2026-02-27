@@ -7,7 +7,8 @@ use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::{Address, Bytes, B256};
+use alloy::primitives::{Address, B256};
+use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
@@ -83,12 +84,6 @@ mod helpers {
             .map(|_| rng.random_range(0..16))
             .map(|digit| format!("{:x}", digit))
             .collect()
-    }
-
-    pub fn random_encrypted_bytes() -> Bytes {
-        let mut rng = rng();
-        let bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
-        Bytes::from(bytes)
     }
 
     pub fn create_user_decrypt_payload(
@@ -286,12 +281,11 @@ async fn test_success_single_request() {
         user_address,
     );
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles,
         user_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -392,12 +386,11 @@ async fn test_consecutive_duplicate_requests_succeed() {
     );
 
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
-    let encrypted_bytes = helpers::random_encrypted_bytes();
 
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles,
         user_address,
-        encrypted_bytes,
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -525,9 +518,9 @@ async fn test_nonce_too_low_then_succeeds() {
         vec![Response::error("nonce too low".to_string())],
     );
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles.clone(),
         user_address,
-        Bytes::from(vec![0x01]),
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -576,7 +569,7 @@ async fn test_timeout() {
     // Configure mock to emit REQUEST event only (no response) - will timeout
     setup
         .fhevm_mock
-        .on_user_decrypt_request_only(handles, user_address);
+        .on_user_decrypt_request_only(UserDecryptKind::Direct, handles, user_address);
 
     test_v2_timeout_flow(
         helpers::v2_user_decrypt_post_url(&setup),
@@ -611,9 +604,9 @@ async fn test_nonce_too_high_then_succeeds() {
         vec![Response::error("nonce too high".to_string())],
     );
     setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Direct,
         handles.clone(),
         user_address,
-        Bytes::from(vec![0x01]),
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
@@ -686,7 +679,7 @@ async fn test_contract_paused_returns_503() {
     setup.fhevm_mock.set_readiness_success();
     setup
         .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_ENFORCED_PAUSE);
+        .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_ENFORCED_PAUSE);
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -720,7 +713,7 @@ async fn test_invalid_signature_returns_400() {
     setup.fhevm_mock.set_readiness_success();
     setup
         .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INVALID_SIGNATURE);
+        .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_INVALID_SIGNATURE);
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -754,9 +747,10 @@ async fn test_insufficient_balance_returns_503() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_BALANCE);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Direct,
+        constants::REVERT_INSUFFICIENT_BALANCE,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -788,9 +782,10 @@ async fn test_insufficient_allowance_returns_503() {
     );
 
     setup.fhevm_mock.set_readiness_success();
-    setup
-        .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_ALLOWANCE);
+    setup.fhevm_mock.on_user_decrypt_revert(
+        UserDecryptKind::Direct,
+        constants::REVERT_INSUFFICIENT_ALLOWANCE,
+    );
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
@@ -824,7 +819,7 @@ async fn test_unknown_selector_returns_500() {
     setup.fhevm_mock.set_readiness_success();
     setup
         .fhevm_mock
-        .on_user_decrypt_revert(constants::REVERT_UNKNOWN_SELECTOR);
+        .on_user_decrypt_revert(UserDecryptKind::Direct, constants::REVERT_UNKNOWN_SELECTOR);
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;

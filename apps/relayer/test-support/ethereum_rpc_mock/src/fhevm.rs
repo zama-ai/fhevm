@@ -21,6 +21,22 @@ use tracing::{debug, info};
 pub use fhevm_gateway_bindings::decryption::Decryption;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
 
+/// Selects between direct and delegated user decryption mock patterns.
+#[derive(Debug, Clone, Copy)]
+pub enum UserDecryptKind {
+    Direct,
+    Delegated,
+}
+
+impl UserDecryptKind {
+    fn selector(&self) -> [u8; 4] {
+        match self {
+            Self::Direct => Decryption::userDecryptionRequestCall::SELECTOR,
+            Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
+        }
+    }
+}
+
 // Use actual gateway binding events instead of custom ones
 // Individual responses use: Decryption::UserDecryptionResponse
 // Consensus events use the topic hash from get_consensus_event_topic()
@@ -277,22 +293,22 @@ impl FhevmMockWrapper {
         );
     }
 
-    // Public API methods
+    // Public API methods — User Decryption (direct + delegated)
 
     /// Register user decryption that succeeds with the new multi-response pattern
     /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus
     /// Uses Unlimited usage limit for tests that send duplicate requests
     pub fn on_user_decrypt_success(
         &self,
+        kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
-        _result: Bytes,
         target: mock_server::SubscriptionTarget,
     ) {
-        self.on_user_decrypt_success_internal(
+        self.register_user_decrypt_success(
+            kind.selector(),
             handles,
             user,
-            _result,
             vec![target],
             UsageLimit::Unlimited,
         );
@@ -305,20 +321,33 @@ impl FhevmMockWrapper {
     /// Uses Once usage limit for redundancy tests that register multiple patterns
     pub fn on_user_decrypt_success_with_targets(
         &self,
+        kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
-        _result: Bytes,
         targets: Vec<mock_server::SubscriptionTarget>,
     ) {
-        self.on_user_decrypt_success_internal(handles, user, _result, targets, UsageLimit::Once);
+        self.register_user_decrypt_success(
+            kind.selector(),
+            handles,
+            user,
+            targets,
+            UsageLimit::Once,
+        );
     }
 
-    /// Internal method for user decryption with configurable usage limit
-    fn on_user_decrypt_success_internal(
+    /// Register user decryption that reverts with specified reason
+    pub fn on_user_decrypt_revert(&self, kind: UserDecryptKind, reason: &str) {
+        self.register_user_decrypt_revert(kind.selector(), reason);
+    }
+
+    // Shared internals for user / delegated-user decryption
+
+    /// Internal: register a user-decrypt success pattern for the given TX selector.
+    fn register_user_decrypt_success(
         &self,
+        selector: [u8; 4],
         handles: Vec<B256>,
         user: Address,
-        _result: Bytes,
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
@@ -475,10 +504,7 @@ impl FhevmMockWrapper {
 
         // Register pattern that returns immediate response with scheduled transaction
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector_for_txn(
-                self.decryption_contract,
-                Decryption::userDecryptionRequestCall::SELECTOR,
-            ),
+            matches_contract_and_selector_for_txn(self.decryption_contract, selector),
             immediate_response,
             usage_limit,
         );
@@ -486,13 +512,10 @@ impl FhevmMockWrapper {
         debug!("Registered FHEVM user decryption pattern with multi-block scheduled responses");
     }
 
-    /// Register user decryption that reverts with specified reason
-    pub fn on_user_decrypt_revert(&self, reason: &str) {
+    /// Internal: register a user-decrypt revert pattern for the given TX selector.
+    fn register_user_decrypt_revert(&self, selector: [u8; 4], reason: &str) {
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector_for_txn(
-                self.decryption_contract,
-                Decryption::userDecryptionRequestCall::SELECTOR,
-            ),
+            matches_contract_and_selector_for_txn(self.decryption_contract, selector),
             Response::Revert {
                 hash: Some(random_hash()),
                 reason: Some(reason.to_string()),
@@ -661,27 +684,36 @@ impl FhevmMockWrapper {
         );
     }
 
-    /// Register user decryption request event only (for timeout testing)
-    /// Emits the request event but NO response event, causing the relayer to timeout
-    pub fn on_user_decrypt_request_only(&self, handles: Vec<B256>, user: Address) {
-        // Set up readiness check to return true (ready)
-        self.set_readiness_success();
+    /// Register user decryption request event only (for timeout testing).
+    /// Emits the request event but NO response event, causing the relayer to timeout.
+    pub fn on_user_decrypt_request_only(
+        &self,
+        kind: UserDecryptKind,
+        handles: Vec<B256>,
+        user: Address,
+    ) {
+        self.register_user_decrypt_request_only(kind.selector(), handles, user);
+    }
 
+    /// Internal: register a request-only pattern (no response) for the given TX selector.
+    fn register_user_decrypt_request_only(
+        &self,
+        selector: [u8; 4],
+        handles: Vec<B256>,
+        user: Address,
+    ) {
+        self.set_readiness_success();
         let id = self.next_decryption_id();
         let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
-        self.register_request_only(
-            self.decryption_contract,
-            Decryption::userDecryptionRequestCall::SELECTOR,
-            request_log,
-        );
+        self.register_request_only(self.decryption_contract, selector, request_log);
     }
 
     /// Register user decryption that fails with error response
-    pub fn on_user_decrypt_error(&self, handles: Vec<B256>, user: Address) {
+    pub fn on_user_decrypt_error(&self, kind: UserDecryptKind, handles: Vec<B256>, user: Address) {
         self.register_decrypt_pattern(
             "user decryption error",
             self.decryption_contract,
-            Decryption::userDecryptionRequestCall::SELECTOR,
+            kind.selector(),
             mock_server::SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
@@ -1120,13 +1152,13 @@ mod tests {
 
         // Test pattern setup methods don't panic
         wrapper.on_user_decrypt_success(
+            UserDecryptKind::Direct,
             handles.clone(),
             user,
-            Bytes::from("result"),
             mock_server::SubscriptionTarget::All,
         );
-        wrapper.on_user_decrypt_error(handles.clone(), user);
-        wrapper.on_user_decrypt_revert("test reason");
+        wrapper.on_user_decrypt_error(UserDecryptKind::Direct, handles.clone(), user);
+        wrapper.on_user_decrypt_revert(UserDecryptKind::Direct, "test reason");
 
         wrapper.on_public_decrypt_success(
             handles.clone(),

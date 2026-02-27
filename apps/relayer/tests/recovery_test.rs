@@ -20,7 +20,8 @@ mod common;
 
 use alloy::primitives::{Address, Bytes, B256};
 use ethereum_rpc_mock::{
-    fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, SubscriptionTarget,
+    fhevm::{FhevmMockWrapper, UserDecryptKind},
+    MockConfig, MockServer, MockServerHandle, SubscriptionTarget,
 };
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
@@ -264,11 +265,10 @@ impl RecoveryTestSetup {
 
             let dummy_address =
                 Address::from_str("0x1234567890123456789012345678901234567890").unwrap();
-            let result = Bytes::from(b"decrypted_result");
             self.working_gateway.on_user_decrypt_success(
+                UserDecryptKind::Direct,
                 b256_handles,
                 dummy_address,
-                result,
                 SubscriptionTarget::All,
             );
         }

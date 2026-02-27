@@ -15,7 +15,7 @@ use alloy::{
     sol_types::SolCall,
 };
 use ethereum_rpc_mock::{
-    fhevm::{Decryption, FhevmMockWrapper, InputVerification},
+    fhevm::{Decryption, FhevmMockWrapper, InputVerification, UserDecryptKind},
     test_utils::{create_test_wallet, get_free_port},
     MockConfig, MockServer,
 };
@@ -339,13 +339,12 @@ async fn test_user_decrypt_response() {
     });
 
     let handle = B256::from([0x42; 32]);
-    let result_bytes = Bytes::from([42]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_user_decrypt_success(
+            UserDecryptKind::Direct,
             vec![handle],
             USER_ADDRESS,
-            result_bytes,
             ethereum_rpc_mock::SubscriptionTarget::All,
         );
 
@@ -433,7 +432,7 @@ async fn test_user_decrypt_error() {
     let handle = B256::from([0x42; 32]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_error(vec![handle], USER_ADDRESS);
+        .on_user_decrypt_error(UserDecryptKind::Direct, vec![handle], USER_ADDRESS);
 
     let server_handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -483,7 +482,7 @@ async fn test_user_decrypt_revert() {
 
     let expected_error = "Insufficient permissions";
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_revert(expected_error);
+        .on_user_decrypt_revert(UserDecryptKind::Direct, expected_error);
 
     let handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
