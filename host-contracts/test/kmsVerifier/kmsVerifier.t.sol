@@ -655,24 +655,6 @@ contract KMSVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that isValidKmsContext returns true for a valid (non-destroyed, existing) context.
-     */
-    function test_ValidateKmsContextReturnsTrueForValidContext() public {
-        _upgradeProxyWithSigners(3); // context 1
-        assertTrue(kmsVerifier.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 1));
-    }
-
-    /**
-     * @dev Tests that isValidKmsContext returns false for a non-existent context ID.
-     */
-    function test_ValidateKmsContextReturnsFalseForNonExistentContext() public {
-        _upgradeProxyWithSigners(3);
-        assertFalse(kmsVerifier.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 999));
-        assertFalse(kmsVerifier.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE));
-        assertFalse(kmsVerifier.isValidKmsContext(0));
-    }
-
-    /**
      * @dev Tests that destroyKmsContext can only be called by the governance (ACL owner).
      */
     function test_DestroyKmsContextOnlyCallableByGovernance() public {
@@ -705,7 +687,7 @@ contract KMSVerifierTest is Test {
         kmsVerifier.destroyKmsContext(ctx1);
         vm.stopPrank();
 
-        assertFalse(kmsVerifier.isValidKmsContext(ctx1));
+        assertEq(kmsVerifier.getSignersForKmsContext(ctx1).length, 0);
     }
 
     /**
@@ -935,12 +917,12 @@ contract KMSVerifierTest is Test {
         kv.reinitializeV2();
 
         // Verify migration
-        assertEq(kv.getCurrentKmsContextId(), KMS_CONTEXT_COUNTER_BASE + 1);
-        address[] memory ctxSigners = kv.getSignersForKmsContext(KMS_CONTEXT_COUNTER_BASE + 1);
+        uint256 expectedCtxId = KMS_CONTEXT_COUNTER_BASE + 1;
+        assertEq(kv.getCurrentKmsContextId(), expectedCtxId);
+        address[] memory ctxSigners = kv.getSignersForKmsContext(expectedCtxId);
         assertEq(ctxSigners.length, 2);
         assertEq(ctxSigners[0], signer0);
         assertEq(ctxSigners[1], signer1);
-        assertTrue(kv.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 1));
     }
 
     /**

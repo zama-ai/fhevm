@@ -341,15 +341,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice              Validates whether a KMS context exists and is not destroyed.
-     * @param kmsContextId  The context ID.
-     * @return isValid      true if the context exists and is not destroyed, false otherwise.
-     */
-    function isValidKmsContext(uint256 kmsContextId) public view virtual returns (bool) {
-        return _isValidKmsContext(kmsContextId);
-    }
-
-    /**
      * @notice        Getter for the name and version of the contract.
      * @return string Name and the version of the contract.
      */
