@@ -2,7 +2,7 @@ use crate::core::{Config, publish::publish_context_id};
 use alloy::{network::Ethereum, providers::Provider};
 use fhevm_host_bindings::kms_verifier::KMSVerifier::{self, KMSVerifierInstance};
 use sqlx::{Pool, Postgres};
-use tracing::{error, info};
+use tracing::info;
 
 pub struct EthereumListener<P> {
     /// The database pool for storing Ethereum's events.
@@ -27,10 +27,6 @@ where
 
     /// Starts the `EthereumListener`.
     pub async fn start(self) {
-        if let Err(e) = self.store_on_chain_context().await {
-            error!("Failed to store current context: {e}");
-        }
-
         // No listening for now, will be done when implementing RFC-005.
 
         info!("EthereumListener stopped successfully!");
@@ -65,7 +61,7 @@ mod tests {
     #[tokio::test]
     async fn test_store_current_context_id() {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
-        let context_id = U256::from(69_u64);
+        let context_id = U256::from(79_u64);
 
         let asserter = Asserter::new();
         asserter.push_success(&context_id.abi_encode());
@@ -79,13 +75,12 @@ mod tests {
 
         listener.store_on_chain_context().await.unwrap();
 
-        let row = sqlx::query("SELECT id, is_valid FROM kms_context")
+        let row = sqlx::query("SELECT is_valid FROM kms_context WHERE id = $1")
+            .bind(context_id.as_le_slice())
             .fetch_one(test_instance.db())
             .await
             .unwrap();
 
-        let stored_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("id").unwrap());
-        assert_eq!(stored_id, context_id);
         assert!(row.try_get::<bool, _>("is_valid").unwrap());
     }
 }

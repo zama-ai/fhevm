@@ -3,6 +3,7 @@ use crate::{
     monitoring::health::State,
 };
 use alloy::{network::Ethereum, providers::Provider};
+use anyhow::anyhow;
 use connector_utils::conn::{DefaultProvider, connect_to_db, connect_to_rpc_node};
 use tokio::join;
 use tokio_util::sync::CancellationToken;
@@ -36,12 +37,20 @@ where
         }
     }
 
-    pub async fn start(self) {
+    pub async fn start(self) -> anyhow::Result<()> {
+        // Ensure current Ethereum context is stored before starting any listener
+        self.ethereum_listener
+            .store_on_chain_context()
+            .await
+            .map_err(|e| anyhow!("Failed to store current context: {e}"))?;
+
         join!(
             self.gateway_listener.start(),
             self.ethereum_listener.start()
         );
         info!("EventListener stopped successfully!");
+
+        Ok(())
     }
 }
 

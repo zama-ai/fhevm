@@ -31,7 +31,7 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
 
-    /// TODO.
+    /// The entity used to validate KMS context.
     context_manager: C,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.

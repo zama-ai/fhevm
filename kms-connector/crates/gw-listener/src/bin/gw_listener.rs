@@ -48,7 +48,7 @@ async fn run() -> anyhow::Result<()> {
             let (event_listener, state) =
                 EventListener::from_config(config, cancel_token.clone()).await?;
             start_monitoring_server(monitoring_endpoint, state, cancel_token);
-            event_listener.start().await
+            event_listener.start().await?;
         }
     }
     Ok(())
