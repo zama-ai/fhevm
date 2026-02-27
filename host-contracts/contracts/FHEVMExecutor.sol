@@ -140,6 +140,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 3;
 
+    /// Domain separator for hashing when building an output handle for a FHE computation
+    bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMExecutorStorageLocation =
         0x4613e1771f6b755d243e536fb5a23c5b15e2826575fee921e8fe7a22a760c800;
@@ -671,7 +674,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
         /// @dev It must not cast to same type.
         if (typeCt == toType) revert InvalidType();
-        result = keccak256(abi.encodePacked(Operators.cast, ct, toType, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.cast, ct, toType, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(result, toType);
         hcuLimit.checkHCUForCast(toType, ct, result, msg.sender);
         acl.allowTransient(result, msg.sender);
@@ -695,7 +698,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
 
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
-        result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.trivialEncrypt, pt, toType, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(result, toType);
         hcuLimit.checkHCUForTrivialEncrypt(toType, result, msg.sender);
         acl.allowTransient(result, msg.sender);
@@ -812,7 +815,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
-        result = keccak256(abi.encodePacked(op, ct, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, ct, acl, block.chainid, blockhash(block.number - 1)));
         FheType typeCt = _typeOf(ct);
         result = _appendMetadataToPrehandle(result, typeCt);
         acl.allowTransient(result, msg.sender);
@@ -836,7 +839,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             FheType lhsType = _typeOf(lhs);
             if (lhsType != rhsType) revert IncompatibleTypes();
         }
-        result = keccak256(abi.encodePacked(op, lhs, rhs, scalar, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, rhs, scalar, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(result, resultType);
         acl.allowTransient(result, msg.sender);
     }
@@ -859,7 +862,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if (lhsType != FheType.Bool) revert UnsupportedType();
         if (middleType != rhsType) revert IncompatibleTypes();
 
-        result = keccak256(abi.encodePacked(op, lhs, middle, rhs, acl, block.chainid));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, op, lhs, middle, rhs, acl, block.chainid, blockhash(block.number - 1)));
         result = _appendMetadataToPrehandle(result, middleType);
         acl.allowTransient(result, msg.sender);
     }
@@ -867,7 +870,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function _generateSeed() internal virtual returns (bytes16 seed) {
         FHEVMExecutorStorage storage $ = _getFHEVMExecutorStorage();
         seed = bytes16(
-            keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
+            keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, $.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))
         );
         $.counterRand++;
     }
@@ -883,7 +886,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
-        result = keccak256(abi.encodePacked(Operators.fheRand, randType, seed));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRand, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
         hcuLimit.checkHCUForFheRand(randType, result, msg.sender);
         acl.allowTransient(result, msg.sender);
@@ -904,7 +907,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
         _checkBelowMaxBound(upperBound, randType);
-        result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRandBounded, upperBound, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
         hcuLimit.checkHCUForFheRandBounded(randType, result, msg.sender);
         acl.allowTransient(result, msg.sender);
