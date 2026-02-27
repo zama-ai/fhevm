@@ -197,17 +197,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice          Sets a threshold (i.e. the minimum number of valid signatures required to accept a transaction).
-     * @dev             Only the owner can set a threshold.
-     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
-     */
-    function setThreshold(uint256 threshold) public virtual onlyACLOwner {
-        KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-        _setContextThreshold($.currentKmsContextId, threshold);
-        emit NewContextSet($.currentKmsContextId, $.contextSigners[$.currentKmsContextId], threshold);
-    }
-
-    /**
      * @notice              Destroys a KMS context, preventing it from being used for verification.
      * @dev                 Only the owner can destroy a context. The current context cannot be destroyed.
      * @param kmsContextId  The ID of the context to destroy.

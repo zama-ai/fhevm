@@ -360,38 +360,6 @@ contract KMSVerifierTest is Test {
         kmsVerifier.defineNewContext(emptyAddress, 0);
     }
 
-    /**
-     * @dev Tests that only the owner can set the threshold.
-     * @param randomAccount An address that is not the owner.
-     */
-    function test_OnlyOwnerCanSetThreshold(address randomAccount) public {
-        vm.assume(randomAccount != owner);
-        _upgradeProxyWithSigners(3);
-        vm.prank(randomAccount);
-        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
-        kmsVerifier.setThreshold(2);
-    }
-
-    /**
-     * @dev Tests that the threshold value must not be set to 0.
-     */
-    function test_ThresholdMustBeNotSetToZero() public {
-        _upgradeProxyWithSigners(3);
-        vm.prank(owner);
-        vm.expectRevert(KMSVerifier.ThresholdIsNull.selector);
-        kmsVerifier.setThreshold(0);
-    }
-
-    /**
-     * @dev Tests that the threshold cannot be set if it is above the number of signers.
-     */
-    function test_ThresholdCannotBeSetIfAboveNumberOfSigners() public {
-        _upgradeProxyWithSigners(3);
-        vm.prank(owner);
-        vm.expectRevert(KMSVerifier.ThresholdIsAboveNumberOfSigners.selector);
-        kmsVerifier.setThreshold(4);
-    }
-
     /// @dev This function exists for the test below to call it externally.
     function upgrade(address randomAccount) external {
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", randomAccount);
@@ -526,8 +494,9 @@ contract KMSVerifierTest is Test {
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNumberOfSignaturesIsInferiorToThreshold() public {
         _upgradeProxyWithSigners(3);
 
+        /// @dev Define a new context with the same signers but threshold=2.
         vm.prank(owner);
-        kmsVerifier.setThreshold(2);
+        kmsVerifier.defineNewContext(activeSigners, 2);
         assertEq(kmsVerifier.getThreshold(), 2);
 
         /// @dev Mock data for testing purposes.
@@ -551,9 +520,9 @@ contract KMSVerifierTest is Test {
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfSameSignerIsUsedTwice() public {
         _upgradeProxyWithSigners(3);
 
-        /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
+        /// @dev Define a new context with the same signers but threshold=2.
         vm.prank(owner);
-        kmsVerifier.setThreshold(2);
+        kmsVerifier.defineNewContext(activeSigners, 2);
         assertEq(kmsVerifier.getThreshold(), 2);
 
         /// @dev Mock data for testing purposes.
@@ -975,39 +944,6 @@ contract KMSVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that setThreshold correctly updates the context threshold so that
-     *      verification respects the new threshold.
-     */
-    function test_SetThresholdAffectsVerification() public {
-        _upgradeProxyWithSigners(3); // context 1 with threshold 1
-        uint256 ctx = kmsVerifier.getCurrentKmsContextId();
-
-        vm.prank(owner);
-        kmsVerifier.setThreshold(2);
-
-        assertEq(kmsVerifier.getThreshold(), 2);
-        assertTrue(kmsVerifier.isValidKmsContext(ctx));
-
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("threshold-test"));
-        bytes memory extraData = abi.encodePacked(uint8(0x00));
-
-        // Single signature should now fail
-        uint256[] memory singleKey = new uint256[](1);
-        singleKey[0] = privateKeySigner0;
-        bytes memory singleProof = _buildDecryptionProof(singleKey, extraData, handlesList, decryptedResult);
-        vm.expectPartialRevert(KMSVerifier.KMSSignatureThresholdNotReached.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, singleProof);
-
-        // Two signatures should succeed
-        uint256[] memory dualKeys = new uint256[](2);
-        dualKeys[0] = privateKeySigner0;
-        dualKeys[1] = privateKeySigner1;
-        bytes memory dualProof = _buildDecryptionProof(dualKeys, extraData, handlesList, decryptedResult);
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, dualProof));
-    }
-
-    /**
      * @dev Tests that a signer from context 2 cannot sign for context 1 where they are not registered.
      *      This is a critical security property: context isolation must prevent cross-context signing.
      */
@@ -1064,58 +1000,6 @@ contract KMSVerifierTest is Test {
         vm.prank(owner);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         kv.reinitializeV2();
-    }
-
-    /**
-     * @dev Tests that calling setThreshold on the current context does not retroactively
-     *      affect a previous context's threshold. Specifically: context 1 has threshold 1,
-     *      then setThreshold(2) is called, then context 2 is created with threshold 1.
-     *      Context 1 must still require 2 signatures.
-     */
-    function test_SetThresholdRetainedOnPreviousContextAfterNewContext() public {
-        _upgradeProxyWithSigners(3); // context 1, threshold 1
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
-
-        vm.startPrank(owner);
-        kmsVerifier.setThreshold(2); // context 1 now requires 2 signatures
-
-        address[] memory newSigners = new address[](2);
-        newSigners[0] = signer3;
-        newSigners[1] = signer4;
-        kmsVerifier.defineNewContext(newSigners, 1); // context 2, threshold 1
-        vm.stopPrank();
-
-        // Context 1 should still require 2 signatures — 1 signature must fail
-        bytes32[] memory handlesList = _generateMockHandlesList(2);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("threshold-isolation"));
-        bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-
-        uint256[] memory singleKey = new uint256[](1);
-        singleKey[0] = privateKeySigner0;
-        bytes memory singleProof = _buildDecryptionProof(singleKey, extraData, handlesList, decryptedResult);
-        vm.expectPartialRevert(KMSVerifier.KMSSignatureThresholdNotReached.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, singleProof);
-
-        // 2 signatures should succeed for context 1
-        uint256[] memory dualKeys = new uint256[](2);
-        dualKeys[0] = privateKeySigner0;
-        dualKeys[1] = privateKeySigner1;
-        bytes memory dualProof = _buildDecryptionProof(dualKeys, extraData, handlesList, decryptedResult);
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, dualProof));
-    }
-
-    /**
-     * @dev Tests that setThreshold emits NewContextSet with the correct parameters.
-     */
-    function test_SetThresholdEmitsNewContextSetEvent() public {
-        _upgradeProxyWithSigners(3); // context 1, threshold 1
-        uint256 ctx = kmsVerifier.getCurrentKmsContextId();
-        address[] memory ctxSigners = kmsVerifier.getSignersForKmsContext(ctx);
-
-        vm.prank(owner);
-        vm.expectEmit(true, true, true, true);
-        emit KMSVerifier.NewContextSet(ctx, ctxSigners, 2);
-        kmsVerifier.setThreshold(2);
     }
 
     /**
