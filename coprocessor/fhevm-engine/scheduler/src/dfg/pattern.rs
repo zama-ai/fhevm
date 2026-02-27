@@ -148,9 +148,9 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use daggy::petgraph::algo::toposort;
 use daggy::{Dag, NodeIndex};
-use data_encoding::BASE64URL_NOPAD;
 use lru::LruCache;
 use sha3::{Digest, Keccak256};
 
@@ -226,7 +226,7 @@ impl fmt::Display for PatternDescription {
 /// Encode the `pattern_id` bytes as a base64url (no-pad) string for use in
 /// OTel span attributes.
 pub fn pattern_to_base64url(bytes: &[u8]) -> String {
-    BASE64URL_NOPAD.encode(bytes)
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// Decode a binary pattern encoding into a [`PatternDescription`].
@@ -354,8 +354,8 @@ fn build_hash_pattern(encoding: &[u8], node_count: usize) -> Vec<u8> {
     let cache =
         seen.get_or_insert_with(|| LruCache::new(NonZeroUsize::new(HASH_LOG_CACHE_SIZE).unwrap()));
     if cache.put(buf.clone(), ()).is_none() {
-        let b64_hash = BASE64URL_NOPAD.encode(&buf);
-        let b64_full = BASE64URL_NOPAD.encode(encoding);
+        let b64_hash = URL_SAFE_NO_PAD.encode(&buf);
+        let b64_full = URL_SAFE_NO_PAD.encode(encoding);
         tracing::info!(
             pattern_hash = %b64_hash,
             pattern_full = %b64_full,
@@ -813,7 +813,7 @@ mod tests {
     use fhevm_engine_common::types::SupportedFheOperations;
     use std::collections::HashMap;
 
-    use data_encoding::BASE64URL_NOPAD;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
     use super::{
         decode_pattern, is_hashed_pattern, pattern_to_base64url, ENCODING_VERSION, HASH_VERSION,
@@ -1941,7 +1941,7 @@ mod tests {
         let pattern = ids.values().next().unwrap();
         let b64 = pattern_to_base64url(pattern);
         // Verify the base64url decodes back to the same bytes
-        let decoded = BASE64URL_NOPAD
+        let decoded = URL_SAFE_NO_PAD
             .decode(b64.as_bytes())
             .expect("should decode base64url");
         assert_eq!(&decoded, pattern);

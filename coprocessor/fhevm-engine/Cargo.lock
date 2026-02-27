@@ -6363,8 +6363,8 @@ name = "scheduler"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "daggy",
- "data-encoding",
  "fhevm-engine-common",
  "hex",
  "lru 0.13.0",
@@ -7678,11 +7678,11 @@ version = "0.7.0"
 dependencies = [
  "actix-web",
  "alloy",
+ "base64 0.22.1",
  "bigdecimal",
  "chrono",
  "clap",
  "criterion",
- "data-encoding",
  "fhevm-engine-common",
  "hex",
  "host-listener",
