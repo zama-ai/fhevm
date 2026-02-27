@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use alloy::primitives::{FixedBytes, U256};
 use anyhow::anyhow;
 use connector_utils::{
@@ -20,6 +18,7 @@ use sqlx::{
     postgres::PgQueryResult,
     types::chrono::{DateTime, Utc},
 };
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 const INSERTION_RETRY_LIMIT: usize = 10;
@@ -307,5 +306,27 @@ pub async fn update_last_block_polled(
         );
     }
 
+    Ok(())
+}
+
+pub async fn publish_context_id(db_pool: &Pool<Postgres>, context_id: U256) -> anyhow::Result<()> {
+    info!("Publishing KMS context #{context_id} in DB...");
+    let now = Utc::now();
+    let query_result = sqlx::query!(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at) \
+        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        context_id.as_le_slice(),
+        true,
+        now,
+        now,
+    )
+    .execute(db_pool)
+    .await?;
+
+    if query_result.rows_affected() == 1 {
+        info!("KMS context #{context_id} was successfully published!");
+    } else {
+        debug!("KMS context #{context_id} was not published: {query_result:?}");
+    }
     Ok(())
 }
