@@ -49,7 +49,7 @@ describe('Upgrades', function () {
     });
     const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, { unsafeAllow: ['missing-initializer'] });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.1.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.2.0');
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
     expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
