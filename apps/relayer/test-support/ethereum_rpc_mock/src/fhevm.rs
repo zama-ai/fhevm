@@ -295,9 +295,8 @@ impl FhevmMockWrapper {
 
     // Public API methods — User Decryption (direct + delegated)
 
-    /// Register user decryption that succeeds with the new multi-response pattern
-    /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus
-    /// Uses Unlimited usage limit for tests that send duplicate requests
+    /// Register user decryption that succeeds with the multi-response pattern.
+    /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus.
     pub fn on_user_decrypt_success(
         &self,
         kind: UserDecryptKind,
@@ -318,7 +317,7 @@ impl FhevmMockWrapper {
     ///
     /// User decryption emits **10 events** (3+3+3+1 block pattern). If fewer targets are provided,
     /// they cycle. Example: `[Only([0]), Only([1])]` becomes `[0,1,0,1,0,1,0,1,0,1]` across the 10 events.
-    /// Uses Once usage limit for redundancy tests that register multiple patterns
+    /// Uses Once usage limit for redundancy tests that register multiple patterns.
     pub fn on_user_decrypt_success_with_targets(
         &self,
         kind: UserDecryptKind,
@@ -335,7 +334,7 @@ impl FhevmMockWrapper {
         );
     }
 
-    /// Register user decryption that reverts with specified reason
+    /// Register user decryption that reverts with specified reason.
     pub fn on_user_decrypt_revert(&self, kind: UserDecryptKind, reason: &str) {
         self.register_user_decrypt_revert(kind.selector(), reason);
     }
