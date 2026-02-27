@@ -589,3 +589,93 @@ fn run_computation(
         Err(e) => (graph_node_index, Err(e.into())),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::re_randomise_operation_inputs;
+    use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
+    use fhevm_engine_common::tfhe_ops::{perform_fhe_operation, trivial_encrypt_be_bytes};
+    use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
+    use tfhe::set_server_key;
+
+    fn compressed_roundtrip(ct: &SupportedFheCiphertexts) -> SupportedFheCiphertexts {
+        let ct_type = ct.type_num();
+        let bytes = ct.compress().expect("compress ciphertext");
+        SupportedFheCiphertexts::decompress_no_memcheck(ct_type, &bytes)
+            .expect("decompress ciphertext")
+    }
+
+    fn rerand_then_add(
+        lhs: SupportedFheCiphertexts,
+        rhs: SupportedFheCiphertexts,
+        keys: &FhevmKeys,
+    ) -> SupportedFheCiphertexts {
+        let mut cts = vec![lhs, rhs];
+        re_randomise_operation_inputs(
+            &mut cts,
+            SupportedFheOperations::FheAdd as i32,
+            &keys.compact_public_key,
+        )
+        .expect("re-randomise inputs");
+
+        perform_fhe_operation(SupportedFheOperations::FheAdd as i16, &cts, 0)
+            .expect("perform FheAdd")
+    }
+
+    #[test]
+    fn repro_compression_cycle_then_rerand_can_change_output_bytes() {
+        let keys_dir = format!("{}/../fhevm-keys", env!("CARGO_MANIFEST_DIR"));
+        let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk(&keys_dir).into();
+        set_server_key(keys.server_key.clone());
+        let client_key = keys.client_key.as_ref().expect("client key");
+
+        // Compare two realistic execution modes for one dependency chain:
+        // A) one batch (intermediates kept in memory),
+        // B) split batches (intermediate compressed/decompressed between ops).
+        let inputs = [11_u8, 17_u8, 23_u8];
+
+        let mut acc_mem = trivial_encrypt_be_bytes(1, &[inputs[0]]);
+        let mut acc_rt = compressed_roundtrip(&acc_mem);
+
+        for (step, rhs_val) in inputs.iter().skip(1).enumerate() {
+            let rhs = trivial_encrypt_be_bytes(1, &[*rhs_val]);
+            acc_mem = rerand_then_add(acc_mem, rhs.clone(), &keys);
+            acc_rt = compressed_roundtrip(&acc_rt);
+            acc_rt = rerand_then_add(acc_rt, rhs, &keys);
+
+            let clear_mem = acc_mem.decrypt(client_key);
+            let clear_rt = acc_rt.decrypt(client_key);
+            assert_eq!(
+                clear_mem,
+                clear_rt,
+                "decrypted result mismatch at step {}",
+                step + 1
+            );
+
+            let bytes_mem = acc_mem.compress().expect("compress in-memory result");
+            let bytes_rt = acc_rt.compress().expect("compress roundtrip result");
+            let first_diff = bytes_mem
+                .iter()
+                .zip(bytes_rt.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(bytes_mem.len().min(bytes_rt.len()));
+            assert!(
+                bytes_mem == bytes_rt,
+                "diverged at step {}: first_diff={}, mem_byte={}, rt_byte={}, mem_len={}, rt_len={}",
+                step + 1,
+                first_diff,
+                bytes_mem.get(first_diff).copied().unwrap_or(0),
+                bytes_rt.get(first_diff).copied().unwrap_or(0),
+                bytes_mem.len(),
+                bytes_rt.len(),
+            );
+        }
+
+        let clear_mem = acc_mem.decrypt(client_key);
+        let clear_rt = acc_rt.decrypt(client_key);
+        assert_eq!(
+            clear_mem, clear_rt,
+            "decrypted result mismatch on final result"
+        );
+    }
+}
