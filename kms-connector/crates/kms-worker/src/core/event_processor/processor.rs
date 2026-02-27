@@ -1,5 +1,6 @@
 use crate::core::event_processor::{
     KmsClient,
+    context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
 };
@@ -25,12 +26,12 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<GP: Provider, HP: Provider> {
+pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<GP, HP>,
+    decryption_processor: DecryptionProcessor<GP, HP, C>,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -42,7 +43,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider> {
     db_pool: Pool<Postgres>,
 }
 
-impl<GP: Provider, HP: Provider> EventProcessor for DbEventProcessor<GP, HP> {
+impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventProcessor<GP, HP, C> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -98,10 +99,10 @@ pub enum ProcessingError {
     Recoverable(anyhow::Error),
 }
 
-impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
+impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<GP, HP>,
+        decryption_processor: DecryptionProcessor<GP, HP, C>,
         kms_generation_processor: KMSGenerationProcessor,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,

@@ -4,7 +4,7 @@ use crate::{
 };
 use alloy::{hex, primitives::Address, providers::Provider, transports::http::Client};
 use anyhow::anyhow;
-use connector_utils::types::fhe::extract_fhe_type_from_handle;
+use connector_utils::types::handle::extract_fhe_type_from_handle;
 use dashmap::DashMap;
 use fhevm_gateway_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,

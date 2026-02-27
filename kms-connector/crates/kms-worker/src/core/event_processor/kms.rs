@@ -1,12 +1,12 @@
 use crate::core::config::Config;
-use alloy::{hex, primitives::U256};
-use connector_utils::types::KmsGrpcRequest;
+use alloy::primitives::U256;
+use connector_utils::types::{KmsGrpcRequest, u256_to_request_id};
 use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CrsGenRequest, Eip712DomainMsg, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest,
-    KeyGenRequest, RequestId,
+    KeyGenRequest,
 };
 use tracing::error;
 
@@ -34,12 +34,8 @@ impl KMSGenerationProcessor {
         &self,
         prep_keygen_request: &PrepKeygenRequest,
     ) -> KmsGrpcRequest {
-        let request_id = Some(RequestId {
-            request_id: hex::encode(prep_keygen_request.prepKeygenId.to_be_bytes::<32>()),
-        });
-
         KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
-            request_id,
+            request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: prep_keygen_request.paramsType as i32,
             epoch_id: None,
@@ -50,16 +46,9 @@ impl KMSGenerationProcessor {
     }
 
     pub fn prepare_keygen_request(&self, keygen_request: &KeygenRequest) -> KmsGrpcRequest {
-        let request_id = Some(RequestId {
-            request_id: hex::encode(keygen_request.keyId.to_be_bytes::<32>()),
-        });
-        let preproc_id = Some(RequestId {
-            request_id: hex::encode(keygen_request.prepKeygenId.to_be_bytes::<32>()),
-        });
-
         KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id,
-            preproc_id,
+            request_id: Some(u256_to_request_id(keygen_request.keyId)),
+            preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: None,
             epoch_id: None,
@@ -71,9 +60,6 @@ impl KMSGenerationProcessor {
     }
 
     pub fn prepare_crsgen_request(&self, crsgen_request: &CrsgenRequest) -> KmsGrpcRequest {
-        let request_id = Some(RequestId {
-            request_id: hex::encode(crsgen_request.crsId.to_be_bytes::<32>()),
-        });
         let max_num_bits = crsgen_request
             .maxBitLength
             .as_le_slice()
@@ -86,7 +72,7 @@ impl KMSGenerationProcessor {
             });
 
         KmsGrpcRequest::Crsgen(CrsGenRequest {
-            request_id,
+            request_id: Some(u256_to_request_id(crsgen_request.crsId)),
             domain: Some(self.domain.clone()),
             params: crsgen_request.paramsType as i32,
             max_num_bits,
@@ -95,29 +81,18 @@ impl KMSGenerationProcessor {
     }
 
     pub fn prepare_prss_init_request(&self, id: U256) -> KmsGrpcRequest {
-        let request_id = Some(RequestId {
-            request_id: hex::encode(id.to_be_bytes::<32>()),
-        });
         KmsGrpcRequest::PrssInit(InitRequest {
-            request_id,
+            request_id: Some(u256_to_request_id(id)),
             context_id: None, // TODO: update once context is implemented
         })
     }
 
     pub fn prepare_initiate_resharing_request(&self, req: &KeyReshareSameSet) -> KmsGrpcRequest {
-        let request_id = Some(RequestId {
-            request_id: hex::encode(req.keyReshareId.to_be_bytes::<32>()),
-        });
-
         KmsGrpcRequest::KeyReshareSameSet(InitiateResharingRequest {
-            request_id,
-            key_id: Some(RequestId {
-                request_id: hex::encode(req.keyId.to_be_bytes::<32>()),
-            }),
+            request_id: Some(u256_to_request_id(req.keyReshareId)),
+            key_id: Some(u256_to_request_id(req.keyId)),
             key_digests: vec![], // TODO: update once resharing is implemented
-            preproc_id: Some(RequestId {
-                request_id: hex::encode(req.prepKeygenId.to_be_bytes::<32>()),
-            }),
+            preproc_id: Some(u256_to_request_id(req.prepKeygenId)),
             key_parameters: req.paramsType as i32,
             domain: Some(self.domain.clone()),
             epoch_id: None,

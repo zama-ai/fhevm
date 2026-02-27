@@ -10,25 +10,32 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        DbEventProcessor, DecryptionProcessor, KMSGenerationProcessor, KmsClient, s3::S3Service,
+        DbContextManager, DbEventProcessor, DecryptionProcessor, KMSGenerationProcessor, KmsClient,
+        s3::S3Service,
     },
 };
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
 
-pub async fn init_kms_worker<GP: Provider + Clone + 'static, HP: Provider + Clone + 'static>(
+pub async fn init_kms_worker<GP, HP>(
     config: Config,
     gateway_provider: GP,
     acl_contracts_mock: HashMap<u64, ACLInstance<HP>>,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<GP, HP>>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<GP, HP, DbContextManager>>>
+where
+    GP: Provider + Clone + 'static,
+    HP: Provider + Clone + 'static,
+{
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
+    let context_manager = DbContextManager::new(db.clone());
     let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
     let decryption_processor = DecryptionProcessor::new(
         &config,
+        context_manager,
         gateway_provider.clone(),
         acl_contracts_mock,
         s3_service,

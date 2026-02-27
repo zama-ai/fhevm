@@ -1,6 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{ProcessingError, s3::S3Service},
+    event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
 };
 use alloy::{
     consensus::Transaction,
@@ -10,7 +10,10 @@ use alloy::{
     sol_types::SolCall,
 };
 use anyhow::anyhow;
-use connector_utils::types::{KmsGrpcRequest, fhe::extract_chain_id_from_handle};
+use connector_utils::types::{
+    KmsGrpcRequest, extra_data::parse_extra_data_context, handle::extract_chain_id_from_handle,
+    u256_to_request_id,
+};
 use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
     userDecryptionRequestCall,
@@ -24,9 +27,12 @@ use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
+pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
+
+    /// The entity used to validate KMS context.
+    context_manager: C,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<GP>,
@@ -38,13 +44,15 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     s3_service: S3Service<GP>,
 }
 
-impl<GP, HP> DecryptionProcessor<GP, HP>
+impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
 where
     GP: Provider,
     HP: Provider,
+    C: ContextManager,
 {
     pub fn new(
         config: &Config,
+        context_manager: C,
         gateway_provider: GP,
         acl_contracts: HashMap<u64, ACLInstance<HP>>,
         s3_service: S3Service<GP>,
@@ -61,6 +69,7 @@ where
 
         Self {
             domain,
+            context_manager,
             decryption_contract,
             acl_contracts,
             s3_service,
@@ -291,11 +300,10 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
+        let context_id = self.extract_and_validate_context(extra_data).await?;
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
-        let request_id = Some(RequestId {
-            request_id: hex::encode(decryption_id.to_be_bytes::<32>()),
-        });
+        let request_id = Some(u256_to_request_id(decryption_id));
         let extra_data = extra_data.to_vec();
 
         if let Some(user_decrypt_data) = user_decrypt_data {
@@ -310,7 +318,7 @@ where
                 typed_ciphertexts: ciphertexts,
                 extra_data,
                 epoch_id: None,
-                context_id: None,
+                context_id,
             };
 
             Ok(user_decryption_request.into())
@@ -322,7 +330,7 @@ where
                 domain: Some(self.domain.clone()),
                 extra_data,
                 epoch_id: None,
-                context_id: None,
+                context_id,
             };
             Ok(public_decryption_request.into())
         }
@@ -374,6 +382,21 @@ where
                 ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
             })
             .map(|tx| tx.input().to_vec())
+    }
+
+    /// Parses `extraData` for a context ID and validates it if present.
+    async fn extract_and_validate_context(
+        &self,
+        extra_data: &[u8],
+    ) -> Result<Option<RequestId>, ProcessingError> {
+        match parse_extra_data_context(extra_data) {
+            Err(e) => Err(ProcessingError::Irrecoverable(e)),
+            Ok(None) => Ok(None),
+            Ok(Some(context_id)) => {
+                self.context_manager.validate_context(context_id).await?;
+                Ok(Some(u256_to_request_id(context_id)))
+            }
+        }
     }
 }
 
@@ -438,8 +461,13 @@ mod tests {
 
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             DecryptionReadyMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -491,8 +519,13 @@ mod tests {
         let sns_ciphertexts = vec![sns_ct];
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -572,8 +605,13 @@ mod tests {
         let user_address = Address::default();
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             UserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -665,8 +703,13 @@ mod tests {
         let user_address = Address::default();
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -700,6 +743,14 @@ mod tests {
                 }
                 _ => panic!("Expected Irrecoverable error, got: {:?}", result),
             },
+        }
+    }
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+            Ok(())
         }
     }
 }

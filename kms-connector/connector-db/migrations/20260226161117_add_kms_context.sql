@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS kms_context (
+    id BYTEA NOT NULL,
+    is_valid BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (id)
+);

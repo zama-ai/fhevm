@@ -5,13 +5,13 @@ use crate::{
         GRPC_RESPONSE_POLLED_ERRORS,
     },
 };
-use alloy::{hex, primitives::U256};
+use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
     types::{
-        KmsGrpcRequest, KmsGrpcResponse, db::EventType, decode_request_id, gw_event::PRSS_INIT_ID,
-        u256_to_u32,
+        KmsGrpcRequest, KmsGrpcResponse, db::EventType, gw_event::PRSS_INIT_ID, request_id_to_u256,
+        u256_to_request_id, u256_to_u32,
     },
 };
 use kms_grpc::{
@@ -249,9 +249,7 @@ impl KmsClient {
     }
 
     async fn request_prss_init(&self, request: &InitRequest) -> (i16, Result<(), ProcessingError>) {
-        let inner_client = self.choose_client(RequestId {
-            request_id: hex::encode(PRSS_INIT_ID.to_be_bytes::<32>()),
-        });
+        let inner_client = self.choose_client(u256_to_request_id(PRSS_INIT_ID));
         send_request_with_retries(
             self.grpc_request_retries,
             || {
@@ -463,7 +461,7 @@ impl KmsClient {
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
-        let request_id = decode_request_id(request_id).unwrap_or_else(|e| {
+        let request_id = request_id_to_u256(request_id).unwrap_or_else(|e| {
             warn!("Failed to parse request ID: {e}. Sending request to shard 0 by default");
             U256::ZERO
         });
