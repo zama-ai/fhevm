@@ -288,6 +288,22 @@ impl MockServer {
             .add_call_pattern(Arc::new(predicate), response, usage);
     }
 
+    /// Register a dynamic mock response that can inspect the request.
+    pub fn on_call_dynamic(
+        &self,
+        predicate: impl Fn(&CallParams) -> bool + Send + Sync + 'static,
+        responder: impl Fn(&CallParams) -> Response + Send + Sync + 'static,
+        usage: UsageLimit,
+    ) {
+        debug!("Registering dynamic call pattern");
+
+        self.pattern_matcher.add_call_pattern_dynamic(
+            Arc::new(predicate),
+            Arc::new(responder),
+            usage,
+        );
+    }
+
     /// Clear all patterns and reset blockchain state for test cleanup
     pub fn reset_state(&self) {
         debug!("Resetting MockServer state");

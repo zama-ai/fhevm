@@ -19,15 +19,17 @@
 mod common;
 
 use alloy::primitives::{Address, Bytes, B256};
+use alloy::sol_types::SolCall;
+use common::utils::{host_acl_multicall_allow_response, random_handle};
 use ethereum_rpc_mock::{
     fhevm::{FhevmMockWrapper, UserDecryptKind},
-    MockConfig, MockServer, MockServerHandle, SubscriptionTarget,
+    MockConfig, MockServer, MockServerHandle, Response, SubscriptionTarget, UsageLimit,
 };
+use fhevm_host_bindings::acl::ACL;
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::repositories::Repositories;
 use fhevm_relayer::tracing::init_tracing_once;
-use rand::{rng, RngExt};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use std::net::TcpListener;
@@ -47,10 +49,13 @@ const INPUT_VERIFICATION_ADDR: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339a
 struct RecoveryTestSetup {
     broken_gateway_port: u16,
     working_gateway_port: u16,
+    host_port: u16,
+    host_server: MockServer,
     broken_gateway: FhevmMockWrapper,
     working_gateway: FhevmMockWrapper,
     _broken_handle: MockServerHandle,
     _working_handle: MockServerHandle,
+    _host_handle: MockServerHandle,
     http_port: Option<u16>,
     settings_rx: Option<oneshot::Receiver<Settings>>,
     cancellation_token: CancellationToken,
@@ -62,17 +67,31 @@ impl RecoveryTestSetup {
     async fn new() -> eyre::Result<Self> {
         let broken_port = get_free_port()?;
         let working_port = get_free_port()?;
+        let host_port = get_free_port()?;
 
         tracing::info!(
-            "Setting up recovery test - broken gateway: {}, working gateway: {}",
+            "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}",
             broken_port,
-            working_port
+            working_port,
+            host_port
         );
 
         let decryption_addr: Address = DECRYPTION_ADDR.parse().expect("Invalid decryption address");
         let input_verification_addr: Address = INPUT_VERIFICATION_ADDR
             .parse()
             .expect("Invalid input verification address");
+
+        // Create and start host chain mock server (ACL registered after settings load)
+        let host_config = MockConfig {
+            port: host_port,
+            ..MockConfig::new()
+        };
+        let host_server = MockServer::new(host_config);
+        let host_server_clone = host_server.clone();
+        let host_handle = host_server
+            .start()
+            .await
+            .map_err(|e| eyre::eyre!("Failed to start host mock server: {}", e))?;
 
         // Create broken gateway mock server
         let broken_config = MockConfig {
@@ -109,10 +128,13 @@ impl RecoveryTestSetup {
         Ok(Self {
             broken_gateway_port: broken_port,
             working_gateway_port: working_port,
+            host_port,
+            host_server: host_server_clone,
             broken_gateway,
             working_gateway,
             _broken_handle: broken_handle,
             _working_handle: working_handle,
+            _host_handle: host_handle,
             http_port: None,
             settings_rx: None,
             cancellation_token: CancellationToken::new(),
@@ -148,6 +170,14 @@ impl RecoveryTestSetup {
         for listener in &mut settings.gateway.listener_pool.listeners {
             listener.url = ws_url.clone();
         }
+
+        // Wire host chain URLs to the host mock server
+        for hc in &mut settings.host_chains {
+            hc.url = format!("http://localhost:{}", self.host_port);
+        }
+
+        // Register default ACL allow-all pattern on host mock
+        register_host_acl_allow_all(&self.host_server, &settings.host_chains);
 
         // Store storage settings for DB access
         self.storage_settings = Some(settings.storage.clone());
@@ -312,10 +342,42 @@ fn get_free_port() -> eyre::Result<u16> {
     Ok(port)
 }
 
-fn random_handle() -> String {
-    let mut rng = rng();
-    let bytes: [u8; 32] = rng.random();
-    format!("0x{}", hex::encode(bytes))
+/// Extract the number of calls encoded in a multicall calldata.
+fn extract_multicall_count(input: &Bytes) -> usize {
+    if input.len() < 68 {
+        return 0;
+    }
+    let len_bytes: [u8; 8] = input[60..68].try_into().unwrap_or([0u8; 8]);
+    usize::try_from(u64::from_be_bytes(len_bytes)).unwrap_or(0)
+}
+
+/// Register default ACL allow-all multicall pattern on the host mock server
+/// using the ACL address from config.
+fn register_host_acl_allow_all(
+    host_server: &MockServer,
+    host_chains: &[fhevm_relayer::config::settings::HostChainConfig],
+) {
+    // Recovery tests use public decrypt (1 handle → 1 call).
+    let count = 1;
+    let response_bytes = host_acl_multicall_allow_response(count);
+    let multicall_selector = ACL::multicallCall::SELECTOR;
+
+    for hc in host_chains {
+        let acl_address =
+            Address::from_str(&hc.acl_address).expect("Invalid ACL address in config");
+        let response = response_bytes.clone();
+
+        host_server.on_call(
+            move |params| {
+                params.to == acl_address
+                    && params.input.len() >= 4
+                    && params.input[0..4] == multicall_selector
+                    && extract_multicall_count(&params.input) == count
+            },
+            Response::call_success(response),
+            UsageLimit::Unlimited,
+        );
+    }
 }
 
 /// Clean up all incomplete requests from the database to start with a clean state
@@ -639,8 +701,18 @@ async fn test_recovery_from_queued_status() {
     setup
         .start_relayer_with_gateway(setup.broken_gateway_port, |settings| {
             // High retry limits so requests don't fail, just keep retrying readiness
-            settings.gateway.readiness_checker.retry.max_attempts = 100;
-            settings.gateway.readiness_checker.retry.retry_interval_ms = 100;
+            settings
+                .gateway
+                .readiness_checker
+                .gw_ciphertext_check
+                .retry
+                .max_attempts = 100;
+            settings
+                .gateway
+                .readiness_checker
+                .gw_ciphertext_check
+                .retry
+                .retry_interval_ms = 100;
         })
         .await
         .expect("Failed to start relayer");

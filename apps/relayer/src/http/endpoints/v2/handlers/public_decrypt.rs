@@ -1,12 +1,15 @@
 use super::super::types::error::{
-    classify_revert_error, ApiResponseStatus, RelayerV2ApiError404, RelayerV2ApiError500,
-    RelayerV2ApiError503, RelayerV2ResponseFailed,
+    classify_revert_error, ApiResponseStatus, RelayerV2ApiError400NoDetails, RelayerV2ApiError404,
+    RelayerV2ApiError500, RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptResponseJson,
     PublicDecryptStatusResponseJson,
 };
-use crate::core::errors::{READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG};
+use crate::core::errors::{
+    HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
+    TIMEOUT_REASON_MISSING_MSG,
+};
 use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptRequest, RelayerEvent, RelayerEventData,
 };
@@ -522,8 +525,22 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             }
                         };
 
-                        // Classify the error to determine appropriate status code and label
-                        let (status_code, error_value) = classify_revert_error(&error_msg);
+                        // Classify host ACL errors before falling through to revert classification
+                        let (status_code, error_value) = if error_msg
+                            .starts_with(NOT_ALLOWED_ON_HOST_ACL_PREFIX)
+                        {
+                            (
+                                StatusCode::BAD_REQUEST,
+                                RelayerV2ApiError400NoDetails::not_allowed_on_host_acl(&error_msg),
+                            )
+                        } else if error_msg.starts_with(HOST_ACL_FAILED_PREFIX) {
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                RelayerV2ApiError500::host_acl_failed(&error_msg),
+                            )
+                        } else {
+                            classify_revert_error(&error_msg)
+                        };
 
                         (
                             status_code,

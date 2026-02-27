@@ -10,8 +10,37 @@
 //! - Exhausted patterns: Keep patterns in list even when usage is exhausted
 
 use crate::mock_server::rpc_types::{CallParams, Response, TxParams};
+use std::fmt;
 use std::sync::Arc;
 use std::sync::RwLock;
+
+/// Response strategy for call patterns: either a fixed value or a request-dependent closure.
+#[derive(Clone)]
+pub enum CallResponder {
+    /// Return the same response regardless of request content.
+    Static(Response),
+    /// Compute the response from the incoming [`CallParams`].
+    Dynamic(Arc<dyn Fn(&CallParams) -> Response + Send + Sync>),
+}
+
+impl CallResponder {
+    /// Produce a concrete [`Response`] for the given request.
+    pub fn resolve(&self, params: &CallParams) -> Response {
+        match self {
+            Self::Static(r) => r.clone(),
+            Self::Dynamic(f) => f(params),
+        }
+    }
+}
+
+impl fmt::Debug for CallResponder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Static(r) => f.debug_tuple("Static").field(r).finish(),
+            Self::Dynamic(_) => f.debug_tuple("Dynamic").field(&"<closure>").finish(),
+        }
+    }
+}
 
 /// Type alias for predicate functions used in pattern matching
 pub type PredicateFn<T> = Arc<dyn Fn(&T) -> bool + Send + Sync>;
@@ -72,8 +101,8 @@ impl<P, R: std::fmt::Debug> std::fmt::Debug for Pattern<P, R> {
 /// Transaction pattern that matches transaction requests
 pub type TransactionPattern = Pattern<TxParams, Response>;
 
-/// Call pattern that matches call requests  
-pub type CallPattern = Pattern<CallParams, Response>;
+/// Call pattern that matches call requests and resolves via [`CallResponder`].
+pub type CallPattern = Pattern<CallParams, CallResponder>;
 
 /// Pattern matcher that stores and matches patterns against requests
 #[derive(Debug, Clone)]
@@ -141,14 +170,34 @@ impl PatternMatcher {
         Self::add_pattern(&self.transaction_patterns, predicate, response, usage);
     }
 
-    /// Add call pattern that matches requests with predicate
+    /// Add call pattern with a static response.
     pub fn add_call_pattern(
         &self,
         predicate: PredicateFn<CallParams>,
         response: Response,
         usage: UsageLimit,
     ) {
-        Self::add_pattern(&self.call_patterns, predicate, response, usage);
+        Self::add_pattern(
+            &self.call_patterns,
+            predicate,
+            CallResponder::Static(response),
+            usage,
+        );
+    }
+
+    /// Add call pattern with a dynamic (request-dependent) response.
+    pub fn add_call_pattern_dynamic(
+        &self,
+        predicate: PredicateFn<CallParams>,
+        responder: Arc<dyn Fn(&CallParams) -> Response + Send + Sync>,
+        usage: UsageLimit,
+    ) {
+        Self::add_pattern(
+            &self.call_patterns,
+            predicate,
+            CallResponder::Dynamic(responder),
+            usage,
+        );
     }
 
     /// Find matching transaction pattern for given parameters
@@ -156,9 +205,25 @@ impl PatternMatcher {
         Self::find_match(&self.transaction_patterns, tx_params)
     }
 
-    /// Find matching call pattern for given parameters
+    /// Find matching call pattern for given parameters.
+    ///
+    /// Uses [`CallResponder::resolve`] so dynamic patterns can inspect the request.
     pub fn find_call_match(&self, call_params: &CallParams) -> Option<Response> {
-        Self::find_match(&self.call_patterns, call_params)
+        let mut patterns_guard = self.call_patterns.write().unwrap();
+
+        for (i, pattern) in patterns_guard.iter_mut().enumerate() {
+            if (pattern.predicate)(call_params) && pattern.usage_limit.can_use() {
+                let response = pattern.response.resolve(call_params);
+                if pattern.usage_limit.use_once() {
+                    if pattern.usage_limit.is_once() {
+                        patterns_guard.remove(i);
+                    }
+                    return Some(response);
+                }
+            }
+        }
+
+        None
     }
 
     /// Clear all patterns from both collections

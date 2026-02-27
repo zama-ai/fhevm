@@ -1,7 +1,10 @@
 mod common;
 
 use crate::common::utils::{
-    assert_retry_after_header_present, create_timeout_test_config, TestSetup,
+    assert_retry_after_header_present, create_timeout_test_config,
+    register_host_acl_allow_all_dynamic, register_host_acl_deny_all,
+    register_host_acl_partial_deny, register_host_acl_rpc_error, TestSetup, TEST_HOST_CHAIN_ID,
+    TEST_HOST_CHAIN_ID_2,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -1137,6 +1140,394 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
         expect_v2_malformed_json(),
     )
     .await;
+
+    setup.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Host ACL check tests
+// ---------------------------------------------------------------------------
+
+/// When the host chain ACL contract returns false for all handles,
+/// the request should fail with 400 and label "not_allowed_on_host_acl".
+#[tokio::test]
+async fn test_not_allowed_on_host_acl_returns_400() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let payload = helpers::create_delegated_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        delegator_address,
+        delegate_address,
+    );
+
+    // Override default allow-all ACL with deny-all
+    let acl_address =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    // Delegated: 1 handle → 1 isHandleDelegatedForUserDecryption call
+    register_host_acl_deny_all(&setup.host_server, acl_address);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for ACL not allowed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    // Verify the error label
+    let error = body.error.expect("Expected error in response");
+    let label = error.get("label").and_then(|v| v.as_str());
+    assert_eq!(label, Some("not_allowed_on_host_acl"));
+
+    setup.shutdown().await;
+}
+
+/// When the host chain RPC is unavailable, the request should fail with 500
+/// after exhausting retries.
+#[tokio::test]
+async fn test_host_acl_rpc_error_returns_500() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let payload = helpers::create_delegated_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        delegator_address,
+        delegate_address,
+    );
+
+    // Override default allow-all ACL with RPC error
+    let acl_address =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    register_host_acl_rpc_error(&setup.host_server, acl_address);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        "Expected 500 for ACL RPC error"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    setup.shutdown().await;
+}
+
+/// 2 handle-contract pairs, deny index 1 → 400 with label "not_allowed_on_host_acl".
+#[tokio::test]
+async fn test_multi_pair_acl_partial_deny() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let chain_id = setup.settings.gateway.blockchain_rpc.chain_id.to_string();
+    let handle1 = helpers::random_handle();
+    let handle2 = helpers::random_handle();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let payload = json!({
+        "handleContractPairs": [
+            { "handle": handle1, "contractAddress": format!("{:?}", contract_address) },
+            { "handle": handle2, "contractAddress": format!("{:?}", contract_address) }
+        ],
+        "contractsChainId": chain_id,
+        "contractAddresses": [format!("{:?}", contract_address)],
+        "delegatorAddress": format!("{:?}", delegator_address),
+        "delegateAddress": format!("{:?}", delegate_address),
+        "startTimestamp": (now - 1).to_string(),
+        "durationDays": constants::REQUEST_VALIDITY_DAYS,
+        "signature": helpers::random_signature(),
+        "publicKey": helpers::random_public_key(),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Override default ACL with partial deny (index 1)
+    let acl_address =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    register_host_acl_partial_deny(&setup.host_server, acl_address, vec![1]);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for partial ACL denial"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.expect("Expected error in response");
+    let label = error.get("label").and_then(|v| v.as_str());
+    assert_eq!(label, Some("not_allowed_on_host_acl"));
+
+    setup.shutdown().await;
+}
+
+/// Handle-contract pair with unsupported chain_id 99999 → immediate 400 from POST.
+#[tokio::test]
+async fn test_unsupported_chain_id_returns_400() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let chain_id = setup.settings.gateway.blockchain_rpc.chain_id.to_string();
+    let unsupported_handle = crate::common::utils::random_handle_with_chain_id(99999);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let payload = json!({
+        "handleContractPairs": [{
+            "handle": unsupported_handle,
+            "contractAddress": format!("{:?}", contract_address)
+        }],
+        "contractsChainId": chain_id,
+        "contractAddresses": [format!("{:?}", contract_address)],
+        "delegatorAddress": format!("{:?}", delegator_address),
+        "delegateAddress": format!("{:?}", delegate_address),
+        "startTimestamp": (now - 1).to_string(),
+        "durationDays": constants::REQUEST_VALIDITY_DAYS,
+        "signature": helpers::random_signature(),
+        "publicKey": helpers::random_public_key(),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // POST should return 400 synchronously (no job created)
+    let response = reqwest::Client::new()
+        .post(helpers::v2_delegated_user_decrypt_post_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send POST request");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for unsupported chain ID"
+    );
+
+    let body: serde_json::Value = response.json().await.expect("Failed to parse response");
+    assert_eq!(body["status"].as_str(), Some("failed"));
+    assert_eq!(
+        body["error"]["label"].as_str(),
+        Some("host_chain_id_not_supported")
+    );
+
+    setup.shutdown().await;
+}
+
+/// 2 handle-contract pairs, all denied → 400 with label "not_allowed_on_host_acl".
+#[tokio::test]
+async fn test_multi_pair_acl_all_denied() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let chain_id = setup.settings.gateway.blockchain_rpc.chain_id.to_string();
+    let handle1 = helpers::random_handle();
+    let handle2 = helpers::random_handle();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let payload = json!({
+        "handleContractPairs": [
+            { "handle": handle1, "contractAddress": format!("{:?}", contract_address) },
+            { "handle": handle2, "contractAddress": format!("{:?}", contract_address) }
+        ],
+        "contractsChainId": chain_id,
+        "contractAddresses": [format!("{:?}", contract_address)],
+        "delegatorAddress": format!("{:?}", delegator_address),
+        "delegateAddress": format!("{:?}", delegate_address),
+        "startTimestamp": (now - 1).to_string(),
+        "durationDays": constants::REQUEST_VALIDITY_DAYS,
+        "signature": helpers::random_signature(),
+        "publicKey": helpers::random_public_key(),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    let acl_address =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    register_host_acl_deny_all(&setup.host_server, acl_address);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for all pairs denied"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.expect("Expected error in response");
+    let label = error.get("label").and_then(|v| v.as_str());
+    assert_eq!(label, Some("not_allowed_on_host_acl"));
+
+    setup.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-chain ACL tests (handle-contract pairs spanning chain 8009 and 9001)
+// ---------------------------------------------------------------------------
+
+/// Cross-chain: pairs on both chains, all denied → 400.
+#[tokio::test]
+async fn test_cross_chain_acl_all_denied() {
+    let setup = TestSetup::new_with_multi_chain()
+        .await
+        .expect("Failed to create multi-chain test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let chain_id = setup.settings.gateway.blockchain_rpc.chain_id.to_string();
+    let handle_a = crate::common::utils::random_handle_with_chain_id(TEST_HOST_CHAIN_ID);
+    let handle_b = crate::common::utils::random_handle_with_chain_id(TEST_HOST_CHAIN_ID_2);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let payload = json!({
+        "handleContractPairs": [
+            { "handle": handle_a, "contractAddress": format!("{:?}", contract_address) },
+            { "handle": handle_b, "contractAddress": format!("{:?}", contract_address) }
+        ],
+        "contractsChainId": chain_id,
+        "contractAddresses": [format!("{:?}", contract_address)],
+        "delegatorAddress": format!("{:?}", delegator_address),
+        "delegateAddress": format!("{:?}", delegate_address),
+        "startTimestamp": (now - 1).to_string(),
+        "durationDays": constants::REQUEST_VALIDITY_DAYS,
+        "signature": helpers::random_signature(),
+        "publicKey": helpers::random_public_key(),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    let acl_address_a =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    let acl_address_b =
+        Address::from_str(&setup.settings.host_chains[1].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    register_host_acl_deny_all(&setup.host_server, acl_address_a);
+    register_host_acl_deny_all(&setup.host_server, acl_address_b);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for all pairs denied across chains"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.expect("Expected error in response");
+    let label = error.get("label").and_then(|v| v.as_str());
+    assert_eq!(label, Some("not_allowed_on_host_acl"));
+
+    setup.shutdown().await;
+}
+
+/// Cross-chain: chain A allows all, chain B denies → 400 partial deny.
+#[tokio::test]
+async fn test_cross_chain_acl_partial_deny() {
+    let setup = TestSetup::new_with_multi_chain()
+        .await
+        .expect("Failed to create multi-chain test setup");
+
+    let contract_address = helpers::random_address();
+    let delegator_address = helpers::random_address();
+    let delegate_address = helpers::random_address();
+    let chain_id = setup.settings.gateway.blockchain_rpc.chain_id.to_string();
+    let handle_a = crate::common::utils::random_handle_with_chain_id(TEST_HOST_CHAIN_ID);
+    let handle_b = crate::common::utils::random_handle_with_chain_id(TEST_HOST_CHAIN_ID_2);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let payload = json!({
+        "handleContractPairs": [
+            { "handle": handle_a, "contractAddress": format!("{:?}", contract_address) },
+            { "handle": handle_b, "contractAddress": format!("{:?}", contract_address) }
+        ],
+        "contractsChainId": chain_id,
+        "contractAddresses": [format!("{:?}", contract_address)],
+        "delegatorAddress": format!("{:?}", delegator_address),
+        "delegateAddress": format!("{:?}", delegate_address),
+        "startTimestamp": (now - 1).to_string(),
+        "durationDays": constants::REQUEST_VALIDITY_DAYS,
+        "signature": helpers::random_signature(),
+        "publicKey": helpers::random_public_key(),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Chain A: allow all, Chain B: deny all
+    let acl_address_a =
+        Address::from_str(&setup.settings.host_chains[0].acl_address).expect("Invalid ACL address");
+    let acl_address_b =
+        Address::from_str(&setup.settings.host_chains[1].acl_address).expect("Invalid ACL address");
+    setup.host_server.reset_state();
+    register_host_acl_allow_all_dynamic(&setup.host_server, acl_address_a);
+    register_host_acl_deny_all(&setup.host_server, acl_address_b);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "Expected 400 for cross-chain partial deny"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.expect("Expected error in response");
+    let label = error.get("label").and_then(|v| v.as_str());
+    assert_eq!(label, Some("not_allowed_on_host_acl"));
 
     setup.shutdown().await;
 }

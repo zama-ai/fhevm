@@ -1,13 +1,18 @@
 use std::net::TcpListener;
 
-use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle};
-use fhevm_relayer::config::settings::{Settings, StorageConfig};
+use ethereum_rpc_mock::{
+    fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
+};
+use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Bytes};
+use alloy::sol_types::{SolCall, SolValue};
+use fhevm_host_bindings::acl::ACL;
 use rand::{rng, RngExt};
+use std::str::FromStr;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -19,6 +24,7 @@ use super::test_schema::TestSchema;
 #[allow(dead_code)]
 pub struct TestSetup {
     pub fhevm_mock: FhevmMockWrapper,
+    pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
     host_handle: MockServerHandle,
@@ -77,6 +83,14 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
+    /// Create test setup with two host chains (chain_id 8009 and 9001) for cross-chain tests.
+    #[allow(dead_code)]
+    pub async fn new_with_multi_chain() -> eyre::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_multi_chain_config(&temp_config_dir)?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
     /// Create test setup with admin endpoint enabled
     #[allow(dead_code)]
     pub async fn new_with_admin_endpoint() -> eyre::Result<Self> {
@@ -130,6 +144,7 @@ impl TestSetup {
             ..MockConfig::new()
         };
         let host_server = MockServer::new(host_config);
+        let host_server_clone = host_server.clone();
         let host_handle = host_server
             .start()
             .await
@@ -190,6 +205,14 @@ impl TestSetup {
             listener.url = ws_url.clone();
         }
 
+        // Wire host chain URLs to the host mock server
+        for hc in &mut settings.host_chains {
+            hc.url = format!("http://localhost:{}", host_port);
+        }
+
+        // Register default ACL allow-all pattern on host mock
+        register_default_host_acl_allow_all(&host_server_clone, &settings.host_chains);
+
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
         let relayer_token = cancellation_token.clone();
@@ -212,6 +235,11 @@ impl TestSetup {
         relayer_settings.gateway.blockchain_rpc.read_http_url =
             settings.gateway.blockchain_rpc.read_http_url.clone();
         relayer_settings.metrics.endpoint = settings.metrics.endpoint.clone();
+
+        // Wire relayer host chain URLs to the host mock server
+        for hc in &mut relayer_settings.host_chains {
+            hc.url = format!("http://localhost:{}", host_port);
+        }
 
         // Update relayer listener pool URLs to use the mock server
         for listener in &mut relayer_settings.gateway.listener_pool.listeners {
@@ -261,6 +289,7 @@ impl TestSetup {
 
         Ok(TestSetup {
             fhevm_mock: fhevm_wrapper,
+            host_server: host_server_clone,
             settings,
             http_port,
             host_handle,
@@ -302,6 +331,48 @@ fn create_default_config(temp_dir: &tempfile::TempDir) -> eyre::Result<std::path
     Ok(temp_config_path)
 }
 
+/// Create a config file with a second host chain entry for cross-chain tests.
+///
+/// Reads `local.yaml.example`, appends a host chain with `TEST_HOST_CHAIN_ID_2`
+/// and `TEST_HOST_ACL_ADDRESS_2`, and writes to a temp file.
+fn create_multi_chain_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("multi_chain.yaml");
+
+    let config_content = std::fs::read_to_string("config/local.yaml.example")
+        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+
+    // Append second host chain entry
+    if let Some(host_chains) = config.get_mut("host_chains") {
+        if let Some(seq) = host_chains.as_sequence_mut() {
+            let mut entry = serde_yaml::Mapping::new();
+            entry.insert(
+                serde_yaml::Value::String("chain_id".to_string()),
+                serde_yaml::Value::Number(serde_yaml::Number::from(TEST_HOST_CHAIN_ID_2)),
+            );
+            entry.insert(
+                serde_yaml::Value::String("url".to_string()),
+                serde_yaml::Value::String("http://localhost:8545".to_string()),
+            );
+            entry.insert(
+                serde_yaml::Value::String("acl_address".to_string()),
+                serde_yaml::Value::String(TEST_HOST_ACL_ADDRESS_2.to_string()),
+            );
+            seq.push(serde_yaml::Value::Mapping(entry));
+        }
+    }
+
+    let modified_content = serde_yaml::to_string(&config)
+        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+
+    std::fs::write(&temp_config_path, modified_content)
+        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+
+    Ok(temp_config_path)
+}
+
 /// Create a config file with fast readiness settings (4 attempts × 250ms)
 fn create_readiness_config(
     temp_dir: &TempDir,
@@ -319,14 +390,24 @@ fn create_readiness_config(
     let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
         .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
 
-    // Modify the readiness checker retry settings
+    // Modify the readiness checker retry settings (both gw_ciphertext_check and host_acl_check)
     if let Some(gateway) = config.get_mut("gateway") {
         if let Some(readiness_checker) = gateway.get_mut("readiness_checker") {
-            if let Some(retry) = readiness_checker.get_mut("retry") {
-                retry["max_attempts"] =
-                    serde_yaml::Value::Number(serde_yaml::Number::from(max_attempts));
-                retry["retry_interval_ms"] =
-                    serde_yaml::Value::Number(serde_yaml::Number::from(retry_interval_ms));
+            if let Some(gw_ciphertext_check) = readiness_checker.get_mut("gw_ciphertext_check") {
+                if let Some(retry) = gw_ciphertext_check.get_mut("retry") {
+                    retry["max_attempts"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(max_attempts));
+                    retry["retry_interval_ms"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(retry_interval_ms));
+                }
+            }
+            if let Some(host_acl_check) = readiness_checker.get_mut("host_acl_check") {
+                if let Some(retry) = host_acl_check.get_mut("retry") {
+                    retry["max_attempts"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(max_attempts));
+                    retry["retry_interval_ms"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(retry_interval_ms));
+                }
             }
         }
     }
@@ -516,15 +597,35 @@ pub fn random_address() -> Address {
     Address::from(bytes)
 }
 
-/// Generate a random handle (64 hex characters) for testing
+/// Default host chain ID used in test config (local.yaml.example).
+pub const TEST_HOST_CHAIN_ID: u64 = 8009;
+
+/// Second host chain ID for cross-chain tests.
+pub const TEST_HOST_CHAIN_ID_2: u64 = 9001;
+
+/// ACL contract address for the second host chain (cross-chain tests).
+pub const TEST_HOST_ACL_ADDRESS_2: &str = "0x2222222222222222222222222222222222222222";
+
+/// Generate a random handle (64 hex characters) with a valid host chain ID.
+///
+/// Bytes 22..30 are set to the configured chain_id (big-endian) so that
+/// `HostChainIdChecker::validate_handles` passes.
 #[allow(dead_code)]
 pub fn random_handle() -> String {
+    random_handle_with_chain_id(TEST_HOST_CHAIN_ID)
+}
+
+/// Generate a random handle with a specific chain_id embedded at bytes 22..30.
+#[allow(dead_code)]
+pub fn random_handle_with_chain_id(chain_id: u64) -> String {
     let mut rng = rng();
-    let hex: String = (0..64)
-        .map(|_| rng.random_range(0..16))
-        .map(|digit| format!("{:x}", digit))
-        .collect();
-    format!("0x{}", hex)
+    let mut bytes = [0u8; 32];
+    for b in &mut bytes {
+        *b = rng.random_range(0..=255);
+    }
+    // Embed chain_id at bytes 22..30 (big-endian)
+    bytes[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    format!("0x{}", hex::encode(bytes))
 }
 
 /// Setup test database connection
@@ -667,6 +768,175 @@ pub async fn test_v2_timeout_flow(
     );
 }
 
+// ---------------------------------------------------------------------------
+// Host ACL mock helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the number of calls encoded in a multicall calldata.
+///
+/// ABI layout of `multicall(bytes[])`:
+///   [0..4]   selector
+///   [4..36]  offset to array data (0x20)
+///   [36..68] array length
+pub fn extract_multicall_count(input: &Bytes) -> usize {
+    if input.len() < 68 {
+        return 0;
+    }
+    // Array length is the uint256 at bytes 36..68; only the last 8 bytes matter for test counts.
+    let len_bytes: [u8; 8] = input[60..68].try_into().unwrap_or([0u8; 8]);
+    usize::try_from(u64::from_be_bytes(len_bytes)).unwrap_or(0)
+}
+
+/// Register default ACL multicall allow-all patterns on the host mock server.
+///
+/// Registers one pattern per expected call count so the response contains exactly
+/// the right number of results. The predicate inspects the multicall calldata to
+/// determine the count.
+fn register_default_host_acl_allow_all(host_server: &MockServer, host_chains: &[HostChainConfig]) {
+    // Cover all counts used by tests:
+    //   1 — public decrypt (1 handle) and delegated user decrypt (1 pair)
+    //   2 — user decrypt (1 pair → 2 isAllowed calls: user + contract)
+    for count in 1..=2 {
+        let response_bytes = host_acl_multicall_allow_response(count);
+
+        for hc in host_chains {
+            let acl_address =
+                Address::from_str(&hc.acl_address).expect("Invalid ACL address in config");
+            let multicall_selector = ACL::multicallCall::SELECTOR;
+
+            host_server.on_call(
+                move |params| {
+                    params.to == acl_address
+                        && params.input.len() >= 4
+                        && params.input[0..4] == multicall_selector
+                        && extract_multicall_count(&params.input) == count
+                },
+                Response::call_success(response_bytes.clone()),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+}
+
+/// Build ABI-encoded multicall response with `count` all-true boolean results.
+///
+/// Each result is an ABI-encoded `bool(true)` (32 bytes).
+/// The outer encoding matches the `multicall(bytes[]) returns (bytes[])` return type.
+#[allow(dead_code)]
+pub fn host_acl_multicall_allow_response(count: usize) -> Bytes {
+    let true_value = {
+        let mut buf = vec![0u8; 32];
+        buf[31] = 1;
+        Bytes::from(buf)
+    };
+
+    let results: Vec<Bytes> = vec![true_value; count];
+    Bytes::from(results.abi_encode_params())
+}
+
+/// Build ABI-encoded multicall response where specific indices are denied (false).
+///
+/// `denied` is a set of indices to mark as false; all others are true.
+#[allow(dead_code)]
+pub fn host_acl_multicall_deny_response(count: usize, denied: &[usize]) -> Bytes {
+    let results: Vec<Bytes> = (0..count)
+        .map(|i| {
+            let mut buf = vec![0u8; 32];
+            buf[31] = if denied.contains(&i) { 0 } else { 1 };
+            Bytes::from(buf)
+        })
+        .collect();
+    Bytes::from(results.abi_encode_params())
+}
+
+/// Register an ACL multicall pattern that denies all handles on the host mock.
+///
+/// Auto-detects the call count from the multicall calldata, so callers don't
+/// need to know the per-request-type count (1 for public decrypt, 2 for user
+/// decrypt, etc.).
+#[allow(dead_code)]
+pub fn register_host_acl_deny_all(host_server: &MockServer, acl_address: Address) {
+    let multicall_selector = ACL::multicallCall::SELECTOR;
+
+    host_server.on_call_dynamic(
+        move |params| {
+            params.to == acl_address
+                && params.input.len() >= 4
+                && params.input[0..4] == multicall_selector
+        },
+        move |params| {
+            let count = extract_multicall_count(&params.input);
+            let denied: Vec<usize> = (0..count).collect();
+            Response::call_success(host_acl_multicall_deny_response(count, &denied))
+        },
+        UsageLimit::Unlimited,
+    );
+}
+
+/// Register a count-aware ACL multicall allow-all pattern using `on_call_dynamic`.
+///
+/// Unlike `register_default_host_acl_allow_all` which only covers counts 1-2,
+/// this handles any call count by inspecting the multicall calldata at runtime.
+#[allow(dead_code)]
+pub fn register_host_acl_allow_all_dynamic(host_server: &MockServer, acl_address: Address) {
+    let multicall_selector = ACL::multicallCall::SELECTOR;
+
+    host_server.on_call_dynamic(
+        move |params| {
+            params.to == acl_address
+                && params.input.len() >= 4
+                && params.input[0..4] == multicall_selector
+        },
+        move |params| {
+            let count = extract_multicall_count(&params.input);
+            Response::call_success(host_acl_multicall_allow_response(count))
+        },
+        UsageLimit::Unlimited,
+    );
+}
+
+/// Register a count-aware ACL multicall pattern that denies specific indices.
+///
+/// `denied_indices` specifies which positions in the multicall response should
+/// return false (denied). All other positions return true (allowed).
+#[allow(dead_code)]
+pub fn register_host_acl_partial_deny(
+    host_server: &MockServer,
+    acl_address: Address,
+    denied_indices: Vec<usize>,
+) {
+    let multicall_selector = ACL::multicallCall::SELECTOR;
+
+    host_server.on_call_dynamic(
+        move |params| {
+            params.to == acl_address
+                && params.input.len() >= 4
+                && params.input[0..4] == multicall_selector
+        },
+        move |params| {
+            let count = extract_multicall_count(&params.input);
+            Response::call_success(host_acl_multicall_deny_response(count, &denied_indices))
+        },
+        UsageLimit::Unlimited,
+    );
+}
+
+/// Register an ACL multicall pattern that returns an RPC error.
+#[allow(dead_code)]
+pub fn register_host_acl_rpc_error(host_server: &MockServer, acl_address: Address) {
+    let multicall_selector = ACL::multicallCall::SELECTOR;
+
+    host_server.on_call(
+        move |params| {
+            params.to == acl_address
+                && params.input.len() >= 4
+                && params.input[0..4] == multicall_selector
+        },
+        Response::error("RPC error: host chain node unavailable".to_string()),
+        UsageLimit::Unlimited,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -676,22 +946,27 @@ mod tests {
 gateway:
   readiness_checker:
     max_concurrency: 100
-    retry:
-      max_attempts: 75
-      retry_interval_ms: 3000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 75
+        retry_interval_ms: 3000
 "#;
 
         // Parse YAML as a generic value
         let mut config: serde_yaml::Value =
             serde_yaml::from_str(sample_config).expect("Failed to parse YAML");
 
-        // Modify the readiness checker retry settings
+        // Modify the readiness checker gw_ciphertext_check retry settings
         if let Some(gateway) = config.get_mut("gateway") {
             if let Some(readiness_checker) = gateway.get_mut("readiness_checker") {
-                if let Some(retry) = readiness_checker.get_mut("retry") {
-                    retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(4));
-                    retry["retry_interval_ms"] =
-                        serde_yaml::Value::Number(serde_yaml::Number::from(250));
+                if let Some(gw_ciphertext_check) = readiness_checker.get_mut("gw_ciphertext_check")
+                {
+                    if let Some(retry) = gw_ciphertext_check.get_mut("retry") {
+                        retry["max_attempts"] =
+                            serde_yaml::Value::Number(serde_yaml::Number::from(4));
+                        retry["retry_interval_ms"] =
+                            serde_yaml::Value::Number(serde_yaml::Number::from(250));
+                    }
                 }
             }
         }
@@ -699,7 +974,8 @@ gateway:
         // Verify the changes
         let gateway = config.get("gateway").unwrap();
         let readiness_checker = gateway.get("readiness_checker").unwrap();
-        let retry = readiness_checker.get("retry").unwrap();
+        let gw_ciphertext_check = readiness_checker.get("gw_ciphertext_check").unwrap();
+        let retry = gw_ciphertext_check.get("retry").unwrap();
         let max_attempts = retry.get("max_attempts").unwrap().as_u64().unwrap();
         let retry_interval = retry.get("retry_interval_ms").unwrap().as_u64().unwrap();
 
