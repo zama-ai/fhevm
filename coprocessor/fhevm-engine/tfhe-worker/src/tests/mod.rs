@@ -1,4 +1,5 @@
 mod dependence_chain;
+mod determinism;
 mod errors;
 mod event_helpers;
 mod health_check;
