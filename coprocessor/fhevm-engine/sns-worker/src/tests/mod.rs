@@ -4,6 +4,8 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
+use alloy::node_bindings::Anvil;
+use alloy::signers::local::PrivateKeySigner;
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
 use fhevm_engine_common::db_keys::DbKeyId;
@@ -207,8 +209,8 @@ async fn run_batch_computations(
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
     // Assert that all ciphertext128 objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket128, 3 * batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket64, 3 * batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
 }
@@ -410,6 +412,7 @@ struct TestEnvironment {
     pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
+    pub private_key: Vec<u8>,
 }
 
 async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
@@ -440,7 +443,11 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     };
 
     let token = db_instance.parent_token.child_token();
-    let config: Config = conf.clone();
+    let mut config: Config = conf.clone();
+    let anvil = Anvil::new().block_time(1).try_spawn()?;
+    let signer = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
+    let private_key = signer.to_bytes().to_vec();
+    config.private_key = Some(hex::encode(&private_key));
 
     let key_id_gw = fetch_latest_key_id_gw(&pool).await;
     let host_chain_id = fetch_host_chain_id(&pool).await;
@@ -470,6 +477,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         s3_instance,
         s3_client,
         conf,
+        private_key,
     })
 }
 
@@ -786,5 +794,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        private_key: None,
+        signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
     }
 }

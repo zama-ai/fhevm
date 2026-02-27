@@ -3152,6 +3152,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "bytesize",
+ "clap",
  "futures",
  "hex",
  "http 1.3.1",
@@ -6485,6 +6486,7 @@ name = "sns-worker"
 version = "0.7.0"
 dependencies = [
  "aligned-vec",
+ "alloy",
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
