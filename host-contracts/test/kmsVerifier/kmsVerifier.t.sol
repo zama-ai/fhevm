@@ -216,11 +216,7 @@ contract KMSVerifierTest is Test {
     function _buildSingleSignerProof(
         uint256 signerKey,
         bytes memory extraData
-    )
-        internal
-        view
-        returns (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof)
-    {
+    ) internal view returns (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) {
         handlesList = _generateMockHandlesList(3);
         decryptedResult = abi.encodePacked(keccak256("test"));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
@@ -654,7 +650,7 @@ contract KMSVerifierTest is Test {
      * @dev Tests that getSignersForKmsContext returns an empty array for destroyed and non-existent contexts.
      */
     function test_GetSignersForKmsContextReturnsEmptyForInvalidContexts() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
@@ -669,7 +665,7 @@ contract KMSVerifierTest is Test {
      * @dev Tests that destroyKmsContext can only be called by the governance (ACL owner).
      */
     function test_DestroyKmsContextOnlyCallableByGovernance() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(address(0xdead));
@@ -680,7 +676,7 @@ contract KMSVerifierTest is Test {
      * @dev Tests that destroyKmsContext marks the context as destroyed and emits KMSContextDestroyed.
      */
     function test_DestroyKmsContextMarksAsDestroyed() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         vm.expectEmit(true, true, true, true);
         emit KMSVerifier.KMSContextDestroyed(ctx1);
@@ -722,12 +718,14 @@ contract KMSVerifierTest is Test {
      *      with v1 extraData pointing to that context.
      */
     function test_VerificationSucceedsForOldContextWithOldSigners() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         // Verify with old context's signers using v1 extraData
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
 
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
@@ -736,14 +734,16 @@ contract KMSVerifierTest is Test {
      * @dev Tests that verification reverts with InvalidKMSContext when targeting a destroyed context.
      */
     function test_VerificationFailsForDestroyedContext() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         vm.prank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
 
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
 
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, ctx1));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
@@ -756,8 +756,10 @@ contract KMSVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         bytes memory extraData = abi.encodePacked(uint8(0x02)); // unsupported version
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
 
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.UnsupportedExtraDataVersion.selector, uint8(0x02)));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
@@ -791,7 +793,7 @@ contract KMSVerifierTest is Test {
      * @dev Tests that destroying an already-destroyed context reverts with InvalidKMSContext.
      */
     function test_CannotDestroyAlreadyDestroyedContext() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         vm.startPrank(owner);
         kmsVerifier.destroyKmsContext(ctx1);
@@ -810,20 +812,26 @@ contract KMSVerifierTest is Test {
 
         // Above range: context ID that was never created
         uint256 nonExistentCtx = KMS_CONTEXT_COUNTER_BASE + 999;
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), nonExistentCtx));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            abi.encodePacked(uint8(0x01), nonExistentCtx)
+        );
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, nonExistentCtx));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
 
         // Off-by-one below range: KMS_CONTEXT_COUNTER_BASE (first valid is BASE + 1)
-        (handlesList, decryptedResult, proof) =
-            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), KMS_CONTEXT_COUNTER_BASE));
+        (handlesList, decryptedResult, proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            abi.encodePacked(uint8(0x01), KMS_CONTEXT_COUNTER_BASE)
+        );
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, KMS_CONTEXT_COUNTER_BASE));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
 
         // Zero context ID: default/uninitialized value guard
-        (handlesList, decryptedResult, proof) =
-            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), uint256(0)));
+        (handlesList, decryptedResult, proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            abi.encodePacked(uint8(0x01), uint256(0))
+        );
         vm.expectRevert(abi.encodeWithSelector(KMSVerifier.InvalidKMSContext.selector, uint256(0)));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
@@ -835,8 +843,10 @@ contract KMSVerifierTest is Test {
     function test_VerificationSucceedsWithEmptyExtraData() public {
         _upgradeProxyWithSigners(3); // context 1
 
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, new bytes(0));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            new bytes(0)
+        );
 
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
@@ -881,12 +891,14 @@ contract KMSVerifierTest is Test {
      *      This is a critical security property: context isolation must prevent cross-context signing.
      */
     function test_CrossContextSignerRejection() public {
-        (uint256 ctx1,) = _setupTwoContexts();
+        (uint256 ctx1, ) = _setupTwoContexts();
 
         // Attempt to verify against context 1 using signer3 (only in context 2)
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner3, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner3,
+            extraData
+        );
 
         vm.expectPartialRevert(KMSVerifier.KMSInvalidSigner.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
@@ -928,8 +940,10 @@ contract KMSVerifierTest is Test {
         // Trailing bytes after the 33-byte minimum are ignored for context resolution
         // but included in the EIP-712 digest, so they exercise the full roundtrip.
         bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx, uint256(12345));
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
 
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
@@ -943,8 +957,10 @@ contract KMSVerifierTest is Test {
 
         // v0 prefix with arbitrary trailing bytes (uint256(12345))
         bytes memory extraData = abi.encodePacked(uint8(0x00), uint256(12345));
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, extraData);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
 
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
     }
