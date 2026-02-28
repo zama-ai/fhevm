@@ -598,28 +598,37 @@ mod tests {
     use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
     use tfhe::set_server_key;
 
-    fn compressed_roundtrip(ct: &SupportedFheCiphertexts) -> SupportedFheCiphertexts {
-        let ct_type = ct.type_num();
-        let bytes = ct.compress().expect("compress ciphertext");
-        SupportedFheCiphertexts::decompress_no_memcheck(ct_type, &bytes)
-            .expect("decompress ciphertext")
+    fn compress_then_decompress_ciphertext(
+        ciphertext: &SupportedFheCiphertexts,
+    ) -> SupportedFheCiphertexts {
+        let ciphertext_type_number = ciphertext.type_num();
+        let compressed_ciphertext_bytes = ciphertext.compress().expect("compress ciphertext");
+        SupportedFheCiphertexts::decompress_no_memcheck(
+            ciphertext_type_number,
+            &compressed_ciphertext_bytes,
+        )
+        .expect("decompress ciphertext")
     }
 
-    fn rerand_then_add(
-        lhs: SupportedFheCiphertexts,
-        rhs: SupportedFheCiphertexts,
+    fn rerandomize_inputs_then_add(
+        left_input_ciphertext: SupportedFheCiphertexts,
+        right_input_ciphertext: SupportedFheCiphertexts,
         keys: &FhevmKeys,
     ) -> SupportedFheCiphertexts {
-        let mut cts = vec![lhs, rhs];
+        let mut operation_input_ciphertexts = vec![left_input_ciphertext, right_input_ciphertext];
         re_randomise_operation_inputs(
-            &mut cts,
+            &mut operation_input_ciphertexts,
             SupportedFheOperations::FheAdd as i32,
             &keys.compact_public_key,
         )
         .expect("re-randomise inputs");
 
-        perform_fhe_operation(SupportedFheOperations::FheAdd as i16, &cts, 0)
-            .expect("perform FheAdd")
+        perform_fhe_operation(
+            SupportedFheOperations::FheAdd as i16,
+            &operation_input_ciphertexts,
+            0,
+        )
+        .expect("perform FheAdd")
     }
 
     #[test]
@@ -629,52 +638,88 @@ mod tests {
         set_server_key(keys.server_key.clone());
         let client_key = keys.client_key.as_ref().expect("client key");
 
-        // Compare two realistic execution modes for one dependency chain:
-        // A) one batch (intermediates kept in memory),
-        // B) split batches (intermediate compressed/decompressed between ops).
-        let inputs = [11_u8, 17_u8, 23_u8];
+        // This test targets byte-level determinism, not only semantic correctness.
+        // We run the same dependency chain in two execution paths and compare:
+        // 1) ciphertext bytes after each operation
+        // 2) decrypted values (to prove semantics still match)
+        let plaintext_input_values = [11_u8, 17_u8, 23_u8];
 
-        let mut acc_mem = trivial_encrypt_be_bytes(1, &[inputs[0]]);
-        let mut acc_rt = compressed_roundtrip(&acc_mem);
+        // Path A keeps intermediates in memory between dependent operations.
+        let mut in_memory_path_result_ciphertext =
+            trivial_encrypt_be_bytes(1, &[plaintext_input_values[0]]);
 
-        for (step, rhs_val) in inputs.iter().skip(1).enumerate() {
-            let rhs = trivial_encrypt_be_bytes(1, &[*rhs_val]);
-            acc_mem = rerand_then_add(acc_mem, rhs.clone(), &keys);
-            acc_rt = compressed_roundtrip(&acc_rt);
-            acc_rt = rerand_then_add(acc_rt, rhs, &keys);
+        // Path B forces a compression/decompression cycle before reuse.
+        let mut compression_cycle_path_result_ciphertext =
+            compress_then_decompress_ciphertext(&in_memory_path_result_ciphertext);
 
-            let clear_mem = acc_mem.decrypt(client_key);
-            let clear_rt = acc_rt.decrypt(client_key);
-            assert_eq!(
-                clear_mem,
-                clear_rt,
-                "decrypted result mismatch at step {}",
-                step + 1
+        for (step_index, next_plaintext_input_value) in
+            plaintext_input_values.iter().skip(1).enumerate()
+        {
+            let next_input_ciphertext = trivial_encrypt_be_bytes(1, &[*next_plaintext_input_value]);
+
+            in_memory_path_result_ciphertext = rerandomize_inputs_then_add(
+                in_memory_path_result_ciphertext,
+                next_input_ciphertext.clone(),
+                &keys,
             );
 
-            let bytes_mem = acc_mem.compress().expect("compress in-memory result");
-            let bytes_rt = acc_rt.compress().expect("compress roundtrip result");
-            let first_diff = bytes_mem
+            compression_cycle_path_result_ciphertext =
+                compress_then_decompress_ciphertext(&compression_cycle_path_result_ciphertext);
+            compression_cycle_path_result_ciphertext = rerandomize_inputs_then_add(
+                compression_cycle_path_result_ciphertext,
+                next_input_ciphertext,
+                &keys,
+            );
+
+            let decrypted_in_memory_path_value =
+                in_memory_path_result_ciphertext.decrypt(client_key);
+            let decrypted_compression_cycle_path_value =
+                compression_cycle_path_result_ciphertext.decrypt(client_key);
+            assert_eq!(
+                decrypted_in_memory_path_value,
+                decrypted_compression_cycle_path_value,
+                "decrypted result mismatch at step {}",
+                step_index + 1
+            );
+
+            let in_memory_path_ciphertext_bytes = in_memory_path_result_ciphertext
+                .compress()
+                .expect("compress in-memory path ciphertext");
+            let compression_cycle_path_ciphertext_bytes = compression_cycle_path_result_ciphertext
+                .compress()
+                .expect("compress compression-cycle path ciphertext");
+            let first_different_byte_index = in_memory_path_ciphertext_bytes
                 .iter()
-                .zip(bytes_rt.iter())
+                .zip(compression_cycle_path_ciphertext_bytes.iter())
                 .position(|(a, b)| a != b)
-                .unwrap_or(bytes_mem.len().min(bytes_rt.len()));
+                .unwrap_or(
+                    in_memory_path_ciphertext_bytes
+                        .len()
+                        .min(compression_cycle_path_ciphertext_bytes.len()),
+                );
             assert!(
-                bytes_mem == bytes_rt,
-                "diverged at step {}: first_diff={}, mem_byte={}, rt_byte={}, mem_len={}, rt_len={}",
-                step + 1,
-                first_diff,
-                bytes_mem.get(first_diff).copied().unwrap_or(0),
-                bytes_rt.get(first_diff).copied().unwrap_or(0),
-                bytes_mem.len(),
-                bytes_rt.len(),
+                in_memory_path_ciphertext_bytes == compression_cycle_path_ciphertext_bytes,
+                "ciphertext byte divergence at step {}: first_different_byte_index={}, in_memory_byte={}, compression_cycle_byte={}, in_memory_len={}, compression_cycle_len={}",
+                step_index + 1,
+                first_different_byte_index,
+                in_memory_path_ciphertext_bytes
+                    .get(first_different_byte_index)
+                    .copied()
+                    .unwrap_or(0),
+                compression_cycle_path_ciphertext_bytes
+                    .get(first_different_byte_index)
+                    .copied()
+                    .unwrap_or(0),
+                in_memory_path_ciphertext_bytes.len(),
+                compression_cycle_path_ciphertext_bytes.len(),
             );
         }
 
-        let clear_mem = acc_mem.decrypt(client_key);
-        let clear_rt = acc_rt.decrypt(client_key);
+        let decrypted_in_memory_path_value = in_memory_path_result_ciphertext.decrypt(client_key);
+        let decrypted_compression_cycle_path_value =
+            compression_cycle_path_result_ciphertext.decrypt(client_key);
         assert_eq!(
-            clear_mem, clear_rt,
+            decrypted_in_memory_path_value, decrypted_compression_cycle_path_value,
             "decrypted result mismatch on final result"
         );
     }
