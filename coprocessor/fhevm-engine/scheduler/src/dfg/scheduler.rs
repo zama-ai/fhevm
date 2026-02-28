@@ -638,89 +638,74 @@ mod tests {
         set_server_key(keys.server_key.clone());
         let client_key = keys.client_key.as_ref().expect("client key");
 
-        // This test targets byte-level determinism, not only semantic correctness.
-        // We run the same dependency chain in two execution paths and compare:
-        // 1) ciphertext bytes after each operation
-        // 2) decrypted values (to prove semantics still match)
-        let plaintext_input_values = [11_u8, 17_u8, 23_u8];
+        let first_input_ciphertext = trivial_encrypt_be_bytes(1, &[11_u8]);
+        let second_input_ciphertext = trivial_encrypt_be_bytes(1, &[17_u8]);
+        let third_input_ciphertext = trivial_encrypt_be_bytes(1, &[23_u8]);
 
-        // Path A keeps intermediates in memory between dependent operations.
-        let mut in_memory_path_result_ciphertext =
-            trivial_encrypt_be_bytes(1, &[plaintext_input_values[0]]);
+        // Baseline path:
+        // trivial encrypt -> add -> add
+        let baseline_intermediate_ciphertext = rerandomize_inputs_then_add(
+            first_input_ciphertext.clone(),
+            second_input_ciphertext.clone(),
+            &keys,
+        );
+        let baseline_result_ciphertext = rerandomize_inputs_then_add(
+            baseline_intermediate_ciphertext,
+            third_input_ciphertext.clone(),
+            &keys,
+        );
 
-        // Path B forces a compression/decompression cycle before reuse.
-        let mut compression_cycle_path_result_ciphertext =
-            compress_then_decompress_ciphertext(&in_memory_path_result_ciphertext);
+        // Compression path:
+        // trivial encrypt -> add -> compress/decompress -> add
+        let compression_path_intermediate_ciphertext =
+            rerandomize_inputs_then_add(first_input_ciphertext, second_input_ciphertext, &keys);
+        let compression_path_intermediate_ciphertext =
+            compress_then_decompress_ciphertext(&compression_path_intermediate_ciphertext);
+        let compression_path_result_ciphertext = rerandomize_inputs_then_add(
+            compression_path_intermediate_ciphertext,
+            third_input_ciphertext,
+            &keys,
+        );
 
-        for (step_index, next_plaintext_input_value) in
-            plaintext_input_values.iter().skip(1).enumerate()
-        {
-            let next_input_ciphertext = trivial_encrypt_be_bytes(1, &[*next_plaintext_input_value]);
-
-            in_memory_path_result_ciphertext = rerandomize_inputs_then_add(
-                in_memory_path_result_ciphertext,
-                next_input_ciphertext.clone(),
-                &keys,
-            );
-
-            compression_cycle_path_result_ciphertext =
-                compress_then_decompress_ciphertext(&compression_cycle_path_result_ciphertext);
-            compression_cycle_path_result_ciphertext = rerandomize_inputs_then_add(
-                compression_cycle_path_result_ciphertext,
-                next_input_ciphertext,
-                &keys,
-            );
-
-            let decrypted_in_memory_path_value =
-                in_memory_path_result_ciphertext.decrypt(client_key);
-            let decrypted_compression_cycle_path_value =
-                compression_cycle_path_result_ciphertext.decrypt(client_key);
-            assert_eq!(
-                decrypted_in_memory_path_value,
-                decrypted_compression_cycle_path_value,
-                "decrypted result mismatch at step {}",
-                step_index + 1
-            );
-
-            let in_memory_path_ciphertext_bytes = in_memory_path_result_ciphertext
-                .compress()
-                .expect("compress in-memory path ciphertext");
-            let compression_cycle_path_ciphertext_bytes = compression_cycle_path_result_ciphertext
-                .compress()
-                .expect("compress compression-cycle path ciphertext");
-            let first_different_byte_index = in_memory_path_ciphertext_bytes
-                .iter()
-                .zip(compression_cycle_path_ciphertext_bytes.iter())
-                .position(|(a, b)| a != b)
-                .unwrap_or(
-                    in_memory_path_ciphertext_bytes
-                        .len()
-                        .min(compression_cycle_path_ciphertext_bytes.len()),
-                );
-            assert!(
-                in_memory_path_ciphertext_bytes == compression_cycle_path_ciphertext_bytes,
-                "ciphertext byte divergence at step {}: first_different_byte_index={}, in_memory_byte={}, compression_cycle_byte={}, in_memory_len={}, compression_cycle_len={}",
-                step_index + 1,
-                first_different_byte_index,
-                in_memory_path_ciphertext_bytes
-                    .get(first_different_byte_index)
-                    .copied()
-                    .unwrap_or(0),
-                compression_cycle_path_ciphertext_bytes
-                    .get(first_different_byte_index)
-                    .copied()
-                    .unwrap_or(0),
-                in_memory_path_ciphertext_bytes.len(),
-                compression_cycle_path_ciphertext_bytes.len(),
-            );
-        }
-
-        let decrypted_in_memory_path_value = in_memory_path_result_ciphertext.decrypt(client_key);
-        let decrypted_compression_cycle_path_value =
-            compression_cycle_path_result_ciphertext.decrypt(client_key);
+        // Sanity: both paths should decrypt to the same clear value.
+        let baseline_clear_value = baseline_result_ciphertext.decrypt(client_key);
+        let compression_path_clear_value = compression_path_result_ciphertext.decrypt(client_key);
         assert_eq!(
-            decrypted_in_memory_path_value, decrypted_compression_cycle_path_value,
-            "decrypted result mismatch on final result"
+            baseline_clear_value, compression_path_clear_value,
+            "decrypted values must match"
+        );
+
+        // Bug check: ciphertext bytes should also match, but they currently diverge.
+        let baseline_ciphertext_bytes = baseline_result_ciphertext
+            .compress()
+            .expect("compress baseline ciphertext");
+        let compression_path_ciphertext_bytes = compression_path_result_ciphertext
+            .compress()
+            .expect("compress compression-path ciphertext");
+        let first_different_byte_index = baseline_ciphertext_bytes
+            .iter()
+            .zip(compression_path_ciphertext_bytes.iter())
+            .position(|(a, b)| a != b)
+            .unwrap_or(
+                baseline_ciphertext_bytes
+                    .len()
+                    .min(compression_path_ciphertext_bytes.len()),
+            );
+
+        assert!(
+            baseline_ciphertext_bytes == compression_path_ciphertext_bytes,
+            "ciphertext byte divergence: first_different_byte_index={}, baseline_byte={}, compression_path_byte={}, baseline_len={}, compression_path_len={}",
+            first_different_byte_index,
+            baseline_ciphertext_bytes
+                .get(first_different_byte_index)
+                .copied()
+                .unwrap_or(0),
+            compression_path_ciphertext_bytes
+                .get(first_different_byte_index)
+                .copied()
+                .unwrap_or(0),
+            baseline_ciphertext_bytes.len(),
+            compression_path_ciphertext_bytes.len(),
         );
     }
 }
