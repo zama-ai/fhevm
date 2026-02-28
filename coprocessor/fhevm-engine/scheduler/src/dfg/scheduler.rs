@@ -589,3 +589,123 @@ fn run_computation(
         Err(e) => (graph_node_index, Err(e.into())),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::re_randomise_operation_inputs;
+    use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
+    use fhevm_engine_common::tfhe_ops::{perform_fhe_operation, trivial_encrypt_be_bytes};
+    use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
+    use tfhe::set_server_key;
+
+    fn compress_then_decompress_ciphertext(
+        ciphertext: &SupportedFheCiphertexts,
+    ) -> SupportedFheCiphertexts {
+        let ciphertext_type_number = ciphertext.type_num();
+        let compressed_ciphertext_bytes = ciphertext.compress().expect("compress ciphertext");
+        SupportedFheCiphertexts::decompress_no_memcheck(
+            ciphertext_type_number,
+            &compressed_ciphertext_bytes,
+        )
+        .expect("decompress ciphertext")
+    }
+
+    fn rerandomize_inputs_then_add(
+        left_input_ciphertext: SupportedFheCiphertexts,
+        right_input_ciphertext: SupportedFheCiphertexts,
+        keys: &FhevmKeys,
+    ) -> SupportedFheCiphertexts {
+        let mut operation_input_ciphertexts = vec![left_input_ciphertext, right_input_ciphertext];
+        re_randomise_operation_inputs(
+            &mut operation_input_ciphertexts,
+            SupportedFheOperations::FheAdd as i32,
+            &keys.compact_public_key,
+        )
+        .expect("re-randomise inputs");
+
+        perform_fhe_operation(
+            SupportedFheOperations::FheAdd as i16,
+            &operation_input_ciphertexts,
+            0,
+        )
+        .expect("perform FheAdd")
+    }
+
+    #[test]
+    fn repro_compression_cycle_then_rerand_can_change_output_bytes() {
+        let keys_dir = format!("{}/../fhevm-keys", env!("CARGO_MANIFEST_DIR"));
+        let keys: FhevmKeys = SerializedFhevmKeys::load_from_disk(&keys_dir).into();
+        set_server_key(keys.server_key.clone());
+        let client_key = keys.client_key.as_ref().expect("client key");
+
+        let first_input_ciphertext = trivial_encrypt_be_bytes(1, &[11_u8]);
+        let second_input_ciphertext = trivial_encrypt_be_bytes(1, &[17_u8]);
+        let third_input_ciphertext = trivial_encrypt_be_bytes(1, &[23_u8]);
+
+        // Baseline path:
+        // trivial encrypt -> add -> add
+        let baseline_intermediate_ciphertext = rerandomize_inputs_then_add(
+            first_input_ciphertext.clone(),
+            second_input_ciphertext.clone(),
+            &keys,
+        );
+        let baseline_result_ciphertext = rerandomize_inputs_then_add(
+            baseline_intermediate_ciphertext,
+            third_input_ciphertext.clone(),
+            &keys,
+        );
+
+        // Compression path:
+        // trivial encrypt -> add -> compress/decompress -> add
+        let compression_path_intermediate_ciphertext =
+            rerandomize_inputs_then_add(first_input_ciphertext, second_input_ciphertext, &keys);
+        let compression_path_intermediate_ciphertext =
+            compress_then_decompress_ciphertext(&compression_path_intermediate_ciphertext);
+        let compression_path_result_ciphertext = rerandomize_inputs_then_add(
+            compression_path_intermediate_ciphertext,
+            third_input_ciphertext,
+            &keys,
+        );
+
+        // Sanity: both paths should decrypt to the same clear value.
+        let baseline_clear_value = baseline_result_ciphertext.decrypt(client_key);
+        let compression_path_clear_value = compression_path_result_ciphertext.decrypt(client_key);
+        assert_eq!(
+            baseline_clear_value, compression_path_clear_value,
+            "decrypted values must match"
+        );
+
+        // Bug check: ciphertext bytes should also match, but they currently diverge.
+        let baseline_ciphertext_bytes = baseline_result_ciphertext
+            .compress()
+            .expect("compress baseline ciphertext");
+        let compression_path_ciphertext_bytes = compression_path_result_ciphertext
+            .compress()
+            .expect("compress compression-path ciphertext");
+        let first_different_byte_index = baseline_ciphertext_bytes
+            .iter()
+            .zip(compression_path_ciphertext_bytes.iter())
+            .position(|(a, b)| a != b)
+            .unwrap_or(
+                baseline_ciphertext_bytes
+                    .len()
+                    .min(compression_path_ciphertext_bytes.len()),
+            );
+
+        assert!(
+            baseline_ciphertext_bytes == compression_path_ciphertext_bytes,
+            "ciphertext byte divergence: first_different_byte_index={}, baseline_byte={}, compression_path_byte={}, baseline_len={}, compression_path_len={}",
+            first_different_byte_index,
+            baseline_ciphertext_bytes
+                .get(first_different_byte_index)
+                .copied()
+                .unwrap_or(0),
+            compression_path_ciphertext_bytes
+                .get(first_different_byte_index)
+                .copied()
+                .unwrap_or(0),
+            baseline_ciphertext_bytes.len(),
+            compression_path_ciphertext_bytes.len(),
+        );
+    }
+}
