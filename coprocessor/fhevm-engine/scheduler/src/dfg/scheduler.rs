@@ -273,46 +273,6 @@ fn re_randomise_operation_inputs(
     Ok(())
 }
 
-fn insert_partition_result(
-    res: &mut HashMap<Handle, Result<TaskResult>>,
-    handle: Handle,
-    value: Result<TaskResult>,
-) {
-    let Some(existing) = res.get(&handle) else {
-        res.insert(handle, value);
-        return;
-    };
-
-    match (existing, &value) {
-        // Same handle + same bytes is benign (idempotent propagation).
-        (Ok(prev), Ok(new))
-            if prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct =>
-        {
-            return;
-        }
-        // Same handle + different bytes is a hard invariant break.
-        (Ok(prev), Ok(new)) => {
-            error!(
-                target: "scheduler",
-                {
-                    handle = ?hex::encode(&handle),
-                    prev_tx = ?hex::encode(prev.transaction_id.clone()),
-                    new_tx = ?hex::encode(new.transaction_id.clone())
-                },
-                "Invariant violation: same handle produced different compressed ciphertext"
-            );
-            res.insert(handle, Err(SchedulerError::SchedulerError.into()));
-            return;
-        }
-        // Keep prior failure once present (fail-closed).
-        (Err(_), Ok(_)) => return,
-        // New failures always overwrite.
-        _ => {}
-    }
-
-    res.insert(handle, value);
-}
-
 fn resolve_task_input(
     input: DFGTaskInput,
     gpu_idx: usize,
@@ -436,16 +396,33 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    insert_partition_result(
-                        &mut res,
-                        node.result_handle.clone(),
-                        result.1.map(|v| TaskResult {
-                            ct_type: v.0,
-                            compressed_ct: v.1,
-                            is_allowed: node.is_allowed,
-                            transaction_id: tid.clone(),
-                        }),
-                    );
+                    let handle = node.result_handle.clone();
+                    let value = result.1.map(|v| TaskResult {
+                        ct_type: v.0,
+                        compressed_ct: v.1,
+                        is_allowed: node.is_allowed,
+                        transaction_id: tid.clone(),
+                    });
+                    if let (Some(Ok(prev)), Ok(new)) = (res.get(&handle), &value) {
+                        let same =
+                            prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct;
+                        debug_assert!(
+                            same,
+                            "Invariant violation: same handle produced different compressed ciphertext"
+                        );
+                        if !same {
+                            warn!(
+                                target: "scheduler",
+                                {
+                                    handle = ?hex::encode(&handle),
+                                    prev_tx = ?hex::encode(prev.transaction_id.clone()),
+                                    new_tx = ?hex::encode(new.transaction_id.clone())
+                                },
+                                "Same handle produced different compressed ciphertext"
+                            );
+                        }
+                    }
+                    res.entry(handle).or_insert(value);
                 }
                 Err(e) => {
                     let Some(node) = dfg.graph.node_weight(*nidx) else {
@@ -593,42 +570,6 @@ fn run_computation(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn task_result(tx: u8, ct_type: i16, bytes: &[u8]) -> TaskResult {
-        TaskResult {
-            ct_type,
-            compressed_ct: bytes.to_vec(),
-            is_allowed: true,
-            transaction_id: vec![tx],
-        }
-    }
-
-    #[test]
-    fn insert_partition_result_accepts_same_handle_same_bytes() {
-        let handle = vec![0xAA];
-        let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::new();
-
-        insert_partition_result(&mut res, handle.clone(), Ok(task_result(1, 4, &[1, 2, 3])));
-        insert_partition_result(&mut res, handle.clone(), Ok(task_result(2, 4, &[1, 2, 3])));
-
-        let stored = res.get(&handle).expect("handle must exist");
-        assert!(stored.is_ok(), "same-handle same-bytes must be accepted");
-    }
-
-    #[test]
-    fn insert_partition_result_rejects_same_handle_different_bytes() {
-        let handle = vec![0xBB];
-        let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::new();
-
-        insert_partition_result(&mut res, handle.clone(), Ok(task_result(1, 4, &[1, 2, 3])));
-        insert_partition_result(&mut res, handle.clone(), Ok(task_result(2, 4, &[9, 9, 9])));
-
-        let stored = res.get(&handle).expect("handle must exist");
-        assert!(
-            stored.is_err(),
-            "same-handle different-bytes must fail closed"
-        );
-    }
 
     #[test]
     fn resolve_task_input_accepts_immediate_scalar() {
