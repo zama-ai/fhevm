@@ -43,14 +43,15 @@ impl std::fmt::Debug for DFGTxInput {
 
 #[derive(Clone)]
 pub enum DFGTaskInput {
-    Value(SupportedFheCiphertexts),
+    // Immediate/scalar operand materialized in the op input list.
+    Immediate(SupportedFheCiphertexts),
     Compressed((i16, Vec<u8>)),
     Dependence(Handle),
 }
 impl std::fmt::Debug for DFGTaskInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Value(_) => write!(f, "DecCT"),
+            Self::Immediate(_) => write!(f, "ImmCT"),
             Self::Compressed(_) => write!(f, "ComCT"),
             Self::Dependence(_) => write!(f, "DepHL"),
         }

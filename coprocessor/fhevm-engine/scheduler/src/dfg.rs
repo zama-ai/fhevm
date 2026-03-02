@@ -179,7 +179,7 @@ pub fn build_component_nodes(
                         dependence_pairs.push((*producer, index, pos));
                     }
                 }
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                DFGTaskInput::Immediate(_) | DFGTaskInput::Compressed(_) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -251,7 +251,7 @@ impl ComponentNode {
                             self.inputs.entry(dh.clone()).or_insert(None);
                         }
                     }
-                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                    DFGTaskInput::Immediate(_) | DFGTaskInput::Compressed(_) => {}
                 }
             }
             self.results.push(op.output_handle.clone());
@@ -633,10 +633,12 @@ impl OpNode {
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Immediate(_) | DFGTaskInput::Compressed(_) => continue,
                 DFGTaskInput::Dependence(d) => {
                     let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
+                        Some(Some(DFGTxInput::Value((val, _)))) => {
+                            DFGTaskInput::Immediate(val.clone())
+                        }
                         Some(Some(DFGTxInput::Compressed(((t, c), _)))) => {
                             DFGTaskInput::Compressed((*t, c.clone()))
                         }

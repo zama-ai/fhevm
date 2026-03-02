@@ -413,7 +413,7 @@ WHERE c.transaction_id IN (
                     is_scalar_op_vec.push(is_operand_scalar);
                     this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {
-                        inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                        inputs.push(DFGTaskInput::Immediate(SupportedFheCiphertexts::Scalar(
                             dh.clone(),
                         )));
                     } else {
