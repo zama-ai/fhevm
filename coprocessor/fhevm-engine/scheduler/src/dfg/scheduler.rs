@@ -17,7 +17,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -273,6 +273,64 @@ fn re_randomise_operation_inputs(
     Ok(())
 }
 
+fn insert_partition_result(
+    res: &mut HashMap<Handle, Result<TaskResult>>,
+    handle: Handle,
+    value: Result<TaskResult>,
+) {
+    match res.entry(handle.clone()) {
+        Entry::Vacant(v) => {
+            v.insert(value);
+        }
+        Entry::Occupied(mut o) => match (o.get(), value) {
+            (Ok(prev), Ok(new)) => {
+                if prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct {
+                    // Same handle + same bytes is benign (idempotent propagation).
+                    return;
+                }
+                error!(
+                    target: "scheduler",
+                    {
+                        handle = ?hex::encode(handle),
+                        prev_tx = ?hex::encode(prev.transaction_id.clone()),
+                        new_tx = ?hex::encode(new.transaction_id.clone())
+                    },
+                    "Invariant violation: same handle produced different compressed ciphertext"
+                );
+                let _ = o.insert(Err(SchedulerError::SchedulerError.into()));
+            }
+            (_, Ok(_)) => {
+                // Keep prior failure once present (fail-closed).
+            }
+            (_, Err(e)) => {
+                let _ = o.insert(Err(e));
+            }
+        },
+    }
+}
+
+fn materialize_task_input(
+    input: DFGTaskInput,
+    gpu_idx: usize,
+    output_handle: &Handle,
+) -> Result<SupportedFheCiphertexts> {
+    match input {
+        DFGTaskInput::Immediate(v) => {
+            if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
+                error!(target: "scheduler", { handle = ?hex::encode(output_handle) },
+                       "Invariant violation: Immediate input must be scalar");
+                return Err(SchedulerError::SchedulerError.into());
+            }
+            Ok(v)
+        }
+        DFGTaskInput::Compressed((t, c)) => SupportedFheCiphertexts::decompress(t, &c, gpu_idx),
+        DFGTaskInput::Dependence(_) => {
+            error!(target: "scheduler", { handle = ?hex::encode(output_handle) }, "Computation missing inputs");
+            Err(SchedulerError::MissingInputs.into())
+        }
+    }
+}
+
 type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
 fn execute_partition(
     transactions: ComponentSet,
@@ -373,7 +431,8 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    res.insert(
+                    insert_partition_result(
+                        &mut res,
                         node.result_handle.clone(),
                         result.1.map(|v| TaskResult {
                             ct_type: v.0,
@@ -414,16 +473,7 @@ fn try_execute_node(
     }
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
-        match i {
-            DFGTaskInput::Immediate(v) => cts.push(v),
-            DFGTaskInput::Compressed((t, c)) => {
-                cts.push(SupportedFheCiphertexts::decompress(t, &c, gpu_idx)?);
-            }
-            DFGTaskInput::Dependence(_) => {
-                error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
-                return Err(SchedulerError::MissingInputs.into());
-            }
-        }
+        cts.push(materialize_task_input(i, gpu_idx, &node.result_handle)?);
     }
     // Re-randomize inputs for this operation
     {
@@ -532,5 +582,60 @@ fn run_computation(
             }
         }
         Err(e) => (graph_node_index, Err(e.into())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task_result(tx: u8, ct_type: i16, bytes: &[u8]) -> TaskResult {
+        TaskResult {
+            ct_type,
+            compressed_ct: bytes.to_vec(),
+            is_allowed: true,
+            transaction_id: vec![tx],
+        }
+    }
+
+    #[test]
+    fn insert_partition_result_accepts_same_handle_same_bytes() {
+        let handle = vec![0xAA];
+        let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::new();
+
+        insert_partition_result(&mut res, handle.clone(), Ok(task_result(1, 4, &[1, 2, 3])));
+        insert_partition_result(&mut res, handle.clone(), Ok(task_result(2, 4, &[1, 2, 3])));
+
+        let stored = res.get(&handle).expect("handle must exist");
+        assert!(stored.is_ok(), "same-handle same-bytes must be accepted");
+    }
+
+    #[test]
+    fn insert_partition_result_rejects_same_handle_different_bytes() {
+        let handle = vec![0xBB];
+        let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::new();
+
+        insert_partition_result(&mut res, handle.clone(), Ok(task_result(1, 4, &[1, 2, 3])));
+        insert_partition_result(&mut res, handle.clone(), Ok(task_result(2, 4, &[9, 9, 9])));
+
+        let stored = res.get(&handle).expect("handle must exist");
+        assert!(
+            stored.is_err(),
+            "same-handle different-bytes must fail closed"
+        );
+    }
+
+    #[test]
+    fn materialize_task_input_accepts_immediate_scalar() {
+        let out = vec![0xCC];
+        let input = DFGTaskInput::Immediate(SupportedFheCiphertexts::Scalar(vec![0x01]));
+        assert!(materialize_task_input(input, 0, &out).is_ok());
+    }
+
+    #[test]
+    fn materialize_task_input_rejects_unresolved_dependence() {
+        let out = vec![0xDD];
+        let input = DFGTaskInput::Dependence(vec![0x01]);
+        assert!(materialize_task_input(input, 0, &out).is_err());
     }
 }

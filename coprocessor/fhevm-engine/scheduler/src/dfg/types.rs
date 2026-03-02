@@ -43,7 +43,9 @@ impl std::fmt::Debug for DFGTxInput {
 
 #[derive(Clone)]
 pub enum DFGTaskInput {
-    // Immediate/scalar operand materialized in the op input list.
+    // Immediate scalar operand materialized directly in the op input list.
+    // Ciphertext operands must never use this variant: they are always
+    // propagated as compressed bytes across scheduler hops.
     Immediate(SupportedFheCiphertexts),
     Compressed((i16, Vec<u8>)),
     Dependence(Handle),
@@ -63,7 +65,6 @@ pub enum SchedulerError {
     CyclicDependence,
     DataflowGraphError,
     MissingInputs,
-    DecompressionError,
     ReRandomisationError,
     SchedulerError,
 }
@@ -81,9 +82,6 @@ impl std::fmt::Display for SchedulerError {
             }
             Self::MissingInputs => {
                 write!(f, "Missing inputs")
-            }
-            Self::DecompressionError => {
-                write!(f, "Decompression error")
             }
             Self::ReRandomisationError => {
                 write!(f, "Re-randomisation error")
