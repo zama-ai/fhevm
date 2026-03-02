@@ -157,7 +157,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.prank(owner);
         EmptyUUPSProxy(hcuLimitAdd).upgradeToAndCall(
             hcuLimitImplementation,
-            abi.encodeCall(HCULimit.initializeFromEmptyProxy, ())
+            abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
 
         hcuLimitProxy = HCULimit(hcuLimitAdd);
