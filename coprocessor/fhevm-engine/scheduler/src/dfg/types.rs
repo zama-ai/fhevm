@@ -1,25 +1,75 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
-// The ciphertext payload of a computation result.
-#[derive(Clone)]
-pub enum TaskResultCiphertext {
-    // Allowed result: only the compressed form is retained in memory
-    Compressed { ct_type: i16, bytes: Vec<u8> },
-    // Non-allowed (intermediate) result: decompressed form used as it
-    // never goes to DB
-    Decompressed(SupportedFheCiphertexts),
+#[derive(Clone, Debug)]
+pub struct CompressedCiphertext {
+    pub ct_type: i16,
+    pub bytes: Vec<u8>,
 }
 
-pub struct TaskResult {
-    pub ct: TaskResultCiphertext,
-    pub is_allowed: bool,
-    pub transaction_id: Handle,
+impl From<(i16, Vec<u8>)> for CompressedCiphertext {
+    fn from((ct_type, bytes): (i16, Vec<u8>)) -> Self {
+        Self { ct_type, bytes }
+    }
+}
+
+impl From<CompressedCiphertext> for (i16, Vec<u8>) {
+    fn from(value: CompressedCiphertext) -> Self {
+        (value.ct_type, value.bytes)
+    }
+}
+
+#[derive(Clone)]
+pub enum TaskResult {
+    Allowed {
+        ct: CompressedCiphertext,
+        transaction_id: Handle,
+    },
+    Intermediate {
+        ct: SupportedFheCiphertexts,
+        transaction_id: Handle,
+    },
+}
+
+impl TaskResult {
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, Self::Allowed { .. })
+    }
+
+    pub fn transaction_id(&self) -> &Handle {
+        match self {
+            Self::Allowed { transaction_id, .. } | Self::Intermediate { transaction_id, .. } => {
+                transaction_id
+            }
+        }
+    }
+}
+
+impl TryFrom<&TaskResult> for CompressedCiphertext {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &TaskResult) -> Result<Self> {
+        match value {
+            TaskResult::Allowed { ct, .. } => Ok(ct.clone()),
+            TaskResult::Intermediate { .. } => Err(SchedulerError::SchedulerError.into()),
+        }
+    }
+}
+
+impl TryFrom<&TaskResult> for DFGTxInput {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &TaskResult) -> Result<Self> {
+        match value {
+            TaskResult::Allowed { ct, .. } => Ok(DFGTxInput::Compressed((ct.clone(), true))),
+            TaskResult::Intermediate { ct, .. } => Ok(DFGTxInput::Value((ct.clone(), false))),
+        }
+    }
 }
 pub struct DFGTxResult {
     pub handle: Handle,
     pub transaction_id: Handle,
-    pub compressed_ct: Result<(i16, Vec<u8>)>,
+    pub compressed_ct: Result<CompressedCiphertext>,
 }
 impl std::fmt::Debug for DFGTxResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -39,7 +89,7 @@ impl std::fmt::Debug for DFGTxResult {
 #[derive(Clone)]
 pub enum DFGTxInput {
     Value((SupportedFheCiphertexts, bool)),
-    Compressed(((i16, Vec<u8>), bool)),
+    Compressed((CompressedCiphertext, bool)),
 }
 impl std::fmt::Debug for DFGTxInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,7 +103,7 @@ impl std::fmt::Debug for DFGTxInput {
 #[derive(Clone)]
 pub enum DFGTaskInput {
     Value(SupportedFheCiphertexts),
-    Compressed((i16, Vec<u8>)),
+    Compressed(CompressedCiphertext),
     Dependence(Handle),
 }
 impl std::fmt::Debug for DFGTaskInput {

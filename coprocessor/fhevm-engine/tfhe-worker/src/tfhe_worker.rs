@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
-use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
@@ -538,10 +538,10 @@ async fn build_transaction_graph_and_execute<'a>(
 	      "some inputs are missing to execute the dependence chain");
         }
     }
-    for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
+    for (handle, (ct_type, ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
-            &DFGTxInput::Compressed(((ct_type, std::mem::take(&mut ct)), true)),
+            &DFGTxInput::Compressed((CompressedCiphertext::from((ct_type, ct)), true)),
         )?;
     }
     // Resolve deferred cross-transaction dependences: edges whose
@@ -606,7 +606,10 @@ async fn upload_transaction_graph_results<'a>(
     let mut cts_to_insert = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
-            Ok((db_type, db_bytes)) => {
+            Ok(CompressedCiphertext {
+                ct_type: db_type,
+                bytes: db_bytes,
+            }) => {
                 cts_to_insert.push((
                     *tenant_id,
                     (

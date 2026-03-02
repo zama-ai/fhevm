@@ -491,14 +491,19 @@ impl DFComponentGraph {
                 if let Ok(ref result) = result {
                     if let Some((pid, _)) = producer
                         .iter()
-                        .find(|(_, tid)| *tid == result.transaction_id)
+                        .find(|(_, tid)| *tid == *result.transaction_id())
                     {
                         prod_idx = *pid;
                     }
                 }
                 let mut save_result = true;
                 if let Ok(ref result) = result {
-                    save_result = result.is_allowed;
+                    save_result = result.is_allowed();
+                    let propagated_input = DFGTxInput::try_from(result).map_err(|e| {
+                        error!(target: "scheduler", { handle = ?hex::encode(handle), error = %e },
+                               "Failed to convert task result into transaction input");
+                        e
+                    })?;
                     // Traverse immediate dependents and add this result as an input
                     for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
                         let dependent_tx_index = edge.target();
@@ -507,17 +512,7 @@ impl DFComponentGraph {
                             .node_weight_mut(dependent_tx_index)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                            match &result.ct {
-                                TaskResultCiphertext::Decompressed(ct) => {
-                                    *v = Some(DFGTxInput::Value((ct.clone(), result.is_allowed)));
-                                }
-                                TaskResultCiphertext::Compressed { ct_type, bytes } => {
-                                    *v = Some(DFGTxInput::Compressed((
-                                        (*ct_type, bytes.clone()),
-                                        result.is_allowed,
-                                    )));
-                                }
-                            }
+                            *v = Some(propagated_input.clone());
                         });
                     }
                 } else {
@@ -536,15 +531,12 @@ impl DFComponentGraph {
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.and_then(|rok| match rok.ct {
-                            TaskResultCiphertext::Compressed { ct_type, bytes } => {
-                                Ok((ct_type, bytes))
-                            }
-                            TaskResultCiphertext::Decompressed(_) => {
-                                error!(target: "scheduler", {handle = ?hex::encode(handle) },
+                        compressed_ct: result.and_then(|rok| {
+                            CompressedCiphertext::try_from(&rok).map_err(|e| {
+                                error!(target: "scheduler", {handle = ?hex::encode(handle), error = %e },
                                        "Expected compressed ciphertext in allowed task result");
-                                Err(SchedulerError::SchedulerError.into())
-                            }
+                                e
+                            })
                         }),
                     });
                 }

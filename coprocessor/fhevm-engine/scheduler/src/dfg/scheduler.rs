@@ -252,8 +252,8 @@ fn decompress_transaction_inputs(
 ) -> Result<usize> {
     let mut count = 0;
     for txinput in inputs.values_mut() {
-        if let Some(DFGTxInput::Compressed(((t, c), allowed))) = txinput {
-            let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx)?;
+        if let Some(DFGTxInput::Compressed((cct, allowed))) = txinput {
+            let decomp = SupportedFheCiphertexts::decompress(cct.ct_type, &cct.bytes, gpu_idx)?;
             *txinput = Some(DFGTxInput::Value((decomp, *allowed)));
             count += 1;
         }
@@ -306,7 +306,7 @@ fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -322,17 +322,30 @@ fn execute_partition(
                     }
                     continue 'tx;
                 };
-                match &ct.ct {
-                    TaskResultCiphertext::Decompressed(val) => {
-                        *i = Some(DFGTxInput::Value((val.clone(), ct.is_allowed)));
+                let propagated_input = match DFGTxInput::try_from(ct) {
+                    Ok(input) => input,
+                    Err(e) => {
+                        error!(
+                            target: "scheduler",
+                            { transaction_id = ?hex::encode(&tid), handle = ?hex::encode(h), error = %e },
+                            "Failed to convert result into transaction input"
+                        );
+                        for nidx in dfg.graph.node_identifiers() {
+                            let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                                error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                                continue;
+                            };
+                            if node.is_allowed {
+                                res.insert(
+                                    node.result_handle.clone(),
+                                    Err(SchedulerError::MissingInputs.into()),
+                                );
+                            }
+                        }
+                        continue 'tx;
                     }
-                    TaskResultCiphertext::Compressed { ct_type, bytes } => {
-                        *i = Some(DFGTxInput::Compressed((
-                            (*ct_type, bytes.clone()),
-                            ct.is_allowed,
-                        )));
-                    }
-                }
+                };
+                *i = Some(propagated_input);
             }
         }
 
@@ -423,8 +436,8 @@ fn execute_partition(
                             // form must be used for allowed ciphertexts
                             if let Ok(ref res) = result.1 {
                                 child_node.inputs[*edge.weight() as usize] =
-                                    if let Some((ct_type, ref bytes)) = res.1 {
-                                        DFGTaskInput::Compressed((ct_type, bytes.clone()))
+                                    if let Some(ref cct) = res.1 {
+                                        DFGTaskInput::Compressed(cct.clone())
                                     } else {
                                         DFGTaskInput::Value(res.0.clone())
                                     };
@@ -438,18 +451,25 @@ fn execute_partition(
                     };
                     res.insert(
                         node.result_handle.clone(),
-                        result.1.map(|v| {
-                            let ct = if node.is_allowed {
-                                let (ct_type, bytes) =
-                                    v.1.expect("allowed result must have compressed form");
-                                TaskResultCiphertext::Compressed { ct_type, bytes }
+                        result.1.and_then(|v| {
+                            if node.is_allowed {
+                                let Some(cct) = v.1 else {
+                                    error!(
+                                        target: "scheduler",
+                                        { transaction_id = ?hex::encode(&tid), handle = ?hex::encode(&node.result_handle) },
+                                        "Missing compressed ciphertext for allowed result"
+                                    );
+                                    return Err(SchedulerError::SchedulerError.into());
+                                };
+                                Ok(TaskResult::Allowed {
+                                    ct: cct,
+                                    transaction_id: tid.clone(),
+                                })
                             } else {
-                                TaskResultCiphertext::Decompressed(v.0)
-                            };
-                            TaskResult {
-                                ct,
-                                is_allowed: node.is_allowed,
-                                transaction_id: tid.clone(),
+                                Ok(TaskResult::Intermediate {
+                                    ct: v.0,
+                                    transaction_id: tid.clone(),
+                                })
                             }
                         }),
                     );
@@ -490,8 +510,12 @@ fn try_execute_node(
     for i in std::mem::take(&mut node.inputs) {
         match i {
             DFGTaskInput::Value(v) => cts.push(v),
-            DFGTaskInput::Compressed((t, c)) => {
-                cts.push(SupportedFheCiphertexts::decompress(t, &c, gpu_idx)?);
+            DFGTaskInput::Compressed(cct) => {
+                cts.push(SupportedFheCiphertexts::decompress(
+                    cct.ct_type,
+                    &cct.bytes,
+                    gpu_idx,
+                )?);
             }
             _ => {
                 // That should not be possible as we called the checker.
@@ -531,7 +555,7 @@ fn try_execute_node(
     ))
 }
 
-type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
+type OpResult = Result<(SupportedFheCiphertexts, Option<CompressedCiphertext>)>;
 #[allow(clippy::too_many_arguments)]
 fn run_computation(
     operation: i32,
@@ -561,7 +585,7 @@ fn run_computation(
                     compress_span.end();
                     (
                         graph_node_index,
-                        Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
+                        Ok((inputs[0].clone(), Some((ct_type, ct_bytes).into()))),
                     )
                 }
                 Err(error) => {
@@ -605,7 +629,10 @@ fn run_computation(
                                     ct_bytes.len() as i64,
                                 ));
                                 compress_span.end();
-                                (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
+                                (
+                                    graph_node_index,
+                                    Ok((result, Some((ct_type, ct_bytes).into()))),
+                                )
                             }
                             Err(error) => {
                                 compress_span.set_status(Status::Error {
