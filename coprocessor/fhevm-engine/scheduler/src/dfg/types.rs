@@ -2,8 +2,8 @@ use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
 pub struct TaskResult {
-    pub ct: SupportedFheCiphertexts,
-    pub compressed_ct: Option<(i16, Vec<u8>)>,
+    pub ct_type: i16,
+    pub compressed_ct: Vec<u8>,
     pub is_allowed: bool,
     pub transaction_id: Handle,
 }
