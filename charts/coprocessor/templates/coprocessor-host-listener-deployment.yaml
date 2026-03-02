@@ -47,7 +47,12 @@ spec:
           image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
           command: ["host_listener"]
           args:
-{{ toYaml .Values.hostListener.args | nindent 12 }}
+            {{- range $arg := .Values.hostListener.args }}
+            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
+            - {{ $arg | quote }}
+            {{- end }}
+            {{- end }}
+            - --dependent-ops-max-per-chain={{ int .Values.dependentOps.maxPerChain }}
           env:
 {{ toYaml .Values.hostListener.env | nindent 12 }}
           ports:

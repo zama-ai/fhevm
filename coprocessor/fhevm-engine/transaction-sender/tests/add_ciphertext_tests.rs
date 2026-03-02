@@ -1,16 +1,16 @@
 mod common;
 
 use alloy::network::TxSigner;
-use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
-use common::{CiphertextCommits, TestEnvironment};
+use common::{is_coprocessor_config_error, CiphertextCommits, TestEnvironment};
 
 use common::SignerType;
 use rand::{random, Rng};
 use rstest::*;
 use serial_test::serial;
 use std::time::Duration;
-use test_harness::db_utils::{insert_ciphertext_digest, insert_random_tenant};
+use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
 use transaction_sender::{
     is_backend_gone, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
@@ -58,7 +58,7 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     //  Add a ciphertext digest to database
     let handle = random::<[u8; 32]>();
@@ -70,7 +70,8 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -102,13 +103,6 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
 
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     // Verify that a transaction has been sent.
     let tx_count = provider.get_transaction_count(env.signer.address()).await?;
@@ -167,7 +161,7 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     //  Add a ciphertext digest to database
     let handle = random::<[u8; 32]>();
@@ -175,7 +169,8 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -212,14 +207,6 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
         tx_count, initial_tx_count,
         "Expected no new transaction to be sent due to revert"
     );
-
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     env.cancel_token.cancel();
     run_handle.await??;
@@ -265,7 +252,7 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Record a transaction count, to make sure the provider is connected before the transport error.
     let _ = provider.get_transaction_count(env.signer.address()).await?;
@@ -277,7 +264,8 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     let handle = random::<[u8; 32]>();
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -308,13 +296,6 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
         }
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     env.cancel_token.cancel();
     run_handle.await??;
@@ -379,7 +360,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Simulate a transport error by stopping the anvil instance.
     env.drop_anvil();
@@ -388,7 +369,8 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     let handle = random::<[u8; 32]>();
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -422,13 +404,6 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         }
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     // Expect that the sender will stop on its own due to BackendGone.
     let err = run_handle.await?.err().unwrap();
@@ -480,7 +455,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
 
     let txn_sender_task = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     let mut rng = rand::rng();
     let handle = rng.random::<[u8; 32]>();
@@ -488,7 +463,8 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     // Insert a ciphertext digest into the database.
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -528,14 +504,6 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
 
         sleep(Duration::from_millis(500)).await;
     }
-
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     assert!(
         valid_retries_count,
@@ -593,7 +561,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Simulate an AWS KMS error by stopping the localstack instance.
     env.stop_localstack().await;
@@ -602,7 +570,8 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     let handle = random::<[u8; 32]>();
     insert_ciphertext_digest(
         &env.db_pool,
-        tenant_id,
+        host_chain_id,
+        key_id,
         &handle,
         &random::<[u8; 32]>(),
         &random::<[u8; 32]>(),
@@ -636,13 +605,139 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         }
         sleep(Duration::from_millis(500)).await;
     }
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn stop_retrying_add_ciphertext_on_gw_config_error(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let config_error_mode: u8 = 1;
+    let conf = ConfigSettings {
+        add_ciphertexts_max_retries: 3,
+        ..Default::default()
+    };
+    let force_per_test_localstack = false;
+    let env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    provider_deploy
+        .send_transaction_sync(
+            ciphertext_commits
+                .setConfigErrorMode(config_error_mode)
+                .into_transaction_request(),
+        )
+        .await?;
+
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        provider.inner().clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        host_chain_id,
+        key_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        0,
+    )
+    .await?;
+
     sqlx::query!(
         "
-        delete from tenants where tenant_id = $1",
-        tenant_id
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
     )
     .execute(&env.db_pool)
     .await?;
+
+    let mut attempts = 0;
+    let row = loop {
+        let row = sqlx::query!(
+            "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            &handle[..],
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !row.txn_is_sent
+            && row.txn_limited_retries_count == conf.add_ciphertexts_max_retries
+            && row
+                .txn_last_error
+                .as_deref()
+                .is_some_and(is_coprocessor_config_error)
+        {
+            break row;
+        }
+        attempts += 1;
+        assert!(
+            attempts < 60,
+            "timed out waiting for non-retryable state; retries={}, last_error={:?}",
+            row.txn_limited_retries_count,
+            row.txn_last_error
+        );
+        sleep(Duration::from_millis(250)).await;
+    };
+    assert!(!row.txn_is_sent);
+    assert_eq!(
+        row.txn_limited_retries_count,
+        conf.add_ciphertexts_max_retries
+    );
+    assert!(
+        row.txn_last_error
+            .as_deref()
+            .is_some_and(is_coprocessor_config_error),
+        "Expected non-retryable gateway config error, got {:?}",
+        row.txn_last_error
+    );
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no transaction to be sent for gateway config errors detected before send"
+    );
 
     env.cancel_token.cancel();
     run_handle.await??;

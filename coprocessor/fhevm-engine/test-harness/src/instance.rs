@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::db_utils::setup_test_user;
+use crate::db_utils::setup_test_key;
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::types::Oid;
 use sqlx::Row;
@@ -63,13 +63,13 @@ async fn setup_test_app_existing_localhost(
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.to_string().replace("coprocessor", "postgres");
+        let admin_db_url = db_url.as_str().replace("coprocessor", "postgres");
         create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
     info!("Using existing local database at {db_url}");
 
-    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?, 12345).await;
+    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?).await;
 
     Ok(DBInstance {
         _container: None,
@@ -111,6 +111,7 @@ pub enum ImportMode {
     None,
     WithKeysNoSns,
     WithAllKeys,
+    SkipMigrations,
 }
 
 async fn create_database(
@@ -138,20 +139,23 @@ async fn create_database(
         .connect(db_url)
         .await?;
 
-    info!("Running migrations...");
-    sqlx::migrate!("./migrations").run(&pool).await?;
-
     match mode {
+        ImportMode::SkipMigrations => {
+            info!("Skipping migrations");
+        }
         ImportMode::None => {
+            sqlx::migrate!("./migrations").run(&pool).await?;
             info!("No keys imported");
         }
         ImportMode::WithKeysNoSns => {
-            info!("Creating test user with keys, without SnS key...");
-            setup_test_user(&pool, false).await?;
+            sqlx::migrate!("./migrations").run(&pool).await?;
+            info!("Creating test keys, without SnS key...");
+            setup_test_key(&pool, false).await?;
         }
         ImportMode::WithAllKeys => {
-            info!("Creating test user with all keys...");
-            setup_test_user(&pool, true).await?;
+            sqlx::migrate!("./migrations").run(&pool).await?;
+            info!("Creating test keys with all keys...");
+            setup_test_key(&pool, true).await?;
         }
     }
 
@@ -160,14 +164,18 @@ async fn create_database(
     Ok(())
 }
 
-pub async fn get_sns_pk_size(pool: &sqlx::PgPool, chain_id: i64) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM tenants WHERE chain_id = $1")
-        .bind(chain_id)
-        .fetch_one(pool)
+pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1")
+        .fetch_optional(pool)
         .await?;
 
+    let Some(row) = row else {
+        info!("No sns_pk found in keys");
+        return Ok(0);
+    };
+
     let oid: Oid = row.try_get(0)?;
-    info!(oid = ?oid, chain_id, "Found sns_pk oid");
+    info!(oid = ?oid, "Found sns_pk oid");
     let row = sqlx::query_scalar(
         "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) FROM pg_largeobject WHERE loid = $1",
     )

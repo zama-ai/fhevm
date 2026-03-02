@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::chain_id_from_env;
@@ -81,6 +82,13 @@ struct Conf {
 
     #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true, alias = "catchup-kms-generation-from-block")]
     pub replay_from_block: Option<i64>,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Skip VerifyProofRequest events during replay"
+    )]
+    pub replay_skip_verify_proof: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -102,17 +110,11 @@ async fn main() -> anyhow::Result<()> {
 
     let conf = Conf::parse();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_level(true)
-        .with_max_level(conf.log_level)
-        .init();
-
-    if !conf.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
-        }
-    }
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        conf.log_level,
+        &conf.service_name,
+        "otlp-layer",
+    );
 
     info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
          retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
@@ -146,7 +148,12 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
 
-    let Some(host_chain_id) = conf.host_chain_id.or_else(chain_id_from_env) else {
+    let Some(host_chain_id) = conf
+        .host_chain_id
+        .map(ChainId::try_from)
+        .transpose()?
+        .or_else(chain_id_from_env)
+    else {
         anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
     let config = ConfigSettings {
@@ -162,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
         replay_from_block: conf.replay_from_block,
+        replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
     };
 

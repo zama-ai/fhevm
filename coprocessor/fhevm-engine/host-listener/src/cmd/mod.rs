@@ -2,13 +2,12 @@ use alloy::eips::BlockId;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
+use alloy::rpc::types::{Block, Filter, Header, Log};
 use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use futures_util::stream::StreamExt;
 use rustls;
-use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
@@ -19,13 +18,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
-use crate::database::ingest::{ingest_block_logs, BlockLogs};
-use crate::database::tfhe_event_propagate::{ChainId, Database};
+use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use fhevm_engine_common::chain_id::ChainId;
 
 pub mod block_history;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
@@ -70,9 +69,6 @@ pub struct Args {
         allow_hyphen_values = true
     )]
     pub end_at_block: Option<i64>,
-
-    #[arg(long, help = "A Coprocessor API key is needed for database access")]
-    pub coprocessor_api_key: Option<Uuid>,
 
     #[arg(
         long,
@@ -124,6 +120,13 @@ pub struct Args {
         help = "Dependence chain are across blocks"
     )]
     pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast)"
+    )]
+    pub dependent_ops_max_per_chain: u32,
 
     #[arg(
         long,
@@ -261,7 +264,12 @@ impl InfiniteLogIter {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
-        Ok(provider.get_chain_id().await?)
+        let chain_id = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_chain_id(),
+        )
+        .await??;
+        Ok(ChainId::try_from(chain_id)?)
     }
 
     /// Resolves `end_at_block` to an absolute block number.
@@ -269,40 +277,47 @@ impl InfiniteLogIter {
     async fn resolve_end_at_block(
         &self,
         provider: &BlockchainProvider,
-    ) -> Option<u64> {
-        let n = self.end_at_block?;
+    ) -> Result<Option<u64>> {
+        let Some(n) = self.end_at_block else {
+            return Ok(None);
+        };
         if n >= 0 {
-            return Some(n as u64);
+            return Ok(Some(n as u64));
         }
-        let last_block = provider.get_block_number().await.ok()?;
-        Some(last_block.saturating_sub(n.unsigned_abs()))
+        let last_block = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_block_number(),
+        )
+        .await??;
+        Ok(Some(last_block.saturating_sub(n.unsigned_abs())))
     }
 
     async fn catchup_block_from(
         &self,
         provider: &BlockchainProvider,
-    ) -> BlockNumberOrTag {
+    ) -> Result<u64> {
         if let Some(last_seen_block) = self.last_valid_block {
-            return BlockNumberOrTag::Number(
-                last_seen_block - self.catchup_margin + 1,
-            );
+            return Ok(last_seen_block - self.catchup_margin + 1);
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
-                return BlockNumberOrTag::Number(
-                    start_at_block.try_into().unwrap(),
-                );
+                return Ok(start_at_block.try_into()?);
             }
         }
-        let Ok(last_block) = provider.get_block_number().await else {
-            return BlockNumberOrTag::Earliest; // should not happend
+        let block_number = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_block_number(),
+        )
+        .await?;
+        let Ok(last_block) = block_number else {
+            anyhow::bail!("get_block_number failed");
         };
         let catch_size = if let Some(start_at_block) = self.start_at_block {
-            (-start_at_block).try_into().unwrap()
+            (-start_at_block).try_into()?
         } else {
             self.catchup_margin
         };
-        BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
+        Ok(last_block - catch_size.min(last_block))
     }
 
     async fn get_blocks_logs_range_no_retry(
@@ -319,10 +334,21 @@ impl InfiniteLogIter {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url)
             .with_config(config)
-            .with_max_retries(0); // disabled, alloy skips events
-        let provider = match ProviderBuilder::new().connect_ws(ws).await {
-            Ok(provider) => provider,
-            Err(_) => anyhow::bail!("Cannot get a provider"),
+            // disabled, retried explicitly later
+            .with_max_retries(0);
+        // Timeout to prevent slow reconnection
+        let provider = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            ProviderBuilder::new().connect_ws(ws),
+        );
+        let provider = match provider.await {
+            Err(_) => {
+                anyhow::bail!("Timeout getting provider for logs range")
+            }
+            Ok(Err(err)) => {
+                anyhow::bail!("Cannot get provider for logs range due to {err}")
+            }
+            Ok(Ok(provider)) => provider,
         };
         // Timeout to prevent hanging indefinitely on buggy node
         match tokio::time::timeout(
@@ -532,11 +558,11 @@ impl InfiniteLogIter {
             );
             match block.await {
                 Ok(Ok(Some(block))) => return Ok(block),
-                Ok(Ok(None)) => error!(
+                Ok(Ok(None)) => warn!(
                     block_id = ?block_id,
                     "Cannot get block {block_id}, retrying",
                 ),
-                Ok(Err(err)) => error!(
+                Ok(Err(err)) => warn!(
                     block_id = ?block_id,
                     error = %err,
                     "Cannot get block {block_id}, retrying",
@@ -553,7 +579,8 @@ impl InfiniteLogIter {
                 .await;
             }
         }
-        Err(anyhow::anyhow!("Cannot get current block after retries"))
+        error!(block_id = ?block_id, "Cannot get block after many retries");
+        anyhow::bail!("Cannot get block {block_id} after many retries")
     }
 
     async fn get_block(&self, block_hash: BlockHash) -> Result<Block> {
@@ -646,7 +673,7 @@ impl InfiniteLogIter {
         ))
     }
 
-    async fn get_missings_ancestors(
+    async fn get_missing_ancestors(
         &self,
         mut current_block: BlockSummary,
     ) -> Vec<BlockSummary> {
@@ -720,7 +747,7 @@ impl InfiniteLogIter {
         }
 
         let missing_blocks =
-            self.get_missings_ancestors(current_block_summary).await;
+            self.get_missing_ancestors(current_block_summary).await;
         if missing_blocks.is_empty() {
             // we don't add to history from which we have no event
             // e.g. at timeout, because empty blocks are not get_logs
@@ -739,72 +766,32 @@ impl InfiniteLogIter {
         warn!("Missing ancestors catchup done.");
     }
 
-    async fn new_log_stream(&mut self, not_initialized: bool) {
-        let mut retry = 20;
+    async fn new_log_stream_no_retry(&mut self) -> Result<()> {
         let config = websocket_config();
-        loop {
-            let ws = WsConnect::new(&self.url)
-                .with_config(config)
-                .with_max_retries(0); // disabled, alloy skips events
-            match ProviderBuilder::new().connect_ws(ws).await {
-                Ok(provider) => {
-                    let catch_up_from =
-                        self.catchup_block_from(&provider).await;
-                    self.absolute_end_at_block =
-                        self.resolve_end_at_block(&provider).await;
-                    self.catchup_blocks = Some((
-                        catch_up_from.as_number().unwrap_or(0),
-                        self.absolute_end_at_block,
-                    ));
-                    // note subscribing to real-time before reading catchup
-                    // events to have the minimal gap between the two
-                    // TODO: but it does not guarantee no gap for now
-                    // (implementation dependant)
-                    // subscribe_logs does not honor from_block and sometime not to_block
-                    // so we rely on catchup_blocks and end_at_block_reached
-                    self.stream = Some(
-                        provider
-                            .subscribe_blocks()
-                            .await
-                            .expect("BLA2")
-                            .into_stream(),
-                    );
-                    let _ = self.provider.write().await.replace(provider);
-                    info!(contracts = ?self.contract_addresses, "Listening on contracts");
-                    return;
-                }
-                Err(err) => {
-                    let delay = if not_initialized {
-                        if retry == 0 {
-                            // TODO: remove panic and, instead, propagate the error
-                            error!(
-                                error = %err,
-                                "Cannot connect",
-                            );
-                            panic!("Cannot connect due to {err}.",)
-                        }
-                        5
-                    } else {
-                        1
-                    };
-                    if not_initialized {
-                        warn!(
-                            error = %err,
-                            delay_secs = delay,
-                            retry = retry,
-                            "Cannot connect. Will retry",
-                        );
-                    } else {
-                        warn!(
-                            error = %err,
-                            delay_secs = delay,
-                            "Cannot connect. Will retry infinitely",
-                        );
-                    }
-                    retry -= 1;
-                    tokio::time::sleep(Duration::from_secs(delay)).await;
-                }
-            }
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            .with_max_retries(0); // disabled, alloy skips events
+        let provider = ProviderBuilder::new().connect_ws(ws).await?;
+        let catch_up_from = self.catchup_block_from(&provider).await?;
+        self.absolute_end_at_block =
+            self.resolve_end_at_block(&provider).await?;
+        self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
+        // note subscribing to real-time before reading catchup
+        // events to have the minimal gap between the two
+        // TODO: but it does not guarantee no gap for now
+        // (implementation dependent)
+        // subscribe_logs does not honor from_block and sometime not to_block
+        // so we rely on catchup_blocks and end_at_block_reached
+        self.stream = Some(provider.subscribe_blocks().await?.into_stream());
+        let _ = self.provider.write().await.replace(provider);
+        info!(contracts = ?self.contract_addresses, "Listening on contracts");
+        Ok(())
+    }
+
+    async fn new_log_stream(&mut self) {
+        while let Err(err) = self.new_log_stream_no_retry().await {
+            warn!(error = %err, "Error creating new log stream, retrying");
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -814,7 +801,7 @@ impl InfiniteLogIter {
         };
         let next_opt_event = stream.next();
         // it assume the eventual discard of next_opt_event is handled correctly
-        // by alloy if not the case, the recheck mecanism ensures it's
+        // by alloy if not the case, the recheck mechanism ensures it's
         // only extra latency
         match tokio::time::timeout(
             Duration::from_secs(self.block_time + 2),
@@ -862,11 +849,9 @@ impl InfiniteLogIter {
     }
 
     async fn next(&mut self) -> Option<BlockLogs<Log>> {
-        let mut not_initialized = self.stream.is_none();
         let block_logs = loop {
             if self.stream.is_none() {
-                self.new_log_stream(not_initialized).await;
-                not_initialized = false;
+                self.new_log_stream().await;
                 continue;
             };
             if self.next_blocklogs.is_empty() {
@@ -944,7 +929,7 @@ impl InfiniteLogIter {
 }
 
 async fn db_insert_block(
-    chain_id: u64,
+    chain_id: ChainId,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
@@ -965,8 +950,11 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
-            args.dependence_by_connexity,
-            args.dependence_cross_block,
+            IngestOptions {
+                dependence_by_connexity: args.dependence_by_connexity,
+                dependence_cross_block: args.dependence_cross_block,
+                dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+            },
         )
         .await;
         let Err(err) = res else {
@@ -1053,45 +1041,24 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )
     };
 
-    if !args.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
-        }
-    }
-
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
-    info!(chain_id = chain_id, "Chain ID");
+    info!(chain_id = %chain_id, "Chain ID");
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
-    let Some(coprocessor_api_key) = args.coprocessor_api_key else {
-        error!("A Coprocessor API key is required to access the database");
-        panic!("A Coprocessor API key is required to access the database");
-    };
-    let mut db = Database::new(
-        &args.database_url,
-        &coprocessor_api_key,
-        args.dependence_cache_size,
-    )
-    .await?;
-
-    if chain_id != db.chain_id {
-        error!(
-            chain_id_blockchain = ?chain_id,
-            chain_id_db = ?db.chain_id,
-            tenant_id = ?db.tenant_id,
-            coprocessor_api_key = ?coprocessor_api_key,
-            "Chain ID mismatch with database",
-        );
-        return Err(anyhow!(
-            "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
-            chain_id,
-            db.chain_id,
-            db.tenant_id,
-            coprocessor_api_key
-        ));
+    let mut db =
+        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
+            .await?;
+    if args.dependent_ops_max_per_chain == 0 {
+        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
     }
 
     let health_check = HealthCheck {
@@ -1116,8 +1083,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
+    // Check connection works
+    log_iter.new_log_stream_no_retry().await?;
+
     loop {
-        log_iter.new_log_stream(true).await;
+        log_iter.stream = None; // force new connection each iteration
 
         while let Some(block_logs) = log_iter.next().await {
             if args.only_catchup_loop && !block_logs.catchup {

@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM ciphertext_digest\n                                    WHERE handle = $1 AND\n                                    (ciphertext128 IS NULL OR ciphertext IS NULL)\n                                    FOR UPDATE SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "txn_is_sent",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_limited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "txn_last_error_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "txn_unlimited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 9,
+        "name": "txn_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "txn_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 13,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "22d4192be3d4af374ffb6b6d39b842b5d0d56e548e90b3b9387f94eb4dc17fa2"
+}

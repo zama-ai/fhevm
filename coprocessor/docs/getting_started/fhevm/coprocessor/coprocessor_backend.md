@@ -1,6 +1,6 @@
 # Coprocessor Backend
 
-A Coprocesor backend is needed to run alongside the geth node. The Coprocessor backend executes the actual FHE computation. Please look at [FHE Computation](../../../fundamentals/fhevm/coprocessor/fhe_computation.md) for more info.
+A Coprocessor backend is needed to run alongside the geth node. The Coprocessor backend executes the actual FHE computation. Please look at [FHE Computation](../../../fundamentals/fhevm/coprocessor/fhe_computation.md) for more info.
 
 The coprocessor backend is implemented in the [Coprocessor](../../../../fhevm-engine/coprocessor/README.md) directory of `fhevm-engine`.
 

@@ -23,6 +23,8 @@ tfhe = { workspace = true }
 tonic  = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
 bytesize = { workspace = true}
 tokio-util = { workspace = true}
 axum = { workspace = true}

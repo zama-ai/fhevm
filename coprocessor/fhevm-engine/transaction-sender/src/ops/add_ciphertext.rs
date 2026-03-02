@@ -6,7 +6,7 @@ use crate::{
     REVIEW,
 };
 
-use super::common::try_into_array;
+use super::common::{try_extract_non_retryable_config_error, try_into_array};
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -17,7 +17,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::to_hex};
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -41,6 +41,7 @@ impl<P> AddCiphertextOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
+    #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -49,10 +50,14 @@ where
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            src_transaction_id.as_deref(),
+        );
         let h = to_hex(handle);
 
         info!(handle = h, "Processing transaction");
-        let _t = telemetry::tracer("call_add_ciphertext", &src_transaction_id);
 
         let receipt = match self
             .provider
@@ -74,27 +79,41 @@ where
                     .await?;
                 return Ok(());
             }
-            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
-            // Local usage are included as they might be transient due to external AWS KMS signers.
-            Err(e)
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
-                    || matches!(&e, RpcError::LocalUsageError(_)) =>
-            {
-                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
-                warn!(
-                    error = %e,
-                    handle = h,
-                    "Transaction sending failed with unlimited retry error"
-                );
-                self.increment_txn_unlimited_retries_count(
-                    handle,
-                    &e.to_string(),
-                    current_unlimited_retries_count,
-                )
-                .await?;
-                bail!(e);
-            }
             Err(e) => {
+                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Local usage are included as they might be transient due to external AWS KMS signers.
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_))
+                {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %e,
+                        handle = h,
+                        "Transaction sending failed with unlimited retry error"
+                    );
+                    self.increment_txn_unlimited_retries_count(
+                        handle,
+                        &e.to_string(),
+                        current_unlimited_retries_count,
+                    )
+                    .await?;
+                    bail!(e);
+                }
+                if let Some(non_retryable_config_error) = try_extract_non_retryable_config_error(&e)
+                {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %non_retryable_config_error,
+                        handle = h,
+                        "Non-retryable gateway coprocessor config error while adding ciphertext"
+                    );
+                    self.stop_retrying_add_ciphertext_on_config_error(
+                        handle,
+                        &non_retryable_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
                     error = %e,
@@ -294,6 +313,27 @@ where
         .await?;
         Ok(())
     }
+
+    async fn stop_retrying_add_ciphertext_on_config_error(
+        &self,
+        handle: &[u8],
+        error: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+            SET
+                txn_limited_retries_count = $1,
+                txn_last_error = $2,
+                txn_last_error_at = NOW()
+            WHERE handle = $3",
+            self.conf.add_ciphertexts_max_retries,
+            error,
+            handle,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -311,7 +351,7 @@ where
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
         let rows = sqlx::query!(
             "
-            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM ciphertext_digest
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
@@ -335,15 +375,10 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_add_ciphertext", &transaction_id);
-
-            let tenant_info = match query_tenant_info(&self.db_pool, row.tenant_id).await {
-                Ok(res) => res,
-                Err(_) => {
-                    error!(tenant_id = row.tenant_id, "Failed to get key_id for tenant");
-                    continue;
-                }
-            };
+            let _span =
+                tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
+            telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
+            let _enter = _span.enter();
 
             let handle = row.handle.clone();
 
@@ -360,12 +395,20 @@ where
                 };
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
-            let key_id = U256::from_be_bytes(tenant_info.key_id);
+            let key_id_gw_bytes32: [u8; 32] =
+                row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
+                    anyhow::anyhow!(
+                        "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
+                        bad.len(),
+                        to_hex(&bad)
+                    )
+                })?;
+            let key_id_gw = U256::from_be_bytes(key_id_gw_bytes32);
 
             info!(
                 handle = to_hex(&handle),
-                chain_id = tenant_info.chain_id,
-                key_id = to_hex(&tenant_info.key_id),
+                host_chain_id = row.host_chain_id,
+                key_id_gw = to_hex(&key_id_gw_bytes32),
                 ct64_digest = to_hex(ciphertext64_digest.as_ref()),
                 ct128_digest = to_hex(ciphertext128_digest.as_ref()),
                 "Adding ciphertext"
@@ -375,7 +418,7 @@ where
                 Some(gas_limit) => ciphertext_manager
                     .addCiphertextMaterial(
                         handle_bytes32,
-                        key_id,
+                        key_id_gw,
                         ciphertext64_digest,
                         ciphertext128_digest,
                     )
@@ -384,14 +427,15 @@ where
                 None => ciphertext_manager
                     .addCiphertextMaterial(
                         handle_bytes32,
-                        key_id,
+                        key_id_gw,
                         ciphertext64_digest,
                         ciphertext128_digest,
                     )
                     .into_transaction_request(),
             };
 
-            t.end();
+            drop(_enter);
+            drop(_span);
 
             let operation = self.clone();
             join_set.spawn(async move {

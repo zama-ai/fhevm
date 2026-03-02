@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS public_decryption_requests (
     decryption_id BYTEA NOT NULL,
     sns_ct_materials sns_ciphertext_material[] NOT NULL,
     under_process BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (decryption_id)
 );
 

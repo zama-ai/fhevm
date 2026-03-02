@@ -14,4 +14,4 @@ The blockchain handles all decryption, reencryption, and key management operatio
 All operations must be paid for with tokens. Currently the tokenomics is not implemented and hence tokens can be constructed freely using a focet.
 
 ## Deployment
-The KMS blockchain is deployed using `n` servers where `n` is the number of MPC parties. Each run their own validator docker image but is depoyed on the same machine as each of the MPC parties.
+The KMS blockchain is deployed using `n` servers where `n` is the number of MPC parties. Each run their own validator docker image but is deployed on the same machine as each of the MPC parties.

@@ -32,6 +32,9 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Update npm # required by trusted publishing
+        run: npm install -g npm@11.7.0
+
       - name: Prepare environment file
         working-directory: library-solidity
         run: cp .env.example .env
@@ -46,19 +49,17 @@ jobs:
 
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
         with:
           package: ./library-solidity/package.json
           tag: prerelease
-          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           provenance: true
           access: public
 
       - name: Publish release to npm
         if: ${{ inputs.release == 'true' }}
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
         with:
           package: ./library-solidity/package.json
-          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           provenance: true
           access: public

@@ -1,6 +1,6 @@
 # Decryption
 
-Everything in FHEVM is encrypted, at some point one could need to decrypt somes values. Let's give as illustration a blind auction application.
+Everything in FHEVM is encrypted, at some point one could need to decrypt some values. Let's give as illustration a blind auction application.
 After reaching the end of the auction, one need to discover (only) the winner, here is where a asynchronous decrypt could appear. 
 
 
@@ -9,7 +9,7 @@ After reaching the end of the auction, one need to discover (only) the winner, h
 ## How it's working
 
 The Gateway acts as an oracle service: it will listen to decryption request events and return the decrypted value through a callback function.
-The responsabilities of the Gateway are:
+The responsibilities of the Gateway are:
 - Listening decryption request from FHEVM that contains a handle `h` that corresponds to a  ciphertext `C`
 - Computing a storage proof `P` to attest h (i.e. C)  is decryptable
 - Retrieve C from FHEVM using `h` as key

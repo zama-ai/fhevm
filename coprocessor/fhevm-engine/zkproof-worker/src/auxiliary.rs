@@ -1,3 +1,4 @@
+use fhevm_engine_common::chain_id::ChainId;
 use std::str::FromStr;
 
 const SIZE: usize = 92;
@@ -8,7 +9,7 @@ pub(crate) struct ZkData {
     pub contract_address: String,
     pub user_address: String,
     pub acl_contract_address: String,
-    pub chain_id: i64,
+    pub chain_id: ChainId,
 }
 
 impl ZkData {
@@ -23,7 +24,7 @@ impl ZkData {
         let user_bytes = alloy_primitives::Address::from_str(&self.user_address)?.into_array();
         let acl_bytes =
             alloy_primitives::Address::from_str(&self.acl_contract_address)?.into_array();
-        let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id)
+        let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id.as_u64())
             .to_owned()
             .to_be_bytes();
 
@@ -47,7 +48,7 @@ mod tests {
         let contract_address = "0x1111111111111111111111111111111111111111".to_string();
         let user_address = "0x2222222222222222222222222222222222222222".to_string();
         let acl_contract_address = "0x3333333333333333333333333333333333333333".to_string();
-        let chain_id = 1;
+        let chain_id = ChainId::try_from(1_u64).unwrap();
 
         let zk_data = ZkData {
             contract_address: contract_address.clone(),

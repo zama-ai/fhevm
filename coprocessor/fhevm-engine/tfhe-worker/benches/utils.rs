@@ -1,20 +1,28 @@
+#![allow(dead_code)]
+
 use fhevm_engine_common::telemetry::MetricsConfig;
-use fhevm_engine_common::utils::safe_deserialize_key;
+use fhevm_engine_common::{chain_id::ChainId, types::AllowEvents};
 use rand::Rng;
-use sqlx::query;
-use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
+use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tfhe_worker::daemon_cli::Args;
 use tokio::sync::watch::Receiver;
 use tracing::Level;
+
+use alloy::primitives::{FixedBytes, Log};
+use bigdecimal::num_bigint::BigInt;
+use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::tfhe_event_propagate::{
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+};
+use sqlx::types::time::PrimitiveDateTime;
+use sqlx::PgPool;
 
 pub struct TestInstance {
     // just to destroy container
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
     // send message to this on destruction to stop the app
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
-    app_url: String,
     db_url: String,
 }
 
@@ -27,21 +35,9 @@ impl Drop for TestInstance {
 }
 
 impl TestInstance {
-    pub fn app_url(&self) -> &str {
-        self.app_url.as_str()
-    }
-
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
     }
-}
-
-pub fn default_api_key() -> &'static str {
-    "a1503fb6-d79b-4e9e-826d-44cf262f3e05"
-}
-
-pub fn default_tenant_id() -> i32 {
-    1
 }
 
 pub fn random_handle() -> u64 {
@@ -49,9 +45,7 @@ pub fn random_handle() -> u64 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    if std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok() {
-        setup_test_app_existing_localhost().await
-    } else if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
+    if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
         setup_test_app_existing_db().await
     } else {
         setup_test_app_custom_docker().await
@@ -60,50 +54,31 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-pub async fn setup_test_app_existing_localhost() -> Result<TestInstance, Box<dyn std::error::Error>>
-{
-    Ok(TestInstance {
-        _container: None,
-        app_close_channel: None,
-        app_url: "http://127.0.0.1:50051".to_string(),
-        db_url: LOCAL_DB_URL.to_string(),
-    })
-}
-
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let app_port = get_app_port();
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, LOCAL_DB_URL).await;
+    start_coprocessor(rx, LOCAL_DB_URL).await;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
-        app_url: format!("http://127.0.0.1:{app_port}"),
         db_url: LOCAL_DB_URL.to_string(),
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
+async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
     let ecfg = EnvConfig::new();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
-        run_server: true,
         generate_fhe_keys: false,
-        server_maximum_ciphertexts_to_schedule: 20000,
-        server_maximum_ciphertexts_to_get: 20000,
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
-        tenant_key_cache_size: 4,
+        key_cache_size: 4,
         coprocessor_fhe_threads: 64,
-        maximum_handles_per_input: 255,
         tokio_threads: 32,
         pg_pool_max_connections: 2,
-        server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: None,
         database_url: Some(db_url.into()),
-        maximum_compact_inputs_upload: 10,
-        coprocessor_private_key: "./coprocessor.key".to_string(),
-        service_name: "coprocessor".to_string(),
+        service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
         log_level: Level::INFO,
         health_check_port: 8080,
         metric_rerand_batch_latency: MetricsConfig::default(),
@@ -115,6 +90,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         dcid_cleanup_interval_sec: 0,
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
+        dcid_ignore_dependency_count_threshold: 100,
     };
 
     std::thread::spawn(move || {
@@ -125,19 +101,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 }
 
-fn get_app_port() -> u16 {
-    static PORT_COUNTER: AtomicU16 = AtomicU16::new(10000);
-
-    let app_port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
-    // wrap around, if we ever have that many tests?
-    if app_port >= 50000 {
-        PORT_COUNTER.store(10000, Ordering::SeqCst);
-    }
-    app_port
-}
-
 async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    let app_port = get_app_port();
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -164,14 +128,13 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
-    setup_test_user(&pool).await?;
+    setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, app_port, &db_url).await;
+    start_coprocessor(rx, &db_url).await;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
-        app_url: format!("http://127.0.0.1:{app_port}"),
         db_url,
     })
 }
@@ -201,107 +164,92 @@ pub async fn wait_until_all_allowed_handles_computed(
     Ok(())
 }
 
-pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
-        (
-            "../fhevm-keys/sks",
-            "../fhevm-keys/cks",
-            "../fhevm-keys/pks",
-            "../fhevm-keys/pp",
-        )
-    } else {
-        (
-            "../fhevm-keys/gpu-csks",
-            "../fhevm-keys/gpu-cks",
-            "../fhevm-keys/gpu-pks",
-            "../fhevm-keys/gpu-pp",
-        )
+pub fn to_ty(ty: i32) -> ToType {
+    ToType::from(ty as u8)
+}
+
+pub fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
+    let (_, bytes) = big_int.to_bytes_be();
+    ClearConst::from_be_slice(&bytes)
+}
+
+pub fn as_handle(v: u64) -> Handle {
+    let mut out = [0_u8; 32];
+    out[24..32].copy_from_slice(&v.to_be_bytes());
+    Handle::from(out)
+}
+
+pub fn next_handle(counter: &mut u64) -> Handle {
+    let out = as_handle(*counter);
+    *counter += 1;
+    out
+}
+
+pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
+    let address = "0x0000000000000000000000000000000000000000"
+        .parse()
+        .unwrap();
+    Log::<TfheContractEvents> { address, data }
+}
+
+pub async fn listener_event_db(
+    app: &TestInstance,
+) -> Result<ListenerDatabase, Box<dyn std::error::Error>> {
+    Ok(ListenerDatabase::new(
+        &app.db_url().into(),
+        ChainId::try_from(42_u64).unwrap(),
+        default_dependence_cache_size(),
+    )
+    .await?)
+}
+
+pub fn default_dependence_cache_size() -> u16 {
+    128
+}
+
+pub async fn insert_tfhe_event(
+    db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    log: alloy::rpc::types::Log<TfheContractEvents>,
+    tx_hash: Handle,
+    is_allowed: bool,
+) -> Result<bool, sqlx::Error> {
+    let event = LogTfhe {
+        event: log.inner,
+        transaction_hash: Some(tx_hash),
+        is_allowed,
+        block_number: log.block_number.unwrap_or(0),
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: tx_hash,
+        tx_depth_size: 0,
+        log_index: log.log_index,
     };
-    let sks = tokio::fs::read(sks).await.expect("can't read sks key");
-    let pks = tokio::fs::read(pks).await.expect("can't read pks key");
-    let cks = tokio::fs::read(cks).await.expect("can't read cks key");
-    let public_params = tokio::fs::read(pp).await.expect("can't read public params");
-    sqlx::query!(
-        "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
-            VALUES (
-                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
-                12345,
-                '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',
-                '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
-                $1,
-                $2,
-                $3,
-                $4
-            )
-        ",
-        &pks,
-        &sks,
-        &public_params,
-        &cks,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
+    db.insert_tfhe_event(tx, &event).await
 }
 
-pub struct BenchKeys {
-    pub pks: tfhe::CompactPublicKey,
-    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
-    pub cks: tfhe::ClientKey,
+pub async fn allow_handle(
+    db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    handle: &Handle,
+) -> Result<bool, sqlx::Error> {
+    db.insert_allowed_handle(
+        tx,
+        handle.to_vec(),
+        String::new(),
+        AllowEvents::AllowedForDecryption,
+        None,
+    )
+    .await
 }
 
-pub async fn query_tenant_keys<'a, T>(
-    tenants_to_query: Vec<i32>,
-    conn: T,
-) -> Result<Vec<BenchKeys>, Box<dyn std::error::Error + Send + Sync>>
-where
-    T: sqlx::PgExecutor<'a>,
-{
-    let mut res = Vec::with_capacity(tenants_to_query.len());
-    let keys = query!(
-        "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, public_params, cks_key
-            FROM tenants
-            WHERE tenant_id = ANY($1::INT[])
-        ",
-        &tenants_to_query
-    )
-    .fetch_all(conn)
-    .await?;
-    for key in keys {
-        #[cfg(not(feature = "gpu"))]
-        {
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
-                .expect("We can't deserialize our own validated pks key");
-            let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
-                .expect("We can't deserialize our own validated public params");
-            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
-                .expect("We can't deserialize client key");
-            res.push(BenchKeys {
-                pks,
-                public_params: Arc::new(public_params),
-                cks,
-            });
-        }
-        #[cfg(feature = "gpu")]
-        {
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&key.pks_key)
-                .expect("We can't deserialize our own validated pks key");
-            let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&key.public_params)
-                .expect("We can't deserialize our own validated public params");
-            let cks: tfhe::ClientKey = safe_deserialize_key(&key.cks_key.unwrap())
-                .expect("We can't deserialize client key");
-            res.push(BenchKeys {
-                pks,
-                public_params: Arc::new(public_params),
-                cks,
-            });
-        }
-    }
+pub fn zero_address() -> alloy::primitives::Address {
+    "0x0000000000000000000000000000000000000000"
+        .parse()
+        .unwrap()
+}
 
-    Ok(res)
+pub fn scalar_flag(is_scalar: bool) -> FixedBytes<1> {
+    FixedBytes::from([if is_scalar { 1_u8 } else { 0_u8 }])
 }
 
 use serde::Serialize;
@@ -774,6 +722,30 @@ pub fn write_to_json<
     params_directory.push("parameters.json");
 
     fs::write(params_directory, serde_json::to_string(&record).unwrap()).unwrap();
+}
+
+pub async fn write_atomic_u64_bench_params(
+    pool: &PgPool,
+    bench_id: &str,
+    display_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db_key_cache = fhevm_engine_common::db_keys::DbKeyCache::new(100)?;
+    let key = db_key_cache.fetch_latest(pool).await?;
+    let params = key
+        .cks
+        .ok_or_else(|| std::io::Error::other("latest key is missing cks"))?
+        .computation_parameters();
+
+    write_to_json::<u64, _>(
+        bench_id,
+        params,
+        "",
+        display_name,
+        &OperatorType::Atomic,
+        64,
+        vec![],
+    );
+    Ok(())
 }
 
 #[allow(dead_code)]

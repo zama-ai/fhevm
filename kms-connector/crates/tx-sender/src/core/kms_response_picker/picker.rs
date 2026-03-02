@@ -119,7 +119,8 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, decrypted_result, signature, extra_data, otlp_context
+                RETURNING resp.decryption_id, decrypted_result, signature, extra_data, created_at,
+                otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -142,7 +143,8 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data, otlp_context
+                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data,
+                created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -165,7 +167,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
-                RETURNING resp.prep_keygen_id, signature, otlp_context
+                RETURNING resp.prep_keygen_id, signature, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -188,7 +190,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
-                RETURNING resp.key_id, key_digests, signature, otlp_context
+                RETURNING resp.key_id, key_digests, signature, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -211,7 +213,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE crsgen_responses.crs_id = resp.crs_id
-                RETURNING resp.crs_id, crs_digest, signature, otlp_context
+                RETURNING resp.crs_id, crs_digest, signature, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)

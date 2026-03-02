@@ -20,7 +20,9 @@ anyhow = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
 humantime = { workspace = true }
 prometheus = { workspace = true }
 

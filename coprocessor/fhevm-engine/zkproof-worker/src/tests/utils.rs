@@ -1,5 +1,8 @@
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::crs::CrsCache;
+use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
-use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
+use fhevm_engine_common::utils::safe_serialize;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use test_harness::instance::{DBInstance, ImportMode};
@@ -7,6 +10,7 @@ use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 use crate::auxiliary::ZkData;
+use crate::verifier::MAX_CACHED_KEYS;
 
 pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
@@ -94,17 +98,18 @@ pub(crate) async fn generate_zk_pok_with_inputs(
     aux_data: &[u8],
     inputs: &[ZkInput],
 ) -> Vec<u8> {
-    let keys: Vec<tenant_keys::TfheTenantKeys> =
-        tenant_keys::query_tenant_keys(vec![1], pool, true)
-            .await
-            .map_err(|e| {
-                let e: Box<dyn std::error::Error> = e;
-                e
-            })
-            .unwrap();
-    let keys = &keys[0];
+    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
 
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    let latest_key = db_key_cache.fetch_latest(pool).await.unwrap();
+
+    let latest_crs = CrsCache::load(pool)
+        .await
+        .unwrap()
+        .get_latest()
+        .cloned()
+        .unwrap();
+
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&latest_key.pks);
     for v in inputs {
         match *v {
             ZkInput::Bool(b) => builder.push(b),
@@ -116,11 +121,7 @@ pub(crate) async fn generate_zk_pok_with_inputs(
     }
 
     let the_list = builder
-        .build_with_proof_packed(
-            &keys.public_params,
-            aux_data,
-            tfhe::zk::ZkComputeLoad::Proof,
-        )
+        .build_with_proof_packed(&latest_crs.crs, aux_data, tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
 
     safe_serialize(&the_list)
@@ -150,11 +151,11 @@ pub(crate) async fn insert_proof(
 ) -> Result<i64, sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
+            "INSERT INTO verify_proofs (zk_proof_id, input, host_chain_id, contract_address, user_address, verified)
             VALUES ($1, $2, $3, $4, $5, NULL )" 
         ).bind(request_id)
         .bind(zk_pok)
-        .bind(aux.chain_id)
+        .bind(aux.chain_id.as_i64())
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
         .execute(pool).await?;
@@ -178,7 +179,7 @@ pub(crate) fn aux_fixture(acl_contract_address: String) -> (ZkData, [u8; 92]) {
         contract_address,
         user_address,
         acl_contract_address,
-        chain_id: 12345,
+        chain_id: ChainId::try_from(12345_u64).unwrap(),
     };
 
     (

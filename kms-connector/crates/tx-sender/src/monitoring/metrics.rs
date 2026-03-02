@@ -1,8 +1,13 @@
 use connector_utils::types::{
+    KmsResponse,
     db::EventType,
     kms_response::{PUBLIC_DECRYPTION_RESPONSE_STR, USER_DECRYPTION_RESPONSE_STR},
 };
-use prometheus::{IntCounterVec, IntGaugeVec, register_int_counter_vec, register_int_gauge_vec};
+use prometheus::{
+    HistogramVec, IntCounterVec, IntGaugeVec, register_histogram_vec, register_int_counter_vec,
+    register_int_gauge_vec,
+};
+use sqlx::types::chrono::Utc;
 use sqlx::{Pool, Postgres};
 use std::{sync::LazyLock, time::Duration};
 use tokio::{select, task::JoinHandle};
@@ -44,6 +49,25 @@ pub static GATEWAY_TX_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+const RESPONSE_FORWARDING_LATENCY_BUCKETS: &[f64] = &[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0];
+
+pub static RESPONSE_FORWARDING_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        "kms_connector_tx_sender_response_forwarding_latency_seconds",
+        "Latency from response creation in DB to successful blockchain transaction confirmation",
+        &["response_type"],
+        RESPONSE_FORWARDING_LATENCY_BUCKETS.to_vec()
+    )
+    .unwrap()
+});
+
+pub fn register_response_forwarding_latency(response: &KmsResponse) {
+    let elapsed = Utc::now() - response.created_at;
+    RESPONSE_FORWARDING_LATENCY_HISTOGRAM
+        .with_label_values(&[response.kind.as_str()])
+        .observe(elapsed.as_seconds_f64());
+}
 
 // Definition of gauges are in the tx-sender because it is a single entity, contrary to kms-worker
 // or gw-listener.

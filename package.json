@@ -1,4 +1,5 @@
 {
+  "name": "fhevm",
   "private": true,
   "workspaces": [
     "host-contracts",

@@ -430,10 +430,9 @@ async fn generate_transactions_at_rate(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let database_url: DatabaseURL = ecfg.evgen_db_url.into();
-    let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
         &database_url,
-        &coprocessor_api_key,
+        ecfg.chain_id,
         default_dependence_cache_size(),
     )
     .await?;
@@ -507,10 +506,9 @@ async fn generate_transactions_count(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = ctx.ecfg.clone();
     let database_url: DatabaseURL = ecfg.evgen_db_url.into();
-    let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
         &database_url,
-        &coprocessor_api_key,
+        ecfg.chain_id,
         default_dependence_cache_size(),
     )
     .await?;

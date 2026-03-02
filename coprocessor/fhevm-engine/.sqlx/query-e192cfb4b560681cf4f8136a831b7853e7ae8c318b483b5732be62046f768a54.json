@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT handle, ciphertext_type, ciphertext_version, ciphertext\n                FROM ciphertexts\n                WHERE handle = ANY($1::BYTEA[])\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext_type",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e192cfb4b560681cf4f8136a831b7853e7ae8c318b483b5732be62046f768a54"
+}

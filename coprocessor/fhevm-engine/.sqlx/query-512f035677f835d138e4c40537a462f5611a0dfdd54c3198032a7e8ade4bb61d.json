@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sks_key FROM keys WHERE key_id_gw = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sks_key",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "512f035677f835d138e4c40537a462f5611a0dfdd54c3198032a7e8ade4bb61d"
+}

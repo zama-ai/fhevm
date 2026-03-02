@@ -48,7 +48,7 @@ pub enum ExecutionError {
     InvalidProof(i64, String),
 
     #[error("Fhevm error: {0}")]
-    FaildFhevm(#[from] FhevmError),
+    FailedFhevm(#[from] FhevmError),
 
     #[error("Server keys not found {0}")]
     ServerKeysNotFound(String),
@@ -61,6 +61,15 @@ pub enum ExecutionError {
 
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
+
+    #[error("Unknown chain ID: {0})")]
+    UnknownChainId(i64),
+
+    #[error("Cache creation error: {0})")]
+    CacheCreationError(String),
+
+    #[error("{0}")]
+    Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<ExecutionError> for ServiceError {

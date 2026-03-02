@@ -174,7 +174,7 @@ struct Conf {
     #[arg(
         long,
         default_value = "648000", // 3 months assuming 12s block time on host chain
-        help = "Clear delegation entries after N blocks (deault to 3 months)"
+        help = "Clear delegation entries after N blocks (default to 3 months)"
     )]
     pub delegation_clear_after_n_blocks: u64,
 
@@ -286,11 +286,11 @@ async fn main() -> anyhow::Result<()> {
 
     let conf = parse_args();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_level(true)
-        .with_max_level(conf.log_level)
-        .init();
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        conf.log_level,
+        &conf.service_name,
+        "otlp-layer",
+    );
 
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
@@ -307,12 +307,6 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
-
-    if !conf.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
-        }
-    }
 
     let abstract_signer: AbstractSigner;
     match conf.signer_type {

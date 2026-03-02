@@ -1,10 +1,7 @@
+use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
-use opentelemetry::{
-    global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
-    trace::{SpanBuilder, Status, TraceContextExt, Tracer},
-    Context, KeyValue,
-};
+use opentelemetry::{trace::TraceContextExt, trace::TracerProvider, KeyValue};
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
@@ -13,12 +10,38 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{Arc, LazyLock, OnceLock},
-    time::SystemTime,
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+/// Calls provider shutdown exactly once when dropped.
+pub struct TracerProviderGuard {
+    tracer_provider: Option<SdkTracerProvider>,
+}
+
+impl TracerProviderGuard {
+    fn new(trace_provider: SdkTracerProvider) -> Self {
+        Self {
+            tracer_provider: Some(trace_provider),
+        }
+    }
+
+    fn shutdown_once(&mut self) {
+        if let Some(provider) = self.tracer_provider.take() {
+            if let Err(err) = provider.shutdown() {
+                warn!(error = %err, "Failed to shutdown OTLP tracer provider");
+            }
+        }
+    }
+}
+
+impl Drop for TracerProviderGuard {
+    fn drop(&mut self) {
+        self.shutdown_once();
+    }
+}
 
 pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
 pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
@@ -38,9 +61,68 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
-pub fn setup_otlp(
+pub fn init_json_subscriber(
+    log_level: tracing::Level,
     service_name: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    tracer_name: &'static str,
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_target(false)
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_level(true);
+    let base = tracing_subscriber::registry()
+        .with(level_filter)
+        .with(fmt_layer);
+
+    if service_name.is_empty() {
+        base.try_init()?;
+        return Ok(None);
+    }
+
+    let (tracer, trace_provider) = match setup_otel_with_tracer(service_name, tracer_name) {
+        Ok(v) => v,
+        Err(err) => {
+            // Keep JSON logs even if OTLP export cannot be initialized.
+            base.try_init()?;
+            return Err(err);
+        }
+    };
+
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    base.with(telemetry_layer).try_init()?;
+    opentelemetry::global::set_tracer_provider(trace_provider.clone());
+    Ok(Some(TracerProviderGuard::new(trace_provider)))
+}
+
+/// Initializes tracing with JSON logs and best-effort OTLP export.
+///
+/// Fallback here means "logs-only mode": if OTLP setup fails, we keep
+/// JSON logging enabled and continue execution without an OTLP exporter.
+/// It does not try alternate OTLP endpoints.
+pub fn init_tracing_otel_with_logs_only_fallback(
+    log_level: tracing::Level,
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Option<TracerProviderGuard> {
+    match init_json_subscriber(log_level, service_name, tracer_name) {
+        Ok(guard) => guard,
+        Err(err) => {
+            error!(error = %err, "Failed to setup OTLP");
+            None
+        }
+    }
+}
+
+fn setup_otel_with_tracer(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<
+    (opentelemetry_sdk::trace::Tracer, SdkTracerProvider),
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()?;
@@ -57,118 +139,8 @@ pub fn setup_otlp(
         .with_batch_exporter(otlp_exporter)
         .build();
 
-    opentelemetry::global::set_tracer_provider(trace_provider);
-
-    Ok(())
-}
-
-#[derive(Clone)]
-pub struct OtelTracer {
-    ctx: opentelemetry::Context,
-    tracer: Arc<BoxedTracer>,
-}
-
-impl OtelTracer {
-    pub fn child_span(&self, name: &'static str) -> BoxedSpan {
-        self.tracer.start_with_context(name, &self.ctx)
-    }
-
-    /// Sets attribute to the root span
-    pub fn set_attribute(&self, key: &str, value: String) {
-        self.ctx
-            .span()
-            .set_attribute(KeyValue::new(key.to_owned(), value));
-    }
-
-    /// Consumes and ends the tracer with status Ok
-    pub fn end(self) {
-        self.ctx.span().set_status(Status::Ok);
-        self.ctx.span().end();
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct Handle(Vec<u8>);
-#[derive(Debug, PartialEq)]
-struct Transaction(Vec<u8>);
-
-pub fn tracer_with_handle(
-    span_name: &'static str,
-    handle: Vec<u8>,
-    transaction_id: &Option<Vec<u8>>,
-) -> OtelTracer {
-    let tracer = opentelemetry::global::tracer(format!("tracer_{}", span_name));
-    let mut span = tracer.start(span_name);
-
-    if !handle.is_empty() {
-        let handle = to_hex(&handle).get(0..10).unwrap_or_default().to_owned();
-
-        span.set_attribute(KeyValue::new("handle", handle));
-    }
-
-    if let Some(transaction_id) = transaction_id {
-        set_txn_id(&mut span, transaction_id);
-    }
-
-    // Add handle and transaction_id to the context
-    // so that they can be retrieved in the application code, e.g. for logging
-    let mut ctx = Context::default().with_span(span);
-    ctx = ctx.with_value(Handle(handle.clone()));
-    ctx = ctx.with_value(Transaction(transaction_id.clone().unwrap_or_default()));
-
-    OtelTracer {
-        ctx,
-        tracer: Arc::new(tracer),
-    }
-}
-
-// Sets the txn_id attribute to the span
-// The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
-pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
-    let txn_id_short = to_hex(transaction_id)
-        .get(0..10)
-        .unwrap_or_default()
-        .to_owned();
-
-    span.set_attribute(KeyValue::new(TXN_ID_ATTR_KEY, txn_id_short));
-}
-
-/// Create a new span with start and end time
-pub fn tracer_with_start_time(span_name: &'static str, start_time: SystemTime) -> OtelTracer {
-    let tracer = opentelemetry::global::tracer(span_name);
-    let root_span = tracer.build(SpanBuilder::from_name(span_name).with_start_time(start_time));
-    let ctx = opentelemetry::Context::default().with_span(root_span);
-    OtelTracer {
-        ctx,
-        tracer: Arc::new(tracer),
-    }
-}
-
-pub fn tracer(span_name: &'static str, transaction_id: &Option<Vec<u8>>) -> OtelTracer {
-    tracer_with_handle(span_name, vec![], transaction_id)
-}
-
-pub fn attribute(span: &mut BoxedSpan, key: &str, value: String) {
-    span.set_attribute(KeyValue::new(key.to_owned(), value));
-}
-
-/// Ends span with status Ok
-pub fn end_span(mut span: BoxedSpan) {
-    span.set_status(Status::Ok);
-    span.end();
-}
-
-pub fn end_span_with_timestamp(mut span: BoxedSpan, timestamp: SystemTime) {
-    span.set_status(Status::Ok);
-    span.end_with_timestamp(timestamp);
-}
-
-/// Ends span with status Error with description
-pub fn end_span_with_err(mut span: BoxedSpan, desc: String) {
-    span.set_status(Status::Error {
-        description: desc.into(),
-    });
-    span.end();
+    let tracer = trace_provider.tracer(tracer_name);
+    Ok((tracer, trace_provider))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -242,6 +214,34 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
         .unwrap_or_else(|_| panic!("Failed to register latency histogram: {}", name))
 }
 
+/// Returns the legacy short-form hex id used by telemetry spans.
+pub fn short_hex_id(value: &[u8]) -> String {
+    to_hex(value).get(0..10).unwrap_or_default().to_owned()
+}
+
+pub fn record_short_hex(span: &Span, field: &'static str, value: &[u8]) {
+    span.record(field, tracing::field::display(short_hex_id(value)));
+}
+
+pub fn record_short_hex_if_some<T: AsRef<[u8]>>(
+    span: &Span,
+    field: &'static str,
+    value: Option<T>,
+) {
+    if let Some(value) = value {
+        record_short_hex(span, field, value.as_ref());
+    }
+}
+
+pub fn set_current_span_error(error: &impl fmt::Display) {
+    tracing::Span::current()
+        .context()
+        .span()
+        .set_status(opentelemetry::trace::Status::Error {
+            description: error.to_string().into(),
+        });
+}
+
 pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =
     LazyLock::new(|| TransactionMetrics::new(NonZeroUsize::new(100).unwrap()));
 
@@ -287,7 +287,7 @@ impl TransactionMetrics {
     pub async fn begin_transaction(
         &self,
         pool: &sqlx::PgPool,
-        chain_id: i64,
+        chain_id: ChainId,
         txn_id: &[u8],
         block_number: u64,
     ) -> Result<bool, sqlx::Error> {
@@ -302,7 +302,7 @@ impl TransactionMetrics {
             ON CONFLICT (id) DO NOTHING
         "#,
             txn_id,
-            chain_id,
+            chain_id.as_i64(),
             block_number as i64
         )
         .execute(pool)
@@ -432,7 +432,7 @@ impl TransactionMetrics {
 /// Marks a transaction as started using the global transaction manager
 pub async fn try_begin_transaction(
     pool: &sqlx::PgPool,
-    chain_id: i64,
+    chain_id: ChainId,
     transaction_id: &[u8],
     block_number: u64,
 ) {
@@ -512,4 +512,23 @@ pub async fn try_end_zkproof_transaction(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn otel_guard_shutdown_once_disarms_provider() {
+        let provider = SdkTracerProvider::builder().build();
+        let mut guard = TracerProviderGuard::new(provider);
+        assert!(guard.tracer_provider.is_some());
+
+        guard.shutdown_once();
+        assert!(guard.tracer_provider.is_none());
+
+        // A second shutdown is a no-op.
+        guard.shutdown_once();
+        assert!(guard.tracer_provider.is_none());
+    }
 }

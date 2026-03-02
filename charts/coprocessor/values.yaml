@@ -1,6 +1,14 @@
 # =============================================================================
 # FHEVM Coprocessor Configuration
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# Shared host-listener dependence settings (applies to all HL types)
+# -----------------------------------------------------------------------------
+dependentOps:
+  # Max dependent ops per chain per ingested block before slow-lane.
+  # 0 disables slow-lane decisions.
+  maxPerChain: 0
 # This chart deploys the FHEVM coprocessor components including:
 # - Configuration setup
 # - Database migration
@@ -29,12 +37,6 @@ config:
     secret:
       name: coprocessor-key
       key: coprocessor.hex
-
-  # API key for tenant authentication
-  apiKey:
-    secret:
-      name: coprocessor-api-key
-      key: coprocessor-api-key
 
   # Database connection configuration
   database:
@@ -82,11 +84,6 @@ dbMigration:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   serviceAccountName:
 
@@ -130,16 +127,10 @@ hostListener:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener
   args:
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -152,6 +143,7 @@ hostListener:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
+    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -235,17 +227,11 @@ hostListenerPoller:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener poller
   args:
     ### Required parameters
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_HTTP_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -270,6 +256,7 @@ hostListenerPoller:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
+    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
 
   # Service ports configuration
   ports:
@@ -340,17 +327,11 @@ hostListenerCatchupOnly:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener catchup only mode
   # NOTE: --only-catchup-loop requires --end-at-block to be set
   args:
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -371,6 +352,7 @@ hostListenerCatchupOnly:
     # - --start-at-block  # To catch up from a specific block
     # - --catchup-margin
     # - --catchup-paging
+    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
 
   # Service ports configuration
   ports:
@@ -465,6 +447,7 @@ gwListener:
     # --replay-from-block BLOCK_NUMBER
     # To go back in time from latest block
     # --replay-from-block -NB_BLOCK
+    # --replay-skip-verify-proof  # Skip VerifyProofRequest events during replay
 
   # Service ports configuration
   ports:
@@ -535,15 +518,8 @@ tfheWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
     - name: ACL_CONTRACT_ADDRESS
       value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
-    - name: INPUT_VERIFIER_ADDRESS
-      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
 
   # Command line arguments for TFHE worker
   args:
@@ -552,22 +528,15 @@ tfheWorker:
     - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
     - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
-    - --tenant-key-cache-size=32
+    - --key-cache-size=32
     - --coprocessor-fhe-threads=64  # scheduling changed
     - --tokio-threads=16  # scheduling changed
     - --pg-pool-max-connections=10
     - --metrics-addr=0.0.0.0:9100
     - --service-name=tfhe-worker  # tfhe-worker service name in OTLP traces
     - --log-level=INFO
-    # Should not be used (unsafe - testing only, keep 0/false values except CI)
-    - --run-server=false
+    # Should not be used (unsafe - testing only, keep false values except CI)
     - --generate-fhe-keys=false
-    - --server-maximum-ciphertexts-to-schedule=0
-    - --server-maximum-ciphertexts-to-get=0
-    - --maximum-compact-inputs-upload=0
-    - --maximum-handles-per-input=0
-    - --server-addr=""
-    - --coprocessor-private-key=""
     # Unique worker identifier (valid UUID v4 format)
     # If not set, defaults to a random UUID generated at startup
     - --worker-id=$(WORKER_ID)
@@ -794,16 +763,10 @@ snsWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for SNS worker
   args:
     - --database-url=$(DATABASE_URL)
-    - --tenant-api-key=$(TENANT_API_KEY)
     - --pg-listen-channels
     - event_pbs_computations
     - event_ciphertext_computed

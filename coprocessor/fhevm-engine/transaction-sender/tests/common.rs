@@ -44,6 +44,12 @@ pub enum SignerType {
     AwsKms,
 }
 
+pub fn is_coprocessor_config_error(err: &str) -> bool {
+    err.starts_with("NotCoprocessorSigner(")
+        || err.starts_with("NotCoprocessorTxSender(")
+        || err.starts_with("CoprocessorSignerDoesNotMatchTxSender(")
+}
+
 pub struct TestEnvironment {
     pub signer: AbstractSigner,
     pub conf: ConfigSettings,
@@ -92,6 +98,9 @@ impl TestEnvironment {
                 "ciphertext_digest",
                 "allowed_handles",
                 "delegate_user_decrypt",
+                "keys",
+                "crs",
+                "host_chains",
             ],
         )
         .await?;

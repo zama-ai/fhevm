@@ -1,3 +1,4 @@
+use super::common::try_extract_non_retryable_config_error;
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -14,7 +15,7 @@ use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
 use std::time::Duration;
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::input_verification::InputVerification::InputVerificationErrors;
@@ -117,14 +118,19 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            src_transaction_id.as_deref(),
+        );
         info!(zk_proof_id = txn_request.0, "Processing transaction");
-        let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
 
         let receipt = match self
             .provider
@@ -158,6 +164,21 @@ where
                         "Coprocessor has already rejected the proof, removing from DB"
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
+                    return Ok(());
+                } else if let Some(non_retryable_config_error) =
+                    try_extract_non_retryable_config_error(&e)
+                {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        error = %non_retryable_config_error,
+                        "Non-retryable gateway coprocessor config error while sending verify_proof transaction"
+                    );
+                    self.stop_retrying_verify_proof_on_config_error(
+                        txn_request.0,
+                        &non_retryable_config_error.to_string(),
+                    )
+                    .await?;
                     return Ok(());
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
@@ -214,6 +235,28 @@ where
         }
         Ok(())
     }
+
+    async fn stop_retrying_verify_proof_on_config_error(
+        &self,
+        zk_proof_id: i64,
+        error: &str,
+    ) -> anyhow::Result<()> {
+        // Intentionally set retry_count to max so existing max-retry cleanup logic can run unchanged when enabled.
+        sqlx::query!(
+            "UPDATE verify_proofs
+            SET
+                retry_count = $2,
+                last_error = $3,
+                last_retry_at = NOW()
+            WHERE zk_proof_id = $1",
+            zk_proof_id,
+            self.conf.verify_proof_resp_max_retries as i32,
+            error,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -232,7 +275,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
+            "SELECT zk_proof_id, host_chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -247,20 +290,24 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_verify_proof_resp", &transaction_id);
+            let span =
+                tracing::info_span!("prepare_verify_proof_resp", txn_id = tracing::field::Empty);
+            telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
 
             let txn_request = match row.verified {
                 Some(true) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
+                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing verified proof");
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
                     if handles.len() % 32 != 0 {
-                        error!(
+                        error!(parent: &span,
                             handles_len = handles.len(),
                             "Bad handles field, len is not divisible by 32"
                         );
-                        self.remove_proof_by_id(row.zk_proof_id).await?;
+                        self.remove_proof_by_id(row.zk_proof_id)
+                            .instrument(span.clone())
+                            .await?;
                         continue;
                     }
                     let handles: Vec<FixedBytes<32>> = handles
@@ -283,11 +330,15 @@ where
                             .contract_address
                             .parse()
                             .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
+                        contractChainId: U256::from(row.host_chain_id),
                         extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
-                    let signature = self.signer.sign_hash(&signing_hash).await?;
+                    let signature = self
+                        .signer
+                        .sign_hash(&signing_hash)
+                        .instrument(span.clone())
+                        .await?;
 
                     if let Some(gas) = self.gas {
                         (
@@ -317,7 +368,7 @@ where
                     }
                 }
                 Some(false) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
+                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing rejected proof");
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
@@ -342,15 +393,13 @@ where
                     }
                 }
                 None => {
-                    error!(
+                    error!(parent: &span,
                         zk_proof_id = row.zk_proof_id,
                         "verified field is unexpectedly None for proof"
                     );
                     continue;
                 }
             };
-
-            t.end();
 
             let self_clone = self.clone();
             let src_transaction_id = transaction_id;

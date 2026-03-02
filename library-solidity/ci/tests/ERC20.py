@@ -196,7 +196,7 @@ assert transaction_receipt['status'] == 1
 
 print(f"\n\n======== STEP 2: MINT {initial_mint} TOKENS ========")
 
-# get contract adress and send mint transaction
+# get contract address and send mint transaction
 contract_address = transaction_receipt.contractAddress
 
 # create the contract and make sure we use a middleware to automatically sign calls.

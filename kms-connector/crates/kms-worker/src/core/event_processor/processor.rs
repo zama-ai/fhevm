@@ -11,7 +11,7 @@ use connector_utils::types::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -143,20 +143,19 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
 
-                // Skip the ACL check if we don't have the `tx_hash` just for v0.11.
-                // This is tracked by this issue: https://github.com/zama-ai/fhevm-internal/issues/916.
-                if let Some(tx_hash) = event.tx_hash {
-                    let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
-                    self.decryption_processor
-                        .check_ciphertexts_allowed_for_user_decryption(
-                            calldata,
-                            &req.snsCtMaterials,
-                            req.userAddress,
-                        )
-                        .await?;
-                } else {
-                    warn!("No `tx_hash` found. Skipping the ACL check!");
-                }
+                let tx_hash = event.tx_hash.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "No `tx_hash` found for user decryption. Cannot perform ACL check."
+                    ))
+                })?;
+                let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
+                self.decryption_processor
+                    .check_ciphertexts_allowed_for_user_decryption(
+                        calldata,
+                        &req.snsCtMaterials,
+                        req.userAddress,
+                    )
+                    .await?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,

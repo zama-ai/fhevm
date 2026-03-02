@@ -241,6 +241,12 @@ jobs:
           echo "::group::Gateway Listener"
           ./fhevm-cli logs coprocessor-gw-listener
           echo "::endgroup::"
+          echo "::group::ZKProof Worker"
+          ./fhevm-cli logs coprocessor-zkproof-worker
+          echo "::endgroup::"
+          echo "::group::TFHE Worker"
+          ./fhevm-cli logs coprocessor-tfhe-worker
+          echo "::endgroup::"
 
       - name: Cleanup
         working-directory: test-suite/fhevm

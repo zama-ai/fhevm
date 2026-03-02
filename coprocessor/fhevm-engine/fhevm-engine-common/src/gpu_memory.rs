@@ -85,7 +85,7 @@ pub fn release_memory_on_gpu(amount: u64, idx: usize) {
 pub fn get_op_size_on_gpu(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
-    // for deterministc randomness functions
+    // for deterministic randomness functions
 ) -> Result<u64, FhevmError> {
     let fhe_operation: SupportedFheOperations =
         fhe_operation_int.try_into().expect("Invalid operation");

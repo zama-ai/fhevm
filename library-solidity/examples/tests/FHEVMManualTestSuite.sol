@@ -211,21 +211,21 @@ contract FHEVMManualTestSuite {
         resEbool = FHE.xor(FHE.asEbool(a), b);
     }
 
-    function test_ebool_select_unitialized() public {
+    function test_ebool_select_uninitialized() public {
         ebool a_;
         ebool b_;
         ebool c_;
         resEbool = FHE.select(a_, b_, c_);
     }
 
-    function test_ebaddress_select_unitialized() public {
+    function test_ebaddress_select_uninitialized() public {
         ebool a_;
         eaddress b_;
         eaddress c_;
         resAdd = FHE.select(a_, b_, c_);
     }
 
-    function test_euint64_select_unitialized() public {
+    function test_euint64_select_uninitialized() public {
         ebool a_;
         euint64 b_;
         euint64 c_;

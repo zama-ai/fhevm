@@ -4,18 +4,22 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::SchedulePriority;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
@@ -28,21 +32,32 @@ use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 
-type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
 pub type TransactionHash = FixedBytes<32>;
-pub type TenantId = i32;
-pub type ChainId = u64;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
 
+static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
+    || {
+        register_int_counter_vec!(
+            "host_listener_slow_lane_marked_chains_total",
+            "Number of dependence chains marked slow by host-listener classification",
+            &["chain_id"]
+        )
+        .expect("host-listener slow-lane metric must register")
+    },
+);
+
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
+    // Ingest-only metadata for dependency links split by no_fork grouping.
+    // Not used by scheduler execution ordering.
+    pub split_dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: u64,
@@ -53,7 +68,8 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-
+const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
+const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
@@ -62,6 +78,10 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
 type DbErrorCode = std::borrow::Cow<'static, str>;
 const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
+
+fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
+    SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
+}
 
 pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
     let is_transient = match err {
@@ -90,7 +110,6 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
-    pub tenant_id: TenantId,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
@@ -105,6 +124,8 @@ pub struct LogTfhe {
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
+    // global index per block (not by tx)
+    pub log_index: Option<u64>,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -112,12 +133,10 @@ pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 impl Database {
     pub async fn new(
         url: &DatabaseURL,
-        coprocessor_api_key: &CoprocessorApiKey,
+        chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
-        let (tenant_id, chain_id) =
-            Self::find_tenant_id(&pool, coprocessor_api_key).await?;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
                 dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
@@ -127,12 +146,111 @@ impl Database {
         ));
         Ok(Database {
             url: url.clone(),
-            tenant_id,
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
+    }
+
+    pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
+        if count > 0 {
+            let chain_id_label = self.chain_id.to_string();
+            SLOW_LANE_MARKED_CHAINS_TOTAL
+                .with_label_values(&[chain_id_label.as_str()])
+                .inc_by(count);
+        }
+    }
+
+    pub async fn promote_all_dep_chains_to_fast_priority(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
+        let mut connection = self.pool().await.acquire().await?;
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(lock_key)
+            .execute(connection.deref_mut())
+            .await?;
+
+        let rows = async {
+            let mut total_promoted: u64 = 0;
+            loop {
+                let updated = sqlx::query(
+                    r#"
+                    WITH candidate AS (
+                        SELECT dependence_chain_id
+                        FROM dependence_chain
+                        WHERE schedule_priority <> $1
+                        ORDER BY dependence_chain_id
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE dependence_chain dc
+                    SET schedule_priority = $1
+                    FROM candidate
+                    WHERE dc.dependence_chain_id = candidate.dependence_chain_id
+                    "#,
+                )
+                .bind(i16::from(SchedulePriority::Fast))
+                .bind(SLOW_LANE_RESET_BATCH_SIZE)
+                .execute(connection.deref_mut())
+                .await?
+                .rows_affected();
+
+                total_promoted = total_promoted.saturating_add(updated);
+                if updated == 0 {
+                    break;
+                }
+            }
+            Ok(total_promoted)
+        }
+        .await;
+
+        let unlock_res =
+            sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
+                .bind(lock_key)
+                .fetch_one(connection.deref_mut())
+                .await;
+        if let Err(err) = unlock_res {
+            warn!(error = %err, "Failed to release slow-lane reset advisory lock");
+        }
+
+        rows
+    }
+
+    pub async fn find_slow_dep_chain_ids(
+        &self,
+        tx: &mut Transaction<'_>,
+        dep_chain_ids: &[Vec<u8>],
+    ) -> Result<HashSet<ChainHash>, SqlxError> {
+        if dep_chain_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT dependence_chain_id
+            FROM dependence_chain
+            WHERE schedule_priority = $1
+              AND dependence_chain_id = ANY($2::bytea[])
+            "#,
+            i16::from(SchedulePriority::Slow),
+            dep_chain_ids as _
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let mut slow_dep_chain_ids =
+            HashSet::with_capacity(rows.len() + dep_chain_ids.len());
+        for row in rows {
+            let dep_chain_id = row.dependence_chain_id;
+            if let Ok(dep_chain_bytes) =
+                <[u8; 32]>::try_from(dep_chain_id.as_slice())
+            {
+                slow_dep_chain_ids.insert(ChainHash::from(dep_chain_bytes));
+            }
+        }
+        Ok(slow_dep_chain_ids)
     }
 
     async fn new_pool(url: &DatabaseURL) -> PgPool {
@@ -179,44 +297,10 @@ impl Database {
         old_pool.close().await;
     }
 
-    async fn find_tenant_id(
-        pool: &sqlx::Pool<Postgres>,
-        tenant_api_key: &CoprocessorApiKey,
-    ) -> Result<(TenantId, ChainId)> {
-        let query = || {
-            sqlx::query!(
-                r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
-                tenant_api_key.into()
-            )
-            .fetch_one(pool)
-        };
-        // retry mecanism
-        let mut retry_count = 0;
-        loop {
-            match query().await {
-                Ok(record) => {
-                    return Ok((record.tenant_id, record.chain_id as u64))
-                }
-                Err(SqlxError::RowNotFound) => {
-                    anyhow::bail!("No tenant found for the provided API key");
-                }
-                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
-                    error!(error = %err, "Error requesting tenant id, retrying");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
-                }
-                Err(err) => {
-                    return Err(err.into());
-                }
-            }
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     async fn insert_computation_bytes(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies_handles: &[&Handle],
         dependencies_bytes: &[Vec<u8>], /* always added after
@@ -232,7 +316,6 @@ impl Database {
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
         self.insert_computation_inner(
             tx,
-            tenant_id,
             result,
             dependencies,
             fhe_operation,
@@ -246,7 +329,6 @@ impl Database {
     async fn insert_computation(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies: &[&Handle],
         fhe_operation: FheOperation,
@@ -257,7 +339,6 @@ impl Database {
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
             tx,
-            tenant_id,
             result,
             dependencies,
             fhe_operation,
@@ -271,7 +352,6 @@ impl Database {
     async fn insert_computation_inner(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
@@ -283,7 +363,6 @@ impl Database {
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
-                tenant_id,
                 output_handle,
                 dependencies,
                 fhe_operation,
@@ -293,12 +372,12 @@ impl Database {
                 is_allowed,
                 created_at,
                 schedule_order,
-                is_completed
+                is_completed,
+                host_chain_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::timestamp, $10)
-            ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10)
+            ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
-            tenant_id as i32,
             output_handle,
             &dependencies,
             fhe_operation as i16,
@@ -307,10 +386,11 @@ impl Database {
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
             log.block_timestamp
-                .saturating_add(time::Duration::microseconds(
+                .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
             !log.is_allowed,
+            self.chain_id.as_i64()
         );
         query
             .execute(tx.deref_mut())
@@ -319,6 +399,7 @@ impl Database {
     }
 
     #[rustfmt::skip]
+    #[tracing::instrument(name = "handle_tfhe_event", skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
@@ -332,19 +413,18 @@ impl Database {
         let event = &log.event;
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
-        let tenant_id = self.tenant_id;
         let fhe_operation = event_to_op_int(event);
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            log.transaction_hash.as_ref(),
+        );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
+            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
-
-        let _t = telemetry::tracer(
-            "handle_tfhe_event",
-            &log.transaction_hash.map(|h| h.to_vec()),
-        );
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -422,7 +502,7 @@ impl Database {
             VALUES ($1, $2, $3)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
-            self.chain_id as i64,
+            self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
         )
@@ -433,7 +513,7 @@ impl Database {
 
     pub async fn poller_get_last_caught_up_block(
         &self,
-        chain_id: i64,
+        chain_id: ChainId,
     ) -> Result<Option<i64>, SqlxError> {
         let pool = self.pool.read().await.clone();
         sqlx::query_scalar(
@@ -443,14 +523,14 @@ impl Database {
             WHERE chain_id = $1
             "#,
         )
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .fetch_optional(&pool)
         .await
     }
 
     pub async fn poller_set_last_caught_up_block(
         &self,
-        chain_id: i64,
+        chain_id: ChainId,
         block: i64,
     ) -> Result<(), SqlxError> {
         let pool = self.pool.read().await.clone();
@@ -463,7 +543,7 @@ impl Database {
                 updated_at = NOW()
             "#,
         )
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .bind(block)
         .execute(&pool)
         .await?;
@@ -476,7 +556,7 @@ impl Database {
             r#"
             SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
             "#,
-            self.chain_id as i64,
+            self.chain_id.as_i64(),
         );
         let pool = self.pool.read().await.clone();
         match query.fetch_one(&pool).await {
@@ -486,20 +566,24 @@ impl Database {
     }
 
     /// Handles all types of ACL events
+    #[tracing::instrument(skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
         transaction_hash: &Option<Handle>,
-        chain_id: u64,
+        chain_id: ChainId,
         block_hash: &[u8],
         block_number: u64,
     ) -> Result<bool, SqlxError> {
         let data = &event.data;
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            transaction_hash.as_ref(),
+        );
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
-
-        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
 
         // Record only Allowed or AllowedForDecryption events
         if matches!(
@@ -663,15 +747,14 @@ impl Database {
         handles: &Vec<Vec<u8>>,
         transaction_id: Option<Vec<u8>>,
     ) -> Result<bool, SqlxError> {
-        let tenant_id = self.tenant_id;
         let mut inserted = false;
         for handle in handles {
             let query = sqlx::query!(
-                "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
+                "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id) VALUES($1, $2, $3)
                  ON CONFLICT DO NOTHING;",
-                tenant_id,
                 handle,
-                transaction_id
+                transaction_id,
+                self.chain_id.as_i64(),
             );
             inserted |=
                 query.execute(tx.deref_mut()).await?.rows_affected() > 0;
@@ -688,11 +771,9 @@ impl Database {
         event_type: AllowEvents,
         transaction_id: Option<Vec<u8>>,
     ) -> Result<bool, SqlxError> {
-        let tenant_id = self.tenant_id;
         let query = sqlx::query!(
-            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
+            "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4)
                     ON CONFLICT DO NOTHING;",
-            tenant_id,
             handle,
             account_address,
             event_type as i16,
@@ -711,7 +792,7 @@ impl Database {
             let pool = self.pool.read().await.clone();
             let _ = telemetry::try_begin_transaction(
                 &pool,
-                self.chain_id as i64,
+                self.chain_id,
                 txn_id.as_ref(),
                 block_number,
             )
@@ -728,12 +809,12 @@ impl Database {
         delegation_counter: u64,
         old_expiration_date: u64,
         new_expiration_date: u64,
-        chain_id: u64,
+        chain_id: ChainId,
         block_hash: &[u8],
         block_number: u64,
         transaction_id: Option<Vec<u8>>,
     ) -> Result<bool, SqlxError> {
-        // ON CONFLIT is done on Unique constraint
+        // ON CONFLICT is done on Unique constraint
         let query = sqlx::query!(
             "INSERT INTO delegate_user_decrypt(
                 delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, host_chain_id, block_number, block_hash, transaction_id, on_gateway, reorg_out)
@@ -745,7 +826,7 @@ impl Database {
             delegation_counter as i64,
             BigDecimal::from(old_expiration_date),
             BigDecimal::from(new_expiration_date),
-            chain_id as i64,
+            chain_id.as_i64(),
             block_number as i64,
             block_hash,
             transaction_id
@@ -773,8 +854,15 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
+        slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
+            let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
+            {
+                SchedulePriority::Slow
+            } else {
+                SchedulePriority::Fast
+            };
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -792,16 +880,28 @@ impl Database {
                     dependency_count,
                     dependents,
                     block_hash,
-                    block_height
+                    block_height,
+                    schedule_priority
                 ) VALUES (
-                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6, $7
                 )
                 ON CONFLICT (dependence_chain_id) DO UPDATE
                 SET status = 'updated',
                     last_updated_at = CASE
                         WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at
-                        ELSE dependence_chain.last_updated_at
-                    END
+                        ELSE LEAST(dependence_chain.last_updated_at, EXCLUDED.last_updated_at)
+                    END,
+                    dependents = (
+                        SELECT ARRAY(
+                            SELECT DISTINCT d
+                            FROM unnest(dependence_chain.dependents || EXCLUDED.dependents) AS d
+                        )
+                    )
+                    ,
+                    schedule_priority = GREATEST(
+                        dependence_chain.schedule_priority,
+                        EXCLUDED.schedule_priority
+                    )
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
@@ -809,6 +909,7 @@ impl Database {
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,
+                i16::from(schedule_priority),
             )
             .execute(tx.deref_mut())
             .await?;

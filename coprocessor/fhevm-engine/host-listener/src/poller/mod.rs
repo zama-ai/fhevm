@@ -9,18 +9,17 @@ use alloy::providers::ProviderBuilder;
 use alloy::rpc::types::Log;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{anyhow, Context, Result};
-use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::cmd::block_history::BlockSummary;
-use crate::database::ingest::{ingest_block_logs, BlockLogs};
+use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
 use crate::poller::http_client::HttpChainClient;
@@ -71,7 +70,6 @@ pub struct PollerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub database_url: DatabaseURL,
-    pub coprocessor_api_key: Uuid,
     pub finality_lag: u64,
     pub batch_size: u64,
     pub poll_interval: Duration,
@@ -87,15 +85,10 @@ pub struct PollerConfig {
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
+    pub dependent_ops_max_per_chain: u32,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
-    if !config.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            warn!(error = %err, "Failed to setup OTLP");
-        }
-    }
-
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
 
@@ -118,7 +111,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     )?;
 
     let chain_id = match client.chain_id().await {
-        Ok(id) => id,
+        Ok(id) => ChainId::try_from(id)
+            .context("chain id from provider is out of range")?,
         Err(err) => {
             error!(
                 error = %err,
@@ -135,37 +129,28 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
     let mut db = Database::new(
         &config.database_url,
-        &config.coprocessor_api_key,
+        chain_id,
         config.dependence_cache_size,
     )
     .await?;
-
-    if chain_id != db.chain_id {
-        error!(
-            chain_id_blockchain = ?chain_id,
-            chain_id_db = ?db.chain_id,
-            tenant_id = ?db.tenant_id,
-            coprocessor_api_key = ?config.coprocessor_api_key,
-            "Chain ID mismatch with database",
-        );
-        return Err(anyhow!(
-            "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
-            chain_id,
-            db.chain_id,
-            db.tenant_id,
-            config.coprocessor_api_key
-        ));
+    if config.dependent_ops_max_per_chain == 0 {
+        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
     }
 
-    let initial_anchor =
-        db.poller_get_last_caught_up_block(chain_id as i64).await?;
+    let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
     let mut last_caught_up_block = match initial_anchor {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
         None => {
             let initial = db.read_last_valid_block().await.unwrap_or(0);
-            db.poller_set_last_caught_up_block(chain_id as i64, initial)
+            db.poller_set_last_caught_up_block(chain_id, initial)
                 .await?;
             db.tick.update();
             u64::try_from(initial)
@@ -193,7 +178,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     });
 
     info!(
-        chain_id = chain_id,
+        chain_id = %chain_id,
         last_caught_up_block = last_caught_up_block,
         finality_lag = config.finality_lag,
         batch_size = config.batch_size,
@@ -229,7 +214,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let safe_tip = latest.saturating_sub(config.finality_lag);
         if safe_tip <= last_caught_up_block {
             info!(
-                chain_id = chain_id,
+                chain_id = %chain_id,
                 latest_block = latest,
                 safe_tip = safe_tip,
                 last_caught_up_block = last_caught_up_block,
@@ -289,6 +274,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 catchup: true,
             };
 
+            let ingest_options = IngestOptions {
+                dependence_by_connexity: config.dependence_by_connexity,
+                dependence_cross_block: config.dependence_cross_block,
+                dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+            };
             match ingest_with_retry(
                 chain_id,
                 &mut db,
@@ -296,8 +286,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 acl_address,
                 tfhe_address,
                 config.retry_interval,
-                config.dependence_by_connexity,
-                config.dependence_cross_block,
+                ingest_options,
             )
             .await
             {
@@ -326,8 +315,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         if new_anchor > last_caught_up_block {
             let anchor = i64::try_from(new_anchor)
                 .context("last_caught_up_block overflow")?;
-            db.poller_set_last_caught_up_block(chain_id as i64, anchor)
-                .await?;
+            db.poller_set_last_caught_up_block(chain_id, anchor).await?;
             db.tick.update();
             last_caught_up_block = new_anchor;
         }
@@ -345,7 +333,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
 
         info!(
-            chain_id = chain_id,
+            chain_id = %chain_id,
             latest_block = latest,
             safe_tip = safe_tip,
             last_caught_up_block_before = new_anchor - processed_blocks,
@@ -363,29 +351,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 async fn ingest_with_retry(
-    chain_id: u64,
+    chain_id: ChainId,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
     retry_interval: Duration,
-    dependency_by_connexity: bool,
-    dependency_cross_block: bool,
+    options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     loop {
-        match ingest_block_logs(
-            chain_id,
-            db,
-            block_logs,
-            &acl,
-            &tfhe,
-            dependency_by_connexity,
-            dependency_cross_block,
-        )
-        .await
+        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe, options)
+            .await
         {
             Ok(_) => return Ok(errors),
             Err(err) => {

@@ -2,6 +2,7 @@ import { expect } from 'chai';
 
 import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
+import { initializeHCULimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
@@ -16,6 +17,14 @@ describe('EncryptedERC20:HCU', function () {
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
     this.instances = await createInstances(this.signers);
+    this.hcuLimit = await initializeHCULimit();
+  });
+
+  afterEach(async function () {
+    if (await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress)) {
+      const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+      await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+    }
   });
 
   it('should transfer tokens between two users', async function () {
@@ -85,5 +94,46 @@ describe('EncryptedERC20:HCU', function () {
 
     // Le euint64 (149000) + And ebool (25000) + Select euint64 (55000) + Sub euint64 (162000)
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
+  });
+
+  it('should account FHE operations in block HCU meter', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    const receipt = await tx.wait();
+    expect(receipt?.status).to.eq(1);
+
+    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
+    expect(usedHCU).to.be.greaterThan(0n);
+  });
+
+  it('should bypass block HCU meter for whitelisted contract', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    const receipt = await tx.wait();
+    expect(receipt?.status).to.eq(1);
+
+    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
+    expect(usedHCU).to.eq(0n);
   });
 });

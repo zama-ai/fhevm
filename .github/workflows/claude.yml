@@ -1,10 +1,10 @@
 name: claude-review
 
-# Triggered by: @claude mention in PR comments (e.g., "@claude review this function")
+# Triggered by: @claude mention in PR comments (e.g., "@claude /pr-review this function")
 #
 # How prompt extraction works:
 # The action's `extractUserRequest` function automatically extracts text AFTER "@claude".
-# Example: "@claude review auth" → "review auth"
+# Example: "@claude /pr-review auth" → "/pr-review auth"
 #
 # See: https://github.com/anthropics/claude-code-action/blob/main/src/utils/extract-user-request.ts
 #
@@ -149,7 +149,7 @@ jobs:
           ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
+        uses: anthropics/claude-code-action@b433f16b30d54063fd3bab6b12f46f3da00e41b6 # 2026-02-10
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "/tmp/zama-marketplace"

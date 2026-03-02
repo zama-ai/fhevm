@@ -15,6 +15,7 @@ use sqlx::{
     Pool, Postgres, Row,
     postgres::{PgArguments, PgRow},
     query::Query,
+    types::chrono::{DateTime, Utc},
 };
 use std::fmt::Display;
 use tracing::{info, warn};
@@ -26,6 +27,7 @@ pub struct GatewayEvent {
     pub tx_hash: Option<FixedBytes<32>>,
     pub already_sent: bool,
     pub error_counter: i16,
+    pub created_at: DateTime<Utc>,
     pub otlp_context: PropagationContext,
 }
 
@@ -40,6 +42,7 @@ impl GatewayEvent {
             tx_hash,
             already_sent: false,
             error_counter: 0,
+            created_at: Utc::now(),
             otlp_context,
         }
     }
@@ -122,6 +125,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -149,6 +153,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -169,6 +174,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
 
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -188,6 +194,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
 
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -208,6 +215,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
 
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -224,6 +232,7 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
 
         already_sent: false,
         error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -237,7 +246,6 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     });
     Ok(GatewayEvent {
         kind,
-
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
             .ok()
@@ -245,6 +253,7 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
 
         already_sent: false,
         error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }

@@ -9,7 +9,7 @@ pub static RERAND_LATENCY_BATCH_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|
     register_histogram(
         RERAND_LATENCY_BATCH_HISTOGRAM_CONF.get(),
         "coprocessor_rerand_batch_latency_seconds",
-        "Re-randomization latencies per transaction in seconds",
+        "Re-randomization latencies per operation in seconds",
     )
 });
 

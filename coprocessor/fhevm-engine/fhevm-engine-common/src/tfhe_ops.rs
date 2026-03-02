@@ -83,7 +83,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
     };
     match output_type {
         0 => SupportedFheCiphertexts::FheBool(
-            FheBool::try_encrypt_trivial(last_byte > 0).expect("trival encrypt bool"),
+            FheBool::try_encrypt_trivial(last_byte > 0).expect("trivial encrypt bool"),
         ),
         1 => SupportedFheCiphertexts::FheUint4(
             FheUint4::try_encrypt_trivial(last_byte).expect("trivial encrypt 4"),
@@ -740,7 +740,7 @@ pub fn perform_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     _: usize,
-    // for deterministc randomness functions
+    // for deterministic randomness functions
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     perform_fhe_operation_impl(fhe_operation_int, input_operands)
 }
@@ -750,7 +750,7 @@ pub fn perform_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     gpu_idx: usize,
-    // for deterministc randomness functions
+    // for deterministic randomness functions
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
 
@@ -767,7 +767,7 @@ pub fn perform_fhe_operation(
 pub fn perform_fhe_operation_impl(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
-    // for deterministc randomness functions
+    // for deterministic randomness functions
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
     match fhe_operation {

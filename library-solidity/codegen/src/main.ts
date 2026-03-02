@@ -23,7 +23,7 @@ import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
-import { generateSolidityFHELib } from './templateFHEDotSol';
+import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol';
 import { generateSolidityFheType } from './templateFheTypeDotSol';
 import { generateSolidityImplLib } from './templateImpDotSol';
 import {
@@ -147,6 +147,7 @@ export async function commandGenerateAllFiles(options: any) {
 
   const fheTypesDotSol = `${path.join(absConfig.lib.fheTypeDir, 'FheType.sol')}`;
   const implDotSol = `${path.join(absConfig.lib.outDir, 'Impl.sol')}`;
+  const ecdsaDotSol = `${path.join(absConfig.lib.outDir, 'cryptography', 'FhevmECDSA.sol')}`;
   const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
 
@@ -162,6 +163,7 @@ export async function commandGenerateAllFiles(options: any) {
   const implRelFheTypesDotSol = fromFileToFile(implDotSol, fheTypesDotSol);
   const fheRelFheTypesDotSol = fromFileToFile(fheDotSol, fheTypesDotSol);
   const fheRelImplDotSol = fromFileToFile(fheDotSol, implDotSol);
+  const fheRelEcdsaDotSol = fromFileToFile(fheDotSol, ecdsaDotSol);
 
   debugLog(`============ Config ============`);
   debugLog(`basePath:           ${absConfig.baseDir}`);
@@ -170,6 +172,7 @@ export async function commandGenerateAllFiles(options: any) {
   debugLog(`noTest:             ${absConfig.noTest}`);
   debugLog(`============= Lib =============`);
   debugLog(`libDir:             ${absConfig.lib.outDir}`);
+  debugLog(`FhevmECDSA.sol:     ${ecdsaDotSol}`);
   debugLog(`Impl.sol:           ${implDotSol}`);
   debugLog(`FHE.sol:            ${fheDotSol}`);
   debugLog(`fheTypeDir:         ${absConfig.lib.fheTypeDir}`);
@@ -197,15 +200,24 @@ export async function commandGenerateAllFiles(options: any) {
   if (config.noLib !== true) {
     const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
     const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
-    const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPE_INFOS, fheRelFheTypesDotSol, fheRelImplDotSol);
+    const fheCode = generateSolidityFHELib({
+      operators: ALL_OPERATORS,
+      fheTypes: ALL_FHE_TYPE_INFOS,
+      fheTypeDotSol: fheRelFheTypesDotSol,
+      implDotSol: fheRelImplDotSol,
+      ecdsaDotSol: fheRelEcdsaDotSol,
+    });
+    const ecdsaCode = generateFhevmECDSALib();
 
     mkDir(path.dirname(fheTypesDotSol));
     mkDir(path.dirname(implDotSol));
+    mkDir(path.dirname(ecdsaDotSol));
     mkDir(path.dirname(fheDotSol));
 
     // Generate core Solidity contract files.
     await formatAndWriteFile(`${fheTypesDotSol}`, fheTypesCode);
     await formatAndWriteFile(`${implDotSol}`, implCode);
+    await formatAndWriteFile(`${ecdsaDotSol}`, ecdsaCode);
     await formatAndWriteFile(`${fheDotSol}`, fheCode);
   } else {
     debugLog(`Skipping lib generation.`);

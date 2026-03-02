@@ -42,6 +42,7 @@ docker exec -u postgres -it fhevm-coprocessor-db-1 psql coprocessor
 ```
 cargo test
 ```
+`operators_from_events` uses the full type matrix by default. To run a lighter local matrix (up to `uint64`) set `TFHE_WORKER_EVENT_TYPE_MATRIX=local` before `cargo test`.
 
 ## Running the first working fhevm coprocessor smoke test
 
@@ -49,8 +50,8 @@ Reload database and apply schemas from scratch
 ```
 make recreate_db
 ```
-Run the server and background fhe worker
+Run the background FHE worker
 
 ```
-cargo run -- --run-server --run-bg-worker --worker-polling-interval-ms 1000
+cargo run -- --run-bg-worker --worker-polling-interval-ms 1000
 ```

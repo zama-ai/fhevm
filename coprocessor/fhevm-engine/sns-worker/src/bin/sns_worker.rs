@@ -1,5 +1,6 @@
 use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig};
 
+use fhevm_engine_common::telemetry;
 use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -19,7 +20,6 @@ fn construct_config() -> Config {
     let db_url = args.database_url.clone().unwrap_or_default();
 
     Config {
-        tenant_api_key: args.tenant_api_key,
         service_name: args.service_name,
         metrics: SNSMetricsConfig {
             addr: args.metrics_addr,
@@ -65,14 +65,11 @@ async fn main() {
     let config: Config = construct_config();
     let parent = CancellationToken::new();
 
-    tracing_subscriber::fmt()
-        .json()
-        .with_target(false) // drop "target" field so the logs are not too verbose. Instead, span names are used.
-        .with_current_span(true) // keep "span"
-        .with_span_list(false) // drop "spans"
-        .with_level(true)
-        .with_max_level(config.log_level)
-        .init();
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        config.log_level,
+        &config.service_name,
+        "otlp-layer",
+    );
 
     // Handle SIGINIT signals
     handle_sigint(parent.clone());

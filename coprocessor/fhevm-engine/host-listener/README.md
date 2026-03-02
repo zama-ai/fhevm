@@ -33,6 +33,48 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
+### Dependent ops throttling (optional)
+
+`--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).
+
+Current behavior:
+- Count is **per ingest pass** (block-scoped in normal flow).
+- Count unit is **unweighted**: `+1` for each newly inserted TFHE op.
+- Slow-lane threshold is evaluated on split-dependency closures (connected dcids),
+  then applied to all chains in the over-cap closure.
+- `is_allowed` is **not** part of the counter (a non-allowed op can still be required producer work).
+- It is **not** dependency depth and **not** cumulative across past blocks.
+
+If a closure exceeds the cap in that ingest pass, host-listener marks its chains slow by
+setting `dependence_chain.schedule_priority = 1` (monotonic via `GREATEST` on
+upsert). tfhe-worker picks fast first (`0`) and processes slow when fast is empty.
+
+Default tuning on testnet: start at `64`, then adjust from metrics/logs:
+`rate(host_listener_slow_lane_marked_chains_total[5m])`, completion throughput,
+and backlog slope.
+
+### Testnet incident runbook (slow lane)
+
+Use only when slow lane is likely the cause (do not disable blindly):
+- `rate(host_listener_slow_lane_marked_chains_total[5m])` sustained high,
+- completion throughput flat/low,
+- tfhe-worker shows repeated no-progress/fallback,
+- no DB/RPC/host-listener outage explains the stall.
+
+If all gates hold, set `--dependent-ops-max-per-chain=0` in Argo for all host-listener types (`main`, `poller`, `catchup`) and roll out together.
+Then continue COP-RB01 checks and reassess recovery.
+
+### Local stack notes
+
+Quick local validation:
+```bash
+cd coprocessor/fhevm-engine
+cargo test -p host-listener --test host_listener_integration_tests \
+  test_slow_lane_threshold_matrix_locally \
+  test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally \
+  test_slow_lane_off_mode_promotes_all_chains_on_startup_locally -- --nocapture
+```
+
 ## Events in FHEVM
 
 ### Blockchain Events

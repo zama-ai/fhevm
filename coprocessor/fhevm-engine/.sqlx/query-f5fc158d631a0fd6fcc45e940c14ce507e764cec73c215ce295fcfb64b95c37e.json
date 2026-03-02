@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH uploaded_ct128 AS (\n            SELECT c.handle\n            FROM ciphertexts128 c\n            JOIN ciphertext_digest d\n            ON d.handle = c.handle\n            WHERE d.ciphertext128 IS NOT NULL\n            FOR UPDATE OF c SKIP LOCKED\n            LIMIT $1\n        )\n\n        DELETE FROM ciphertexts128 c\n        USING uploaded_ct128 r\n        WHERE c.handle = r.handle;\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5fc158d631a0fd6fcc45e940c14ce507e764cec73c215ce295fcfb64b95c37e"
+}

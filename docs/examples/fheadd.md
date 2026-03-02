@@ -46,11 +46,11 @@ contract FHEAdd is ZamaEthereumConfig {
     // It does not matter if the contract caller (`msg.sender`) has FHE permission or not.
     _a_plus_b = FHE.add(_a, _b);
 
-    // At this point the contract ifself (`address(this)`) has been granted ephemeral FHE permission
+    // At this point the contract itself (`address(this)`) has been granted ephemeral FHE permission
     // over `_a_plus_b`. This FHE permission will be revoked when the function exits.
     //
     // Now, to make sure `_a_plus_b` can be decrypted by the contract caller (`msg.sender`),
-    // we need to grant permanent FHE permissions to both the contract ifself (`address(this)`)
+    // we need to grant permanent FHE permissions to both the contract itself (`address(this)`)
     // and the contract caller (`msg.sender`)
     FHE.allowThis(_a_plus_b);
     FHE.allow(_a_plus_b, msg.sender);

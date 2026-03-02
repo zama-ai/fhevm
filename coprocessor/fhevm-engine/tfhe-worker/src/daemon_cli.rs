@@ -7,10 +7,6 @@ use uuid::Uuid;
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    /// Run the API server
-    #[arg(long)]
-    pub run_server: bool,
-
     /// Run the background worker
     #[arg(long)]
     pub run_bg_worker: bool,
@@ -23,14 +19,6 @@ pub struct Args {
     #[arg(long)]
     pub generate_fhe_keys: bool,
 
-    /// Server maximum ciphertexts to schedule per batch
-    #[arg(long, default_value_t = 5000)]
-    pub server_maximum_ciphertexts_to_schedule: usize,
-
-    /// Server maximum ciphertexts to serve on get_cihpertexts endpoint
-    #[arg(long, default_value_t = 5000)]
-    pub server_maximum_ciphertexts_to_get: usize,
-
     /// Work items batch size
     #[arg(long, default_value_t = 100)]
     pub work_items_batch_size: i32,
@@ -39,17 +27,9 @@ pub struct Args {
     #[arg(long, default_value_t = 20)]
     pub dependence_chains_per_batch: i32,
 
-    /// Tenant key cache size
-    #[arg(long, default_value_t = 32)]
-    pub tenant_key_cache_size: i32,
-
-    /// Maximum compact inputs to upload
-    #[arg(long, default_value_t = 10)]
-    pub maximum_compact_inputs_upload: usize,
-
-    /// Maximum compact inputs to upload
-    #[arg(long, default_value_t = 255)]
-    pub maximum_handles_per_input: u8,
+    /// Key cache size
+    #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
+    pub key_cache_size: usize,
 
     /// Coprocessor FHE processing threads
     #[arg(long, default_value_t = 32)]
@@ -63,10 +43,6 @@ pub struct Args {
     #[arg(long, default_value_t = 10)]
     pub pg_pool_max_connections: u32,
 
-    /// Server socket address
-    #[arg(long, default_value = "127.0.0.1:50051")]
-    pub server_addr: String,
-
     /// Prometheus metrics server address
     #[arg(long, default_value = "0.0.0.0:9100")]
     pub metrics_addr: Option<String>,
@@ -74,11 +50,6 @@ pub struct Args {
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
     pub database_url: Option<DatabaseURL>,
-
-    /// Coprocessor private key file path.
-    /// Private key is in plain text 0x1234.. format.
-    #[arg(long, default_value = "./coprocessor.key")]
-    pub coprocessor_private_key: String,
 
     /// tfhe-worker service name in OTLP traces
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "tfhe-worker")]
@@ -120,6 +91,10 @@ pub struct Args {
     /// dependence chain
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 2)]
     pub dcid_max_no_progress_cycles: u32,
+
+    /// Number of no-progress DCID releases before ignoring dependence counter
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 100)]
+    pub dcid_ignore_dependency_count_threshold: u32,
 
     /// Log level for the application
     #[arg(

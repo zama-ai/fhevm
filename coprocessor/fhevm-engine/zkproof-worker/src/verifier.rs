@@ -1,19 +1,19 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::crs::{Crs, CrsCache};
+use fhevm_engine_common::db_keys::DbKey;
+use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry::{self};
-use fhevm_engine_common::tenant_keys::TfheTenantKeys;
-use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
-use hex::encode;
-use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
-use std::num::NonZero;
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
@@ -30,9 +30,10 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing::{debug, error, info};
 
-const MAX_CACHED_TENANT_KEYS: usize = 100;
+pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
@@ -81,12 +82,11 @@ impl HealthCheckService for ZkProofService {
 }
 
 impl ZkProofService {
+    #[tracing::instrument(name = "init_service", skip_all)]
     pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-        let t = telemetry::tracer("init_service", &None);
-        let _s = t.child_span("pg_connect");
 
         let Some(pool_mngr) = PostgresPoolManager::connect_pool(
             token.child_token(),
@@ -128,31 +128,41 @@ pub async fn execute_verify_proofs_loop(
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, conf = %conf, "Starting with config");
 
-    // Tenants key cache is shared amongst all workers
-    let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
-        NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
-    )));
+    // DB key cache is shared amongst all workers
+    let db_key_cache =
+        DbKeyCache::new(MAX_CACHED_KEYS).map_err(|err| ExecutionError::Other(err.into()))?;
 
-    let t = telemetry::tracer("init_workers", &None);
-    let mut s = t.child_span("start_workers");
-    telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
+    let host_chain_cache = Arc::new(
+        HostChainsCache::load(&pool_mngr.pool())
+            .await
+            .map_err(|err| ExecutionError::Other(err.into()))?,
+    );
+
     let mut task_set = JoinSet::new();
 
     for index in 0..conf.worker_thread_count {
         let conf = conf.clone();
-        let tenant_key_cache = tenant_key_cache.clone();
+        let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
-
+        let host_chain_cache = host_chain_cache.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
-            let tenant_key_cache = tenant_key_cache.clone();
+            let db_key_cache = db_key_cache.clone();
+            let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
             async move {
-                execute_worker(conf, pool, ct, tenant_key_cache, last_active_at)
-                    .await
-                    .map_err(ServiceError::from)
+                execute_worker(
+                    conf,
+                    pool,
+                    ct,
+                    db_key_cache,
+                    host_chain_cache,
+                    last_active_at,
+                )
+                .await
+                .map_err(ServiceError::from)
             }
         };
 
@@ -160,8 +170,6 @@ pub async fn execute_verify_proofs_loop(
             .spawn_join_set_with_db_retry(op, &mut task_set, format!("worker_{}", index).as_str())
             .await;
     }
-
-    telemetry::end_span(s);
 
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
@@ -177,7 +185,8 @@ async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
     token: CancellationToken,
-    tenant_key_cache: Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    db_key_cache: DbKeyCache,
+    host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
@@ -187,10 +196,33 @@ async fn execute_worker(
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
+    let latest_key = Arc::new(
+        db_key_cache
+            .fetch_latest(&pool)
+            .await
+            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
+    );
+
+    let latest_crs = Arc::new(
+        CrsCache::load(&pool)
+            .await
+            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?
+            .get_latest()
+            .cloned()
+            .ok_or_else(|| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
+    );
+
     loop {
         update_last_active(last_active_at.clone()).await;
 
-        execute_verify_proof_routine(&pool, &tenant_key_cache, &conf).await?;
+        execute_verify_proof_routine(
+            &pool,
+            latest_key.clone(),
+            latest_crs.clone(),
+            host_chain_cache.as_ref(),
+            &conf,
+        )
+        .await?;
         let count = get_remaining_tasks(&pool).await?;
         if count > 0 {
             info!({ count }, "zkproof requests available");
@@ -222,12 +254,14 @@ async fn execute_worker(
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
-    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    db_key: Arc<DbKey>,
+    crs: Arc<Crs>,
+    host_chain_cache: &HostChainsCache,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, host_chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -239,7 +273,9 @@ async fn execute_verify_proof_routine(
         let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let chain_id: i64 = row.get("chain_id");
+        let host_chain_id_raw: i64 = row.get("host_chain_id");
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
         let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
@@ -247,80 +283,98 @@ async fn execute_verify_proof_routine(
         info!(
             message = "Process zk-verify request",
             request_id,
-            chain_id,
+            %host_chain_id,
             user_address,
             contract_address,
             input_len = format!("{}", input.len()),
         );
 
-        let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        let host_chain = host_chain_cache
+            .get_chain(host_chain_id)
+            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
-        let s = t.child_span("fetch_keys");
-        let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
-            .await
-            .map_err(|err| ExecutionError::ServerKeysNotFound(err.to_string()))?;
-        telemetry::end_span(s);
+        let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let tenant_id = keys.tenant_id;
-        info!(message = "Keys retrieved", request_id, chain_id);
-
+        let verify_span =
+            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
+        fhevm_engine_common::telemetry::record_short_hex_if_some(
+            &verify_span,
+            "txn_id",
+            transaction_id.as_deref(),
+        );
         let res = tokio::task::spawn_blocking(move || {
+            let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
                 contract_address,
                 user_address,
-                chain_id: keys.chain_id,
-                acl_contract_address: keys.acl_contract_address.clone(),
+                chain_id: host_chain_id,
+                acl_contract_address,
             };
 
-            verify_proof(request_id, &keys, &aux_data, &input, t)
+            verify_proof(request_id, &db_key, &crs, &aux_data, &input)
         })
         .await?;
 
-        let t = telemetry::tracer("db_insert", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        let db_insert_span = tracing::info_span!(
+            "db_insert",
+            request_id,
+            txn_id = tracing::field::Empty,
+            valid = tracing::field::Empty,
+            count = tracing::field::Empty
+        );
+        fhevm_engine_common::telemetry::record_short_hex_if_some(
+            &db_insert_span,
+            "txn_id",
+            transaction_id.as_deref(),
+        );
 
-        let mut verified = false;
-        let mut handles_bytes = vec![];
-        match res.as_ref() {
-            Ok((cts, blob_hash)) => {
-                info!(
-                    message = "Proof verification successful",
-                    request_id,
-                    cts = format!("{}", cts.len()),
-                );
+        async {
+            let mut verified = false;
+            let mut handles_bytes = vec![];
+            match res.as_ref() {
+                Ok((cts, blob_hash)) => {
+                    info!(
+                        message = "Proof verification successful",
+                        request_id,
+                        cts = format!("{}", cts.len()),
+                    );
 
-                handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
-                    acc.extend_from_slice(ct.handle.as_ref());
-                    acc
-                });
-                verified = true;
-                let count = cts.len();
-                insert_ciphertexts(&mut txn, tenant_id, cts, blob_hash).await?;
+                    handles_bytes = cts.iter().fold(Vec::new(), |mut acc, ct| {
+                        acc.extend_from_slice(ct.handle.as_ref());
+                        acc
+                    });
+                    verified = true;
+                    let count = cts.len();
+                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    tracing::Span::current().record("count", count);
 
-                info!(message = "Ciphertexts inserted", request_id);
-                t.set_attribute("count", count.to_string());
+                    info!(message = "Ciphertexts inserted", request_id, count);
+                }
+                Err(err) => {
+                    error!(
+                        message = "Failed to verify proof",
+                        request_id,
+                        err = err.to_string()
+                    );
+                }
             }
-            Err(err) => {
-                error!(
-                    message = "Failed to verify proof",
-                    request_id,
-                    err = err.to_string()
-                );
-            }
+
+            tracing::Span::current().record("valid", verified);
+
+            // Mark as verified=true/false and set handles, if computed
+            sqlx::query(
+                "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
+                WHERE zk_proof_id = $3",
+            )
+            .bind(handles_bytes)
+            .bind(verified)
+            .bind(request_id)
+            .execute(&mut *txn)
+            .await?;
+
+            Ok::<_, ExecutionError>(())
         }
-
-        t.set_attribute("valid", verified.to_string());
-
-        // Mark as verified=true/false and set handles, if computed
-        sqlx::query(
-            "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
-            WHERE zk_proof_id = $3",
-        )
-        .bind(handles_bytes)
-        .bind(verified)
-        .bind(request_id)
-        .execute(&mut *txn)
+        .instrument(db_insert_span)
         .await?;
 
         // Notify
@@ -346,45 +400,22 @@ async fn execute_verify_proof_routine(
 
 pub(crate) fn verify_proof(
     request_id: i64,
-    keys: &FetchTenantKeyResult,
+    key: &DbKey,
+    crs: &Crs,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-    span: telemetry::OtelTracer,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
-    set_server_key(keys.server_key.clone());
+    set_server_key(key.sks.clone());
 
     // Step 1: Deserialize and verify the proof
-    let mut s_verify = span.child_span("verify_proof");
-    let verified_list = match verify_proof_only(request_id, raw_ct, keys, aux_data) {
-        Ok(list) => {
-            telemetry::attribute(&mut s_verify, "list_len", list.len().to_string());
-            telemetry::end_span(s_verify);
-            info!(message = "Proof verified successfully", request_id);
-            list
-        }
-        Err(err) => {
-            telemetry::end_span_with_err(s_verify, err.to_string());
-            return Err(err);
-        }
-    };
+    let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
+        .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 2: Expand the verified ciphertext list
-    let mut s_expand = span.child_span("expand_ciphertext_list");
-    let mut cts = match expand_verified_list(request_id, &verified_list) {
-        Ok(cts) => {
-            telemetry::attribute(&mut s_expand, "count", cts.len().to_string());
-            telemetry::end_span(s_expand);
-            info!(message = "Ciphertext list expanded", request_id);
-            cts
-        }
-        Err(err) => {
-            telemetry::end_span_with_err(s_expand, err.to_string());
-            return Err(err);
-        }
-    };
+    let mut cts = expand_verified_list(request_id, &verified_list)
+        .inspect_err(telemetry::set_current_span_error)?;
 
-    let _s = span.child_span("create_ciphertext");
-
+    // Step 3: Create ciphertext handles
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
@@ -393,29 +424,33 @@ pub(crate) fn verify_proof(
     let cts = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data, &span))
-        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
+        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
+        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()
+        .inspect_err(telemetry::set_current_span_error)?;
 
     Ok((cts, blob_hash))
 }
 
+#[tracing::instrument(name = "verify_proof", skip_all, fields(list_len = tracing::field::Empty))]
 fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
-    keys: &FetchTenantKeyResult,
+    key: &DbKey,
+    crs: &Crs,
     aux_data: &auxiliary::ZkData,
 ) -> Result<tfhe::ProvenCompactCiphertextList, ExecutionError> {
     let aux_data_bytes = aux_data
         .assemble()
-        .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
+        .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
+        .inspect_err(telemetry::set_current_span_error)?;
 
     let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
         &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            keys.pks.parameters(),
-            &keys.public_params,
-        ),
-    )?;
+            key.pks.parameters(), &crs.crs,
+        ))
+        .map_err(ExecutionError::from)
+        .inspect_err(telemetry::set_current_span_error)?;
 
     info!(
         message = "Input list deserialized",
@@ -430,22 +465,26 @@ fn verify_proof_only(
     }
 
     if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
-        return Err(ExecutionError::TooManyInputs(the_list.len()));
+        let err = ExecutionError::TooManyInputs(the_list.len());
+        telemetry::set_current_span_error(&err);
+        return Err(err);
     }
 
     // Verify the ZK proof
-    let verification_result = the_list.verify(&keys.public_params, &keys.pks, &aux_data_bytes);
+    let verification_result = the_list.verify(&crs.crs, &key.pks, &aux_data_bytes);
 
     if verification_result.is_invalid() {
-        return Err(ExecutionError::InvalidProof(
-            request_id,
-            "ZK proof verification failed".to_string(),
-        ));
+        let err =
+            ExecutionError::InvalidProof(request_id, "ZK proof verification failed".to_string());
+        telemetry::set_current_span_error(&err);
+        return Err(err);
     }
 
+    tracing::Span::current().record("list_len", the_list.len());
     Ok(the_list)
 }
 
+#[tracing::instrument(name = "expand_ciphertext_list", skip_all, fields(count = tracing::field::Empty))]
 fn expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
@@ -456,27 +495,35 @@ fn expand_verified_list(
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .expand_without_verification()
-        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
+        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
+        .inspect_err(telemetry::set_current_span_error)?;
 
-    Ok(extract_ct_list(&expanded)?)
+    let cts = extract_ct_list(&expanded)
+        .map_err(ExecutionError::from)
+        .inspect_err(telemetry::set_current_span_error)?;
+    tracing::Span::current().record("count", cts.len());
+    Ok(cts)
 }
 
 /// Creates a ciphertext
+#[tracing::instrument(skip_all, fields(
+    ct_type = tracing::field::Empty,
+    ct_idx = ct_idx,
+    chain_id = %aux_data.chain_id,
+))]
 fn create_ciphertext(
     request_id: i64,
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-    span: &telemetry::OtelTracer,
 ) -> Result<Ciphertext, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
         return Err(ExecutionError::TooManyInputs(ct_idx));
     }
 
-    let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
-        .to_owned()
-        .to_be_bytes();
+    let chain_id_bytes: [u8; 32] =
+        alloy_primitives::U256::from(aux_data.chain_id.as_u64()).to_be_bytes();
     let mut handle_hash = Keccak256::new();
     handle_hash.update(HANDLE_HASH_DOMAIN_SEPARATOR);
     handle_hash.update(blob_hash);
@@ -493,32 +540,26 @@ fn create_ciphertext(
     // Add the full 256bit hash as re-randomization metadata, NOT the
     // truncated hash of the handle
     the_ct.add_re_randomization_metadata(&handle);
-    let (serialized_type, compressed) = the_ct.compress();
+    let serialized_type = the_ct.type_num();
+    let compressed = the_ct.compress()?;
 
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
-    // TODO: change chain ID to be u64
-    handle[22..30].copy_from_slice(&(aux_data.chain_id as u64).to_be_bytes());
+    handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    let t = &mut span.child_span("create_handle");
-    telemetry::attribute(t, "request_id", request_id.to_string());
-    telemetry::attribute(t, "handle", hex::encode(handle.clone()));
-    telemetry::attribute(t, "chain_id", aux_data.chain_id.to_string());
-    telemetry::attribute(t, "ct_idx", ct_idx.to_string());
-    telemetry::attribute(t, "user_address", aux_data.user_address.clone());
-    telemetry::attribute(t, "contract_address", aux_data.user_address.clone());
-    telemetry::attribute(t, "version", current_ciphertext_version().to_string());
-    telemetry::attribute(t, "type", serialized_type.to_string());
-    telemetry::attribute(
-        t,
-        "acl_contract_address",
-        aux_data.acl_contract_address.clone(),
+    tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
+    info!(
+        request_id,
+        handle = %hex::encode(&handle),
+        user_address = %aux_data.user_address,
+        contract_address = %aux_data.contract_address,
+        version = current_ciphertext_version(),
+        acl_contract_address = %aux_data.acl_contract_address,
+        "create_handle details"
     );
-
-    info!(handle = ?encode(&handle), "Create new handle");
 
     Ok(Ciphertext {
         handle,
@@ -552,7 +593,6 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 
 pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
-    tenant_id: i32,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
@@ -560,12 +600,11 @@ pub(crate) async fn insert_ciphertexts(
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type, 
+                handle, ciphertext, ciphertext_version, ciphertext_type, 
                 input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING;
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
-            tenant_id,
             &ct.handle,
             &ct.compressed,
             ct.ct_version,

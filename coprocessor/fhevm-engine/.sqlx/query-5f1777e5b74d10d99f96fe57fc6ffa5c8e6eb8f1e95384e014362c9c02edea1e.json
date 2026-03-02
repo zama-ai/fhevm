@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id\n            FROM ciphertext_digest\n            WHERE txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND txn_limited_retries_count < $1\n            ORDER BY created_at ASC\n            LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_limited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "txn_unlimited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "5f1777e5b74d10d99f96fe57fc6ffa5c8e6eb8f1e95384e014362c9c02edea1e"
+}

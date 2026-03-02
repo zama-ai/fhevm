@@ -3,20 +3,17 @@ use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
 
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
 pub mod daemon_cli;
-mod db_queries;
 pub mod dependence_chain;
 pub mod health_check;
-pub mod server;
 
 #[cfg(test)]
 mod tests;
 pub mod tfhe_worker;
 pub mod types;
-mod utils;
 
 // separate function for testing
 pub fn start_runtime(
@@ -50,36 +47,27 @@ pub fn start_runtime(
 
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
+static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::new();
 
 pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
-        tracing_subscriber::fmt()
-            .json()
-            .with_level(true)
-            .with_max_level(args.log_level)
-            .init();
+        let otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+            args.log_level,
+            &args.service_name,
+            "otlp-layer",
+        );
+        let _ = OTEL_GUARD.set(otel_guard);
     });
 
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    if !args.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
-        }
-    }
-
     let database_url = args.database_url.clone().unwrap_or_default();
     let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();
-    if args.run_server {
-        info!(target: "async_main", "Initializing api server");
-        set.spawn(server::run_server(args.clone()));
-    }
-
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
         info!(target: "async_main", gpu_enabled,  "Initializing background worker");

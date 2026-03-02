@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./Impl.sol";
+import {FhevmECDSA} from "./cryptography/FhevmECDSA.sol";
 import {FheType} from "../contracts/shared/FheType.sol";
 
 import "encrypted-types/EncryptedTypes.sol";
@@ -16,6 +17,23 @@ interface IKMSVerifier {
         bytes memory decryptedResult,
         bytes memory decryptionProof
     ) external returns (bool);
+
+    function eip712Domain()
+        external
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        );
+
+    function getThreshold() external view returns (uint256);
+
+    function getKmsSigners() external view returns (address[] memory);
 }
 
 /**
@@ -24,6 +42,31 @@ interface IKMSVerifier {
  *          that interact with the FHEVM protocol.
  */
 library FHE {
+    /// @notice Decryption result typehash.
+    bytes32 private constant DECRYPTION_RESULT_TYPEHASH =
+        keccak256("PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)");
+
+    /// @notice EIP-712 domain  typehash.
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @notice Returned if the deserializing of the decryption proof fails.
+    error DeserializingDecryptionProofFail();
+
+    /// @notice Returned if the decryption proof is empty.
+    error EmptyDecryptionProof();
+
+    /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
+    /// @param invalidSigner Address of the invalid signer.
+    error KMSInvalidSigner(address invalidSigner);
+
+    /// @notice                 Returned if the number of signatures is inferior to the threshold.
+    /// @param numSignatures    Number of signatures.
+    error KMSSignatureThresholdNotReached(uint256 numSignatures);
+
+    /// @notice Returned if the number of signatures is equal to 0.
+    error KMSZeroSignature();
+
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
@@ -8453,6 +8496,9 @@ library FHE {
             return ebool.wrap(Impl.verify(externalEbool.unwrap(inputHandle), inputProof, FheType.Bool));
         } else {
             bytes32 inputBytes32 = externalEbool.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEbool(false);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return ebool.wrap(inputBytes32);
         }
@@ -8476,13 +8522,16 @@ library FHE {
             return euint8.wrap(Impl.verify(externalEuint8.unwrap(inputHandle), inputProof, FheType.Uint8));
         } else {
             bytes32 inputBytes32 = externalEuint8.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint8(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint8.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint8 integer.
+     * @dev Convert a plaintext value to an encrypted euint8 value.
      */
     function asEuint8(uint8 value) internal returns (euint8) {
         return euint8.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint8));
@@ -8499,13 +8548,16 @@ library FHE {
             return euint16.wrap(Impl.verify(externalEuint16.unwrap(inputHandle), inputProof, FheType.Uint16));
         } else {
             bytes32 inputBytes32 = externalEuint16.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint16(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint16.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint16 integer.
+     * @dev Convert a plaintext value to an encrypted euint16 value.
      */
     function asEuint16(uint16 value) internal returns (euint16) {
         return euint16.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint16));
@@ -8522,13 +8574,16 @@ library FHE {
             return euint32.wrap(Impl.verify(externalEuint32.unwrap(inputHandle), inputProof, FheType.Uint32));
         } else {
             bytes32 inputBytes32 = externalEuint32.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint32(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint32.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint32 integer.
+     * @dev Convert a plaintext value to an encrypted euint32 value.
      */
     function asEuint32(uint32 value) internal returns (euint32) {
         return euint32.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint32));
@@ -8545,13 +8600,16 @@ library FHE {
             return euint64.wrap(Impl.verify(externalEuint64.unwrap(inputHandle), inputProof, FheType.Uint64));
         } else {
             bytes32 inputBytes32 = externalEuint64.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint64(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint64.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint64 integer.
+     * @dev Convert a plaintext value to an encrypted euint64 value.
      */
     function asEuint64(uint64 value) internal returns (euint64) {
         return euint64.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint64));
@@ -8568,13 +8626,16 @@ library FHE {
             return euint128.wrap(Impl.verify(externalEuint128.unwrap(inputHandle), inputProof, FheType.Uint128));
         } else {
             bytes32 inputBytes32 = externalEuint128.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint128(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint128.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint128 integer.
+     * @dev Convert a plaintext value to an encrypted euint128 value.
      */
     function asEuint128(uint128 value) internal returns (euint128) {
         return euint128.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint128));
@@ -8591,13 +8652,16 @@ library FHE {
             return eaddress.wrap(Impl.verify(externalEaddress.unwrap(inputHandle), inputProof, FheType.Uint160));
         } else {
             bytes32 inputBytes32 = externalEaddress.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEaddress(address(0));
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return eaddress.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted eaddress integer.
+     * @dev Convert a plaintext value to an encrypted eaddress value.
      */
     function asEaddress(address value) internal returns (eaddress) {
         return eaddress.wrap(Impl.trivialEncrypt(uint256(uint160(value)), FheType.Uint160));
@@ -8614,13 +8678,16 @@ library FHE {
             return euint256.wrap(Impl.verify(externalEuint256.unwrap(inputHandle), inputProof, FheType.Uint256));
         } else {
             bytes32 inputBytes32 = externalEuint256.unwrap(inputHandle);
+            if (inputBytes32 == 0) {
+                return asEuint256(0);
+            }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint256.wrap(inputBytes32);
         }
     }
 
     /**
-     * @dev Convert a plaintext value to an encrypted euint256 integer.
+     * @dev Convert a plaintext value to an encrypted euint256 value.
      */
     function asEuint256(uint256 value) internal returns (euint256) {
         return euint256.wrap(Impl.trivialEncrypt(uint256(value), FheType.Uint256));
@@ -9435,6 +9502,191 @@ library FHE {
             revert InvalidKMSSignatures();
         }
         emit PublicDecryptionVerified(handlesList, abiEncodedCleartexts);
+    }
+
+    /// @notice Returns false or reverts if the KMS signatures verification against the provided handles and public decryption data
+    ///         fails. Returns true only if KMS signatures verification pass. This is the `view` variant of `checkSignatures`.
+    /// @dev **WARNING**: Prefer using `checkSignatures` (non-view) over this function whenever possible, for several reasons:
+    ///      1. **Safety** – `checkSignatures` automatically reverts when signatures are invalid, making misuse impossible.
+    ///         In contrast, `isPublicDecryptionResultValid` returns a boolean: if the caller forgets to `require` the returned
+    ///         value, invalid signatures will silently pass, leaving the contract vulnerable to forged decryption results.
+    ///      2. **Front-end integration** – `checkSignatures` emits a `PublicDecryptionVerified` event upon successful
+    ///         verification, which is critical for front-end applications that need to detect when a public decrypt result
+    ///         has been verified on-chain. This view function does not emit any event.
+    ///      3. **Gas efficiency** – `checkSignatures` leverages a transient-storage mapping to cache verification results,
+    ///         making decryption result verification cheaper.
+    ///      Use this view variant only when you explicitly need a read-only call (e.g. off-chain simulation or static call).
+    /// @param handlesList The list of handles as an array of bytes32 to check
+    /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
+    ///                             The ABI-encoded list order must match the `handlesList` order.
+    /// @param decryptionProof The KMS public decryption proof. It includes the KMS signatures, associated metadata,
+    ///                        and the context needed for verification.
+    /// @dev Reverts if any of the following conditions are met:
+    ///      - The `decryptionProof` is empty or has an invalid length.
+    ///      - The number of valid signatures is zero or less than the configured KMS signers threshold.
+    ///      - Any signature is produced by an address that is not a registered KMS signer.
+    /// @dev Returns false if there are enough signatures to reach threshold, but some recovered signer is duplicated.
+    /// @return true if the signatures verification succeeds, false or reverts otherwise.
+    function isPublicDecryptionResultValid(
+        bytes32[] memory handlesList,
+        bytes memory abiEncodedCleartexts,
+        bytes memory decryptionProof
+    ) internal view returns (bool) {
+        if (decryptionProof.length == 0) {
+            revert EmptyDecryptionProof();
+        }
+
+        /// @dev The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
+        uint256 numSigners = uint256(uint8(decryptionProof[0]));
+
+        /// @dev The extraData is the rest of the decryptionProof bytes after the numSigners + signatures.
+        uint256 extraDataOffset = 1 + 65 * numSigners;
+
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures.
+        if (decryptionProof.length < extraDataOffset) {
+            revert DeserializingDecryptionProofFail();
+        }
+
+        bytes[] memory signatures = new bytes[](numSigners);
+        for (uint256 j = 0; j < numSigners; j++) {
+            signatures[j] = new bytes(65);
+            for (uint256 i = 0; i < 65; i++) {
+                signatures[j][i] = decryptionProof[1 + 65 * j + i];
+            }
+        }
+
+        /// @dev Extract the extraData from the decryptionProof.
+        uint256 extraDataSize = decryptionProof.length - extraDataOffset;
+        bytes memory extraData = new bytes(extraDataSize);
+        for (uint i = 0; i < extraDataSize; i++) {
+            extraData[i] = decryptionProof[extraDataOffset + i];
+        }
+        bytes32 digest = _hashDecryptionResult(handlesList, abiEncodedCleartexts, extraData);
+
+        return _verifySignaturesDigest(digest, signatures);
+    }
+
+    /*
+     * @notice                  Hashes the decryption result.
+     * @param ctHandles         The list of handles as an array of bytes32 to check.
+     * @param decryptedResult   ABI-encoded list of decrypted values
+     * @param extraData         Extra data.
+     * @return hashTypedData    Hash typed data.
+     */
+    function _hashDecryptionResult(
+        bytes32[] memory ctHandles,
+        bytes memory decryptedResult,
+        bytes memory extraData
+    ) private view returns (bytes32) {
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 gatewayCahinId,
+            address verifyingContract,
+            ,
+
+        ) = IKMSVerifier($.KMSVerifierAddress).eip712Domain();
+
+        bytes32 domainHash = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                gatewayCahinId,
+                verifyingContract
+            )
+        );
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                DECRYPTION_RESULT_TYPEHASH,
+                keccak256(abi.encodePacked(ctHandles)),
+                keccak256(decryptedResult),
+                keccak256(abi.encodePacked(extraData))
+            )
+        );
+
+        bytes32 typedDataHash;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, hex"19_01")
+            mstore(add(ptr, 0x02), domainHash)
+            mstore(add(ptr, 0x22), structHash)
+            typedDataHash := keccak256(ptr, 0x42)
+        }
+
+        return typedDataHash;
+    }
+
+    /**
+     * @notice              View function that verifies multiple signatures for a given message at a certain threshold.
+     * @param digest        The hash of the message that was signed by all signers.
+     * @param signatures    An array of signatures to verify.
+     * @return isVerified   true if enough provided signatures are valid, false otherwise.
+     */
+    function _verifySignaturesDigest(bytes32 digest, bytes[] memory signatures) private view returns (bool) {
+        uint256 numSignatures = signatures.length;
+
+        if (numSignatures == 0) {
+            revert KMSZeroSignature();
+        }
+
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+
+        uint256 threshold = IKMSVerifier($.KMSVerifierAddress).getThreshold();
+
+        if (numSignatures < threshold) {
+            revert KMSSignatureThresholdNotReached(numSignatures);
+        }
+
+        address[] memory KMSSigners = IKMSVerifier($.KMSVerifierAddress).getKmsSigners();
+
+        address[] memory recoveredSigners = new address[](numSignatures);
+        uint256 uniqueValidCount;
+        for (uint256 i = 0; i < numSignatures; i++) {
+            address signerRecovered = FhevmECDSA.recover(digest, signatures[i]);
+            if (!_isSigner(signerRecovered, KMSSigners)) {
+                revert KMSInvalidSigner(signerRecovered);
+            }
+            if (!_isSigner(signerRecovered, recoveredSigners)) {
+                recoveredSigners[uniqueValidCount] = signerRecovered;
+                uniqueValidCount++;
+            }
+            if (uniqueValidCount >= threshold) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice              Checks whether a given address is present in an array of signers.
+     * @param signer        The address to look for.
+     * @param signersArray  The array of signer addresses to search.
+     * @return isSigner     true if the address is found, false otherwise.
+     */
+    function _isSigner(address signer, address[] memory signersArray) private pure returns (bool) {
+        uint256 signersArrayLength = signersArray.length;
+        for (uint256 i = 0; i < signersArrayLength; i++) {
+            if (signer == signersArray[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice          Recovers the signer's address from a `signature` and a `message` digest.
+     * @dev             It utilizes ECDSA for actual address recovery. It does not support contract signature (EIP-1271).
+     * @param message   The hash of the message that was signed.
+     * @param signature The signature to verify.
+     * @return signer   The address that supposedly signed the message.
+     */
+    function _recoverSigner(bytes32 message, bytes memory signature) private pure returns (address) {
+        address signerRecovered = FhevmECDSA.recover(message, signature);
+        return signerRecovered;
     }
 
     /// @notice Verifies KMS signatures against the provided handles and public decryption data.

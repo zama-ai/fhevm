@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id, host_chain_id, key_id_gw\n        FROM ciphertext_digest \n        WHERE ciphertext IS NULL OR ciphertext128 IS NULL\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c9baf1542b684063be66cae40108e096dc603a296fc403c52bd58cb6c8e7071e"
+}
