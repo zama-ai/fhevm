@@ -396,14 +396,15 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    let handle = node.result_handle.clone();
-                    let value = result.1.map(|v| TaskResult {
-                        ct_type: v.0,
-                        compressed_ct: v.1,
-                        is_allowed: node.is_allowed,
-                        transaction_id: tid.clone(),
-                    });
-                    res.entry(handle).or_insert(value);
+                    res.insert(
+                        node.result_handle.clone(),
+                        result.1.map(|v| TaskResult {
+                            ct_type: v.0,
+                            compressed_ct: v.1,
+                            is_allowed: node.is_allowed,
+                            transaction_id: tid.clone(),
+                        }),
+                    );
                 }
                 Err(e) => {
                     let Some(node) = dfg.graph.node_weight(*nidx) else {
