@@ -1,9 +1,18 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
+// The ciphertext payload of a computation result.
+#[derive(Clone)]
+pub enum TaskResultCiphertext {
+    // Allowed result: only the compressed form is retained in memory
+    Compressed { ct_type: i16, bytes: Vec<u8> },
+    // Non-allowed (intermediate) result: decompressed form used as it
+    // never goes to DB
+    Decompressed(SupportedFheCiphertexts),
+}
+
 pub struct TaskResult {
-    pub ct: SupportedFheCiphertexts,
-    pub compressed_ct: Option<(i16, Vec<u8>)>,
+    pub ct: TaskResultCiphertext,
     pub is_allowed: bool,
     pub transaction_id: Handle,
 }

@@ -507,7 +507,17 @@ impl DFComponentGraph {
                             .node_weight_mut(dependent_tx_index)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                            *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
+                            match &result.ct {
+                                TaskResultCiphertext::Decompressed(ct) => {
+                                    *v = Some(DFGTxInput::Value((ct.clone(), result.is_allowed)));
+                                }
+                                TaskResultCiphertext::Compressed { ct_type, bytes } => {
+                                    *v = Some(DFGTxInput::Compressed((
+                                        (*ct_type, bytes.clone()),
+                                        result.is_allowed,
+                                    )));
+                                }
+                            }
                         });
                     }
                 } else {
@@ -526,13 +536,15 @@ impl DFComponentGraph {
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.and_then(|rok| {
-                            rok.compressed_ct
-                                .map(|cct| (cct.0, cct.1))
-                                .ok_or_else(|| {
-                                    error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                                    SchedulerError::SchedulerError.into()
-                                })
+                        compressed_ct: result.and_then(|rok| match rok.ct {
+                            TaskResultCiphertext::Compressed { ct_type, bytes } => {
+                                Ok((ct_type, bytes))
+                            }
+                            TaskResultCiphertext::Decompressed(_) => {
+                                error!(target: "scheduler", {handle = ?hex::encode(handle) },
+                                       "Expected compressed ciphertext in allowed task result");
+                                Err(SchedulerError::SchedulerError.into())
+                            }
                         }),
                     });
                 }
@@ -640,15 +652,16 @@ impl std::fmt::Debug for OpNode {
 impl OpNode {
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
-            if !matches!(i, DFGTaskInput::Value(_)) {
-                let DFGTaskInput::Dependence(d) = i else {
-                    return false;
-                };
-                let Some(Some(DFGTxInput::Value((val, _)))) = ct_map.get(d) else {
-                    return false;
-                };
-                *i = DFGTaskInput::Value(val.clone());
+            if matches!(i, DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_)) {
+                continue;
             }
+            let DFGTaskInput::Dependence(d) = i else {
+                return false;
+            };
+            let Some(Some(DFGTxInput::Value((val, _)))) = ct_map.get(d) else {
+                return false;
+            };
+            *i = DFGTaskInput::Value(val.clone());
         }
         true
     }

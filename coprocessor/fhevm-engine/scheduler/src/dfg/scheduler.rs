@@ -322,7 +322,17 @@ fn execute_partition(
                     }
                     continue 'tx;
                 };
-                *i = Some(DFGTxInput::Value((ct.ct.clone(), ct.is_allowed)));
+                match &ct.ct {
+                    TaskResultCiphertext::Decompressed(val) => {
+                        *i = Some(DFGTxInput::Value((val.clone(), ct.is_allowed)));
+                    }
+                    TaskResultCiphertext::Compressed { ct_type, bytes } => {
+                        *i = Some(DFGTxInput::Compressed((
+                            (*ct_type, bytes.clone()),
+                            ct.is_allowed,
+                        )));
+                    }
+                }
             }
         }
 
@@ -409,10 +419,15 @@ fn execute_partition(
                                 error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
                                 continue;
                             };
-                            // Update input of consumers
+                            // Update input of consumers: compressed
+                            // form must be used for allowed ciphertexts
                             if let Ok(ref res) = result.1 {
                                 child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Value(res.0.clone());
+                                    if let Some((ct_type, ref bytes)) = res.1 {
+                                        DFGTaskInput::Compressed((ct_type, bytes.clone()))
+                                    } else {
+                                        DFGTaskInput::Value(res.0.clone())
+                                    };
                             }
                         }
                     }
@@ -423,11 +438,19 @@ fn execute_partition(
                     };
                     res.insert(
                         node.result_handle.clone(),
-                        result.1.map(|v| TaskResult {
-                            ct: v.0,
-                            compressed_ct: if node.is_allowed { v.1 } else { None },
-                            is_allowed: node.is_allowed,
-                            transaction_id: tid.clone(),
+                        result.1.map(|v| {
+                            let ct = if node.is_allowed {
+                                let (ct_type, bytes) =
+                                    v.1.expect("allowed result must have compressed form");
+                                TaskResultCiphertext::Compressed { ct_type, bytes }
+                            } else {
+                                TaskResultCiphertext::Decompressed(v.0)
+                            };
+                            TaskResult {
+                                ct,
+                                is_allowed: node.is_allowed,
+                                transaction_id: tid.clone(),
+                            }
                         }),
                     );
                 }
@@ -465,12 +488,16 @@ fn try_execute_node(
     }
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
-        if let DFGTaskInput::Value(i) = i {
-            cts.push(i);
-        } else {
-            // That should not be possible as we called the checker.
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
-            return Err(SchedulerError::MissingInputs.into());
+        match i {
+            DFGTaskInput::Value(v) => cts.push(v),
+            DFGTaskInput::Compressed((t, c)) => {
+                cts.push(SupportedFheCiphertexts::decompress(t, &c, gpu_idx)?);
+            }
+            _ => {
+                // That should not be possible as we called the checker.
+                error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
+                return Err(SchedulerError::MissingInputs.into());
+            }
         }
     }
     // Re-randomize inputs for this operation
