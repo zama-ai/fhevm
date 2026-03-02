@@ -506,7 +506,7 @@ impl DFComponentGraph {
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
                             *v = Some(DFGTxInput::Compressed((
-                                (result.ct_type, result.compressed_ct.clone()),
+                                result.compressed_ct.clone(),
                                 result.is_allowed,
                             )))
                         });
@@ -527,7 +527,7 @@ impl DFComponentGraph {
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.map(|rok| (rok.ct_type, rok.compressed_ct)),
+                        compressed_ct: result.map(|rok| rok.compressed_ct),
                     });
                 }
             }
@@ -611,7 +611,7 @@ impl std::fmt::Debug for DFComponentGraph {
 
 pub struct DFGResult {
     pub handle: Handle,
-    pub result: Result<Option<(i16, Vec<u8>)>>,
+    pub result: Result<Option<CompressedCiphertext>>,
     pub work_index: usize,
 }
 pub type OpEdge = u8;
@@ -637,8 +637,8 @@ impl OpNode {
                 DFGTaskInput::Dependence(d) => {
                     let resolved = match ct_map.get(d) {
                         Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
-                        Some(Some(DFGTxInput::Compressed(((t, c), _)))) => {
-                            DFGTaskInput::Compressed((*t, c.clone()))
+                        Some(Some(DFGTxInput::Compressed((cct, _)))) => {
+                            DFGTaskInput::Compressed(cct.clone())
                         }
                         _ => return false,
                     };

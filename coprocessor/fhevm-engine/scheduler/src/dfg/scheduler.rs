@@ -313,7 +313,7 @@ fn execute_partition(
                     continue 'tx;
                 };
                 *i = Some(DFGTxInput::Compressed((
-                    (ct.ct_type, ct.compressed_ct.clone()),
+                    ct.compressed_ct.clone(),
                     ct.is_allowed,
                 )));
             }
@@ -364,7 +364,7 @@ fn execute_partition(
                             // Update input of consumers
                             if let Ok(ref res) = result.1 {
                                 child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Compressed((res.0, res.1.clone()));
+                                    DFGTaskInput::Compressed(res.clone());
                             }
                         }
                     }
@@ -376,8 +376,7 @@ fn execute_partition(
                     res.insert(
                         node.result_handle.clone(),
                         result.1.map(|v| TaskResult {
-                            ct_type: v.0,
-                            compressed_ct: v.1,
+                            compressed_ct: v,
                             is_allowed: node.is_allowed,
                             transaction_id: tid.clone(),
                         }),
@@ -422,8 +421,12 @@ fn try_execute_node(
                 }
                 cts.push(v);
             }
-            DFGTaskInput::Compressed((t, c)) => {
-                cts.push(SupportedFheCiphertexts::decompress(t, &c, gpu_idx)?);
+            DFGTaskInput::Compressed(cct) => {
+                cts.push(SupportedFheCiphertexts::decompress(
+                    cct.ct_type,
+                    &cct.ct_bytes,
+                    gpu_idx,
+                )?);
             }
             DFGTaskInput::Dependence(_) => {
                 error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
@@ -454,7 +457,7 @@ fn try_execute_node(
     ))
 }
 
-type OpResult = Result<(i16, Vec<u8>)>;
+type OpResult = Result<CompressedCiphertext>;
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -481,7 +484,10 @@ fn run_computation(
             match compressed {
                 Ok(ct_bytes) => {
                     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
-                    (graph_node_index, Ok((ct_type, ct_bytes)))
+                    (
+                        graph_node_index,
+                        Ok(CompressedCiphertext { ct_type, ct_bytes }),
+                    )
                 }
                 Err(error) => {
                     telemetry::set_current_span_error(&error);
@@ -524,7 +530,10 @@ fn run_computation(
                         Ok(ct_bytes) => {
                             tracing::Span::current()
                                 .record("compressed_size", ct_bytes.len() as i64);
-                            (graph_node_index, Ok((ct_type, ct_bytes)))
+                            (
+                                graph_node_index,
+                                Ok(CompressedCiphertext { ct_type, ct_bytes }),
+                            )
                         }
                         Err(error) => {
                             telemetry::set_current_span_error(&error);

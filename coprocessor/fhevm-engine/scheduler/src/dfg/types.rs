@@ -1,16 +1,21 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
-pub struct TaskResult {
+#[derive(Clone)]
+pub struct CompressedCiphertext {
     pub ct_type: i16,
-    pub compressed_ct: Vec<u8>,
+    pub ct_bytes: Vec<u8>,
+}
+
+pub struct TaskResult {
+    pub compressed_ct: CompressedCiphertext,
     pub is_allowed: bool,
     pub transaction_id: Handle,
 }
 pub struct DFGTxResult {
     pub handle: Handle,
     pub transaction_id: Handle,
-    pub compressed_ct: Result<(i16, Vec<u8>)>,
+    pub compressed_ct: Result<CompressedCiphertext>,
 }
 impl std::fmt::Debug for DFGTxResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -30,7 +35,7 @@ impl std::fmt::Debug for DFGTxResult {
 #[derive(Clone)]
 pub enum DFGTxInput {
     Value((SupportedFheCiphertexts, bool)),
-    Compressed(((i16, Vec<u8>), bool)),
+    Compressed((CompressedCiphertext, bool)),
 }
 impl std::fmt::Debug for DFGTxInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -44,7 +49,7 @@ impl std::fmt::Debug for DFGTxInput {
 #[derive(Clone)]
 pub enum DFGTaskInput {
     Value(SupportedFheCiphertexts),
-    Compressed((i16, Vec<u8>)),
+    Compressed(CompressedCiphertext),
     Dependence(Handle),
 }
 impl std::fmt::Debug for DFGTaskInput {
