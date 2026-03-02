@@ -403,25 +403,6 @@ fn execute_partition(
                         is_allowed: node.is_allowed,
                         transaction_id: tid.clone(),
                     });
-                    if let (Some(Ok(prev)), Ok(new)) = (res.get(&handle), &value) {
-                        let same =
-                            prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct;
-                        debug_assert!(
-                            same,
-                            "Invariant violation: same handle produced different compressed ciphertext"
-                        );
-                        if !same {
-                            warn!(
-                                target: "scheduler",
-                                {
-                                    handle = ?hex::encode(&handle),
-                                    prev_tx = ?hex::encode(prev.transaction_id.clone()),
-                                    new_tx = ?hex::encode(new.transaction_id.clone())
-                                },
-                                "Same handle produced different compressed ciphertext"
-                            );
-                        }
-                    }
                     res.entry(handle).or_insert(value);
                 }
                 Err(e) => {
