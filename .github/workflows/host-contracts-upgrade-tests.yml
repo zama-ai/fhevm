@@ -133,6 +133,7 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade ACL contract
         working-directory: current-fhevm/host-contracts
+        if: false # REINITIALIZER_VERSION unchanged (3→3) between v0.11.0 and current
         run: |
           npx hardhat task:upgradeACL \
             --current-implementation previous-contracts/ACL.sol:ACL \
@@ -155,6 +156,7 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade KMSVerifier contract
         working-directory: current-fhevm/host-contracts
+        if: false # REINITIALIZER_VERSION unchanged (2→2) between v0.11.0 and current
         run: |
           npx hardhat task:upgradeKMSVerifier \
             --current-implementation previous-contracts/KMSVerifier.sol:KMSVerifier \
@@ -166,6 +168,7 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade InputVerifier contract
         working-directory: current-fhevm/host-contracts
+        if: false # REINITIALIZER_VERSION unchanged (3→3) between v0.11.0 and current
         run: |
           npx hardhat task:upgradeInputVerifier \
             --current-implementation previous-contracts/InputVerifier.sol:InputVerifier \
