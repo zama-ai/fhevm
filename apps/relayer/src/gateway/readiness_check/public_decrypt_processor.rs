@@ -8,6 +8,7 @@ use crate::{
         job_id::JobId,
     },
     gateway::readiness_check::{
+        error_redact::redact_alloy_error,
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
         readiness_throttler::{PublicDecryptReadinessTask, ReadinessWorker},
     },
@@ -144,7 +145,7 @@ impl PublicDecryptReadinessProcessor {
                     &dispatcher,
                     &task.request,
                     task.job_id,
-                    EventProcessingError::ContractCallFailed(e.to_string()),
+                    EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
                 )
                 .await;
             }

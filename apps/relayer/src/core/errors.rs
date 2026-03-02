@@ -2,7 +2,9 @@ use crate::{
     config::settings::AppConfigError,
     gateway::{
         arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
-        readiness_check::readiness_checker::ReadinessCheckError,
+        readiness_check::{
+            error_redact::redact_alloy_error, readiness_checker::ReadinessCheckError,
+        },
     },
 };
 use serde::{Deserialize, Serialize};
@@ -89,7 +91,7 @@ impl From<ReadinessCheckError> for EventProcessingError {
         match e {
             ReadinessCheckError::GwTimeout => EventProcessingError::ReadinessCheckTimedOut,
             ReadinessCheckError::GwContractError(err) => {
-                EventProcessingError::ContractCallFailed(err.to_string())
+                EventProcessingError::ContractCallFailed(redact_alloy_error(&err))
             }
             ReadinessCheckError::NotAllowedOnHostAcl(err) => {
                 EventProcessingError::NotAllowedOnHostAcl(err.to_string())

@@ -10,6 +10,7 @@ use crate::{
     gateway::{
         arbitrum::bindings::Decryption,
         readiness_check::{
+            error_redact::redact_alloy_error,
             readiness_checker::{ReadinessCheckError, ReadinessChecker},
             readiness_throttler::{ReadinessWorker, UserDecryptReadinessTask},
         },
@@ -146,7 +147,7 @@ impl UserDecryptReadinessProcessor {
                     &dispatcher,
                     &task.request,
                     task.job_id,
-                    EventProcessingError::ContractCallFailed(e.to_string()),
+                    EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
                 )
                 .await;
             }

@@ -7,7 +7,10 @@ use crate::{
     },
     gateway::{
         arbitrum::bindings::Decryption,
-        readiness_check::host_acl_checker::{HostAclChecker, HostAclError},
+        readiness_check::{
+            error_redact::redact_alloy_error,
+            host_acl_checker::{HostAclChecker, HostAclError},
+        },
     },
 };
 use alloy::{
@@ -220,7 +223,7 @@ impl GwCiphertextChecker {
                     }
                 }
                 Err(err) => {
-                    error!(int_job_id = %job_id, error = %err, "Contract call failed, will retry");
+                    error!(int_job_id = %job_id, error = %redact_alloy_error(&err), "Contract call failed, will retry");
                     last_error = Some(err);
                 }
             }
