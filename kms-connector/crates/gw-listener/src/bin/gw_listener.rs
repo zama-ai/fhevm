@@ -1,5 +1,5 @@
 use gw_listener::{
-    core::{Config, GatewayListener},
+    core::{Config, EventListener},
     monitoring::health::HealthStatus,
 };
 
@@ -44,11 +44,11 @@ async fn run() -> anyhow::Result<()> {
             install_signal_handlers(cancel_token.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
 
-            info!("Starting GatewayListener");
-            let (gw_listener, state) =
-                GatewayListener::from_config(config, cancel_token.clone()).await?;
+            info!("Starting EventListener");
+            let (event_listener, state) =
+                EventListener::from_config(config, cancel_token.clone()).await?;
             start_monitoring_server(monitoring_endpoint, state, cancel_token);
-            gw_listener.start().await
+            event_listener.start().await?;
         }
     }
     Ok(())
