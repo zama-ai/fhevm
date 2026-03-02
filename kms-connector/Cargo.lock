@@ -3336,6 +3336,7 @@ dependencies = [
  "bc2wrap",
  "connector-utils",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "humantime-serde",
  "opentelemetry",
  "prometheus",
