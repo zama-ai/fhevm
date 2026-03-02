@@ -62,7 +62,17 @@ impl TryFrom<&TaskResult> for DFGTxInput {
     fn try_from(value: &TaskResult) -> Result<Self> {
         match value {
             TaskResult::Allowed { ct, .. } => Ok(DFGTxInput::Compressed((ct.clone(), true))),
-            TaskResult::Intermediate { ct, .. } => Ok(DFGTxInput::Value((ct.clone(), false))),
+            TaskResult::Intermediate { ct, .. } => {
+                // Normalize cross-transaction propagation through compressed form to avoid
+                // representation-sensitive behavior when the same handle can appear in
+                // multiple contexts (e.g. allowed/non-allowed paths).
+                let ct_type = ct.type_num();
+                let bytes = ct.compress()?;
+                Ok(DFGTxInput::Compressed((
+                    CompressedCiphertext::from((ct_type, bytes)),
+                    false,
+                )))
+            }
         }
     }
 }
