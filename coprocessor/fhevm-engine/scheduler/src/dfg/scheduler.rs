@@ -17,7 +17,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -278,35 +278,39 @@ fn insert_partition_result(
     handle: Handle,
     value: Result<TaskResult>,
 ) {
-    match res.entry(handle.clone()) {
-        Entry::Vacant(v) => {
-            v.insert(value);
+    let Some(existing) = res.get(&handle) else {
+        res.insert(handle, value);
+        return;
+    };
+
+    match (existing, &value) {
+        // Same handle + same bytes is benign (idempotent propagation).
+        (Ok(prev), Ok(new))
+            if prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct =>
+        {
+            return;
         }
-        Entry::Occupied(mut o) => match (o.get(), value) {
-            (Ok(prev), Ok(new)) => {
-                if prev.ct_type == new.ct_type && prev.compressed_ct == new.compressed_ct {
-                    // Same handle + same bytes is benign (idempotent propagation).
-                    return;
-                }
-                error!(
-                    target: "scheduler",
-                    {
-                        handle = ?hex::encode(handle),
-                        prev_tx = ?hex::encode(prev.transaction_id.clone()),
-                        new_tx = ?hex::encode(new.transaction_id.clone())
-                    },
-                    "Invariant violation: same handle produced different compressed ciphertext"
-                );
-                let _ = o.insert(Err(SchedulerError::SchedulerError.into()));
-            }
-            (_, Ok(_)) => {
-                // Keep prior failure once present (fail-closed).
-            }
-            (_, Err(e)) => {
-                let _ = o.insert(Err(e));
-            }
-        },
+        // Same handle + different bytes is a hard invariant break.
+        (Ok(prev), Ok(new)) => {
+            error!(
+                target: "scheduler",
+                {
+                    handle = ?hex::encode(&handle),
+                    prev_tx = ?hex::encode(prev.transaction_id.clone()),
+                    new_tx = ?hex::encode(new.transaction_id.clone())
+                },
+                "Invariant violation: same handle produced different compressed ciphertext"
+            );
+            res.insert(handle, Err(SchedulerError::SchedulerError.into()));
+            return;
+        }
+        // Keep prior failure once present (fail-closed).
+        (Err(_), Ok(_)) => return,
+        // New failures always overwrite.
+        _ => {}
     }
+
+    res.insert(handle, value);
 }
 
 fn materialize_task_input(
@@ -315,13 +319,14 @@ fn materialize_task_input(
     output_handle: &Handle,
 ) -> Result<SupportedFheCiphertexts> {
     match input {
-        DFGTaskInput::Immediate(v) => {
-            if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
-                error!(target: "scheduler", { handle = ?hex::encode(output_handle) },
-                       "Invariant violation: Immediate input must be scalar");
-                return Err(SchedulerError::SchedulerError.into());
-            }
-            Ok(v)
+        DFGTaskInput::Immediate(v @ SupportedFheCiphertexts::Scalar(_)) => Ok(v),
+        DFGTaskInput::Immediate(_) => {
+            error!(
+                target: "scheduler",
+                { handle = ?hex::encode(output_handle) },
+                "Invariant violation: Immediate input must be scalar"
+            );
+            Err(SchedulerError::SchedulerError.into())
         }
         DFGTaskInput::Compressed((t, c)) => SupportedFheCiphertexts::decompress(t, &c, gpu_idx),
         DFGTaskInput::Dependence(_) => {
