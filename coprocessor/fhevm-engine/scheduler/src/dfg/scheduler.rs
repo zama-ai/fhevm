@@ -415,7 +415,13 @@ fn try_execute_node(
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
-            DFGTaskInput::Value(v) => cts.push(v),
+            DFGTaskInput::Value(v) => {
+                if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
+                    error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) },
+			   "Consensus risk: non-scalar uncompressed ciphertext");
+                }
+                cts.push(v);
+            }
             DFGTaskInput::Compressed((t, c)) => {
                 cts.push(SupportedFheCiphertexts::decompress(t, &c, gpu_idx)?);
             }
