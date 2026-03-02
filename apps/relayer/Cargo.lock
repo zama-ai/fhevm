@@ -1980,7 +1980,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=9c615a75a5467b70b405b72de2cab701df8a0116)",
+ "fhevm_gateway_bindings",
  "hex",
  "indexmap 2.13.0",
  "jsonrpsee",
@@ -2077,7 +2077,7 @@ dependencies = [
  "derivative",
  "ethereum_rpc_mock",
  "eyre",
- "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3)",
+ "fhevm_gateway_bindings",
  "fhevm_host_bindings",
  "futures",
  "governor",
@@ -2112,16 +2112,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3#edb4c81c4d45f557faab569055957dd21991223d"
-dependencies = [
- "alloy",
- "serde",
-]
-
-[[package]]
-name = "fhevm_gateway_bindings"
-version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=9c615a75a5467b70b405b72de2cab701df8a0116#9c615a75a5467b70b405b72de2cab701df8a0116"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=b27c89f4bc53f256a4a4a3e7928b57b49f7d7229#b27c89f4bc53f256a4a4a3e7928b57b49f7d7229"
 dependencies = [
  "alloy",
  "serde",
@@ -6108,7 +6099,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

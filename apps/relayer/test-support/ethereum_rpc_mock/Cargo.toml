@@ -34,7 +34,7 @@ anyhow = "1.0.102"
 async-trait = "0.1.51"
 
 # FHEVM bindings - match relayer version exactly
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "9c615a75a5467b70b405b72de2cab701df8a0116" }
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "b27c89f4bc53f256a4a4a3e7928b57b49f7d7229" }
 
 # JSON-RPC server - unique to mock
 jsonrpsee = { version = "0.26.0", features = ["server", "macros"] }

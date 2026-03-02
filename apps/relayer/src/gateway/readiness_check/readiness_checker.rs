@@ -156,7 +156,6 @@ impl GwCiphertextChecker {
     async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        user_address: Address,
         contract_pairs: Vec<Decryption::CtHandleContractPair>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
@@ -173,7 +172,7 @@ impl GwCiphertextChecker {
                 let extra_data = extra_data.clone();
                 async move {
                     decryption
-                        .isUserDecryptionReady(user_address, pairs, extra_data)
+                        .isUserDecryptionReady(pairs, extra_data)
                         .call()
                         .await
                 }
@@ -318,12 +317,11 @@ impl ReadinessChecker {
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        user_address: Address,
         contract_pairs: Vec<Decryption::CtHandleContractPair>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.gw_ciphertext
-            .check_user_decryption_readiness(job_id, user_address, contract_pairs, extra_data)
+            .check_user_decryption_readiness(job_id, contract_pairs, extra_data)
             .await
     }
 

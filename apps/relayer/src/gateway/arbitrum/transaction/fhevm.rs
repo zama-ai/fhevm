@@ -2,13 +2,9 @@ use crate::gateway::arbitrum::bindings::{
     CiphertextCommits::{self, CiphertextCommitsErrors},
     Decryption::{self, DecryptionErrors},
     InputVerification::{self, InputVerificationErrors},
-    MultichainACL::{self, MultichainACLErrors},
 };
 use alloy::contract::Error;
-use fhevm_gateway_bindings::{
-    gateway_config::GatewayConfig::{self, GatewayConfigErrors},
-    multichain_acl_checks::MultichainACLChecks::{self, MultichainACLChecksErrors},
-};
+use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigErrors};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,8 +12,6 @@ pub enum FhevmError {
     GatewayConfigError(GatewayConfigErrors),
     DecryptionError(DecryptionErrors),
     InputError(InputVerificationErrors),
-    AclError(MultichainACLErrors),
-    AclChecksError(MultichainACLChecksErrors),
     CiphertextError(CiphertextCommitsErrors),
     GenericError,
 }
@@ -25,11 +19,7 @@ pub enum FhevmError {
 pub fn retryable_error(err: &FhevmError) -> bool {
     match err {
         // Errors that happen when the Ciphertext wasn't created and the ACL propagated yet
-        FhevmError::DecryptionError(value) => match value {
-            DecryptionErrors::AccountNotAllowedToUseCiphertext(_)
-            | DecryptionErrors::PublicDecryptNotAllowed(_) => true,
-            _ => true,
-        },
+        FhevmError::DecryptionError(_) => true,
         FhevmError::CiphertextError(value) => match value {
             CiphertextCommitsErrors::CiphertextMaterialNotFound(_) => true,
             _ => true,
@@ -247,97 +237,6 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
         return FhevmError::InputError(InputVerificationErrors::VerifyProofNotRequested(value));
     }
 
-    // MultichainACL Errors
-    if let Some(value) = err.as_decoded_error::<Decryption::AccountNotAllowedToUseCiphertext>() {
-        return FhevmError::DecryptionError(DecryptionErrors::AccountNotAllowedToUseCiphertext(
-            value,
-        ));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::AddressEmptyCode>() {
-        return FhevmError::AclError(MultichainACLErrors::AddressEmptyCode(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::ContractsMaxLengthExceeded>() {
-        return FhevmError::AclError(MultichainACLErrors::ContractsMaxLengthExceeded(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::CoprocessorAlreadyAllowedAccount>() {
-        return FhevmError::AclError(MultichainACLErrors::CoprocessorAlreadyAllowedAccount(value));
-    }
-    if let Some(value) =
-        err.as_decoded_error::<MultichainACL::CoprocessorAlreadyAllowedPublicDecrypt>()
-    {
-        return FhevmError::AclError(MultichainACLErrors::CoprocessorAlreadyAllowedPublicDecrypt(
-            value,
-        ));
-    }
-    if let Some(value) =
-        err.as_decoded_error::<MultichainACL::CoprocessorAlreadyDelegatedUserDecryption>()
-    {
-        return FhevmError::AclError(
-            MultichainACLErrors::CoprocessorAlreadyDelegatedUserDecryption(value),
-        );
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::ERC1967InvalidImplementation>() {
-        return FhevmError::AclError(MultichainACLErrors::ERC1967InvalidImplementation(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::ERC1967NonPayable>() {
-        return FhevmError::AclError(MultichainACLErrors::ERC1967NonPayable(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::EmptyContractAddresses>() {
-        return FhevmError::AclError(MultichainACLErrors::EmptyContractAddresses(value));
-    }
-    if let Some(value) = err.as_decoded_error::<InputVerification::EnforcedPause>() {
-        return FhevmError::InputError(InputVerificationErrors::EnforcedPause(value));
-    }
-    if let Some(value) = err.as_decoded_error::<InputVerification::ExpectedPause>() {
-        return FhevmError::InputError(InputVerificationErrors::ExpectedPause(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::FailedCall>() {
-        return FhevmError::AclError(MultichainACLErrors::FailedCall(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::InvalidInitialization>() {
-        return FhevmError::AclError(MultichainACLErrors::InvalidInitialization(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::NotGatewayOwner>() {
-        return FhevmError::AclError(MultichainACLErrors::NotGatewayOwner(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::NotInitializing>() {
-        return FhevmError::AclError(MultichainACLErrors::NotInitializing(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::NotInitializingFromEmptyProxy>() {
-        return FhevmError::AclError(MultichainACLErrors::NotInitializingFromEmptyProxy(value));
-    }
-    if let Some(value) = err.as_decoded_error::<InputVerification::NotOwnerOrGatewayConfig>() {
-        return FhevmError::InputError(InputVerificationErrors::NotOwnerOrGatewayConfig(value));
-    }
-    if let Some(value) = err.as_decoded_error::<GatewayConfig::NotPauser>() {
-        return FhevmError::GatewayConfigError(GatewayConfigErrors::NotPauser(value));
-    }
-    if let Some(value) = err.as_decoded_error::<InputVerification::NotPauserOrGatewayConfig>() {
-        return FhevmError::InputError(InputVerificationErrors::NotPauserOrGatewayConfig(value));
-    }
-    if let Some(value) = err.as_decoded_error::<GatewayConfig::OwnableInvalidOwner>() {
-        return FhevmError::GatewayConfigError(GatewayConfigErrors::OwnableInvalidOwner(value));
-    }
-    if let Some(value) = err.as_decoded_error::<GatewayConfig::OwnableUnauthorizedAccount>() {
-        return FhevmError::GatewayConfigError(GatewayConfigErrors::OwnableUnauthorizedAccount(
-            value,
-        ));
-    }
-    if let Some(value) = err.as_decoded_error::<Decryption::PublicDecryptNotAllowed>() {
-        return FhevmError::DecryptionError(DecryptionErrors::PublicDecryptNotAllowed(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::UUPSUnauthorizedCallContext>() {
-        return FhevmError::AclError(MultichainACLErrors::UUPSUnauthorizedCallContext(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::UUPSUnsupportedProxiableUUID>() {
-        return FhevmError::AclError(MultichainACLErrors::UUPSUnsupportedProxiableUUID(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACLChecks::UserDecryptionNotDelegated>() {
-        return FhevmError::AclChecksError(MultichainACLChecksErrors::UserDecryptionNotDelegated(
-            value,
-        ));
-    }
-
     // CiphertextCommits Errors
     if let Some(value) = err.as_decoded_error::<CiphertextCommits::AddressEmptyCode>() {
         return FhevmError::CiphertextError(CiphertextCommitsErrors::AddressEmptyCode(value));
@@ -423,8 +322,6 @@ impl Clone for FhevmError {
                 FhevmError::GenericError
             }
             FhevmError::InputError(_) => FhevmError::GenericError,
-            FhevmError::AclError(_) => FhevmError::GenericError,
-            FhevmError::AclChecksError(_) => FhevmError::GenericError,
             FhevmError::CiphertextError(_) => FhevmError::GenericError,
             FhevmError::GenericError => FhevmError::GenericError,
         }

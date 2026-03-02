@@ -6,7 +6,6 @@ pub use fhevm_gateway_bindings::{
     ciphertext_commits::CiphertextCommits,
     decryption::{Decryption, IDecryption},
     input_verification::InputVerification,
-    multichain_acl::MultichainACL,
 };
 
 // Define the Transfer event structure using alloy_sol_types
