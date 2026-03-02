@@ -313,7 +313,7 @@ fn insert_partition_result(
     res.insert(handle, value);
 }
 
-fn materialize_task_input(
+fn resolve_task_input(
     input: DFGTaskInput,
     gpu_idx: usize,
     output_handle: &Handle,
@@ -478,7 +478,7 @@ fn try_execute_node(
     }
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
-        cts.push(materialize_task_input(i, gpu_idx, &node.result_handle)?);
+        cts.push(resolve_task_input(i, gpu_idx, &node.result_handle)?);
     }
     // Re-randomize inputs for this operation
     {
@@ -631,16 +631,16 @@ mod tests {
     }
 
     #[test]
-    fn materialize_task_input_accepts_immediate_scalar() {
+    fn resolve_task_input_accepts_immediate_scalar() {
         let out = vec![0xCC];
         let input = DFGTaskInput::Immediate(SupportedFheCiphertexts::Scalar(vec![0x01]));
-        assert!(materialize_task_input(input, 0, &out).is_ok());
+        assert!(resolve_task_input(input, 0, &out).is_ok());
     }
 
     #[test]
-    fn materialize_task_input_rejects_unresolved_dependence() {
+    fn resolve_task_input_rejects_unresolved_dependence() {
         let out = vec![0xDD];
         let input = DFGTaskInput::Dependence(vec![0x01]);
-        assert!(materialize_task_input(input, 0, &out).is_err());
+        assert!(resolve_task_input(input, 0, &out).is_err());
     }
 }
