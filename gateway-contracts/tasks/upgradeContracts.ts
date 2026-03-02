@@ -251,7 +251,11 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, []);
+    const kmsContextId = getRequiredEnvVar("KMS_CONTEXT_ID");
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      kmsContextId,
+    ]);
   });
 
 task("task:upgradeKMSGeneration")

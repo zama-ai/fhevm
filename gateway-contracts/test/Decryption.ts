@@ -328,14 +328,17 @@ describe("Decryption", function () {
     });
 
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
-      // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
+      // Request public decryption first so the decryptionId exists in state
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
+
+      // Check that the transaction fails because the recovered signer does not match the fake tx sender
       await expect(
         decryption
           .connect(fakeTxSender)
           .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       )
-        .to.be.revertedWithCustomError(decryption, "NotKmsTxSender")
-        .withArgs(fakeTxSender.address);
+        .to.be.revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, fakeTxSender.address);
     });
 
     it("Should revert because the signer is not a KMS signer", async function () {
@@ -1321,14 +1324,27 @@ describe("Decryption", function () {
     });
 
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
-      // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
+      // Request user decryption first so the decryptionId exists in state
+      await decryption
+        .connect(tokenFundedTxSender)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsInfo,
+          user.address,
+          publicKey,
+          userSignature,
+          extraDataV0,
+        );
+
+      // Check that the transaction fails because the recovered signer does not match the fake tx sender
       await expect(
         decryption
           .connect(fakeTxSender)
           .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       )
-        .to.be.revertedWithCustomError(decryption, "NotKmsTxSender")
-        .withArgs(fakeTxSender.address);
+        .to.be.revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, fakeTxSender.address);
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
