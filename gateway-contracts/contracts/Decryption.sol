@@ -1051,7 +1051,7 @@ contract Decryption is
         uint256 contextId,
         uint256 numVerifiedResponses
     ) internal view virtual returns (bool) {
-        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getKmsContextPublicDecryptionThreshold(contextId);
+        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThresholdForContext(contextId);
         return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
@@ -1065,7 +1065,7 @@ contract Decryption is
         uint256 contextId,
         uint256 numVerifiedResponses
     ) internal view virtual returns (bool) {
-        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getKmsContextUserDecryptionThreshold(contextId);
+        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThresholdForContext(contextId);
         return numVerifiedResponses >= userDecryptionThreshold;
     }
 

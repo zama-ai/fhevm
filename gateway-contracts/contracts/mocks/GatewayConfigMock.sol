@@ -20,7 +20,7 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event UpdateKmsContext(
+    event CreateKmsContext(
         uint256 indexed newContextId,
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
@@ -67,7 +67,7 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(kmsContextId, metadata, thresholds, kmsNodes, coprocessors, custodians);
     }
 
-    function updateKmsContext(
+    function createKmsContext(
         uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
@@ -75,7 +75,7 @@ contract GatewayConfigMock {
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
     ) public {
-        emit UpdateKmsContext(
+        emit CreateKmsContext(
             newContextId,
             newKmsNodes,
             newMpcThreshold,

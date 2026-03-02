@@ -35,7 +35,7 @@ interface IDecryption {
     error EmptyContractAddresses();
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
-    error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
+    error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
     error InvalidNullDurationDays();
     error InvalidUserSignature(bytes signature);
     error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
@@ -867,7 +867,7 @@ interface IDecryption {
     "name": "InvalidExtraDataLength",
     "inputs": [
       {
-        "name": "actualLength",
+        "name": "length",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -3030,13 +3030,13 @@ error EmptyCtHandles();
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidExtraDataLength(uint256,uint256)` and selector `0x93548a66`.
 ```solidity
-error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
+error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidExtraDataLength {
         #[allow(missing_docs)]
-        pub actualLength: alloy::sol_types::private::primitives::aliases::U256,
+        pub length: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub minimumLength: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -3073,7 +3073,7 @@ error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
         #[doc(hidden)]
         impl ::core::convert::From<InvalidExtraDataLength> for UnderlyingRustTuple<'_> {
             fn from(value: InvalidExtraDataLength) -> Self {
-                (value.actualLength, value.minimumLength)
+                (value.length, value.minimumLength)
             }
         }
         #[automatically_derived]
@@ -3081,7 +3081,7 @@ error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidExtraDataLength {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    actualLength: tuple.0,
+                    length: tuple.0,
                     minimumLength: tuple.1,
                 }
             }
@@ -3105,7 +3105,7 @@ error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.actualLength),
+                    > as alloy_sol_types::SolType>::tokenize(&self.length),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.minimumLength),

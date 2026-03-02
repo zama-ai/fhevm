@@ -237,10 +237,10 @@ interface IDecryption {
 
     /**
      * @notice Error indicating that the extraData length is invalid.
-     * @param actualLength The actual length of the extraData.
+     * @param length The length of the extraData.
      * @param minimumLength The minimum expected length.
      */
-    error InvalidExtraDataLength(uint256 actualLength, uint256 minimumLength);
+    error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
 
     /**
      * @notice Error indicating that the extraData version is unsupported.

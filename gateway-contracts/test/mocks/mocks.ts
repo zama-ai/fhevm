@@ -248,9 +248,9 @@ describe("Mock contracts", function () {
         );
     });
 
-    it("Should emit UpdateKmsContext event on update KMS nodes call", async function () {
+    it("Should emit CreateKmsContext event on create KMS context call", async function () {
       await expect(
-        gatewayConfigMock.updateKmsContext(
+        gatewayConfigMock.createKmsContext(
           DefaultUint256,
           [DefaultKmsNode],
           DefaultUint256,
@@ -259,7 +259,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
         ),
       )
-        .to.emit(gatewayConfigMock, "UpdateKmsContext")
+        .to.emit(gatewayConfigMock, "CreateKmsContext")
         .withArgs(
           DefaultUint256,
           toValues([DefaultKmsNode]),

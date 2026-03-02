@@ -603,7 +603,7 @@ describe("GatewayConfig", function () {
 
           const tx = await gatewayConfig
             .connect(owner)
-            .updateKmsContext(
+            .createKmsContext(
               newContextId,
               newKmsNodes,
               newMpcThreshold,
@@ -613,7 +613,7 @@ describe("GatewayConfig", function () {
             );
 
           await expect(tx)
-            .to.emit(gatewayConfig, "UpdateKmsContext")
+            .to.emit(gatewayConfig, "CreateKmsContext")
             .withArgs(
               newContextId,
               toValues(newKmsNodes),
@@ -644,10 +644,10 @@ describe("GatewayConfig", function () {
 
           // Check that the thresholds have been updated
           expect(await gatewayConfig.getMpcThreshold()).to.equal(newMpcThreshold);
-          expect(await gatewayConfig.getKmsContextPublicDecryptionThreshold(newContextId)).to.equal(
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(newContextId)).to.equal(
             newPublicDecryptionThreshold,
           );
-          expect(await gatewayConfig.getKmsContextUserDecryptionThreshold(newContextId)).to.equal(
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(newContextId)).to.equal(
             newUserDecryptionThreshold,
           );
           expect(await gatewayConfig.getKmsGenThreshold()).to.equal(newKmsGenThreshold);
@@ -674,7 +674,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(fakeOwner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -691,7 +691,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 emptyKmsNodes,
                 mpcThreshold,
@@ -706,7 +706,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 highMpcThreshold,
@@ -723,7 +723,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -739,7 +739,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -756,7 +756,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -772,7 +772,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -789,7 +789,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -805,7 +805,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsContext(
+              .createKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -827,7 +827,7 @@ describe("GatewayConfig", function () {
             storageUrl: "s3://kms-bucket-100",
           };
 
-          await expect(gatewayConfig.connect(owner).updateKmsContext(initialKmsContextId, [newKmsNode], 0, 1, 1, 1))
+          await expect(gatewayConfig.connect(owner).createKmsContext(initialKmsContextId, [newKmsNode], 0, 1, 1, 1))
             .to.be.revertedWithCustomError(gatewayConfig, "KmsContextAlreadyRegistered")
             .withArgs(initialKmsContextId, initialKmsContextId);
         });
@@ -841,7 +841,7 @@ describe("GatewayConfig", function () {
           };
 
           await expect(
-            gatewayConfig.connect(owner).updateKmsContext(0, [newKmsNode], 0, 1, 1, 1),
+            gatewayConfig.connect(owner).createKmsContext(0, [newKmsNode], 0, 1, 1, 1),
           ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsContextId");
         });
 
@@ -853,7 +853,7 @@ describe("GatewayConfig", function () {
             storageUrl: "s3://kms-bucket-100",
           };
 
-          await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
+          await gatewayConfig.connect(owner).createKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
 
           // Initial context should still have the original nodes
           expect(await gatewayConfig.getKmsSignersForContext(initialKmsContextId)).to.have.lengthOf(kmsSigners.length);
@@ -872,16 +872,16 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getCurrentKmsContextId()).to.equal(nextKmsContextId);
 
           // Initial context should have original thresholds
-          expect(await gatewayConfig.getKmsContextPublicDecryptionThreshold(initialKmsContextId)).to.equal(
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(initialKmsContextId)).to.equal(
             publicDecryptionThreshold,
           );
-          expect(await gatewayConfig.getKmsContextUserDecryptionThreshold(initialKmsContextId)).to.equal(
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(initialKmsContextId)).to.equal(
             userDecryptionThreshold,
           );
 
           // New context should have the new thresholds
-          expect(await gatewayConfig.getKmsContextPublicDecryptionThreshold(nextKmsContextId)).to.equal(1);
-          expect(await gatewayConfig.getKmsContextUserDecryptionThreshold(nextKmsContextId)).to.equal(1);
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
         });
       });
 
@@ -1229,7 +1229,7 @@ describe("GatewayConfig", function () {
 
         // Check that the public decryption threshold has been updated
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        expect(await gatewayConfig.getKmsContextPublicDecryptionThreshold(currentContextId)).to.equal(
+        expect(await gatewayConfig.getPublicDecryptionThresholdForContext(currentContextId)).to.equal(
           newPublicDecryptionThreshold,
         );
       });
@@ -1270,7 +1270,7 @@ describe("GatewayConfig", function () {
 
         // Check that the user decryption threshold has been updated
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        expect(await gatewayConfig.getKmsContextUserDecryptionThreshold(currentContextId)).to.equal(
+        expect(await gatewayConfig.getUserDecryptionThresholdForContext(currentContextId)).to.equal(
           newUserDecryptionThreshold,
         );
       });

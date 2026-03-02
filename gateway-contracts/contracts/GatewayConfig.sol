@@ -268,9 +268,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-updateKmsContext}.
+     * @notice See {IGatewayConfig-createKmsContext}.
      */
-    function updateKmsContext(
+    function createKmsContext(
         uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
@@ -302,7 +302,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Update the current KMS context ID
         $.currentKmsContextId = newContextId;
 
-        emit UpdateKmsContext(
+        emit CreateKmsContext(
             newContextId,
             newKmsNodes,
             newMpcThreshold,
@@ -675,17 +675,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-getKmsContextPublicDecryptionThreshold}.
+     * @notice See {IGatewayConfig-getPublicDecryptionThresholdForContext}.
      */
-    function getKmsContextPublicDecryptionThreshold(uint256 contextId) external view virtual returns (uint256) {
+    function getPublicDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.publicDecryptionThresholdForContext[contextId];
     }
 
     /**
-     * @notice See {IGatewayConfig-getKmsContextUserDecryptionThreshold}.
+     * @notice See {IGatewayConfig-getUserDecryptionThresholdForContext}.
      */
-    function getKmsContextUserDecryptionThreshold(uint256 contextId) external view virtual returns (uint256) {
+    function getUserDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.userDecryptionThresholdForContext[contextId];
     }
