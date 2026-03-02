@@ -12,7 +12,7 @@ concurrency:
 # Define common environment variables here:
 # - DOTENV_CONFIG_PATH: The path to the environment file, used for loading variables used for upgrades
 # - HARDHAT_NETWORK: Should match the network from the docker-compose.yml's services
-# - CHAIN_ID_GATEWAY: Should match the chain ID used in the gateway anvil node in the docker-compose.yml file
+# - CHAIN_ID_GATEWAY: The gateway chain ID, should match CHAIN_ID_GATEWAY in docker-compose.yml
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
   DOTENV_CONFIG_PATH: .env.example
