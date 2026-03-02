@@ -603,7 +603,7 @@ describe("GatewayConfig", function () {
 
           const tx = await gatewayConfig
             .connect(owner)
-            .createKmsContext(
+            .updateKmsContext(
               newContextId,
               newKmsNodes,
               newMpcThreshold,
@@ -613,7 +613,7 @@ describe("GatewayConfig", function () {
             );
 
           await expect(tx)
-            .to.emit(gatewayConfig, "CreateKmsContext")
+            .to.emit(gatewayConfig, "UpdateKmsContext")
             .withArgs(
               newContextId,
               toValues(newKmsNodes),
@@ -674,7 +674,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(fakeOwner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -691,7 +691,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 emptyKmsNodes,
                 mpcThreshold,
@@ -706,7 +706,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 highMpcThreshold,
@@ -723,7 +723,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -739,7 +739,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -756,7 +756,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -772,7 +772,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -789,7 +789,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -805,7 +805,7 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .createKmsContext(
+              .updateKmsContext(
                 nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
@@ -827,7 +827,7 @@ describe("GatewayConfig", function () {
             storageUrl: "s3://kms-bucket-100",
           };
 
-          await expect(gatewayConfig.connect(owner).createKmsContext(initialKmsContextId, [newKmsNode], 0, 1, 1, 1))
+          await expect(gatewayConfig.connect(owner).updateKmsContext(initialKmsContextId, [newKmsNode], 0, 1, 1, 1))
             .to.be.revertedWithCustomError(gatewayConfig, "KmsContextAlreadyRegistered")
             .withArgs(initialKmsContextId, initialKmsContextId);
         });
@@ -841,7 +841,7 @@ describe("GatewayConfig", function () {
           };
 
           await expect(
-            gatewayConfig.connect(owner).createKmsContext(0, [newKmsNode], 0, 1, 1, 1),
+            gatewayConfig.connect(owner).updateKmsContext(0, [newKmsNode], 0, 1, 1, 1),
           ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsContextId");
         });
 
@@ -853,7 +853,7 @@ describe("GatewayConfig", function () {
             storageUrl: "s3://kms-bucket-100",
           };
 
-          await gatewayConfig.connect(owner).createKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
+          await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
 
           // Initial context should still have the original nodes
           expect(await gatewayConfig.getKmsSignersForContext(initialKmsContextId)).to.have.lengthOf(kmsSigners.length);

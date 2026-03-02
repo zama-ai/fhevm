@@ -54,7 +54,7 @@ interface IGatewayConfig {
     );
 
     /**
-     * @notice Emitted when a new KMS context has been created.
+     * @notice Emitted when the KMS context has been updated.
      * @param newContextId The new context ID associated with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
@@ -62,7 +62,7 @@ interface IGatewayConfig {
      * @param newUserDecryptionThreshold The new user decryption threshold.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    event CreateKmsContext(
+    event UpdateKmsContext(
         uint256 indexed newContextId,
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
@@ -272,7 +272,7 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Create a new KMS context: nodes and thresholds for a given context ID.
+     * @notice Update the KMS context: nodes and thresholds for a given context ID.
      * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
      * some requests and the contracts should first be paused. It will be deprecated in the future.
      * @param newContextId The new context ID to associate with the KMS nodes.
@@ -282,7 +282,7 @@ interface IGatewayConfig {
      * @param newUserDecryptionThreshold The new user decryption threshold.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function createKmsContext(
+    function updateKmsContext(
         uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,

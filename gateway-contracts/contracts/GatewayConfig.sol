@@ -268,9 +268,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-createKmsContext}.
+     * @notice See {IGatewayConfig-updateKmsContext}.
      */
-    function createKmsContext(
+    function updateKmsContext(
         uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
         uint256 newMpcThreshold,
@@ -302,7 +302,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Update the current KMS context ID
         $.currentKmsContextId = newContextId;
 
-        emit CreateKmsContext(
+        emit UpdateKmsContext(
             newContextId,
             newKmsNodes,
             newMpcThreshold,
