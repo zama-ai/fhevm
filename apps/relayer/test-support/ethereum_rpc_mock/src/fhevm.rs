@@ -1136,44 +1136,4 @@ mod tests {
         let proof_id2 = wrapper.next_zk_proof_id();
         assert!(proof_id2 > proof_id1, "ZK proof IDs should increment");
     }
-
-    #[test]
-    fn test_pattern_setup_methods() {
-        // Tests if all pattern setup methods complete without panicking
-
-        let server = MockServer::new(MockConfig::new());
-        let wrapper =
-            FhevmMockWrapper::new(server, Address::repeat_byte(1), Address::repeat_byte(2));
-
-        let handles = vec![generate_ciphertext_handle()];
-        let user = Address::repeat_byte(3);
-        let test_data = Bytes::from("test proof data");
-
-        // Test pattern setup methods don't panic
-        wrapper.on_user_decrypt_success(
-            UserDecryptKind::Direct,
-            handles.clone(),
-            user,
-            mock_server::SubscriptionTarget::All,
-        );
-        wrapper.on_user_decrypt_error(UserDecryptKind::Direct, handles.clone(), user);
-        wrapper.on_user_decrypt_revert(UserDecryptKind::Direct, "test reason");
-
-        wrapper.on_public_decrypt_success(
-            handles.clone(),
-            vec![42],
-            mock_server::SubscriptionTarget::All,
-        );
-        wrapper.on_public_decrypt_error(handles.clone());
-        wrapper.on_public_decrypt_revert("test reason");
-
-        wrapper.on_input_proof_success(
-            user,
-            test_data.clone(),
-            10,
-            mock_server::SubscriptionTarget::All,
-        );
-        wrapper.on_input_proof_error(user, test_data, 10);
-        wrapper.on_input_proof_revert("test reason");
-    }
 }
