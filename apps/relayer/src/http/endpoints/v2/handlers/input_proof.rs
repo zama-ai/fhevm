@@ -1,5 +1,5 @@
 use super::super::types::error::{
-    ApiResponseStatus, RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500,
+    classify_revert_error, ApiResponseStatus, RelayerV2ApiError404, RelayerV2ApiError500,
     RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::input_proof::{
@@ -42,45 +42,6 @@ use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type InputProofResponse = AppResponse<InputProofPostResponseJson>;
-
-/// Helper to classify error messages and return appropriate HTTP status and error response
-///
-/// Parses error selector from message, classifies the revert reason,
-/// and returns appropriate HTTP status and error response.
-fn classify_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
-    use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
-
-    // Parse selector and classify revert reason
-    let reason = if let Some(selector) = extract_revert_selector(error_msg) {
-        classify_revert_selector(&selector)
-    } else {
-        RevertReason::Unknown
-    };
-
-    // Map to HTTP response
-    match reason {
-        RevertReason::ContractPaused => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::protocol_paused(error_msg),
-        ),
-        RevertReason::InsufficientBalance => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_balance(error_msg),
-        ),
-        RevertReason::InsufficientAllowance => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_allowance(error_msg),
-        ),
-        RevertReason::InvalidSignature => (
-            StatusCode::BAD_REQUEST,
-            RelayerV2ApiError400NoDetails::invalid_signature(),
-        ),
-        RevertReason::Unknown => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            RelayerV2ApiError500::internal_server_error(error_msg),
-        ),
-    }
-}
 
 pub struct InputProofHandler<D>
 where
@@ -494,7 +455,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         };
 
                         // Classify the error to determine appropriate status code and label
-                        let (status_code, error_value) = classify_error(&error_msg);
+                        let (status_code, error_value) = classify_revert_error(&error_msg);
 
                         (
                             status_code,

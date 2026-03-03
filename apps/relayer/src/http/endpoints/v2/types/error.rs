@@ -444,6 +444,44 @@ impl RelayerV2ResponseFailed {
     }
 }
 
+/// Classify an error by its ABI revert selector and return the matching HTTP status + JSON body.
+///
+/// The contract can revert with many selectors — we validate most conditions before
+/// sending the transaction, so only a subset can appear here. Plain-text messages
+/// (no selector) fall through to Unknown / 500.
+pub fn classify_revert_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
+    use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
+
+    let reason = if let Some(selector) = extract_revert_selector(error_msg) {
+        classify_revert_selector(&selector)
+    } else {
+        RevertReason::Unknown
+    };
+
+    match reason {
+        RevertReason::ContractPaused => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::protocol_paused(error_msg),
+        ),
+        RevertReason::InsufficientBalance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_balance(error_msg),
+        ),
+        RevertReason::InsufficientAllowance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_allowance(error_msg),
+        ),
+        RevertReason::InvalidSignature => (
+            StatusCode::BAD_REQUEST,
+            RelayerV2ApiError400NoDetails::invalid_signature(),
+        ),
+        RevertReason::Unknown => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RelayerV2ApiError500::internal_server_error(error_msg),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
