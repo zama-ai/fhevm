@@ -433,29 +433,26 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 })).into_response()
                             }
                         } else {
-                            // Request was rejected
-                            let error_msg = match response_model.err_reason {
-                                Some(reason) => reason,
-                                None => {
-                                    error!(
-                                        alert = true,
-                                        request_id = %request_id,
-                                        "Rejected request missing error reason in database"
-                                    );
-                                    "Proof rejected".to_string()
-                                }
-                            };
-
-                            // Classify the error to determine appropriate status code and label
-                            let (status_code, error_value) = classify_error(&error_msg);
+                            // Proof was evaluated and rejected — this is a valid business outcome, not an error
+                            info!(
+                                request_id = %request_id,
+                                http_status = 200,
+                                ext_job_id = %job_id,
+                                "HTTP response: proof rejected"
+                            );
 
                             (
-                                status_code,
+                                StatusCode::OK,
                                 Json(InputProofStatusResponseJson {
-                                    status: ApiResponseStatus::Failed,
+                                    status: ApiResponseStatus::Succeeded,
                                     request_id: request_id.to_string(),
-                                    result: None,
-                                    error: Some(error_value),
+                                    result: Some(InputProofResponseJson {
+                                        accepted: false,
+                                        extra_data: "0x00".to_string(),
+                                        handles: None,
+                                        signatures: None,
+                                    }),
+                                    error: None,
                                 }),
                             )
                                 .into_response()

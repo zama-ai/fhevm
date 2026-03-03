@@ -215,7 +215,7 @@ async fn test_nonce_too_low_then_succeeds() {
 }
 
 #[tokio::test]
-async fn test_gateway_rejection_fails() {
+async fn test_gateway_rejection_returns_200_with_accepted_false() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
@@ -225,16 +225,12 @@ async fn test_gateway_rejection_fails() {
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
-    assert_ne!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, ApiResponseStatus::Failed);
-    assert!(body.result.is_none());
-
-    let error = body.error.as_ref().expect("Error should be present");
-    assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("internal_server_error"),
-        "Expected label 'internal_server_error' for gateway rejection"
-    );
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    let result = body.result.expect("expected result with accepted=false");
+    assert!(!result.accepted);
+    assert!(result.handles.is_none());
+    assert!(result.signatures.is_none());
 
     setup.shutdown().await;
 }
