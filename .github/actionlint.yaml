@@ -24,3 +24,6 @@ paths:
   .github/workflows/gateway-contracts-upgrade-tests.yml:
     ignore:
       - 'constant expression "false" in condition' # https://github.com/zama-ai/fhevm-internal/issues/379
+  .github/workflows/host-contracts-upgrade-tests.yml:
+    ignore:
+      - 'constant expression "false" in condition' # https://github.com/zama-ai/fhevm-internal/issues/379
