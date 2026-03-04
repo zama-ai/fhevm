@@ -31,9 +31,9 @@
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "bugs": {
-    "url": "https://github.com/zama-ai/fhevm-solidity/issues"
+    "url": "https://github.com/zama-ai/fhevm/issues"
   },
-  "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
+  "homepage": "https://github.com/zama-ai/fhevm",
   "devDependencies": {
     "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@fhevm/host-contracts": "*",
