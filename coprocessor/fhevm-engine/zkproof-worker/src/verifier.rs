@@ -297,7 +297,6 @@ async fn execute_verify_proof_routine(
 
         let verify_span = tracing::info_span!(
             "verify_task",
-            request_id,
             transaction_hash = transaction_id
                 .as_deref()
                 .map(fhevm_engine_common::utils::to_hex)
@@ -305,6 +304,7 @@ async fn execute_verify_proof_routine(
         );
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
+            info!(request_id, "processing verify task");
             let aux_data = auxiliary::ZkData {
                 contract_address,
                 user_address,
