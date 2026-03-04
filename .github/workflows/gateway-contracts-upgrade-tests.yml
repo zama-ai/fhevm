@@ -119,13 +119,16 @@ jobs:
           UPGRADED=0
           SKIPPED=0
 
+          # Iterate over contracts listed in the upgrade manifest
           for name in $(jq -r '.[]' upgrade-manifest.json); do
+            # Skip contracts not present in the previous release (e.g. newly added)
             if [ ! -f "previous-contracts/${name}.sol" ]; then
               echo "Skipping $name (not present in previous release)"
               SKIPPED=$((SKIPPED + 1))
               continue
             fi
 
+            # Extract REINITIALIZER_VERSION from both versions
             old_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
               "previous-contracts/${name}.sol")
             new_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
@@ -133,6 +136,7 @@ jobs:
             old_ver=${old_ver:-0}
             new_ver=${new_ver:-0}
 
+            # Upgrade only if reinitializer version changed
             if [ "$old_ver" != "$new_ver" ]; then
               echo "::group::Upgrading $name (reinitializer $old_ver → $new_ver)"
               npx hardhat "task:upgrade${name}" \
