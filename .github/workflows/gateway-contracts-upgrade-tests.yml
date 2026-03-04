@@ -124,6 +124,12 @@ jobs:
 
           # Iterate over contracts listed in the upgrade manifest
           for name in $(jq -r '.[]' upgrade-manifest.json); do
+            # Fail fast if the contract is missing from current code (manifest out of sync)
+            if [ ! -f "contracts/${name}.sol" ]; then
+              echo "::error::$name listed in upgrade-manifest.json but contracts/${name}.sol not found"
+              exit 1
+            fi
+
             # Skip contracts not present in the previous release (e.g. newly added)
             if [ ! -f "previous-contracts/${name}.sol" ]; then
               echo "Skipping $name (not present in previous release)"
@@ -176,8 +182,6 @@ jobs:
           MultichainACL_ADDR=$MULTICHAIN_ACL_ADDRESS
           # shellcheck disable=SC2034
           KMSGeneration_ADDR=$KMS_GENERATION_ADDRESS
-          # shellcheck disable=SC2034
-          ProtocolPayment_ADDR=$PROTOCOL_PAYMENT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
             # Build expected version from source constants: "<Name> v<MAJOR>.<MINOR>.<PATCH>"
