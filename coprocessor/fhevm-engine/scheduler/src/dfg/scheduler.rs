@@ -422,11 +422,21 @@ fn try_execute_node(
                 cts.push(v);
             }
             DFGTaskInput::Compressed(cct) => {
-                cts.push(SupportedFheCiphertexts::decompress(
-                    cct.ct_type,
-                    &cct.ct_bytes,
-                    gpu_idx,
-                )?);
+                let decompressed = SupportedFheCiphertexts::decompress(
+		    cct.ct_type,
+		    &cct.ct_bytes,
+		    gpu_idx,
+		)
+		    .map_err(|e| {
+			error!(
+			    target: "scheduler",
+			    { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, error = ?e },
+			    "Error while decompressing op input"
+			);
+			telemetry::set_current_span_error(&e);
+			SchedulerError::DecompressionError
+		    })?;
+                cts.push(decompressed);
             }
             DFGTaskInput::Dependence(_) => {
                 error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
