@@ -164,6 +164,7 @@ jobs:
         working-directory: current-fhevm/gateway-contracts
         run: |
           source addresses/.env.gateway
+          # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
           GatewayConfig_ADDR=$GATEWAY_CONFIG_ADDRESS
           Decryption_ADDR=$DECRYPTION_ADDRESS
           CiphertextCommits_ADDR=$CIPHERTEXT_COMMITS_ADDRESS

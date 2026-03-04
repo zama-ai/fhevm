@@ -169,6 +169,7 @@ jobs:
         working-directory: current-fhevm/host-contracts
         run: |
           source addresses/.env.host
+          # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
           ACL_ADDR=$ACL_CONTRACT_ADDRESS
           FHEVMExecutor_ADDR=$FHEVM_EXECUTOR_CONTRACT_ADDRESS
           KMSVerifier_ADDR=$KMS_VERIFIER_CONTRACT_ADDRESS
