@@ -190,12 +190,16 @@ jobs:
           KMSGeneration_ADDR=$KMS_GENERATION_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
-            # Skip contracts with no deployment address (new contracts not in previous release)
             addr_var="${name}_ADDR"
             addr="${!addr_var:-}"
             if [ -z "$addr" ]; then
-              echo "Skipping $name version check (no deployment address — new contract)"
-              continue
+              # New contract (not in previous release) — no deployment to verify
+              if [ ! -f "previous-contracts/${name}.sol" ]; then
+                echo "Skipping $name version check (new contract, not previously deployed)"
+                continue
+              fi
+              echo "::error::$name existed in previous release but ${addr_var} is not set — check address mapping"
+              exit 1
             fi
 
             # Build expected version from source constants: "<Name> v<MAJOR>.<MINOR>.<PATCH>"
