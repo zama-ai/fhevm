@@ -15,7 +15,7 @@ concurrency:
 # - CHAIN_ID_GATEWAY: Should match the chain ID used in the anvil node in the docker-compose.yml file
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
-  PREVIOUS_RELEASE_TAG: v0.11.0
+  UPGRADE_FROM_TAG: v0.11.0
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
   CHAIN_ID_GATEWAY: 54321
@@ -55,7 +55,7 @@ jobs:
       - name: Checkout previous release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.PREVIOUS_RELEASE_TAG }}
+          ref: ${{ env.UPGRADE_FROM_TAG }}
           path: previous-fhevm
           persist-credentials: 'false'
 
@@ -155,7 +155,7 @@ jobs:
 
           echo "::notice::Upgrade summary: $UPGRADED upgraded, $SKIPPED skipped"
           if [ "$UPGRADED" -eq 0 ]; then
-            echo "::warning::No contracts needed upgrading — consider bumping PREVIOUS_RELEASE_TAG"
+            echo "::warning::No contracts needed upgrading — consider bumping UPGRADE_FROM_TAG"
           fi
 
       - name: Clean up
