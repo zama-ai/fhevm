@@ -159,7 +159,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        defineNewContext(initialSigners, initialThreshold);
+        _defineContext(initialSigners, initialThreshold);
     }
 
     /**
@@ -172,7 +172,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     function reinitializeV2() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        defineNewContext($.signers, $.threshold);
+        _defineContext($.signers, $.threshold);
     }
 
     /**
@@ -182,18 +182,27 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
     function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyACLOwner {
+        uint256 newContextId = _defineContext(newSignersSet, newThreshold);
+        emit NewContextSet(newContextId, newSignersSet, newThreshold);
+    }
+
+    /**
+     * @dev             Creates a new context without emitting NewContextSet.
+     * @param newSignersSet   The new set of signers. Must not be empty.
+     * @param newThreshold    The threshold. Must be non-zero and <= signer count.
+     * @return newContextId   The newly created context ID.
+     */
+    function _defineContext(
+        address[] memory newSignersSet,
+        uint256 newThreshold
+    ) internal virtual returns (uint256 newContextId) {
         if (newSignersSet.length == 0) {
             revert SignersSetIsEmpty();
         }
-
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
-
-        $.currentKmsContextId++;
-
-        _setContextSigners($.currentKmsContextId, newSignersSet);
-        _setContextThreshold($.currentKmsContextId, newThreshold);
-
-        emit NewContextSet($.currentKmsContextId, newSignersSet, newThreshold);
+        newContextId = ++$.currentKmsContextId;
+        _setContextSigners(newContextId, newSignersSet);
+        _setContextThreshold(newContextId, newThreshold);
     }
 
     /**
