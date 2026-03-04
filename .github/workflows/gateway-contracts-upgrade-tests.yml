@@ -164,15 +164,14 @@ jobs:
         working-directory: current-fhevm/gateway-contracts
         run: |
           source addresses/.env.gateway
-          declare -A ADDR=(
-            [GatewayConfig]=$GATEWAY_CONFIG_ADDRESS
-            [Decryption]=$DECRYPTION_ADDRESS
-            [CiphertextCommits]=$CIPHERTEXT_COMMITS_ADDRESS
-            [InputVerification]=$INPUT_VERIFICATION_ADDRESS
-            [MultichainACL]=$MULTICHAIN_ACL_ADDRESS
-            [KMSGeneration]=$KMS_GENERATION_ADDRESS
-            [ProtocolPayment]=$PROTOCOL_PAYMENT_ADDRESS
-          )
+          GatewayConfig_ADDR=$GATEWAY_CONFIG_ADDRESS
+          Decryption_ADDR=$DECRYPTION_ADDRESS
+          CiphertextCommits_ADDR=$CIPHERTEXT_COMMITS_ADDRESS
+          InputVerification_ADDR=$INPUT_VERIFICATION_ADDRESS
+          MultichainACL_ADDR=$MULTICHAIN_ACL_ADDRESS
+          KMSGeneration_ADDR=$KMS_GENERATION_ADDRESS
+          ProtocolPayment_ADDR=$PROTOCOL_PAYMENT_ADDRESS
+
           for name in $(jq -r '.[]' upgrade-manifest.json); do
             # Build expected version from source constants: "<Name> v<MAJOR>.<MINOR>.<PATCH>"
             sol="contracts/${name}.sol"
@@ -181,7 +180,8 @@ jobs:
             patch=$(sed -n 's/.*PATCH_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
             expected="${name} v${major}.${minor}.${patch}"
 
-            actual=$(cast call "${ADDR[$name]}" "getVersion()(string)" --rpc-url "$RPC_URL")
+            addr_var="${name}_ADDR"
+            actual=$(cast call "${!addr_var}" "getVersion()(string)" --rpc-url "$RPC_URL")
 
             if [ "$actual" != "$expected" ]; then
               echo "::error::$name version mismatch: expected '$expected', got '$actual'"
