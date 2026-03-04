@@ -638,11 +638,7 @@ mod tests {
 
     enum DelegatedUserDecryptACLMock {
         Failure(&'static str),
-        Success {
-            is_delegated: bool,
-            delegator_allowed: bool,
-            contract_allowed: bool,
-        },
+        Success { is_delegated: bool },
     }
 
     #[rstest]
@@ -652,22 +648,12 @@ mod tests {
         None
     )]
     #[case::allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: true },
         ExpectedOutcome::Ok,
         None
     )]
-    #[case::delegator_allowed_contract_not_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: false },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
-    #[case::delegator_not_allowed_contract_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: false, contract_allowed: true },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
     #[case::not_delegated(
-        DelegatedUserDecryptACLMock::Success { is_delegated: false, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: false },
         ExpectedOutcome::Recoverable,
         Some("is not a delegate of")
     )]
@@ -710,14 +696,8 @@ mod tests {
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
-            DelegatedUserDecryptACLMock::Success {
-                is_delegated,
-                delegator_allowed,
-                contract_allowed,
-            } => {
+            DelegatedUserDecryptACLMock::Success { is_delegated } => {
                 asserter.push_success(&is_delegated.abi_encode());
-                asserter.push_success(&delegator_allowed.abi_encode());
-                asserter.push_success(&contract_allowed.abi_encode());
             }
         }
 
