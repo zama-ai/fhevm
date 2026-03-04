@@ -2,15 +2,12 @@ use tokio::sync::mpsc;
 
 use crate::{
     config::settings::Settings,
-    gateway::{
-        arbitrum::transaction::tx_throttler::{
-            GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender, TxThrottlingType,
-        },
-        readiness_check::readiness_throttler::{
-            DelegatedUserDecryptReadinessTask, PublicDecryptReadinessTask, ReadinessSender,
-            ReadinessSenders, ReadinessThrottlers, ReadinessThrottlingType,
-            UserDecryptReadinessTask,
-        },
+    gateway::arbitrum::transaction::tx_throttler::{
+        GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender, TxThrottlingType,
+    },
+    readiness::throttler::{
+        DelegatedUserDecryptReadinessTask, PublicDecryptReadinessTask, ReadinessSender,
+        ReadinessSenders, ReadinessThrottlers, ReadinessThrottlingType, UserDecryptReadinessTask,
     },
 };
 

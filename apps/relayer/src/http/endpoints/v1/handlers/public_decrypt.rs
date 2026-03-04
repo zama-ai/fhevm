@@ -7,8 +7,7 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::readiness_check::readiness_throttler::PublicDecryptReadinessTask;
-use crate::http::host_chain_validation::HostChainIdChecker;
+use crate::host::HostChainIdChecker;
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::PublicDecryptStep;
@@ -16,6 +15,7 @@ use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, H
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
+use crate::readiness::throttler::PublicDecryptReadinessTask;
 use crate::store::sql::repositories::public_decrypt_repo::{
     PublicDecryptInsertResult, PublicDecryptRepository,
 };

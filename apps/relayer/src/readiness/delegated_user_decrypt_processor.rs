@@ -7,15 +7,12 @@ use crate::{
         },
         job_id::JobId,
     },
-    gateway::{
-        arbitrum::bindings::Decryption,
-        readiness_check::{
-            error_redact::redact_alloy_error,
-            readiness_checker::{ReadinessCheckError, ReadinessChecker},
-            readiness_throttler::{DelegatedUserDecryptReadinessTask, ReadinessWorker},
-        },
-    },
+    host::redact_alloy_error,
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    readiness::{
+        checker::{ReadinessCheckError, ReadinessChecker},
+        throttler::{DelegatedUserDecryptReadinessTask, ReadinessWorker},
+    },
 };
 use std::sync::Arc;
 use tracing::{error, info};
@@ -88,17 +85,10 @@ impl DelegatedUserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
-        let contract_pairs: Vec<_> = task
-            .request
-            .ct_handle_contract_pairs
-            .iter()
-            .map(Decryption::CtHandleContractPair::from)
-            .collect();
-
         let result = checker
             .check_user_decryption_readiness(
                 &task.job_id,
-                contract_pairs,
+                &task.request.ct_handle_contract_pairs,
                 task.request.extra_data.clone(),
             )
             .await;

@@ -19,7 +19,6 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::PublicDecryptStep,
@@ -27,6 +26,7 @@ use crate::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
+    readiness::throttler::{PublicDecryptReadinessTask, ReadinessSender},
     store::sql::{
         models::req_status_enum_model::ReqStatus,
         repositories::public_decrypt_repo::{

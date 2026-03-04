@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export the base queue info types from their source modules
 pub use crate::gateway::arbitrum::transaction::tx_throttler::TxQueueInfo;
-pub use crate::gateway::readiness_check::readiness_throttler::ReadinessQueueInfo;
+pub use crate::readiness::throttler::ReadinessQueueInfo;
 
 /// Combined queue info for decrypt operations (user-decrypt and public-decrypt).
 ///

@@ -1,11 +1,8 @@
 use crate::{
     config::settings::AppConfigError,
-    gateway::{
-        arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
-        readiness_check::{
-            error_redact::redact_alloy_error, readiness_checker::ReadinessCheckError,
-        },
-    },
+    gateway::arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
+    host::redact_alloy_error,
+    readiness::ReadinessCheckError,
 };
 use serde::{Deserialize, Serialize};
 

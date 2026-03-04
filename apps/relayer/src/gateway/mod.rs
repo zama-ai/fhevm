@@ -1,8 +1,8 @@
 pub mod arbitrum;
+pub mod ciphertext_checker;
 pub mod input_handlers;
 pub mod keyurl_handler;
 pub mod public_decrypt_handler;
-pub mod readiness_check;
 pub mod throttlers;
 pub mod user_decrypt_handler;
 pub mod utils;
@@ -15,16 +15,15 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::{ListenerType, Settings};
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
-use crate::gateway::{
-    readiness_check::{
-        delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
-        host_acl_checker::HostAclChecker,
-        public_decrypt_processor::PublicDecryptReadinessProcessor,
-        readiness_checker::ReadinessChecker, user_decrypt_processor::UserDecryptReadinessProcessor,
-    },
-    throttlers::GatewayThrottlers,
-};
+use crate::gateway::throttlers::GatewayThrottlers;
+use crate::host::HostAclChecker;
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
+use crate::readiness::{
+    checker::ReadinessChecker,
+    delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
+    public_decrypt_processor::PublicDecryptReadinessProcessor,
+    user_decrypt_processor::UserDecryptReadinessProcessor,
+};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
 use arbitrum::{

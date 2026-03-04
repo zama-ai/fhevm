@@ -1,7 +1,7 @@
 use crate::{
     config::settings::{HostChainConfig, RetrySettings},
     core::{event::HandleContractPair, job_id::JobId},
-    gateway::readiness_check::{
+    host::{
         error_redact::redact_alloy_error,
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
     },

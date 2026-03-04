@@ -2,10 +2,12 @@
 pub mod config;
 pub mod core;
 pub mod gateway;
+pub mod host;
 pub mod http;
 pub mod logging;
 pub mod metrics;
 pub mod orchestrator;
+pub mod readiness;
 pub mod startup;
 pub mod startup_recovery;
 pub mod store;

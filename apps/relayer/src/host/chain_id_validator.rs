@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use crate::core::event::HandleContractPair;
-use crate::gateway::readiness_check::handle_chain_id::{
-    extract_chain_id_from_handle, extract_chain_id_from_u256,
-};
+use crate::host::handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256};
 
 pub struct HostChainIdChecker {
     supported_chain_ids: HashSet<u64>,

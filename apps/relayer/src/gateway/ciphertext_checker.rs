@@ -1,17 +1,9 @@
 use crate::{
     config::settings::{AppConfigError, GatewayConfig, RetrySettings},
-    core::{
-        errors::EventProcessingError,
-        event::{DelegatedUserDecryptRequest, UserDecryptRequest},
-        job_id::JobId,
-    },
-    gateway::{
-        arbitrum::bindings::Decryption,
-        readiness_check::{
-            error_redact::redact_alloy_error,
-            host_acl_checker::{HostAclChecker, HostAclError},
-        },
-    },
+    core::{errors::EventProcessingError, event::HandleContractPair, job_id::JobId},
+    gateway::arbitrum::bindings::Decryption,
+    host::redact_alloy_error,
+    readiness::ReadinessCheckError,
 };
 use alloy::{
     primitives::{Address, Bytes, FixedBytes},
@@ -19,39 +11,12 @@ use alloy::{
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use reqwest::Url;
-use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-/// Steps for readiness checker operations
-#[derive(Debug, Clone, Copy)]
-pub enum ReadinessStep {
-    Started,
-    Passed,
-    Failed,
-    Retrying,
-}
-
-impl fmt::Display for ReadinessStep {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Started => write!(f, "readiness_started"),
-            Self::Passed => write!(f, "readiness_passed"),
-            Self::Failed => write!(f, "readiness_failed"),
-            Self::Retrying => write!(f, "readiness_retrying"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ReadinessCheckError {
-    GwTimeout,
-    GwContractError(alloy::contract::Error),
-    NotAllowedOnHostAcl(HostAclError),
-    HostAclFailed(HostAclError),
-}
+use crate::readiness::ReadinessStep;
 
 type Provider = FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -74,13 +39,13 @@ type Provider = FillProvider<
 type GatewayDecryption = DecryptionInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 
 /// Checks gateway ciphertext readiness (isPublicDecryptionReady / isUserDecryptionReady).
-struct GwCiphertextChecker {
-    gw_retry_config: RetrySettings,
+pub struct CiphertextChecker {
+    retry_config: RetrySettings,
     gw_decryption: GatewayDecryption,
 }
 
-impl GwCiphertextChecker {
-    fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
+impl CiphertextChecker {
+    pub fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
         let decryption_address = Address::from_str(&gateway_config.contracts.decryption_address)
             .map_err(|_| {
                 EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
@@ -104,7 +69,7 @@ impl GwCiphertextChecker {
         let gw_decryption = Decryption::new(decryption_address, provider);
 
         Ok(Self {
-            gw_retry_config: gateway_config
+            retry_config: gateway_config
                 .readiness_checker
                 .gw_ciphertext_check
                 .retry
@@ -113,7 +78,7 @@ impl GwCiphertextChecker {
         })
     }
 
-    async fn check_public_decryption_readiness(
+    pub async fn check_public_decryption_readiness(
         &self,
         job_id: &JobId,
         handles: Vec<FixedBytes<32>>,
@@ -156,10 +121,12 @@ impl GwCiphertextChecker {
         result
     }
 
-    async fn check_user_decryption_readiness(
+    /// Check user decryption readiness, accepting core `HandleContractPair` types.
+    /// Converts to gateway binding types internally.
+    pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        contract_pairs: Vec<Decryption::CtHandleContractPair>,
+        pairs: &[HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         info!(
@@ -167,6 +134,11 @@ impl GwCiphertextChecker {
             int_job_id = %job_id,
             "Starting user decryption gateway ciphertext check"
         );
+
+        let contract_pairs: Vec<Decryption::CtHandleContractPair> = pairs
+            .iter()
+            .map(Decryption::CtHandleContractPair::from)
+            .collect();
 
         let result = self
             .check_readiness_internal(job_id, || {
@@ -208,8 +180,8 @@ impl GwCiphertextChecker {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
     {
-        let max_retries = self.gw_retry_config.max_attempts;
-        let retry_interval = Duration::from_millis(self.gw_retry_config.retry_interval_ms);
+        let max_retries = self.retry_config.max_attempts;
+        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
         let mut retries = 0;
         let mut last_error: Option<alloy::contract::Error> = None;
 
@@ -233,7 +205,7 @@ impl GwCiphertextChecker {
                 warn!(
                     int_job_id = %job_id,
                     max_retries = max_retries,
-                    retry_interval_ms = self.gw_retry_config.retry_interval_ms,
+                    retry_interval_ms = self.retry_config.retry_interval_ms,
                     "Max retries reached for readiness check"
                 );
                 return if let Some(err) = last_error {
@@ -252,98 +224,5 @@ impl GwCiphertextChecker {
             );
             tokio::time::sleep(retry_interval).await;
         }
-    }
-}
-
-/// Combined readiness checker that orchestrates host ACL checks and gateway
-/// ciphertext readiness checks.
-pub struct ReadinessChecker {
-    host_acl: HostAclChecker,
-    gw_ciphertext: GwCiphertextChecker,
-}
-
-impl ReadinessChecker {
-    pub fn new(
-        host_acl: HostAclChecker,
-        gateway_config: &GatewayConfig,
-    ) -> Result<Self, EventProcessingError> {
-        let gw_ciphertext = GwCiphertextChecker::new(gateway_config)?;
-        Ok(Self {
-            host_acl,
-            gw_ciphertext,
-        })
-    }
-
-    pub async fn check_host_acl_public_decrypt(
-        &self,
-        job_id: &JobId,
-        handles: &[[u8; 32]],
-    ) -> Result<(), ReadinessCheckError> {
-        self.host_acl
-            .check_public_decrypt(job_id, handles)
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
-    }
-
-    pub async fn check_public_decryption_readiness(
-        &self,
-        job_id: &JobId,
-        handles: Vec<FixedBytes<32>>,
-        extra_data: Bytes,
-    ) -> Result<(), ReadinessCheckError> {
-        self.gw_ciphertext
-            .check_public_decryption_readiness(job_id, handles, extra_data)
-            .await
-    }
-
-    pub async fn check_host_acl_user_decrypt(
-        &self,
-        job_id: &JobId,
-        request: &UserDecryptRequest,
-    ) -> Result<(), ReadinessCheckError> {
-        self.host_acl
-            .check_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.user_address,
-            )
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
-    }
-
-    pub async fn check_user_decryption_readiness(
-        &self,
-        job_id: &JobId,
-        contract_pairs: Vec<Decryption::CtHandleContractPair>,
-        extra_data: Bytes,
-    ) -> Result<(), ReadinessCheckError> {
-        self.gw_ciphertext
-            .check_user_decryption_readiness(job_id, contract_pairs, extra_data)
-            .await
-    }
-
-    pub async fn check_host_acl_delegated_user_decrypt(
-        &self,
-        job_id: &JobId,
-        request: &DelegatedUserDecryptRequest,
-    ) -> Result<(), ReadinessCheckError> {
-        self.host_acl
-            .check_delegated_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.delegator_address,
-                request.delegate_address,
-            )
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
     }
 }

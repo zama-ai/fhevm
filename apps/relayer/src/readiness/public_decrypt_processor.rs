@@ -7,12 +7,12 @@ use crate::{
         },
         job_id::JobId,
     },
-    gateway::readiness_check::{
-        error_redact::redact_alloy_error,
-        readiness_checker::{ReadinessCheckError, ReadinessChecker},
-        readiness_throttler::{PublicDecryptReadinessTask, ReadinessWorker},
-    },
+    host::redact_alloy_error,
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    readiness::{
+        checker::{ReadinessCheckError, ReadinessChecker},
+        throttler::{PublicDecryptReadinessTask, ReadinessWorker},
+    },
 };
 use alloy::primitives::FixedBytes;
 use std::sync::Arc;

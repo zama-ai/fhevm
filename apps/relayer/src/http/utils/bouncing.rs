@@ -1,7 +1,5 @@
-use crate::gateway::{
-    arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender},
-    readiness_check::readiness_throttler::{ReadinessItem, ReadinessSender},
-};
+use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
+use crate::readiness::throttler::{ReadinessItem, ReadinessSender};
 
 pub async fn bounce_check(tx_throttler: TxThrottlingSender<GatewayTxTask>) -> bool {
     let tx_full = tx_throttler.is_queue_full().await;

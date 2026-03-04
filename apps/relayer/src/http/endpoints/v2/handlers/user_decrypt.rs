@@ -15,12 +15,9 @@ use crate::core::event::{
     RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::readiness_check::readiness_throttler::{
-    DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask,
-};
+use crate::host::HostChainIdChecker;
 use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
 use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
-use crate::http::host_chain_validation::HostChainIdChecker;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
@@ -29,6 +26,7 @@ use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
+use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
 use crate::store::sql::models::{
     req_status_enum_model::ReqStatus, user_decrypt_req_model::UserDecryptReqData,
 };
@@ -51,62 +49,6 @@ use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
-
-/// Helper to classify error messages and return appropriate HTTP status and error response
-///
-/// Parses error selector from message, classifies the revert reason,
-/// and returns appropriate HTTP status and error response.
-fn classify_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
-    use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
-
-    // Not allowed on host ACL → 400
-    // TODO(Mano): Use structured data in error_message field, probably json and use it for branching.
-    if error_msg.starts_with(crate::core::errors::NOT_ALLOWED_ON_HOST_ACL_PREFIX) {
-        return (
-            StatusCode::BAD_REQUEST,
-            RelayerV2ApiError400NoDetails::not_allowed_on_host_acl(error_msg),
-        );
-    }
-
-    // Host ACL infra failure (RPC / unsupported chain) → 500
-    if error_msg.starts_with(crate::core::errors::HOST_ACL_FAILED_PREFIX) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            RelayerV2ApiError500::host_acl_failed(error_msg),
-        );
-    }
-
-    // Parse selector and classify revert reason
-    let reason = if let Some(selector) = extract_revert_selector(error_msg) {
-        classify_revert_selector(&selector)
-    } else {
-        RevertReason::Unknown
-    };
-
-    // Map to HTTP response
-    match reason {
-        RevertReason::ContractPaused => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::protocol_paused(error_msg),
-        ),
-        RevertReason::InsufficientBalance => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_balance(error_msg),
-        ),
-        RevertReason::InsufficientAllowance => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_allowance(error_msg),
-        ),
-        RevertReason::InvalidSignature => (
-            StatusCode::BAD_REQUEST,
-            RelayerV2ApiError400NoDetails::invalid_signature(),
-        ),
-        RevertReason::Unknown => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            RelayerV2ApiError500::internal_server_error(error_msg),
-        ),
-    }
-}
 
 pub struct UserDecryptHandler<D>
 where

@@ -24,7 +24,7 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{self, throttlers::init_throttlers};
-use crate::http::host_chain_validation::HostChainIdChecker;
+use crate::host::HostChainIdChecker;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;

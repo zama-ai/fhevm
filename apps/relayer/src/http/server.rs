@@ -1,6 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::gateway::throttlers::BouncerThrottlers;
+use crate::host::HostChainIdChecker;
 use crate::http::admin::AdminConfigRegistry;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
@@ -14,7 +15,6 @@ use crate::http::endpoints::{
     },
     version_handler,
 };
-use crate::http::host_chain_validation::HostChainIdChecker;
 use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
 use crate::http::utils::BounceChecker;
