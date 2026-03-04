@@ -78,21 +78,17 @@ jobs:
       - name: Check smart contract deployment from previous release
         working-directory: previous-fhevm/gateway-contracts
         run: |
-
-          ## Check Contracts Deployment
           timeout 300s bash -c 'while docker ps --filter "name=deploy-gateway-contracts" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
           docker compose logs deploy-gateway-contracts > deployment_logs.txt
-          EXIT_CODE_SC=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
-          # display logs for debugging
-          # cat deployment_logs.txt
-          if [ "$EXIT_CODE_SC" -ne 0 ]; then
-            echo "Deployment failed with exit code $EXIT_CODE_SC"
+          cat deployment_logs.txt
+          EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "Deployment failed with exit code $EXIT_CODE"
             exit 1
           elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
             echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
             exit 1
-          else
-            echo "Deployment completed successfully with expected completion message"
           fi
 
       - name: Checkout current code
