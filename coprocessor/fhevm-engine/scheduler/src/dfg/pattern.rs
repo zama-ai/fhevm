@@ -444,8 +444,8 @@ const V1_MAX_INTERNAL_REF: usize = 127;
 /// (byte 0x00).
 ///
 /// Returns `None` if the group exceeds the v1 encoding limits (\>255 nodes,
-/// \>7 inputs per node, or \>127 internal-ref position). Callers should treat
-/// `None` as "not attributable" for this group (no pattern attribution).
+/// \>7 inputs per node, or \>127 internal-ref position). Callers can fall back
+/// to wide-format hashing so oversized groups are still attributable via hash.
 ///
 /// ## Binary layout (version 1)
 ///
@@ -1949,7 +1949,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn oversize_group_returns_no_pattern() {
+    fn oversize_group_hashes_for_transaction_pattern() {
         // Build a group with > 255 nodes (V1_MAX_NODES).
         // All are independent allowed FheAdd ops with external inputs.
         let n = 256;
