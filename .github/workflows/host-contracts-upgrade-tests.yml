@@ -102,6 +102,9 @@ jobs:
           persist-credentials: 'false'
           path: current-fhevm
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
       - name: Install dependencies
         working-directory: current-fhevm/host-contracts
         run: npm ci
@@ -161,6 +164,22 @@ jobs:
           if [ "$UPGRADED" -eq 0 ]; then
             echo "::warning::No contracts needed upgrading — consider bumping UPGRADE_FROM_TAG"
           fi
+
+      - name: Verify contract versions
+        working-directory: current-fhevm/host-contracts
+        run: |
+          source addresses/.env.host
+          declare -A ADDR=(
+            [ACL]=$ACL_CONTRACT_ADDRESS
+            [FHEVMExecutor]=$FHEVM_EXECUTOR_CONTRACT_ADDRESS
+            [KMSVerifier]=$KMS_VERIFIER_CONTRACT_ADDRESS
+            [InputVerifier]=$INPUT_VERIFIER_CONTRACT_ADDRESS
+            [HCULimit]=$HCU_LIMIT_CONTRACT_ADDRESS
+          )
+          for name in $(jq -r '.[]' upgrade-manifest.json); do
+            version=$(cast call "${ADDR[$name]}" "getVersion()(string)" --rpc-url "$RPC_URL")
+            echo "$name (${ADDR[$name]}): $version"
+          done
 
       - name: Clean up
         working-directory: previous-fhevm/host-contracts
