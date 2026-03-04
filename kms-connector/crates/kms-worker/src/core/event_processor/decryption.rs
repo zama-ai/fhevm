@@ -217,36 +217,21 @@ where
         delegator_address: Address,
     ) -> Result<(), ProcessingError> {
         let handle_hex = hex::encode(handle);
-        let is_delegated_call = acl_contract.isHandleDelegatedForUserDecryption(
-            delegator_address,
-            user_address,
-            contract_address,
-            handle,
-        );
-        let delegator_allowed_call = acl_contract.isAllowed(handle, delegator_address);
-        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
-
-        let (is_delegated, delegator_allowed, contract_allowed) = tokio::try_join!(
-            is_delegated_call.call(),
-            delegator_allowed_call.call(),
-            contract_allowed_call.call(),
-        )
-        .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        let is_delegated = acl_contract
+            .isHandleDelegatedForUserDecryption(
+                delegator_address,
+                user_address,
+                contract_address,
+                handle,
+            )
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !is_delegated {
             return Err(ProcessingError::Recoverable(anyhow!(
                 "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle_hex}!",
-            )));
-        }
-        if !delegator_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{delegator_address} is not allowed to decrypt {handle_hex}!",
-            )));
-        }
-        if !contract_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
 
