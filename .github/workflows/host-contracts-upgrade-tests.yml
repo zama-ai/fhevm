@@ -136,6 +136,12 @@ jobs:
           SKIPPED=0
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
+            if [ ! -f "previous-contracts/${name}.sol" ]; then
+              echo "Skipping $name (not present in previous release)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
             old_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
               "previous-contracts/${name}.sol")
             new_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
