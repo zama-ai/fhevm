@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -22,6 +22,7 @@ contract KMSVerifierTest is Test {
         0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
     bytes32 internal constant OZ_INITIALIZABLE_STORAGE_SLOT =
         0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+    bytes32 internal constant NEW_CONTEXT_SET_TOPIC = keccak256("NewContextSet(uint256,address[],uint256)");
     uint256 internal constant initialThreshold = 1;
     address internal constant verifyingContractSource = address(10000);
     address internal constant owner = address(456);
@@ -239,6 +240,15 @@ contract KMSVerifierTest is Test {
         signerPrivateKeys[signer2] = privateKeySigner2;
         signerPrivateKeys[signer3] = privateKeySigner3;
         signerPrivateKeys[signer4] = privateKeySigner4;
+    }
+
+    function _hasNewContextSetEvent(Vm.Log[] memory logs) internal pure returns (bool) {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == NEW_CONTEXT_SET_TOPIC) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -873,9 +883,11 @@ contract KMSVerifierTest is Test {
         // Set OZ Initializable _initialized = 2 (simulating completed V2 init)
         vm.store(proxyAddr, OZ_INITIALIZABLE_STORAGE_SLOT, bytes32(uint256(2)));
 
-        // Call reinitializeV2 — should migrate legacy signers into context 1
+        // Call reinitializeV2 — should migrate legacy signers into context 1 without emitting NewContextSet
+        vm.recordLogs();
         vm.prank(owner);
         kv.reinitializeV2();
+        assertFalse(_hasNewContextSetEvent(vm.getRecordedLogs()), "NewContextSet should not be emitted during reinit");
 
         // Verify migration
         uint256 expectedCtxId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -1036,5 +1048,37 @@ contract KMSVerifierTest is Test {
         vm.prank(owner);
         vm.expectRevert(KMSVerifier.ThresholdIsNull.selector);
         kv.reinitializeV2();
+    }
+
+    /**
+     * @dev Tests that initializeFromEmptyProxy does NOT emit NewContextSet,
+     *      but still sets state correctly.
+     */
+    function test_InitializeFromEmptyProxyDoesNotEmitNewContextSet() public {
+        vm.recordLogs();
+        _upgradeProxyWithSigners(3);
+        assertFalse(_hasNewContextSetEvent(vm.getRecordedLogs()), "NewContextSet should not be emitted during init");
+
+        // State should still be set correctly
+        assertEq(kmsVerifier.getCurrentKmsContextId(), KMS_CONTEXT_COUNTER_BASE + 1);
+        assertEq(kmsVerifier.getKmsSigners().length, 3);
+        assertEq(kmsVerifier.getThreshold(), initialThreshold);
+        assertTrue(kmsVerifier.isSigner(signer0));
+    }
+
+    /**
+     * @dev Tests that defineNewContext emits exactly 1 NewContextSet event.
+     */
+    function test_DefineNewContextEmitsNewContextSet() public {
+        _upgradeProxyWithSigners(3);
+
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = signer3;
+
+        vm.expectEmit(true, false, false, true);
+        emit KMSVerifier.NewContextSet(KMS_CONTEXT_COUNTER_BASE + 2, newSigners, 1);
+
+        vm.prank(owner);
+        kmsVerifier.defineNewContext(newSigners, 1);
     }
 }
