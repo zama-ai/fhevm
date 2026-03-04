@@ -181,7 +181,7 @@ jobs:
             expected="${name} v${major}.${minor}.${patch}"
 
             addr_var="${name}_ADDR"
-            actual=$(cast call "${!addr_var}" "getVersion()(string)" --rpc-url "$RPC_URL")
+            actual=$(cast call "${!addr_var}" "getVersion()(string)" --rpc-url "$RPC_URL" | tr -d '"')
 
             if [ "$actual" != "$expected" ]; then
               echo "::error::$name version mismatch: expected '$expected', got '$actual'"
