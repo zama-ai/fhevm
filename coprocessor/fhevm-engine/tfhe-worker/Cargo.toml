@@ -46,6 +46,7 @@ gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu", "test-harness/gpu
 bench = []
 latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]
+pattern-integration-tests = []
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_futures"] }
