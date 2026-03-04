@@ -147,8 +147,14 @@ jobs:
               "previous-contracts/${name}.sol")
             new_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
               "contracts/${name}.sol")
-            old_ver=${old_ver:-0}
-            new_ver=${new_ver:-0}
+            if [ -z "$old_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from previous-contracts/${name}.sol"
+              exit 1
+            fi
+            if [ -z "$new_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from contracts/${name}.sol"
+              exit 1
+            fi
 
             # Upgrade only if reinitializer version changed
             if [ "$old_ver" != "$new_ver" ]; then
@@ -187,6 +193,14 @@ jobs:
           HCULimit_ADDR=$HCU_LIMIT_CONTRACT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
+            # Skip contracts with no deployment address (new contracts not in previous release)
+            addr_var="${name}_ADDR"
+            addr="${!addr_var:-}"
+            if [ -z "$addr" ]; then
+              echo "Skipping $name version check (no deployment address — new contract)"
+              continue
+            fi
+
             # Build expected version from source constants: "<Name> v<MAJOR>.<MINOR>.<PATCH>"
             sol="contracts/${name}.sol"
             major=$(sed -n 's/.*MAJOR_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
@@ -194,8 +208,7 @@ jobs:
             patch=$(sed -n 's/.*PATCH_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
             expected="${name} v${major}.${minor}.${patch}"
 
-            addr_var="${name}_ADDR"
-            actual=$(cast call "${!addr_var}" "getVersion()(string)" --rpc-url "$RPC_URL" | tr -d '"')
+            actual=$(cast call "$addr" "getVersion()(string)" --rpc-url "$RPC_URL" | tr -d '"')
 
             if [ "$actual" != "$expected" ]; then
               echo "::error::$name version mismatch: expected '$expected', got '$actual'"
