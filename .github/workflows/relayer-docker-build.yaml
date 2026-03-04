@@ -1,4 +1,4 @@
-name: docker-build-and-push
+name: relayer-docker-build-and-push
 
 on:
   # TODO: remove this when we have a proper release process

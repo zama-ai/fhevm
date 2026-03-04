@@ -1,26 +1,19 @@
-name: rust-ci
+name: relayer-test
 
 # NOTE: could be parametrized with which package to test when we have a specific transaction manager different from the relayer itself.
 
 on:
-  workflow_call:
-    secrets:
-      DEVELOPER_PLATFORM_ACTIONS_TOKEN:
-        required: true
-      CGR_USERNAME:
-        required: true
-      CGR_PASSWORD:
-        required: true
-permissions:
-  contents: read
-  checks: write
+  pull_request:
+  push:
+    branches: [ main, release/* ]
+permissions: {}
 concurrency:
-  group: rust-ci-${{ github.ref }}
+  group: relayer-test-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  format:
-    name: rust-ci/format
+  unit-test:
+    name: relayer-test/unit-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Project
@@ -31,22 +24,33 @@ jobs:
           submodules: recursive
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 #v1
         with:
           toolchain: stable
           components: rustfmt
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: apps/relayer
+          key: rust-build-apps/relayer
+          cache-targets: true
+          cache-all-crates: true
 
-      - name: Check formatting
+      - name: Format
         working-directory: apps/relayer
         run: cargo fmt --all -- --check
 
+      - name: Build for tests (no rpc mock)
+        working-directory: apps/relayer
+        run: cargo test --no-run --lib
+
+      - name: Unit tests
+        working-directory: apps/relayer
+        run: RUST_BACKTRACE=full make test-unit
+
   clippy:
-    name: rust-ci/clippy
+    name: relayer-test/clippy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Project
@@ -66,13 +70,14 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: apps/relayer
+          key: rust-build-apps/relayer
 
       - name: Clippy
         working-directory: apps/relayer
         run: cargo clippy -- -D warnings
 
-  test:
-    name: rust-ci/test
+  integration-test:
+    name: relayer-test/integration-test
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -126,9 +131,7 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: apps/relayer
-          # Separate cache key for build artifacts - only invalidated on Cargo.toml/lock changes
           key: rust-build-apps/relayer
-          # Save target directory to reuse compiled artifacts
           cache-targets: true
           cache-all-crates: true
 
@@ -141,17 +144,10 @@ jobs:
             echo "sqlx-cli found in cache."
           fi
 
-      # 4. Run Migrations (Initializes the DB schema)
       - name: Migrate Database
         working-directory: apps/relayer/relayer-migrate
         run: sqlx migrate run
 
-      # Build test binaries separately - this gets cached
-      - name: Build test binaries
-        working-directory: apps/relayer
-        run: make test-build
-
-      # Run the already-built test binaries
       - name: Run tests
         working-directory: apps/relayer
         run: RUST_BACKTRACE=full make test-run

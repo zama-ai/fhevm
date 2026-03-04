@@ -12,6 +12,7 @@ path = "src/lib.rs"
 default = []
 tracing-chrome = ["dep:tracing-chrome"]
 long-running-tests = []
+integration-tests = ["dep:ethereum_rpc_mock"]
 
 [dependencies]
 alloy = { version = "1.7.3", features = [
@@ -62,6 +63,7 @@ chrono = { version = "0.4.43", features = ["serde"] }
 humantime = "2.3.0"
 governor = "0.10.4"
 indexmap = "2.13.0"
+ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 
 [build-dependencies]
 built = { version = "0.8", features = [
@@ -75,7 +77,6 @@ built = { version = "0.8", features = [
 
 [dev-dependencies]
 tempfile = "3.25.0"
-ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
 rand = "0.10.0"
 rstest = "0.26.1"
 serde_yaml = "0.9.34"

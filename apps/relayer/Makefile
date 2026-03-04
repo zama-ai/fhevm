@@ -376,32 +376,32 @@ health: ## Check relayer health endpoints (requires running relayer)
 # ---------------------------------------------------------------------------
 ##@ Testing
 # ---------------------------------------------------------------------------
-
-test-unit: ## Run library/unit tests only (no Postgres needed)
+test-unit: ## Run unit tests (no Postgres needed)
 	@$(CARGO_TEST) --lib
+
+test-integration-mock-rpc: ## Run tests with ethereum_rpc_mock (no Postgres needed)
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --lib
 
 test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline data)
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
-	@$(CARGO_TEST) --test input_proof_v2_test --no-run
-	@$(CARGO_TEST) --test public_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --test user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --test delegated_user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --test health_tests --no-run
-	@$(CARGO_TEST) --test keyurl_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
+	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
 
 test-run: _check-postgres ## Run pre-built test binaries
 	@echo "Running pre-built test binaries..."
-	@$(CARGO_TEST) --lib
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
-	@$(CARGO_TEST) --test input_proof_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --test public_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --test user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --test delegated_user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --test health_tests -- --test-threads=1
-	@$(CARGO_TEST) --test keyurl_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
 
 test-long-running: _check-postgres ## Run long-running redundancy tests (requires --features long-running-tests)
 	@echo "Running long-running redundancy tests..."
@@ -432,20 +432,20 @@ test-health-endpoints: _check-postgres ## Run health endpoint tests
 
 test-smoke-ok-all-v2: _check-postgres ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
 	@echo "Building v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
 	@echo "Running v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
 
 test-smoke-ok-input-proof-v2: _check-postgres ## Run smoke test on ok (happy path) for input-proof v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
 
 test-smoke-ok-user-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
 
 test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
 
 
 # ---------------------------------------------------------------------------
