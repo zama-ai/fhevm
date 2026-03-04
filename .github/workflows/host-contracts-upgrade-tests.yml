@@ -171,9 +171,13 @@ jobs:
           source addresses/.env.host
           # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
           ACL_ADDR=$ACL_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
           FHEVMExecutor_ADDR=$FHEVM_EXECUTOR_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
           KMSVerifier_ADDR=$KMS_VERIFIER_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
           InputVerifier_ADDR=$INPUT_VERIFIER_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
           HCULimit_ADDR=$HCU_LIMIT_CONTRACT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do

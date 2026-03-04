@@ -166,11 +166,17 @@ jobs:
           source addresses/.env.gateway
           # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
           GatewayConfig_ADDR=$GATEWAY_CONFIG_ADDRESS
+          # shellcheck disable=SC2034
           Decryption_ADDR=$DECRYPTION_ADDRESS
+          # shellcheck disable=SC2034
           CiphertextCommits_ADDR=$CIPHERTEXT_COMMITS_ADDRESS
+          # shellcheck disable=SC2034
           InputVerification_ADDR=$INPUT_VERIFICATION_ADDRESS
+          # shellcheck disable=SC2034
           MultichainACL_ADDR=$MULTICHAIN_ACL_ADDRESS
+          # shellcheck disable=SC2034
           KMSGeneration_ADDR=$KMS_GENERATION_ADDRESS
+          # shellcheck disable=SC2034
           ProtocolPayment_ADDR=$PROTOCOL_PAYMENT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
