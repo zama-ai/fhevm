@@ -60,18 +60,11 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
         .with_sns_ct_materials(vec![sns_ct.clone()])
         .with_tx_hash(tx_hash);
     for attempt in 0..MAX_DECRYPTION_ATTEMPTS {
-        match event_type {
-            EventType::PublicDecryptionRequest => {
-                // Mocking isDecryptionDone returns false
-                asserter.push_success(&false.abi_encode());
-            }
-            EventType::UserDecryptionRequest => {
-                // Mocking `get_transaction_by_hash` call result
-                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
-                asserter.push_success(&mock_tx);
-            }
-            _ => (),
-        };
+        if matches!(event_type, EventType::UserDecryptionRequest) {
+            // Mocking `get_transaction_by_hash` call result
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            asserter.push_success(&mock_tx);
+        }
 
         // First attempt, the copro URL is not cached yet
         if attempt == 0 {

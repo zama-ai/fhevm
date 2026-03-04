@@ -70,20 +70,13 @@ async fn test_processing_request(
     let mut insert_options = InsertRequestOptions::new()
         .with_already_sent(already_sent)
         .with_sns_ct_materials(vec![sns_ct.clone()]);
-    match event_type {
-        EventType::PublicDecryptionRequest => {
-            // Mocking isDecryptionDone returns false
-            asserter.push_success(&false.abi_encode());
-        }
-        EventType::UserDecryptionRequest => {
-            // Mocking `get_transaction_by_hash` call result
-            let tx_hash = rand_digest();
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
-            insert_options = insert_options.with_tx_hash(tx_hash);
-            asserter.push_success(&mock_tx);
-        }
-        _ => (),
-    };
+    if matches!(event_type, EventType::UserDecryptionRequest) {
+        // Mocking `get_transaction_by_hash` call result
+        let tx_hash = rand_digest();
+        let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+        insert_options = insert_options.with_tx_hash(tx_hash);
+        asserter.push_success(&mock_tx);
+    }
 
     let get_copro_call_response = Coprocessor {
         s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
