@@ -29,13 +29,11 @@ interface ProofSubmission {
 interface PendingHandle {
   firstSeenAt: number;
   submissions: CiphertextSubmission[];
-  consensusReached: boolean;
 }
 
 interface PendingProof {
   firstSeenAt: number;
   submissions: ProofSubmission[];
-  consensusReached: boolean;
 }
 
 class ConsensusWatchdog {
@@ -44,8 +42,11 @@ class ConsensusWatchdog {
   private inputVerification: ethers.Contract;
   private pendingHandles = new Map<string, PendingHandle>();
   private pendingProofs = new Map<string, PendingProof>();
+  private resolvedHandleCount = 0;
+  private resolvedProofCount = 0;
   private divergences: string[] = [];
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private polling = false;
   private lastBlock = 0;
 
   constructor(gatewayRpcUrl: string, ciphertextCommitsAddress: string, inputVerificationAddress: string) {
@@ -67,7 +68,14 @@ class ConsensusWatchdog {
     this.provider.destroy();
   }
 
+  /** Force a poll cycle — used by Mocha hooks to catch events before checking health. */
+  async flush(): Promise<void> {
+    return this.poll();
+  }
+
   private async poll(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
     try {
       const currentBlock = await this.provider.getBlockNumber();
       if (currentBlock <= this.lastBlock) return;
@@ -84,6 +92,8 @@ class ConsensusWatchdog {
     } catch (err) {
       // Transient RPC errors shouldn't crash the watchdog — log and retry next poll.
       console.warn('[consensus-watchdog] poll error:', (err as Error).message);
+    } finally {
+      this.polling = false;
     }
   }
 
@@ -113,7 +123,6 @@ class ConsensusWatchdog {
         this.pendingHandles.set(ctHandle, {
           firstSeenAt: Date.now(),
           submissions: [],
-          consensusReached: false,
         });
       }
 
@@ -127,9 +136,8 @@ class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
-      const pending = this.pendingHandles.get(ctHandle);
-      if (pending) {
-        pending.consensusReached = true;
+      if (this.pendingHandles.delete(ctHandle)) {
+        this.resolvedHandleCount++;
       }
     }
   }
@@ -158,7 +166,6 @@ class ConsensusWatchdog {
         this.pendingProofs.set(zkProofId, {
           firstSeenAt: Date.now(),
           submissions: [],
-          consensusReached: false,
         });
       }
 
@@ -171,9 +178,8 @@ class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const zkProofId = String(log.args[0]);
-      const pending = this.pendingProofs.get(zkProofId);
-      if (pending) {
-        pending.consensusReached = true;
+      if (this.pendingProofs.delete(zkProofId)) {
+        this.resolvedProofCount++;
       }
     }
   }
@@ -230,7 +236,6 @@ class ConsensusWatchdog {
     const now = Date.now();
 
     for (const [ctHandle, pending] of this.pendingHandles) {
-      if (pending.consensusReached) continue;
       const elapsed = now - pending.firstSeenAt;
       if (elapsed > CONSENSUS_TIMEOUT_MS) {
         const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
@@ -243,7 +248,6 @@ class ConsensusWatchdog {
     }
 
     for (const [zkProofId, pending] of this.pendingProofs) {
-      if (pending.consensusReached) continue;
       const elapsed = now - pending.firstSeenAt;
       if (elapsed > CONSENSUS_TIMEOUT_MS) {
         const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
@@ -258,24 +262,21 @@ class ConsensusWatchdog {
 
   /** Summary for afterAll — reports any remaining pending handles. */
   summary(): string | null {
-    const pendingCt = [...this.pendingHandles.entries()].filter(([, p]) => !p.consensusReached);
-    const pendingPf = [...this.pendingProofs.entries()].filter(([, p]) => !p.consensusReached);
-    const resolvedCt = [...this.pendingHandles.values()].filter((p) => p.consensusReached).length;
-    const resolvedPf = [...this.pendingProofs.values()].filter((p) => p.consensusReached).length;
-
     const lines: string[] = [];
-    lines.push(`[consensus-watchdog] Summary: ${resolvedCt} ciphertext(s) and ${resolvedPf} proof(s) reached consensus.`);
+    lines.push(
+      `[consensus-watchdog] Summary: ${this.resolvedHandleCount} ciphertext(s) and ${this.resolvedProofCount} proof(s) reached consensus.`,
+    );
 
-    if (pendingCt.length > 0) {
-      lines.push(`  WARNING: ${pendingCt.length} ciphertext handle(s) never reached consensus:`);
-      for (const [handle, p] of pendingCt) {
+    if (this.pendingHandles.size > 0) {
+      lines.push(`  WARNING: ${this.pendingHandles.size} ciphertext handle(s) never reached consensus:`);
+      for (const [handle, p] of this.pendingHandles) {
         lines.push(`    - ${handle} (${p.submissions.length} submission(s))`);
       }
     }
 
-    if (pendingPf.length > 0) {
-      lines.push(`  WARNING: ${pendingPf.length} proof(s) never reached consensus:`);
-      for (const [id, p] of pendingPf) {
+    if (this.pendingProofs.size > 0) {
+      lines.push(`  WARNING: ${this.pendingProofs.size} proof(s) never reached consensus:`);
+      for (const [id, p] of this.pendingProofs) {
         lines.push(`    - zkProofId ${id} (${p.submissions.length} submission(s))`);
       }
     }
@@ -297,14 +298,14 @@ export const mochaHooks = {
 
     const gatewayRpcUrl = process.env.GATEWAY_RPC_URL!;
     const ciphertextCommitsAddress = process.env.CIPHERTEXT_COMMITS_ADDRESS!;
-    const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
+    const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS;
 
     if (!inputVerificationAddress) {
       console.warn('[consensus-watchdog] INPUT_VERIFICATION_ADDRESS not set, skipping proof monitoring');
     }
 
     console.log(`[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`);
-    watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress);
+    watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress ?? '');
     await watchdog.start();
   },
 
@@ -312,7 +313,7 @@ export const mochaHooks = {
     if (!watchdog) return;
 
     // Force one last poll before checking health so we catch recent events.
-    await (watchdog as any).poll();
+    await watchdog.flush();
     watchdog.checkHealth();
   },
 
@@ -320,7 +321,7 @@ export const mochaHooks = {
     if (!watchdog) return;
 
     // Final poll + summary.
-    await (watchdog as any).poll();
+    await watchdog.flush();
     const summary = watchdog.summary();
     if (summary) console.log(summary);
 
