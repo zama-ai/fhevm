@@ -47,13 +47,29 @@ async function upgradeCurrentToNew(
   // Prepare the new implementation factory and execute the upgrade by calling the reinitialize function
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
 
-  await hre.upgrades.upgradeProxy(currentProxyContract, newImplementationFactory, {
+  const upgraded = await hre.upgrades.upgradeProxy(currentProxyContract, newImplementationFactory, {
     call: {
       fn: reinitializeFunction.name,
       args: reinitializeArgs,
     },
   });
-  console.log('Proxy contract successfully upgraded!');
+
+  // The OZ hardhat-upgrades plugin does NOT call .wait() on the upgradeToAndCall
+  // transaction — it returns as soon as the tx is submitted. With interval mining
+  // (e.g. Anvil --block-time), the tx may not yet be mined when the plugin returns.
+  // If it reverts during mining, the revert goes undetected. Wait explicitly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const upgradeTx = (upgraded as any).deployTransaction;
+  if (upgradeTx?.wait) {
+    const receipt = await upgradeTx.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error(`upgradeToAndCall transaction reverted (status=${receipt?.status}, tx=${upgradeTx.hash})`);
+    }
+  }
+
+  // Verify the implementation was actually updated on-chain
+  const newImplAddress = await hre.upgrades.erc1967.getImplementationAddress(proxyAddress);
+  console.log(`Proxy contract successfully upgraded! New implementation: ${newImplAddress}`);
 
   if (verifyContract) {
     console.log('Waiting 2 minutes before contract verification... Please wait...');
