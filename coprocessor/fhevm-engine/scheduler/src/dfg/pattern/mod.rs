@@ -143,8 +143,11 @@
 ///
 /// Only graph **shape** contributes to the fingerprint. Runtime identifiers
 /// (output handles, transaction IDs, ciphertext data) are excluded.
+mod types;
+
+pub use types::{PatternDescription, PatternInput, PatternNode};
+
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::{LazyLock, Mutex};
 
@@ -175,51 +178,13 @@ const DEFAULT_PATTERN_HASH_THRESHOLD: usize = 25;
 /// Bounded at [`HASH_LOG_CACHE_SIZE`] entries; when full, the least-recently
 /// seen pattern is evicted (and will be re-logged if it reappears).
 static HASH_LOG_SEEN: LazyLock<Mutex<LruCache<Vec<u8>, ()>>> = LazyLock::new(|| {
-    Mutex::new(LruCache::new(NonZeroUsize::new(HASH_LOG_CACHE_SIZE).unwrap()))
+    Mutex::new(LruCache::new(
+        NonZeroUsize::new(HASH_LOG_CACHE_SIZE).unwrap(),
+    ))
 });
 
 /// Maximum entries in the hash-log dedup LRU cache.
 const HASH_LOG_CACHE_SIZE: usize = 10_000;
-
-// ---------------------------------------------------------------------------
-// Pattern encoding / decoding types
-// ---------------------------------------------------------------------------
-
-/// Decoded description of a pattern encoding.
-pub struct PatternDescription {
-    pub nodes: Vec<PatternNode>,
-}
-
-pub struct PatternNode {
-    /// Raw opcode value (SupportedFheOperations repr).
-    pub opcode: i32,
-    /// Human-readable opcode name via `FheOperation::as_str_name()`.
-    pub opcode_name: &'static str,
-    pub is_allowed: bool,
-    pub inputs: Vec<PatternInput>,
-}
-
-pub enum PatternInput {
-    /// Internal reference to another node at the given topo position.
-    Internal(u8),
-    /// External input (DB handle, other group, scalar).
-    External,
-}
-
-impl fmt::Display for PatternDescription {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, node) in self.nodes.iter().enumerate() {
-            if i > 0 {
-                write!(f, ",")?;
-            }
-            write!(f, "{}", node.opcode_name)?;
-            if node.is_allowed {
-                write!(f, "[a]")?;
-            }
-        }
-        Ok(())
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Encoding / decoding
