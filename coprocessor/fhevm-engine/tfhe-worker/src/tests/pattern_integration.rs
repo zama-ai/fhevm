@@ -342,15 +342,17 @@ async fn insert_no_cmux_transfer(
 #[tokio::test]
 #[serial(db)]
 async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::Error>> {
-    let exporter = try_install_test_subscriber();
+    // Install BEFORE setup_event_harness() so we capture all spans.
+    // This must succeed — if another test already set a global subscriber
+    // the pattern assertions would be silently skipped.
+    let exporter = try_install_test_subscriber()
+        .expect("failed to install test subscriber — another test set the global subscriber first");
 
     let harness = setup_event_harness().await?;
     let listener_db = &harness.listener_db;
 
     // Clear startup spans.
-    if let Some(ref exp) = exporter {
-        exp.reset();
-    }
+    exporter.reset();
 
     let ct_type = 4; // FheUint32
 
@@ -464,8 +466,8 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
 
     // ── Span assertions ─────────────────────────────────────────────────
 
-    if let Some(ref exp) = exporter {
-        let spans = exp.get_finished_spans().expect("failed to read spans");
+    {
+        let spans = exporter.get_finished_spans().expect("failed to read spans");
         let groups = group_ops_by_transaction(&spans);
 
         // We expect exactly 3 distinct transaction_pattern_ids.
@@ -658,8 +660,6 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
             "triple should have 6 allowed outputs"
         );
         println!("assertion 4c passed: triple tx encoding = {triple}");
-    } else {
-        println!("skipping span assertions: global subscriber already set by another test");
     }
 
     Ok(())
