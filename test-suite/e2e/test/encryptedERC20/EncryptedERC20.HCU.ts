@@ -19,6 +19,7 @@ const HCU_LIMIT_ABI = [
   'function addToBlockHCUWhitelist(address)',
   'function removeFromBlockHCUWhitelist(address)',
   'function isBlockHCUWhitelisted(address) view returns (bool)',
+  'error NotHostOwner()',
 ];
 
 describe('EncryptedERC20:HCU', function () {
@@ -296,7 +297,10 @@ describe('EncryptedERC20:HCU', function () {
 
     it('should reject setHCUPerBlock from non-owner', async function () {
       const aliceHcuLimit = this.hcuLimit.connect(this.signers.alice);
-      await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.reverted;
+      await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.revertedWithCustomError(
+        this.hcuLimit,
+        'NotHostOwner',
+      );
     });
   });
 });
