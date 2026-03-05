@@ -253,21 +253,6 @@ impl<'a> Scheduler<'a> {
     }
 }
 
-fn decompress_transaction_inputs(
-    inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
-    gpu_idx: usize,
-) -> Result<usize> {
-    let mut count = 0;
-    for txinput in inputs.values_mut() {
-        if let Some(DFGTxInput::Compressed(((t, c), allowed))) = txinput {
-            let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx)?;
-            *txinput = Some(DFGTxInput::Value((decomp, *allowed)));
-            count += 1;
-        }
-    }
-    Ok(count)
-}
-
 fn re_randomise_operation_inputs(
     cts: &mut [SupportedFheCiphertexts],
     opcode: i32,
@@ -341,38 +326,10 @@ fn execute_partition(
                     }
                     continue 'tx;
                 };
-                *i = Some(DFGTxInput::Value((ct.ct.clone(), ct.is_allowed)));
-            }
-        }
-
-        // Decompress ciphertexts
-        {
-            let _guard =
-                tracing::info_span!("decompress_ciphertexts", count = tracing::field::Empty,)
-                    .entered();
-
-            match decompress_transaction_inputs(tx_inputs, gpu_idx) {
-                Ok(count) => {
-                    tracing::Span::current().record("count", count as i64);
-                }
-                Err(e) => {
-                    error!(target: "scheduler", {transaction_id = ?hex::encode(&tid), error = ?e },
-                           "Error while decompressing inputs");
-                    telemetry::set_current_span_error(&e);
-                    for nidx in dfg.graph.node_identifiers() {
-                        let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                            error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                            continue;
-                        };
-                        if node.is_allowed {
-                            res.insert(
-                                node.result_handle.clone(),
-                                Err(SchedulerError::DecompressionError.into()),
-                            );
-                        }
-                    }
-                    continue 'tx;
-                }
+                *i = Some(DFGTxInput::Compressed((
+                    ct.compressed_ct.clone(),
+                    ct.is_allowed,
+                )));
             }
         }
 
@@ -421,7 +378,7 @@ fn execute_partition(
                             // Update input of consumers
                             if let Ok(ref res) = result.1 {
                                 child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Value(res.0.clone());
+                                    DFGTaskInput::Compressed(res.clone());
                             }
                         }
                     }
@@ -433,8 +390,7 @@ fn execute_partition(
                     res.insert(
                         node.result_handle.clone(),
                         result.1.map(|v| TaskResult {
-                            ct: v.0,
-                            compressed_ct: if node.is_allowed { v.1 } else { None },
+                            compressed_ct: v,
                             is_allowed: node.is_allowed,
                             transaction_id: tid.clone(),
                         }),
@@ -472,12 +428,35 @@ fn try_execute_node(
     let operation_pattern_id = node.operation_pattern_id().to_vec();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
-        if let DFGTaskInput::Value(i) = i {
-            cts.push(i);
-        } else {
-            // That should not be possible as we called the checker.
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
-            return Err(SchedulerError::MissingInputs.into());
+        match i {
+            DFGTaskInput::Value(v) => {
+                if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
+                    error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) },
+			   "Consensus risk: non-scalar uncompressed ciphertext");
+                }
+                cts.push(v);
+            }
+            DFGTaskInput::Compressed(cct) => {
+                let decompressed = SupportedFheCiphertexts::decompress(
+		    cct.ct_type,
+		    &cct.ct_bytes,
+		    gpu_idx,
+		)
+		    .map_err(|e| {
+			error!(
+			    target: "scheduler",
+			    { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, error = ?e },
+			    "Error while decompressing op input"
+			);
+			telemetry::set_current_span_error(&e);
+			SchedulerError::DecompressionError
+		    })?;
+                cts.push(decompressed);
+            }
+            DFGTaskInput::Dependence(_) => {
+                error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
+                return Err(SchedulerError::MissingInputs.into());
+            }
         }
     }
     // Re-randomize inputs for this operation
@@ -494,24 +473,20 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let is_allowed = node.is_allowed;
     Ok(run_computation(
         opcode,
         cts,
         node_index,
-        is_allowed,
         gpu_idx,
         &operation_pattern_id,
     ))
 }
 
-type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
-
+type OpResult = Result<CompressedCiphertext>;
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
-    is_allowed: bool,
     gpu_idx: usize,
     operation_pattern_id: &[u8],
 ) -> (usize, OpResult) {
@@ -536,7 +511,7 @@ fn run_computation(
                     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
                     (
                         graph_node_index,
-                        Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
+                        Ok(CompressedCiphertext { ct_type, ct_bytes }),
                     )
                 }
                 Err(error) => {
@@ -562,31 +537,30 @@ fn run_computation(
 
             match result {
                 Ok(result) => {
-                    if is_allowed {
-                        // Compression span
-                        let _guard = tracing::info_span!(
-                            "compress_ciphertext",
-                            ct_type = result.type_name(),
-                            operation = op_name,
-                            operation_pattern_id = %operation_pattern_id_hex,
-                            compressed_size = tracing::field::Empty,
-                        )
-                        .entered();
-                        let ct_type = result.type_num();
-                        let compressed = result.compress();
-                        match compressed {
-                            Ok(ct_bytes) => {
-                                tracing::Span::current()
-                                    .record("compressed_size", ct_bytes.len() as i64);
-                                (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
-                            }
-                            Err(error) => {
-                                telemetry::set_current_span_error(&error);
-                                (graph_node_index, Err(error.into()))
-                            }
+                    // Compression span
+                    let _guard = tracing::info_span!(
+                        "compress_ciphertext",
+                        ct_type = result.type_name(),
+                        operation = op_name,
+                        operation_pattern_id = %operation_pattern_id_hex,
+                        compressed_size = tracing::field::Empty,
+                    )
+                    .entered();
+                    let ct_type = result.type_num();
+                    let compressed = result.compress();
+                    match compressed {
+                        Ok(ct_bytes) => {
+                            tracing::Span::current()
+                                .record("compressed_size", ct_bytes.len() as i64);
+                            (
+                                graph_node_index,
+                                Ok(CompressedCiphertext { ct_type, ct_bytes }),
+                            )
                         }
-                    } else {
-                        (graph_node_index, Ok((result, None)))
+                        Err(error) => {
+                            telemetry::set_current_span_error(&error);
+                            (graph_node_index, Err(error.into()))
+                        }
                     }
                 }
                 Err(e) => {

@@ -374,96 +374,29 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
 
     {
         let mut tx = listener_db.new_transaction().await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            100,
-            ct_type,
-            h_bal1,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            10,
-            ct_type,
-            h_amt1,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            20,
-            ct_type,
-            h_dst1,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            300,
-            ct_type,
-            h_bal_b,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            25,
-            ct_type,
-            h_amt_b,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            40,
-            ct_type,
-            h_dst_b,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            500,
-            ct_type,
-            h_bal_c,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            50,
-            ct_type,
-            h_amt_c,
-            false,
-        )
-        .await?;
-        insert_trivial_encrypt(
-            listener_db,
-            &mut tx,
-            setup_tx_id,
-            60,
-            ct_type,
-            h_dst_c,
-            false,
-        )
-        .await?;
+        for (value, handle) in [
+            (100, h_bal1),
+            (10, h_amt1),
+            (20, h_dst1),
+            (300, h_bal_b),
+            (25, h_amt_b),
+            (40, h_dst_b),
+            (500, h_bal_c),
+            (50, h_amt_c),
+            (60, h_dst_c),
+        ] {
+            insert_trivial_encrypt(
+                listener_db,
+                &mut tx,
+                setup_tx_id,
+                value,
+                ct_type,
+                handle,
+                true,
+            )
+            .await?;
+            allow_handle(listener_db, &mut tx, &handle).await?;
+        }
         tx.commit().await?;
     }
 

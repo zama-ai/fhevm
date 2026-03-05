@@ -532,7 +532,10 @@ impl DFComponentGraph {
                             .node_weight_mut(dependent_tx_index)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                            *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
+                            *v = Some(DFGTxInput::Compressed((
+                                result.compressed_ct.clone(),
+                                result.is_allowed,
+                            )))
                         });
                     }
                 } else {
@@ -551,14 +554,7 @@ impl DFComponentGraph {
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.and_then(|rok| {
-                            rok.compressed_ct
-                                .map(|cct| (cct.0, cct.1))
-                                .ok_or_else(|| {
-                                    error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                                    SchedulerError::SchedulerError.into()
-                                })
-                        }),
+                        compressed_ct: result.map(|rok| rok.compressed_ct),
                     });
                 }
             }
@@ -642,7 +638,7 @@ impl std::fmt::Debug for DFComponentGraph {
 
 pub struct DFGResult {
     pub handle: Handle,
-    pub result: Result<Option<(i16, Vec<u8>)>>,
+    pub result: Result<Option<CompressedCiphertext>>,
     pub work_index: usize,
 }
 pub type OpEdge = u8;
@@ -669,14 +665,18 @@ impl OpNode {
 
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
-            if !matches!(i, DFGTaskInput::Value(_)) {
-                let DFGTaskInput::Dependence(d) = i else {
-                    return false;
-                };
-                let Some(Some(DFGTxInput::Value((val, _)))) = ct_map.get(d) else {
-                    return false;
-                };
-                *i = DFGTaskInput::Value(val.clone());
+            match i {
+                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Dependence(d) => {
+                    let resolved = match ct_map.get(d) {
+                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
+                        Some(Some(DFGTxInput::Compressed((cct, _)))) => {
+                            DFGTaskInput::Compressed(cct.clone())
+                        }
+                        _ => return false,
+                    };
+                    *i = resolved;
+                }
             }
         }
         true
