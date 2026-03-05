@@ -143,12 +143,16 @@ describe('EncryptedERC20:HCU', function () {
     it('should accumulate HCU from multiple users in the same block', async function () {
       await mintAndDistribute(this);
 
-      // Block 1: single tx — baseline meter
+      // Fresh block: meter starts at 0
       await mineNBlocks(1);
+      const [, meter0] = await this.hcuLimit.getBlockMeter();
+      expect(meter0).to.eq(0n);
+
+      // Block 1: single tx — baseline meter
       const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       await tx1.wait();
       const [, meter1] = await this.hcuLimit.getBlockMeter();
-      expect(meter1).to.be.greaterThan(0n);
+      expect(meter1).to.be.greaterThan(meter0);
 
       // Block 2: two txs in same block — meter should exceed block 1
       await mineNBlocks(1);
