@@ -137,10 +137,12 @@ jobs:
         run: |
           echo "Component versions: $JSON_INPUT"
 
+      # TODO: revert --build before merge — needed so the test-suite image
+      # includes the new HCU block-cap tests from this branch.
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli deploy
+          ./fhevm-cli deploy --build
 
       # TODO: remove `if: false` before merge — temporarily skipping to validate HCU tests only
       - name: Pause Host Contracts
