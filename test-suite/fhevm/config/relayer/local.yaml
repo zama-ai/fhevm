@@ -1,3 +1,8 @@
+host_chains:
+  - chain_id: 12345
+    url: "http://host-node:8545"
+    acl_address: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+
 gateway:
   blockchain_rpc:
     read_http_url: "http://gateway-node:8546"
@@ -69,9 +74,14 @@ gateway:
     tx_throttler_capacity: 11000 # To allow actual capacity of 10k, after accounting for safety margin.
     tx_throttler_safety_margin: 1000
   readiness_checker:
-    retry:
-      max_attempts: 30
-      retry_interval_ms: 2000
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 5
+        retry_interval_ms: 2000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
