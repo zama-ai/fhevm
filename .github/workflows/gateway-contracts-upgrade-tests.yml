@@ -15,6 +15,7 @@ concurrency:
 # - CHAIN_ID_GATEWAY: Should match the chain ID used in the anvil node in the docker-compose.yml file
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
+  # Bump this tag each release cycle to test upgrades from the previous version
   UPGRADE_FROM_TAG: v0.11.0
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
@@ -177,20 +178,20 @@ jobs:
         run: |
           source addresses/.env.gateway
           # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
-          GatewayConfig_ADDR=$GATEWAY_CONFIG_ADDRESS
+          GatewayConfigAddress=$GATEWAY_CONFIG_ADDRESS
           # shellcheck disable=SC2034
-          Decryption_ADDR=$DECRYPTION_ADDRESS
+          DecryptionAddress=$DECRYPTION_ADDRESS
           # shellcheck disable=SC2034
-          CiphertextCommits_ADDR=$CIPHERTEXT_COMMITS_ADDRESS
+          CiphertextCommitsAddress=$CIPHERTEXT_COMMITS_ADDRESS
           # shellcheck disable=SC2034
-          InputVerification_ADDR=$INPUT_VERIFICATION_ADDRESS
+          InputVerificationAddress=$INPUT_VERIFICATION_ADDRESS
           # shellcheck disable=SC2034
-          MultichainACL_ADDR=$MULTICHAIN_ACL_ADDRESS
+          MultichainACLAddress=$MULTICHAIN_ACL_ADDRESS
           # shellcheck disable=SC2034
-          KMSGeneration_ADDR=$KMS_GENERATION_ADDRESS
+          KMSGenerationAddress=$KMS_GENERATION_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
-            addr_var="${name}_ADDR"
+            addr_var="${name}Address"
             addr="${!addr_var:-}"
             if [ -z "$addr" ]; then
               # New contract (not in previous release) — no deployment to verify
