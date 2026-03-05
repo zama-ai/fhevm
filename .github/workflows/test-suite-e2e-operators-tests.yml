@@ -125,7 +125,7 @@ jobs:
           SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
           ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
         run: |
-          ./fhevm-cli deploy
+          ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
 
       - name: All operators tests
         working-directory: test-suite/fhevm
