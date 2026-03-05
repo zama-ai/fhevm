@@ -143,37 +143,33 @@ describe('EncryptedERC20:HCU', function () {
     it('should accumulate HCU from multiple users in the same block', async function () {
       await mintAndDistribute(this);
 
+      // Block 1: single tx — baseline meter
+      await mineNBlocks(1);
+      const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+      await tx1.wait();
+      const [, meter1] = await this.hcuLimit.getBlockMeter();
+      expect(meter1).to.be.greaterThan(0n);
+
+      // Block 2: two txs in same block — meter should exceed block 1
       await mineNBlocks(1);
       await ethers.provider.send('evm_setAutomine', [false]);
-
-      const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 1000);
-      const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 1000);
-
+      const txA = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+      const txB = await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 100);
       await ethers.provider.send('evm_mine');
       await ethers.provider.send('evm_setAutomine', [true]);
+      const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
+      expect(receiptA?.status).to.eq(1);
+      expect(receiptB?.status).to.eq(1);
+      expect(receiptA?.blockNumber).to.eq(receiptB?.blockNumber);
+      const [, meter2] = await this.hcuLimit.getBlockMeter();
+      expect(meter2).to.be.greaterThan(meter1);
 
-      const receiptAlice = await txAlice.wait();
-      const receiptBob = await txBob.wait();
-
-      expect(receiptAlice?.status).to.eq(1);
-      expect(receiptBob?.status).to.eq(1);
-      expect(receiptAlice?.blockNumber).to.eq(receiptBob?.blockNumber);
-
-      const { globalTxHCU: hcuAlice } = getTxHCUFromTxReceipt(receiptAlice);
-      const { globalTxHCU: hcuBob } = getTxHCUFromTxReceipt(receiptBob);
-      expect(hcuAlice).to.be.greaterThan(0);
-      expect(hcuBob).to.be.greaterThan(0);
-
-      // Verify block meter accumulated HCU from both txs.
-      // We compare the on-chain meter against individual receipt-reported HCU
-      // rather than their sum, because the receipt parser reconstructs HCU from
-      // the @fhevm/solidity npm price table while the block meter uses the
-      // deployed contract's hardcoded prices — a version skew can cause a small
-      // discrepancy.  Asserting meter > each individual tx proves accumulation
-      // without cross-comparing price tables.
-      const [, usedHCU] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCU).to.be.greaterThan(BigInt(hcuAlice), 'Block meter should exceed alice HCU alone');
-      expect(usedHCU).to.be.greaterThan(BigInt(hcuBob), 'Block meter should exceed bob HCU alone');
+      // Block 3: single tx again — meter resets and matches block 1
+      await mineNBlocks(1);
+      const tx3 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+      await tx3.wait();
+      const [, meter3] = await this.hcuLimit.getBlockMeter();
+      expect(meter3).to.eq(meter1);
     });
 
     describe('with lowered limits', function () {
