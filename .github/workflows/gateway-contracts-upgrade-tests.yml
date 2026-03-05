@@ -155,6 +155,16 @@ jobs:
             # Upgrade only if reinitializer version changed
             if [ "$old_ver" != "$new_ver" ]; then
               echo "::group::Upgrading $name (reinitializer $old_ver → $new_ver)"
+
+              # Clean Hardhat cache/artifacts and the OZ manifest before each upgrade.
+              # Each upgrade runs as a separate npx process; stale cache, artifacts, or
+              # .openzeppelin manifest data from a prior upgrade can cause the OZ plugin
+              # to skip the actual implementation deployment (bytecode-hash collision in
+              # the manifest) or Hardhat to resolve the wrong artifact when two directories
+              # (previous-contracts/ and contracts/) share the same contract name.
+              npx hardhat clean
+              rm -rf .openzeppelin
+
               npx hardhat "task:upgrade${name}" \
                 --current-implementation "previous-contracts/${name}.sol:${name}" \
                 --new-implementation "contracts/${name}.sol:${name}" \
