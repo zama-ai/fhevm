@@ -120,6 +120,22 @@ jobs:
         working-directory: current-fhevm/gateway-contracts
         run: |
           set -euo pipefail
+
+          # Load proxy addresses so we can verify each upgrade on-chain.
+          source addresses/.env.gateway
+          # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
+          GatewayConfig_proxy=$GATEWAY_CONFIG_ADDRESS
+          # shellcheck disable=SC2034
+          Decryption_proxy=$DECRYPTION_ADDRESS
+          # shellcheck disable=SC2034
+          CiphertextCommits_proxy=$CIPHERTEXT_COMMITS_ADDRESS
+          # shellcheck disable=SC2034
+          InputVerification_proxy=$INPUT_VERIFICATION_ADDRESS
+          # shellcheck disable=SC2034
+          MultichainACL_proxy=$MULTICHAIN_ACL_ADDRESS
+          # shellcheck disable=SC2034
+          KMSGeneration_proxy=$KMS_GENERATION_ADDRESS
+
           UPGRADED=0
           SKIPPED=0
 
@@ -170,6 +186,33 @@ jobs:
                 --new-implementation "contracts/${name}.sol:${name}" \
                 --use-internal-proxy-address true \
                 --verify-contract false
+
+              # The OZ hardhat-upgrades plugin does NOT wait for the upgradeToAndCall
+              # transaction to be mined — it returns as soon as the tx is submitted.
+              # With Anvil's interval mining (--block-time 0.5), the tx may still be
+              # pending. Force-mine a block so the tx is included before we verify.
+              cast rpc evm_mine --rpc-url "$RPC_URL" > /dev/null
+
+              # Verify the upgrade took effect on-chain immediately.
+              # If the upgradeToAndCall tx reverted silently, getVersion() will still
+              # return the old value and we fail fast with a clear diagnostic.
+              addr_var="${name}_proxy"
+              addr="${!addr_var:-}"
+              if [ -n "$addr" ]; then
+                sol="contracts/${name}.sol"
+                major=$(sed -n 's/.*MAJOR_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+                minor=$(sed -n 's/.*MINOR_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+                patch=$(sed -n 's/.*PATCH_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+                expected="${name} v${major}.${minor}.${patch}"
+                actual=$(cast call "$addr" "getVersion()(string)" --rpc-url "$RPC_URL" | tr -d '"')
+                impl=$(cast implementation "$addr" --rpc-url "$RPC_URL")
+                echo "Post-upgrade check: expected='$expected' actual='$actual' implementation=$impl"
+                if [ "$actual" != "$expected" ]; then
+                  echo "::error::$name upgrade tx was silently dropped or reverted — proxy still on '$actual' (expected '$expected')"
+                  exit 1
+                fi
+              fi
+
               echo "::endgroup::"
               UPGRADED=$((UPGRADED + 1))
             else
