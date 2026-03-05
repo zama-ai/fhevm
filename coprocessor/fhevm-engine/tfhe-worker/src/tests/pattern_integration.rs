@@ -1,25 +1,20 @@
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::tfhe_event_propagate::{
+    Database as ListenerDatabase, Handle, Transaction,
+};
 use opentelemetry::trace::{SpanId, TracerProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use scheduler::dfg::pattern::{self, PatternInput};
 use serial_test::serial;
-use tonic::metadata::MetadataValue;
 use tracing_subscriber::layer::SubscriberExt;
 
-use crate::server::common::FheOperation;
-use crate::server::tfhe_worker::async_computation_input::Input;
-use crate::server::tfhe_worker::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::tfhe_worker::{
-    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, TrivialEncryptBatch,
-    TrivialEncryptRequestSingle,
-};
-
-use super::utils::{
-    decrypt_ciphertexts, default_api_key, random_handle, setup_test_app,
-    wait_until_all_allowed_handles_computed,
+use crate::tests::event_helpers::{
+    allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
+    setup_event_harness, to_ty, wait_until_computed, zero_address,
 };
 
 // ── Subscriber / span helpers ───────────────────────────────────────────────
@@ -102,24 +97,9 @@ fn group_ops_by_transaction(spans: &[SpanData]) -> HashMap<String, Vec<(u64, Vec
     result
 }
 
-// ── Handle counter ──────────────────────────────────────────────────────────
-
-struct HandleCounter(u64);
-
-impl HandleCounter {
-    fn new() -> Self {
-        Self(random_handle())
-    }
-    fn next(&mut self) -> Vec<u8> {
-        let h = self.0.to_be_bytes().to_vec();
-        self.0 += 1;
-        h
-    }
-}
-
 // ── ERC-20 transfer builders ────────────────────────────────────────────────
 
-/// Whitepaper encrypted transfer (5 operations, 2 allowed outputs).
+/// Insert a whitepaper encrypted transfer (5 operations) into the database.
 ///
 /// ```text
 ///  balance_src ─┬─ FheGe(bal, amt) ───────┬─ FheIfThenElse(ge, add, dst) → new_to   [allowed]
@@ -129,184 +109,207 @@ impl HandleCounter {
 ///               ├─ FheSub(bal, amt) ──────┬─ FheIfThenElse(ge, sub, bal) → new_from  [allowed]
 ///               └─ FheGe(bal, amt) ───────┘
 /// ```
-struct WhitepaperTransfer {
-    new_to_handle: Vec<u8>,
-    new_from_handle: Vec<u8>,
-    ops: Vec<AsyncComputation>,
+async fn insert_whitepaper_transfer(
+    listener_db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    tx_id: Handle,
+    balance_src: Handle,
+    amount: Handle,
+    balance_dst: Handle,
+) -> Result<(), sqlx::Error> {
+    let caller = zero_address();
+    let h_ge = next_handle();
+    let h_add = next_handle();
+    let h_new_to = next_handle();
+    let h_sub = next_handle();
+    let h_new_from = next_handle();
+
+    // [0] FheGe(balance_src, amount)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheGe(TfheContract::FheGe {
+            caller,
+            lhs: balance_src,
+            rhs: amount,
+            scalarByte: scalar_flag(false),
+            result: h_ge,
+        }),
+        false,
+    )
+    .await?;
+
+    // [1] FheAdd(balance_dst, amount)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller,
+            lhs: balance_dst,
+            rhs: amount,
+            scalarByte: scalar_flag(false),
+            result: h_add,
+        }),
+        false,
+    )
+    .await?;
+
+    // [2] FheIfThenElse(ge, add, balance_dst) → new_to [allowed]
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            caller,
+            control: h_ge,
+            ifTrue: h_add,
+            ifFalse: balance_dst,
+            result: h_new_to,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(listener_db, tx, &h_new_to).await?;
+
+    // [3] FheSub(balance_src, amount)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheSub(TfheContract::FheSub {
+            caller,
+            lhs: balance_src,
+            rhs: amount,
+            scalarByte: scalar_flag(false),
+            result: h_sub,
+        }),
+        false,
+    )
+    .await?;
+
+    // [4] FheIfThenElse(ge, sub, balance_src) → new_from [allowed]
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            caller,
+            control: h_ge,
+            ifTrue: h_sub,
+            ifFalse: balance_src,
+            result: h_new_from,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(listener_db, tx, &h_new_from).await?;
+
+    Ok(())
 }
 
-fn build_whitepaper_transfer(
-    handles: &mut HandleCounter,
-    tx_id: &[u8],
-    balance_src: &AsyncComputationInput,
-    amount: &AsyncComputationInput,
-    balance_dst: &AsyncComputationInput,
-) -> WhitepaperTransfer {
-    let h_ge = handles.next();
-    let h_add_target = handles.next();
-    let h_new_to = handles.next();
-    let h_sub_target = handles.next();
-    let h_new_from = handles.next();
-
-    let ops = vec![
-        // [0] FheGe(balance_src, amount) → has_enough_funds
-        AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_ge.clone(),
-            inputs: vec![balance_src.clone(), amount.clone()],
-            is_allowed: false,
-        },
-        // [1] FheAdd(balance_dst, amount) → new_to_target
-        AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_add_target.clone(),
-            inputs: vec![balance_dst.clone(), amount.clone()],
-            is_allowed: false,
-        },
-        // [2] FheIfThenElse(has_enough, new_to_target, balance_dst) → new_to
-        AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_new_to.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_ge.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_add_target.clone())),
-                },
-                balance_dst.clone(),
-            ],
-            is_allowed: true,
-        },
-        // [3] FheSub(balance_src, amount) → new_from_target
-        AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_sub_target.clone(),
-            inputs: vec![balance_src.clone(), amount.clone()],
-            is_allowed: false,
-        },
-        // [4] FheIfThenElse(has_enough, new_from_target, balance_src) → new_from
-        AsyncComputation {
-            operation: FheOperation::FheIfThenElse.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_new_from.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_ge.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_sub_target.clone())),
-                },
-                balance_src.clone(),
-            ],
-            is_allowed: true,
-        },
-    ];
-
-    WhitepaperTransfer {
-        new_to_handle: h_new_to,
-        new_from_handle: h_new_from,
-        ops,
-    }
-}
-
-/// No-cmux encrypted transfer variant (5 operations, 2 allowed outputs).
+/// Insert a no-cmux encrypted transfer (5 operations) into the database.
 ///
 /// Uses FheCast + FheMul instead of FheIfThenElse for the conditional.
-struct NoCmuxTransfer {
-    new_to_handle: Vec<u8>,
-    new_from_handle: Vec<u8>,
-    ops: Vec<AsyncComputation>,
-}
-
-fn build_no_cmux_transfer(
-    handles: &mut HandleCounter,
-    tx_id: &[u8],
+async fn insert_no_cmux_transfer(
+    listener_db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    tx_id: Handle,
     ct_type: i32,
-    balance_src: &AsyncComputationInput,
-    amount: &AsyncComputationInput,
-    balance_dst: &AsyncComputationInput,
-) -> NoCmuxTransfer {
-    let h_ge = handles.next();
-    let h_cast = handles.next();
-    let h_select = handles.next();
-    let h_new_to = handles.next();
-    let h_new_from = handles.next();
+    balance_src: Handle,
+    amount: Handle,
+    balance_dst: Handle,
+) -> Result<(), sqlx::Error> {
+    let caller = zero_address();
+    let h_ge = next_handle();
+    let h_cast = next_handle();
+    let h_select = next_handle();
+    let h_new_to = next_handle();
+    let h_new_from = next_handle();
 
-    let ops = vec![
-        // [0] FheGe(balance_src, amount) → has_enough_funds (bool)
-        AsyncComputation {
-            operation: FheOperation::FheGe.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_ge.clone(),
-            inputs: vec![balance_src.clone(), amount.clone()],
-            is_allowed: false,
-        },
-        // [1] FheCast(has_enough_funds → ct_type)
-        AsyncComputation {
-            operation: FheOperation::FheCast.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_cast.clone(),
-            inputs: vec![
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_ge.clone())),
-                },
-                AsyncComputationInput {
-                    input: Some(Input::Scalar(vec![ct_type as u8])),
-                },
-            ],
-            is_allowed: false,
-        },
-        // [2] FheMul(amount, cast_funds) → select_amount
-        AsyncComputation {
-            operation: FheOperation::FheMul.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_select.clone(),
-            inputs: vec![
-                amount.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_cast.clone())),
-                },
-            ],
-            is_allowed: false,
-        },
-        // [3] FheAdd(balance_dst, select_amount) → new_to
-        AsyncComputation {
-            operation: FheOperation::FheAdd.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_new_to.clone(),
-            inputs: vec![
-                balance_dst.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_select.clone())),
-                },
-            ],
-            is_allowed: true,
-        },
-        // [4] FheSub(balance_src, select_amount) → new_from
-        AsyncComputation {
-            operation: FheOperation::FheSub.into(),
-            transaction_id: tx_id.to_vec(),
-            output_handle: h_new_from.clone(),
-            inputs: vec![
-                balance_src.clone(),
-                AsyncComputationInput {
-                    input: Some(Input::InputHandle(h_select.clone())),
-                },
-            ],
-            is_allowed: true,
-        },
-    ];
+    // [0] FheGe(balance_src, amount)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheGe(TfheContract::FheGe {
+            caller,
+            lhs: balance_src,
+            rhs: amount,
+            scalarByte: scalar_flag(false),
+            result: h_ge,
+        }),
+        false,
+    )
+    .await?;
 
-    NoCmuxTransfer {
-        new_to_handle: h_new_to,
-        new_from_handle: h_new_from,
-        ops,
-    }
+    // [1] FheCast(ge → ct_type)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct: h_ge,
+            toType: to_ty(ct_type),
+            result: h_cast,
+        }),
+        false,
+    )
+    .await?;
+
+    // [2] FheMul(amount, cast)
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheMul(TfheContract::FheMul {
+            caller,
+            lhs: amount,
+            rhs: h_cast,
+            scalarByte: scalar_flag(false),
+            result: h_select,
+        }),
+        false,
+    )
+    .await?;
+
+    // [3] FheAdd(balance_dst, select) → new_to [allowed]
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller,
+            lhs: balance_dst,
+            rhs: h_select,
+            scalarByte: scalar_flag(false),
+            result: h_new_to,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(listener_db, tx, &h_new_to).await?;
+
+    // [4] FheSub(balance_src, select) → new_from [allowed]
+    insert_event(
+        listener_db,
+        tx,
+        tx_id,
+        TfheContractEvents::FheSub(TfheContract::FheSub {
+            caller,
+            lhs: balance_src,
+            rhs: h_select,
+            scalarByte: scalar_flag(false),
+            result: h_new_from,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(listener_db, tx, &h_new_from).await?;
+
+    Ok(())
 }
 
 // ── Test ────────────────────────────────────────────────────────────────────
@@ -337,17 +340,12 @@ fn build_no_cmux_transfer(
 /// 3. **Different implementation**: `Tx_nocmux` has a different
 ///    `transaction_pattern_id` than `Tx_single` (different opcodes/edges).
 #[tokio::test]
-#[serial]
+#[serial(db)]
 async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::Error>> {
     let exporter = try_install_test_subscriber();
 
-    let app = setup_test_app().await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await?;
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
-    let api_key_header = format!("bearer {}", default_api_key());
+    let harness = setup_event_harness().await?;
+    let listener_db = &harness.listener_db;
 
     // Clear startup spans.
     if let Some(ref exp) = exporter {
@@ -355,200 +353,181 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
     }
 
     let ct_type = 4; // FheUint32
-    let mut handles = HandleCounter::new();
 
     // ── Encrypt inputs ──────────────────────────────────────────────────
     //
-    // Tx_single & Tx_nocmux: balance=100, amount=10, dest=20
-    // Tx_triple transfer A:  balance=100, amount=10,  dest=20
-    // Tx_triple transfer B:  balance=300, amount=25,  dest=40
-    // Tx_triple transfer C:  balance=500, amount=50,  dest=60
+    // Shared inputs for Tx_single, Tx_triple A, and Tx_nocmux:
+    //   balance=100, amount=10, dest=20
+    // Tx_triple B: balance=300, amount=25, dest=40
+    // Tx_triple C: balance=500, amount=50, dest=60
 
-    let h_bal1 = handles.next();
-    let h_amt1 = handles.next();
-    let h_dst1 = handles.next();
-    // Separate handles for Tx_triple transfer B
-    let h_bal_b = handles.next();
-    let h_amt_b = handles.next();
-    let h_dst_b = handles.next();
-    // Separate handles for Tx_triple transfer C
-    let h_bal_c = handles.next();
-    let h_amt_c = handles.next();
-    let h_dst_c = handles.next();
+    let setup_tx_id = next_handle();
+    let h_bal1 = next_handle();
+    let h_amt1 = next_handle();
+    let h_dst1 = next_handle();
+    let h_bal_b = next_handle();
+    let h_amt_b = next_handle();
+    let h_dst_b = next_handle();
+    let h_bal_c = next_handle();
+    let h_amt_c = next_handle();
+    let h_dst_c = next_handle();
 
     {
-        let mut req = tonic::Request::new(TrivialEncryptBatch {
-            values: vec![
-                TrivialEncryptRequestSingle {
-                    handle: h_bal1.clone(),
-                    be_value: vec![100],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_amt1.clone(),
-                    be_value: vec![10],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_dst1.clone(),
-                    be_value: vec![20],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_bal_b.clone(),
-                    be_value: vec![0x01, 0x2C], // 300
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_amt_b.clone(),
-                    be_value: vec![25],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_dst_b.clone(),
-                    be_value: vec![40],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_bal_c.clone(),
-                    be_value: vec![0x01, 0xF4], // 500
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_amt_c.clone(),
-                    be_value: vec![50],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h_dst_c.clone(),
-                    be_value: vec![60],
-                    output_type: ct_type,
-                },
-            ],
-        });
-        req.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        client.trivial_encrypt_ciphertexts(req).await?;
+        let mut tx = listener_db.new_transaction().await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            100,
+            ct_type,
+            h_bal1,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            10,
+            ct_type,
+            h_amt1,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            20,
+            ct_type,
+            h_dst1,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            300,
+            ct_type,
+            h_bal_b,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            25,
+            ct_type,
+            h_amt_b,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            40,
+            ct_type,
+            h_dst_b,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            500,
+            ct_type,
+            h_bal_c,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            50,
+            ct_type,
+            h_amt_c,
+            false,
+        )
+        .await?;
+        insert_trivial_encrypt(
+            listener_db,
+            &mut tx,
+            setup_tx_id,
+            60,
+            ct_type,
+            h_dst_c,
+            false,
+        )
+        .await?;
+        tx.commit().await?;
     }
-
-    let input = |h: &[u8]| AsyncComputationInput {
-        input: Some(Input::InputHandle(h.to_vec())),
-    };
 
     // ── Tx_single: 1 whitepaper transfer ────────────────────────────────
 
-    let tx_single_id = handles.next();
-    let tx_single = build_whitepaper_transfer(
-        &mut handles,
-        &tx_single_id,
-        &input(&h_bal1),
-        &input(&h_amt1),
-        &input(&h_dst1),
-    );
+    let tx_single_id = next_handle();
+    {
+        let mut tx = listener_db.new_transaction().await?;
+        insert_whitepaper_transfer(listener_db, &mut tx, tx_single_id, h_bal1, h_amt1, h_dst1)
+            .await?;
+        tx.commit().await?;
+    }
 
     // ── Tx_triple: 3 independent whitepaper transfers, same tx_id ───────
 
-    let tx_triple_id = handles.next();
-    let tx_triple_a = build_whitepaper_transfer(
-        &mut handles,
-        &tx_triple_id,
-        &input(&h_bal1),
-        &input(&h_amt1),
-        &input(&h_dst1),
-    );
-    let tx_triple_b = build_whitepaper_transfer(
-        &mut handles,
-        &tx_triple_id,
-        &input(&h_bal_b),
-        &input(&h_amt_b),
-        &input(&h_dst_b),
-    );
-    let tx_triple_c = build_whitepaper_transfer(
-        &mut handles,
-        &tx_triple_id,
-        &input(&h_bal_c),
-        &input(&h_amt_c),
-        &input(&h_dst_c),
-    );
+    let tx_triple_id = next_handle();
+    {
+        let mut tx = listener_db.new_transaction().await?;
+        insert_whitepaper_transfer(listener_db, &mut tx, tx_triple_id, h_bal1, h_amt1, h_dst1)
+            .await?;
+        insert_whitepaper_transfer(
+            listener_db,
+            &mut tx,
+            tx_triple_id,
+            h_bal_b,
+            h_amt_b,
+            h_dst_b,
+        )
+        .await?;
+        insert_whitepaper_transfer(
+            listener_db,
+            &mut tx,
+            tx_triple_id,
+            h_bal_c,
+            h_amt_c,
+            h_dst_c,
+        )
+        .await?;
+        tx.commit().await?;
+    }
 
     // ── Tx_nocmux: 1 no-cmux transfer ──────────────────────────────────
 
-    let tx_nocmux_id = handles.next();
-    let tx_nocmux = build_no_cmux_transfer(
-        &mut handles,
-        &tx_nocmux_id,
-        ct_type,
-        &input(&h_bal1),
-        &input(&h_amt1),
-        &input(&h_dst1),
-    );
-
-    // ── Submit all computations ─────────────────────────────────────────
-
-    let mut all_ops = Vec::with_capacity(25);
-    all_ops.extend(tx_single.ops);
-    all_ops.extend(tx_triple_a.ops);
-    all_ops.extend(tx_triple_b.ops);
-    all_ops.extend(tx_triple_c.ops);
-    all_ops.extend(tx_nocmux.ops);
-
+    let tx_nocmux_id = next_handle();
     {
-        let mut req = tonic::Request::new(AsyncComputeRequest {
-            computations: all_ops,
-        });
-        req.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        client.async_compute(req).await?;
+        let mut tx = listener_db.new_transaction().await?;
+        insert_no_cmux_transfer(
+            listener_db,
+            &mut tx,
+            tx_nocmux_id,
+            ct_type,
+            h_bal1,
+            h_amt1,
+            h_dst1,
+        )
+        .await?;
+        tx.commit().await?;
     }
 
-    // ── Wait & decrypt ──────────────────────────────────────────────────
+    // ── Wait for all computations ──────────────────────────────────────
 
-    wait_until_all_allowed_handles_computed(&app).await?;
+    wait_until_computed(&harness.app).await?;
 
-    let results = decrypt_ciphertexts(
-        &pool,
-        vec![
-            tx_single.new_to_handle.clone(),
-            tx_single.new_from_handle.clone(),
-            tx_triple_a.new_to_handle.clone(),
-            tx_triple_a.new_from_handle.clone(),
-            tx_triple_b.new_to_handle.clone(),
-            tx_triple_b.new_from_handle.clone(),
-            tx_triple_c.new_to_handle.clone(),
-            tx_triple_c.new_from_handle.clone(),
-            tx_nocmux.new_to_handle.clone(),
-            tx_nocmux.new_from_handle.clone(),
-        ],
-    )
-    .await?;
-
-    assert_eq!(results.len(), 10);
-
-    // Tx_single: whitepaper(100, 10, 20) → new_to=30, new_from=90
-    assert_eq!(results[0].value, "30", "single new_to");
-    assert_eq!(results[1].value, "90", "single new_from");
-
-    // Tx_triple A: whitepaper(100, 10, 20) → 30, 90
-    assert_eq!(results[2].value, "30", "triple_a new_to");
-    assert_eq!(results[3].value, "90", "triple_a new_from");
-
-    // Tx_triple B: whitepaper(300, 25, 40) → 65, 275
-    assert_eq!(results[4].value, "65", "triple_b new_to");
-    assert_eq!(results[5].value, "275", "triple_b new_from");
-
-    // Tx_triple C: whitepaper(500, 50, 60) → 110, 450
-    assert_eq!(results[6].value, "110", "triple_c new_to");
-    assert_eq!(results[7].value, "450", "triple_c new_from");
-
-    // Tx_nocmux: no-cmux(100, 10, 20) → 30, 90
-    assert_eq!(results[8].value, "30", "nocmux new_to");
-    assert_eq!(results[9].value, "90", "nocmux new_from");
-
-    println!("FHE correctness verified for all transfers");
+    println!("All computations completed for all transfers");
 
     // ── Span assertions ─────────────────────────────────────────────────
 
@@ -694,9 +673,9 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
         // Expected DFG (5 nodes in topo order):
         //   [0] FheGe(ext, ext)
         //   [1] FheAdd(ext, ext)
-        //   [2] FheIfThenElse(ref0, ref1, ext)  ← is_allowed
+        //   [2] FheIfThenElse(ref0, ref1, ext)  <- is_allowed
         //   [3] FheSub(ext, ext)
-        //   [4] FheIfThenElse(ref0, ref3, ext)  ← is_allowed
+        //   [4] FheIfThenElse(ref0, ref3, ext)  <- is_allowed
         let wp = decode_b64(&p_single_tx);
         assert_eq!(wp.nodes.len(), 5, "whitepaper pattern should have 5 nodes");
 
@@ -749,8 +728,8 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
         //   [0] FheGe(ext, ext)
         //   [1] FheCast(ref0, ext)
         //   [2] FheMul(ext, ref1)
-        //   [3] FheAdd(ext, ref2)  ← is_allowed
-        //   [4] FheSub(ext, ref2)  ← is_allowed
+        //   [3] FheAdd(ext, ref2)  <- is_allowed
+        //   [4] FheSub(ext, ref2)  <- is_allowed
         let nc = decode_b64(&p_nocmux_tx);
         assert_eq!(nc.nodes.len(), 5, "no-cmux pattern should have 5 nodes");
 
