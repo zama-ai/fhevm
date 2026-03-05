@@ -146,7 +146,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use daggy::petgraph::algo::toposort;
@@ -174,7 +174,9 @@ const DEFAULT_PATTERN_HASH_THRESHOLD: usize = 25;
 /// LRU dedup cache so we log the full encoding once per unique hash.
 /// Bounded at [`HASH_LOG_CACHE_SIZE`] entries; when full, the least-recently
 /// seen pattern is evicted (and will be re-logged if it reappears).
-static HASH_LOG_SEEN: Mutex<Option<LruCache<Vec<u8>, ()>>> = Mutex::new(None);
+static HASH_LOG_SEEN: LazyLock<Mutex<LruCache<Vec<u8>, ()>>> = LazyLock::new(|| {
+    Mutex::new(LruCache::new(NonZeroUsize::new(HASH_LOG_CACHE_SIZE).unwrap()))
+});
 
 /// Maximum entries in the hash-log dedup LRU cache.
 const HASH_LOG_CACHE_SIZE: usize = 10_000;
@@ -237,9 +239,7 @@ pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
     if bytes.len() < 2 {
         return None;
     }
-    if bytes[0] == HASH_VERSION {
-        return None;
-    }
+    // Only v1 encodings are decodable; hashed (v2) and unknown versions are not.
     if bytes[0] != ENCODING_VERSION {
         return None;
     }
@@ -306,14 +306,14 @@ pub fn is_hashed_pattern(bytes: &[u8]) -> bool {
     !bytes.is_empty() && bytes[0] == HASH_VERSION
 }
 
-/// Read the hash threshold from `FHEVM_PATTERN_HASH_THRESHOLD` env var,
+/// Hash threshold read once from `FHEVM_PATTERN_HASH_THRESHOLD` env var,
 /// falling back to [`DEFAULT_PATTERN_HASH_THRESHOLD`].
-fn pattern_hash_threshold() -> usize {
+static PATTERN_HASH_THRESHOLD: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("FHEVM_PATTERN_HASH_THRESHOLD")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_PATTERN_HASH_THRESHOLD)
-}
+});
 
 /// If the v1 encoding has `node_count ≤ threshold`, return it as-is.
 /// Otherwise hash it into a compact 23-byte v2 form and log the full
@@ -352,9 +352,7 @@ fn build_hash_pattern(encoding: &[u8], node_count: usize, log_full_encoding: boo
         // Log the full encoding once per unique hash for linkability.
         // The LRU cache evicts the least-recently seen pattern when full;
         // if an evicted pattern reappears it simply gets re-logged.
-        let mut seen = HASH_LOG_SEEN.lock().unwrap();
-        let cache = seen
-            .get_or_insert_with(|| LruCache::new(NonZeroUsize::new(HASH_LOG_CACHE_SIZE).unwrap()));
+        let mut cache = HASH_LOG_SEEN.lock().unwrap();
         if cache.put(buf.clone(), ()).is_none() {
             let b64_hash = URL_SAFE_NO_PAD.encode(&buf);
             let b64_full = URL_SAFE_NO_PAD.encode(encoding);
@@ -425,6 +423,35 @@ fn is_source_op(op: &DFGOp) -> bool {
         .all(|i| !matches!(i, DFGTaskInput::Dependence(_)))
 }
 
+/// Filter the parent graph's topo order to group members and build a
+/// position map for internal-ref encoding.
+fn compute_subgraph_layout(
+    group: &[usize],
+    parent_topo: &[NodeIndex],
+    graph: &Dag<(bool, usize), OpEdge>,
+) -> Option<(Vec<usize>, HashMap<usize, usize>)> {
+    if group.is_empty() {
+        return None;
+    }
+    let local_topo: Vec<usize> = parent_topo
+        .iter()
+        .filter_map(|nidx| {
+            let op_idx = graph.node_weight(*nidx)?.1;
+            if group.binary_search(&op_idx).is_ok() {
+                Some(op_idx)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let mut topo_pos: HashMap<usize, usize> = HashMap::with_capacity(local_topo.len());
+    for (pos, &op_idx) in local_topo.iter().enumerate() {
+        topo_pos.insert(op_idx, pos);
+    }
+    Some((local_topo, topo_pos))
+}
+
 /// Maximum number of nodes that a v1 encoding can represent (node_count is u8).
 const V1_MAX_NODES: usize = 255;
 
@@ -469,39 +496,11 @@ fn encode_subgraph(
     parent_topo: &[NodeIndex],
     graph: &Dag<(bool, usize), OpEdge>,
 ) -> Option<Vec<u8>> {
-    if group.is_empty() {
-        return None;
-    }
-
-    // Filter the parent graph's topo order to group members. The parent topo
-    // is a valid topological ordering for any subgraph — filtering preserves
-    // the relative order, which is sufficient for deterministic encoding.
-    //
-    // The ordering is deterministic but is NOT a canonical form for graph
-    // isomorphism. In practice, identical structures encode identically because
-    // handles are sorted before graph construction (dfg.rs:166), giving all
-    // isomorphic instances the same node insertion order.
-    let local_topo: Vec<usize> = parent_topo
-        .iter()
-        .filter_map(|nidx| {
-            let op_idx = graph.node_weight(*nidx)?.1;
-            if group.binary_search(&op_idx).is_ok() {
-                Some(op_idx)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let (local_topo, topo_pos) = compute_subgraph_layout(group, parent_topo, graph)?;
 
     let node_count = local_topo.len();
     if node_count > V1_MAX_NODES {
         return None;
-    }
-
-    // Map global op_idx → local topo position for internal refs.
-    let mut topo_pos: HashMap<usize, u8> = HashMap::with_capacity(node_count);
-    for (pos, &op_idx) in local_topo.iter().enumerate() {
-        topo_pos.insert(op_idx, pos as u8);
     }
 
     // Pre-allocate: version(1) + count(1) + per-node ~4 bytes average
@@ -534,10 +533,10 @@ fn encode_subgraph(
                     // Internal dependency only if the producer is in this group
                     if let Some(&producer_idx) = produced_handles.get(h) {
                         if let Some(&src_pos) = topo_pos.get(&producer_idx) {
-                            if src_pos as usize > V1_MAX_INTERNAL_REF {
+                            if src_pos > V1_MAX_INTERNAL_REF {
                                 return None;
                             }
-                            0x80 | src_pos
+                            0x80 | (src_pos as u8)
                         } else {
                             0x00
                         }
@@ -565,28 +564,9 @@ fn encode_subgraph_hashable(
     parent_topo: &[NodeIndex],
     graph: &Dag<(bool, usize), OpEdge>,
 ) -> Option<Vec<u8>> {
-    if group.is_empty() {
-        return None;
-    }
-
-    let local_topo: Vec<usize> = parent_topo
-        .iter()
-        .filter_map(|nidx| {
-            let op_idx = graph.node_weight(*nidx)?.1;
-            if group.binary_search(&op_idx).is_ok() {
-                Some(op_idx)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let (local_topo, topo_pos) = compute_subgraph_layout(group, parent_topo, graph)?;
 
     let node_count = local_topo.len();
-    let mut topo_pos: HashMap<usize, u32> = HashMap::with_capacity(node_count);
-    for (pos, &op_idx) in local_topo.iter().enumerate() {
-        topo_pos.insert(op_idx, pos as u32);
-    }
-
     let mut buf: Vec<u8> = Vec::with_capacity(5 + node_count * 10);
     buf.push(0xFE); // wide format marker
     buf.extend_from_slice(&(node_count as u32).to_be_bytes());
@@ -603,7 +583,7 @@ fn encode_subgraph_hashable(
                     if let Some(&producer_idx) = produced_handles.get(h) {
                         if let Some(&src_pos) = topo_pos.get(&producer_idx) {
                             buf.push(0x01); // internal
-                            buf.extend_from_slice(&src_pos.to_be_bytes());
+                            buf.extend_from_slice(&(src_pos as u32).to_be_bytes());
                             continue;
                         }
                     }
@@ -726,7 +706,7 @@ pub fn compute_logical_pattern_ids(
     // Try compact v1 first. If it succeeds and is above threshold, we hash and
     // log full encoding once. If v1 fails (group too large), hash wide encoding
     // without logging the full payload.
-    let threshold = pattern_hash_threshold();
+    let threshold = *PATTERN_HASH_THRESHOLD;
     let mut result: HashMap<usize, Vec<u8>> = HashMap::new();
     for group in groups.values() {
         let pattern_id = match encode_subgraph(operations, group, produced_handles, &topo, graph) {
@@ -743,16 +723,26 @@ pub fn compute_logical_pattern_ids(
 
     // Source nodes that feed into a single group inherit that group's pattern_id.
     for &src_idx in &source_nodes {
-        let mut target_patterns: HashSet<Vec<u8>> = HashSet::new();
+        let mut unique_pattern: Option<&Vec<u8>> = None;
+        let mut ambiguous = false;
         if let Some(succs) = successors.get(&src_idx) {
             for &succ in succs {
-                if let Some(pattern_id) = result.get(&succ) {
-                    target_patterns.insert(pattern_id.clone());
+                if let Some(pid) = result.get(&succ) {
+                    match unique_pattern {
+                        None => unique_pattern = Some(pid),
+                        Some(prev) if prev == pid => {}
+                        Some(_) => {
+                            ambiguous = true;
+                            break;
+                        }
+                    }
                 }
             }
         }
-        if target_patterns.len() == 1 {
-            result.insert(src_idx, target_patterns.into_iter().next().unwrap());
+        if !ambiguous {
+            if let Some(pid) = unique_pattern {
+                result.insert(src_idx, pid.clone());
+            }
         }
     }
 
@@ -786,7 +776,7 @@ pub fn compute_transaction_pattern_id(
         Err(_) => return Vec::new(),
     };
 
-    let threshold = pattern_hash_threshold();
+    let threshold = *PATTERN_HASH_THRESHOLD;
     match encode_subgraph(operations, &all_computation, produced_handles, &topo, graph) {
         Some(encoding) => finalize_pattern(encoding, threshold),
         None => {
@@ -891,8 +881,13 @@ mod tests {
     ///
     /// `prefix` differentiates handles across multiple calls in the same tx.
     fn build_transfer_from_ops(prefix: u8) -> Vec<DFGOp> {
+        build_transfer_from_ops_with_amount(prefix, handle(0xE0, prefix))
+    }
+
+    /// Build a transfer where the amount input is supplied externally (e.g.,
+    /// from a prior allowed output to simulate dependent transfers).
+    fn build_transfer_from_ops_with_amount(prefix: u8, ext_amount: Vec<u8>) -> Vec<DFGOp> {
         // External handles (not produced by this set of ops)
-        let ext_amount = handle(0xE0, prefix);
         let ext_allowance = handle(0xE1, prefix);
         let ext_bal_from = handle(0xE2, prefix);
         let ext_bal_to = handle(0xE3, prefix);
@@ -1178,115 +1173,7 @@ mod tests {
     /// Build a transfer where one input comes from a prior allowed output
     /// (simulating a dependent transfer in a chain).
     fn build_transfer_from_ops_dependent(prefix: u8, prior_allowed_handle: Vec<u8>) -> Vec<DFGOp> {
-        // Uses the prior_allowed_handle as ext_amount (instead of a DB handle)
-        let ext_amount = prior_allowed_handle;
-        let ext_allowance = handle(0xE1, prefix);
-        let ext_bal_from = handle(0xE2, prefix);
-        let ext_bal_to = handle(0xE3, prefix);
-
-        let h0 = handle(prefix, 0);
-        let h1 = handle(prefix, 1);
-        let h2 = handle(prefix, 2);
-        let h3 = handle(prefix, 3);
-        let h4 = handle(prefix, 4);
-        let h5 = handle(prefix, 5);
-        let h6 = handle(prefix, 6);
-        let h7 = handle(prefix, 7);
-        let h8 = handle(prefix, 8);
-
-        vec![
-            DFGOp {
-                output_handle: h0.clone(),
-                fhe_op: SupportedFheOperations::FheLe,
-                inputs: vec![
-                    DFGTaskInput::Dependence(ext_amount.clone()),
-                    DFGTaskInput::Dependence(ext_allowance.clone()),
-                ],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h1.clone(),
-                fhe_op: SupportedFheOperations::FheLe,
-                inputs: vec![
-                    DFGTaskInput::Dependence(ext_amount.clone()),
-                    DFGTaskInput::Dependence(ext_bal_from.clone()),
-                ],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h2.clone(),
-                fhe_op: SupportedFheOperations::FheBitAnd,
-                inputs: vec![
-                    DFGTaskInput::Dependence(h1.clone()),
-                    DFGTaskInput::Dependence(h0.clone()),
-                ],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h3.clone(),
-                fhe_op: SupportedFheOperations::FheSub,
-                inputs: vec![
-                    DFGTaskInput::Dependence(ext_allowance.clone()),
-                    DFGTaskInput::Dependence(ext_amount.clone()),
-                ],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h4.clone(),
-                fhe_op: SupportedFheOperations::FheIfThenElse,
-                inputs: vec![
-                    DFGTaskInput::Dependence(h2.clone()),
-                    DFGTaskInput::Dependence(h3.clone()),
-                    DFGTaskInput::Dependence(ext_allowance.clone()),
-                ],
-                is_allowed: true,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h5.clone(),
-                fhe_op: SupportedFheOperations::FheTrivialEncrypt,
-                inputs: vec![DFGTaskInput::Value(
-                    fhevm_engine_common::types::SupportedFheCiphertexts::Scalar(vec![0u8]),
-                )],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h6.clone(),
-                fhe_op: SupportedFheOperations::FheIfThenElse,
-                inputs: vec![
-                    DFGTaskInput::Dependence(h2.clone()),
-                    DFGTaskInput::Dependence(ext_amount.clone()),
-                    DFGTaskInput::Dependence(h5.clone()),
-                ],
-                is_allowed: false,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h7.clone(),
-                fhe_op: SupportedFheOperations::FheAdd,
-                inputs: vec![
-                    DFGTaskInput::Dependence(ext_bal_to.clone()),
-                    DFGTaskInput::Dependence(h6.clone()),
-                ],
-                is_allowed: true,
-                ..Default::default()
-            },
-            DFGOp {
-                output_handle: h8.clone(),
-                fhe_op: SupportedFheOperations::FheSub,
-                inputs: vec![
-                    DFGTaskInput::Dependence(ext_bal_from.clone()),
-                    DFGTaskInput::Dependence(h6.clone()),
-                ],
-                is_allowed: true,
-                ..Default::default()
-            },
-        ]
+        build_transfer_from_ops_with_amount(prefix, prior_allowed_handle)
     }
 
     #[test]
