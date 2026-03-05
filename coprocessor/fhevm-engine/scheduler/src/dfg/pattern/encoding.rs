@@ -233,6 +233,11 @@ const V1_MAX_INTERNAL_REF: usize = 127;
 /// Encode a subgraph (a set of node indices within the pre-partition graph)
 /// as a compact self-describing binary structure.
 ///
+/// The encoding captures opcodes, `is_allowed` flags, input counts, and edges
+/// (internal refs vs external) — all in topological order. It is decodable
+/// without any external lookup (see [`decode_pattern`]). Only graph **shape**
+/// contributes to the fingerprint; runtime identifiers are excluded.
+///
 /// Nodes in `group` are the computation nodes belonging to one logical operation.
 /// `group` must be sorted. All inputs that come from outside the group (source
 /// nodes, allowed nodes from other groups, DB handles) are treated as external

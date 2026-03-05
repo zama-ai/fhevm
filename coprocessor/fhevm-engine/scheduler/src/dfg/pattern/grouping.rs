@@ -67,12 +67,72 @@ fn is_source_op(op: &DFGOp) -> bool {
 /// Returns a map from op_index → pattern_id (compact binary encoding).
 /// Every op in the same logical operation gets the same pattern_id.
 ///
-/// Algorithm:
-/// 1. Classify source vs computation nodes.
-/// 2. BFS backward from each `is_allowed` computation node, stopping at other
-///    `is_allowed` nodes (they're boundaries of a different logical operation).
-/// 3. Union-find to merge overlapping cones.
-/// 4. For each group, encode using the compact binary structure.
+/// # Algorithm
+///
+/// 1. **Classify nodes** — `TrivialEncrypt`, `FheRand`, `FheRandBounded`
+///    that have no FHE dependencies are **source nodes** (input provisioning).
+///    They are excluded from cone tracing but inherit their group's
+///    `pattern_id` afterward if they feed exactly one group.
+///
+/// 2. **Backward cones** — From each `is_allowed=true` computation node,
+///    walk backward collecting every non-source computation node. Stop at
+///    other `is_allowed=true` nodes (they mark the boundary of another cone).
+///
+/// 3. **Union-find merge** — Cones sharing any node get merged.
+///
+/// 4. **Encode each group** — Compact binary encoding over structure
+///    (see [`encode_subgraph`](super::encoding::encode_subgraph)).
+///
+/// # Example: grouping walkthrough
+///
+/// Suppose a computation has one intermediate node (`Le`) feeding two
+/// published outputs (`✓`):
+///
+/// ```text
+///   [Le]  ← takes ext_a
+///    │
+///    ├──► [Select] ✓   ← also takes ext_b   → out_a
+///    │
+///    └──► [Add] ✓      ← also takes ext_c   → out_b
+/// ```
+///
+/// **Step 1 — trace backward from each `✓` node** (its "cone"):
+///
+/// ```text
+///   From Select✓:  trace back → finds Le      cone = {Le, Select}
+///   From Add✓:     trace back → finds Le      cone = {Le, Add}
+///                                      ^^
+///                                Le is in both cones
+/// ```
+///
+/// **Step 2 — merge overlapping cones** (union-find):
+///
+/// Both cones contain `Le`, so they merge into one group:
+/// `{Le, Select, Add}` → **one** `pattern_id`.
+///
+/// # Example: ERC20 `transferFrom`
+///
+/// A real `transferFrom` compiles to 9 FHE operations with three published
+/// outputs. The intermediate nodes `And` and `Select` are shared across
+/// all three output cones:
+///
+/// ```text
+///   [0]Le ──┐
+///   [1]Le ──┼──► [2]And ──┬──► [4]Select ✓   newAllowance
+///   [3]Sub ─┘             │
+///                         └──► [6]Select ──┬──► [7]Add ✓  newBalanceTo
+///                                          │
+///   [5]TrivialEncrypt(0)                   └──► [8]Sub ✓  newBalanceFrom
+///         ↑ source node (excluded)
+/// ```
+///
+/// Tracing backward from the three `✓` nodes, all cones overlap at `And`,
+/// `Le`, etc. — so union-find merges everything into **one group** of 8
+/// computation nodes (the `TrivialEncrypt` is a source node and excluded).
+///
+/// Three `transferFrom` calls in one transaction — even with chained
+/// dependencies — all get the **same** `pattern_id` because their
+/// *structure* is identical.
 pub fn compute_logical_pattern_ids(
     graph: &Dag<(bool, usize), OpEdge>,
     operations: &[DFGOp],
