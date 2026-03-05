@@ -192,8 +192,12 @@ describe('EncryptedERC20:HCU', function () {
       expect(hcuBob).to.be.greaterThan(0);
 
       const [, usedHCU] = await this.hcuLimit.getBlockMeter();
-      // Block meter should reflect accumulation from both txs
-      expect(usedHCU).to.be.greaterThan(BigInt(Math.max(hcuAlice, hcuBob)));
+      // Block meter should approximate the sum of both txs (allow ~2% drift
+      // between receipt-reported HCU and on-chain meter)
+      const expectedSum = BigInt(hcuAlice + hcuBob);
+      const tolerance = expectedSum / 50n; // 2%
+      expect(usedHCU).to.be.greaterThanOrEqual(expectedSum - tolerance);
+      expect(usedHCU).to.be.lessThanOrEqual(expectedSum + tolerance);
     });
 
     it('should revert when block HCU cap is exhausted', async function () {
