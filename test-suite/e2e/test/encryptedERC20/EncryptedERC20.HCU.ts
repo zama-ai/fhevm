@@ -143,19 +143,18 @@ describe('EncryptedERC20:HCU', function () {
     it('should accumulate HCU from multiple users in the same block', async function () {
       await mintAndDistribute(this);
 
-      // Fresh block: meter starts at 0
+      // Fresh block after setup: meter should be 0
       await mineNBlocks(1);
       const [, meter0] = await this.hcuLimit.getBlockMeter();
       expect(meter0).to.eq(0n);
 
-      // Block 1: single tx — baseline meter
+      // Single tx (auto-mines its own block)
       const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       await tx1.wait();
       const [, meter1] = await this.hcuLimit.getBlockMeter();
       expect(meter1).to.be.greaterThan(meter0);
 
-      // Block 2: two txs in same block — meter should exceed block 1
-      await mineNBlocks(1);
+      // Two txs batched in same block — same ops, so meter should be exactly double
       await ethers.provider.send('evm_setAutomine', [false]);
       const txA = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       const txB = await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 100);
@@ -166,10 +165,9 @@ describe('EncryptedERC20:HCU', function () {
       expect(receiptB?.status).to.eq(1);
       expect(receiptA?.blockNumber).to.eq(receiptB?.blockNumber);
       const [, meter2] = await this.hcuLimit.getBlockMeter();
-      expect(meter2).to.be.greaterThan(meter1);
+      expect(meter2).to.eq(meter1 * 2n);
 
-      // Block 3: single tx again — meter resets and matches block 1
-      await mineNBlocks(1);
+      // Single tx again — meter resets in new block and matches the first
       const tx3 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       await tx3.wait();
       const [, meter3] = await this.hcuLimit.getBlockMeter();
