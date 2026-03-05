@@ -105,14 +105,6 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   describe('block cap scenarios', function () {
-    const TIGHT_DEPTH_PER_TX = 400_000;
-    const TIGHT_MAX_PER_TX = 600_000;
-    const TIGHT_PER_BLOCK = 600_000;
-
-    let savedHCUPerBlock: bigint;
-    let savedMaxHCUPerTx: bigint;
-    let savedMaxHCUDepthPerTx: bigint;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function sendEncryptedTransfer(ctx: any, sender: string, recipient: string, amount: number, overrides?: any) {
       const erc20 = ctx.erc20.connect(ctx.signers[sender]);
@@ -122,13 +114,12 @@ describe('EncryptedERC20:HCU', function () {
       return erc20['transfer(address,bytes32,bytes)'](recipient, enc.handles[0], enc.inputProof, overrides ?? {});
     }
 
-    // Narrowest-first when lowering to satisfy: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async function lowerHCULimits(ctx: any) {
-      const ownerHcuLimit = ctx.hcuLimit.connect(ctx.deployer);
-      await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX);
-      await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX);
-      await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK);
+    async function mintAndDistribute(ctx: any) {
+      const mintTx = await ctx.erc20.mint(10000);
+      await mintTx.wait();
+      const setupTx = await sendEncryptedTransfer(ctx, 'alice', ctx.signers.bob.address, 5000);
+      await setupTx.wait();
     }
 
     before(async function () {
@@ -145,31 +136,12 @@ describe('EncryptedERC20:HCU', function () {
       this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
     });
 
-    beforeEach(async function () {
-      savedHCUPerBlock = await this.hcuLimit.getGlobalHCUCapPerBlock();
-      savedMaxHCUPerTx = await this.hcuLimit.getMaxHCUPerTx();
-      savedMaxHCUDepthPerTx = await this.hcuLimit.getMaxHCUDepthPerTx();
-    });
-
     afterEach(async function () {
       await ethers.provider.send('evm_setAutomine', [true]);
-      // Widest-first when restoring to satisfy: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
-      const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-      await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock);
-      await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
-      await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
-
-      if (await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress)) {
-        await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
-      }
     });
 
     it('should accumulate HCU from multiple users in the same block', async function () {
-      const mintTx = await this.erc20.mint(10000);
-      await mintTx.wait();
-
-      const setupTx = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 5000);
-      await setupTx.wait();
+      await mintAndDistribute(this);
 
       await mineNBlocks(1);
       await ethers.provider.send('evm_setAutomine', [false]);
@@ -204,69 +176,89 @@ describe('EncryptedERC20:HCU', function () {
       expect(usedHCU).to.be.greaterThan(BigInt(hcuBob), 'Block meter should exceed bob HCU alone');
     });
 
-    it('should revert when block HCU cap is exhausted', async function () {
-      await lowerHCULimits(this);
+    describe('with lowered limits', function () {
+      const TIGHT_DEPTH_PER_TX = 400_000;
+      const TIGHT_MAX_PER_TX = 600_000;
+      const TIGHT_PER_BLOCK = 600_000;
 
-      const mintTx = await this.erc20.mint(10000);
-      await mintTx.wait();
+      let savedHCUPerBlock: bigint;
+      let savedMaxHCUPerTx: bigint;
+      let savedMaxHCUDepthPerTx: bigint;
 
-      const setupTx = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 5000);
-      await setupTx.wait();
+      beforeEach(async function () {
+        [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx] = await Promise.all([
+          this.hcuLimit.getGlobalHCUCapPerBlock(),
+          this.hcuLimit.getMaxHCUPerTx(),
+          this.hcuLimit.getMaxHCUDepthPerTx(),
+        ]);
 
-      await mineNBlocks(1);
-      await ethers.provider.send('evm_setAutomine', [false]);
+        // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
+        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+        await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX);
+        await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX);
+        await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK);
+      });
 
-      // Alice fills the cap, Bob would push block total over — use fixed gasLimit
-      // to bypass estimateGas (which reverts against pending state)
-      const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
-      const tx2 = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
+      afterEach(async function () {
+        // Widest-first when restoring: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
+        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+        await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock);
+        await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
+        await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
+      });
 
-      await ethers.provider.send('evm_mine');
-      await ethers.provider.send('evm_setAutomine', [true]);
+      it('should revert when block HCU cap is exhausted', async function () {
+        await mintAndDistribute(this);
 
-      const receipt1 = await tx1.wait();
-      expect(receipt1?.status).to.eq(1, 'First transfer should succeed');
+        await mineNBlocks(1);
+        await ethers.provider.send('evm_setAutomine', [false]);
 
-      // Use getTransactionReceipt to avoid ethers throwing on reverted tx
-      const receipt2 = await ethers.provider.getTransactionReceipt(tx2.hash);
-      expect(receipt2?.status).to.eq(0, 'Second transfer should revert (block cap exceeded)');
-      expect(receipt1?.blockNumber).to.eq(receipt2?.blockNumber);
-    });
+        // Alice fills the cap, Bob would push block total over — use fixed gasLimit
+        // to bypass estimateGas (which reverts against pending state)
+        const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
+        const tx2 = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
 
-    it('should allow previously blocked caller to succeed after block rollover', async function () {
-      await lowerHCULimits(this);
+        await ethers.provider.send('evm_mine');
+        await ethers.provider.send('evm_setAutomine', [true]);
 
-      const mintTx = await this.erc20.mint(10000);
-      await mintTx.wait();
+        const receipt1 = await tx1.wait();
+        expect(receipt1?.status).to.eq(1, 'First transfer should succeed');
 
-      const setupTx = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 5000);
-      await setupTx.wait();
+        // Use getTransactionReceipt to avoid ethers throwing on reverted tx
+        const receipt2 = await ethers.provider.getTransactionReceipt(tx2.hash);
+        expect(receipt2?.status).to.eq(0, 'Second transfer should revert (block cap exceeded)');
+        expect(receipt1?.blockNumber).to.eq(receipt2?.blockNumber);
+      });
 
-      // Block N: alice fills the cap, bob gets blocked
-      await mineNBlocks(1);
-      await ethers.provider.send('evm_setAutomine', [false]);
+      it('should allow previously blocked caller to succeed after block rollover', async function () {
+        await mintAndDistribute(this);
 
-      const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
-      const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
+        // Block N: alice fills the cap, bob gets blocked
+        await mineNBlocks(1);
+        await ethers.provider.send('evm_setAutomine', [false]);
 
-      await ethers.provider.send('evm_mine');
-      await ethers.provider.send('evm_setAutomine', [true]);
+        const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
+        const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
 
-      const receiptAlice = await txAlice.wait();
-      expect(receiptAlice?.status).to.eq(1, 'Alice should succeed');
+        await ethers.provider.send('evm_mine');
+        await ethers.provider.send('evm_setAutomine', [true]);
 
-      const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
-      expect(receiptBob?.status).to.eq(0, 'Bob should be blocked in block N');
+        const receiptAlice = await txAlice.wait();
+        expect(receiptAlice?.status).to.eq(1, 'Alice should succeed');
 
-      // Block N+1: meter resets, bob retries and succeeds
-      await mineNBlocks(1);
+        const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
+        expect(receiptBob?.status).to.eq(0, 'Bob should be blocked in block N');
 
-      const [, usedHCUAfterReset] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUAfterReset).to.eq(0n, 'Meter should reset after new block');
+        // Block N+1: meter resets, bob retries and succeeds
+        await mineNBlocks(1);
 
-      const retryBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
-      const receiptRetry = await retryBob.wait();
-      expect(receiptRetry?.status).to.eq(1, 'Bob should succeed after rollover');
+        const [, usedHCUAfterReset] = await this.hcuLimit.getBlockMeter();
+        expect(usedHCUAfterReset).to.eq(0n, 'Meter should reset after new block');
+
+        const retryBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
+        const receiptRetry = await retryBob.wait();
+        expect(receiptRetry?.status).to.eq(1, 'Bob should succeed after rollover');
+      });
     });
 
     it('should count HCU after whitelist removal', async function () {
