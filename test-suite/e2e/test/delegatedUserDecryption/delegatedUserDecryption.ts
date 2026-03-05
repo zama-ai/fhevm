@@ -9,7 +9,7 @@ const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
 
 describe('Delegated user decryption', function () {
   before(async function () {
-    await initSigners(3);
+    await initSigners(5);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
 
@@ -247,5 +247,80 @@ describe('Delegated user decryption', function () {
     ).to.be.rejectedWith(
       new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
     );
+  });
+
+  it('test delegated user decryption should fail when no delegation exists', async function () {
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.dave.generateKeypair();
+
+    await expect(
+      delegatedUserDecryptSingleHandle(
+        this.instances.dave,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.dave.address,
+        this.signers.dave,
+        privateKey,
+        publicKey,
+      )
+    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
+  });
+
+  it('test delegated user decryption should fail when delegation is for wrong contract', async function () {
+    const dummyFactory = await ethers.getContractFactory('UserDecrypt');
+    const dummy = await dummyFactory.connect(this.signers.alice).deploy();
+    await dummy.waitForDeployment();
+    const wrongAddress = await dummy.getAddress();
+
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
+    const tx = await this.smartWallet
+      .connect(this.signers.bob)
+      .delegateUserDecryption(this.signers.eve.address, wrongAddress, expirationTimestamp);
+    await tx.wait();
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
+
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.eve.generateKeypair();
+
+    await expect(
+      delegatedUserDecryptSingleHandle(
+        this.instances.eve,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.eve.address,
+        this.signers.eve,
+        privateKey,
+        publicKey,
+      )
+    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
+  });
+
+  it('test delegated user decryption should fail when delegation has expired', async function () {
+    const pastExpiration = 1;
+    const tx = await this.smartWallet
+      .connect(this.signers.bob)
+      .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, pastExpiration);
+    await tx.wait();
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
+
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.eve.generateKeypair();
+
+    await expect(
+      delegatedUserDecryptSingleHandle(
+        this.instances.eve,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.eve.address,
+        this.signers.eve,
+        privateKey,
+        publicKey,
+      )
+    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
   });
 });
