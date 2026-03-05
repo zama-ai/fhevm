@@ -35,26 +35,23 @@ async fn run_migrations_before_target(pool: &PgPool) -> String {
 }
 
 /// Inserts test data using the OLD schema (with tenant_id columns).
-/// Returns the auto-generated tenant_id.
+/// Returns the tenant_id.
 async fn seed_old_schema_data(pool: &PgPool) -> i32 {
-    // 1. Insert a single tenant.
+    // 1. Insert a single tenant that is not 0 (to distinguish from default).
+    let tenant_id = 49;
     sqlx::query(
         "INSERT INTO tenants (
-            chain_id, verifying_contract_address, acl_contract_address,
+            tenant_id, chain_id, verifying_contract_address, acl_contract_address,
             pks_key, sks_key, public_params, cks_key, key_id
         ) VALUES (
-            12345, '0xVerifyingAddr', '0xACLContractAddr',
+            $1, 12345, '0xVerifyingAddr', '0xACLContractAddr',
             '\\xaa'::bytea, '\\xbb'::bytea, '\\xcc'::bytea, '\\xdd'::bytea, '\\xee'::bytea
         )",
     )
+    .bind(tenant_id)
     .execute(pool)
     .await
     .expect("Insert tenant");
-
-    let tenant_id: i32 = sqlx::query_scalar("SELECT tenant_id FROM tenants LIMIT 1")
-        .fetch_one(pool)
-        .await
-        .expect("Fetch tenant_id");
 
     // 2. Insert into computations.
     sqlx::query(
@@ -388,6 +385,25 @@ async fn test_remove_tenants_migration_with_data() {
     assert!(index_exists(&pool, "idx_ciphertexts128_no_tenant").await);
     assert!(index_exists(&pool, "idx_computations_no_tenant").await);
     assert!(index_exists(&pool, "idx_pbs_computations_no_tenant").await);
+
+    // host_chain_id defaults set to the existing host chain's ID.
+    let hcid_str = chain_id.to_string();
+    for table in &["computations", "pbs_computations", "ciphertext_digest"] {
+        let default = column_default(&pool, table, "host_chain_id").await;
+        assert_eq!(
+            default.as_deref(),
+            Some(hcid_str.as_str()),
+            "host_chain_id default for {table} should be {hcid_str}"
+        );
+    }
+
+    // key_id_gw default set to the existing tenant's key_id (copied into keys.key_id_gw).
+    let kgw_default = column_default(&pool, "ciphertext_digest", "key_id_gw").await;
+    assert_eq!(
+        kgw_default.as_deref(),
+        Some(r"'\xee'::bytea"),
+        "key_id_gw default should match the tenant's key_id"
+    );
 }
 
 #[tokio::test]
@@ -482,4 +498,22 @@ async fn test_remove_tenants_migration_empty_db() {
             "tenant_id default for {table} should be 0 on empty DB"
         );
     }
+
+    // host_chain_id defaults should be 0 when host_chains is empty.
+    for table in &["computations", "pbs_computations", "ciphertext_digest"] {
+        let default = column_default(&pool, table, "host_chain_id").await;
+        assert_eq!(
+            default.as_deref(),
+            Some("0"),
+            "host_chain_id default for {table} should be 0 on empty DB"
+        );
+    }
+
+    // key_id_gw default should be empty bytes when keys is empty.
+    let kgw_default = column_default(&pool, "ciphertext_digest", "key_id_gw").await;
+    assert_eq!(
+        kgw_default.as_deref(),
+        Some(r"'\x'::bytea"),
+        "key_id_gw default should be empty bytes on empty DB"
+    );
 }

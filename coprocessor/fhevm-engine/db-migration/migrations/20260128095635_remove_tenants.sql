@@ -111,4 +111,20 @@ UPDATE pbs_computations SET host_chain_id = (SELECT chain_id FROM tenants WHERE 
 ALTER TABLE pbs_computations ALTER COLUMN host_chain_id SET NOT NULL;
 ALTER TABLE pbs_computations ADD CONSTRAINT pbs_computations_host_chain_id_positive CHECK (host_chain_id >= 0);
 
+-- Set host_chain_id and key_id_gw defaults for backward compatibility with old code that does not
+-- supply these columns. Uses the single host chain / key inserted above (or 0 / empty on empty DB).
+DO $$
+DECLARE
+    hcid BIGINT;
+    kid  BYTEA;
+BEGIN
+    SELECT COALESCE((SELECT chain_id FROM host_chains LIMIT 1), 0) INTO hcid;
+    SELECT COALESCE((SELECT key_id_gw FROM keys LIMIT 1), ''::bytea) INTO kid;
+
+    EXECUTE format('ALTER TABLE computations ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE pbs_computations ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE ciphertext_digest ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE ciphertext_digest ALTER COLUMN key_id_gw SET DEFAULT %L::bytea', kid::text);
+END $$;
+
 COMMIT;
