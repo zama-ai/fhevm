@@ -94,6 +94,12 @@ UPDATE ciphertext_digest SET host_chain_id = (SELECT chain_id FROM tenants WHERE
 ALTER TABLE ciphertext_digest ALTER COLUMN host_chain_id SET NOT NULL;
 ALTER TABLE ciphertext_digest ADD CONSTRAINT ciphertext_digest_host_chain_id_positive CHECK (host_chain_id >= 0);
 ALTER TABLE ciphertext_digest ADD COLUMN key_id_gw BYTEA DEFAULT NULL;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM ciphertext_digest) AND NOT EXISTS (SELECT 1 FROM tenants) THEN
+        RAISE EXCEPTION 'ciphertext_digest has rows but tenants is empty; cannot populate key_id_gw';
+    END IF;
+END $$;
 UPDATE ciphertext_digest SET key_id_gw = (SELECT key_id FROM tenants LIMIT 1);
 ALTER TABLE ciphertext_digest ALTER COLUMN key_id_gw SET NOT NULL;
 
