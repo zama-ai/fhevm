@@ -221,32 +221,40 @@ describe('EncryptedERC20:HCU', function () {
       expect(receipt1?.blockNumber).to.eq(receipt2?.blockNumber);
     });
 
-    it('should reset block meter after a new block', async function () {
+    it('should allow previously blocked caller to succeed after block rollover', async function () {
       await lowerHCULimits(this);
 
       const mintTx = await this.erc20.mint(10000);
       await mintTx.wait();
 
-      // Transfer to bob fills the block meter
       const setupTx = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 5000);
       await setupTx.wait();
 
-      const [, usedHCUBefore] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUBefore).to.be.greaterThan(0n);
+      // Block N: alice fills the cap, bob gets blocked
+      await mineNBlocks(1);
+      await ethers.provider.send('evm_setAutomine', [false]);
 
-      // Mine a new block — meter resets
+      const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
+      const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
+
+      await ethers.provider.send('evm_mine');
+      await ethers.provider.send('evm_setAutomine', [true]);
+
+      const receiptAlice = await txAlice.wait();
+      expect(receiptAlice?.status).to.eq(1, 'Alice should succeed');
+
+      const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
+      expect(receiptBob?.status).to.eq(0, 'Bob should be blocked in block N');
+
+      // Block N+1: meter resets, bob retries and succeeds
       await mineNBlocks(1);
 
       const [, usedHCUAfterReset] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUAfterReset).to.eq(0n);
+      expect(usedHCUAfterReset).to.eq(0n, 'Meter should reset after new block');
 
-      // Bob transfer succeeds in the fresh block
-      const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
-      const receiptBob = await txBob.wait();
-      expect(receiptBob?.status).to.eq(1);
-
-      const [, usedHCUAfterBob] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUAfterBob).to.be.greaterThan(0n);
+      const retryBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
+      const receiptRetry = await retryBob.wait();
+      expect(receiptRetry?.status).to.eq(1, 'Bob should succeed after rollover');
     });
 
     it('should count HCU after whitelist removal', async function () {
