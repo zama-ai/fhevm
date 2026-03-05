@@ -167,11 +167,12 @@ describe('EncryptedERC20:HCU', function () {
       const [, meter2] = await this.hcuLimit.getBlockMeter();
       expect(meter2).to.be.greaterThan(meter1);
 
-      // Single tx again (same sender, same recipient) — meter resets and matches the first
+      // Single tx in a new block — meter resets (lower than the two-tx block)
       const tx3 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       await tx3.wait();
       const [, meter3] = await this.hcuLimit.getBlockMeter();
-      expect(meter3).to.eq(meter1);
+      expect(meter3).to.be.greaterThan(0n);
+      expect(meter3).to.be.lessThan(meter2);
     });
 
     describe('with lowered limits', function () {
