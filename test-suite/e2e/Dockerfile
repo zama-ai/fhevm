@@ -10,7 +10,9 @@ RUN apk add --no-cache \
     curl \
     wget \
     vim \
-    jq && \
+    jq \
+    python3 \
+    build-base && \
     rm -rf /var/cache/apk/*
 
 RUN addgroup -g 10001 fhevm && \
