@@ -539,9 +539,9 @@ run_additional_coprocessor_instance() {
 
     log_info "Starting additional coprocessor instance #$instance_idx (runtime phase)"
     if [[ "$FORCE_BUILD" == true ]]; then
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build --no-deps -d "${runtime_services[@]}"
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d "${runtime_services[@]}"
     else
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --no-deps -d "${runtime_services[@]}"
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d "${runtime_services[@]}"
     fi
 
     wait_for_service "$temp_compose" "coprocessor${instance_idx}-host-listener" "true"
