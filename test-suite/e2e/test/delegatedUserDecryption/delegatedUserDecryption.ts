@@ -5,7 +5,7 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
-const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
+const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 
 describe('Delegated user decryption', function () {
   before(async function () {
@@ -233,8 +233,8 @@ describe('Delegated user decryption', function () {
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.bob.generateKeypair();
 
-    await expect(
-      delegatedUserDecryptSingleHandle(
+    try {
+      await delegatedUserDecryptSingleHandle(
         this.instances.bob,
         balanceHandle,
         this.tokenAddress,
@@ -243,18 +243,19 @@ describe('Delegated user decryption', function () {
         this.signers.bob,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(
-      new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
-    );
+      );
+      expect.fail('Expected delegated user decrypt to be rejected after revocation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
   });
 
   it('test delegated user decryption should fail when no delegation exists', async function () {
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.dave.generateKeypair();
 
-    await expect(
-      delegatedUserDecryptSingleHandle(
+    try {
+      await delegatedUserDecryptSingleHandle(
         this.instances.dave,
         balanceHandle,
         this.tokenAddress,
@@ -263,8 +264,11 @@ describe('Delegated user decryption', function () {
         this.signers.dave,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
+      );
+      expect.fail('Expected delegated user decrypt to be rejected without delegation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
   });
 
   it('test delegated user decryption should fail when delegation is for wrong contract', async function () {
@@ -284,8 +288,8 @@ describe('Delegated user decryption', function () {
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.eve.generateKeypair();
 
-    await expect(
-      delegatedUserDecryptSingleHandle(
+    try {
+      await delegatedUserDecryptSingleHandle(
         this.instances.eve,
         balanceHandle,
         this.tokenAddress,
@@ -294,8 +298,11 @@ describe('Delegated user decryption', function () {
         this.signers.eve,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
+      );
+      expect.fail('Expected delegated user decrypt to be rejected for wrong contract');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
   });
 
   it('test delegated user decryption should fail when delegation has expired', async function () {
@@ -310,8 +317,8 @@ describe('Delegated user decryption', function () {
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.eve.generateKeypair();
 
-    await expect(
-      delegatedUserDecryptSingleHandle(
+    try {
+      await delegatedUserDecryptSingleHandle(
         this.instances.eve,
         balanceHandle,
         this.tokenAddress,
@@ -320,7 +327,10 @@ describe('Delegated user decryption', function () {
         this.signers.eve,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR));
+      );
+      expect.fail('Expected delegated user decrypt to be rejected for expired delegation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
   });
 });
