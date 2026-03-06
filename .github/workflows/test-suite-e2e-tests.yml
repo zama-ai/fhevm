@@ -137,94 +137,80 @@ jobs:
         run: |
           echo "Component versions: $JSON_INPUT"
 
-      # TODO: revert --build before merge — needed so the test-suite image
-      # includes the new HCU block-cap tests from this branch.
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli deploy --build
+          ./fhevm-cli deploy
 
-      # TODO: remove `if: false` before merge — temporarily skipping to validate HCU tests only
+      # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli pause host
 
       - name: Paused Host contracts test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test paused-host-contracts
 
       - name: Unpause Host Contracts
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli unpause host
 
+      # E2E tests on pausing the Gateway contracts
       - name: Pause Gateway Contracts
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli pause gateway
 
       - name: Paused Gateway contracts test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test paused-gateway-contracts
 
       - name: Unpause Gateway Contracts
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli unpause gateway
 
+      # E2E tests after unpausing the Host and Gateway contracts
       - name: Input proof test (uint64)
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test input-proof
 
       - name: Input proof test with compute and decrypt (uint64)
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test input-proof-compute-decrypt
 
       - name: User Decryption test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test user-decryption
 
       - name: Delegated User Decryption test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test delegated-user-decryption
 
       - name: ERC20 test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test erc20
 
       - name: Public Decryption HTTP endpoint test (ebool)
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decrypt-http-ebool
 
       - name: Public Decryption HTTP endpoint test (mixed)
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
       - name: Random operators test (subset)
-        if: false
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random-subset
@@ -235,7 +221,6 @@ jobs:
           ./fhevm-cli test hcu-block-cap
 
       - name: Host listener poller test
-        if: false
         working-directory: test-suite/fhevm
         run: |
           docker stop coprocessor-host-listener
