@@ -5,6 +5,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
 use common::{is_coprocessor_config_error, MultichainACL, SignerType, TestEnvironment};
 
+use fhevm_engine_common::chain_id::ChainId;
 use rstest::*;
 use serial_test::serial;
 use sqlx::PgPool;
@@ -24,7 +25,7 @@ async fn insert_delegate_user_decrypt(
     delegation_counter: u64,
     old_expiration_date: u64,
     new_expiration_date: u64,
-    chain_id: u64,
+    chain_id: ChainId,
     block_hash: &[u8],
     block_number: u64,
     transaction_id: Option<Vec<u8>>,
@@ -39,7 +40,7 @@ async fn insert_delegate_user_decrypt(
         delegation_counter as i64,
         old_expiration_date as i64,
         new_expiration_date as i64,
-        chain_id as i64,
+        chain_id.as_i64(),
         block_number as i64,
         block_hash,
         transaction_id,
@@ -47,7 +48,7 @@ async fn insert_delegate_user_decrypt(
     query.execute(pool).await?;
     sqlx::query!(
         "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES ($1, $2, $3, 'pending') ON CONFLICT DO NOTHING",
-        chain_id as i64,
+        chain_id.as_i64(),
         block_hash,
         block_number as i64,
     )
@@ -104,7 +105,7 @@ async fn delegate_user_decrypt_life_cycle_aux(
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let chain_id = provider.get_chain_id().await?;
+    let chain_id = ChainId::try_from(provider.get_chain_id().await?)?;
 
     let block = provider
         .inner()
@@ -270,7 +271,7 @@ async fn delegate_user_decrypt_idempotent_error_call(
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let chain_id = provider.get_chain_id().await?;
+    let chain_id = ChainId::try_from(provider.get_chain_id().await?)?;
 
     let block = provider
         .inner()
@@ -428,7 +429,7 @@ async fn stop_retrying_delegation_on_gw_config_error(
         .await?;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
-    let chain_id = provider.get_chain_id().await?;
+    let chain_id = ChainId::try_from(provider.get_chain_id().await?)?;
     let block = provider
         .inner()
         .get_block_by_number(BlockNumberOrTag::Latest)
