@@ -332,9 +332,6 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
-    if last_block_number < finality_lag {
-        return;
-    }
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
         Err(err) => {
