@@ -138,7 +138,7 @@ describe('ConsensusWatchdog', function () {
       pending.firstSeenAt = Date.now() - 4 * 60 * 1000; // 4 minutes ago
 
       expect(() => watchdog.checkHealth()).to.throw('Consensus stall');
-      expect(() => watchdog.checkHealth()).to.throw('only 1 coprocessor(s)');
+      expect(() => watchdog.checkHealth()).to.not.throw();
     });
 
     it('should not throw when within timeout', async function () {
@@ -221,13 +221,19 @@ describe('ConsensusWatchdog', function () {
     it('should prevent overlapping polls', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 
-      let pollCount = 0;
+      let activePolls = 0;
+      let maxConcurrentPolls = 0;
       const origGetBlock = (watchdog as any).provider.getBlockNumber;
       (watchdog as any).provider.getBlockNumber = async () => {
-        pollCount++;
+        activePolls++;
+        maxConcurrentPolls = Math.max(maxConcurrentPolls, activePolls);
         // Simulate slow RPC.
         await new Promise((r) => setTimeout(r, 50));
-        return origGetBlock();
+        try {
+          return await origGetBlock();
+        } finally {
+          activePolls--;
+        }
       };
 
       setCiphertextEvents([], []);
@@ -236,8 +242,26 @@ describe('ConsensusWatchdog', function () {
       // Launch two concurrent flushes.
       await Promise.all([watchdog.flush(), watchdog.flush()]);
 
-      // Only one should have actually polled (the other was guarded).
-      expect(pollCount).to.equal(1);
+      expect(maxConcurrentPolls).to.equal(1);
+    });
+
+    it('should not duplicate state when one sub-poll fails', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      (watchdog as any).inputVerification.queryFilter = async () => {
+        throw new Error('rpc broke');
+      };
+      setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+      setBlock(1);
+
+      await watchdog.flush();
+      expect((watchdog as any).pendingHandles.size).to.equal(0);
+
+      (watchdog as any).inputVerification.queryFilter = async (filter: string) => {
+        return filter === 'pf-sub-filter' ? [] : [];
+      };
+      await watchdog.flush();
+      expect((watchdog as any).pendingHandles.size).to.equal(1);
     });
   });
 

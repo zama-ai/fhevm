@@ -36,6 +36,20 @@ interface PendingProof {
   submissions: ProofSubmission[];
 }
 
+interface CiphertextPollResult {
+  pendingHandles: Map<string, PendingHandle>;
+  resolvedHandleDelta: number;
+  divergences: string[];
+  divergenceKeys: Set<string>;
+}
+
+interface ProofPollResult {
+  pendingProofs: Map<string, PendingProof>;
+  resolvedProofDelta: number;
+  divergences: string[];
+  divergenceKeys: Set<string>;
+}
+
 export class ConsensusWatchdog {
   private provider: ethers.JsonRpcProvider;
   private ciphertextCommits: ethers.Contract;
@@ -45,8 +59,9 @@ export class ConsensusWatchdog {
   private resolvedHandleCount = 0;
   private resolvedProofCount = 0;
   private divergences: string[] = [];
+  private divergenceKeys = new Set<string>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private polling = false;
+  private pollInFlight: Promise<void> | null = null;
   private lastBlock = 0;
 
   constructor(gatewayRpcUrl: string, ciphertextCommitsAddress: string, inputVerificationAddress?: string) {
@@ -72,12 +87,21 @@ export class ConsensusWatchdog {
 
   /** Force a poll cycle — used by Mocha hooks to catch events before checking health. */
   async flush(): Promise<void> {
+    if (this.pollInFlight) {
+      await this.pollInFlight;
+    }
     return this.poll();
   }
 
   private async poll(): Promise<void> {
-    if (this.polling) return;
-    this.polling = true;
+    if (this.pollInFlight) return this.pollInFlight;
+    this.pollInFlight = this.runPoll().finally(() => {
+      this.pollInFlight = null;
+    });
+    return this.pollInFlight;
+  }
+
+  private async runPoll(): Promise<void> {
     try {
       const currentBlock = await this.provider.getBlockNumber();
       if (currentBlock <= this.lastBlock) return;
@@ -85,22 +109,32 @@ export class ConsensusWatchdog {
       const fromBlock = this.lastBlock + 1;
       const toBlock = currentBlock;
 
-      const polls = [this.pollCiphertextEvents(fromBlock, toBlock)];
-      if (this.inputVerification) {
-        polls.push(this.pollInputVerificationEvents(fromBlock, toBlock));
-      }
-      await Promise.all(polls);
+      const [ciphertextResult, proofResult] = await Promise.all([
+        this.pollCiphertextEvents(fromBlock, toBlock),
+        this.inputVerification
+          ? this.pollInputVerificationEvents(fromBlock, toBlock)
+          : Promise.resolve<ProofPollResult>({
+              pendingProofs: this.clonePendingProofs(),
+              resolvedProofDelta: 0,
+              divergences: [],
+              divergenceKeys: new Set(this.divergenceKeys),
+            }),
+      ]);
 
+      this.pendingHandles = ciphertextResult.pendingHandles;
+      this.pendingProofs = proofResult.pendingProofs;
+      this.resolvedHandleCount += ciphertextResult.resolvedHandleDelta;
+      this.resolvedProofCount += proofResult.resolvedProofDelta;
+      this.divergences.push(...ciphertextResult.divergences, ...proofResult.divergences);
+      this.divergenceKeys = new Set([...ciphertextResult.divergenceKeys, ...proofResult.divergenceKeys]);
       this.lastBlock = toBlock;
     } catch (err) {
       // Transient RPC errors shouldn't crash the watchdog — log and retry next poll.
       console.warn('[consensus-watchdog] poll error:', (err as Error).message);
-    } finally {
-      this.polling = false;
     }
   }
 
-  private async pollCiphertextEvents(fromBlock: number, toBlock: number): Promise<void> {
+  private async pollCiphertextEvents(fromBlock: number, toBlock: number): Promise<CiphertextPollResult> {
     const [submissions, consensuses] = await Promise.all([
       this.ciphertextCommits.queryFilter(
         this.ciphertextCommits.filters.AddCiphertextMaterial(),
@@ -114,6 +148,11 @@ export class ConsensusWatchdog {
       ),
     ]);
 
+    const pendingHandles = this.clonePendingHandles();
+    const divergences: string[] = [];
+    const divergenceKeys = new Set(this.divergenceKeys);
+    let resolvedHandleDelta = 0;
+
     for (const event of submissions) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
@@ -122,30 +161,32 @@ export class ConsensusWatchdog {
       const snsCiphertextDigest = log.args[3] as string;
       const coprocessor = log.args[4] as string;
 
-      if (!this.pendingHandles.has(ctHandle)) {
-        this.pendingHandles.set(ctHandle, {
+      if (!pendingHandles.has(ctHandle)) {
+        pendingHandles.set(ctHandle, {
           firstSeenAt: Date.now(),
           submissions: [],
         });
       }
 
-      const pending = this.pendingHandles.get(ctHandle)!;
+      const pending = pendingHandles.get(ctHandle)!;
       pending.submissions.push({ coprocessor, ciphertextDigest, snsCiphertextDigest, keyId });
 
       // Check for divergence: compare all submissions for this handle.
-      this.checkCiphertextDivergence(ctHandle, pending);
+      this.checkCiphertextDivergence(ctHandle, pending, divergences, divergenceKeys);
     }
 
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
-      if (this.pendingHandles.delete(ctHandle)) {
-        this.resolvedHandleCount++;
+      if (pendingHandles.delete(ctHandle)) {
+        resolvedHandleDelta++;
       }
     }
+
+    return { pendingHandles, resolvedHandleDelta, divergences, divergenceKeys };
   }
 
-  private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<void> {
+  private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<ProofPollResult> {
     const [responses, consensuses] = await Promise.all([
       this.inputVerification!.queryFilter(
         this.inputVerification!.filters.VerifyProofResponseCall(),
@@ -159,68 +200,109 @@ export class ConsensusWatchdog {
       ),
     ]);
 
+    const pendingProofs = this.clonePendingProofs();
+    const divergences: string[] = [];
+    const divergenceKeys = new Set(this.divergenceKeys);
+    let resolvedProofDelta = 0;
+
     for (const event of responses) {
       const log = event as ethers.EventLog;
       const zkProofId = String(log.args[0]);
       const ctHandles = log.args[1] as string[];
       const coprocessor = log.args[3] as string;
 
-      if (!this.pendingProofs.has(zkProofId)) {
-        this.pendingProofs.set(zkProofId, {
+      if (!pendingProofs.has(zkProofId)) {
+        pendingProofs.set(zkProofId, {
           firstSeenAt: Date.now(),
           submissions: [],
         });
       }
 
-      const pending = this.pendingProofs.get(zkProofId)!;
+      const pending = pendingProofs.get(zkProofId)!;
       pending.submissions.push({ coprocessor, ctHandles: [...ctHandles] });
 
-      this.checkProofDivergence(zkProofId, pending);
+      this.checkProofDivergence(zkProofId, pending, divergences, divergenceKeys);
     }
 
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const zkProofId = String(log.args[0]);
-      if (this.pendingProofs.delete(zkProofId)) {
-        this.resolvedProofCount++;
+      if (pendingProofs.delete(zkProofId)) {
+        resolvedProofDelta++;
       }
     }
+
+    return { pendingProofs, resolvedProofDelta, divergences, divergenceKeys };
   }
 
-  private checkCiphertextDivergence(ctHandle: string, pending: PendingHandle): void {
+  private checkCiphertextDivergence(
+    ctHandle: string,
+    pending: PendingHandle,
+    divergences: string[],
+    divergenceKeys: Set<string>,
+  ): void {
     if (pending.submissions.length < 2) return;
 
     const first = pending.submissions[0];
-    for (let i = 1; i < pending.submissions.length; i++) {
-      const sub = pending.submissions[i];
-      if (sub.ciphertextDigest !== first.ciphertextDigest || sub.snsCiphertextDigest !== first.snsCiphertextDigest) {
-        const msg =
-          `[consensus-watchdog] CIPHERTEXT DIVERGENCE for handle ${ctHandle}\n` +
-          `  Coprocessor ${first.coprocessor}: ctDigest=${first.ciphertextDigest} snsDigest=${first.snsCiphertextDigest}\n` +
-          `  Coprocessor ${sub.coprocessor}: ctDigest=${sub.ciphertextDigest} snsDigest=${sub.snsCiphertextDigest}`;
-        console.error(msg);
-        this.divergences.push(msg);
-      }
+    const sub = pending.submissions[pending.submissions.length - 1];
+    if (sub.ciphertextDigest !== first.ciphertextDigest || sub.snsCiphertextDigest !== first.snsCiphertextDigest) {
+      const msg =
+        `[consensus-watchdog] CIPHERTEXT DIVERGENCE for handle ${ctHandle}\n` +
+        `  Coprocessor ${first.coprocessor}: ctDigest=${first.ciphertextDigest} snsDigest=${first.snsCiphertextDigest}\n` +
+        `  Coprocessor ${sub.coprocessor}: ctDigest=${sub.ciphertextDigest} snsDigest=${sub.snsCiphertextDigest}`;
+      const key = `ct:${ctHandle}:${first.ciphertextDigest}:${first.snsCiphertextDigest}:${sub.ciphertextDigest}:${sub.snsCiphertextDigest}`;
+      this.recordDivergence(key, msg, divergences, divergenceKeys);
     }
   }
 
-  private checkProofDivergence(zkProofId: string, pending: PendingProof): void {
+  private checkProofDivergence(
+    zkProofId: string,
+    pending: PendingProof,
+    divergences: string[],
+    divergenceKeys: Set<string>,
+  ): void {
     if (pending.submissions.length < 2) return;
 
     const first = pending.submissions[0];
     const firstHandles = first.ctHandles.join(',');
-    for (let i = 1; i < pending.submissions.length; i++) {
-      const sub = pending.submissions[i];
-      const subHandles = sub.ctHandles.join(',');
-      if (firstHandles !== subHandles) {
-        const msg =
-          `[consensus-watchdog] INPUT VERIFICATION DIVERGENCE for zkProofId ${zkProofId}\n` +
-          `  Coprocessor ${first.coprocessor}: handles=[${firstHandles}]\n` +
-          `  Coprocessor ${sub.coprocessor}: handles=[${subHandles}]`;
-        console.error(msg);
-        this.divergences.push(msg);
-      }
+    const sub = pending.submissions[pending.submissions.length - 1];
+    const subHandles = sub.ctHandles.join(',');
+    if (firstHandles !== subHandles) {
+      const msg =
+        `[consensus-watchdog] INPUT VERIFICATION DIVERGENCE for zkProofId ${zkProofId}\n` +
+        `  Coprocessor ${first.coprocessor}: handles=[${firstHandles}]\n` +
+        `  Coprocessor ${sub.coprocessor}: handles=[${subHandles}]`;
+      const key = `pf:${zkProofId}:${firstHandles}:${subHandles}`;
+      this.recordDivergence(key, msg, divergences, divergenceKeys);
     }
+  }
+
+  private recordDivergence(key: string, msg: string, divergences: string[], divergenceKeys: Set<string>): void {
+    if (divergenceKeys.has(key)) return;
+    divergenceKeys.add(key);
+    console.error(msg);
+    divergences.push(msg);
+  }
+
+  private clonePendingHandles(): Map<string, PendingHandle> {
+    return new Map(
+      [...this.pendingHandles.entries()].map(([handle, pending]) => [
+        handle,
+        { firstSeenAt: pending.firstSeenAt, submissions: [...pending.submissions] },
+      ]),
+    );
+  }
+
+  private clonePendingProofs(): Map<string, PendingProof> {
+    return new Map(
+      [...this.pendingProofs.entries()].map(([proofId, pending]) => [
+        proofId,
+        {
+          firstSeenAt: pending.firstSeenAt,
+          submissions: pending.submissions.map((submission) => ({ ...submission, ctHandles: [...submission.ctHandles] })),
+        },
+      ]),
+    );
   }
 
   /**
@@ -232,6 +314,7 @@ export class ConsensusWatchdog {
     if (this.divergences.length > 0) {
       const msg = this.divergences.join('\n\n');
       this.divergences = [];
+      this.divergenceKeys.clear();
       throw new Error(`Consensus divergence detected:\n\n${msg}`);
     }
 
@@ -242,6 +325,7 @@ export class ConsensusWatchdog {
       const elapsed = now - pending.firstSeenAt;
       if (elapsed > CONSENSUS_TIMEOUT_MS) {
         const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
+        this.pendingHandles.delete(ctHandle);
         throw new Error(
           `Consensus stall for ciphertext handle ${ctHandle}: ` +
             `only ${pending.submissions.length} coprocessor(s) submitted after ${Math.round(elapsed / 1000)}s ` +
@@ -254,6 +338,7 @@ export class ConsensusWatchdog {
       const elapsed = now - pending.firstSeenAt;
       if (elapsed > CONSENSUS_TIMEOUT_MS) {
         const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
+        this.pendingProofs.delete(zkProofId);
         throw new Error(
           `Consensus stall for input verification zkProofId ${zkProofId}: ` +
             `only ${pending.submissions.length} coprocessor(s) submitted after ${Math.round(elapsed / 1000)}s ` +
@@ -264,7 +349,7 @@ export class ConsensusWatchdog {
   }
 
   /** Summary for afterAll — reports any remaining pending handles. */
-  summary(): string | null {
+  summary(): string {
     const lines: string[] = [];
     lines.push(
       `[consensus-watchdog] Summary: ${this.resolvedHandleCount} ciphertext(s) and ${this.resolvedProofCount} proof(s) reached consensus.`,
