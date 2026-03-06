@@ -45,7 +45,7 @@ fn group_ops_by_transaction(
         .iter()
         .filter(|s| s.name == "execute_transaction")
         .filter_map(|s| {
-            let tx_id = get_string_attr(s, "test_transaction_id")?;
+            let tx_id = get_string_attr(s, "transaction_id")?;
             if !test_transaction_ids.contains(&tx_id) {
                 return None;
             }
@@ -454,10 +454,9 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
     let spans = finished_test_spans().expect("failed to read spans");
     assert!(
         spans.iter().any(|s| {
-            s.name == "execute_transaction" && get_string_attr(s, "test_transaction_id").is_some()
+            s.name == "execute_transaction" && get_string_attr(s, "transaction_id").is_some()
         }),
-        "execute_transaction spans are missing test_transaction_id; \
-         scheduler test-span-attrs feature is likely disabled"
+        "execute_transaction spans are missing transaction_id"
     );
     let groups = group_ops_by_transaction(&spans, &test_transaction_ids);
 

@@ -318,17 +318,14 @@ async fn execute_verify_proof_routine(
 
         let db_insert_span = tracing::info_span!(
             "db_insert",
-            valid = tracing::field::Empty,
-            count = tracing::field::Empty
-        );
-        info!(
-            request_id,
             transaction_hash = transaction_id
                 .as_deref()
                 .map(fhevm_engine_common::utils::to_hex)
                 .unwrap_or_default(),
-            "inserting zkproof result"
+            valid = tracing::field::Empty,
+            count = tracing::field::Empty
         );
+        info!(request_id, "inserting zkproof result");
 
         async {
             let mut verified = false;

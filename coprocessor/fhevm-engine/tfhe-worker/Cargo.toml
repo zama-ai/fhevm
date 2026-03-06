@@ -56,7 +56,6 @@ test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
-scheduler = { path = "../scheduler", features = ["test-span-attrs"] }
 
 [[bin]]
 name = "tfhe_worker"

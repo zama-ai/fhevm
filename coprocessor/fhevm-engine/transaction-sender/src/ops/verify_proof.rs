@@ -118,7 +118,11 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(name = "call_verify_proof_resp", skip_all)]
+    #[tracing::instrument(
+        name = "call_verify_proof_resp",
+        skip_all,
+        fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default())
+    )]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),

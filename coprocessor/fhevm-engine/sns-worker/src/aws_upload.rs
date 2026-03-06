@@ -533,7 +533,10 @@ async fn fetch_pending_uploads(
         };
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
-            let recovery_span = tracing::info_span!("recovery_task");
+            let recovery_span = tracing::info_span!(
+                "recovery_task",
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
+            );
             info!(
                 handle = %to_hex(&handle),
                 "recovery task for handle"
