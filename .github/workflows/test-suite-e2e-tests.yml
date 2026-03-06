@@ -215,6 +215,11 @@ jobs:
         run: |
           ./fhevm-cli test random-subset
 
+      - name: HCU block cap test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test hcu-block-cap
+
       - name: Host listener poller test
         working-directory: test-suite/fhevm
         run: |
