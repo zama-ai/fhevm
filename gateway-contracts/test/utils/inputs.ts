@@ -50,6 +50,14 @@ export function createCtHandles(length: number, chainId: number = 0, fheType: nu
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
 }
 
+// Create an extraData payload encoding [version | contextId | epochId]
+export function createExtraData(contextCounter: number, epochCounter: number): string {
+  const extraDataVersion = 1;
+  const contextId = BigInt(contextCounter);
+  const epochId = BigInt(epochCounter);
+  return hre.ethers.solidityPacked(["uint8", "uint256", "uint256"], [extraDataVersion, contextId, epochId]);
+}
+
 // Defined in IKMSGeneration.sol
 export enum ParamsTypeEnum {
   Default = 0,
