@@ -136,10 +136,17 @@ describe('EncryptedERC20:HCU', function () {
       this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
     });
 
+    beforeEach(async function () {
+      // Disable interval mining so we have deterministic block control.
+      // Automine stays on — single txs still auto-mine their own block.
+      // Tests that need batching flip automine off/on locally.
+      await ethers.provider.send('evm_setIntervalMining', [0]);
+    });
+
     afterEach(async function () {
-      // Restore both automine and 1-second interval mining (Anvil --block-time 1)
-      await ethers.provider.send('evm_setIntervalMining', [1]);
+      // Restore automine + 1-second interval mining (Anvil --block-time 1)
       await ethers.provider.send('evm_setAutomine', [true]);
+      await ethers.provider.send('evm_setIntervalMining', [1]);
     });
 
     it('should accumulate HCU from multiple users in the same block', async function () {
@@ -157,14 +164,11 @@ describe('EncryptedERC20:HCU', function () {
       expect(meter1).to.be.greaterThan(meter0);
 
       // Two txs batched in same block — meter must exceed the single-tx reading
-      // Disable both automine and interval mining (Anvil --block-time 1)
-      await ethers.provider.send('evm_setIntervalMining', [0]);
       await ethers.provider.send('evm_setAutomine', [false]);
       const txA = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       const txB = await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 100);
       await ethers.provider.send('evm_mine');
       await ethers.provider.send('evm_setAutomine', [true]);
-      await ethers.provider.send('evm_setIntervalMining', [1]);
       const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
       expect(receiptA?.status).to.eq(1);
       expect(receiptB?.status).to.eq(1);
@@ -215,7 +219,6 @@ describe('EncryptedERC20:HCU', function () {
         await mintAndDistribute(this);
 
         await mineNBlocks(1);
-        await ethers.provider.send('evm_setIntervalMining', [0]);
         await ethers.provider.send('evm_setAutomine', [false]);
 
         // Alice fills the cap, Bob would push block total over — use fixed gasLimit
@@ -225,7 +228,6 @@ describe('EncryptedERC20:HCU', function () {
 
         await ethers.provider.send('evm_mine');
         await ethers.provider.send('evm_setAutomine', [true]);
-        await ethers.provider.send('evm_setIntervalMining', [1]);
 
         const receipt1 = await tx1.wait();
         expect(receipt1?.status).to.eq(1, 'First transfer should succeed');
@@ -241,7 +243,6 @@ describe('EncryptedERC20:HCU', function () {
 
         // Block N: alice fills the cap, bob gets blocked
         await mineNBlocks(1);
-        await ethers.provider.send('evm_setIntervalMining', [0]);
         await ethers.provider.send('evm_setAutomine', [false]);
 
         const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
@@ -249,7 +250,6 @@ describe('EncryptedERC20:HCU', function () {
 
         await ethers.provider.send('evm_mine');
         await ethers.provider.send('evm_setAutomine', [true]);
-        await ethers.provider.send('evm_setIntervalMining', [1]);
 
         const receiptAlice = await txAlice.wait();
         expect(receiptAlice?.status).to.eq(1, 'Alice should succeed');
