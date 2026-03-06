@@ -160,9 +160,10 @@ describe('EncryptedERC20:HCU', function () {
       await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
       await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
 
-      if (wasWhitelisted) {
+      const isWhitelisted = await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress);
+      if (wasWhitelisted && !isWhitelisted) {
         await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
-      } else {
+      } else if (!wasWhitelisted && isWhitelisted) {
         await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
       }
     });
