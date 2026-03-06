@@ -7312,9 +7312,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-cuda-backend"
-version = "0.13.2"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07408b8faff3ca4f9a486aaebd5f4cb5445bb8fc5aaf8e12c4f947b4474a01e3"
+checksum = "f0d3c47abe0f26b7b1d021b15bf0ca5d7a3512dda830cfa2df8eb11ba6128527"
 dependencies = [
  "bindgen",
  "cmake",
