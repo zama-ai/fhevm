@@ -298,4 +298,19 @@ describe('ConsensusWatchdog', function () {
       }
     });
   });
+
+  describe('optional proof monitoring', function () {
+    it('should keep ciphertext monitoring active without input verification address', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      (watchdog as any).inputVerification = null;
+      setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+      setBlock(1);
+
+      await watchdog.flush();
+
+      expect((watchdog as any).pendingHandles.size).to.equal(1);
+      expect((watchdog as any).pendingProofs.size).to.equal(0);
+    });
+  });
 });

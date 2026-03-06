@@ -39,7 +39,7 @@ interface PendingProof {
 export class ConsensusWatchdog {
   private provider: ethers.JsonRpcProvider;
   private ciphertextCommits: ethers.Contract;
-  private inputVerification: ethers.Contract;
+  private inputVerification: ethers.Contract | null;
   private pendingHandles = new Map<string, PendingHandle>();
   private pendingProofs = new Map<string, PendingProof>();
   private resolvedHandleCount = 0;
@@ -49,10 +49,12 @@ export class ConsensusWatchdog {
   private polling = false;
   private lastBlock = 0;
 
-  constructor(gatewayRpcUrl: string, ciphertextCommitsAddress: string, inputVerificationAddress: string) {
+  constructor(gatewayRpcUrl: string, ciphertextCommitsAddress: string, inputVerificationAddress?: string) {
     this.provider = new ethers.JsonRpcProvider(gatewayRpcUrl);
     this.ciphertextCommits = new ethers.Contract(ciphertextCommitsAddress, CIPHERTEXT_COMMITS_ABI, this.provider);
-    this.inputVerification = new ethers.Contract(inputVerificationAddress, INPUT_VERIFICATION_ABI, this.provider);
+    this.inputVerification = inputVerificationAddress
+      ? new ethers.Contract(inputVerificationAddress, INPUT_VERIFICATION_ABI, this.provider)
+      : null;
   }
 
   async start(): Promise<void> {
@@ -83,10 +85,11 @@ export class ConsensusWatchdog {
       const fromBlock = this.lastBlock + 1;
       const toBlock = currentBlock;
 
-      await Promise.all([
-        this.pollCiphertextEvents(fromBlock, toBlock),
-        this.pollInputVerificationEvents(fromBlock, toBlock),
-      ]);
+      const polls = [this.pollCiphertextEvents(fromBlock, toBlock)];
+      if (this.inputVerification) {
+        polls.push(this.pollInputVerificationEvents(fromBlock, toBlock));
+      }
+      await Promise.all(polls);
 
       this.lastBlock = toBlock;
     } catch (err) {
@@ -144,13 +147,13 @@ export class ConsensusWatchdog {
 
   private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<void> {
     const [responses, consensuses] = await Promise.all([
-      this.inputVerification.queryFilter(
-        this.inputVerification.filters.VerifyProofResponseCall(),
+      this.inputVerification!.queryFilter(
+        this.inputVerification!.filters.VerifyProofResponseCall(),
         fromBlock,
         toBlock,
       ),
-      this.inputVerification.queryFilter(
-        this.inputVerification.filters.VerifyProofResponse(),
+      this.inputVerification!.queryFilter(
+        this.inputVerification!.filters.VerifyProofResponse(),
         fromBlock,
         toBlock,
       ),
@@ -305,7 +308,7 @@ export const mochaHooks = {
     }
 
     console.log(`[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`);
-    watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress ?? '');
+    watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress);
     await watchdog.start();
   },
 

@@ -140,7 +140,7 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          ./fhevm-cli deploy --build --coprocessors 2 --coprocessor-threshold 2
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
