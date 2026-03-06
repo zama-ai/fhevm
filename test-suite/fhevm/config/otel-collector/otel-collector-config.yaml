@@ -1,0 +1,147 @@
+# =============================================================================
+# OpenTelemetry Collector Configuration for FHEVM Coprocessor
+# =============================================================================
+# Architecture:
+#   Services --OTLP gRPC--> [otlp receiver] --traces--> [spanmetrics connector] --> [prometheus exporter]
+#                                            --traces--> [otlp/jaeger exporter] --> Jaeger
+#
+# Spanmetrics dimensions (explicit allowlist):
+#   - service.name (default) — 6 known services
+#   - span.name (default) — ~45 distinct span names
+#   - status.code (default) — OK / ERROR
+#   - operation — FHE operation enum name (~30 values)
+#   - ct_type — ciphertext type (~15 values)
+#   - operation_pattern_id — per-cone DFG hash on fhe_operation spans (bounded by distinct contract patterns)
+#   - transaction_pattern_id — whole-tx DFG hash (bounded by distinct contract patterns)
+#
+# Excluded from defaults:
+#   - span.kind — all spans are INTERNAL (single value = useless)
+#
+# High-cardinality attributes NOT listed as dimensions are automatically
+# excluded from spanmetrics output (txn_id, count, compressed_size, etc.)
+# =============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+connectors:
+  spanmetrics:
+    namespace: coprocessor.span
+
+    histogram:
+      unit: ms
+      explicit:
+        buckets:
+          - 1ms
+          - 5ms
+          - 10ms
+          - 25ms
+          - 50ms
+          - 100ms
+          - 250ms
+          - 500ms
+          - 1s
+          - 2.5s
+          - 5s
+          - 10s
+          - 30s
+          - 60s
+
+    # Additional dimensions beyond defaults (service.name, span.name, status.code)
+    dimensions:
+      - name: operation       # FHE op name on fhe_operation / compress_ciphertext spans
+      - name: ct_type         # Ciphertext type on compress/squash/upload spans
+      - name: operation_pattern_id    # per-cone DFG fingerprint on fhe_operation / compress_ciphertext spans
+      - name: transaction_pattern_id  # whole-tx DFG fingerprint on execute_transaction spans
+
+    # Remove unhelpful defaults (all coprocessor spans are INTERNAL — single value)
+    exclude_dimensions:
+      - span.kind
+
+    # Exemplars for metric→trace pivot in Grafana
+    exemplars:
+      enabled: true
+      max_per_data_point: 5
+
+    # Flush and expiration
+    metrics_flush_interval: 15s
+    metrics_expiration: 5m
+
+exporters:
+  otlp/jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    enable_open_metrics: true   # Required for exemplars
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: "0.0.0.0:8888"  # Collector's own health metrics
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [spanmetrics, otlp/jaeger]
+
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [prometheus]
+
+# =============================================================================
+# Sample PromQL Queries for RED Dashboards
+# =============================================================================
+# Metric names generated (namespace "coprocessor.span" → underscores in Prometheus):
+#   coprocessor_span_calls_total          — span call counter
+#   coprocessor_span_duration_milliseconds_bucket  — span duration histogram
+#
+# --- Rate (Request Rate) ---
+#
+# Total span call rate by service and span name:
+#   sum(rate(coprocessor_span_calls_total[5m])) by (service_name, span_name)
+#
+# FHE operation rate by operation type:
+#   sum(rate(coprocessor_span_calls_total{span_name="fhe_operation"}[5m])) by (operation)
+#
+# --- Error Rate ---
+#
+# Error rate by service:
+#   sum(rate(coprocessor_span_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (service_name)
+#   / sum(rate(coprocessor_span_calls_total[5m])) by (service_name)
+#
+# Error rate by span name:
+#   sum(rate(coprocessor_span_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (span_name)
+#   / sum(rate(coprocessor_span_calls_total[5m])) by (span_name)
+#
+# --- Duration (Latency Percentiles) ---
+#
+# p50 latency by service:
+#   histogram_quantile(0.5, sum(rate(coprocessor_span_duration_milliseconds_bucket[5m])) by (le, service_name))
+#
+# p95 latency by span name:
+#   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket[5m])) by (le, span_name))
+#
+# p99 latency for FHE operations by operation type:
+#   histogram_quantile(0.99, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="fhe_operation"}[5m])) by (le, operation))
+#
+# p95 latency by DFG operation pattern (per FHE op cone):
+#   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="fhe_operation"}[5m])) by (le, operation_pattern_id))
+#
+# p95 latency by DFG transaction pattern:
+#   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="execute_transaction"}[5m])) by (le, transaction_pattern_id))
+# =============================================================================
