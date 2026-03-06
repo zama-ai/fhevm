@@ -306,11 +306,21 @@ describe('Delegated user decryption', function () {
   });
 
   it('test delegated user decryption should fail when delegation has expired', async function () {
-    const pastExpiration = 1;
+    // Expiration must be >1h from chain time (FHE library constraint).
+    // Use block timestamp, not Date.now(), since evm_increaseTime shifts chain clock.
+    const oneHour = 3600;
+    const buffer = 60;
+    const latestBlock = await ethers.provider.getBlock('latest');
+    const expirationTimestamp = latestBlock!.timestamp + oneHour + buffer;
     const tx = await this.smartWallet
       .connect(this.signers.bob)
-      .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, pastExpiration);
+      .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, expirationTimestamp);
     await tx.wait();
+
+    // Fast-forward time past the expiration.
+    await ethers.provider.send('evm_increaseTime', [oneHour + buffer + 1]);
+    await ethers.provider.send('evm_mine', []);
+
     const currentBlock = await ethers.provider.getBlockNumber();
     await waitForBlock(currentBlock + 15);
 
