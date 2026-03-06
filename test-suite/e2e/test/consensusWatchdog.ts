@@ -36,7 +36,7 @@ interface PendingProof {
   submissions: ProofSubmission[];
 }
 
-class ConsensusWatchdog {
+export class ConsensusWatchdog {
   private provider: ethers.JsonRpcProvider;
   private ciphertextCommits: ethers.Contract;
   private inputVerification: ethers.Contract;
