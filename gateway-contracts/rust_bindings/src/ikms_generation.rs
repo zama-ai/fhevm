@@ -28,7 +28,6 @@ interface IKMSGeneration {
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes extraData, bytes signature, address kmsTxSender);
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes extraData, bytes signature, address kmsTxSender);
-    event PRSSInit();
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
@@ -45,7 +44,6 @@ interface IKMSGeneration {
     function keygen(ParamsType paramsType) external;
     function keygenResponse(uint256 keyId, KeyDigest[] memory keyDigests, bytes memory extraData, bytes memory signature) external;
     function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) external;
-    function prssInit() external;
 }
 ```
 
@@ -326,13 +324,6 @@ interface IKMSGeneration {
     "stateMutability": "nonpayable"
   },
   {
-    "type": "function",
-    "name": "prssInit",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "event",
     "name": "ActivateCrs",
     "inputs": [
@@ -522,12 +513,6 @@ interface IKMSGeneration {
         "internalType": "address"
       }
     ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PRSSInit",
-    "inputs": [],
     "anonymous": false
   },
   {
@@ -2951,104 +2936,6 @@ event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes extraData, byt
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `PRSSInit()` and selector `0x11db42c1878f2e2819241f5250984563f06cf22818e7adb86a66921d15d59d3f`.
-```solidity
-event PRSSInit();
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct PRSSInit;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for PRSSInit {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "PRSSInit()";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                17u8, 219u8, 66u8, 193u8, 135u8, 143u8, 46u8, 40u8, 25u8, 36u8, 31u8,
-                82u8, 80u8, 152u8, 69u8, 99u8, 240u8, 108u8, 242u8, 40u8, 24u8, 231u8,
-                173u8, 184u8, 106u8, 102u8, 146u8, 29u8, 21u8, 213u8, 157u8, 63u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {}
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for PRSSInit {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&PRSSInit> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &PRSSInit) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PrepKeygenRequest(uint256,uint256,uint8)` and selector `0x02024007d96574dbc9d11328bfee9893e7c7bb4ef4aa806df33bfdf454eb5e60`.
 ```solidity
 event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
@@ -5361,141 +5248,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `prssInit()` and selector `0x7514a2ac`.
-```solidity
-function prssInit() external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct prssInitCall;
-    ///Container type for the return parameters of the [`prssInit()`](prssInitCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct prssInitReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<prssInitCall> for UnderlyingRustTuple<'_> {
-                fn from(value: prssInitCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for prssInitCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<prssInitReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: prssInitReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for prssInitReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl prssInitReturn {
-            fn _tokenize(
-                &self,
-            ) -> <prssInitCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for prssInitCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = prssInitReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "prssInit()";
-            const SELECTOR: [u8; 4] = [117u8, 20u8, 162u8, 172u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                prssInitReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
     ///Container for all the [`IKMSGeneration`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
@@ -5526,8 +5278,6 @@ function prssInit() external;
         keygenResponse(keygenResponseCall),
         #[allow(missing_docs)]
         prepKeygenResponse(prepKeygenResponseCall),
-        #[allow(missing_docs)]
-        prssInit(prssInitCall),
     }
     #[automatically_derived]
     impl IKMSGenerationCalls {
@@ -5545,7 +5295,6 @@ function prssInit() external;
             [60u8, 2u8, 248u8, 52u8],
             [69u8, 175u8, 38u8, 27u8],
             [88u8, 154u8, 219u8, 14u8],
-            [117u8, 20u8, 162u8, 172u8],
             [147u8, 102u8, 8u8, 174u8],
             [186u8, 255u8, 33u8, 30u8],
             [197u8, 91u8, 135u8, 36u8],
@@ -5558,7 +5307,7 @@ function prssInit() external;
     impl alloy_sol_types::SolInterface for IKMSGenerationCalls {
         const NAME: &'static str = "IKMSGenerationCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 14usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5599,7 +5348,6 @@ function prssInit() external;
                 Self::prepKeygenResponse(_) => {
                     <prepKeygenResponseCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::prssInit(_) => <prssInitCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
         #[inline]
@@ -5695,15 +5443,6 @@ function prssInit() external;
                             .map(IKMSGenerationCalls::prepKeygenResponse)
                     }
                     prepKeygenResponse
-                },
-                {
-                    fn prssInit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <prssInitCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(IKMSGenerationCalls::prssInit)
-                    }
-                    prssInit
                 },
                 {
                     fn getKeyMaterials(
@@ -5867,17 +5606,6 @@ function prssInit() external;
                     prepKeygenResponse
                 },
                 {
-                    fn prssInit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <prssInitCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::prssInit)
-                    }
-                    prssInit
-                },
-                {
                     fn getKeyMaterials(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
@@ -6018,9 +5746,6 @@ function prssInit() external;
                         inner,
                     )
                 }
-                Self::prssInit(inner) => {
-                    <prssInitCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
             }
         }
         #[inline]
@@ -6097,12 +5822,6 @@ function prssInit() external;
                 }
                 Self::prepKeygenResponse(inner) => {
                     <prepKeygenResponseCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::prssInit(inner) => {
-                    <prssInitCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6637,8 +6356,6 @@ function prssInit() external;
         #[allow(missing_docs)]
         KeygenResponse(KeygenResponse),
         #[allow(missing_docs)]
-        PRSSInit(PRSSInit),
-        #[allow(missing_docs)]
         PrepKeygenRequest(PrepKeygenRequest),
         #[allow(missing_docs)]
         PrepKeygenResponse(PrepKeygenResponse),
@@ -6656,11 +6373,6 @@ function prssInit() external;
                 2u8, 2u8, 64u8, 7u8, 217u8, 101u8, 116u8, 219u8, 201u8, 209u8, 19u8,
                 40u8, 191u8, 238u8, 152u8, 147u8, 231u8, 199u8, 187u8, 78u8, 244u8,
                 170u8, 128u8, 109u8, 243u8, 59u8, 253u8, 244u8, 84u8, 235u8, 94u8, 96u8,
-            ],
-            [
-                17u8, 219u8, 66u8, 193u8, 135u8, 143u8, 46u8, 40u8, 25u8, 36u8, 31u8,
-                82u8, 80u8, 152u8, 69u8, 99u8, 240u8, 108u8, 242u8, 40u8, 24u8, 231u8,
-                173u8, 184u8, 106u8, 102u8, 146u8, 29u8, 21u8, 213u8, 157u8, 63u8,
             ],
             [
                 34u8, 88u8, 183u8, 63u8, 174u8, 211u8, 63u8, 178u8, 226u8, 234u8, 69u8,
@@ -6703,7 +6415,7 @@ function prssInit() external;
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IKMSGenerationEvents {
         const NAME: &'static str = "IKMSGenerationEvents";
-        const COUNT: usize = 9usize;
+        const COUNT: usize = 8usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -6750,10 +6462,6 @@ function prssInit() external;
                             data,
                         )
                         .map(Self::KeygenResponse)
-                }
-                Some(<PRSSInit as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <PRSSInit as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
-                        .map(Self::PRSSInit)
                 }
                 Some(
                     <PrepKeygenRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -6809,9 +6517,6 @@ function prssInit() external;
                 Self::KeygenResponse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::PRSSInit(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::PrepKeygenRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -6838,9 +6543,6 @@ function prssInit() external;
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::KeygenResponse(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::PRSSInit(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::PrepKeygenRequest(inner) => {
@@ -7137,10 +6839,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`prssInit`] function.
-        pub fn prssInit(&self) -> alloy_contract::SolCallBuilder<&P, prssInitCall, N> {
-            self.call_builder(&prssInitCall)
-        }
     }
     /// Event filters.
     #[automatically_derived]
@@ -7188,10 +6886,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, KeygenResponse, N> {
             self.event_filter::<KeygenResponse>()
-        }
-        ///Creates a new event filter for the [`PRSSInit`] event.
-        pub fn PRSSInit_filter(&self) -> alloy_contract::Event<&P, PRSSInit, N> {
-            self.event_filter::<PRSSInit>()
         }
         ///Creates a new event filter for the [`PrepKeygenRequest`] event.
         pub fn PrepKeygenRequest_filter(

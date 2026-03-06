@@ -464,13 +464,6 @@ contract KMSGeneration is
     }
 
     /**
-     * @notice See {IKMSGeneration-prssInit}.
-     */
-    function prssInit() external virtual onlyGatewayOwner {
-        emit PRSSInit();
-    }
-
-    /**
      * @notice See {IKMSGeneration-getKeyParamsType}.
      */
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {

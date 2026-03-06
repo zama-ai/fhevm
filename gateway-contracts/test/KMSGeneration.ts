@@ -699,21 +699,4 @@ describe("KMSGeneration", function () {
       });
     });
   });
-
-  describe("PRSS initialization", function () {
-    it("Should revert because of access controls", async function () {
-      const { kmsGeneration } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that only the owner can trigger a PRSS initialization.
-      await expect(kmsGeneration.connect(fakeOwner).prssInit())
-        .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-    });
-
-    it("Should trigger the PRSS initialization", async function () {
-      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
-
-      await expect(kmsGeneration.connect(owner).prssInit()).to.emit(kmsGeneration, "PRSSInit");
-    });
-  });
 });

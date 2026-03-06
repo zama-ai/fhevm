@@ -33,8 +33,6 @@ contract KMSGenerationMock {
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
-    event PRSSInit();
-
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
@@ -90,9 +88,5 @@ contract KMSGenerationMock {
         emit CrsgenResponse(crsId, crsDigest, extraData, signature, kmsTxSender);
 
         emit ActivateCrs(crsId, kmsNodeStorageUrls, crsDigest);
-    }
-
-    function prssInit() external {
-        emit PRSSInit();
     }
 }

@@ -382,10 +382,6 @@ describe("Mock contracts", function () {
         .to.emit(kmsGenerationMock, "CrsgenResponse")
         .withArgs(crsgenId, DefaultBytes, DefaultBytes, DefaultBytes, DefaultAddress);
     });
-
-    it("Should emit PRSSInit event on prssInit call", async function () {
-      await expect(kmsGenerationMock.prssInit()).to.emit(kmsGenerationMock, "PRSSInit");
-    });
   });
 
   describe("MultichainACLMock", async function () {

@@ -102,12 +102,6 @@ interface IKMSGeneration {
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     /**
-     * @notice Emitted to trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
-     * @dev This is a temporary event to initialize PRSS until implementation of a proper key resharing.
-     */
-    event PRSSInit();
-
-    /**
      * @notice Error indicating that the preprocessing keygen request is not requested yet.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      */
@@ -223,12 +217,6 @@ interface IKMSGeneration {
         bytes calldata extraData,
         bytes calldata signature
     ) external;
-
-    /**
-     * @notice Trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
-     * @dev This is a temporary method to initialize PRSS until implementation of a proper key resharing.
-     */
-    function prssInit() external;
 
     /**
      * @notice Get the parameters type used for the key generation.
