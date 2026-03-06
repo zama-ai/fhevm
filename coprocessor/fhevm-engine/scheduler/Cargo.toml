@@ -27,3 +27,4 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
+test-span-attrs = []

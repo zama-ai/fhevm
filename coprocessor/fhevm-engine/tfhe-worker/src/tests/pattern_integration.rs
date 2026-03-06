@@ -6,37 +6,16 @@ use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, Transaction,
 };
-use opentelemetry::trace::{SpanId, TracerProvider};
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
+use opentelemetry::trace::SpanId;
+use opentelemetry_sdk::trace::SpanData;
 use scheduler::dfg::pattern;
 use serial_test::serial;
-use tracing_subscriber::layer::SubscriberExt;
 
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
     setup_event_harness, to_ty, wait_until_computed, zero_address,
 };
-
-// ── Subscriber / span helpers ───────────────────────────────────────────────
-
-/// Try to install a test-only tracing subscriber with an in-memory OTel exporter.
-///
-/// Returns `Some(exporter)` if installation succeeded (first caller in the
-/// process) or `None` if a subscriber was already registered by another test
-/// or by the coprocessor itself.
-fn try_install_test_subscriber() -> Option<InMemorySpanExporter> {
-    let exporter = InMemorySpanExporter::default();
-    let provider = SdkTracerProvider::builder()
-        .with_simple_exporter(exporter.clone())
-        .build();
-    let tracer = provider.tracer("test");
-    let layer = tracing_opentelemetry::layer().with_tracer(tracer);
-    let subscriber = tracing_subscriber::registry().with(layer);
-    match tracing::subscriber::set_global_default(subscriber) {
-        Ok(()) => Some(exporter),
-        Err(_) => None,
-    }
-}
+use crate::tests::utils::{finished_test_spans, reset_test_spans};
 
 fn get_string_attr(span: &SpanData, key: &str) -> Option<String> {
     span.attributes
@@ -57,12 +36,19 @@ fn span_id_key(id: SpanId) -> u64 {
 /// Multiple `execute_transaction` spans may share the same
 /// `transaction_pattern_id` when a transaction is split into several
 /// scheduler components.
-fn group_ops_by_transaction(spans: &[SpanData]) -> HashMap<String, Vec<(u64, Vec<String>)>> {
+fn group_ops_by_transaction(
+    spans: &[SpanData],
+    test_transaction_ids: &HashSet<String>,
+) -> HashMap<String, Vec<(u64, Vec<String>)>> {
     // execute_transaction span_id → transaction_pattern_id
     let exec_spans: HashMap<u64, String> = spans
         .iter()
         .filter(|s| s.name == "execute_transaction")
         .filter_map(|s| {
+            let tx_id = get_string_attr(s, "test_transaction_id")?;
+            if !test_transaction_ids.contains(&tx_id) {
+                return None;
+            }
             let tp = get_string_attr(s, "transaction_pattern_id")?;
             Some((span_id_key(s.span_context.span_id()), tp))
         })
@@ -342,15 +328,11 @@ async fn insert_no_cmux_transfer(
 #[tokio::test]
 #[serial(db)]
 async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::Error>> {
-    let exporter = try_install_test_subscriber();
-
     let harness = setup_event_harness().await?;
     let listener_db = &harness.listener_db;
 
-    // Clear startup spans.
-    if let Some(ref exp) = exporter {
-        exp.reset();
-    }
+    // Clear startup spans from worker boot before creating test transactions.
+    reset_test_spans();
 
     let ct_type = 4; // FheUint32
 
@@ -464,203 +446,211 @@ async fn test_erc20_transaction_pattern_ids() -> Result<(), Box<dyn std::error::
 
     // ── Span assertions ─────────────────────────────────────────────────
 
-    if let Some(ref exp) = exporter {
-        let spans = exp.get_finished_spans().expect("failed to read spans");
-        let groups = group_ops_by_transaction(&spans);
+    let test_transaction_ids = HashSet::from([
+        hex::encode(tx_single_id),
+        hex::encode(tx_triple_id),
+        hex::encode(tx_nocmux_id),
+    ]);
+    let spans = finished_test_spans().expect("failed to read spans");
+    assert!(
+        spans.iter().any(|s| {
+            s.name == "execute_transaction" && get_string_attr(s, "test_transaction_id").is_some()
+        }),
+        "execute_transaction spans are missing test_transaction_id; \
+         scheduler test-span-attrs feature is likely disabled"
+    );
+    let groups = group_ops_by_transaction(&spans, &test_transaction_ids);
 
-        // We expect exactly 3 distinct transaction_pattern_ids.
-        //
-        // The scheduler may split each transaction into multiple
-        // `execute_transaction` scheduling components, so we identify
-        // transactions by their **total op count** across all components:
-        //   Tx_triple  – 15 total ops (3 independent 5-op transfers)
-        //   Tx_single  – 5 total ops, whitepaper transfer
-        //   Tx_nocmux  – 5 total ops, no-cmux transfer
-        assert!(
-            groups.len() >= 3,
-            "expected >= 3 distinct transaction_pattern_ids, got {}",
-            groups.len()
-        );
+    // We expect exactly 3 distinct transaction_pattern_ids.
+    //
+    // The scheduler may split each transaction into multiple
+    // `execute_transaction` scheduling components, so we identify
+    // transactions by their **total op count** across all components:
+    //   Tx_triple  – 15 total ops (3 independent 5-op transfers)
+    //   Tx_single  – 5 total ops, whitepaper transfer
+    //   Tx_nocmux  – 5 total ops, no-cmux transfer
+    assert!(
+        groups.len() >= 3,
+        "expected >= 3 distinct transaction_pattern_ids, got {}",
+        groups.len()
+    );
 
-        // Collect (tx_pattern, total_op_count, all_op_pids) for each group.
-        let mut by_op_count: Vec<(String, Vec<String>)> = groups
-            .iter()
-            .map(|(tx_pat, components)| {
-                let all_op_pids: Vec<String> =
-                    components.iter().flat_map(|(_, ops)| ops.clone()).collect();
-                (tx_pat.clone(), all_op_pids)
-            })
-            .collect();
+    // Collect (tx_pattern, total_op_count, all_op_pids) for each group.
+    let mut by_op_count: Vec<(String, Vec<String>)> = groups
+        .iter()
+        .map(|(tx_pat, components)| {
+            let all_op_pids: Vec<String> =
+                components.iter().flat_map(|(_, ops)| ops.clone()).collect();
+            (tx_pat.clone(), all_op_pids)
+        })
+        .collect();
 
-        // Find Tx_triple: the only one with 15 ops.
-        let triple_idx = by_op_count
-            .iter()
-            .position(|(_, ops)| ops.len() == 15)
-            .expect("should find a transaction_pattern with 15 ops (triple transfer)");
-        let (p_triple_tx, p_triple_ops) = by_op_count.remove(triple_idx);
+    // Find Tx_triple: the only one with 15 ops.
+    let triple_idx = by_op_count
+        .iter()
+        .position(|(_, ops)| ops.len() == 15)
+        .expect("should find a transaction_pattern with 15 ops (triple transfer)");
+    let (p_triple_tx, p_triple_ops) = by_op_count.remove(triple_idx);
 
-        // The remaining two both have 5 ops.  Distinguish whitepaper from
-        // no-cmux: Tx_triple's operation_pattern_ids should all equal
-        // Tx_single's transaction_pattern_id (the whitepaper pattern).
-        let whitepaper_op_pid = p_triple_ops.first().unwrap().clone();
+    // The remaining two both have 5 ops.  Distinguish whitepaper from
+    // no-cmux: Tx_triple's operation_pattern_ids should all equal
+    // Tx_single's transaction_pattern_id (the whitepaper pattern).
+    let whitepaper_op_pid = p_triple_ops.first().unwrap().clone();
 
-        let single_idx = by_op_count
-            .iter()
-            .position(|(tx_pat, _)| *tx_pat == whitepaper_op_pid)
-            .expect("should find single-transfer tx whose tx_pattern matches triple's op_pattern");
-        let (p_single_tx, p_single_ops) = by_op_count.remove(single_idx);
+    let single_idx = by_op_count
+        .iter()
+        .position(|(tx_pat, _)| *tx_pat == whitepaper_op_pid)
+        .expect("should find single-transfer tx whose tx_pattern matches triple's op_pattern");
+    let (p_single_tx, p_single_ops) = by_op_count.remove(single_idx);
 
-        // The remaining 5-op pattern is the no-cmux transfer.
-        let nocmux_idx = by_op_count
-            .iter()
-            .position(|(_, ops)| ops.len() == 5)
-            .expect("should find no-cmux transfer transaction");
-        let (p_nocmux_tx, p_nocmux_ops) = by_op_count.remove(nocmux_idx);
+    // The remaining 5-op pattern is the no-cmux transfer.
+    let nocmux_idx = by_op_count
+        .iter()
+        .position(|(_, ops)| ops.len() == 5)
+        .expect("should find no-cmux transfer transaction");
+    let (p_nocmux_tx, p_nocmux_ops) = by_op_count.remove(nocmux_idx);
 
-        let empty_pattern = "";
+    let empty_pattern = "";
 
-        // ── Assertion 1: single transfer ────────────────────────────────
-        //
-        // For a single-transfer transaction, the one logical group IS the
-        // entire graph.  Therefore every fhe_operation's
-        // operation_pattern_id must equal the transaction_pattern_id.
-        assert_ne!(p_single_tx, empty_pattern);
-        assert_eq!(p_single_ops.len(), 5, "single transfer should have 5 ops");
-        for op_pid in &p_single_ops {
-            assert_eq!(
-                op_pid, &p_single_tx,
-                "single transfer: operation_pattern_id should equal transaction_pattern_id"
-            );
-        }
-        println!("assertion 1 passed: single transfer op_pattern == tx_pattern");
-        println!("  pattern: {p_single_tx}");
-
-        // ── Assertion 2: triple transfer ────────────────────────────────
-        //
-        // Each of the 3 independent transfers in Tx_triple has the same
-        // 5-op subgraph as Tx_single.  So:
-        //   a) all 15 operation_pattern_ids are identical
-        //   b) they equal Tx_single's transaction_pattern_id
-        //   c) Tx_triple's own transaction_pattern_id differs (15-op graph)
-        assert_eq!(p_triple_ops.len(), 15, "triple transfer should have 15 ops");
-        let unique_triple_op_pids: HashSet<&String> = p_triple_ops.iter().collect();
+    // ── Assertion 1: single transfer ────────────────────────────────
+    //
+    // For a single-transfer transaction, the one logical group IS the
+    // entire graph.  Therefore every fhe_operation's
+    // operation_pattern_id must equal the transaction_pattern_id.
+    assert_ne!(p_single_tx, empty_pattern);
+    assert_eq!(p_single_ops.len(), 5, "single transfer should have 5 ops");
+    for op_pid in &p_single_ops {
         assert_eq!(
-            unique_triple_op_pids.len(),
-            1,
-            "all 15 ops in triple transfer should share one operation_pattern_id, \
-             got {unique_triple_op_pids:?}"
+            op_pid, &p_single_tx,
+            "single transfer: operation_pattern_id should equal transaction_pattern_id"
         );
-        let triple_op_pid = p_triple_ops.first().unwrap();
-        assert_eq!(
-            triple_op_pid, &p_single_tx,
-            "triple transfer operation_pattern_id should equal \
-             single transfer's transaction_pattern_id"
-        );
-        assert_ne!(
-            p_triple_tx, p_single_tx,
-            "triple transfer's transaction_pattern_id must differ from \
-             single transfer (15-op graph vs 5-op graph)"
-        );
-        println!("assertion 2 passed: triple transfer op_patterns == single tx_pattern");
-        println!("  triple tx_pattern:  {p_triple_tx} (15-op graph)");
-        println!("  triple op_pattern:  {triple_op_pid} == single tx_pattern");
-
-        // ── Assertion 3: different implementation ───────────────────────
-        assert_ne!(
-            p_nocmux_tx, p_single_tx,
-            "no-cmux transfer must have different transaction_pattern_id than whitepaper"
-        );
-        assert_ne!(
-            p_nocmux_tx, p_triple_tx,
-            "no-cmux transfer must have different transaction_pattern_id than triple"
-        );
-        // The no-cmux single transfer should also satisfy op_pattern == tx_pattern.
-        assert_eq!(p_nocmux_ops.len(), 5, "no-cmux should have 5 ops");
-        for op_pid in &p_nocmux_ops {
-            assert_eq!(
-                op_pid, &p_nocmux_tx,
-                "no-cmux: operation_pattern_id should equal transaction_pattern_id"
-            );
-        }
-        println!("assertion 3 passed: no-cmux has different tx_pattern");
-        println!("  no-cmux pattern: {p_nocmux_tx}");
-
-        // ── Assertion 4: encodings are decodable and structurally correct ─
-        //
-        // Pattern IDs are base64url-encoded. Verify they decode to valid
-        // DFG descriptions with the expected node counts and opcode sets.
-        // (Detailed structural checks on topo order and internal refs are
-        // covered by the unit tests in scheduler/src/dfg/pattern/tests.rs.)
-
-        let decode_b64 = |b64: &str| -> pattern::PatternDescription {
-            let bytes = URL_SAFE_NO_PAD
-                .decode(b64.as_bytes())
-                .unwrap_or_else(|e| panic!("invalid base64url pattern '{b64}': {e}"));
-            if pattern::is_hashed_pattern(&bytes) {
-                panic!("expected decodable pattern but got hashed pattern '{b64}'");
-            }
-            pattern::decode_pattern(&bytes)
-                .unwrap_or_else(|| panic!("malformed pattern encoding '{b64}'"))
-        };
-
-        let sorted_opcodes = |desc: &pattern::PatternDescription| -> Vec<&str> {
-            let mut ops: Vec<&str> = desc.nodes.iter().map(|n| n.opcode_name).collect();
-            ops.sort();
-            ops
-        };
-
-        // Whitepaper: 5 nodes — GE, Add, Sub, 2×IfThenElse
-        let wp = decode_b64(&p_single_tx);
-        assert_eq!(wp.nodes.len(), 5, "whitepaper pattern should have 5 nodes");
-        assert_eq!(
-            sorted_opcodes(&wp),
-            &[
-                "FHE_ADD",
-                "FHE_GE",
-                "FHE_IF_THEN_ELSE",
-                "FHE_IF_THEN_ELSE",
-                "FHE_SUB"
-            ],
-            "whitepaper opcode set"
-        );
-        assert_eq!(
-            wp.nodes.iter().filter(|n| n.is_allowed).count(),
-            2,
-            "whitepaper should have 2 allowed outputs"
-        );
-        println!("assertion 4a passed: whitepaper encoding = {wp}");
-
-        // No-cmux: 5 nodes — GE, Cast, Mul, Add, Sub
-        let nc = decode_b64(&p_nocmux_tx);
-        assert_eq!(nc.nodes.len(), 5, "no-cmux pattern should have 5 nodes");
-        assert_eq!(
-            sorted_opcodes(&nc),
-            &["FHE_ADD", "FHE_CAST", "FHE_GE", "FHE_MUL", "FHE_SUB"],
-            "no-cmux opcode set"
-        );
-        assert_eq!(
-            nc.nodes.iter().filter(|n| n.is_allowed).count(),
-            2,
-            "no-cmux should have 2 allowed outputs"
-        );
-        println!("assertion 4b passed: no-cmux encoding = {nc}");
-
-        // Triple: 15 nodes (3× whitepaper)
-        let triple = decode_b64(&p_triple_tx);
-        assert_eq!(
-            triple.nodes.len(),
-            15,
-            "triple transfer tx pattern should have 15 nodes"
-        );
-        assert_eq!(
-            triple.nodes.iter().filter(|n| n.is_allowed).count(),
-            6,
-            "triple should have 6 allowed outputs"
-        );
-        println!("assertion 4c passed: triple tx encoding = {triple}");
-    } else {
-        println!("skipping span assertions: global subscriber already set by another test");
     }
+    println!("assertion 1 passed: single transfer op_pattern == tx_pattern");
+    println!("  pattern: {p_single_tx}");
+
+    // ── Assertion 2: triple transfer ────────────────────────────────
+    //
+    // Each of the 3 independent transfers in Tx_triple has the same
+    // 5-op subgraph as Tx_single.  So:
+    //   a) all 15 operation_pattern_ids are identical
+    //   b) they equal Tx_single's transaction_pattern_id
+    //   c) Tx_triple's own transaction_pattern_id differs (15-op graph)
+    assert_eq!(p_triple_ops.len(), 15, "triple transfer should have 15 ops");
+    let unique_triple_op_pids: HashSet<&String> = p_triple_ops.iter().collect();
+    assert_eq!(
+        unique_triple_op_pids.len(),
+        1,
+        "all 15 ops in triple transfer should share one operation_pattern_id, \
+         got {unique_triple_op_pids:?}"
+    );
+    let triple_op_pid = p_triple_ops.first().unwrap();
+    assert_eq!(
+        triple_op_pid, &p_single_tx,
+        "triple transfer operation_pattern_id should equal \
+         single transfer's transaction_pattern_id"
+    );
+    assert_ne!(
+        p_triple_tx, p_single_tx,
+        "triple transfer's transaction_pattern_id must differ from \
+         single transfer (15-op graph vs 5-op graph)"
+    );
+    println!("assertion 2 passed: triple transfer op_patterns == single tx_pattern");
+    println!("  triple tx_pattern:  {p_triple_tx} (15-op graph)");
+    println!("  triple op_pattern:  {triple_op_pid} == single tx_pattern");
+
+    // ── Assertion 3: different implementation ───────────────────────
+    assert_ne!(
+        p_nocmux_tx, p_single_tx,
+        "no-cmux transfer must have different transaction_pattern_id than whitepaper"
+    );
+    assert_ne!(
+        p_nocmux_tx, p_triple_tx,
+        "no-cmux transfer must have different transaction_pattern_id than triple"
+    );
+    // The no-cmux single transfer should also satisfy op_pattern == tx_pattern.
+    assert_eq!(p_nocmux_ops.len(), 5, "no-cmux should have 5 ops");
+    for op_pid in &p_nocmux_ops {
+        assert_eq!(
+            op_pid, &p_nocmux_tx,
+            "no-cmux: operation_pattern_id should equal transaction_pattern_id"
+        );
+    }
+    println!("assertion 3 passed: no-cmux has different tx_pattern");
+    println!("  no-cmux pattern: {p_nocmux_tx}");
+
+    // ── Assertion 4: encodings are decodable and structurally correct ─
+    //
+    // Pattern IDs are base64url-encoded. Verify they decode to valid
+    // DFG descriptions with the expected node counts and opcode sets.
+    // (Detailed structural checks on topo order and internal refs are
+    // covered by the unit tests in scheduler/src/dfg/pattern/tests.rs.)
+
+    let decode_b64 = |b64: &str| -> pattern::PatternDescription {
+        let bytes = URL_SAFE_NO_PAD
+            .decode(b64.as_bytes())
+            .unwrap_or_else(|e| panic!("invalid base64url pattern '{b64}': {e}"));
+        if pattern::is_hashed_pattern(&bytes) {
+            panic!("expected decodable pattern but got hashed pattern '{b64}'");
+        }
+        pattern::decode_pattern(&bytes)
+            .unwrap_or_else(|| panic!("malformed pattern encoding '{b64}'"))
+    };
+
+    let sorted_opcodes = |desc: &pattern::PatternDescription| -> Vec<&str> {
+        let mut ops: Vec<&str> = desc.nodes.iter().map(|n| n.opcode_name).collect();
+        ops.sort();
+        ops
+    };
+
+    // Whitepaper: 5 nodes — GE, Add, Sub, 2×IfThenElse
+    let wp = decode_b64(&p_single_tx);
+    assert_eq!(wp.nodes.len(), 5, "whitepaper pattern should have 5 nodes");
+    assert_eq!(
+        sorted_opcodes(&wp),
+        &[
+            "FHE_ADD",
+            "FHE_GE",
+            "FHE_IF_THEN_ELSE",
+            "FHE_IF_THEN_ELSE",
+            "FHE_SUB"
+        ],
+        "whitepaper opcode set"
+    );
+    assert_eq!(
+        wp.nodes.iter().filter(|n| n.is_allowed).count(),
+        2,
+        "whitepaper should have 2 allowed outputs"
+    );
+    println!("assertion 4a passed: whitepaper encoding = {wp}");
+
+    // No-cmux: 5 nodes — GE, Cast, Mul, Add, Sub
+    let nc = decode_b64(&p_nocmux_tx);
+    assert_eq!(nc.nodes.len(), 5, "no-cmux pattern should have 5 nodes");
+    assert_eq!(
+        sorted_opcodes(&nc),
+        &["FHE_ADD", "FHE_CAST", "FHE_GE", "FHE_MUL", "FHE_SUB"],
+        "no-cmux opcode set"
+    );
+    assert_eq!(
+        nc.nodes.iter().filter(|n| n.is_allowed).count(),
+        2,
+        "no-cmux should have 2 allowed outputs"
+    );
+    println!("assertion 4b passed: no-cmux encoding = {nc}");
+
+    // Triple: 15 nodes (3× whitepaper)
+    let triple = decode_b64(&p_triple_tx);
+    assert_eq!(
+        triple.nodes.len(),
+        15,
+        "triple transfer tx pattern should have 15 nodes"
+    );
+    assert_eq!(
+        triple.nodes.iter().filter(|n| n.is_allowed).count(),
+        6,
+        "triple should have 6 allowed outputs"
+    );
+    println!("assertion 4c passed: triple tx encoding = {triple}");
 
     Ok(())
 }
