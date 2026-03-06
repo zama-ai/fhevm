@@ -261,7 +261,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, host_chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -273,7 +273,7 @@ async fn execute_verify_proof_routine(
         let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let host_chain_id_raw: i64 = row.get("host_chain_id");
+        let host_chain_id_raw: i64 = row.get("chain_id");
         let host_chain_id = ChainId::try_from(host_chain_id_raw)
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");

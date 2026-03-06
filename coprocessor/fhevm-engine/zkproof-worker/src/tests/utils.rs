@@ -151,7 +151,7 @@ pub(crate) async fn insert_proof(
 ) -> Result<i64, sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, host_chain_id, contract_address, user_address, verified)
+            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
             VALUES ($1, $2, $3, $4, $5, NULL )" 
         ).bind(request_id)
         .bind(zk_pok)

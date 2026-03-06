@@ -325,7 +325,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, host_chain_id, contract_address, user_address, input, extra_data, transaction_id)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
