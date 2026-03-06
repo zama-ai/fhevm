@@ -22,7 +22,8 @@ function mockWatchdog(): {
   let pfResponses: any[] = [];
   let pfConsensuses: any[] = [];
 
-  // Replace provider with stub.
+  // Destroy the real provider (created by the constructor) before replacing with stub.
+  (w as any).provider.destroy();
   (w as any).provider = {
     getBlockNumber: async () => blockNumber,
     destroy: () => {},
@@ -279,18 +280,22 @@ describe('ConsensusWatchdog', function () {
       const { mochaHooks } = require('./consensusWatchdog');
       const origGw = process.env.GATEWAY_RPC_URL;
       const origCt = process.env.CIPHERTEXT_COMMITS_ADDRESS;
-      delete process.env.GATEWAY_RPC_URL;
-      delete process.env.CIPHERTEXT_COMMITS_ADDRESS;
+      try {
+        delete process.env.GATEWAY_RPC_URL;
+        delete process.env.CIPHERTEXT_COMMITS_ADDRESS;
 
-      // beforeAll should be a no-op.
-      await mochaHooks.beforeAll.call({});
-      // afterEach and afterAll should also be no-ops (watchdog is null).
-      await mochaHooks.afterEach.call({});
-      await mochaHooks.afterAll.call({});
-
-      // Restore.
-      if (origGw) process.env.GATEWAY_RPC_URL = origGw;
-      if (origCt) process.env.CIPHERTEXT_COMMITS_ADDRESS = origCt;
+        // beforeAll should be a no-op.
+        await mochaHooks.beforeAll.call({});
+        // afterEach and afterAll should also be no-ops (watchdog is null).
+        await mochaHooks.afterEach.call({});
+        await mochaHooks.afterAll.call({});
+      } finally {
+        // Restore env vars even if assertions fail.
+        if (origGw !== undefined) process.env.GATEWAY_RPC_URL = origGw;
+        else delete process.env.GATEWAY_RPC_URL;
+        if (origCt !== undefined) process.env.CIPHERTEXT_COMMITS_ADDRESS = origCt;
+        else delete process.env.CIPHERTEXT_COMMITS_ADDRESS;
+      }
     });
   });
 });
