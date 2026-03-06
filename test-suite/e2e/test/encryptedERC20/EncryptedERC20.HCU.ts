@@ -156,20 +156,21 @@ describe('EncryptedERC20:HCU', function () {
       await ethers.provider.send('evm_setIntervalMining', [1]);
 
       const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-      await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock);
-      await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
-      await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
+      await (await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock)).wait();
+      await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
+      await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
 
       const isWhitelisted = await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress);
       if (wasWhitelisted && !isWhitelisted) {
-        await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+        await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
       } else if (!wasWhitelisted && isWhitelisted) {
-        await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+        await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
       }
     });
 
     it('should accumulate HCU from multiple users in the same block', async function () {
       await mintAndDistribute(this);
+      await ethers.provider.send('evm_setIntervalMining', [0]);
 
       // Fresh block after setup: meter should be 0
       await mineNBlocks(1);
@@ -183,14 +184,12 @@ describe('EncryptedERC20:HCU', function () {
       expect(meter1).to.be.greaterThan(meter0);
 
       // Two txs batched in same block — meter must exceed the single-tx reading
-      // Disable both automine and interval mining (Anvil --block-time 1)
-      await ethers.provider.send('evm_setIntervalMining', [0]);
+      // Disable automine and batch both txs into one block
       await ethers.provider.send('evm_setAutomine', [false]);
       const txA = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
       const txB = await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 100);
       await ethers.provider.send('evm_mine');
       await ethers.provider.send('evm_setAutomine', [true]);
-      await ethers.provider.send('evm_setIntervalMining', [1]);
       const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
       expect(receiptA?.status).to.eq(1);
       expect(receiptB?.status).to.eq(1);
@@ -279,11 +278,12 @@ describe('EncryptedERC20:HCU', function () {
 
     it('should count HCU after whitelist removal', async function () {
       const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+      await ethers.provider.send('evm_setIntervalMining', [0]);
 
       const mintTx = await this.erc20.mint(10000);
       await mintTx.wait();
 
-      await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+      await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
       await mineNBlocks(1);
 
       // Transfer while whitelisted — meter stays at 0
@@ -293,7 +293,7 @@ describe('EncryptedERC20:HCU', function () {
       const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter();
       expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
 
-      await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+      await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
 
       // Transfer after removal — meter should count HCU
       const tx2 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
