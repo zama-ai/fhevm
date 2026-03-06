@@ -49,11 +49,13 @@ throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_futures"] }
+base64 = { workspace = true }
 host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [[bin]]
 name = "tfhe_worker"
