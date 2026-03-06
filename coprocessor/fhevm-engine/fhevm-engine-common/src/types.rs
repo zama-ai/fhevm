@@ -1,9 +1,12 @@
+use alloy::primitives::Signature;
 use alloy::providers::RootProvider;
+use alloy::signers::Signer;
 use alloy_provider::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
 };
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
+use clap::{Parser, ValueEnum};
 use tfhe::integer::bigint::StaticUnsignedBigInt;
 use tfhe::integer::ciphertext::{BaseRadixCiphertext, ReRandomizationSeed};
 use tfhe::integer::U256;
@@ -1066,6 +1069,14 @@ pub type BlockchainProvider = FillProvider<
     >,
     RootProvider,
 >;
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+pub enum SignerType {
+    PrivateKey,
+    AwsKms,
+}
+
+pub type CoproSigner = std::sync::Arc<dyn Signer<Signature> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
