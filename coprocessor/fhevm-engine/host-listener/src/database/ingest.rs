@@ -332,6 +332,7 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
+    info!(last_block_number, finality_lag, "Updating finalized blocks");
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
         Err(err) => {
@@ -359,6 +360,7 @@ pub async fn update_finalized_blocks(
             return;
         }
     };
+    info!(?blocks_number, "Finalizing blocks");
     for block_number in blocks_number {
         let block =
             match log_iter.get_block_by_number(block_number as u64).await {
