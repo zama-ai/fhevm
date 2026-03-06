@@ -105,6 +105,11 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   describe('block cap scenarios', function () {
+    let savedHCUPerBlock: bigint;
+    let savedMaxHCUPerTx: bigint;
+    let savedMaxHCUDepthPerTx: bigint;
+    let wasWhitelisted: boolean;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function sendEncryptedTransfer(ctx: any, sender: string, recipient: string, amount: number, overrides?: any) {
       const erc20 = ctx.erc20.connect(ctx.signers[sender]);
@@ -136,10 +141,30 @@ describe('EncryptedERC20:HCU', function () {
       this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
     });
 
+    beforeEach(async function () {
+      [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
+        this.hcuLimit.getGlobalHCUCapPerBlock(),
+        this.hcuLimit.getMaxHCUPerTx(),
+        this.hcuLimit.getMaxHCUDepthPerTx(),
+        this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
+      ]);
+    });
+
     afterEach(async function () {
       // Restore automine + 1-second interval mining (Anvil --block-time 1)
       await ethers.provider.send('evm_setAutomine', [true]);
       await ethers.provider.send('evm_setIntervalMining', [1]);
+
+      const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+      await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock);
+      await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
+      await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
+
+      if (wasWhitelisted) {
+        await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+      } else {
+        await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+      }
     });
 
     it('should accumulate HCU from multiple users in the same block', async function () {
@@ -185,30 +210,12 @@ describe('EncryptedERC20:HCU', function () {
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
 
-      let savedHCUPerBlock: bigint;
-      let savedMaxHCUPerTx: bigint;
-      let savedMaxHCUDepthPerTx: bigint;
-
       beforeEach(async function () {
-        [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx] = await Promise.all([
-          this.hcuLimit.getGlobalHCUCapPerBlock(),
-          this.hcuLimit.getMaxHCUPerTx(),
-          this.hcuLimit.getMaxHCUDepthPerTx(),
-        ]);
-
         // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
         await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX);
         await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX);
         await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK);
-      });
-
-      afterEach(async function () {
-        // Widest-first when restoring: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
-        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-        await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock);
-        await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx);
-        await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx);
       });
 
       it('should revert when block HCU cap is exhausted', async function () {
