@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, types::AllowEvents, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::multichain_acl::MultichainACL;
 use fhevm_gateway_bindings::multichain_acl::MultichainACL::MultichainACLErrors;
@@ -66,7 +66,7 @@ where
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
-    #[tracing::instrument(name = "call_allow_account", skip_all, fields(txn_id = tracing::field::Empty))]
+    #[tracing::instrument(name = "call_allow_account", skip_all)]
     async fn send_transaction(
         &self,
         key: &Key,
@@ -75,11 +75,6 @@ where
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        telemetry::record_short_hex_if_some(
-            &tracing::Span::current(),
-            "txn_id",
-            src_transaction_id.as_deref(),
-        );
         let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
@@ -401,9 +396,13 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let src_transaction_id = row.transaction_id.clone();
-            let _span =
-                tracing::info_span!("prepare_allow_account", txn_id = tracing::field::Empty);
-            telemetry::record_short_hex_if_some(&_span, "txn_id", src_transaction_id.as_deref());
+            let _span = tracing::info_span!(
+                "prepare_allow_account",
+                transaction_hash = src_transaction_id
+                    .as_deref()
+                    .map(to_hex)
+                    .unwrap_or_default(),
+            );
             let _enter = _span.enter();
 
             let handle = row.handle.clone();
@@ -473,18 +472,23 @@ where
                 event_type,
             };
 
+            drop(_enter);
+
             let operation = self.clone();
-            join_set.spawn(async move {
-                operation
-                    .send_transaction(
-                        &key,
-                        txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
-                        src_transaction_id,
-                    )
-                    .await
-            });
+            join_set.spawn(
+                async move {
+                    operation
+                        .send_transaction(
+                            &key,
+                            txn_request,
+                            row.txn_limited_retries_count,
+                            row.txn_unlimited_retries_count,
+                            src_transaction_id,
+                        )
+                        .await
+                }
+                .instrument(_span),
+            );
         }
 
         while let Some(res) = join_set.join_next().await {
