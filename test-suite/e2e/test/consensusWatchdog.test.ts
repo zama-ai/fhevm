@@ -283,7 +283,7 @@ describe('ConsensusWatchdog', function () {
       await watchdog.flush();
 
       const summary = watchdog.summary()!;
-      expect(summary).to.include('1 ciphertext(s) and 0 proof(s) reached consensus');
+      expect(summary).to.include('1 ciphertext(s), 0 proof(s), 0 divergence(s), 0 stalled pending item(s)');
       expect(summary).to.include('1 ciphertext handle(s) never reached consensus');
       expect(summary).to.include('0xpending');
     });
@@ -294,7 +294,7 @@ describe('ConsensusWatchdog', function () {
       (watchdog as any).resolvedProofCount = 3;
 
       const summary = watchdog.summary()!;
-      expect(summary).to.include('5 ciphertext(s) and 3 proof(s) reached consensus');
+      expect(summary).to.include('5 ciphertext(s), 3 proof(s), 0 divergence(s), 0 stalled pending item(s)');
       expect(summary).to.not.include('WARNING');
     });
   });

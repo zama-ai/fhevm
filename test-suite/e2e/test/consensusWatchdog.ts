@@ -305,6 +305,17 @@ export class ConsensusWatchdog {
     );
   }
 
+  private stalledPendingCount(now = Date.now()): number {
+    let count = 0;
+    for (const pending of this.pendingHandles.values()) {
+      if (now - pending.firstSeenAt > CONSENSUS_TIMEOUT_MS) count++;
+    }
+    for (const pending of this.pendingProofs.values()) {
+      if (now - pending.firstSeenAt > CONSENSUS_TIMEOUT_MS) count++;
+    }
+    return count;
+  }
+
   /**
    * Check for divergences (instant) and stalls (3-minute timeout).
    * Called in afterEach to fail the current test if consensus is broken.
@@ -352,7 +363,7 @@ export class ConsensusWatchdog {
   summary(): string {
     const lines: string[] = [];
     lines.push(
-      `[consensus-watchdog] Summary: ${this.resolvedHandleCount} ciphertext(s) and ${this.resolvedProofCount} proof(s) reached consensus.`,
+      `[consensus-watchdog] Summary: ${this.resolvedHandleCount} ciphertext(s), ${this.resolvedProofCount} proof(s), ${this.divergences.length} divergence(s), ${this.stalledPendingCount()} stalled pending item(s)`,
     );
 
     if (this.pendingHandles.size > 0) {
