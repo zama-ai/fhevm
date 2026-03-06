@@ -9,6 +9,8 @@ services:
       - "9001:9001"
     entrypoint: >
       minio server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
     healthcheck:
       test: [ "CMD", "mc", "ready", "local" ]
       interval: 1s
@@ -47,4 +49,5 @@ services:
         condition: service_healthy
 
 volumes:
+  minio_data:
   minio_secrets:
