@@ -57,6 +57,7 @@ services:
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_WS_URL}
       - --initial-block-time=1
+      - --catchup-finalization-in-blocks=5
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -80,7 +81,6 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
-      - --catchup-finalization-in-blocks=5
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
