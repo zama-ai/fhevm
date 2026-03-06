@@ -27,27 +27,6 @@ use super::{pattern, DFComponentGraph, DFGraph, OpNode};
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
-#[cfg(feature = "test-span-attrs")]
-macro_rules! execute_transaction_span {
-    ($tx_pattern_id:expr, $transaction_id:expr) => {
-        tracing::info_span!(
-            "execute_transaction",
-            transaction_pattern_id = %$tx_pattern_id,
-            test_transaction_id = %hex::encode($transaction_id),
-        )
-    };
-}
-
-#[cfg(not(feature = "test-span-attrs"))]
-macro_rules! execute_transaction_span {
-    ($tx_pattern_id:expr, $transaction_id:expr) => {
-        tracing::info_span!(
-            "execute_transaction",
-            transaction_pattern_id = %$tx_pattern_id,
-        )
-    };
-}
-
 pub enum PartitionStrategy {
     MaxParallelism,
     MaxLocality,
@@ -356,7 +335,12 @@ fn execute_partition(
 
         // Prime the scheduler with ready ops from the transaction's subgraph
         let transaction_pattern_id = pattern::pattern_to_base64url(transaction_pattern_id);
-        let _exec_guard = execute_transaction_span!(transaction_pattern_id, &tid).entered();
+        let _exec_guard = tracing::info_span!(
+            "execute_transaction",
+            transaction_id = %hex::encode(&tid),
+            transaction_pattern_id = %transaction_pattern_id,
+        )
+        .entered();
         let started_at = std::time::Instant::now();
 
         let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
