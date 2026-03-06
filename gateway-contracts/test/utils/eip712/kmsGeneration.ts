@@ -51,6 +51,7 @@ export function createEIP712ResponseKeygen(
   prepKeygenId: BigInt,
   keyId: BigInt,
   keyDigests: { keyType: BigNumberish; digest: BytesLike }[],
+  extraData: BytesLike,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -67,6 +68,7 @@ export function createEIP712ResponseKeygen(
         { name: "prepKeygenId", type: "uint256" },
         { name: "keyId", type: "uint256" },
         { name: "keyDigests", type: "KeyDigest[]" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "KeygenVerification",
@@ -80,6 +82,7 @@ export function createEIP712ResponseKeygen(
       prepKeygenId,
       keyId,
       keyDigests,
+      extraData,
     },
   };
 }
@@ -105,6 +108,7 @@ export function createEIP712ResponseCrsgen(
   crsId: BigNumberish,
   maxBitLength: BigNumberish,
   crsDigest: string,
+  extraData: BytesLike,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -121,6 +125,7 @@ export function createEIP712ResponseCrsgen(
         { name: "crsId", type: "uint256" },
         { name: "maxBitLength", type: "uint256" },
         { name: "crsDigest", type: "bytes" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "CrsgenVerification",
@@ -134,6 +139,7 @@ export function createEIP712ResponseCrsgen(
       crsId,
       maxBitLength,
       crsDigest,
+      extraData,
     },
   };
 }

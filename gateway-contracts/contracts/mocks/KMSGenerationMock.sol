@@ -23,24 +23,21 @@ contract KMSGenerationMock {
 
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
 
-    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes extraData, bytes signature, address kmsTxSender);
 
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
 
-    event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
+    event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes extraData, bytes signature, address kmsTxSender);
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     event PRSSInit();
 
-    event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
-
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
-    uint256 keyReshareCounter = 6 << 248;
 
     function keygen(ParamsType paramsType) external {
         prepKeygenCounter++;
@@ -60,11 +57,16 @@ contract KMSGenerationMock {
         emit KeygenRequest(prepKeygenId, keyId);
     }
 
-    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
+    function keygenResponse(
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata extraData,
+        bytes calldata signature
+    ) external {
         address kmsTxSender;
         string[] memory kmsNodeStorageUrls = new string[](1);
 
-        emit KeygenResponse(keyId, keyDigests, signature, kmsTxSender);
+        emit KeygenResponse(keyId, keyDigests, extraData, signature, kmsTxSender);
 
         emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
     }
@@ -76,26 +78,21 @@ contract KMSGenerationMock {
         emit CrsgenRequest(crsId, maxBitLength, paramsType);
     }
 
-    function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external {
+    function crsgenResponse(
+        uint256 crsId,
+        bytes calldata crsDigest,
+        bytes calldata extraData,
+        bytes calldata signature
+    ) external {
         address kmsTxSender;
         string[] memory kmsNodeStorageUrls = new string[](1);
 
-        emit CrsgenResponse(crsId, crsDigest, signature, kmsTxSender);
+        emit CrsgenResponse(crsId, crsDigest, extraData, signature, kmsTxSender);
 
         emit ActivateCrs(crsId, kmsNodeStorageUrls, crsDigest);
     }
 
     function prssInit() external {
         emit PRSSInit();
-    }
-
-    function keyReshareSameSet(uint256 keyId) external {
-        prepKeygenCounter++;
-        uint256 prepKeygenId = prepKeygenCounter;
-        keyReshareCounter++;
-        uint256 keyReshareId = keyReshareCounter;
-        ParamsType paramsType;
-
-        emit KeyReshareSameSet(prepKeygenId, keyId, keyReshareId, paramsType);
     }
 }

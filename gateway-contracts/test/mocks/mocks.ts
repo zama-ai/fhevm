@@ -10,7 +10,7 @@ import {
   KMSGenerationMock,
   MultichainACLMock,
 } from "../../typechain-types";
-import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getKeyReshareId, getPrepKeygenId, toValues } from "../utils";
+import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
@@ -362,11 +362,11 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit ActivateKey and KeygenResponse events on keygen response", async function () {
-      await expect(kmsGenerationMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes))
+      await expect(kmsGenerationMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes, DefaultBytes))
         .to.emit(kmsGenerationMock, "ActivateKey")
         .withArgs(keyId, [DefaultString], toValues([DefaultKmsDigest]))
         .to.emit(kmsGenerationMock, "KeygenResponse")
-        .withArgs(keyId, toValues([DefaultKmsDigest]), DefaultBytes, DefaultAddress);
+        .withArgs(keyId, toValues([DefaultKmsDigest]), DefaultBytes, DefaultBytes, DefaultAddress);
     });
 
     it("Should emit CrsgenRequest event on crsgen request", async function () {
@@ -376,26 +376,15 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit ActivateCrs and CrsgenResponse events on crsgen request", async function () {
-      await expect(kmsGenerationMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
+      await expect(kmsGenerationMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes, DefaultBytes))
         .to.emit(kmsGenerationMock, "ActivateCrs")
         .withArgs(crsgenId, [DefaultString], DefaultBytes)
         .to.emit(kmsGenerationMock, "CrsgenResponse")
-        .withArgs(crsgenId, DefaultBytes, DefaultBytes, DefaultAddress);
+        .withArgs(crsgenId, DefaultBytes, DefaultBytes, DefaultBytes, DefaultAddress);
     });
 
     it("Should emit PRSSInit event on prssInit call", async function () {
       await expect(kmsGenerationMock.prssInit()).to.emit(kmsGenerationMock, "PRSSInit");
-    });
-
-    it("Should emit KeyReshareSameSet event on keyReshareSameSet call", async function () {
-      // Define incremented prepKeygenId since the mock contract increments
-      // this value internally from previous test cases.
-      const prepKeygenId = getPrepKeygenId(2);
-      const keyReshareId = getKeyReshareId(1);
-
-      await expect(kmsGenerationMock.keyReshareSameSet(keyId))
-        .to.emit(kmsGenerationMock, "KeyReshareSameSet")
-        .withArgs(prepKeygenId, keyId, keyReshareId, DefaultParamsType);
     });
   });
 

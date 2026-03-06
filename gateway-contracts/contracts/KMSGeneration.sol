@@ -10,12 +10,7 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import {
-    PREP_KEYGEN_COUNTER_BASE,
-    KEY_COUNTER_BASE,
-    CRS_COUNTER_BASE,
-    KEY_RESHARE_COUNTER_BASE
-} from "./shared/KMSRequestCounters.sol";
+import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
  * @title KMSGeneration contract
@@ -65,7 +60,8 @@ contract KMSGeneration is
      * - keyDigests: The digests of the generated key.
      */
     string private constant EIP712_KEYGEN_TYPE =
-        "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests)KeyDigest(uint8 keyType,bytes digest)";
+        "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)"
+        "KeyDigest(uint8 keyType,bytes digest)";
 
     /**
      * @notice The hash of the KeygenVerification typed definition.
@@ -80,7 +76,7 @@ contract KMSGeneration is
      * - crsDigest: The digest of the generated CRS.
      */
     string private constant EIP712_CRSGEN_TYPE =
-        "CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest)";
+        "CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)";
 
     /**
      * @notice The hash of the CrsgenVerification typed definition.
@@ -168,7 +164,7 @@ contract KMSGeneration is
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The number of key resharing, used to generate the keyReshareIds.
+        /// @notice Deprecated: key resharing is now managed by KMSVerifier on Ethereum.
         uint256 keyReshareCounter;
     }
 
@@ -199,7 +195,6 @@ contract KMSGeneration is
         $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
         $.keyCounter = KEY_COUNTER_BASE;
         $.crsCounter = CRS_COUNTER_BASE;
-        $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
     }
 
     /**
@@ -308,6 +303,7 @@ contract KMSGeneration is
     function keygenResponse(
         uint256 keyId,
         KeyDigest[] calldata keyDigests,
+        bytes calldata extraData,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -327,7 +323,7 @@ contract KMSGeneration is
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
 
         // Compute the digest of the KeygenVerification struct.
-        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests);
+        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests, extraData);
 
         // Recover the signer address from the signature and check that it is a KMS node
         address kmsSigner = _validateEIP712Signature(digest, signature);
@@ -347,7 +343,7 @@ contract KMSGeneration is
         uint256 consensusTxSendersLength = consensusTxSenders.length;
 
         // Emit the event at each call for monitoring purposes.
-        emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
+        emit KeygenResponse(keyId, keyDigests, extraData, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
@@ -413,6 +409,7 @@ contract KMSGeneration is
     function crsgenResponse(
         uint256 crsId,
         bytes calldata crsDigest,
+        bytes calldata extraData,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -422,34 +419,30 @@ contract KMSGeneration is
             revert CrsgenNotRequested(crsId);
         }
 
-        uint256 maxBitLength = $.crsMaxBitLength[crsId];
-
         // Compute the digest of the CrsgenVerification struct.
-        bytes32 digest = _hashCrsgenVerification(crsId, maxBitLength, crsDigest);
+        bytes32 digest = _hashCrsgenVerification(crsId, $.crsMaxBitLength[crsId], crsDigest, extraData);
 
-        // Recover the signer address from the signature and check that it is a KMS node
-        address kmsSigner = _validateEIP712Signature(digest, signature);
-
-        // Check that the signer has not already signed for this CRS generation response
-        if ($.kmsHasSignedForResponse[crsId][kmsSigner]) {
-            revert KmsAlreadySignedForCrsgen(crsId, kmsSigner);
+        // Recover the signer address from the signature, check it is a KMS node,
+        // and verify the signer has not already signed for this CRS generation response
+        {
+            address kmsSigner = _validateEIP712Signature(digest, signature);
+            if ($.kmsHasSignedForResponse[crsId][kmsSigner]) {
+                revert KmsAlreadySignedForCrsgen(crsId, kmsSigner);
+            }
+            $.kmsHasSignedForResponse[crsId][kmsSigner] = true;
         }
-
-        $.kmsHasSignedForResponse[crsId][kmsSigner] = true;
 
         // Store the KMS transaction sender address for the crsgen response
         // A "late" valid KMS transaction sender address or storage URL will still be added in the list
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
         consensusTxSenders.push(msg.sender);
 
-        uint256 consensusTxSendersLength = consensusTxSenders.length;
-
         // Emit the event at each call for monitoring purposes.
-        emit CrsgenResponse(crsId, crsDigest, signature, msg.sender);
+        emit CrsgenResponse(crsId, crsDigest, extraData, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusTxSendersLength)) {
+        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusTxSenders.length)) {
             $.isRequestDone[crsId] = true;
 
             // Store the digest of the generated CRS in order to retrieve it later
@@ -461,6 +454,7 @@ contract KMSGeneration is
             // Set the active CRS ID
             $.activeCrsId = crsId;
 
+            uint256 consensusTxSendersLength = consensusTxSenders.length;
             string[] memory consensusUrls = new string[](consensusTxSendersLength);
             for (uint256 i = 0; i < consensusTxSendersLength; i++) {
                 consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders[i]).storageUrl;
@@ -474,32 +468,6 @@ contract KMSGeneration is
      */
     function prssInit() external virtual onlyGatewayOwner {
         emit PRSSInit();
-    }
-
-    /**
-     * @notice See {IKMSGeneration-keyReshareSameSet}.
-     * @dev ⚠️ This function should only be called under exceptional circumstances.
-     * It is intended for corrective flows when a previous resharing attempt failed.
-     * Use with caution since incorrect usage may cause inconsistent key generation states.
-     */
-    function keyReshareSameSet(uint256 keyId) external virtual onlyGatewayOwner {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        if (!$.isRequestDone[keyId]) {
-            revert KeyNotGenerated(keyId);
-        }
-
-        // Get the prepKeygenId associated to the keyId and its params type.
-        uint256 prepKeygenId = $.keygenIdPairs[keyId];
-        ParamsType paramsType = $.requestParamsType[prepKeygenId];
-
-        // Generate a globally unique keyReshareId for the key resharing.
-        // The counter is initialized at deployment such that keyReshareId's first byte uniquely
-        // represents a key reshare request, with format: [0000 0110 | counter_1..31]
-        $.keyReshareCounter++;
-        uint256 keyReshareId = $.keyReshareCounter;
-
-        emit KeyReshareSameSet(prepKeygenId, keyId, keyReshareId, paramsType);
     }
 
     /**
@@ -668,12 +636,14 @@ contract KMSGeneration is
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param keyId The ID of the generated key.
      * @param keyDigests The digests of the generated keys.
+     * @param extraData Generic bytes metadata encoding [version | context_id | epoch_id].
      * @return The hash of the KeygenVerification struct
      */
     function _hashKeygenVerification(
         uint256 prepKeygenId,
         uint256 keyId,
-        KeyDigest[] calldata keyDigests
+        KeyDigest[] calldata keyDigests,
+        bytes calldata extraData
     ) internal view virtual returns (bytes32) {
         // Encodes each KeyDigest struct and computes its struct hash.
         // The `keyDigests` array must be ordered consistently with the KMS nodes:
@@ -692,7 +662,8 @@ contract KMSGeneration is
                         EIP712_KEYGEN_TYPE_HASH,
                         prepKeygenId,
                         keyId,
-                        keccak256(abi.encodePacked(keyDigestHashes))
+                        keccak256(abi.encodePacked(keyDigestHashes)),
+                        keccak256(extraData)
                     )
                 )
             );
@@ -703,17 +674,25 @@ contract KMSGeneration is
      * @param crsId The ID of the generated CRS.
      * @param maxBitLength The max bit length used for generating the CRS.
      * @param crsDigest The digest of the generated CRS.
+     * @param extraData Generic bytes metadata encoding [version | context_id | epoch_id].
      * @return The hash of the CrsgenVerification struct
      */
     function _hashCrsgenVerification(
         uint256 crsId,
         uint256 maxBitLength,
-        bytes calldata crsDigest
+        bytes calldata crsDigest,
+        bytes calldata extraData
     ) internal view virtual returns (bytes32) {
         return
             _hashTypedDataV4(
                 keccak256(
-                    abi.encode(EIP712_CRSGEN_TYPE_HASH, crsId, maxBitLength, keccak256(abi.encodePacked(crsDigest)))
+                    abi.encode(
+                        EIP712_CRSGEN_TYPE_HASH,
+                        crsId,
+                        maxBitLength,
+                        keccak256(abi.encodePacked(crsDigest)),
+                        keccak256(extraData)
+                    )
                 )
             );
     }
