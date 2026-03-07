@@ -72,7 +72,7 @@ async fn insert_proof(
 ) -> Result<(), sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, host_chain_id, contract_address, user_address, verified, transaction_id, retry_count)
+            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified, transaction_id, retry_count)
             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)" 
         ).bind(request_id)
         .bind(zk_pok)
