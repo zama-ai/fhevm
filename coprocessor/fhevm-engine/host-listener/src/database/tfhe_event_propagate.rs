@@ -27,6 +27,7 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
+use crate::cmd::block_history::BlockHash;
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
@@ -491,24 +492,87 @@ impl Database {
         }
     }
 
+    pub async fn update_block_as_finalized(
+        &self,
+        tx: &mut Transaction<'_>,
+        block_number: i64,
+        block_hash: &BlockHash,
+    ) -> Result<(), SqlxError> {
+        sqlx::query!(
+            r#"
+            UPDATE host_chain_blocks_valid
+            SET block_status = CASE
+                WHEN block_hash = $2
+                    THEN 'finalized'
+                    ELSE 'orphaned'
+                END
+            WHERE block_number = $3 AND chain_id = $1
+            "#,
+            self.chain_id.as_i64(),
+            block_hash.to_vec(),
+            block_number,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(())
+    }
+
     pub async fn mark_block_as_valid(
         &self,
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
+        finalized: bool,
     ) -> Result<(), SqlxError> {
+        let status = if finalized { "finalized" } else { "pending" };
+        // 1. Insert if not exists (never overwrites existing row)
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number)
-            VALUES ($1, $2, $3)
+            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
+            status,
         )
         .execute(tx.deref_mut())
         .await?;
+
+        // 2. Update to finalized or orphan if needed
+        if finalized {
+            self.update_block_as_finalized(
+                tx,
+                block_summary.number as i64,
+                &block_summary.hash,
+            )
+            .await?;
+        }
         Ok(())
+    }
+
+    pub async fn get_finalized_blocks_number(
+        tx: &mut Transaction<'_>,
+        last_block_max: i64,
+        chain_id: ChainId,
+    ) -> Result<HashSet<i64>, SqlxError> {
+        // most of the time there is only 1 block pending
+        let blocks_number = sqlx::query!(
+            r#"
+            SELECT block_number FROM host_chain_blocks_valid
+            WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
+            ORDER BY block_number DESC
+            LIMIT 10
+            "#,
+            last_block_max,
+            chain_id.as_i64(),
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+        Ok(blocks_number
+            .into_iter()
+            .map(|record| record.block_number)
+            .collect())
     }
 
     pub async fn poller_get_last_caught_up_block(
@@ -835,15 +899,8 @@ impl Database {
         Ok(inserted)
     }
 
-    pub async fn block_notification(
-        &mut self,
-        last_block_number: u64,
-    ) -> Result<(), SqlxError> {
-        let query = sqlx::query!(
-            "SELECT pg_notify($1, $2)",
-            "new_host_block",
-            last_block_number.to_string()
-        );
+    pub async fn block_notification(&mut self) -> Result<(), SqlxError> {
+        let query = sqlx::query!("NOTIFY new_host_block",);
         query.execute(&self.pool().await).await?;
         Ok(())
     }

@@ -21,7 +21,9 @@ use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
+};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
 use fhevm_engine_common::chain_id::ChainId;
@@ -171,7 +173,7 @@ pub struct Args {
 }
 
 // TODO: to merge with Levent works
-struct InfiniteLogIter {
+pub struct InfiniteLogIter {
     url: String,
     block_time: u64, /* A default value that is refined with real-time
                       * events data */
@@ -459,6 +461,7 @@ impl InfiniteLogIter {
                 logs: std::mem::take(&mut current_logs),
                 summary,
                 catchup: true,
+                finalized: true,
             };
             blocks_logs.push(block_logs);
         }
@@ -538,7 +541,7 @@ impl InfiniteLogIter {
         self.catchup_blocks = Some((paging_to_block + 1, to_block)); // end is detected at function start
     }
 
-    async fn get_block_by_number(&self, number: u64) -> Result<Block> {
+    pub async fn get_block_by_number(&self, number: u64) -> Result<Block> {
         self.get_block_by_id(BlockId::number(number)).await
     }
 
@@ -731,6 +734,7 @@ impl InfiniteLogIter {
                 logs,
                 summary: missing_block,
                 catchup: true,
+                finalized: false, // let catchups with finality conditions do the finalize later
             });
             self.block_history.add_block(missing_block);
         }
@@ -825,6 +829,7 @@ impl InfiniteLogIter {
             logs: self.get_logs_at_hash(block_header.hash).await?,
             summary: block_header.into(),
             catchup: false,
+            finalized: false,
         })
     }
 
@@ -958,15 +963,6 @@ async fn db_insert_block(
         )
         .await;
         let Err(err) = res else {
-            // Notify the database of the new block
-            // Delayed delegation rely on this signal to reconsider ready delegation
-            if !block_logs.catchup {
-                if let Err(err) =
-                    db.block_notification(block_logs.summary.number).await
-                {
-                    error!(error = %err, "Error notifying listener for new block");
-                };
-            }
             return Ok(());
         };
         if retries == 0 {
@@ -1112,6 +1108,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     .number
                     .max(log_iter.last_valid_block.unwrap_or(0)),
             );
+            if !block_logs.catchup {
+                update_finalized_blocks(
+                    &mut db,
+                    &mut log_iter,
+                    block_logs.summary.number,
+                    args.catchup_finalization_in_blocks,
+                )
+                .await;
+            }
         }
 
         if !args.only_catchup_loop {

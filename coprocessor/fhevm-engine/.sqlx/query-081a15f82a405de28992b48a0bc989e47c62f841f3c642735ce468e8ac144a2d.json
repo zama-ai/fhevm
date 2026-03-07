@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "NOTIFY new_host_block",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "081a15f82a405de28992b48a0bc989e47c62f841f3c642735ce468e8ac144a2d"
+}
