@@ -5,76 +5,81 @@
     "columns": [
       {
         "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
         "name": "handle",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "ciphertext",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "ciphertext128",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "txn_is_sent",
         "type_info": "Bool"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "txn_limited_retries_count",
         "type_info": "Int4"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "txn_last_error",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "txn_last_error_at",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "txn_unlimited_retries_count",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "ciphertext128_format",
         "type_info": "Int2"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "txn_hash",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "txn_block_number",
         "type_info": "Int8"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "transaction_id",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamp"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "host_chain_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "key_id_gw",
         "type_info": "Bytea"
       }
@@ -85,6 +90,7 @@
       ]
     },
     "nullable": [
+      false,
       false,
       true,
       true,
