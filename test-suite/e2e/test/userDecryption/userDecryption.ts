@@ -190,6 +190,43 @@ describe('User decryption', function () {
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
   });
 
+  it('test user decrypt should fail when dapp contract is not allowed for handle', async function () {
+    const handle = await this.contract.xBool();
+    // Deploy a second contract to get an address NOT allowed on the handle
+    const factory2 = await ethers.getContractFactory('HTTPPublicDecrypt');
+    const contract2 = await factory2.connect(this.signers.alice).deploy();
+    await contract2.waitForDeployment();
+    const wrongContractAddress = await contract2.getAddress();
+
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const handleContractPairs = [{ handle, contractAddress: wrongContractAddress }];
+    const startTimeStamp = Math.floor(Date.now() / 1000);
+    const durationDays = 10;
+    const contractAddresses = [wrongContractAddress];
+    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+    const signature = await this.signers.alice.signTypedData(
+      eip712.domain,
+      { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+      eip712.message,
+    );
+
+    try {
+      await this.instances.alice.userDecrypt(
+        handleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace('0x', ''),
+        contractAddresses,
+        this.signers.alice.address,
+        startTimeStamp,
+        durationDays,
+      );
+      expect.fail('Expected an error - contract should not be allowed');
+    } catch (error) {
+      expect(error.message).to.include('is not authorized to user decrypt handle');
+    }
+  });
+
   it('test user decrypt request expired', async function () {
     const handle = await this.contract.xBool();
     const HandleContractPairs = [

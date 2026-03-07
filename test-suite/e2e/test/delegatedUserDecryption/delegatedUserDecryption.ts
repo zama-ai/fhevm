@@ -5,11 +5,11 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
-const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
+const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 
 describe('Delegated user decryption', function () {
   before(async function () {
-    await initSigners(3);
+    await initSigners(5);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
 
@@ -233,8 +233,8 @@ describe('Delegated user decryption', function () {
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.bob.generateKeypair();
 
-    await expect(
-      delegatedUserDecryptSingleHandle(
+    try {
+      await delegatedUserDecryptSingleHandle(
         this.instances.bob,
         balanceHandle,
         this.tokenAddress,
@@ -243,9 +243,104 @@ describe('Delegated user decryption', function () {
         this.signers.bob,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(
-      new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
-    );
+      );
+      expect.fail('Expected delegated user decrypt to be rejected after revocation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
+  });
+
+  it('test delegated user decryption should fail when no delegation exists', async function () {
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.dave.generateKeypair();
+
+    try {
+      await delegatedUserDecryptSingleHandle(
+        this.instances.dave,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.dave.address,
+        this.signers.dave,
+        privateKey,
+        publicKey,
+      );
+      expect.fail('Expected delegated user decrypt to be rejected without delegation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
+  });
+
+  it('test delegated user decryption should fail when delegation is for wrong contract', async function () {
+    const dummyFactory = await ethers.getContractFactory('UserDecrypt');
+    const dummy = await dummyFactory.connect(this.signers.alice).deploy();
+    await dummy.waitForDeployment();
+    const wrongAddress = await dummy.getAddress();
+
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
+    const tx = await this.smartWallet
+      .connect(this.signers.bob)
+      .delegateUserDecryption(this.signers.eve.address, wrongAddress, expirationTimestamp);
+    await tx.wait();
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
+
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.eve.generateKeypair();
+
+    try {
+      await delegatedUserDecryptSingleHandle(
+        this.instances.eve,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.eve.address,
+        this.signers.eve,
+        privateKey,
+        publicKey,
+      );
+      expect.fail('Expected delegated user decrypt to be rejected for wrong contract');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
+  });
+
+  it('test delegated user decryption should fail when delegation has expired', async function () {
+    // Expiration must be >1h from chain time (FHE library constraint).
+    // Use block timestamp, not Date.now(), since evm_increaseTime shifts chain clock.
+    const oneHour = 3600;
+    const buffer = 60;
+    const latestBlock = await ethers.provider.getBlock('latest');
+    const expirationTimestamp = latestBlock!.timestamp + oneHour + buffer;
+    const tx = await this.smartWallet
+      .connect(this.signers.bob)
+      .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, expirationTimestamp);
+    await tx.wait();
+
+    // Fast-forward time past the expiration.
+    await ethers.provider.send('evm_increaseTime', [oneHour + buffer + 1]);
+    await ethers.provider.send('evm_mine', []);
+
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
+
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+    const { publicKey, privateKey } = this.instances.eve.generateKeypair();
+
+    try {
+      await delegatedUserDecryptSingleHandle(
+        this.instances.eve,
+        balanceHandle,
+        this.tokenAddress,
+        this.smartWalletAddress,
+        this.signers.eve.address,
+        this.signers.eve,
+        privateKey,
+        publicKey,
+      );
+      expect.fail('Expected delegated user decrypt to be rejected for expired delegation');
+    } catch (err: any) {
+      expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+    }
   });
 });
