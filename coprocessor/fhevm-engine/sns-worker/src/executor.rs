@@ -341,10 +341,12 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
-        info!(parent: &cleanup_span,
-            rows_affected = rows_affected,
-            "Cleaning up old ciphertexts128"
-        );
+        cleanup_span.in_scope(|| {
+            info!(
+                rows_affected = rows_affected,
+                "Cleaning up old ciphertexts128"
+            )
+        });
     }
 
     Ok(())
@@ -484,11 +486,9 @@ pub async fn query_sns_tasks(
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
             let task_span = tracing::info_span!(
                 "task",
-                txn_id = tracing::field::Empty,
-                handle = tracing::field::Empty
+                handle = %to_hex(&handle),
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
             );
-            telemetry::record_short_hex(&task_span, "handle", &handle);
-            telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
 
             Ok(HandleItem {
                 // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch

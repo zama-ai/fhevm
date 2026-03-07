@@ -21,10 +21,11 @@ use alloy::{
 use anyhow::Result;
 use async_trait::async_trait;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::utils::to_hex;
 use sqlx::types::BigDecimal;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Instrument};
 
 use super::TransactionOperation;
 
@@ -41,7 +42,6 @@ pub struct DelegationRow {
     pub delegate: Vec<u8>,
     pub contract_address: Vec<u8>,
     pub delegation_counter: u64,
-    #[allow(dead_code)]
     pub old_expiration_date: u64,
     pub new_expiration_date: u64,
     pub host_chain_id: ChainId,
@@ -115,17 +115,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         }
     }
     /// Sends a transaction
-    #[tracing::instrument(name = "call_delegate_user_decrypt", skip_all, fields(txn_id = tracing::field::Empty))]
+    #[tracing::instrument(
+        name = "call_delegate_user_decrypt",
+        skip_all,
+        fields(transaction_hash = delegation.transaction_id.as_deref().map(to_hex).unwrap_or_default())
+    )]
     async fn send_transaction(
         &self,
         delegation: &DelegationRow,
         txn_request: impl Into<TransactionRequest>,
     ) -> TxResult {
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &tracing::Span::current(),
-            "txn_id",
-            delegation.transaction_id.as_deref(),
-        );
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
@@ -438,12 +437,13 @@ where
             }
         };
         for delegation in ready_delegations {
-            let prepare_delegate_span =
-                tracing::info_span!("prepare_delegate", txn_id = tracing::field::Empty);
-            fhevm_engine_common::telemetry::record_short_hex_if_some(
-                &prepare_delegate_span,
-                "txn_id",
-                delegation.transaction_id.as_deref(),
+            let prepare_delegate_span = tracing::info_span!(
+                "prepare_delegate",
+                transaction_hash = delegation
+                    .transaction_id
+                    .as_deref()
+                    .map(to_hex)
+                    .unwrap_or_default(),
             );
             let txn_request = prepare_delegate_span.in_scope(|| to_transaction(&delegation));
             let txn_request = if let Some(gaz_limit) = &self.gas {
@@ -451,22 +451,26 @@ where
             } else {
                 txn_request
             };
-            requests.push((delegation, txn_request));
+            requests.push((delegation, txn_request, prepare_delegate_span));
         }
         let mut join_set = JoinSet::new();
-        for (delegation, txn_request) in requests.iter() {
+        for (delegation, txn_request, prepare_span) in requests.iter() {
             // parallel transaction can fail if any of the transaction fail
             // with a nonce too high error
             // so we maintain the joint set of successful delegations
             let operation = self.clone();
             let delegation = delegation.clone();
             let txn_request = txn_request.clone();
-            join_set.spawn(async move {
-                let tx_result = operation
-                    .send_transaction(&delegation, txn_request.clone())
-                    .await;
-                (delegation.clone(), tx_result)
-            });
+            let span = prepare_span.clone();
+            join_set.spawn(
+                async move {
+                    let tx_result = operation
+                        .send_transaction(&delegation, txn_request.clone())
+                        .await;
+                    (delegation.clone(), tx_result)
+                }
+                .instrument(span),
+            );
         }
         let mut other_error = false;
         let mut transient_error = false;
