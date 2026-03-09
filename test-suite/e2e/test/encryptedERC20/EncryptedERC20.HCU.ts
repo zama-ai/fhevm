@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { getTxHCUFromTxReceipt, mineNBlocks } from '../utils';
+import { getTxHCUFromTxReceipt, mineNBlocks, waitForPendingTransactions, waitForTransactionReceipt } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 // Minimal ABI for HCULimit — the contract is deployed by the host-sc stack
@@ -105,6 +105,7 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   describe('block cap scenarios', function () {
+    const BATCHED_TRANSFER_GAS_LIMIT = 1_000_000;
     let savedHCUPerBlock: bigint;
     let savedMaxHCUPerTx: bigint;
     let savedMaxHCUDepthPerTx: bigint;
@@ -168,43 +169,6 @@ describe('EncryptedERC20:HCU', function () {
       }
     });
 
-    it('should accumulate HCU from multiple users in the same block', async function () {
-      await mintAndDistribute(this);
-      await ethers.provider.send('evm_setIntervalMining', [0]);
-
-      // Fresh block after setup: meter should be 0
-      await mineNBlocks(1);
-      const [, meter0] = await this.hcuLimit.getBlockMeter();
-      expect(meter0).to.eq(0n);
-
-      // Single tx (auto-mines its own block)
-      const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-      await tx1.wait();
-      const [, meter1] = await this.hcuLimit.getBlockMeter();
-      expect(meter1).to.be.greaterThan(meter0);
-
-      // Two txs batched in same block — meter must exceed the single-tx reading
-      // Disable automine and batch both txs into one block
-      await ethers.provider.send('evm_setAutomine', [false]);
-      const txA = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-      const txB = await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 100);
-      await ethers.provider.send('evm_mine');
-      await ethers.provider.send('evm_setAutomine', [true]);
-      const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
-      expect(receiptA?.status).to.eq(1);
-      expect(receiptB?.status).to.eq(1);
-      expect(receiptA?.blockNumber).to.eq(receiptB?.blockNumber);
-      const [, meter2] = await this.hcuLimit.getBlockMeter();
-      expect(meter2).to.be.greaterThan(meter1);
-
-      // Single tx in a new block — meter resets (lower than the two-tx block)
-      const tx3 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-      await tx3.wait();
-      const [, meter3] = await this.hcuLimit.getBlockMeter();
-      expect(meter3).to.be.greaterThan(0n);
-      expect(meter3).to.be.lessThan(meter2);
-    });
-
     describe('with lowered limits', function () {
       const TIGHT_DEPTH_PER_TX = 400_000;
       const TIGHT_MAX_PER_TX = 600_000;
@@ -213,12 +177,12 @@ describe('EncryptedERC20:HCU', function () {
       beforeEach(async function () {
         // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-        await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX);
-        await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX);
-        await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK);
+        await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
+        await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
+        await (await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK)).wait();
       });
 
-      it('should revert when block HCU cap is exhausted', async function () {
+      it('should accumulate HCU across users until the block cap is exhausted', async function () {
         await mintAndDistribute(this);
 
         await mineNBlocks(1);
@@ -227,14 +191,19 @@ describe('EncryptedERC20:HCU', function () {
 
         // Alice fills the cap, Bob would push block total over — use fixed gasLimit
         // to bypass estimateGas (which reverts against pending state)
-        const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
-        const tx2 = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
+        const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        const tx2 = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        await waitForPendingTransactions([tx1.hash, tx2.hash]);
 
         await ethers.provider.send('evm_mine');
         await ethers.provider.send('evm_setAutomine', [true]);
         await ethers.provider.send('evm_setIntervalMining', [1]);
 
-        const receipt1 = await tx1.wait();
+        const receipt1 = await waitForTransactionReceipt(tx1.hash);
         expect(receipt1?.status).to.eq(1, 'First transfer should succeed');
 
         // Use getTransactionReceipt to avoid ethers throwing on reverted tx
@@ -251,14 +220,19 @@ describe('EncryptedERC20:HCU', function () {
         await ethers.provider.send('evm_setIntervalMining', [0]);
         await ethers.provider.send('evm_setAutomine', [false]);
 
-        const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100);
-        const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, { gasLimit: 1_000_000 });
+        const txAlice = await sendEncryptedTransfer(this, 'alice', this.signers.carol.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        const txBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        await waitForPendingTransactions([txAlice.hash, txBob.hash]);
 
         await ethers.provider.send('evm_mine');
         await ethers.provider.send('evm_setAutomine', [true]);
         await ethers.provider.send('evm_setIntervalMining', [1]);
 
-        const receiptAlice = await txAlice.wait();
+        const receiptAlice = await waitForTransactionReceipt(txAlice.hash);
         expect(receiptAlice?.status).to.eq(1, 'Alice should succeed');
 
         const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
