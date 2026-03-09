@@ -9,6 +9,7 @@ use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
 use crate::cmd::block_history::BlockSummary;
+use crate::cmd::InfiniteLogIter;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
@@ -19,6 +20,7 @@ pub struct BlockLogs<T> {
     pub logs: Vec<T>,
     pub summary: BlockSummary,
     pub catchup: bool,
+    pub finalized: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -309,8 +311,8 @@ pub async fn ingest_block_logs(
             info!(block_number, catchup_insertion, "Catchup inserted events");
         }
     }
-
-    db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
+    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
+        .await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,
@@ -322,6 +324,76 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+pub async fn update_finalized_blocks(
+    db: &mut Database,
+    log_iter: &mut InfiniteLogIter,
+    last_block_number: u64,
+    finality_lag: u64,
+) {
+    info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let mut tx = match db.new_transaction().await {
+        Ok(tx) => tx,
+        Err(err) => {
+            error!(
+                ?err,
+                "Failed to create transaction for finalized blocks update"
+            );
+            return;
+        }
+    };
+    let last_finalized_block = last_block_number - finality_lag;
+    let blocks_number = match Database::get_finalized_blocks_number(
+        &mut tx,
+        last_finalized_block as i64,
+        db.chain_id,
+    )
+    .await
+    {
+        Ok(numbers) => numbers,
+        Err(err) => {
+            error!(
+                ?err,
+                last_finalized_block, "Failed to fetch finalized blocks number"
+            );
+            return;
+        }
+    };
+    info!(?blocks_number, "Finalizing blocks");
+    for block_number in blocks_number {
+        let block =
+            match log_iter.get_block_by_number(block_number as u64).await {
+                Ok(block) => block,
+                Err(err) => {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to fetch block for finalization"
+                    );
+                    continue;
+                }
+            };
+        if let Err(err) = db
+            .update_block_as_finalized(
+                &mut tx,
+                block_number,
+                &block.header.hash,
+            )
+            .await
+        {
+            error!(block_number, ?err, "Failed to update block as finalized");
+        }
+    }
+    if let Err(err) = tx.commit().await {
+        error!(?err, "Failed to commit finalized blocks update");
+        return;
+    }
+    // Notify the database of the new block
+    // Delayed delegation rely on this signal to reconsider ready delegation
+    if let Err(err) = db.block_notification().await {
+        error!(error = %err, "Error notifying listener for new block");
+    }
 }
 
 #[cfg(test)]
