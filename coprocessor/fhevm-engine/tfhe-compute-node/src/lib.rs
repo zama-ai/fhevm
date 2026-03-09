@@ -1,22 +1,19 @@
 use ::tracing::{error, info};
-use fhevm_engine_common::types::Handle;
-use lapin::options::BasicRejectOptions;
-use tracing::debug;
-
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::Handle;
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
-use prometheus::{Histogram, IntCounter, register_histogram, register_int_counter};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use serde::{Deserialize, Serialize};
-use tokio_util::sync::CancellationToken;
-
 use std::sync::Once;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 pub mod cli;
 pub mod context;
 pub mod tfhe_compute;
+
+pub type SenderType = message_broker::rabbitmq::RabbitMQSender;
 
 #[derive(Error, Debug)]
 pub enum ComputeError {
@@ -26,8 +23,6 @@ pub enum ComputeError {
     Redis(#[from] redis::RedisError),
     #[error("Postgres error: {0}")]
     Sqlx(#[from] sqlx::Error),
-    #[error("RabbitMQ error: {0}")]
-    Lapin(#[from] lapin::Error),
     #[error("Task join error: {0}")]
     Join(#[from] tokio::task::JoinError),
     #[error("Postcard serialization error: {0}")]
@@ -55,57 +50,7 @@ struct CiphertextInfo {
 #[derive(Debug, PartialEq)]
 struct Execution {
     partition_id: String,
-
-    // Delivery info from lapin, needed for ack/nack
-    delivery: lapin::message::Delivery,
     received_at: Instant,
-    is_local: bool,
-}
-
-impl Execution {
-    async fn ack(&self) -> Result<bool, lapin::Error> {
-        let res = self
-            .delivery
-            .ack(lapin::options::BasicAckOptions::default())
-            .await?;
-
-        debug!(
-            routing_key = ?self.delivery.routing_key,
-            "Acknowledged message"
-        );
-
-        Ok(res)
-    }
-
-    fn begin(&self) {
-        let tc = RUNNING_TASKS.fetch_add(1, Ordering::Relaxed);
-        let pid = self.partition_id.clone();
-        info!(pid = pid, tc = tc, "Starting FHE partition execution");
-    }
-
-    async fn end(&self, transient_error: bool) {
-        if transient_error {
-            let _headers = self.delivery.properties.headers();
-            // TODO: use headers to decrement a retry counter
-            let _ = self
-                .delivery
-                .reject(BasicRejectOptions {
-                    requeue: false, /* TODO true */
-                })
-                .await;
-        } else {
-            let _ = self.ack().await;
-        }
-
-        let pid = self.partition_id.clone();
-        if transient_error {
-            error!(pid = pid, "FHE partition execution failed");
-        } else {
-            info!(pid = pid, "Completed FHE partition execution");
-        }
-
-        RUNNING_TASKS.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]

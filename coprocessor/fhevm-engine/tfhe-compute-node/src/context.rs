@@ -1,10 +1,10 @@
-use fhevm_engine_common::msg_broker::create_send_channel;
 use fhevm_engine_common::tenant_keys::{
     fetch_tenant_server_key, FetchTenantKeyResult, TfheTenantKeys,
 };
 
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use futures_util::stream::StreamExt;
+use message_broker::Sender;
 use redis::{AsyncCommands, Client};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 
 use crate::{
-    CiphertextInfo, ComputeError, RedisCiphertextRecord, CACHE_HITS_COUNTER,
+    CiphertextInfo, ComputeError, RedisCiphertextRecord, SenderType, CACHE_HITS_COUNTER,
     REDIS_BATCH_STORE_OVERHEAD, REDIS_HITS_COUNTER, REDIS_SUB_COUNTER, REDIS_SUB_OVERHEAD,
 };
 
@@ -25,8 +25,8 @@ pub(crate) struct Context {
 
     pool: sqlx::PgPool,
 
-    // RabbitMQ channel for sending messages about completed partitions back to the dispatcher
-    complete_partition_channel: lapin::Channel,
+    // channel for sending messages about completed partitions back to the dispatcher
+    complete_partition_sender: SenderType,
 
     // caches
     key_cache: Arc<RwLock<lru::LruCache<i64, TfheTenantKeys>>>,
@@ -66,8 +66,13 @@ impl Context {
         let redis = Client::open(redis_url)?;
         let multiplexed_conn = redis.get_multiplexed_async_connection().await?;
 
-        let complete_partition_channel =
-            create_send_channel(rmq_uri, "queue_fhe_execution_complete").await?;
+        let sender = message_broker::rabbitmq::RabbitMQSender::new(
+            rmq_uri,
+            "queue_fhe_execution_complete",
+            "",
+            "queue_fhe_execution_complete",
+        )
+        .await;
 
         Ok(Self {
             redis,
@@ -77,7 +82,7 @@ impl Context {
             ciphertext_cache,
             otel_ctx,
             current_key_id: Arc::new(RwLock::new(None)),
-            complete_partition_channel,
+            complete_partition_sender: sender,
         })
     }
 
@@ -277,19 +282,12 @@ impl Context {
     }
 
     pub async fn send_partition_complete(&self, payload: Vec<u8>) -> Result<(), ComputeError> {
-        let confirm = self
-            .complete_partition_channel
-            .basic_publish(
-                "",
-                "queue_fhe_execution_complete",
-                lapin::options::BasicPublishOptions::default(),
-                &payload,
-                lapin::BasicProperties::default(),
-            )
-            .await?;
-
-        let confirm = confirm.await?;
-        info!(confirm = ?confirm, "Sent partition complete message to dispatcher");
+        self.complete_partition_sender
+            .send(payload)
+            .await
+            .map_err(|e| {
+                ComputeError::Other(format!("Failed to send partition complete message: {}", e))
+            })?;
 
         Ok(())
     }

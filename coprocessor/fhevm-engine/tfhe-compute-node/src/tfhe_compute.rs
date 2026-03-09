@@ -1,19 +1,18 @@
 use crate::cli::Args;
 use crate::context::Context;
-use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
+use crate::{CiphertextInfo, ComputeError, Execution, SenderType, CONSUMER_OVERHEAD};
 use fhevm_engine_common::common::FheOperation;
-use fhevm_engine_common::msg_broker::{create_recv_channel, extract_delivery, try_decode};
 use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
-use futures_util::stream::StreamExt;
-use lapin::message::Delivery;
+
+use message_broker::{MessageResult, Receiver};
 use sqlx::types::Uuid;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 use tfhe::ReRandomizationContext;
-use tokio::task::JoinSet;
+
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -44,8 +43,8 @@ pub async fn run_tfhe_compute(
 /// The main compute cycle for the TFHE compute node worker
 async fn tfhe_compute_cycle(
     args: &Args,
-    worker_id: Uuid,
-    cancel_token: CancellationToken,
+    _worker_id: Uuid,
+    _cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = args.database_url.clone().unwrap_or_default();
 
@@ -58,99 +57,69 @@ async fn tfhe_compute_cycle(
     )
     .await?;
 
-    let node_name = format!("tfhe_compute_node_{}", worker_id);
-
-    // Never deliver more than prefetch_count un-acked messages to that worker
-    // Thus, automatically route jobs to workers with available capacity
-    let prefetch_count = 4u16; // TODO:
-    let mut shared_queue = create_recv_channel(
-        &args.rmq_uri,
-        &node_name,
-        "queue_fhe_partitions",
-        prefetch_count,
-    )
-    .await?;
-
-    let prefetch_count = 1u16; // TODO:
-    let mut local_queue = create_recv_channel(
-        &args.rmq_uri,
-        &node_name,
-        "queue_fhe_partitions_local",
-        prefetch_count,
-    )
-    .await?;
-
-    let mut set: JoinSet<()> = JoinSet::new();
-
-    'outer: loop {
+    let mut receiver = create_receiver(args, "queue_fhe_partitions", ctx.clone()).await;
+    loop {
         tokio::select! {
-            biased;
-            // prioritize local queue
-            res = local_queue.next() => {
+             _ = _cancel_token.cancelled() => {
+                info!("Cancellation requested, stopping compute cycle");
+                break;
+            }
 
-                let delivery = extract_delivery(res, "local")?;
-                let Some(partition) = try_decode::<ExecutablePartition>(&delivery).await else {
-                    continue;
-                };
-
-                process_delivery(&ctx, &mut set, delivery, partition, true).await;
-
-            },
-            res = shared_queue.next() => {
-                info!("Received message on shared queue");
-
-                let delivery = extract_delivery(res, "shared")?;
-                let Some(partition) = try_decode::<ExecutablePartition>(&delivery).await else {
-                    continue;
-                };
-                process_delivery(&ctx, &mut set, delivery, partition, false).await;
-            },
-            _ = cancel_token.cancelled() => {
-                info!( "Cancellation requested, shutting down compute cycle");
-                break 'outer;
-            },
-            // TODO idle timeout to do health check ping
-        };
+            res = receiver.recv_and_handle(async |msg: ExecutablePartition, payload_raw, _state| {
+                info!("Received message on local queue");
+                process_delivery(&ctx, msg.clone(), payload_raw).await;
+                Ok(MessageResult::Ack)
+            }) => {
+                if let Err(e) = res {
+                    error!(error = ?e, "Error receiving message from RabbitMQ");
+                    // In case of an error in receiving messages, we break the loop to restart the connection and consumer channel
+                    break;
+                }
+            }
+        }
     }
 
-    set.shutdown().await;
     Ok(())
 }
 
-async fn process_delivery(
-    ctx: &Context,
-    set: &mut JoinSet<()>,
-    delivery: Delivery,
-    partition: ExecutablePartition,
-    is_local: bool,
-) {
+#[cfg(feature = "rabbitmq")]
+async fn create_receiver(
+    args: &Args,
+    queue_name: &str,
+    ctx: Context,
+) -> impl Receiver<ExecutablePartition, Context> {
+    let consumer_tag = format!("tfhe_compute_node_{}", Uuid::new_v4());
+    message_broker::rabbitmq::RabbitMQReceiver::new(&args.rmq_uri, queue_name, &consumer_tag, ctx)
+        .await
+}
+
+#[cfg(feature = "redis_stream")]
+async fn create_receiver(
+    args: &Args,
+    queue_name: &str,
+    ctx: Context,
+) -> impl Receiver<ExecutablePartition, Context> {
+    message_broker::redis_stream::RedisStreamReceiver::new(&args.redis_url, queue_name).await
+}
+
+async fn process_delivery(ctx: &Context, partition: ExecutablePartition, payload: Vec<u8>) {
     let exec = Execution {
-        delivery,
         received_at: Instant::now(),
-        is_local,
         partition_id: hex::encode(partition.hash),
     };
 
-    info!(delivery = ?exec, is_local, "Received FHE partition for execution");
+    info!(delivery = ?exec, "Received FHE partition for execution");
 
     let ctx = ctx.clone();
-    set.spawn(async move {
-        exec.begin();
 
-        let res = match prepare_and_execute(ctx.clone(), partition, exec.received_at).await {
-            Ok(_) => {
-                let payload = exec.delivery.data.clone();
-                !ctx.send_partition_complete(payload).await.is_ok()
-            }
-            Err(err) => {
-                // Errors will cause the partition execution to be retried by this or another compute-node.
-                error!(error = ?err, exec = ?exec, "Error executing partition");
-                true
-            }
-        };
-
-        exec.end(res).await;
-    });
+    let _res = match prepare_and_execute(ctx.clone(), partition, exec.received_at).await {
+        Ok(_) => !ctx.send_partition_complete(payload).await.is_ok(),
+        Err(err) => {
+            // Errors will cause the partition execution to be retried by this or another compute-node.
+            error!(error = ?err, exec = ?exec, "Error executing partition");
+            true
+        }
+    };
 }
 
 /// Prepares the context and executes the given partition, handling caching and Redis storage of results.
