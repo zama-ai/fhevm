@@ -679,13 +679,7 @@ contract KMSGeneration is
         return
             _hashTypedDataV4(
                 keccak256(
-                    abi.encode(
-                        EIP712_CRSGEN_TYPE_HASH,
-                        crsId,
-                        maxBitLength,
-                        keccak256(abi.encodePacked(crsDigest)),
-                        keccak256(extraData)
-                    )
+                    abi.encode(EIP712_CRSGEN_TYPE_HASH, crsId, maxBitLength, keccak256(crsDigest), keccak256(extraData))
                 )
             );
     }
