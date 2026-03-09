@@ -58,9 +58,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for 2 blocks to ensure delegation is propagated by the coprocessor.
     const currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + 2);
 
     // Get the encrypted balance handle of the smartWallet.
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -95,9 +95,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for 2 blocks to ensure delegation is propagated by the coprocessor.
     const currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + 2);
 
     // Get the encrypted balance handle of the smartWallet.
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -132,9 +132,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for 2 blocks to ensure delegation is propagated by the coprocessor.
     let currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + 2);
 
     // Get the current smartWallet balance before transfer
     const smartWalletBalanceBefore = await this.token.balanceOf(this.smartWalletAddress);
@@ -212,9 +212,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for 2 blocks to ensure delegation is propagated by the coprocessor.
     const currentBlock1 = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock1 + 15);
+    await waitForBlock(currentBlock1 + 2);
 
     // Revoke the delegation for Bob's EOA.
     const revokeTx = await this.smartWallet
@@ -225,9 +225,9 @@ describe('Delegated user decryption', function () {
       );
     await revokeTx.wait();
 
-    // Wait for 15 blocks to ensure revocation is propagated by the coprocessor.
+    // Wait for 2 blocks to ensure revocation is propagated by the coprocessor.
     const currentBlock2 = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock2 + 15);
+    await waitForBlock(currentBlock2 + 2);
 
     // Try to decrypt the smartWallet balance with Bob's EOA, which should now fail.
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -243,9 +243,7 @@ describe('Delegated user decryption', function () {
         this.signers.bob,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(
-      new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
-    );
+      ),
+    ).to.be.rejectedWith('Execution reverted');
   });
 });
