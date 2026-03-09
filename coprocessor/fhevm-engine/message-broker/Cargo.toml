@@ -1,0 +1,28 @@
+[package]
+name = "message-broker"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["rabbitmq"]
+
+rabbitmq = [] # ["dep:lapin"]
+redis_stream = ["dep:redis"]
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+
+
+lapin = { version = "3.7.2", optional = false }
+redis = { version = "1.0.3", features = ["tokio-comp", "aio", "connection-manager"], optional = true }
+postcard = "1.1.3"
+
+
+
+
+
