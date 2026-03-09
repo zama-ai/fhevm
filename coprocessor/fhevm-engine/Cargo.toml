@@ -11,7 +11,7 @@ members = [
     "transaction-sender",
     "zkproof-worker",
     "test-harness",
-    "stress-test-generator",
+    "stress-test-generator", "message-broker",
 ]
 
 [workspace.package]
