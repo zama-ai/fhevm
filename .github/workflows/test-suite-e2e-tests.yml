@@ -143,8 +143,10 @@ jobs:
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          if [[ "${{ inputs.deploy-build }}" == 'true' ]]; then
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
             ./fhevm-cli deploy --build
           else
             ./fhevm-cli deploy
