@@ -77,7 +77,7 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T] [--resume STEP] [--only STEP]${RESET}    Deploy fhevm stack"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|debug)"
@@ -94,11 +94,21 @@ function usage {
   echo -e "  ${CYAN}-r, --no-relayer${RESET}    Disable Rust relayer"
   echo -e "  ${CYAN}--no-hardhat-compile${RESET}        Skip Hardhat compilation step"
   echo
+  echo -e "${BOLD}${LIGHT_BLUE}Deploy Options:${RESET}"
+  echo -e "  ${CYAN}--resume STEP${RESET}       Resume deployment from the given step (skips earlier steps)"
+  echo -e "  ${CYAN}--only STEP${RESET}         Run only the given deployment step"
+  echo -e "  Valid steps: ${GREEN}minio, core, kms-signer, database, host-node, gateway-node,"
+  echo -e "               coprocessor, kms-connector, gateway-mocked-payment, gateway-sc,"
+  echo -e "               host-sc, relayer, test-suite${RESET}"
+  echo -e "  Note: ${CYAN}--resume${RESET} and ${CYAN}--only${RESET} are mutually exclusive"
+  echo
   echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --resume gateway-sc${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --only coprocessor${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-3-5${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
@@ -195,7 +205,10 @@ case $COMMAND in
   deploy)
     print_logo
     echo -e "${LIGHT_BLUE}${BOLD}[DEPLOY] Deploying fhevm stack...${RESET}"
+    VALID_DEPLOY_STEPS="minio|core|kms-signer|database|host-node|gateway-node|coprocessor|kms-connector|gateway-mocked-payment|gateway-sc|host-sc|relayer|test-suite"
     DEPLOY_ARGS=()
+    DEPLOY_RESUME=""
+    DEPLOY_ONLY=""
     while (( "$#" )); do
       case "$1" in
         --build)
@@ -226,6 +239,38 @@ case $COMMAND in
             exit 1
           fi
           ;;
+        --resume)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            if [[ ! "$2" =~ ^(${VALID_DEPLOY_STEPS})$ ]]; then
+              echo -e "${RED}[ERROR]${RESET} ${BOLD}Invalid deploy step: $2${RESET}"
+              usage
+              exit 1
+            fi
+            DEPLOY_RESUME="$2"
+            DEPLOY_ARGS+=("--resume" "$2")
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Resume step argument missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
+        --only)
+          if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+            if [[ ! "$2" =~ ^(${VALID_DEPLOY_STEPS})$ ]]; then
+              echo -e "${RED}[ERROR]${RESET} ${BOLD}Invalid deploy step: $2${RESET}"
+              usage
+              exit 1
+            fi
+            DEPLOY_ONLY="$2"
+            DEPLOY_ARGS+=("--only" "$2")
+            shift 2
+          else
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}Only step argument missing${RESET}"
+            usage
+            exit 1
+          fi
+          ;;
         *)
           echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
           usage
@@ -233,6 +278,11 @@ case $COMMAND in
           ;;
       esac
     done
+    if [ -n "$DEPLOY_RESUME" ] && [ -n "$DEPLOY_ONLY" ]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}--resume and --only are mutually exclusive${RESET}"
+      usage
+      exit 1
+    fi
     "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" "${DEPLOY_ARGS[@]}"
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
     ;;

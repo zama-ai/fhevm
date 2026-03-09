@@ -143,14 +143,14 @@ jobs:
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
-        env:
-          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
-            ./fhevm-cli deploy --build
-          else
-            ./fhevm-cli deploy
-          fi
+          ./fhevm-cli deploy
+
+      - name: Rebuild test-suite from branch
+        if: ${{ inputs.deploy-build }}
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli deploy --build --only test-suite
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
