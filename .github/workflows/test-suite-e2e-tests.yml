@@ -91,6 +91,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
       COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}
       COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor-gw-listener-version }}
@@ -117,6 +118,12 @@ jobs:
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -137,10 +144,19 @@ jobs:
         run: |
           echo "Component versions: $JSON_INPUT"
 
-      - name: Deploy fhevm Stack
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Dry run
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli deploy
+          ./fhevm-cli up --target latest-release --dry-run
+
+      - name: Boot fhevm Stack
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli up --target latest-release
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
@@ -224,32 +240,32 @@ jobs:
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
-        if: always()
+        if: failure()
         run: |
           echo "::group::Relayer Logs"
-          ./fhevm-cli logs fhevm-relayer
+          timeout 20 ./fhevm-cli logs fhevm-relayer || true
           echo "::endgroup::"
           echo "::group::SNS Worker Logs"
-          ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
+          timeout 20 ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
-          ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process"
+          timeout 20 ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
           echo "::group::Host Listener"
-          ./fhevm-cli logs coprocessor-host-listener
+          timeout 20 ./fhevm-cli logs coprocessor-host-listener || true
           echo "::endgroup::"
           echo "::group::Gateway Listener"
-          ./fhevm-cli logs coprocessor-gw-listener
+          timeout 20 ./fhevm-cli logs coprocessor-gw-listener || true
           echo "::endgroup::"
           echo "::group::ZKProof Worker"
-          ./fhevm-cli logs coprocessor-zkproof-worker
+          timeout 20 ./fhevm-cli logs coprocessor-zkproof-worker || true
           echo "::endgroup::"
           echo "::group::TFHE Worker"
-          ./fhevm-cli logs coprocessor-tfhe-worker
+          timeout 20 ./fhevm-cli logs coprocessor-tfhe-worker || true
           echo "::endgroup::"
 
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()
         run: |
-          ./fhevm-cli clean
+          ./fhevm-cli clean --images
