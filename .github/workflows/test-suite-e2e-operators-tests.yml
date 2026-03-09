@@ -82,6 +82,21 @@ jobs:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
+      CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
+      CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
+      CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector_version }}
+      COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
+      HOST_VERSION: ${{ inputs.host_version }}
+      GATEWAY_VERSION: ${{ inputs.gateway_version }}
+      COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.host_listener_version }}
+      COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.gateway_listener_version }}
+      COPROCESSOR_TX_SENDER_VERSION: ${{ inputs.tx_sender_version }}
+      COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
+      COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
+      COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
@@ -94,7 +109,10 @@ jobs:
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      - name: Install Foundry
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
+
+      - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Login to GitHub Container Registry
@@ -111,24 +129,15 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: |
+          bun install --frozen-lockfile
+
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
-        env:
-          CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
-          CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
-          CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
-          CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector_version }}
-          DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
-          HOST_VERSION: ${{ inputs.host_version }}
-          GATEWAY_VERSION: ${{ inputs.gateway_version }}
-          HOST_LISTENER_VERSION: ${{ inputs.host_listener_version }}
-          GW_LISTENER_VERSION: ${{ inputs.gateway_listener_version }}
-          TX_SENDER_VERSION: ${{ inputs.tx_sender_version }}
-          TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
-          SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
-          ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
         run: |
-          ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          ./fhevm-cli up --target latest-release --coprocessors 2 --threshold 2
 
       - name: All operators tests
         working-directory: test-suite/fhevm
@@ -142,32 +151,33 @@ jobs:
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
-        if: always()
+        if: failure()
         run: |
+          snapshot_logs() {
+            local group="$1"
+            local container="$2"
+            echo "::group::${group}"
+            docker logs --tail 200 "${container}" 2>&1 || true
+            echo "::endgroup::"
+          }
           echo "::group::Relayer Logs"
-          ./fhevm-cli logs relayer
+          docker logs --tail 200 fhevm-relayer 2>&1 || true
           echo "::endgroup::"
           echo "::group::SNS Worker Logs"
-          ./fhevm-cli logs sns-worker | grep -v "Selected 0 rows to process"
+          docker logs --tail 200 coprocessor-sns-worker 2>&1 | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
-          ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          docker logs --tail 200 coprocessor-transaction-sender 2>&1 | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
-          echo "::group::Coprocessor 2 - SNS Worker"
-          ./fhevm-cli logs coprocessor-2-sns-worker 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - Transaction Sender (filtered)"
-          ./fhevm-cli logs coprocessor-2-transaction-sender 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - TFHE Worker"
-          ./fhevm-cli logs coprocessor-2-tfhe-worker 2>/dev/null || true
-          echo "::endgroup::"
+          snapshot_logs "Coprocessor 2 - SNS Worker" coprocessor2-sns-worker | grep -v "Selected 0 rows to process" || true
+          snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor2-transaction-sender | grep -v "Selected 0 rows to process" || true
+          snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor2-tfhe-worker
 
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()
         run: |
-          ./fhevm-cli clean
+          ./fhevm-cli clean --images
 
   teardown-instance:
     name: test-suite-e2e-operators-tests/teardown
