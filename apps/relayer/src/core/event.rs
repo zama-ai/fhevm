@@ -1,11 +1,9 @@
 use crate::core::errors::EventProcessingError;
 use crate::core::job_id::JobId;
-use crate::http::endpoints::v1::types::{
-    InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
-    PublicDecryptRequestJson, PublicDecryptResponseJson, PublicDecryptResponsePayloadJson,
-    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
-};
 use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
+use crate::http::endpoints::v2::types::{
+    InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
+};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -778,28 +776,6 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
     }
 }
 
-impl From<UserDecryptResponse> for UserDecryptResponseJson {
-    fn from(response: UserDecryptResponse) -> Self {
-        let mut json_response: Vec<UserDecryptResponsePayloadJson> = Vec::new();
-
-        for (share, signature) in response
-            .reencrypted_shares
-            .iter()
-            .zip(response.signatures.iter())
-        {
-            json_response.push(UserDecryptResponsePayloadJson {
-                payload: share.clone(),
-                signature: signature.clone(),
-                extra_data: response.extra_data.clone(),
-            });
-        }
-
-        UserDecryptResponseJson {
-            response: json_response,
-        }
-    }
-}
-
 impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
     type Error = anyhow::Error;
 
@@ -828,24 +804,6 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles,
             extra_data,
         })
-    }
-}
-
-impl From<PublicDecryptResponse> for PublicDecryptResponseJson {
-    fn from(response: PublicDecryptResponse) -> Self {
-        PublicDecryptResponseJson {
-            response: vec![response.into()],
-        }
-    }
-}
-
-impl From<PublicDecryptResponse> for PublicDecryptResponsePayloadJson {
-    fn from(response: PublicDecryptResponse) -> Self {
-        PublicDecryptResponsePayloadJson {
-            decrypted_value: response.decrypted_value,
-            signatures: response.signatures,
-            extra_data: response.extra_data,
-        }
     }
 }
 
@@ -1008,31 +966,6 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
     }
 }
 
-impl From<InputProofResponse> for InputProofResponseJson {
-    fn from(response: InputProofResponse) -> Self {
-        InputProofResponseJson {
-            response: response.into(),
-        }
-    }
-}
-
-impl From<InputProofResponse> for InputProofResponsePayloadJson {
-    fn from(response: InputProofResponse) -> Self {
-        InputProofResponsePayloadJson {
-            handles: response
-                .handles
-                .into_iter()
-                .map(|handle| format!("{handle:#x}"))
-                .collect(),
-            signatures: response
-                .signatures
-                .into_iter()
-                .map(|sig| format!("{sig:#x}"))
-                .collect(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1071,61 +1004,5 @@ mod tests {
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
 
         Ok(())
-    }
-
-    const FIXED_BYTE_VALUE: u8 = 0x11;
-    const SIGNATURE_BYTE_VALUE: u8 = 0x22;
-
-    #[test]
-
-    fn test_input_proof_response_conversion() {
-        let fixed = FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]);
-        let signature = Bytes::from(vec![SIGNATURE_BYTE_VALUE; 32]);
-
-        let response = InputProofResponse {
-            handles: vec![fixed],
-            signatures: vec![signature],
-        };
-
-        let json: InputProofResponseJson = response.into();
-
-        // Using alloy's formatting we expect a 0x‑prefixed hex string.
-        let expected_handle = format!("{:#x}", FixedBytes::<32>::from([FIXED_BYTE_VALUE; 32]));
-        let expected_signature = format!("{:#x}", Bytes::from(vec![SIGNATURE_BYTE_VALUE; 32]));
-
-        assert_eq!(json.response.handles, vec![expected_handle.clone()]);
-        assert_eq!(json.response.signatures, vec![expected_signature]);
-    }
-
-    use super::UserDecryptResponse;
-    use alloy::primitives::Bytes;
-
-    #[test]
-    fn test_try_from_user_decrypt_response() {
-        // Create a UserDecryptResponse instance
-        let reencrypted_shares = vec![Bytes::from(vec![1, 2, 3, 4]), Bytes::from(vec![5, 6, 7, 8])];
-        let signatures = vec![
-            Bytes::from(vec![9, 10, 11, 12]),
-            Bytes::from(vec![13, 14, 15, 16]),
-        ];
-        let extra_data = "0x00".to_string();
-
-        let response = UserDecryptResponse {
-            gateway_request_id: U256::from_str("5").unwrap(),
-            reencrypted_shares,
-            signatures,
-            extra_data,
-        };
-
-        // Convert UserDecryptResponse to UserDecryptResponseJson
-        let json_response = UserDecryptResponseJson::from(response);
-
-        // Expected UserDecryptResponseJson
-        let expected_json_response = "{\"response\":[{\"payload\":\"01020304\",\"signature\":\"090a0b0c\"},{\"payload\":\"05060708\",\"signature\":\"0d0e0f10\"}]}";
-        // Serialize the json response and print the json string
-        let json_string = serde_json::to_string(&json_response).unwrap();
-
-        println!("JSON Response: {json_string:?}");
-        assert_eq!(json_string, expected_json_response);
     }
 }

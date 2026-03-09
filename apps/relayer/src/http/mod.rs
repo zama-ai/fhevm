@@ -7,19 +7,8 @@ pub mod utils;
 
 // Re-export key types and functions for direct access
 pub use endpoints::{
-    health_handler, liveness_handler,
-    v1::handlers::{
-        InputProofHandler, InputProofResponse, PublicDecryptHandler, PublicDecryptResponse,
-        UserDecryptHandler, UserDecryptResponse,
-    },
-    version_handler, HealthResponse, LivenessResponse, VersionResponse,
-};
-
-pub use endpoints::v1::types::{
-    ChainId, HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
-    InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
-    PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
-    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
+    health_handler, liveness_handler, version_handler, HealthResponse, LivenessResponse,
+    VersionResponse,
 };
 
 pub use middleware::openapi_middleware;

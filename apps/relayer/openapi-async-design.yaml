@@ -13,8 +13,8 @@ info:
   version: 2.0.0
 
 servers:
-  - url: /v1
-    description: FHEVM Relayer API v1
+  - url: /v2
+    description: FHEVM Relayer API v2
 
 paths:
   /public-decrypt:

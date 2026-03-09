@@ -4,7 +4,7 @@ use super::super::types::error::{
 };
 use super::super::types::user_decrypt::{
     UserDecryptErrorResponseJson, UserDecryptPostResponseJson, UserDecryptQueuedResult,
-    UserDecryptResponseJson, UserDecryptStatusResponseJson,
+    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
 use crate::core::errors::{
     HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
@@ -16,7 +16,6 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
 use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::BounceChecker;

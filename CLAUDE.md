@@ -28,7 +28,7 @@ cargo build --bin fhevm-relayer
 ```bash
 make test-unit                  # Unit tests only (no Postgres needed)
 make test-all-no-long-running   # Full suite (requires Postgres — starts automatically with make ci)
-make test-smoke-all-versions    # Smoke tests (v1 + v2 happy paths)
+make test-smoke-ok-all-v2       # Smoke tests (v2 happy paths)
 make test-coverage-report-html  # Coverage report
 
 # Single integration test file

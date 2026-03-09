@@ -17,7 +17,7 @@ This document describes different IDs used in the relayer. There are 4 identifie
 
 - **Purpose**: Track async parts of a HTTP Request internally in the relayer.
 - **Format**: `UUID v7` for its time sortable property with strong uniqueness guarantee.
-- **Creation**: By HTTP handler in application on every HTTP request (`v1 /POSTs`, `v2 /POST`, `v2 /GETs`).
+- **Creation**: By HTTP handler in application on every HTTP request (`v2 /POST`, `v2 /GETs`).
 - **Relationship**: Mapped `1:1` to *External Request ID* by Relayer.
 - **Visibility for user**: :x: No
 - **Storage:** Stored in Requests DB for  `input-proof`.
@@ -27,7 +27,7 @@ This document describes different IDs used in the relayer. There are 4 identifie
 
 - **Purpose:** Track a request across client, Cloudflare and Kong and relayer.
 - **Format:** `UUID v4` for its opaqueness, fully random property with strong uniqueness guarantee
-- **Creation**: By Kong plugin on every HTTP request (`v1 /POSTs`, `v2 /POST`, `v2 /GETs`)
+- **Creation**: By Kong plugin on every HTTP request (`v2 /POST`, `v2 /GETs`)
 - **Relationship**: ???
 - **Visibility for user**: :white_check_mark: Receives in each HTTP response, in `X-Request-ID` header.
 - **Storage:** :x: Not stored in database.
@@ -50,9 +50,7 @@ This document describes different IDs used in the relayer. There are 4 identifie
 
 - **Creation:** By HTTP handler in application, on first occurrence of the request
 
-    1. `v1` : `POST /user-decrypt`, `POST /public-decrypt`
-
-    2. `v2` : `POST /user-decrypt`, `POST /public-decrypt`
+    1. `v2` : `POST /user-decrypt`, `POST /public-decrypt`
 
 - **Relationship**: 
 

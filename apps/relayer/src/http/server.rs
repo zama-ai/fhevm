@@ -5,10 +5,6 @@ use crate::host::HostChainIdChecker;
 use crate::http::admin::AdminConfigRegistry;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
-    v1::handlers::{
-        InputProofHandler as InputProofHandlerV1, KeyUrlHandler as KeyUrlHandlerV1,
-        PublicDecryptHandler as PublicDecryptHandlerV1, UserDecryptHandler as UserDecryptHandlerV1,
-    },
     v2::handlers::{
         InputProofHandler as InputProofHandlerV2, KeyUrlHandler as KeyUrlHandlerV2,
         PublicDecryptHandler as PublicDecryptHandlerV2, UserDecryptHandler as UserDecryptHandlerV2,
@@ -78,54 +74,6 @@ where
             .clone(),
     ));
 
-    // Initialize v1 handlers
-    let input_proof_handler_v1 = Arc::new(InputProofHandlerV1::new(
-        orchestrator.clone(),
-        api_version,
-        repositories.input_proof.clone(),
-        config.api_retry_after_seconds,
-        bouncer_throttlers
-            .tx_throttlers
-            .input_proof_tx_throttler
-            .clone(),
-    ));
-
-    let user_decrypt_handler_v1 = Arc::new(UserDecryptHandlerV1::new(
-        orchestrator.clone(),
-        api_version,
-        repositories.user_decrypt.clone(),
-        BounceChecker::new(
-            bouncer_throttlers
-                .tx_throttlers
-                .user_decrypt_tx_throttler
-                .clone(),
-            bouncer_throttlers
-                .readiness_throttling_senders
-                .user_decrypt_readiness_throttler
-                .clone(),
-            config.api_retry_after_seconds,
-        ),
-        host_chain_id_checker.clone(),
-    ));
-
-    let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
-        orchestrator.clone(),
-        api_version,
-        repositories.public_decrypt.clone(),
-        BounceChecker::new(
-            bouncer_throttlers
-                .tx_throttlers
-                .public_decrypt_tx_throttler
-                .clone(),
-            bouncer_throttlers
-                .readiness_throttling_senders
-                .public_decrypt_readiness_throttler
-                .clone(),
-            config.api_retry_after_seconds,
-        ),
-        host_chain_id_checker.clone(),
-    ));
-
     // Initialize v2 handlers with dynamic retry-after state
     let input_proof_handler_v2 = Arc::new(InputProofHandlerV2::new(
         orchestrator.clone(),
@@ -192,8 +140,7 @@ where
     // Clone orchestrator for health endpoint before using it
     let orchestrator_for_health = orchestrator.clone();
 
-    // Create KeyUrlHandlers - they self-register with orchestrator
-    let keyurl_handler_v1 = KeyUrlHandlerV1::new(orchestrator.clone());
+    // Create KeyUrlHandler - self-registers with orchestrator
     let keyurl_handler_v2 = KeyUrlHandlerV2::new(orchestrator.clone());
 
     // Create the router by merging all handler routers
@@ -206,16 +153,10 @@ where
         )
         .route("/version", get(version_handler))
         // Merge handler routers
-        // v1 routes
-        .merge(input_proof_handler_v1.routes())
-        .merge(public_decrypt_handler_v1.routes())
-        .merge(user_decrypt_handler_v1.routes())
-        // v2 routes
         .merge(input_proof_handler_v2.routes())
         .merge(public_decrypt_handler_v2.routes())
         .merge(user_decrypt_handler_v2.routes())
         // Add keyurl routes (no rate limiting for GET)
-        .merge(keyurl_handler_v1.routes())
         .merge(keyurl_handler_v2.routes())
         // Add OpenAPI documentation
         .merge(openapi_middleware());

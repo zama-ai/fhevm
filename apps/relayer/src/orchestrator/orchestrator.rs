@@ -1,4 +1,3 @@
-use crate::core::job_id::JobId;
 use crate::orchestrator::health_checker::{HealthCheck, HealthChecker};
 use crate::orchestrator::ids;
 use crate::orchestrator::task_manager::TaskManager;
@@ -137,21 +136,6 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
 {
     fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>) {
         self.event_dispatcher.register_handler(event_ids, handler);
-    }
-
-    fn register_once_handler(
-        &self,
-        event_id: u8,
-        job_id: JobId,
-        handler: Arc<dyn EventHandler<E>>,
-    ) {
-        self.event_dispatcher
-            .register_once_handler(event_id, job_id, handler);
-    }
-
-    fn unregister_once_handler(&self, event_id: u8, job_id: JobId) {
-        self.event_dispatcher
-            .unregister_once_handler(event_id, job_id);
     }
 }
 

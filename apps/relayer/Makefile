@@ -385,9 +385,6 @@ test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
-	@$(CARGO_TEST) --test input_proof_v1_test --no-run
-	@$(CARGO_TEST) --test public_decrypt_v1_test --no-run
-	@$(CARGO_TEST) --test user_decrypt_v1_test --no-run
 	@$(CARGO_TEST) --test input_proof_v2_test --no-run
 	@$(CARGO_TEST) --test public_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --test user_decrypt_v2_test --no-run
@@ -399,9 +396,6 @@ test-run: _check-postgres ## Run pre-built test binaries
 	@echo "Running pre-built test binaries..."
 	@$(CARGO_TEST) --lib
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
-	@$(CARGO_TEST) --test input_proof_v1_test -- --test-threads=1
-	@$(CARGO_TEST) --test public_decrypt_v1_test -- --test-threads=1
-	@$(CARGO_TEST) --test user_decrypt_v1_test -- --test-threads=1
 	@$(CARGO_TEST) --test input_proof_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --test public_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --test user_decrypt_v2_test -- --test-threads=1
@@ -429,28 +423,6 @@ test-coverage-report-cmdline: _check-coverage-tools ## Run unit tests with cover
 	@$(CARGO_LLVM_COV) --lib --json --no-cfg-coverage | jq -r -f coverage-format.jq | awk -F'\t' '{printf "%-70s %s\n", $$1, $$2}'
 	@$(MAKE) _clean-profraw
 
-# ---------------------------------------------------------------------------
-##@ Testing - Smoke V1
-# ---------------------------------------------------------------------------
-
-test-smoke-ok-all-v1: _check-postgres ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
-	@echo "Building v1 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v1_test --test user_decrypt_v1_test --test input_proof_v1_test --test health_tests --no-run
-	@echo "Running v1 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v1_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v1_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v1_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test health_tests -- --test-threads=4
-
-test-smoke-ok-input-proof-v1: _check-postgres ## Run smoke test on ok (happy path) for input-proof v1
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test input_proof_v1_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-user-decrypt-v1: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v1
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test user_decrypt_v1_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-public-decrypt-v1: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v1
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v1_test test_success_single_request -- --test-threads=4
-
 test-health-endpoints: _check-postgres ## Run health endpoint tests
 	@$(CARGO_TEST) --test health_tests -- --test-threads=1
 
@@ -475,15 +447,6 @@ test-smoke-ok-user-decrypt-v2: _check-postgres ## Run smoke test on ok (happy pa
 test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v2
 	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
 
-# ---------------------------------------------------------------------------
-##@ Combined Testing
-# ---------------------------------------------------------------------------
-
-test-smoke-all-versions: ## Run smoke tests for both v1 and v2 endpoints
-	@echo "Running v1 smoke tests..."
-	@make test-smoke-ok-all-v1
-	@echo "Running v2 smoke tests..."
-	@make test-smoke-ok-all-v2
 
 # ---------------------------------------------------------------------------
 ##@ Workflows

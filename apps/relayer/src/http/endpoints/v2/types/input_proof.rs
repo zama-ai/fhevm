@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
-// Same request type as v1
 #[derive(Deserialize, Serialize, Validate, Clone, ToSchema, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]

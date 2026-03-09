@@ -23,8 +23,6 @@ pub trait EventHandler<E: Event>: Send + Sync {
 
 pub trait HandlerRegistry<E: Event> {
     fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>);
-    fn register_once_handler(&self, event_id: u8, job_id: JobId, handler: Arc<dyn EventHandler<E>>);
-    fn unregister_once_handler(&self, event_id: u8, job_id: JobId);
 }
 
 pub trait HookRegistry<E: Event> {

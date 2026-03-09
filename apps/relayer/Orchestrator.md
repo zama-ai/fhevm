@@ -86,26 +86,11 @@ It is possible to use one or a combination of dispatchers in a single orchestrat
 
     pub trait HandlerRegistry<E: Event> {
         fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>);
-        fn register_once_handler(
-            &self,
-            event_id: u8,
-            request_id: Uuid,
-            handler: Arc<dyn EventHandler<E>>,
-        );
     }
 
    ```
 
-   Consumers of the event implement the Handler trait and Orchestrator implements an Handler Registry. The Handlers are registered in the orchestrator in the main program.
-
-   **Once handlers** allows defining handler for event type with a specific request ID. Example use case: If app has a HTTP POST end point, which appears synchronous from user perspective. In this case
-
-   - HTTP Post Handler receives an incoming request.
-   - It generates the first orchestrator event with a unique request ID.
-   - Dispatch the first event.
-   - Subscribes to "Result Event Types" for this request ID and waits for the result asynchronously (say in a MPSC channel).
-   - Once the result is available, returns it to the user.
-   - Since the handler is not relevant anymore, it will also be deregistered.
+   Consumers of the event implement the Handler trait and Orchestrator implements a Handler Registry. The Handlers are registered in the orchestrator in the main program.
 
 4. **Request ID**
    - For request ID, we use UUID V1.

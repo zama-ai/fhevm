@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
-// Same request type as v1
 #[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {

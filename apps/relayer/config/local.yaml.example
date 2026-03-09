@@ -136,7 +136,7 @@ http:
   endpoint: "0.0.0.0:3000"
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
-  api_retry_after_seconds: 4  # Fallback for V1 handlers
+  api_retry_after_seconds: 4  # Default retry-after seconds for queued API responses
   # Enable admin endpoints for runtime configuration updates (default: false)
   # NOTE: Authentication and rate limiting should be handled by Kong in production
   enable_admin_endpoint: false

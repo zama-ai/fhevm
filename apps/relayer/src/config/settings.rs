@@ -352,7 +352,7 @@ pub struct HttpConfig {
     pub endpoint: Option<String>,
     /// HTTP metrics configuration
     pub metrics: HttpMetricsConfig,
-    /// Default retry-after seconds for queued API responses (V1 fallback)
+    /// Default retry-after seconds for queued API responses
     pub api_retry_after_seconds: u32,
     /// Enable admin endpoints for dynamic configuration updates
     #[serde(default)]

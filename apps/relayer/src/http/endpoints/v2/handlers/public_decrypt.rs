@@ -3,8 +3,8 @@ use super::super::types::error::{
     RelayerV2ApiError500, RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::public_decrypt::{
-    PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptResponseJson,
-    PublicDecryptStatusResponseJson,
+    PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptRequestJson,
+    PublicDecryptResponseJson, PublicDecryptStatusResponseJson,
 };
 use crate::core::errors::{
     HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
@@ -15,7 +15,6 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};

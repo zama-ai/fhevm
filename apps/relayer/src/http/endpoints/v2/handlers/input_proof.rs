@@ -3,8 +3,8 @@ use super::super::types::error::{
     RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::input_proof::{
-    InputProofPostResponseJson, InputProofQueuedResult, InputProofResponseJson,
-    InputProofStatusResponseJson,
+    InputProofPostResponseJson, InputProofQueuedResult, InputProofRequestJson,
+    InputProofResponseJson, InputProofStatusResponseJson,
 };
 use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
 use crate::core::event::{
@@ -12,7 +12,6 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
-use crate::http::endpoints::v1::types::input_proof::InputProofRequestJson;
 use crate::http::retry_after::{RequestStateInfo, RetryAfterState};
 use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
@@ -555,7 +554,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 #[utoipa::path(
     post,
     path = "/v2/input-proof",
-    request_body = crate::http::endpoints::v1::types::input_proof::InputProofRequestJson,
+    request_body = crate::http::endpoints::v2::types::input_proof::InputProofRequestJson,
     responses(
         (status = 202, description = "Request accepted for processing", body = crate::http::endpoints::v2::types::input_proof::InputProofPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError400NoDetails),

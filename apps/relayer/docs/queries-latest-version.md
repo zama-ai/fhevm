@@ -19,7 +19,7 @@
 
 ### USER DECRYPT:
 
-1.  POST REQUEST => we recieve a payload (v1 or v2)
+1.  POST REQUEST => we receive a payload (v2)
 
     1.  Compute `internal_indexer_id` from payload
     2.  Check if it there in the `user_decrypt_req` table.
@@ -28,7 +28,6 @@
            1. Call readiness checker as an async function.
               1. if failure: -> Return 400 Code: Not ready For Decryption.
               2. if succeed: Insert the `req`, `ext_reference_id`, `int_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
-                 v1 routes -> Continue.
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.
 
@@ -43,11 +42,10 @@
            1. Call host ACL readiness checker as an async function. (DUMMY always pass for next implem - we will do it later with a host listener - substreams/poller...)
               1. if failure: -> Return 400 Code: Not ready For Decryption.
               2. if succeed: Insert the `req`, `ext_reference_id`, `int_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
-                 v1 routes -> Continue.
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.
 
-3.  Gateway readiness checker is triggered (large timeout, same for v1 and same for v2 - ~30 min coverage)
+3.  Gateway readiness checker is triggered (large timeout, ~30 min coverage)
 
     1. if ready -> update user_decrypt_req by `int_indexer_id` for field req_status = `processing` -> Transaction::Send
     2. if not ready after 30min.. -> update by `int_indexer_id` req_status = `timed_out` + `err_reason`
@@ -110,7 +108,7 @@ NOTE: PAUSING STRATEGY.
 
 ### PUBLIC DECRYPT:
 
-1.  POST REQUEST => we recieve a payload (v1 or v2)
+1.  POST REQUEST => we recieve a payload (v2)
 
     1.  Compute `internal_indexer_id` from payload
     2.  Check if it there in the `public_decrypt_req` table.
@@ -119,11 +117,10 @@ NOTE: PAUSING STRATEGY.
            1. Call readiness checker as an async function.
               1. if failure: -> Return 400 Code: Not ready For Decryption.
               2. if succeed: Insert the `req`, `ext_reference_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
-                 v1 routes -> Continue.
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.
 
-2.  NEW POST FLOW (v1, v2.)
+2.  NEW POST FLOW (v2)
 
     1.  Compute `int_indexer_id` from payload
     2.  Check if it there in the `public_decrypt_req` table.
@@ -135,11 +132,10 @@ NOTE: PAUSING STRATEGY.
         3.  Call host ACL readiness checker as an async function. (DUMMY always pass for next implem - we will do it later with a host listener - substreams/poller...)
             1.  if failure: -> Return 400 Code: Not ready For Decryption.
             2.  if succeed: Insert the `req`, `ext_reference_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
-                v1 routes -> Continue.
                 v2 routes -> return ext reqId with 202 Created..
             3.  if new creation.
 
-3.  Gateway readiness checker is triggered (large timeout, same for v1 and same for v2 - ~30 min coverage)
+3.  Gateway readiness checker is triggered (large timeout, ~30 min coverage)
 
     1. if ready -> update public_decrypt_req by `int_indexer_id` for field req_status = `processing` -> Transaction::Send
     2. if not ready after 30min.. -> update by `int_indexer_id` req_status = `timed_out` + `err_reason`
@@ -175,11 +171,10 @@ TIME OUT STRATEGY:
 
 - Comment: no readiness check
 
-1.  POST REQUEST => we recieve a payload (v1 or v2)
+1.  POST REQUEST => we recieve a payload (v2)
 
     - Create uuidV7 `internal_request_id`.
     - Insert `ext_reference_id`, `int_request_id`, `request` into `input_proof_req`
-      v1 routes -> Continue.
       v2 routes -> return `ext_reference_id` with 202 Created..
 
 2.  RelayerEvent Transaction::Send is emitted.

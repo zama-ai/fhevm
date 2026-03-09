@@ -30,14 +30,14 @@ The system follows an event-driven architecture with these key components:
 
 - **Orchestrator**: Central coordinator for event flow and handling
 - **Gateway listeners/handlers**: Listen and process gateway events
-- **HTTP Handlers**: Process v1/v2 API requests
+- **HTTP Handlers**: Process V2 API requests
 - **SQL Repositories**: Persist request state and support status polling
 - **Transaction Engine + Throttlers**: Reliable TX management and backpressure
 - **Metrics + Tracing**: Runtime observability for APIs, queues and blockchain flows
 
 ```mermaid
 flowchart TD
-    HTTP["HTTP API (v1/v2)"] -->|request| ORCH
+    HTTP["HTTP API (v2)"] -->|request| ORCH
     GWL["Gateway Listener (WSS)"] -->|blockchain event| ORCH
 
     subgraph Orchestrator
@@ -69,7 +69,7 @@ src
 │   └── readiness_check/     # Readiness-check processing pipeline
 ├── http/                    # HTTP server, API handlers, and middleware
 │   ├── admin/               # Runtime admin endpoints
-│   ├── endpoints/           # API implementations (common, v1, v2)
+│   ├── endpoints/           # API implementations (common, v2)
 │   ├── middleware/          # OpenAPI/docs and request middleware
 │   ├── retry_after/         # Dynamic Retry-After estimation
 │   └── utils/               # Parsing and validation helpers
@@ -89,8 +89,7 @@ tests/                       # Integration and API tests
 test-support/                # Test helpers (e.g. Ethereum RPC mock)
 docs/                        # Supplemental project documentation
 design-docs/                 # Design and architecture notes
-openapi-current.yaml         # Current OpenAPI specification
-openapi-async-design.yaml    # Async OpenAPI design draft
+openapi-async-design.yaml    # OpenAPI specification
 Makefile                     # Test, lint, and migration helpers
 ```
 
@@ -247,17 +246,17 @@ You can use `./fhevm-cli` to trigger the `fhevm` E2E tests against your local st
 
 ### Production APIs
 
-V1 and V2 APIs are both available. V2 endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls for the result.
+V2 endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls for the result.
 
-| Operation                 | V1                        | V2                                |
-| ------------------------- | ------------------------- | --------------------------------- |
-| Input proof verification  | `POST /v1/input-proof`    | `POST /v2/input-proof`            |
-| Public decryption         | `POST /v1/public-decrypt` | `POST /v2/public-decrypt`         |
-| User decryption           | `POST /v1/user-decrypt`   | `POST /v2/user-decrypt`           |
-| Delegated user decryption | --                        | `POST /v2/delegated-user-decrypt` |
-| Key material URLs         | `GET /v1/keyurl`          | `GET /v2/keyurl`                  |
+| Operation                 | Endpoint                          |
+| ------------------------- | --------------------------------- |
+| Input proof verification  | `POST /v2/input-proof`            |
+| Public decryption         | `POST /v2/public-decrypt`         |
+| User decryption           | `POST /v2/user-decrypt`           |
+| Delegated user decryption | `POST /v2/delegated-user-decrypt` |
+| Key material URLs         | `GET /v2/keyurl`                  |
 
-For complete schemas, see `GET /docs` or `openapi-current.yaml`.
+For complete schemas, see `GET /docs` or `openapi-async-design.yaml`.
 
 ### Admin Endpoints
 

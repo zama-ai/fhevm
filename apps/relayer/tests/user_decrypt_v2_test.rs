@@ -133,28 +133,16 @@ mod helpers {
             .collect()
     }
 
-    /// Validates UserDecrypt response format compatibility with TKMS library
+    /// Validates UserDecrypt v2 response format compatibility with TKMS library
     /// for client-side plaintext reconstruction
     pub fn verify_tkms_compatibility() {
         use alloy::primitives::Bytes;
-        use fhevm_relayer::http::endpoints::v1::types::user_decrypt as v1_types;
         use fhevm_relayer::http::endpoints::v2::types::user_decrypt as v2_types;
-        use serde_json;
 
-        // Create identical test data
+        // Create test data
         let test_payload = Bytes::from(vec![0x01, 0x02, 0x03]);
         let test_signature = Bytes::from(vec![0x04, 0x05, 0x06]);
         let test_extra_data = "0x00".to_string();
-
-        // Create v1 response
-        let v1_item = v1_types::UserDecryptResponsePayloadJson {
-            payload: test_payload.clone(),
-            signature: test_signature.clone(),
-            extra_data: test_extra_data.clone(),
-        };
-        let v1_response = v1_types::UserDecryptResponseJson {
-            response: vec![v1_item],
-        };
 
         // Create v2 response
         let v2_item = v2_types::UserDecryptResponsePayloadJson {
@@ -166,40 +154,20 @@ mod helpers {
             result: vec![v2_item],
         };
 
-        // Serialize both to JSON
-        let v1_json = serde_json::to_string(&v1_response).expect("Failed to serialize v1 response");
+        // Serialize to JSON
         let v2_json = serde_json::to_string(&v2_response).expect("Failed to serialize v2 response");
 
-        // Parse back to compare structure
-        let v1_parsed: serde_json::Value =
-            serde_json::from_str(&v1_json).expect("Failed to parse v1 JSON");
+        // Parse back to verify structure
         let v2_parsed: serde_json::Value =
             serde_json::from_str(&v2_json).expect("Failed to parse v2 JSON");
 
-        // Check that both have the expected structure
-        assert_eq!(
-            v1_parsed["response"].as_array().unwrap().len(),
-            1,
-            "v1 should have one response item"
-        );
         assert_eq!(
             v2_parsed["result"].as_array().unwrap().len(),
             1,
             "v2 should have one result item"
         );
 
-        let v1_item = &v1_parsed["response"][0];
         let v2_item = &v2_parsed["result"][0];
-
-        // Verify field presence and types
-        assert!(
-            v1_item["payload"].is_string(),
-            "v1 payload should be string"
-        );
-        assert!(
-            v1_item["signature"].is_string(),
-            "v1 signature should be string"
-        );
 
         assert!(
             v2_item["payload"].is_string(),
@@ -209,20 +177,9 @@ mod helpers {
             v2_item["signature"].is_string(),
             "v2 signature should be string"
         );
-        // Verify payload and signature values match
-        assert_eq!(
-            v1_item["payload"], v2_item["payload"],
-            "Payload values must match between v1 and v2"
-        );
-        assert_eq!(
-            v1_item["signature"], v2_item["signature"],
-            "Signature values must match between v1 and v2"
-        );
-
-        // Note: Both v1 and v2 now have aligned behavior - neither serializes extra_data
         assert!(
             v2_item.get("extra_data").is_none(),
-            "v2 should not serialize extra_data field (aligned with v1)"
+            "v2 should not serialize extra_data field"
         );
     }
 
@@ -359,7 +316,7 @@ async fn test_success_single_request() {
                     !result_item.signature.is_empty(),
                     "Signature should not be empty"
                 );
-                // Note: extra_data is no longer serialized (aligned with V1 behavior)
+                // Note: extra_data is no longer serialized
             }
         }
         reqwest::StatusCode::ACCEPTED => {
