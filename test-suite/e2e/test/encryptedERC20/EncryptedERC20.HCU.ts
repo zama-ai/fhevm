@@ -252,26 +252,29 @@ describe('EncryptedERC20:HCU', function () {
 
     it('should count HCU after whitelist removal', async function () {
       const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+      await ethers.provider.send('evm_setAutomine', [true]);
       await ethers.provider.send('evm_setIntervalMining', [0]);
 
       const mintTx = await this.erc20.mint(10000);
-      await mintTx.wait();
+      await waitForTransactionReceipt(mintTx.hash);
 
-      await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
+      const whitelistTx = await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+      await waitForTransactionReceipt(whitelistTx.hash);
       await mineNBlocks(1);
 
       // Transfer while whitelisted — meter stays at 0
       const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-      await tx1.wait();
+      await waitForTransactionReceipt(tx1.hash);
 
       const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter();
       expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
 
-      await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
+      const unwhitelistTx = await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+      await waitForTransactionReceipt(unwhitelistTx.hash);
 
       // Transfer after removal — meter should count HCU
       const tx2 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-      await tx2.wait();
+      await waitForTransactionReceipt(tx2.hash);
 
       const [, usedHCUAfterRemoval] = await this.hcuLimit.getBlockMeter();
       expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
