@@ -708,7 +708,7 @@ cleanup_from_step() {
             fi
             if [[ -f "$env_file" ]]; then
                 log_info "Stopping $component services..."
-                docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+                docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v 2>/dev/null || true
             fi
         fi
     done
@@ -737,7 +737,7 @@ cleanup_single_step() {
         fi
         if [[ -f "$env_file" ]]; then
             log_info "Stopping $compose services..."
-            docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+            docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v 2>/dev/null || true
         fi
     fi
 
