@@ -1,115 +1,109 @@
-use fhevm_engine_common::msg_broker::{
-    create_recv_channel, create_send_channel, extract_delivery, try_decode,
-};
 use fhevm_engine_common::protocol::messages as msg;
-use lapin::options::BasicAckOptions;
 
+#[cfg(feature = "rabbitmq")]
+use message_broker::rabbitmq::{RabbitMQReceiver, RabbitMQSender};
+
+use message_broker::{MessageResult, Receiver};
+use std::sync::{Arc, RwLock};
+use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{
-    cli::Args,
-    dispatcher::{Dispatcher, LapinChannel},
-};
-use futures_util::stream::StreamExt;
+use crate::{cli::Args, dispatcher::Dispatcher};
+
+type SharedDispatcher = Arc<RwLock<Dispatcher<RabbitMQSender>>>;
 
 pub async fn run_tfhe_dispatcher(
-    args: crate::cli::Args,
+    args: Args,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(target: "tfhe_dispatcher", "Starting tfhe-dispatcher service");
+
     loop {
         let cancel = cancel_token.clone();
-        if let Err(cycle_error) = tfhe_dispatcher_cycle(&args, cancel).await {
-            error!(target: "tfhe_dispatcher", { error = cycle_error }, "Error in background dispatcher, retrying shortly");
+
+        if let Err(err) = tfhe_dispatcher_loop(&args, cancel).await {
+            error!(
+                target: "tfhe_dispatcher",
+                { error = err },
+                "Error in dispatcher cycle, retrying shortly"
+            );
         }
 
         if cancel_token.is_cancelled() {
-            info!("Cancellation requested, not restarting dispatcher cycle");
+            info!("Cancellation requested, stopping dispatcher");
             return Ok(());
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        sleep(Duration::from_secs(5)).await;
     }
 }
 
-async fn tfhe_dispatcher_cycle(
-    args: &crate::cli::Args,
+/// Main loop of the dispatcher, which listens for FHE events and partition completion messages,
+/// and updates the dispatcher state accordingly. This loop will run until a cancellation is requested.
+async fn tfhe_dispatcher_loop(
+    args: &Args,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let prefetch_count = 4u16; // TODO:
+    let sender = create_sender(args, "shared_tfhe_queue").await;
+    let state: SharedDispatcher = Arc::new(RwLock::new(Dispatcher::new(sender)));
 
-    // Queue for receiving batches of FHE events (logs) to process
-    // Host-listener will push to this queue
-    let mut fhe_events_recv_chan = create_recv_channel(
-        &args.rmq_uri,
-        &args.consumer_tag_prefix,
-        args.fhe_events_queue_name.as_str(),
-        prefetch_count,
-    )
-    .await?;
+    let mut fhe_events = create_receiver(args, &args.fhe_events_queue_name, state.clone()).await;
 
-    // Responses from workers about completed partitions
-    // tfhe-compute-nodes will push to this queue after completing execution of a partition
-    let mut fhe_partition_complete_recv_chan = create_recv_channel(
-        &args.rmq_uri,
-        &args.consumer_tag_prefix,
-        args.fhe_execution_complete_queue.as_str(),
-        prefetch_count,
-    )
-    .await?;
-
-    let mut dispatcher = setup_dispatcher(args).await?;
+    let mut fhe_partition_complete =
+        create_receiver(args, &args.fhe_execution_complete_queue, state.clone()).await;
 
     loop {
         tokio::select! {
             biased;
-            res = fhe_events_recv_chan.next() => {
-                let d = extract_delivery(res, "fhe_events")?;
-                let Some(batch) = try_decode::<Vec<msg::FheLog>>(&d).await else {
-                    continue;
-                };
 
-                dispatcher.dispatch(&batch);
-
-                let _ = d.ack(BasicAckOptions::default()).await;
-            },
-            res = fhe_partition_complete_recv_chan.next() => {
-                let d = extract_delivery(res, "fhe_partition_complete")?;
-                let Some(partition) = try_decode::<msg::ExecutablePartition>(&d).await else {
-                    continue;
-                };
-
-                dispatcher.on_partition_execution_complete(&partition);
-
-                // After processing the completed partition,
-                // we want to check if any new partitions have become executable as a result.
-                // If so, dispatch those immediately
-                dispatcher.dispatch(&[]);
-
-                let _ = d.ack(BasicAckOptions::default()).await;
-            }
             _ = cancel_token.cancelled() => {
                 info!("Cancellation requested, exiting dispatcher cycle");
                 return Ok(());
+            }
+
+            res = fhe_events.recv_and_handle(|batch: Vec<msg::FheLog>, _, state| async move {
+                let mut state = state.write().unwrap();
+                state.dispatch(&batch);
+                Ok(MessageResult::Ack)
+            }) => {
+                if res.is_err() {
+                    return Ok(());
+                }
+            }
+
+            res = fhe_partition_complete.recv_and_handle(|partition: msg::ExecutablePartition, _, state| async move {
+                let mut state = state.write().unwrap();
+                state.on_partition_execution_complete(&partition);
+
+                // Check if new partitions became executable
+                state.dispatch(&[]);
+
+                Ok(MessageResult::Ack)
+            }) => {
+                if res.is_err() {
+                    return Ok(());
+                }
             }
         }
     }
 }
 
-async fn setup_dispatcher(
+#[cfg(feature = "rabbitmq")]
+async fn create_sender(args: &Args, queue_name: &str) -> RabbitMQSender {
+    RabbitMQSender::new(&args.rmq_uri, queue_name, "", "queue_fhe_partitions").await
+}
+
+#[cfg(feature = "rabbitmq")]
+async fn create_receiver(
     args: &Args,
-) -> Result<Dispatcher<LapinChannel>, Box<dyn std::error::Error + Send + Sync>> {
-    // Queue to send executable partitions to workers
-    let sender_channel = create_send_channel(&args.rmq_uri, "shared_tfhe_queue").await?;
+    queue_name: &str,
+    state: SharedDispatcher,
+) -> RabbitMQReceiver<SharedDispatcher> {
+    RabbitMQReceiver::new(&args.rmq_uri, queue_name, &args.consumer_tag_prefix, state).await
+}
 
-    sender_channel.confirm_select(Default::default()).await?;
-
-    let default_channel = LapinChannel::new(
-        sender_channel,
-        "".to_string(),
-        "queue_fhe_partitions".to_string(),
-    );
-
-    Ok(Dispatcher::new(default_channel))
+#[cfg(feature = "redis_stream")]
+async fn create_sender(args: &Args, queue_name: &str) -> impl Sender<Vec<u8>> {
+    message_broker::redis_stream::RedisStreamSender::new(&args.rmq_uri, queue_name).await
 }
