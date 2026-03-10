@@ -9,14 +9,11 @@ use crate::metrics::{
 use crate::nonce_managed_provider::NonceManagedProvider;
 use crate::ops::common::{try_extract_non_retryable_config_error, CoprocessorConfigError};
 
-use alloy::primitives::{Address, FixedBytes};
+use alloy::network::{Ethereum, TransactionBuilder};
+use alloy::primitives::Address;
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::transports::{RpcError, TransportErrorKind};
-use alloy::{
-    eips::BlockNumberOrTag,
-    network::{Ethereum, TransactionBuilder},
-};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,7 +25,6 @@ use tracing::{error, info, warn};
 
 use super::TransactionOperation;
 
-pub type BlockHash = FixedBytes<32>;
 pub type DbTransaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 use fhevm_gateway_bindings::multichain_acl::MultichainACL;
@@ -62,7 +58,6 @@ enum BlockStatus {
 pub struct DelegateUserDecryptOperation<P: Provider<Ethereum> + Clone + 'static> {
     multichain_acl_address: Address,
     gateway_provider: NonceManagedProvider<P>,
-    host_chain_provider: P,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
@@ -92,7 +87,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
     pub fn new(
         multichain_acl_address: Address,
         gateway_provider: NonceManagedProvider<P>,
-        host_chain_provider: P,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -107,7 +101,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         Self {
             multichain_acl_address,
             gateway_provider,
-            host_chain_provider,
             conf,
             gas,
             db_pool,
@@ -219,10 +212,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
     pub async fn tx_check_ready_delegations(
         &self,
         tx: &mut DbTransaction<'_>,
-        last_ready_block: u64,
-    ) -> Result<(Vec<DelegationRow>, Vec<Vec<u8>>)> {
-        let delegations =
-            delayed_sorted_delegation(tx, last_ready_block, self.conf.delegation_max_retry).await?;
+    ) -> Result<(Vec<DelegationRow>, Vec<DelegationRow>)> {
+        let delegations = delayed_sorted_delegation(tx, self.conf.delegation_max_retry).await?;
         let nb_ready_delegations = delegations.len();
         if delegations.is_empty() {
             return Ok((vec![], vec![]));
@@ -235,16 +226,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         let retry_up_to_error_level = retry_error_up_to_error_level(max_error_level);
         info!(
             nb_ready_delegations,
-            last_ready_block, max_error_level, retry_up_to_error_level, "Ready delegations"
+            max_error_level, retry_up_to_error_level, "Ready delegations"
         );
-        let mut blocks_status = HashMap::new(); // avoid multiple host chain call
+        let mut blocks_status = HashMap::new(); // cache db access
         let mut stable_delegations = vec![];
-        let mut unsure_block = vec![];
-        let mut dismissed = 0;
         let mut nb_unsure_delegations = 0;
-        let mut reorg_out_block = vec![];
+        let mut reorg_out_delegations = vec![];
         let mut past_error_backlog = 0;
-        for delegation in &delegations {
+        for delegation in delegations {
             if delegation.gateway_nb_attempts > 0 {
                 past_error_backlog += 1;
             }
@@ -254,53 +243,38 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
             if delegation.gateway_nb_attempts > retry_up_to_error_level {
                 continue;
             }
-            let block_status = if let Some(status) = blocks_status.get(&delegation.block_number) {
+            let block_status = if let Some(status) = blocks_status.get(&delegation.block_hash) {
                 *status
             } else {
-                let status = match self.get_block_hash(delegation.block_number).await {
-                    Ok(block_hash) if delegation.block_hash == block_hash.to_vec() => {
-                        BlockStatus::Stable
-                    }
-                    Ok(block_hash) => {
-                        warn!(
-                            delegation_block_hash = ?delegation.block_hash,
-                            block_hash = ?block_hash.to_vec(),
-                            block_number = delegation.block_number,
-                            "Block hash mismatch for delegation, block was reorged out"
-                        );
-                        // ignoring delegation due to reorg, will be marked as reorg_out
-                        reorg_out_block.push(delegation.block_hash.clone());
-                        BlockStatus::Dismissed
-                    }
-                    Err(_) => {
-                        error!(
-                            block_number = delegation.block_number,
-                            "Cannot get block hash for delegation, will retry next block"
-                        );
-                        unsure_block.push(delegation.block_number);
-                        BlockStatus::Unknown
-                    }
-                };
-                blocks_status.insert(delegation.block_number, status);
+                let status = self.get_block_status(&delegation).await;
+                blocks_status.insert(delegation.block_hash.clone(), status);
                 status
             };
             match block_status {
-                BlockStatus::Stable => {
-                    stable_delegations.push(delegation.clone());
+                BlockStatus::Dismissed => {
+                    warn!(
+                        delegation_block_hash = ?delegation.block_hash,
+                        block_number = delegation.block_number,
+                        "Block hash mismatch for delegation, block was reorged out"
+                    );
+                    // ignoring delegation due to reorg, will be marked as reorg_out
+                    reorg_out_delegations.push(delegation.clone());
                 }
                 BlockStatus::Unknown => {
-                    // skip the full block, will retry on the delegation on next call
+                    warn!(
+                        block_number = delegation.block_number,
+                        "Cannot get block hash for delegation, will retry next block"
+                    );
                     nb_unsure_delegations += 1;
-                    continue;
                 }
-                BlockStatus::Dismissed => {
-                    dismissed += 1;
-                    continue;
+                BlockStatus::Stable => {
+                    stable_delegations.push(delegation.clone());
                 }
             }
         }
         DELEGATE_USER_DECRYPT_ERROR_BACKLOG.set(past_error_backlog);
         let nb_stable_delegations = stable_delegations.len();
+        let dismissed = reorg_out_delegations.len();
         if dismissed > 0 {
             info!(dismissed, "Some delegations were dismissed due to reorg");
         };
@@ -312,58 +286,76 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         };
         info!(nb_stable_delegations, "Processing ready delegations");
 
-        Ok((stable_delegations, reorg_out_block))
+        Ok((stable_delegations, reorg_out_delegations))
     }
 
-    async fn get_block_hash(&self, block_number: u64) -> Result<BlockHash> {
-        let search_block = BlockNumberOrTag::Number(block_number);
-        let some_block = self
-            .host_chain_provider
-            .get_block_by_number(search_block)
-            .await?;
-        let Some(block) = some_block else {
-            error!(block_number, "A past block cannot be found by number");
-            anyhow::bail!("Cannot get past block by number, giving up");
-        };
-        Ok(block.header.hash)
+    async fn get_block_status(&self, delegation: &DelegationRow) -> BlockStatus {
+        let status = sqlx::query!(
+            r#"
+            SELECT block_status
+            FROM host_chain_blocks_valid
+            WHERE block_hash = $2 AND chain_id = $1
+            "#,
+            delegation.host_chain_id.as_i64(),
+            delegation.block_hash,
+        )
+        .fetch_optional(&self.db_pool)
+        .await;
+        match status {
+            Ok(Some(record)) => match record.block_status.as_str() {
+                "finalized" => BlockStatus::Stable,
+                "orphaned" => BlockStatus::Dismissed,
+                "unknown" => {
+                    warn!(
+                        ?delegation,
+                        "Block with unknown status for delegation, delegation was introduced during migration, please manually fix block status in host_chain_blocks_valid table to process the delegation"
+                    );
+                    BlockStatus::Unknown
+                }
+                "pending" => BlockStatus::Unknown,
+                _ => {
+                    error!(
+                        ?delegation,
+                        status = record.block_status,
+                        "Invalid block status for delegation, manually fix it to process the delegation",
+                    );
+                    BlockStatus::Unknown
+                }
+            },
+            Ok(None) => {
+                error!(?delegation, "No block status found for delegation");
+                BlockStatus::Unknown
+            }
+            Err(e) => {
+                error!(
+                    %e,
+                    ?delegation,
+                    "Error querying block status from database"
+                );
+                BlockStatus::Unknown
+            }
+        }
     }
 
-    async fn wait_last_block_number(&self) -> Result<u64> {
+    async fn wait_new_block(&self) -> Result<()> {
         let mut listener = PgListener::connect_with(&self.db_pool).await?;
         listener.listen(self.channel()).await?;
-        let notification = tokio::select! {
+        tokio::select! {
             _ = self.cancel_token.cancelled() => anyhow::bail!("Operation cancelled"),
-            notification = listener.recv() => Some(notification),
-             _ = tokio::time::sleep(Duration::from_secs(self.conf.delegation_fallback_polling)) => None,
-        };
-        let Some(notification) = notification else {
-            // timeout
-            let block_number = self.host_chain_provider.get_block_number().await?;
-            warn!(
-                block_number,
-                "Delegation notification, based on timeout, use last block number"
-            );
-            return Ok(block_number);
-        };
-        let Ok(notification) = notification else {
-            // connection error, try to go further in case of a real db issue, db read will fail later
-            let block_number = self.host_chain_provider.get_block_number().await?;
-            warn!(
-                block_number,
-                "Delegation notification, db error, use last block number"
-            );
-            return Ok(block_number);
-        };
-        let payload = notification.payload();
-        let Ok(block_number) = notification.payload().parse() else {
-            let block_number = self.host_chain_provider.get_block_number().await?;
-            error!(
-                payload,
-                block_number, "Delegation notification, invalid payload,  use last block number"
-            );
-            return Ok(block_number);
-        };
-        Ok(block_number)
+            notification = listener.recv() => {
+                match notification {
+                    Ok(notification) => {
+                        info!(?notification, "Received new block notification");
+                    }
+                    Err(e) => {
+                        tokio::time::sleep(Duration::from_secs(1)).await; // avoid busy loop if db connection is lost
+                        error!(%e, "Error receiving new block notification, will process delegations");
+                    }
+                }
+                Ok(())
+            }
+            _ = tokio::time::sleep(Duration::from_secs(self.conf.delegation_fallback_polling)) => Ok(()),
+        }
     }
 }
 
@@ -378,37 +370,24 @@ where
     }
 
     async fn execute(&self) -> Result<bool> {
-        let block_number = self.wait_last_block_number().await?;
-        let multichain_acl = MultichainACL::new(
-            self.multichain_acl_address,
-            self.host_chain_provider.clone(),
-        );
-        let up_to_block_number: u64 = block_number.saturating_sub(self.conf.delegation_block_delay);
-        let clean_before_block =
-            block_number.saturating_sub(self.conf.delegation_clear_after_n_blocks);
+        self.wait_new_block().await?;
+        let multichain_acl =
+            MultichainACL::new(self.multichain_acl_address, self.gateway_provider.inner());
         let mut tx = self.db_pool.begin().await?;
-        let delegations = self
-            .tx_check_ready_delegations(&mut tx, up_to_block_number)
-            .await;
+        let delegations = self.tx_check_ready_delegations(&mut tx).await;
 
-        let Ok((ready_delegations, reorg_out_block)) = delegations else {
+        let Ok((ready_delegations, reorg_out_delegations)) = delegations else {
             tx.rollback().await?;
             warn!("Error checking ready delegations, will retry later");
             anyhow::bail!("Error checking ready delegations, will retry later");
         };
-        if ready_delegations.is_empty() && reorg_out_block.is_empty() {
+        if ready_delegations.is_empty() && reorg_out_delegations.is_empty() {
             tx.commit().await?;
-            info!(
-                block_number,
-                up_to_block_number, "No delegations to handle at block up to block number"
-            );
+            info!("No delegations to handle");
             return Ok(true); // will automatically rewait for new tasks via listen channel
         }
-        if update_useless_delegations(&mut tx, clean_before_block, &reorg_out_block)
-            .await
-            .is_err()
-        {
-            error!("Cannot update useless delegations");
+        if let Err(err) = update_reorged_delegations(&mut tx, &reorg_out_delegations).await {
+            error!(?err, "Cannot update reorged delegations, will retry later, continuing on finalized delegations");
         }
         let mut requests = Vec::with_capacity(ready_delegations.len());
         let to_transaction = |delegation: &DelegationRow| {
@@ -537,21 +516,18 @@ fn expiration_date_to_u64(value: BigDecimal) -> u64 {
 
 pub async fn delayed_sorted_delegation(
     tx: &mut DbTransaction<'_>,
-    up_to_block_number: u64,
     delegation_max_retry: u64,
 ) -> Result<Vec<DelegationRow>> {
     let query = sqlx::query!(
         r#"
         SELECT key, delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, host_chain_id, block_number, block_hash, transaction_id, gateway_nb_attempts
         FROM delegate_user_decrypt
-        WHERE block_number <= $1
-        AND on_gateway = false
+        WHERE on_gateway = false
         AND reorg_out = false
-        AND gateway_nb_attempts <= $2
+        AND gateway_nb_attempts <= $1
         ORDER BY block_number ASC, delegation_counter ASC, transaction_id ASC
         FOR UPDATE
         "#,
-        up_to_block_number as i64,
         delegation_max_retry as i64, // excludes delegations retired after a non-retryable config error (set to max_retry + 1)
     );
     let delegations_rows = query.fetch_all(tx.deref_mut()).await?;
@@ -574,7 +550,7 @@ pub async fn delayed_sorted_delegation(
         };
         delegations.push(delegation);
     }
-    Ok(delegations) // delegations)
+    Ok(delegations)
 }
 
 pub async fn update_error_delegation(
@@ -671,46 +647,32 @@ pub async fn update_transmitted_delegation(
     }
 }
 
-pub async fn update_useless_delegations(
+pub async fn update_reorged_delegations(
     tx: &mut DbTransaction<'_>,
-    clean_before_block: u64,
-    reorg_out_blocks: &[Vec<u8>],
+    reorged_delegations: &[DelegationRow],
 ) -> Result<()> {
     // update reorg out
-    let reorg_out = sqlx::query!(
-        r#"
-        UPDATE delegate_user_decrypt
-        SET reorg_out = true
-        WHERE block_hash IN (SELECT unnest($1::bytea[]))
-        "#,
-        reorg_out_blocks,
-    );
-    if !reorg_out_blocks.is_empty() {
-        let reorg_out = reorg_out.execute(tx.deref_mut()).await?;
+    if !reorged_delegations.is_empty() {
+        let keys = reorged_delegations
+            .iter()
+            .map(|d| d.key)
+            .collect::<Vec<_>>();
+        let reorg_out = sqlx::query!(
+            r#"
+            UPDATE delegate_user_decrypt
+            SET reorg_out = true
+            WHERE key = ANY($1)
+            "#,
+            &keys
+        )
+        .execute(tx.deref_mut())
+        .await?;
         if reorg_out.rows_affected() == 0 {
             error!(
-                reorg_out_blocks = ?reorg_out_blocks,
+                nb_delegations = keys.len(),
                 "No rows updated when updating reorg out delegation"
             );
         }
-    }
-    // clean table past blocks except for errors
-    let cleaned = sqlx::query!(
-        r#"
-        DELETE FROM delegate_user_decrypt
-        WHERE block_number < $1
-        AND gateway_nb_attempts = 0
-        "#,
-        clean_before_block as i64,
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    let nb_cleaned = cleaned.rows_affected();
-    if nb_cleaned > 0 {
-        info!(
-            nb_cleaned,
-            clean_before_block, "Cleaning old entries in delegate_user_decrypt"
-        );
     }
     Ok(())
 }
