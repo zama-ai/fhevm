@@ -67,6 +67,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
+      deploy-build:
+        description: "Build local Docker images from the checked out repository before deploy"
+        default: false
+        type: boolean
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -139,8 +143,14 @@ jobs:
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          ./fhevm-cli deploy
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
+            ./fhevm-cli deploy --build
+          else
+            ./fhevm-cli deploy
+          fi
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
@@ -214,6 +224,11 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random-subset
+
+      - name: HCU block cap test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test hcu-block-cap
 
       - name: Host listener poller test
         working-directory: test-suite/fhevm
