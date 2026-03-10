@@ -31,6 +31,7 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
+              - ci/coverage-thresholds.json
   cargo-tests:
     name: coprocessor-cargo-test/cargo-tests (bpr)
     needs: check-changes
@@ -54,6 +55,12 @@ jobs:
       uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
       with:
         toolchain: stable
+        components: llvm-tools-preview
+
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+      with:
+        tool: cargo-llvm-cov
 
     - name: Install cargo dependencies
       run: |
@@ -71,8 +78,8 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
+        key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-coverage-
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -101,7 +108,19 @@ jobs:
       run: |
         docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:latest
 
-    - name: Run tests
+    - name: Run tests with coverage
       run: |
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
+        TEST_GLOBAL_LOCALSTACK=1 \
+        cargo llvm-cov --workspace --profile coverage -- --test-threads=1
+      working-directory: coprocessor/fhevm-engine
+
+    - name: Coverage summary
+      if: always()
+      run: |
+        echo '## Coverage: coprocessor/fhevm-engine' >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
+        cargo llvm-cov report --workspace --profile coverage >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo 'No coverage data available' >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
       working-directory: coprocessor/fhevm-engine

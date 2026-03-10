@@ -39,6 +39,7 @@ jobs:
             - 'sdk/rust-sdk/examples/**'
             - 'sdk/rust-sdk/Cargo.toml'
             - gateway-contracts/rust-bindings/**
+            - ci/coverage-thresholds.json
 
   start-runner:
     name: sdk-rust-sdk-tests/start-runner
@@ -103,7 +104,12 @@ jobs:
         uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-llvm-cov
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -127,11 +133,19 @@ jobs:
         run: |
           RUST_BACKTRACE=full cargo run --example keygen
 
-      - name: Run Tests
+      - name: Run Tests with coverage
         env:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
-          RUST_BACKTRACE=full cargo test
+          RUST_BACKTRACE=full cargo llvm-cov
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo '## Coverage: sdk/rust-sdk' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov report >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo 'No coverage data available' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run Examples
         env:

@@ -111,3 +111,8 @@ inherits = "release"
 opt-level = 1
 lto = false
 codegen-units = 16
+
+[profile.coverage]
+inherits = "release"
+lto = false
+codegen-units = 16
