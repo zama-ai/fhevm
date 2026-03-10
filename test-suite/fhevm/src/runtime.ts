@@ -34,6 +34,7 @@ import {
   gatewayAddressesPath,
   hostAddressesPath,
   resolveServiceOverrides,
+  versionsEnvPath,
 } from "./layout";
 import type { Runner } from "./utils";
 import {
@@ -581,6 +582,17 @@ const resetAfterStep = async (step: StepName, deps: RuntimeDeps) => {
   }
 };
 
+const ensureRuntimeArtifacts = async (state: State, deps: Pick<RuntimeDeps, "runner">, reason: string) => {
+  const missing =
+    !(await exists(versionsEnvPath)) ||
+    !(await Promise.all(COMPONENTS.map((component) => exists(composePath(component))))).every(Boolean);
+  if (!missing) {
+    return;
+  }
+  log(`[regen] restoring runtime artifacts for ${reason}`);
+  await regen(state, deps);
+};
+
 const ensureCommand = async (deps: RuntimeDeps, command: string) => {
   try {
     await deps.runner(["which", command]);
@@ -907,6 +919,9 @@ const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   if (options.resume && state.target !== options.target) {
     throw new Error(`Resume target mismatch: state=${state.target}, requested=${options.target}`);
   }
+  if (options.resume) {
+    await ensureRuntimeArtifacts(state, deps, "resume");
+  }
   logOverrideWarnings(state.overrides);
   if (options.resume && options.fromStep) {
     await resetAfterStep(options.fromStep, deps);
@@ -983,6 +998,7 @@ const runUpgrade = async (groupValue: string | undefined, deps: RuntimeDeps) => 
   if (!state) {
     throw new Error("Stack is not running; run `fhevm-cli up --override ...` first");
   }
+  await ensureRuntimeArtifacts(state, deps, "upgrade");
   const { component, group, services, step } = resolveUpgradePlan(state, groupValue);
   log(`[upgrade] ${group}`);
   await regen(state, deps);
@@ -1007,6 +1023,7 @@ const runContractTask = async (
   if (!state) {
     throw new Error("Stack is not running; run `fhevm-cli up` first");
   }
+  await ensureRuntimeArtifacts(state, deps, "contract task");
   await deps.liveRunner(
     [...dockerArgs(component), "run", "--rm", "--no-deps", "--entrypoint", "sh", service, "-lc", command],
     {
@@ -1050,6 +1067,10 @@ const runUnpause = async (scope: string | undefined, deps: RuntimeDeps) => {
 };
 
 const runDown = async (deps: RuntimeDeps) => {
+  const state = await loadState();
+  if (state) {
+    await ensureRuntimeArtifacts(state, deps, "teardown");
+  }
   let stopped = false;
   for (const component of [...COMPONENTS].reverse()) {
     if (!(await exists(composePath(component)))) {

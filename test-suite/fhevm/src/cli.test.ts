@@ -43,6 +43,37 @@ const fixtureDir = async () => {
 
 const maybeRead = (file: string) => fs.readFile(file, "utf8").catch(() => undefined);
 
+const readyDiscovery = () => ({
+  gateway: {
+    GATEWAY_CONFIG_ADDRESS: "0x1",
+    KMS_GENERATION_ADDRESS: "0x2",
+    DECRYPTION_ADDRESS: "0x3",
+    INPUT_VERIFICATION_ADDRESS: "0x4",
+    CIPHERTEXT_COMMITS_ADDRESS: "0x5",
+    MULTICHAIN_ACL_ADDRESS: "0x6",
+  },
+  host: {
+    ACL_CONTRACT_ADDRESS: "0x7",
+    FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x8",
+    KMS_VERIFIER_CONTRACT_ADDRESS: "0x9",
+    INPUT_VERIFIER_CONTRACT_ADDRESS: "0xa",
+    PAUSER_SET_CONTRACT_ADDRESS: "0xb",
+  },
+  kmsSigner: "0xc",
+  fheKeyId: predictedKeyId(),
+  crsKeyId: predictedCrsId(),
+  actualFheKeyId: predictedKeyId(),
+  actualCrsKeyId: predictedCrsId(),
+  endpoints: {
+    gatewayHttp: "http://gateway-node:8546",
+    gatewayWs: "ws://gateway-node:8546",
+    hostHttp: "http://host-node:8545",
+    hostWs: "ws://host-node:8545",
+    minioInternal: "http://minio:9000",
+    minioExternal: "http://minio:9000",
+  },
+});
+
 const LATEST_MAIN_PACKAGES = [
   "fhevm%2Fgateway-contracts",
   "fhevm%2Fhost-contracts",
@@ -444,6 +475,84 @@ describe("runtime invariants", () => {
       { ...noopDeps, runner },
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
+  test("resume from relayer restores generated runtime artifacts from state", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify(
+        stubState({
+          discovery: readyDiscovery(),
+          completedSteps: [
+            "preflight",
+            "resolve",
+            "generate",
+            "base",
+            "kms-signer",
+            "gateway-deploy",
+            "host-deploy",
+            "discover",
+            "regenerate",
+            "validate",
+            "coprocessor",
+            "kms-connector",
+            "bootstrap",
+          ],
+        }),
+      ),
+    );
+    const runner = fakeRunner({
+      "docker inspect fhevm-relayer-db": JSON.stringify([
+        { State: { Status: "running", ExitCode: 0, Health: { Status: "healthy" } }, NetworkSettings: { Networks: { default: { IPAddress: "127.0.0.1" } } } },
+      ]),
+      "docker inspect fhevm-relayer": JSON.stringify([
+        { State: { Status: "running", ExitCode: 0 }, NetworkSettings: { Networks: { default: { IPAddress: "127.0.0.1" } } } },
+      ]),
+      "docker inspect fhevm-test-suite-e2e-debug": JSON.stringify([
+        { State: { Status: "running", ExitCode: 0 }, NetworkSettings: { Networks: { default: { IPAddress: "127.0.0.1" } } } },
+      ]),
+      "docker logs fhevm-relayer": "All servers are ready and responding",
+    });
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--from-step", "relayer"],
+        { ...noopDeps, runner, liveRunner: async () => 0 },
+      );
+      expect(await maybeRead(composePath("relayer"))).toContain("services:");
+      expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+    } finally {
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+  });
+
+  test("down restores generated runtime artifacts from state before teardown", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify(stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] })),
+    );
+    try {
+      await main(["bun", "src/cli.ts", "down"], { ...noopDeps, liveRunner: async () => 0 });
+      expect(await maybeRead(composePath("database"))).toContain("services:");
+      expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+    } finally {
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
   });
 
   test("up --dry-run reports a helpful message when gh is missing", async () => {
