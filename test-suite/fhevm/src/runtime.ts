@@ -16,6 +16,7 @@ import { composeDown, composeUp, inspectImageId, regen, resolvedComposeEnv, serv
 import {
   COMPONENT_BY_STEP,
   COMPONENTS,
+  GROUP_SERVICE_SUFFIXES,
   LOCK_DIR,
   LOG_TARGETS,
   PORTS,
@@ -28,6 +29,7 @@ import {
   envPath,
   gatewayAddressesPath,
   hostAddressesPath,
+  resolveServiceOverrides,
 } from "./layout";
 import type { Runner } from "./utils";
 import {
@@ -102,11 +104,34 @@ const createTopology = (count: number, threshold?: number, instances?: Record<st
 });
 
 const parseLocalOverride = (value: string): LocalOverride => {
-  const [group, profile] = value.split(":", 2);
-  if (!OVERRIDE_GROUPS.includes(group as OverrideGroup)) {
-    throw new Error(`Unsupported override ${value}`);
+  const colonIdx = value.indexOf(":");
+  if (colonIdx < 0) {
+    if (!OVERRIDE_GROUPS.includes(value as OverrideGroup)) {
+      throw new Error(`Unsupported override ${value}`);
+    }
+    return { group: value as OverrideGroup };
   }
-  return { group: group as OverrideGroup, profile };
+  const group = value.slice(0, colonIdx);
+  const rest = value.slice(colonIdx + 1);
+  if (!OVERRIDE_GROUPS.includes(group as OverrideGroup)) {
+    throw new Error(`Unsupported override group "${group}"`);
+  }
+  const g = group as OverrideGroup;
+  const parts = rest.split(",").map((s) => s.trim()).filter(Boolean);
+  const isServiceList = parts.length > 1 || GROUP_SERVICE_SUFFIXES[g].includes(parts[0]);
+  if (isServiceList) {
+    const services = resolveServiceOverrides(g, parts);
+    return { group: g, services };
+  }
+  // If the value contains a hyphen but isn't a known suffix, it's likely a typo.
+  if (parts.length === 1 && parts[0].includes("-")) {
+    throw new Error(
+      `Unknown service "${parts[0]}" in group "${g}". ` +
+      `Valid services: ${GROUP_SERVICE_SUFFIXES[g].join(", ")}. ` +
+      `If this is a cargo profile, use --profile instead.`,
+    );
+  }
+  return { group: g, profile: rest };
 };
 
 const parseKeyValue = (value: string) => {
@@ -580,12 +605,16 @@ const printBundle = (bundle: VersionBundle) => {
   log(describeBundle(bundle));
 };
 
+const describeOverride = (item: LocalOverride) => {
+  const profile = item.profile ? `:${item.profile}` : "";
+  const svc = item.services?.length ? `[${item.services.join(",")}]` : "";
+  return `${item.group}${profile}${svc}`;
+};
+
 const printPlan = (state: Pick<State, "target" | "overrides" | "topology">, fromStep?: StepName) => {
   log(`[plan] target=${state.target}`);
   if (state.overrides.length) {
-    log(
-      `[plan] overrides=${state.overrides.map((item) => `${item.group}${item.profile ? `:${item.profile}` : ""}`).join(", ")}`,
-    );
+    log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
   }
   log(`[plan] topology=n${state.topology.count}/t${state.topology.threshold}`);
   log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
@@ -924,7 +953,7 @@ const runStatus = async (deps: RuntimeDeps) => {
   if (state) {
     log(`[target] ${state.target}`);
     if (state.overrides.length) {
-      log(`[overrides] ${state.overrides.map((item) => `${item.group}${item.profile ? `:${item.profile}` : ""}`).join(", ")}`);
+      log(`[overrides] ${state.overrides.map(describeOverride).join(", ")}`);
     }
     log(`[topology] n=${state.topology.count} t=${state.topology.threshold}`);
     log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
@@ -1090,7 +1119,7 @@ Commands:
 up options:
   --target latest-main|latest-release|devnet|testnet|mainnet
   --lock-file <path-to-bundle-json>
-  --override <group[:profile]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
+  --override <group[:profile|svc1,svc2]>  repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
   --profile <cargo-profile>
   --coprocessors <n>
   --threshold <t>
