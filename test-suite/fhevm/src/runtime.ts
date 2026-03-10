@@ -1201,6 +1201,7 @@ const usage = () => {
 
 Commands:
   up       start or resume the local stack
+  deploy   alias for up
   down     stop stack containers
   clean    stop stack containers and delete .fhevm
   status   print state and running containers
@@ -1232,11 +1233,12 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
   const runtime = { ...defaultDeps, ...deps };
   try {
     const parsed = parseCli(argv);
+    const command = parsed.command === "deploy" ? "up" : parsed.command;
     const fromStep = ensureStep(parsed.parsed.values["from-step"] as string | undefined);
-    if (parsed.command === "up" && fromStep && !parsed.parsed.values.resume && !parsed.parsed.values["dry-run"]) {
+    if (command === "up" && fromStep && !parsed.parsed.values.resume && !parsed.parsed.values["dry-run"]) {
       throw new Error("--from-step requires --resume or --dry-run");
     }
-    switch (parsed.command) {
+    switch (command) {
       case "up":
         if (parsed.parsed.values["dry-run"]) {
           await runUpDry(
