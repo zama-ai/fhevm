@@ -165,6 +165,7 @@ const config: HardhatUserConfig = {
   defaultNetwork: DEFAULT_NETWORK,
   mocha: {
     timeout: 300000,
+    rootHooks: require('./test/consensusWatchdog').mochaHooks,
   },
   gasReporter: {
     currency: 'USD',
