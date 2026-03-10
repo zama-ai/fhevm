@@ -8,7 +8,7 @@ use crate::{
         job_id::JobId,
     },
     host::redact_alloy_error,
-    orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    orchestrator::Orchestrator,
     readiness::{
         checker::{ReadinessCheckError, ReadinessChecker},
         throttler::{DelegatedUserDecryptReadinessTask, ReadinessWorker},
@@ -28,7 +28,7 @@ impl DelegatedUserDecryptReadinessProcessor {
     pub async fn orchestrator_spawn_task(
         throttler_worker: ReadinessWorker<DelegatedUserDecryptReadinessTask>,
         readiness_checker: Arc<ReadinessChecker>,
-        orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
     ) -> anyhow::Result<()> {
         let task_name = "delegated_user_decrypt_readiness_processor";
         let dispatcher = orchestrator.clone();
@@ -66,7 +66,7 @@ impl DelegatedUserDecryptReadinessProcessor {
     async fn process_single_task(
         checker: Arc<ReadinessChecker>,
         task: DelegatedUserDecryptReadinessTask,
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: Arc<Orchestrator>,
     ) {
         // 1. HOST ACL CHECK
         if let Err(acl_err) = checker
@@ -160,7 +160,7 @@ impl DelegatedUserDecryptReadinessProcessor {
     }
 
     async fn dispatch_timeout(
-        dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: &Arc<Orchestrator>,
         decrypt_request: &DelegatedUserDecryptRequest,
         job_id: JobId,
         error: EventProcessingError,
@@ -185,7 +185,7 @@ impl DelegatedUserDecryptReadinessProcessor {
     }
 
     async fn dispatch_failure(
-        dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: &Arc<Orchestrator>,
         decrypt_request: &DelegatedUserDecryptRequest,
         job_id: JobId,
         error: EventProcessingError,

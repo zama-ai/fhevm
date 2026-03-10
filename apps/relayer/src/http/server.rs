@@ -1,5 +1,5 @@
 use crate::config::settings::HttpConfig;
-use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
+use crate::core::event::{ApiCategory, ApiVersion};
 use crate::gateway::throttlers::BouncerThrottlers;
 use crate::host::HostChainIdChecker;
 use crate::http::admin::AdminConfigRegistry;
@@ -14,7 +14,6 @@ use crate::http::endpoints::{
 use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
 use crate::http::utils::BounceChecker;
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
 use axum::{
@@ -42,17 +41,14 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
-pub async fn run_http_server<D>(
+pub async fn run_http_server(
     config: &HttpConfig,
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    orchestrator: Arc<Orchestrator>,
     repositories: Arc<Repositories>,
     user_decrypt_shares_threshold: u16,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
-) -> SocketAddr
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
         .as_ref()

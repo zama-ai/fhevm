@@ -23,8 +23,8 @@ use crate::{
     },
     logging::PublicDecryptStep,
     orchestrator::{
-        traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
-        ContentHasher, Orchestrator, TokioEventDispatcher,
+        traits::{Event, EventHandler},
+        ContentHasher, Orchestrator,
     },
     readiness::throttler::{PublicDecryptReadinessTask, ReadinessSender},
     store::sql::{
@@ -43,7 +43,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 #[derive(Clone)]
 pub struct GatewayHandler {
-    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    dispatcher: Arc<Orchestrator>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     decryption_address: Address,
@@ -53,7 +53,7 @@ pub struct GatewayHandler {
 
 impl GatewayHandler {
     pub fn new(
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: Arc<Orchestrator>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
         decryption_address: Address,

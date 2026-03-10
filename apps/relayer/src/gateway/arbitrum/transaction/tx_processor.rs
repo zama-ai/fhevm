@@ -8,7 +8,7 @@ use crate::{
         tx_throttler::{GatewayTxTask, TxThrottlingWorker},
     },
     logging::WorkerStep,
-    orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    orchestrator::Orchestrator,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -24,7 +24,7 @@ impl GatewayTxProcessor {
     pub async fn orchestrator_spawn_task(
         throttler_worker: TxThrottlingWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
-        orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
     ) -> anyhow::Result<()> {
         let task_name = "gateway_tx_processor";
 
@@ -75,7 +75,7 @@ impl GatewayTxProcessor {
     async fn process_single_task(
         helper: Arc<TransactionHelper>,
         task: GatewayTxTask,
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: Arc<Orchestrator>,
     ) {
         // Dereference hook
         let hook_ref = task.hook.as_inner();

@@ -8,22 +8,19 @@ use crate::{
         RelayerEventData,
     },
     core::job_id::INTERNAL_EVENT_JOB_ID,
-    orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    orchestrator::Orchestrator,
 };
 use std::sync::Arc;
 use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct KeyUrlGatewayHandler {
-    orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: Arc<Orchestrator>,
     config: KeyUrlConfig,
 }
 
 impl KeyUrlGatewayHandler {
-    pub fn new(
-        orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        config: KeyUrlConfig,
-    ) -> Self {
+    pub fn new(orchestrator: Arc<Orchestrator>, config: KeyUrlConfig) -> Self {
         Self {
             orchestrator,
             config,

@@ -15,10 +15,7 @@ use crate::{
         http::{self as http_metrics, HttpEndpoint, HttpMethod},
         HttpApiVersion,
     },
-    orchestrator::{
-        traits::{EventDispatcher, EventHandler, HandlerRegistry},
-        Orchestrator,
-    },
+    orchestrator::{traits::EventHandler, Orchestrator},
 };
 
 /// HTTP handler for `/v2/keyurl` endpoint.
@@ -39,10 +36,7 @@ pub struct KeyUrlHandler {
 }
 
 impl KeyUrlHandler {
-    pub fn new<D>(orchestrator: Arc<Orchestrator<D, RelayerEvent>>) -> Arc<Self>
-    where
-        D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-    {
+    pub fn new(orchestrator: Arc<Orchestrator>) -> Arc<Self> {
         let (keyurl_tx, keyurl_rx) = watch::channel::<Option<KeyUrlResponseJson>>(None);
         let handler = Arc::new(Self {
             keyurl_tx,

@@ -1,32 +1,27 @@
-use super::traits::{EventDispatcher, HandlerRegistry};
-use crate::orchestrator::traits::Event;
-use crate::orchestrator::traits::EventHandler;
+use crate::core::event::RelayerEvent;
+use crate::orchestrator::traits::{Event, EventHandler};
 use anyhow::Error;
-use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tracing::{debug, instrument, Instrument};
 
-type EventHandlerMap<K, E> = Arc<DashMap<K, Vec<Arc<dyn EventHandler<E>>>>>;
+type EventHandlerMap = Arc<DashMap<u8, Vec<Arc<dyn EventHandler<RelayerEvent>>>>>;
 
-pub struct TokioEventDispatcher<E: Event + std::fmt::Debug> {
+pub struct TokioEventDispatcher {
     // (event-type-id) -> EventHandler
-    subscribers: EventHandlerMap<u8, E>,
+    subscribers: EventHandlerMap,
 }
 
 #[allow(clippy::new_without_default)]
-impl<E: Event + std::fmt::Debug> TokioEventDispatcher<E> {
+impl TokioEventDispatcher {
     pub fn new() -> Self {
         Self {
             subscribers: Arc::new(DashMap::new()),
         }
     }
-}
 
-#[async_trait]
-impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> {
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
-    async fn dispatch_event(&self, event: E) -> Result<(), Error> {
+    pub async fn dispatch_event(&self, event: RelayerEvent) -> Result<(), Error> {
         let event = event.clone();
         if let Some(handlers) = self.subscribers.get(&event.event_id()) {
             let handlers = handlers.clone();
@@ -52,11 +47,9 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
         }
         Ok(())
     }
-}
 
-impl<E: Event + std::fmt::Debug> HandlerRegistry<E> for TokioEventDispatcher<E> {
     #[instrument(skip(self, handler))]
-    fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>) {
+    pub fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<RelayerEvent>>) {
         for event_id in event_ids {
             self.subscribers
                 .entry(*event_id)

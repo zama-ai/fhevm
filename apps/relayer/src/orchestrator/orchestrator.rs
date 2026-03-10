@@ -1,35 +1,29 @@
+use crate::core::event::RelayerEvent;
 use crate::orchestrator::health_checker::{HealthCheck, HealthChecker};
 use crate::orchestrator::ids;
 use crate::orchestrator::task_manager::TaskManager;
-use crate::orchestrator::traits::Event;
-use crate::orchestrator::traits::{
-    EventDispatcher, EventHandler, HandlerRegistry, HookRegistry, PreDispatchHook,
-};
+use crate::orchestrator::traits::{Event, EventHandler};
+use crate::orchestrator::TokioEventDispatcher;
 use anyhow::Error;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, instrument};
+use tracing::{error, instrument};
 use uuid::Uuid;
 
-pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
-    event_dispatcher: Arc<D>,
-    pre_dispatch_hooks: Arc<RwLock<Vec<Arc<dyn PreDispatchHook<E>>>>>,
+pub struct Orchestrator {
+    event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
-    _marker: std::marker::PhantomData<E>,
 }
 
-impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
-    pub fn new(event_dispatcher: Arc<D>) -> Arc<Self> {
+impl Orchestrator {
+    pub fn new(event_dispatcher: Arc<TokioEventDispatcher>) -> Arc<Self> {
         Arc::new(Self {
             event_dispatcher,
-            pre_dispatch_hooks: Arc::new(RwLock::new(Vec::new())),
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
-            _marker: std::marker::PhantomData,
         })
     }
 
@@ -92,49 +86,11 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
-    async fn run_pre_dispatch_hooks_sequentially(&self, event: E) {
-        // Acquire lock and prepare all hooks as Futures.
-        let hooks: Vec<_> = if let Ok(hooks_guard) = self.pre_dispatch_hooks.read() {
-            hooks_guard.iter().cloned().collect()
-        } else {
-            error!("Failed to acquire read lock on pre-dispatch hooks");
-            return;
-        };
-
-        // Execute the futures sequentially.
-        for hook in hooks {
-            debug!("Running pre-dispatch hook: {}", hook);
-            hook.run(event.clone()).await;
-        }
-    }
-}
-
-#[async_trait]
-impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
-    for Orchestrator<D, E>
-{
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
-    async fn dispatch_event(&self, event: E) -> Result<(), Error> {
-        self.run_pre_dispatch_hooks_sequentially(event.clone())
-            .await;
+    pub async fn dispatch_event(&self, event: RelayerEvent) -> Result<(), Error> {
         self.event_dispatcher.dispatch_event(event).await
     }
-}
-#[async_trait::async_trait]
-impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HookRegistry<E> for Orchestrator<D, E> {
-    fn register_pre_dispatch_hook(&self, hook: Arc<dyn PreDispatchHook<E>>) {
-        if let Ok(mut hooks) = self.pre_dispatch_hooks.write() {
-            hooks.push(hook);
-        } else {
-            error!("Failed to acquire write lock on pre-dispatch hooks");
-        }
-    }
-}
 
-impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
-    for Orchestrator<D, E>
-{
-    fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>) {
+    pub fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<RelayerEvent>>) {
         self.event_dispatcher.register_handler(event_ids, handler);
     }
 }
@@ -145,7 +101,7 @@ mod tests {
     use crate::core::event::{
         ApiCategory, ApiVersion, PublicDecryptEventData, RelayerEvent, RelayerEventData,
     };
-    use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
+    use crate::orchestrator::traits::{Event, EventHandler};
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
     use alloy::primitives::U256;
     use std::sync::Arc;
@@ -161,7 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator() {
-        let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
+        let pubsub = Arc::new(TokioEventDispatcher::new());
         let orchestrator = Orchestrator::new(pubsub.clone());
 
         let _id = orchestrator.new_internal_request_id();

@@ -23,8 +23,8 @@ use crate::{
     },
     logging::UserDecryptStep,
     orchestrator::{
-        traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
-        ContentHasher, Orchestrator, TokioEventDispatcher,
+        traits::{Event, EventHandler},
+        ContentHasher, Orchestrator,
     },
     readiness::throttler::{
         DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
@@ -64,7 +64,7 @@ pub struct UserDecryptHandlerConfig {
 
 #[derive(Clone)]
 pub struct GatewayHandler {
-    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    dispatcher: Arc<Orchestrator>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
     delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
@@ -74,7 +74,7 @@ pub struct GatewayHandler {
 
 impl GatewayHandler {
     pub fn new(
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: Arc<Orchestrator>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
         delegated_user_decrypt_readiness_throttler: ReadinessSender<

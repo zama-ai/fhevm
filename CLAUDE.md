@@ -113,18 +113,18 @@ The system uses a custom event-driven orchestrator (`src/orchestrator/`):
 
 - **Events** implement the `Event` trait (`traits.rs`) with `event_name()`, `event_id()`, `job_id()`, `timestamp()`
 - **Handlers** implement `EventHandler<E>` and are registered to event IDs via `HandlerRegistry`
-- **Hooks** implement `PreDispatchHook<E>` for cross-cutting concerns (persistence, logging, metrics)
 - **Dispatcher** (`TokioEventDispatcher`) spawns async tasks per event
+- **Orchestrator** is a concrete struct wrapping `TokioEventDispatcher<RelayerEvent>` with health checking and task management
 
 ### Request Flow
 
 ```
-HTTP API (v1/v2) ──→ Orchestrator ──→ Gateway Handler ──→ Gateway Blockchain
-                          ↑                                      │
-Gateway Listener (WSS) ←──────────── Orchestrator ←──────────────┘
+HTTP API (v2) ──→ Orchestrator ──→ Gateway Handler ──→ Gateway Blockchain
+                       ↑                                      │
+Gateway Listener ←──────────────── Orchestrator ←─────────────┘
 ```
 
-V1 endpoints are synchronous (block until result). V2 endpoints return a `job_id` for async polling.
+V2 endpoints return a `job_id` for async polling.
 
 ### Request Deduplication
 

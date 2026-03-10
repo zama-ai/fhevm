@@ -21,7 +21,6 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::PublicDecryptReadinessTask;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
@@ -45,11 +44,8 @@ use uuid::Uuid;
 
 pub type PublicDecryptResponse = AppResponse<PublicDecryptPostResponseJson>;
 
-pub struct PublicDecryptHandler<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+pub struct PublicDecryptHandler {
+    orchestrator: Arc<Orchestrator>,
     api_version: ApiVersion,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     bounce_checker: BounceChecker<PublicDecryptReadinessTask>,
@@ -57,11 +53,9 @@ where
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
-    PublicDecryptHandler<D>
-{
+impl PublicDecryptHandler {
     pub fn new(
-        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
         api_version: ApiVersion,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
         bounce_checker: BounceChecker<PublicDecryptReadinessTask>,
@@ -603,13 +597,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     ),
     tag = "Public Decrypt v2"
 )]
-pub async fn public_decrypt_post_v2<D>(
-    handler: Arc<PublicDecryptHandler<D>>,
+pub async fn public_decrypt_post_v2(
+    handler: Arc<PublicDecryptHandler>,
     req: Request<axum::body::Body>,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.public_decrypt_post_v2(req).await
 }
 
@@ -630,13 +621,10 @@ where
     ),
     tag = "Public Decrypt v2"
 )]
-pub async fn public_decrypt_get_v2<D>(
-    handler: Arc<PublicDecryptHandler<D>>,
+pub async fn public_decrypt_get_v2(
+    handler: Arc<PublicDecryptHandler>,
     Path(job_id): Path<Uuid>,
     headers: HeaderMap,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.public_decrypt_get_v2(Path(job_id), headers).await
 }

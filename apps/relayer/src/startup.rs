@@ -32,7 +32,6 @@ use tracing::{info, span, Level};
 
 use crate::{
     config::settings::Settings,
-    core::event::RelayerEvent,
     http::server::run_http_server,
     metrics,
     orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
@@ -79,7 +78,7 @@ pub async fn run_fhevm_relayer(
 
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components
-    let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
+    let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::new()));
 
     // Initialize SQL repositories
     let repositories = Arc::new(

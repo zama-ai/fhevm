@@ -22,8 +22,8 @@ use crate::{
     },
     logging::InputProofStep,
     orchestrator::{
-        traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
-        Orchestrator, TokioEventDispatcher,
+        traits::{Event, EventHandler},
+        Orchestrator,
     },
     store::sql::{
         models::req_status_enum_model::ReqStatus,
@@ -42,7 +42,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
-    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    dispatcher: Arc<Orchestrator>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
@@ -51,7 +51,7 @@ pub struct InputProofGatewayHandler {
 
 impl InputProofGatewayHandler {
     pub fn new(
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        dispatcher: Arc<Orchestrator>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,

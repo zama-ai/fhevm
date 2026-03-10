@@ -13,7 +13,7 @@ use crate::{
     },
     core::job_id::JobId,
     metrics,
-    orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
+    orchestrator::Orchestrator,
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
 use std::sync::Arc;
@@ -100,7 +100,7 @@ async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::
 
 /// Recover incomplete requests by re-dispatching events based on their status.
 pub async fn recover_incomplete_requests(
-    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     info!("Starting request recovery...");
@@ -132,7 +132,7 @@ pub async fn recover_incomplete_requests(
 
 /// Recover incomplete public decrypt requests
 async fn recover_public_decrypt_requests(
-    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     let mut requests = repositories
@@ -205,7 +205,7 @@ async fn recover_public_decrypt_requests(
 
 /// Recover incomplete user decrypt requests
 async fn recover_user_decrypt_requests(
-    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     let mut requests = repositories
@@ -276,7 +276,7 @@ async fn recover_user_decrypt_requests(
 
 /// Recover incomplete input proof requests
 async fn recover_input_proof_requests(
-    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     let mut requests = repositories

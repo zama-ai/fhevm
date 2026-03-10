@@ -11,8 +11,7 @@ pub mod utils;
 use super::client::PgClient;
 use crate::{
     config::settings::StorageConfig,
-    core::event::RelayerEvent,
-    orchestrator::{Orchestrator, TokioEventDispatcher},
+    orchestrator::Orchestrator,
     store::sql::repositories::{
         cron_task::{create_expiry_worker_future, create_timeout_worker_future},
         expiry_repo::ExpiryRepository,
@@ -74,7 +73,7 @@ impl Repositories {
     /// Register all background workers with the orchestrator for proper lifecycle management
     pub async fn register_background_workers(
         &self,
-        orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        orchestrator: &Arc<Orchestrator>,
         cron_config: crate::config::settings::CronConfig,
     ) -> anyhow::Result<()> {
         // Register timeout worker

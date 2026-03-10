@@ -23,7 +23,6 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
 use crate::store::sql::models::{
@@ -49,11 +48,8 @@ use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
 
-pub struct UserDecryptHandler<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+pub struct UserDecryptHandler {
+    orchestrator: Arc<Orchestrator>,
     api_version: ApiVersion,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: u16,
@@ -63,12 +59,10 @@ where
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
-    UserDecryptHandler<D>
-{
+impl UserDecryptHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
         api_version: ApiVersion,
         user_decrypt_repo: Arc<UserDecryptRepository>,
         user_decrypt_shares_threshold: u16,
@@ -894,13 +888,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     ),
     tag = "User Decrypt v2"
 )]
-pub async fn user_decrypt_post_v2<D>(
-    handler: Arc<UserDecryptHandler<D>>,
+pub async fn user_decrypt_post_v2(
+    handler: Arc<UserDecryptHandler>,
     req: Request<axum::body::Body>,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.user_decrypt_post_v2(req).await
 }
 
@@ -921,13 +912,10 @@ where
     ),
     tag = "User Decrypt v2"
 )]
-pub async fn user_decrypt_get_v2<D>(
-    handler: Arc<UserDecryptHandler<D>>,
+pub async fn user_decrypt_get_v2(
+    handler: Arc<UserDecryptHandler>,
     Path(job_id): Path<Uuid>,
     headers: HeaderMap,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.user_decrypt_get_v2(Path(job_id), headers).await
 }

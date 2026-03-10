@@ -1,5 +1,3 @@
-use crate::core::event::RelayerEvent;
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -54,12 +52,7 @@ pub async fn liveness_handler() -> impl IntoResponse {
         (status = 503, description = "Not healthy", body = HealthResponse),
     ),
 )]
-pub async fn health_handler<D>(
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+pub async fn health_handler(orchestrator: Arc<Orchestrator>) -> impl IntoResponse {
     let (is_healthy, dependencies) = orchestrator.check_all_health().await;
 
     let status = if is_healthy {

@@ -6,10 +6,7 @@ use crate::{
     core::job_id::INTERNAL_EVENT_JOB_ID,
     gateway::arbitrum::bindings::{Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
-    orchestrator::{
-        traits::{EventDispatcher, HandlerRegistry},
-        HealthCheck, Orchestrator,
-    },
+    orchestrator::{HealthCheck, Orchestrator},
     store::sql::repositories::block_number_repo::BlockNumberRepository,
 };
 use alloy::{
@@ -23,12 +20,9 @@ use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 /// HTTP polling listener that uses eth_getLogs at configurable intervals
-pub struct PollingListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+pub struct PollingListener {
     gateway_config: GatewayConfig,
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    orchestrator: Arc<Orchestrator>,
     block_number_repo: Arc<BlockNumberRepository>,
     deduplicator: Arc<EventDeduplicator>,
     instance_id: usize,
@@ -36,13 +30,10 @@ where
     http_url: String,
 }
 
-impl<D> PollingListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+impl PollingListener {
     pub fn new(
         gateway_config: GatewayConfig,
-        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
         block_number_repo: Arc<BlockNumberRepository>,
         deduplicator: Arc<EventDeduplicator>,
         instance_id: usize,
@@ -439,10 +430,7 @@ where
 }
 
 #[async_trait]
-impl<D> HealthCheck for PollingListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+impl HealthCheck for PollingListener {
     async fn check(&self) -> anyhow::Result<()> {
         let provider = self.create_provider()?;
         let health_timeout = Duration::from_secs(

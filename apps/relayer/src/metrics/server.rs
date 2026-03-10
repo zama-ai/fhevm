@@ -1,5 +1,3 @@
-use crate::core::event::RelayerEvent;
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::{response::IntoResponse, routing::get, Router};
 use prometheus::{Registry, TextEncoder};
@@ -43,14 +41,11 @@ async fn health_handler() -> impl axum::response::IntoResponse {
 /// Initializes a http server for metrics endpoint and binds it to the given registry. The port in
 /// endpoint can either be explicitly specified or set to :0 (in which case listener will bind to
 /// free port assigned by OS). The actual socket address is returned.
-pub async fn run_metrics_server<D>(
+pub async fn run_metrics_server(
     registry: Registry,
     endpoint: String,
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-) -> SocketAddr
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+    orchestrator: Arc<Orchestrator>,
+) -> SocketAddr {
     let addr: SocketAddr = endpoint.parse().expect("Invalid metrics endpoint address");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

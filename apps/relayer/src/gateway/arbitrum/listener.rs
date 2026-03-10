@@ -7,10 +7,7 @@ use crate::{
     gateway::arbitrum::bindings::{Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
     logging::ListenerStep,
-    orchestrator::{
-        traits::{EventDispatcher, HandlerRegistry},
-        HealthCheck, Orchestrator,
-    },
+    orchestrator::{HealthCheck, Orchestrator},
     store::sql::repositories::block_number_repo::BlockNumberRepository,
 };
 use alloy::{
@@ -34,12 +31,9 @@ enum RecycleReason {
     RecycleTimer,
 }
 
-pub struct ArbitrumListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+pub struct ArbitrumListener {
     gateway_config: GatewayConfig,
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    orchestrator: Arc<Orchestrator>,
     block_number_repo: Arc<BlockNumberRepository>,
     deduplicator: Arc<EventDeduplicator>,
     instance_id: usize,
@@ -49,13 +43,10 @@ where
     num_listeners: usize,
 }
 
-impl<D> ArbitrumListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+impl ArbitrumListener {
     pub async fn new(
         gateway_config: GatewayConfig,
-        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
         block_number_repo: Arc<BlockNumberRepository>,
         deduplicator: Arc<EventDeduplicator>,
         instance_id: usize,
@@ -541,10 +532,7 @@ where
 }
 
 #[async_trait]
-impl<D> HealthCheck for ArbitrumListener<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
+impl HealthCheck for ArbitrumListener {
     async fn check(&self) -> anyhow::Result<()> {
         let provider = self.create_provider().await?;
         let health_timeout = Duration::from_secs(

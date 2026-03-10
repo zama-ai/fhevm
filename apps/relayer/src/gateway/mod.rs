@@ -13,11 +13,10 @@ pub use public_decrypt_handler::GatewayHandler as PublicDecryptGatewayHandler;
 pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::{ListenerType, Settings};
-use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
 use crate::gateway::throttlers::GatewayThrottlers;
 use crate::host::HostAclChecker;
-use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
+use crate::orchestrator::{HealthCheck, Orchestrator};
 use crate::readiness::{
     checker::ReadinessChecker,
     delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
@@ -38,7 +37,7 @@ use tracing::{error, info};
 
 /// Initialize all gateway components including handlers, listener, and KeyUrl handler
 pub async fn initialize_gateway(
-    orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    orchestrator: Arc<Orchestrator>,
     settings: &Settings,
     repositories: Arc<Repositories>,
     gateway_throttlers: GatewayThrottlers,

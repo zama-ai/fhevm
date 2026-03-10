@@ -18,7 +18,6 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::InputProofStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
-use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::ContentHasher;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
@@ -42,11 +41,8 @@ use uuid::Uuid;
 
 pub type InputProofResponse = AppResponse<InputProofPostResponseJson>;
 
-pub struct InputProofHandler<D>
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
-{
-    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+pub struct InputProofHandler {
+    orchestrator: Arc<Orchestrator>,
     api_version: ApiVersion,
     input_proof_repo: Arc<InputProofRepository>,
     retry_after_seconds: u32,
@@ -54,11 +50,9 @@ where
     retry_after_state: Arc<RetryAfterState>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
-    InputProofHandler<D>
-{
+impl InputProofHandler {
     pub fn new(
-        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        orchestrator: Arc<Orchestrator>,
         api_version: ApiVersion,
         input_proof_repo: Arc<InputProofRepository>,
         retry_after_seconds: u32,
@@ -563,13 +557,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     ),
     tag = "Input Proof v2"
 )]
-pub async fn input_proof_post_v2<D>(
-    handler: Arc<InputProofHandler<D>>,
+pub async fn input_proof_post_v2(
+    handler: Arc<InputProofHandler>,
     req: Request<axum::body::Body>,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.input_proof_post_v2(req).await
 }
 
@@ -590,13 +581,10 @@ where
     ),
     tag = "Input Proof v2"
 )]
-pub async fn input_proof_get_v2<D>(
-    handler: Arc<InputProofHandler<D>>,
+pub async fn input_proof_get_v2(
+    handler: Arc<InputProofHandler>,
     Path(job_id): Path<Uuid>,
     headers: HeaderMap,
-) -> impl IntoResponse
-where
-    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
-{
+) -> impl IntoResponse {
     handler.input_proof_get_v2(Path(job_id), headers).await
 }
