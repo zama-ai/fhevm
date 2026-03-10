@@ -575,10 +575,16 @@ const waitForRelayer = async (deps: RuntimeDeps) => {
 
 const resetAfterStep = async (step: StepName, deps: RuntimeDeps) => {
   const start = stateStepIndex(step);
+  const failed: string[] = [];
   for (let index = STEP_NAMES.length - 1; index >= start; index -= 1) {
     for (const component of COMPONENT_BY_STEP[STEP_NAMES[index]]) {
-      await composeDown(component, deps);
+      if (!(await composeDown(component, deps))) {
+        failed.push(component);
+      }
     }
+  }
+  if (failed.length) {
+    throw new Error(`Failed to stop components while resetting from ${step}: ${failed.join(", ")}`);
   }
 };
 
@@ -1072,16 +1078,22 @@ const runDown = async (deps: RuntimeDeps) => {
     await ensureRuntimeArtifacts(state, deps, "teardown");
   }
   let stopped = false;
+  const failed: string[] = [];
   for (const component of [...COMPONENTS].reverse()) {
     if (!(await exists(composePath(component)))) {
       continue;
     }
     stopped = true;
     log(`[down] ${component}`);
-    await composeDown(component, deps);
+    if (!(await composeDown(component, deps))) {
+      failed.push(component);
+    }
   }
   if (!stopped) {
     log("[down] nothing to stop");
+  }
+  if (failed.length) {
+    throw new Error(`Failed to stop components: ${failed.join(", ")}`);
   }
 };
 

@@ -555,6 +555,28 @@ describe("runtime invariants", () => {
     }
   });
 
+  test("clean keeps runtime state when teardown fails", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    const state = stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] });
+    await fs.writeFile(STATE_FILE, JSON.stringify(state));
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "clean"], { ...noopDeps, liveRunner: async () => 1 });
+    } finally {
+      restore();
+    }
+    expect(await maybeRead(STATE_FILE)).toBeDefined();
+    expect(logs.some((l) => l.includes("Failed to stop components"))).toBe(true);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    if (before !== undefined) {
+      await fs.mkdir(STATE_DIR, { recursive: true });
+      await fs.writeFile(STATE_FILE, before);
+    }
+  });
+
   test("up --dry-run reports a helpful message when gh is missing", async () => {
     const { logs, restore } = captureConsole("error");
     try {

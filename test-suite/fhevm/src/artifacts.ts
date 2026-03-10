@@ -556,7 +556,7 @@ export const composeUp = async (
 
 export const composeDown = async (component: string, deps: Pick<ArtifactDeps, "liveRunner">) => {
   if (!(await exists(composePath(component)))) {
-    return;
+    return true;
   }
   const code = await deps.liveRunner([...dockerArgs(component), "down", "-v"], {
     allowFailure: true,
@@ -564,7 +564,9 @@ export const composeDown = async (component: string, deps: Pick<ArtifactDeps, "l
   });
   if (code !== 0) {
     console.warn(`[warn] compose down failed for ${component} (${code})`);
+    return false;
   }
+  return true;
 };
 
 export const regen = async (state: State, deps: Pick<ArtifactDeps, "runner">) => {
