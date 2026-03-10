@@ -13,6 +13,7 @@ import {
   ENV_DIR,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
+  GROUP_SERVICE_SUFFIXES,
   TEMPLATE_COMPOSE_DIR,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
@@ -70,9 +71,11 @@ const loadComposeDoc = async (component: string) =>
 
 const overriddenServicesForComponent = (state: State, component: string) =>
   new Set(
-    state.overrides.flatMap((o) =>
-      GROUP_BUILD_COMPONENTS[o.group].includes(component) ? GROUP_BUILD_SERVICES[o.group] : [],
-    ),
+    state.overrides.flatMap((o) => {
+      if (!GROUP_BUILD_COMPONENTS[o.group].includes(component)) return [];
+      if (o.services?.length) return o.services;
+      return GROUP_BUILD_SERVICES[o.group];
+    }),
   );
 
 const retagLocal = (image: unknown) =>
@@ -209,10 +212,10 @@ const buildCoprocessorOverride = async (state: State) => {
   const baseOverride = state.topology.instances["coprocessor-0"];
   const baseEnv = await readEnvFile(envPath("coprocessor"));
   const compat = compatPolicyForState(state);
-  // Skip compat args for overridden services — local builds use HEAD code, not the resolved version.
-  const compatArgs = overridden.size ? {} : compat.coprocessorArgs;
   for (const [name, service] of Object.entries(doc.services)) {
-    const adjusted = applyInstanceAdjustments(service, envPath("coprocessor"), baseEnv, baseOverride, compatArgs);
+    // Skip compat args for overridden services — local builds use HEAD code, not the resolved version.
+    const serviceCompatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
+    const adjusted = applyInstanceAdjustments(service, envPath("coprocessor"), baseEnv, baseOverride, serviceCompatArgs);
     applyBuildPolicy(adjusted, overridden.has(name));
     services[name] = adjusted;
   }
@@ -222,12 +225,13 @@ const buildCoprocessorOverride = async (state: State) => {
     const instanceEnv = await readEnvFile(envPath(`coprocessor.${index}`));
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^coprocessor-/, "");
+      const instanceCompatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
       const cloned = applyInstanceAdjustments(
         service,
         envPath(`coprocessor.${index}`),
         instanceEnv,
         override,
-        compatArgs,
+        instanceCompatArgs,
       );
       cloned.container_name = prefix + suffix;
       applyBuildPolicy(cloned, overridden.has(name));
@@ -480,7 +484,10 @@ const maybeBuild = async (
     if (GROUP_BUILD_COMPONENTS[override.group].includes(component)) {
       const doc = YAML.parse(await fs.readFile(composePath(component), "utf8")) as ComposeDoc;
       const available = new Set(Object.keys(doc.services));
-      const services = GROUP_BUILD_SERVICES[override.group].filter((s) => available.has(s));
+      const candidates = override.services?.length
+        ? override.services
+        : GROUP_BUILD_SERVICES[override.group];
+      const services = candidates.filter((s) => available.has(s));
       if (!services.length) {
         continue;
       }
@@ -549,16 +556,7 @@ export const serviceNameList = (state: State, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }
-  const suffixes = [
-    "db-migration",
-    "host-listener",
-    "host-listener-poller",
-    "gw-listener",
-    "tfhe-worker",
-    "zkproof-worker",
-    "sns-worker",
-    "transaction-sender",
-  ];
+  const suffixes = GROUP_SERVICE_SUFFIXES["coprocessor"];
   const names: string[] = [];
   for (let index = 0; index < state.topology.count; index += 1) {
     for (const suffix of suffixes) {

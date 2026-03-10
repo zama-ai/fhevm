@@ -38,6 +38,7 @@ export type InstanceOverride = {
 export type LocalOverride = {
   group: OverrideGroup;
   profile?: string;
+  services?: string[];
 };
 
 export type Topology = {
