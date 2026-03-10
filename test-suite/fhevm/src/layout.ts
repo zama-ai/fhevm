@@ -96,6 +96,61 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "test-suite": ["test-suite-e2e-debug"],
 };
 
+const GROUP_PREFIX: Record<OverrideGroup, string> = {
+  "coprocessor": "coprocessor-",
+  "kms-connector": "kms-connector-",
+  "gateway-contracts": "gateway-",
+  "host-contracts": "host-",
+  "test-suite": "test-suite-",
+};
+
+/** Derived from GROUP_BUILD_SERVICES by stripping the group prefix. */
+export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fromEntries(
+  Object.entries(GROUP_BUILD_SERVICES).map(([group, services]) => [
+    group,
+    services.map((s) => s.slice(GROUP_PREFIX[group as OverrideGroup].length)),
+  ]),
+) as Record<OverrideGroup, string[]>;
+
+/** Canonical sibling groups — services sharing the same Docker image. */
+const SIBLING_GROUPS: string[][] = [
+  ["coprocessor-host-listener", "coprocessor-host-listener-poller"],
+];
+
+/** Bidirectional lookup derived from SIBLING_GROUPS. */
+export const IMAGE_SIBLINGS: Record<string, string[]> = {};
+for (const group of SIBLING_GROUPS) {
+  for (const member of group) {
+    IMAGE_SIBLINGS[member] = group.filter((s) => s !== member);
+  }
+}
+
+/** Groups where all services share a database — per-service override requires schema compatibility. */
+export const SCHEMA_COUPLED_GROUPS: OverrideGroup[] = ["coprocessor", "kms-connector"];
+
+export const suffixToServiceName = (group: OverrideGroup, suffix: string): string => {
+  const fullName = GROUP_PREFIX[group] + suffix;
+  if (!GROUP_BUILD_SERVICES[group].includes(fullName)) {
+    throw new Error(
+      `Unknown service "${suffix}" in group "${group}". Valid: ${GROUP_SERVICE_SUFFIXES[group].join(", ")}`,
+    );
+  }
+  return fullName;
+};
+
+/** Resolve suffixes to full service names, auto-including image siblings. */
+export const resolveServiceOverrides = (group: OverrideGroup, suffixes: string[]): string[] => {
+  const names = new Set<string>();
+  for (const suffix of suffixes) {
+    const name = suffixToServiceName(group, suffix);
+    names.add(name);
+    for (const sibling of IMAGE_SIBLINGS[name] ?? []) {
+      names.add(sibling);
+    }
+  }
+  return [...names];
+};
+
 export const TEST_GREP: Record<string, string> = {
   "paused-host-contracts": "test paused host user input|test paused host HTTP public decrypt|test paused host operators",
   "paused-gateway-contracts":

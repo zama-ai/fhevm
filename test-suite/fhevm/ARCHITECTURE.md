@@ -32,7 +32,7 @@ flowchart TD
   F8 --> F9["relayer"]
   F9 --> F10["test-suite"]
 
-  G["Local overrides"] --> E
+  G["Local overrides (group or per-service)"] --> E
   H["Multicopro topology + per-instance overrides"] --> E
   I["Compatibility policy"] --> E
   I --> F7

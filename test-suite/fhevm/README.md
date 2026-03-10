@@ -162,11 +162,67 @@ Supported groups:
 - `host-contracts`
 - `test-suite`
 
-Example:
+### Override an entire group
 
 ```sh
 ./fhevm-cli up --target latest-release --override coprocessor --profile local
 ```
+
+### Override specific services
+
+To build only specific services locally while pulling the rest from the registry:
+
+```sh
+./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker --profile local
+```
+
+Use the short service suffix after the colon (e.g., `host-listener` not `coprocessor-host-listener`).
+Multiple services are comma-separated. Services that share a Docker image are automatically
+co-selected (e.g., `host-listener` includes `host-listener-poller`).
+
+> **Note:** `coprocessor` and `kms-connector` services share a database. Per-service overrides
+> work when your local changes don't include DB migrations. If your changes add or alter
+> migrations, non-overridden services will fail against the mismatched schema — use
+> `--override coprocessor` (full group) instead.
+
+Available suffixes per group:
+
+| Group | Suffixes |
+|-------|----------|
+| `coprocessor` | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender` |
+| `gateway-contracts` | `deploy-mocked-zama-oft`, `set-relayer-mocked-payment`, `sc-deploy`, `sc-add-network`, `sc-add-pausers`, `sc-trigger-keygen`, `sc-trigger-crsgen` |
+| `host-contracts` | `sc-deploy`, `sc-add-pausers` |
+| `test-suite` | `e2e-debug` |
+
+### Multiple overrides
+
+Repeat `--override` to override several groups at once:
+
+```sh
+# Two full groups
+./fhevm-cli up --target latest-release --override coprocessor --override gateway-contracts --profile local
+
+# Per-service across groups
+./fhevm-cli up --target latest-release --override coprocessor:host-listener --override gateway-contracts:sc-deploy --profile local
+
+# Mixed: per-service + full group
+./fhevm-cli up --target latest-release --override coprocessor:host-listener --override kms-connector --profile local
+```
+
+The `--profile` flag applies to every override that doesn't specify its own profile.
+
+### Combining with env var overrides
+
+You can mix per-service local builds with registry tag overrides:
+
+```sh
+COPROCESSOR_GW_LISTENER_VERSION=abc1234 \
+  ./fhevm-cli up --target latest-release --override coprocessor:host-listener --profile local
+```
+
+This builds `host-listener` (and `host-listener-poller`) locally, pulls `gw-listener` at tag
+`abc1234`, and pulls all other coprocessor services at the resolved target version.
 
 ## Multicopro
 
