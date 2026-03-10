@@ -1,6 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, test } from "bun:test";
 
 import { resolvedComposeEnv, serviceNameList } from "./artifacts";
+import { TEMPLATE_COMPOSE_DIR } from "./layout";
 import { stubState } from "./test-helpers";
 
 describe("resolvedComposeEnv", () => {
@@ -51,5 +55,15 @@ describe("serviceNameList", () => {
     expect(names).toContain("coprocessor1-db-migration");
     expect(names).toContain("coprocessor2-db-migration");
     expect(names.length).toBe(24);
+  });
+});
+
+describe("compose templates", () => {
+  test("transaction sender passes host chain url", async () => {
+    const template = await fs.readFile(
+      path.join(TEMPLATE_COMPOSE_DIR, "coprocessor-docker-compose.yml"),
+      "utf8",
+    );
+    expect(template.includes("--host-chain-url=${RPC_HTTP_URL}")).toBe(true);
   });
 });
