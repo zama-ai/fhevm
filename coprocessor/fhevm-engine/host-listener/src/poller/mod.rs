@@ -272,6 +272,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 logs,
                 summary,
                 catchup: true,
+                finalized: true,
             };
 
             let ingest_options = IngestOptions {
