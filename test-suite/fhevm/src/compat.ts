@@ -8,6 +8,8 @@ export type CompatPolicy = {
   connectorEnv: Record<string, string>;
 };
 
+export const requiresMultichainAclAddress = (_state: Pick<State, "target" | "versions">) => true;
+
 const COMPAT_PROFILES = {
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {

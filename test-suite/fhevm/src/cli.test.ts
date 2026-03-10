@@ -4,14 +4,17 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { REPO_ROOT, STATE_DIR } from "./layout";
-import { main } from "./runtime";
+import {
+  resolveEnvMap,
+  resolvedComposeEnv,
+  rewriteCoprocessorDependsOn,
+} from "./artifacts";
+import { REPO_ROOT, STATE_DIR, resolveServiceOverrides } from "./layout";
+import { main, overrideWarnings, resolveUpgradePlan } from "./runtime";
 import { compatPolicyForState } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
-import type { State } from "./types";
 import {
-  STUB_VERSION_ENV,
   captureConsole,
   fakeRunner,
   noopDeps,
@@ -39,46 +42,65 @@ const fixtureDir = async () => {
 
 const maybeRead = (file: string) => fs.readFile(file, "utf8").catch(() => undefined);
 
+const LATEST_MAIN_PACKAGES = [
+  "fhevm%2Fgateway-contracts",
+  "fhevm%2Fhost-contracts",
+  "fhevm%2Fcoprocessor%2Fdb-migration",
+  "fhevm%2Fcoprocessor%2Fhost-listener",
+  "fhevm%2Fcoprocessor%2Fgw-listener",
+  "fhevm%2Fcoprocessor%2Ftx-sender",
+  "fhevm%2Fcoprocessor%2Ftfhe-worker",
+  "fhevm%2Fcoprocessor%2Fzkproof-worker",
+  "fhevm%2Fcoprocessor%2Fsns-worker",
+  "fhevm%2Fkms-connector%2Fdb-migration",
+  "fhevm%2Fkms-connector%2Fgw-listener",
+  "fhevm%2Fkms-connector%2Fkms-worker",
+  "fhevm%2Fkms-connector%2Ftx-sender",
+  "fhevm%2Ftest-suite%2Fe2e",
+] as const;
+
+const latestMainPackageResponses = (tag: string) =>
+  Object.fromEntries(
+    LATEST_MAIN_PACKAGES.map((pkg) => [
+      `gh api /orgs/zama-ai/packages/container/${pkg}/versions?per_page=100&page=1`,
+      JSON.stringify([{ metadata: { container: { tags: [tag] } } }]),
+    ]),
+  );
+
 describe("resolveTarget", () => {
-  test("latest-main walks back to the first complete sha bundle", async () => {
+  test("latest-main walks back to the first complete sha bundle after the tenant floor", async () => {
     const gh = createGitHubClient(
       fakeRunner({
         "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([{ sha: "1111111000000000000000000000000000000000" }, { sha: "2222222000000000000000000000000000000000" }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fgateway-contracts/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fhost-contracts/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fdb-migration/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fhost-listener/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fgw-listener/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Ftx-sender/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Ftfhe-worker/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fzkproof-worker/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fsns-worker/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fkms-connector%2Fdb-migration/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fkms-connector%2Fgw-listener/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fkms-connector%2Fkms-worker/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Fkms-connector%2Ftx-sender/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
-        "gh api /orgs/zama-ai/packages/container/fhevm%2Ftest-suite%2Fe2e/versions?per_page=100&page=1":
-          JSON.stringify([{ metadata: { container: { tags: ["2222222"] } } }]),
+          JSON.stringify([
+            { sha: "1111111000000000000000000000000000000000" },
+            { sha: "acfa9775818406a119b53d2beb05a04742a49473" },
+            { sha: "2222222000000000000000000000000000000000" },
+          ]),
+        ...latestMainPackageResponses("1111111"),
       }),
     );
     const bundle = await resolveTarget("latest-main", gh);
-    expect(bundle.lockName).toBe("latest-main-2222222.json");
-    expect(bundle.env.GATEWAY_VERSION).toBe("2222222");
+    expect(bundle.lockName).toBe("latest-main-1111111.json");
+    expect(bundle.env.GATEWAY_VERSION).toBe("1111111");
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
+  });
+
+  test("latest-main rejects complete bundles older than the tenant floor", async () => {
+    const gh = createGitHubClient(
+      fakeRunner({
+        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
+          JSON.stringify([
+            { sha: "1111111000000000000000000000000000000000" },
+            { sha: "acfa9775818406a119b53d2beb05a04742a49473" },
+            { sha: "2222222000000000000000000000000000000000" },
+          ]),
+        ...latestMainPackageResponses("2222222"),
+      }),
+    );
+    await expect(resolveTarget("latest-main", gh)).rejects.toThrow(
+      "Could not find a supported modern latest-main image set",
+    );
   });
 
   test("testnet bundle resolves from gitops-style files", async () => {
@@ -124,6 +146,24 @@ describe("resolveTarget", () => {
 });
 
 describe("runtime invariants", () => {
+  test("resolvedComposeEnv preserves version keys and selected cargo profile", () => {
+    const env = resolvedComposeEnv({
+      versions: {
+        target: "latest-release",
+        lockName: "latest-release-v0.11.0.json",
+        sources: [],
+        env: {
+          GATEWAY_VERSION: "v0.11.0",
+          CORE_VERSION: "v0.13.0",
+        },
+      },
+      overrides: [{ group: "coprocessor", profile: "local" }],
+    });
+    expect(env.GATEWAY_VERSION).toBe("v0.11.0");
+    expect(env.CORE_VERSION).toBe("v0.13.0");
+    expect(env.FHEVM_CARGO_PROFILE).toBe("local");
+  });
+
   test("compat policy keeps legacy coprocessor API key flags for versions before v0.12.0", () => {
     const makeState = (version: string) =>
       stubState({ envOverrides: {
@@ -142,9 +182,88 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["sns-worker"]).toEqual([
       ["--tenant-api-key", "TENANT_API_KEY"],
     ]);
+
+    // v0.12.x: all legacy flags removed
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["host-listener"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
+
+    // latest-main SHAs stay modern-only once resolution enforces the floor
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
+  });
+
+  test("coprocessor depends_on rewrite only renames cloned services", () => {
+    expect(
+      rewriteCoprocessorDependsOn(
+        {
+          "coprocessor-db-migration": { condition: "service_completed_successfully" },
+          "coprocessor-and-kms-db": { condition: "service_healthy" },
+        },
+        "coprocessor1-",
+        new Set(["coprocessor-db-migration", "coprocessor-host-listener"]),
+      ),
+    ).toEqual({
+      "coprocessor1-db-migration": { condition: "service_completed_successfully" },
+      "coprocessor-and-kms-db": { condition: "service_healthy" },
+    });
+  });
+
+  test("resolveEnvMap fails on unresolved circular references", () => {
+    expect(() => resolveEnvMap({ A: "${B}", B: "${A}" })).toThrow("Unresolved env interpolation");
+  });
+
+  test("resolveUpgradePlan rejects inactive overrides and expands multicopro services", () => {
+    const inactive = {
+      overrides: [{ group: "test-suite" as const }],
+      topology: { count: 2, threshold: 2, instances: {} },
+    };
+    expect(() => resolveUpgradePlan(inactive, "coprocessor")).toThrow(
+      "upgrade requires an active local override for coprocessor",
+    );
+
+    const plan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "coprocessor" }],
+        topology: { count: 2, threshold: 2, instances: {} },
+      },
+      "coprocessor",
+    );
+    expect(plan.component).toBe("coprocessor");
+    expect(plan.step).toBe("coprocessor");
+    expect(plan.services).toContain("coprocessor-gw-listener");
+    expect(plan.services).toContain("coprocessor1-gw-listener");
+    expect(plan.services).toHaveLength(16);
+
+    const filteredPlan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener", "coprocessor-host-listener-poller"] }],
+        topology: { count: 2, threshold: 2, instances: {} },
+      },
+      "coprocessor",
+    );
+    expect(filteredPlan.services).toEqual([
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor1-host-listener",
+      "coprocessor1-host-listener-poller",
+    ]);
+  });
+
+  test("resolveServiceOverrides expands shared-image runtime siblings", () => {
+    expect(resolveServiceOverrides("coprocessor", ["host-listener"])).toEqual([
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+    ]);
+  });
+
+  test("overrideWarnings flag shared-db per-service runtime overrides only", () => {
+    expect(
+      overrideWarnings([
+        { group: "coprocessor", services: ["coprocessor-host-listener"] },
+        { group: "test-suite", services: ["test-suite-e2e-debug"] },
+      ]),
+    ).toEqual([
+      "coprocessor: per-service override with a shared database. If your changes include DB migrations, non-overridden services may fail. Use --override coprocessor (full group) in that case.",
+    ]);
   });
 
   test("predicted bootstrap ids are deterministic", () => {
@@ -157,6 +276,44 @@ describe("runtime invariants", () => {
     const before = await maybeRead(STATE_FILE);
     await main(["bun", "src/cli.ts", "up", "--from-step", "nope"], noopDeps);
     expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
+  test("up rejects --from-step without --resume outside dry-run", async () => {
+    const dir = await fixtureDir();
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await main(
+      ["bun", "src/cli.ts", "up", "--from-step", "relayer"],
+      {
+        runner: async () => ({ stdout: "", stderr: "", code: 0 }),
+        liveRunner: async () => 0,
+        now: () => "2026-03-06T00:00:00.000Z",
+        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+      },
+    );
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+    void dir;
+  });
+
+  test("up rejects per-service overrides for non-runtime groups before doing work", async () => {
+    const dir = await fixtureDir();
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await main(
+      ["bun", "src/cli.ts", "up", "--override", "gateway-contracts:sc-deploy"],
+      {
+        runner: async () => ({ stdout: "", stderr: "", code: 0 }),
+        liveRunner: async () => 0,
+        now: () => "2026-03-06T00:00:00.000Z",
+        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+      },
+    );
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+    void dir;
   });
 
   test("up --dry-run resolves without creating runtime state", async () => {
@@ -173,7 +330,7 @@ describe("runtime invariants", () => {
       ...portCheckResponses,
     });
     await main(
-      ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+      ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run", "--from-step", "relayer"],
       { ...noopDeps, runner },
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);

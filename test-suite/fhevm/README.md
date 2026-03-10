@@ -10,11 +10,11 @@ It exists for three workflows:
 
 The CLI owns all mutable runtime state under `.fhevm/`. Tracked compose and env files stay as templates.
 
-For the boot flow diagram and invariants, see [ARCHITECTURE.md](/Users/work/.codex/worktrees/75e6/fhevm/test-suite/fhevm/ARCHITECTURE.md).
+For the boot flow diagram and invariants, see `ARCHITECTURE.md`.
 
 ## Quick Start
 
-Run from [/Users/work/.codex/worktrees/75e6/fhevm/test-suite/fhevm](/Users/work/.codex/worktrees/75e6/fhevm/test-suite/fhevm):
+Run from `test-suite/fhevm`:
 
 ```sh
 bun install
@@ -38,12 +38,13 @@ bun test
 ## Targets
 
 - `latest-release`: latest stable fhevm release plus checked-in companion defaults
-- `latest-main`: newest complete repo-owned main SHA bundle plus checked-in companion defaults
+- `latest-main`: newest complete repo-owned main SHA bundle at or after the tenant-refactor floor (`acfa977`)
 - `devnet`
 - `testnet`
 - `mainnet`
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps. Non-network targets do not.
+`latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
 
 ## Pinning an Exact Version Bundle
 
@@ -139,7 +140,9 @@ The resolved lock file records which keys were overridden in its `sources` field
 ./fhevm-cli up --target latest-release
 ./fhevm-cli up --target latest-release --resume --from-step relayer
 ./fhevm-cli up --target latest-release --override coprocessor --profile local
+./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker --profile local
 ./fhevm-cli up --target latest-release --coprocessors 2 --threshold 2
+./fhevm-cli upgrade coprocessor
 
 ./fhevm-cli status
 ./fhevm-cli logs relayer
@@ -168,31 +171,25 @@ Supported groups:
 ./fhevm-cli up --target latest-release --override coprocessor --profile local
 ```
 
-### Override specific services
+### Override specific runtime services
 
-To build only specific services locally while pulling the rest from the registry:
+Runtime override groups also support per-service filtering:
 
 ```sh
 ./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker --profile local
 ```
 
-Use the short service suffix after the colon (e.g., `host-listener` not `coprocessor-host-listener`).
-Multiple services are comma-separated. Services that share a Docker image are automatically
-co-selected (e.g., `host-listener` includes `host-listener-poller`).
+Per-service override syntax is supported only for `coprocessor`, `kms-connector`, and `test-suite`.
+Use the short service suffix after the group prefix. Multiple services are comma-separated. Services that share the same image are auto-selected together, so `coprocessor:host-listener` also builds `host-listener-poller` locally.
 
-> **Note:** `coprocessor` and `kms-connector` services share a database. Per-service overrides
-> work when your local changes don't include DB migrations. If your changes add or alter
-> migrations, non-overridden services will fail against the mismatched schema — use
-> `--override coprocessor` (full group) instead.
+`coprocessor` and `kms-connector` still share a database, so the CLI warns when you do a per-service override there. If your change includes schema or migration changes, use the full-group override instead.
 
-Available suffixes per group:
+Available runtime suffixes:
 
 | Group | Suffixes |
 |-------|----------|
 | `coprocessor` | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
 | `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender` |
-| `gateway-contracts` | `deploy-mocked-zama-oft`, `set-relayer-mocked-payment`, `sc-deploy`, `sc-add-network`, `sc-add-pausers`, `sc-trigger-keygen`, `sc-trigger-crsgen` |
-| `host-contracts` | `sc-deploy`, `sc-add-pausers` |
 | `test-suite` | `e2e-debug` |
 
 ### Multiple overrides
@@ -203,11 +200,11 @@ Repeat `--override` to override several groups at once:
 # Two full groups
 ./fhevm-cli up --target latest-release --override coprocessor --override gateway-contracts --profile local
 
-# Per-service across groups
-./fhevm-cli up --target latest-release --override coprocessor:host-listener --override gateway-contracts:sc-deploy --profile local
+# Per-service across runtime groups
+./fhevm-cli up --target latest-release --override coprocessor:host-listener --override kms-connector:gw-listener --profile local
 
 # Mixed: per-service + full group
-./fhevm-cli up --target latest-release --override coprocessor:host-listener --override kms-connector --profile local
+./fhevm-cli up --target latest-release --override coprocessor:host-listener --override gateway-contracts --profile local
 ```
 
 The `--profile` flag applies to every override that doesn't specify its own profile.
@@ -224,6 +221,19 @@ COPROCESSOR_GW_LISTENER_VERSION=abc1234 \
 This builds `host-listener` (and `host-listener-poller`) locally, pulls `gw-listener` at tag
 `abc1234`, and pulls all other coprocessor services at the resolved target version.
 
+If a runtime override is already active and you only want to rebuild and restart that local code path, use:
+
+```sh
+./fhevm-cli upgrade coprocessor
+```
+
+`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`.
+
+## Dropped Convenience Commands
+
+- `smoke`: use explicit `up ...` plus `test ...`
+- `test debug`: use `docker exec -it fhevm-test-suite-e2e-debug sh`
+
 ## Multicopro
 
 Example:
@@ -238,6 +248,11 @@ Example:
 ```
 
 Generated env, compose overlays, addresses, locks, and state all live under `.fhevm/`.
+
+## Dropped Conveniences
+
+- `smoke` was a preset wrapper. Use `up --coprocessors ... --threshold ...` followed by `test input-proof`.
+- `test debug` was a thin shell shortcut. Use `docker exec -it fhevm-test-suite-e2e-debug bash`.
 
 ## Runtime State
 

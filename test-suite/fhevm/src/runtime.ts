@@ -1,6 +1,7 @@
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { requiresMultichainAclAddress } from "./compat";
 import type {
   Discovery,
   InstanceOverride,
@@ -16,6 +17,8 @@ import { composeDown, composeUp, inspectImageId, regen, resolvedComposeEnv, serv
 import {
   COMPONENT_BY_STEP,
   COMPONENTS,
+  GROUP_BUILD_COMPONENTS,
+  GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
   SCHEMA_COUPLED_GROUPS,
   LOCK_DIR,
@@ -80,18 +83,23 @@ const defaultDeps: RuntimeDeps = {
   env: process.env,
 };
 
-const dockerInspect = async (runner: Runner, name: string) =>
-  JSON.parse(
-    (
-      await runner(["docker", "inspect", name], {
-        allowFailure: true,
-      })
-    ).stdout || "[]",
-  ) as Array<{
-    Name: string;
-    State: { Status: string; ExitCode: number; Health?: { Status: string } };
-    NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
-  }>;
+const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] as const;
+type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+
+const dockerInspect = async (runner: Runner, name: string) => {
+  const result = await runner(["docker", "inspect", name], {
+    allowFailure: true,
+  });
+  try {
+    return JSON.parse(result.stdout || "[]") as Array<{
+      Name: string;
+      State: { Status: string; ExitCode: number; Health?: { Status: string } };
+      NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
+    }>;
+  } catch (error) {
+    throw new Error(`docker inspect ${name} returned invalid JSON: ${toError(error).message}\n${result.stdout || result.stderr || "<empty>"}`);
+  }
+};
 
 const loadState = async () => (await exists(STATE_FILE) ? readJson<State>(STATE_FILE) : undefined);
 const saveState = async (state: State) => writeJson(STATE_FILE, state);
@@ -117,22 +125,23 @@ const parseLocalOverride = (value: string): LocalOverride => {
   if (!OVERRIDE_GROUPS.includes(group as OverrideGroup)) {
     throw new Error(`Unsupported override group "${group}"`);
   }
-  const g = group as OverrideGroup;
-  const parts = rest.split(",").map((s) => s.trim()).filter(Boolean);
-  const isServiceList = parts.length > 1 || GROUP_SERVICE_SUFFIXES[g].includes(parts[0]);
+  const overrideGroup = group as OverrideGroup;
+  const parts = rest
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const isServiceList = parts.length > 1 || GROUP_SERVICE_SUFFIXES[overrideGroup].includes(parts[0] ?? "");
   if (isServiceList) {
-    const services = resolveServiceOverrides(g, parts);
-    return { group: g, services };
+    return { group: overrideGroup, services: resolveServiceOverrides(overrideGroup, parts) };
   }
-  // If the value contains a hyphen but isn't a known suffix, it's likely a typo.
   if (parts.length === 1 && parts[0].includes("-")) {
     throw new Error(
-      `Unknown service "${parts[0]}" in group "${g}". ` +
-      `Valid services: ${GROUP_SERVICE_SUFFIXES[g].join(", ")}. ` +
-      `If this is a cargo profile, use --profile instead.`,
+      `Unknown service "${parts[0]}" in group "${overrideGroup}". ` +
+        `Valid services: ${GROUP_SERVICE_SUFFIXES[overrideGroup].join(", ")}. ` +
+        `If this is a cargo profile, use --profile instead.`,
     );
   }
-  return { group: g, profile: rest };
+  return { group: overrideGroup, profile: rest };
 };
 
 const parseKeyValue = (value: string) => {
@@ -352,10 +361,10 @@ const waitForContainer = async (
   throw new Error(`Timed out waiting for ${container} (${want})`);
 };
 
-const waitForRpc = async (url: string) => {
+const waitForRpc = async (deps: RuntimeDeps, url: string) => {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const response = await fetch(url, {
+      const response = await deps.fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
@@ -423,14 +432,18 @@ const discoverContracts = async (deps: RuntimeDeps): Promise<Pick<Discovery, "ga
   };
 };
 
-const validateDiscovery = (discovery: Discovery) => {
+const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery">) => {
+  const discovery = state.discovery;
+  if (!discovery) {
+    throw new Error("Missing discovery state");
+  }
   const requiredGateway = [
     "GATEWAY_CONFIG_ADDRESS",
     "KMS_GENERATION_ADDRESS",
     "DECRYPTION_ADDRESS",
     "INPUT_VERIFICATION_ADDRESS",
     "CIPHERTEXT_COMMITS_ADDRESS",
-    "MULTICHAIN_ACL_ADDRESS",
+    ...(requiresMultichainAclAddress(state) ? ["MULTICHAIN_ACL_ADDRESS"] : []),
   ];
   const requiredHost = [
     "ACL_CONTRACT_ADDRESS",
@@ -457,9 +470,9 @@ const validateDiscovery = (discovery: Discovery) => {
   }
 };
 
-const ethCallId = async (url: string, to: string, data: string) => {
+const ethCallId = async (deps: RuntimeDeps, url: string, to: string, data: string) => {
   const rpcUrl = hostReachableUrl(url);
-  const response = await fetch(rpcUrl, {
+  const response = await deps.fetch(rpcUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -487,30 +500,42 @@ const hostReachableMaterialUrl = (url: string) =>
 
 const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-const waitForBootstrap = async (state: State, attempts = 120) => {
+const probeBootstrap = async (state: State, deps: RuntimeDeps) => {
   const gateway = withHexPrefix(state.discovery!.gateway.KMS_GENERATION_ADDRESS);
+  let actualKey = 0n;
+  let actualCrs = 0n;
+  try {
+    actualKey = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xd52f10eb");
+    actualCrs = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
+  } catch {
+    return false;
+  }
+  if (actualKey === 0n || actualCrs === 0n) {
+    return false;
+  }
+  const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
+  const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
+  await ensureMaterialUrl(
+    deps,
+    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
+  );
+  await ensureMaterialUrl(
+    deps,
+    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
+  );
+  state.discovery!.actualFheKeyId = actualFheKeyId;
+  state.discovery!.actualCrsKeyId = actualCrsKeyId;
+  if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
+    throw new Error(
+      `Predicted bootstrap ids drifted: expected ${state.discovery!.fheKeyId}/${state.discovery!.crsKeyId}, got ${actualFheKeyId}/${actualCrsKeyId}`,
+    );
+  }
+  return true;
+};
+
+const waitForBootstrap = async (state: State, deps: RuntimeDeps, attempts = 120) => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    let actualKey = 0n;
-    let actualCrs = 0n;
-    try {
-      actualKey = await ethCallId(state.discovery!.endpoints.gatewayHttp, gateway, "0xd52f10eb");
-      actualCrs = await ethCallId(state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
-    } catch {
-      await sleep(2000);
-      continue;
-    }
-    if (actualKey !== 0n && actualCrs !== 0n) {
-      const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-      const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
-      await ensureMaterialUrl(hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`));
-      await ensureMaterialUrl(hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`));
-      state.discovery!.actualFheKeyId = actualFheKeyId;
-      state.discovery!.actualCrsKeyId = actualCrsKeyId;
-      if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
-        throw new Error(
-          `Predicted bootstrap ids drifted: expected ${state.discovery!.fheKeyId}/${state.discovery!.crsKeyId}, got ${actualFheKeyId}/${actualCrsKeyId}`,
-        );
-      }
+    if (await probeBootstrap(state, deps)) {
       return;
     }
     if (attempt === 2 || (attempt > 0 && attempt % 10 === 0)) {
@@ -529,9 +554,9 @@ const castBool = async (runner: Runner, rpcUrl: string, to: string, signature: s
 const pauserRegistered = async (deps: RuntimeDeps, rpcUrl: string, contract: string, account: string, signature: string) =>
   castBool(deps.runner, rpcUrl, withHexPrefix(contract), signature, withHexPrefix(account));
 
-const ensureMaterialUrl = async (url: string) => {
+const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await fetch(url, { method: "HEAD" });
+    const response = await deps.fetch(url, { method: "HEAD" });
     if (response.ok) {
       return;
     }
@@ -606,28 +631,71 @@ const printBundle = (bundle: VersionBundle) => {
   log(describeBundle(bundle));
 };
 
-const describeOverride = (item: LocalOverride) => {
-  const profile = item.profile ? `:${item.profile}` : "";
-  const svc = item.services?.length ? `[${item.services.join(",")}]` : "";
-  return `${item.group}${profile}${svc}`;
+const describeOverride = (item: LocalOverride) =>
+  `${item.group}${item.profile ? `:${item.profile}` : ""}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
+
+export const overrideWarnings = (overrides: LocalOverride[]) =>
+  overrides.flatMap((item) =>
+    item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group)
+      ? [
+          `${item.group}: per-service override with a shared database. ` +
+            `If your changes include DB migrations, non-overridden services may fail. ` +
+            `Use --override ${item.group} (full group) in that case.`,
+        ]
+      : [],
+  );
+
+const logOverrideWarnings = (overrides: LocalOverride[]) => {
+  for (const warning of overrideWarnings(overrides)) {
+    log(`[warn] ${warning}`);
+  }
 };
 
 const printPlan = (state: Pick<State, "target" | "overrides" | "topology">, fromStep?: StepName) => {
   log(`[plan] target=${state.target}`);
   if (state.overrides.length) {
     log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
-    for (const o of state.overrides) {
-      if (o.services?.length && SCHEMA_COUPLED_GROUPS.includes(o.group)) {
-        log(
-          `[warn] ${o.group}: per-service override with a shared database. ` +
-            `If your changes include DB migrations, non-overridden services may fail. ` +
-            `Use --override ${o.group} (full group) in that case.`,
-        );
-      }
-    }
+    logOverrideWarnings(state.overrides);
   }
   log(`[plan] topology=n${state.topology.count}/t${state.topology.threshold}`);
   log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
+};
+
+const waitForCoprocessor = async (state: State, deps: RuntimeDeps) => {
+  for (let index = 0; index < state.topology.count; index += 1) {
+    await waitForContainer(deps, toServiceName("db-migration", index), "complete");
+    await waitForContainer(deps, toServiceName("host-listener", index), "running");
+    await waitForContainer(deps, toServiceName("gw-listener", index), "running");
+    await waitForContainer(deps, toServiceName("tfhe-worker", index), "running");
+    await waitForContainer(deps, toServiceName("zkproof-worker", index), "running");
+    await waitForContainer(deps, toServiceName("sns-worker", index), "running");
+    await waitForContainer(deps, toServiceName("transaction-sender", index), "running");
+  }
+};
+
+const waitForKmsConnector = async (deps: RuntimeDeps) => {
+  await waitForContainer(deps, "kms-connector-db-migration", "complete");
+  await waitForContainer(deps, "kms-connector-gw-listener", "running");
+  await waitForContainer(deps, "kms-connector-kms-worker", "running");
+  await waitForContainer(deps, "kms-connector-tx-sender", "running");
+};
+
+const waitForTestSuite = async (deps: RuntimeDeps) => {
+  await waitForContainer(deps, "fhevm-test-suite-e2e-debug", "running");
+};
+
+const coprocessorServicesForOverrides = (state: Pick<State, "topology">, services?: string[]) => {
+  if (!services?.length) {
+    return serviceNameList(state, "coprocessor");
+  }
+  const suffixes = [...new Set(services.map((service) => service.replace(/^coprocessor-/, "")))];
+  const names: string[] = [];
+  for (let index = 0; index < state.topology.count; index += 1) {
+    for (const suffix of suffixes) {
+      names.push(toServiceName(suffix, index));
+    }
+  }
+  return names;
 };
 
 const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
@@ -651,9 +719,9 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
       await composeUp("database", state, deps, saveState, log);
       await waitForContainer(deps, "coprocessor-and-kms-db", "healthy");
       await composeUp("host-node", state, deps, saveState, log);
-      await waitForRpc("http://localhost:8545");
+      await waitForRpc(deps, "http://localhost:8545");
       await composeUp("gateway-node", state, deps, saveState, log);
-      await waitForRpc("http://localhost:8546");
+      await waitForRpc(deps, "http://localhost:8546");
       state.discovery = {
         gateway: {},
         host: {},
@@ -747,38 +815,23 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
       await regen(state, deps);
       break;
     case "validate":
-      if (!state.discovery) {
-        throw new Error("Missing discovery state");
-      }
-      validateDiscovery(state.discovery);
+      validateDiscovery(state);
       break;
     case "coprocessor":
       await composeUp("coprocessor", state, deps, saveState, log, serviceNameList(state, "coprocessor"));
-      for (let index = 0; index < state.topology.count; index += 1) {
-        await waitForContainer(deps, toServiceName("db-migration", index), "complete");
-        await waitForContainer(deps, toServiceName("host-listener", index), "running");
-        await waitForContainer(deps, toServiceName("gw-listener", index), "running");
-        await waitForContainer(deps, toServiceName("tfhe-worker", index), "running");
-        await waitForContainer(deps, toServiceName("zkproof-worker", index), "running");
-        await waitForContainer(deps, toServiceName("sns-worker", index), "running");
-        await waitForContainer(deps, toServiceName("transaction-sender", index), "running");
-      }
+      await waitForCoprocessor(state, deps);
       break;
     case "kms-connector":
       await composeUp("kms-connector", state, deps, saveState, log);
-      await waitForContainer(deps, "kms-connector-db-migration", "complete");
-      await waitForContainer(deps, "kms-connector-gw-listener", "running");
-      await waitForContainer(deps, "kms-connector-kms-worker", "running");
-      await waitForContainer(deps, "kms-connector-tx-sender", "running");
+      await waitForKmsConnector(deps);
       break;
     case "bootstrap":
       await composeUp("gateway-sc", state, deps, saveState, log, ["gateway-sc-add-network"], { noDeps: true });
       await waitForContainer(deps, "gateway-sc-add-network", "complete");
-      try {
-        await waitForBootstrap(state, 1);
+      if (await probeBootstrap(state, deps)) {
         await regen(state, deps);
         break;
-      } catch {}
+      }
       const hostEnv = await readEnvFile(envPath("host-sc"));
       const gatewayEnv = await readEnvFile(envPath("gateway-sc"));
       if (
@@ -809,7 +862,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
       await waitForContainer(deps, "gateway-sc-trigger-keygen", "complete");
       await composeUp("gateway-sc", state, deps, saveState, log, ["gateway-sc-trigger-crsgen"], { noDeps: true });
       await waitForContainer(deps, "gateway-sc-trigger-crsgen", "complete");
-      await waitForBootstrap(state);
+      await waitForBootstrap(state, deps);
       await regen(state, deps);
       break;
     case "relayer":
@@ -820,7 +873,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
       break;
     case "test-suite":
       await composeUp("test-suite", state, deps, saveState, log);
-      await waitForContainer(deps, "fhevm-test-suite-e2e-debug", "running");
+      await waitForTestSuite(deps);
       break;
   }
   await markStep(state, step, deps);
@@ -848,6 +901,7 @@ const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   if (options.resume && state.target !== options.target) {
     throw new Error(`Resume target mismatch: state=${state.target}, requested=${options.target}`);
   }
+  logOverrideWarnings(state.overrides);
   if (options.resume && options.fromStep) {
     await resetAfterStep(options.fromStep, deps);
     state.completedSteps = state.completedSteps.filter(
@@ -889,6 +943,52 @@ const runUpDry = async (options: Omit<UpOptions, "resume" | "dryRun">, deps: Run
   printBundle(state.versions);
   printPlan(state, options.fromStep);
   log("[dry-run] preflight passed; no state or containers were changed");
+};
+
+export const resolveUpgradePlan = (state: Pick<State, "overrides" | "topology">, groupValue: string | undefined) => {
+  if (!groupValue || !UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
+    throw new Error(`upgrade expects one of ${UPGRADEABLE_GROUPS.join(", ")}`);
+  }
+  const group = groupValue as UpgradeGroup;
+  if (!state.overrides.some((item) => item.group === group)) {
+    throw new Error(`upgrade requires an active local override for ${group}`);
+  }
+  const [component] = GROUP_BUILD_COMPONENTS[group];
+  if (!component) {
+    throw new Error(`No runtime component registered for ${group}`);
+  }
+  const groupOverrides = state.overrides.filter((item) => item.group === group);
+  const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
+  return {
+    component,
+    group,
+    services:
+      group === "coprocessor"
+        ? coprocessorServicesForOverrides(state, selectedServices)
+        : selectedServices.length
+          ? [...new Set(selectedServices)]
+          : GROUP_BUILD_SERVICES[group],
+    step: group === "coprocessor" ? "coprocessor" : group,
+  } as const;
+};
+
+const runUpgrade = async (groupValue: string | undefined, deps: RuntimeDeps) => {
+  const state = await loadState();
+  if (!state) {
+    throw new Error("Stack is not running; run `fhevm-cli up --override ...` first");
+  }
+  const { component, group, services, step } = resolveUpgradePlan(state, groupValue);
+  log(`[upgrade] ${group}`);
+  await regen(state, deps);
+  await composeUp(component, state, deps, saveState, log, services, { noDeps: true });
+  if (group === "coprocessor") {
+    await waitForCoprocessor(state, deps);
+  } else if (group === "kms-connector") {
+    await waitForKmsConnector(deps);
+  } else {
+    await waitForTestSuite(deps);
+  }
+  await markStep(state, step, deps);
 };
 
 const runContractTask = async (
@@ -964,6 +1064,7 @@ const runStatus = async (deps: RuntimeDeps) => {
     log(`[target] ${state.target}`);
     if (state.overrides.length) {
       log(`[overrides] ${state.overrides.map(describeOverride).join(", ")}`);
+      logOverrideWarnings(state.overrides);
     }
     log(`[topology] n=${state.topology.count} t=${state.topology.threshold}`);
     log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
@@ -1122,6 +1223,7 @@ Commands:
   clean    stop stack containers and delete .fhevm
   status   print state and running containers
   logs     follow container logs
+  upgrade  rebuild and restart an active local runtime override
   pause    pause host or gateway contracts
   unpause  unpause host or gateway contracts
   test     run e2e tests in fhevm-test-suite-e2e-debug
@@ -1129,14 +1231,14 @@ Commands:
 up options:
   --target latest-main|latest-release|devnet|testnet|mainnet
   --lock-file <path-to-bundle-json>
-  --override <group[:profile|svc1,svc2]>  repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
+  --override <group[:profile|svc1,svc2]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
   --profile <cargo-profile>
   --coprocessors <n>
   --threshold <t>
   --instance-env <idx:KEY=VALUE>
   --instance-arg <idx:service=--flag=value>
   --instance-profile <idx:name>
-  --from-step <${STEP_NAMES.join("|")}>
+  --from-step <${STEP_NAMES.join("|")}>   requires --resume, except in --dry-run
   --resume
   --dry-run
 
@@ -1149,6 +1251,10 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
   const runtime = { ...defaultDeps, ...deps };
   try {
     const parsed = parseCli(argv);
+    const fromStep = ensureStep(parsed.parsed.values["from-step"] as string | undefined);
+    if (parsed.command === "up" && fromStep && !parsed.parsed.values.resume && !parsed.parsed.values["dry-run"]) {
+      throw new Error("--from-step requires --resume or --dry-run");
+    }
     switch (parsed.command) {
       case "up":
         if (parsed.parsed.values["dry-run"]) {
@@ -1157,7 +1263,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
               target: parsed.target,
               overrides: parsed.overrides,
               topology: parsed.topology,
-              fromStep: ensureStep(parsed.parsed.values["from-step"] as string | undefined),
+              fromStep,
               lockFile: parsed.parsed.values["lock-file"] as string | undefined,
             },
             runtime,
@@ -1169,7 +1275,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
             target: parsed.target,
             overrides: parsed.overrides,
             topology: parsed.topology,
-            fromStep: ensureStep(parsed.parsed.values["from-step"] as string | undefined),
+            fromStep,
             lockFile: parsed.parsed.values["lock-file"] as string | undefined,
             resume: parsed.parsed.values.resume,
             dryRun: parsed.parsed.values["dry-run"],
@@ -1188,6 +1294,9 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
         return;
       case "logs":
         await runLogs(parsed.parsed.positionals[0], runtime);
+        return;
+      case "upgrade":
+        await runUpgrade(parsed.parsed.positionals[0], runtime);
         return;
       case "pause":
         await runPause(parsed.parsed.positionals[0], runtime);
