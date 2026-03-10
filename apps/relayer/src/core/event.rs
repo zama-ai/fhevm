@@ -162,104 +162,12 @@ impl Event for RelayerEvent {
 
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::GatewayChain(gateway_event) => match gateway_event {
-                GatewayChainEventData::EventLogRcvd { .. } => {
-                    GatewayChainEventId::EventLogRcvd.into()
-                }
-            },
-            RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptEventData::ReqRcvdFromUser { .. } => {
-                    PublicDecryptEventId::ReqRcvdFromUser.into()
-                }
-                PublicDecryptEventData::ReadinessCheckPassed { .. } => {
-                    PublicDecryptEventId::ReadinessCheckPassed.into()
-                }
-                PublicDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                    PublicDecryptEventId::ReadinessCheckTimedOut.into()
-                }
-                PublicDecryptEventData::ReadinessCheckFailed { .. } => {
-                    PublicDecryptEventId::ReadinessCheckFailed.into()
-                }
-                PublicDecryptEventData::ReqSentToGw { .. } => {
-                    PublicDecryptEventId::ReqSentToGw.into()
-                }
-                PublicDecryptEventData::RespRcvdFromGw { .. } => {
-                    PublicDecryptEventId::RespRcvdFromGw.into()
-                }
-                PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
-                PublicDecryptEventData::InternalFailure { .. } => {
-                    PublicDecryptEventId::InternalFailure.into()
-                }
-                PublicDecryptEventData::RespSentToUser => {
-                    PublicDecryptEventId::RespSentToUser.into()
-                }
-            },
-            RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
-                UserDecryptEventData::ReqRcvdFromUser { .. } => {
-                    UserDecryptEventId::ReqRcvdFromUser.into()
-                }
-                UserDecryptEventData::ReadinessCheckPassed { .. } => {
-                    UserDecryptEventId::ReadinessCheckPassed.into()
-                }
-                UserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                    UserDecryptEventId::ReadinessCheckTimedOut.into()
-                }
-                UserDecryptEventData::ReadinessCheckFailed { .. } => {
-                    UserDecryptEventId::ReadinessCheckFailed.into()
-                }
-                UserDecryptEventData::ReqSentToGw { .. } => UserDecryptEventId::ReqSentToGw.into(),
-                UserDecryptEventData::RespRcvdFromGw { .. } => {
-                    UserDecryptEventId::RespRcvdFromGw.into()
-                }
-                UserDecryptEventData::RespSentToUser => UserDecryptEventId::RespSentToUser.into(),
-                UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
-                UserDecryptEventData::InternalFailure { .. } => {
-                    UserDecryptEventId::InternalFailure.into()
-                }
-            },
-            RelayerEventData::DelegatedUserDecrypt(decrypt_event) => match decrypt_event {
-                DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => {
-                    UserDecryptEventId::ReqRcvdFromUser.into()
-                }
-                DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
-                    UserDecryptEventId::ReadinessCheckPassed.into()
-                }
-                DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                    UserDecryptEventId::ReadinessCheckTimedOut.into()
-                }
-                DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
-                    UserDecryptEventId::ReadinessCheckFailed.into()
-                }
-                DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
-                    UserDecryptEventId::ReqSentToGw.into()
-                }
-                DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
-                    UserDecryptEventId::RespRcvdFromGw.into()
-                }
-                DelegatedUserDecryptEventData::RespSentToUser => {
-                    UserDecryptEventId::RespSentToUser.into()
-                }
-                DelegatedUserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
-                DelegatedUserDecryptEventData::InternalFailure { .. } => {
-                    UserDecryptEventId::InternalFailure.into()
-                }
-            },
-            RelayerEventData::InputProof(input_event) => match input_event {
-                InputProofEventData::ReqRcvdFromUser { .. } => {
-                    InputProofEventId::ReqRcvdFromUser.into()
-                }
-                InputProofEventData::ReqSentToGw { .. } => InputProofEventId::ReqSentToGw.into(),
-                InputProofEventData::RespRcvdFromGw { .. } => {
-                    InputProofEventId::RespRcvdFromGw.into()
-                }
-                InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
-                InputProofEventData::InternalFailure { .. } => {
-                    InputProofEventId::InternalFailure.into()
-                }
-            },
-            RelayerEventData::KeyUrl(keyurl_event) => match keyurl_event {
-                KeyUrlEventData::KeyDataUpdated { .. } => KeyUrlEventId::KeyDataUpdated.into(),
-            },
+            RelayerEventData::GatewayChain(e) => e.event_id(),
+            RelayerEventData::PublicDecrypt(e) => e.event_id(),
+            RelayerEventData::UserDecrypt(e) => e.event_id(),
+            RelayerEventData::DelegatedUserDecrypt(e) => e.event_id(),
+            RelayerEventData::InputProof(e) => e.event_id(),
+            RelayerEventData::KeyUrl(e) => e.event_id(),
         }
     }
 
@@ -341,6 +249,12 @@ impl GatewayChainEventData {
             GatewayChainEventData::EventLogRcvd { .. } => "GatewayChain::EventLogRcvd",
         }
     }
+
+    pub fn event_id(&self) -> u8 {
+        match self {
+            GatewayChainEventData::EventLogRcvd { .. } => GatewayChainEventId::EventLogRcvd.into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -409,6 +323,32 @@ impl PublicDecryptEventData {
             PublicDecryptEventData::InternalFailure { .. } => "PublicDecrypt::InternalFailure",
         }
     }
+
+    pub fn event_id(&self) -> u8 {
+        match self {
+            PublicDecryptEventData::ReqRcvdFromUser { .. } => {
+                PublicDecryptEventId::ReqRcvdFromUser.into()
+            }
+            PublicDecryptEventData::ReadinessCheckPassed { .. } => {
+                PublicDecryptEventId::ReadinessCheckPassed.into()
+            }
+            PublicDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                PublicDecryptEventId::ReadinessCheckTimedOut.into()
+            }
+            PublicDecryptEventData::ReadinessCheckFailed { .. } => {
+                PublicDecryptEventId::ReadinessCheckFailed.into()
+            }
+            PublicDecryptEventData::ReqSentToGw { .. } => PublicDecryptEventId::ReqSentToGw.into(),
+            PublicDecryptEventData::RespRcvdFromGw { .. } => {
+                PublicDecryptEventId::RespRcvdFromGw.into()
+            }
+            PublicDecryptEventData::RespSentToUser => PublicDecryptEventId::RespSentToUser.into(),
+            PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
+            PublicDecryptEventData::InternalFailure { .. } => {
+                PublicDecryptEventId::InternalFailure.into()
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -471,6 +411,32 @@ impl UserDecryptEventData {
             UserDecryptEventData::RespSentToUser => "UserDecrypt::RespSentToFhevm",
             UserDecryptEventData::Failed { .. } => "UserDecrypt::Failed",
             UserDecryptEventData::InternalFailure { .. } => "UserDecrypt::InternalFailure",
+        }
+    }
+
+    pub fn event_id(&self) -> u8 {
+        match self {
+            UserDecryptEventData::ReqRcvdFromUser { .. } => {
+                UserDecryptEventId::ReqRcvdFromUser.into()
+            }
+            UserDecryptEventData::ReadinessCheckPassed { .. } => {
+                UserDecryptEventId::ReadinessCheckPassed.into()
+            }
+            UserDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                UserDecryptEventId::ReadinessCheckTimedOut.into()
+            }
+            UserDecryptEventData::ReadinessCheckFailed { .. } => {
+                UserDecryptEventId::ReadinessCheckFailed.into()
+            }
+            UserDecryptEventData::ReqSentToGw { .. } => UserDecryptEventId::ReqSentToGw.into(),
+            UserDecryptEventData::RespRcvdFromGw { .. } => {
+                UserDecryptEventId::RespRcvdFromGw.into()
+            }
+            UserDecryptEventData::RespSentToUser => UserDecryptEventId::RespSentToUser.into(),
+            UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
+            UserDecryptEventData::InternalFailure { .. } => {
+                UserDecryptEventId::InternalFailure.into()
+            }
         }
     }
 }
@@ -544,6 +510,40 @@ impl DelegatedUserDecryptEventData {
             DelegatedUserDecryptEventData::Failed { .. } => "DelegatedUserDecrypt::Failed",
             DelegatedUserDecryptEventData::InternalFailure { .. } => {
                 "DelegatedUserDecrypt::InternalFailure"
+            }
+        }
+    }
+
+    /// Returns the event ID for this delegated user decrypt event.
+    /// Intentionally reuses `UserDecryptEventId` values — delegated and
+    /// non-delegated user decrypt flows share the same event ID space so
+    /// they are routed to the same set of handlers.
+    pub fn event_id(&self) -> u8 {
+        match self {
+            DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => {
+                UserDecryptEventId::ReqRcvdFromUser.into()
+            }
+            DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
+                UserDecryptEventId::ReadinessCheckPassed.into()
+            }
+            DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                UserDecryptEventId::ReadinessCheckTimedOut.into()
+            }
+            DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
+                UserDecryptEventId::ReadinessCheckFailed.into()
+            }
+            DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
+                UserDecryptEventId::ReqSentToGw.into()
+            }
+            DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
+                UserDecryptEventId::RespRcvdFromGw.into()
+            }
+            DelegatedUserDecryptEventData::RespSentToUser => {
+                UserDecryptEventId::RespSentToUser.into()
+            }
+            DelegatedUserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
+            DelegatedUserDecryptEventData::InternalFailure { .. } => {
+                UserDecryptEventId::InternalFailure.into()
             }
         }
     }
@@ -846,6 +846,20 @@ impl InputProofEventData {
             InputProofEventData::InternalFailure { .. } => "Input::InternalFailure",
         }
     }
+
+    pub fn event_id(&self) -> u8 {
+        match self {
+            InputProofEventData::ReqRcvdFromUser { .. } => {
+                InputProofEventId::ReqRcvdFromUser.into()
+            }
+            InputProofEventData::ReqSentToGw { .. } => InputProofEventId::ReqSentToGw.into(),
+            InputProofEventData::RespRcvdFromGw { .. } => InputProofEventId::RespRcvdFromGw.into(),
+            InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
+            InputProofEventData::InternalFailure { .. } => {
+                InputProofEventId::InternalFailure.into()
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -858,6 +872,12 @@ impl KeyUrlEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             KeyUrlEventData::KeyDataUpdated { .. } => "KeyUrl::KeyDataUpdated",
+        }
+    }
+
+    pub fn event_id(&self) -> u8 {
+        match self {
+            KeyUrlEventData::KeyDataUpdated { .. } => KeyUrlEventId::KeyDataUpdated.into(),
         }
     }
 }
