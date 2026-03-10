@@ -1,9 +1,8 @@
 use fhevm_engine_common::protocol::messages as msg;
 
-#[cfg(feature = "rabbitmq")]
-use message_broker::rabbitmq::{RabbitMQReceiver, RabbitMQSender};
-
-use message_broker::{MessageResult, Receiver};
+use message_broker::{
+    create_default_receiver, create_default_sender, DefaultSender, MessageResult, Receiver,
+};
 use std::sync::{Arc, RwLock};
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
@@ -11,7 +10,7 @@ use tracing::{error, info};
 
 use crate::{cli::Args, dispatcher::Dispatcher};
 
-type SharedDispatcher = Arc<RwLock<Dispatcher<RabbitMQSender>>>;
+type SharedDispatcher = Arc<RwLock<Dispatcher<DefaultSender>>>;
 
 pub async fn run_tfhe_dispatcher(
     args: Args,
@@ -45,13 +44,24 @@ async fn tfhe_dispatcher_loop(
     args: &Args,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let sender = create_sender(args, "shared_tfhe_queue").await;
+    let sender = create_default_sender(
+        &args.rmq_uri,
+        "shared_tfhe_queue",
+        "",
+        "queue_fhe_partitions",
+    )
+    .await;
     let state: SharedDispatcher = Arc::new(RwLock::new(Dispatcher::new(sender)));
 
-    let mut fhe_events = create_receiver(args, &args.fhe_events_queue_name, state.clone()).await;
+    let mut fhe_events =
+        create_default_receiver(&args.rmq_uri, &args.fhe_events_queue_name, state.clone()).await;
 
-    let mut fhe_partition_complete =
-        create_receiver(args, &args.fhe_execution_complete_queue, state.clone()).await;
+    let mut fhe_partition_complete = create_default_receiver(
+        &args.rmq_uri,
+        &args.fhe_execution_complete_queue,
+        state.clone(),
+    )
+    .await;
 
     loop {
         tokio::select! {
@@ -87,23 +97,4 @@ async fn tfhe_dispatcher_loop(
             }
         }
     }
-}
-
-#[cfg(feature = "rabbitmq")]
-async fn create_sender(args: &Args, queue_name: &str) -> RabbitMQSender {
-    RabbitMQSender::new(&args.rmq_uri, queue_name, "", "queue_fhe_partitions").await
-}
-
-#[cfg(feature = "rabbitmq")]
-async fn create_receiver(
-    args: &Args,
-    queue_name: &str,
-    state: SharedDispatcher,
-) -> RabbitMQReceiver<SharedDispatcher> {
-    RabbitMQReceiver::new(&args.rmq_uri, queue_name, &args.consumer_tag_prefix, state).await
-}
-
-#[cfg(feature = "redis_stream")]
-async fn create_sender(args: &Args, queue_name: &str) -> impl Sender<Vec<u8>> {
-    message_broker::redis_stream::RedisStreamSender::new(&args.rmq_uri, queue_name).await
 }

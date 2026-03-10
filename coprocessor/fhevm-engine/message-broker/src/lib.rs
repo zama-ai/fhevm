@@ -3,8 +3,13 @@ use std::{error::Error, future::Future};
 #[cfg(feature = "rabbitmq")]
 pub mod rabbitmq;
 
+#[cfg(feature = "rabbitmq")]
+pub type DefaultSender = rabbitmq::RabbitMQSender;
+
 #[cfg(feature = "redis_stream")]
 pub mod redis_stream;
+#[cfg(feature = "redis_stream")]
+pub type DefaultSender = redis_stream::RedisStreamSender;
 
 /// Represents the result of processing a message
 /// This abstracts over the different ack strategies of various message brokers
@@ -36,4 +41,38 @@ pub trait Receiver<Message, State> {
     where
         Handler: FnMut(Message, Vec<u8>, State) -> Fut + Send,
         Fut: Future<Output = Result<MessageResult, Box<dyn Error + Send + Sync>>> + Send;
+}
+
+/// Creates a default receiver for the specified message broker where the message type is Vec<u8>
+#[cfg(feature = "rabbitmq")]
+pub async fn create_default_receiver<S>(
+    uri: &str,
+    queue_name: &str,
+    state: S,
+) -> rabbitmq::RabbitMQReceiver<S> {
+    rabbitmq::RabbitMQReceiver::new(uri, queue_name, "", state).await
+}
+
+#[cfg(feature = "redis_stream")]
+pub async fn create_default_receiver<S>(
+    uri: &str,
+    queue_name: &str,
+    state: S,
+) -> redis_stream::RedisStreamReceiver<S> {
+    redis_stream::RedisStreamReceiver::new(uri, queue_name, "", state).await
+}
+
+#[cfg(feature = "rabbitmq")]
+pub async fn create_default_sender(
+    uri: &str,
+    queue_name: &str,
+    exchange: &str,
+    routing_key: &str,
+) -> rabbitmq::RabbitMQSender {
+    rabbitmq::RabbitMQSender::new(uri, queue_name, exchange, routing_key).await
+}
+
+#[cfg(feature = "redis_stream")]
+pub async fn create_default_sender(uri: &str, queue_name: &str) -> impl Sender<Vec<u8>> {
+    message_broker::redis_stream::RedisStreamSender::new(uri, queue_name).await
 }
