@@ -532,7 +532,10 @@ const maybeBuild = async (
       for (const ref of await imageRefsForServices(component, deduped)) {
         await deps.runner(["docker", "image", "rm", "-f", ref], { allowFailure: true });
       }
-      await deps.liveRunner([...dockerArgs(component), "build", ...deduped], { env: await composeEnv(state) });
+      const buildBatches = override.group === "coprocessor" ? deduped.map((service) => [service]) : [deduped];
+      for (const batch of buildBatches) {
+        await deps.liveRunner([...dockerArgs(component), "build", ...batch], { env: await composeEnv(state) });
+      }
       await rememberBuiltImages(state, component, override.group, services, deps, saveState);
     }
   }

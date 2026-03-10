@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { resolvedComposeEnv, serviceNameList } from "./artifacts";
-import { TEMPLATE_COMPOSE_DIR } from "./layout";
+import { composeUp, resolvedComposeEnv, serviceNameList } from "./artifacts";
+import { composePath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { stubState } from "./test-helpers";
 
 describe("resolvedComposeEnv", () => {
@@ -65,5 +65,64 @@ describe("compose templates", () => {
       "utf8",
     );
     expect(template.includes("--host-chain-url=${RPC_HTTP_URL}")).toBe(true);
+  });
+
+  test("coprocessor local builds are serialized", async () => {
+    const file = composePath("coprocessor");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "services:",
+        "  coprocessor-host-listener:",
+        "    image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:fhevm-local",
+        "  coprocessor-gw-listener:",
+        "    image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:fhevm-local",
+      ].join("\n"),
+    );
+    const calls: string[][] = [];
+    try {
+      await composeUp(
+        "coprocessor",
+        stubState({ overrides: [{ group: "coprocessor" }] }),
+        {
+          runner: async () => ({ stdout: "", stderr: "", code: 1 }),
+          liveRunner: async (argv) => {
+            calls.push(argv);
+            return 0;
+          },
+        },
+        async () => {},
+        () => {},
+      );
+    } finally {
+      await fs.rm(file, { force: true });
+    }
+    expect(calls.filter((argv) => argv.includes("build"))).toEqual([
+      [
+        "docker",
+        "compose",
+        "-p",
+        "fhevm",
+        "--env-file",
+        path.join(path.dirname(path.dirname(file)), "env", "versions.env"),
+        "-f",
+        file,
+        "build",
+        "coprocessor-host-listener",
+      ],
+      [
+        "docker",
+        "compose",
+        "-p",
+        "fhevm",
+        "--env-file",
+        path.join(path.dirname(path.dirname(file)), "env", "versions.env"),
+        "-f",
+        file,
+        "build",
+        "coprocessor-gw-listener",
+      ],
+    ]);
   });
 });
