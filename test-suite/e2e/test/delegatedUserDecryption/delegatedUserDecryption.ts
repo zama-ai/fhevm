@@ -5,8 +5,6 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
-const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
-
 describe('Delegated user decryption', function () {
   before(async function () {
     await initSigners(3);
