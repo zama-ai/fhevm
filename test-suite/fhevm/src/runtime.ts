@@ -343,6 +343,19 @@ const assertSchemaCompatibility = async (
           `Run \`git fetch --tags\` or pass --allow-schema-mismatch.`,
       );
     }
+    const untracked = await deps.runner(["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath], {
+      cwd: REPO_ROOT,
+      allowFailure: true,
+    });
+    if (untracked.code !== 0) {
+      throw new Error(`Failed to inspect local ${item.group} migrations`);
+    }
+    if (untracked.stdout.trim()) {
+      throw new Error(
+        `${item.group}: local DB migrations diverge from ${ref}. ` +
+          `Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
+      );
+    }
     const diff = await deps.runner(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
       cwd: REPO_ROOT,
       allowFailure: true,

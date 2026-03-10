@@ -441,11 +441,50 @@ describe("runtime invariants", () => {
         {
           runner: fakeRunner({
             "git rev-parse -q --verify v0.11.0^{commit}": "",
+            "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
             "git diff --quiet --exit-code v0.11.0 -- coprocessor/fhevm-engine/db-migration/migrations": {
               stdout: "",
               stderr: "",
               code: 1,
             },
+          }),
+          liveRunner: async () => 0,
+          now: () => "2026-03-06T00:00:00.000Z",
+          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+          env: {},
+        },
+      );
+    } finally {
+      restore();
+    }
+    expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from v0.11.0"))).toBe(true);
+  });
+
+  test("up --dry-run rejects latest-release partial overrides with untracked local migrations", async () => {
+    const dir = await fixtureDir();
+    const lockFile = path.join(dir, "latest-release.json");
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
+    process.chdir(REPO_ROOT);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--target",
+          "latest-release",
+          "--lock-file",
+          lockFile,
+          "--override",
+          "coprocessor:host-listener",
+          "--dry-run",
+        ],
+        {
+          runner: fakeRunner({
+            "git rev-parse -q --verify v0.11.0^{commit}": "",
+            "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations":
+              "coprocessor/fhevm-engine/db-migration/migrations/20260310000000_new.sql\n",
           }),
           liveRunner: async () => 0,
           now: () => "2026-03-06T00:00:00.000Z",
