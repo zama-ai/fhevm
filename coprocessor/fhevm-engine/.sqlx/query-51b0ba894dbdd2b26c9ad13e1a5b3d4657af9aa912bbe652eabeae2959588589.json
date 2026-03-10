@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "51b0ba894dbdd2b26c9ad13e1a5b3d4657af9aa912bbe652eabeae2959588589"
+}
