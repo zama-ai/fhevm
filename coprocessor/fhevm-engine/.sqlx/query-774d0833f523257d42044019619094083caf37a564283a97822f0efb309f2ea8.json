@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, host_chain_id, contract_address, user_address, input, extra_data\n             FROM verify_proofs",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, input, extra_data\n             FROM verify_proofs",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "host_chain_id",
+        "name": "chain_id",
         "type_info": "Int8"
       },
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "7d89c095ae190e947f7a6b8a90875267dd7160a3be4f8265293ca181f01f6023"
+  "hash": "774d0833f523257d42044019619094083caf37a564283a97822f0efb309f2ea8"
 }
