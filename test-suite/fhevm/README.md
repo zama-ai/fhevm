@@ -45,6 +45,47 @@ bun test
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps. Non-network targets do not.
 
+## Pinning an Exact Version Bundle
+
+If you need to run a specific set of versions (e.g., `v0.10.7` across the board), use `--lock-file`
+to skip all target resolution and supply the full bundle yourself:
+
+```sh
+./fhevm-cli up --target latest-release --lock-file ./my-bundle.json
+```
+
+The lock file must contain every version key. Example:
+
+```json
+{
+  "target": "latest-release",
+  "lockName": "pinned-v0.10.7.json",
+  "sources": ["manual"],
+  "env": {
+    "GATEWAY_VERSION": "v0.10.7",
+    "HOST_VERSION": "v0.10.7",
+    "COPROCESSOR_DB_MIGRATION_VERSION": "v0.10.7",
+    "COPROCESSOR_HOST_LISTENER_VERSION": "v0.10.7",
+    "COPROCESSOR_GW_LISTENER_VERSION": "v0.10.7",
+    "COPROCESSOR_TX_SENDER_VERSION": "v0.10.7",
+    "COPROCESSOR_TFHE_WORKER_VERSION": "v0.10.7",
+    "COPROCESSOR_ZKPROOF_WORKER_VERSION": "v0.10.7",
+    "COPROCESSOR_SNS_WORKER_VERSION": "v0.10.7",
+    "CONNECTOR_DB_MIGRATION_VERSION": "v0.10.7",
+    "CONNECTOR_GW_LISTENER_VERSION": "v0.10.7",
+    "CONNECTOR_KMS_WORKER_VERSION": "v0.10.7",
+    "CONNECTOR_TX_SENDER_VERSION": "v0.10.7",
+    "CORE_VERSION": "v0.13.0",
+    "RELAYER_VERSION": "v0.9.0",
+    "RELAYER_MIGRATE_VERSION": "v0.9.0",
+    "TEST_SUITE_VERSION": "v0.10.7"
+  }
+}
+```
+
+The `--target` flag still determines which compat policy applies. The lock file replaces only
+the version resolution step — preflight, boot pipeline, and everything else run normally.
+
 ## Version Override via Environment Variables
 
 After resolving a target bundle, the CLI applies **environment variable overrides**: any
