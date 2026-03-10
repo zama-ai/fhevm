@@ -5,12 +5,13 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  composeDown,
   resolveEnvMap,
   resolvedComposeEnv,
   rewriteCoprocessorDependsOn,
 } from "./artifacts";
-import { REPO_ROOT, STATE_DIR, resolveServiceOverrides } from "./layout";
-import { main, overrideWarnings, resolveUpgradePlan } from "./runtime";
+import { REPO_ROOT, STATE_DIR, composePath, resolveServiceOverrides } from "./layout";
+import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
 import { compatPolicyForState } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
@@ -263,6 +264,59 @@ describe("runtime invariants", () => {
       "coprocessor1-host-listener",
       "coprocessor1-host-listener-poller",
     ]);
+  });
+
+  test("probeBootstrap treats transient material fetch failures as retryable", async () => {
+    const state = stubState({
+      discovery: {
+        gateway: { KMS_GENERATION_ADDRESS: "0x1234" },
+        host: {},
+        kmsSigner: "",
+        fheKeyId: "1".padStart(64, "0"),
+        crsKeyId: "2".padStart(64, "0"),
+        endpoints: {
+          gatewayHttp: "http://gateway-node:8546",
+          gatewayWs: "",
+          hostHttp: "",
+          hostWs: "",
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://minio:9000",
+        },
+      },
+    });
+    const result = await probeBootstrap(
+      state,
+      {
+        ...noopDeps,
+        fetch: (async (_url: string | URL, init?: RequestInit) => {
+          if (init?.method === "POST") {
+            const payload = JSON.parse(String(init.body)) as { data: string };
+            const result = payload.data === "0xd52f10eb" ? `0x${"1".padStart(64, "0")}` : `0x${"2".padStart(64, "0")}`;
+            return new Response(JSON.stringify({ result }), { status: 200 });
+          }
+          throw new Error("minio not ready");
+        }) as typeof fetch,
+      },
+      0,
+    );
+    expect(result).toBe(false);
+    expect(state.discovery?.actualFheKeyId).toBeUndefined();
+  });
+
+  test("composeDown warns on non-zero exit", async () => {
+    const file = composePath("database");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "services: {}\n");
+    const { logs, restore } = captureConsole("warn");
+    try {
+      await composeDown("database", {
+        liveRunner: async () => 1,
+      });
+    } finally {
+      restore();
+      await fs.rm(file, { force: true });
+    }
+    expect(logs.some((l) => l.includes("compose down failed for database (1)"))).toBe(true);
   });
 
   test("resolveServiceOverrides expands shared-image runtime siblings", () => {

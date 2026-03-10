@@ -72,7 +72,7 @@ export const portCheckResponses = Object.fromEntries(
   PORTS.map((p) => [`lsof -nP -iTCP:${p} -sTCP:LISTEN`, { stdout: "", stderr: "", code: 1 }]),
 ) as Record<string, RunResult>;
 
-export const captureConsole = (method: "log" | "error") => {
+export const captureConsole = (method: "log" | "error" | "warn") => {
   const logs: string[] = [];
   const orig = console[method];
   console[method] = (msg: string) => logs.push(msg);
@@ -84,4 +84,5 @@ export const noopDeps = {
   liveRunner: async () => 0,
   now: () => "2026-03-06T00:00:00.000Z",
   fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+  env: {},
 };

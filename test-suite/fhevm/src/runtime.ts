@@ -343,6 +343,8 @@ const waitForContainer = async (
   throw new Error(`Timed out waiting for ${container} (${want})`);
 };
 
+const shouldLogRetry = (attempt: number) => attempt === 0 || attempt % 10 === 0;
+
 const waitForRpc = async (deps: RuntimeDeps, url: string) => {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
@@ -354,9 +356,13 @@ const waitForRpc = async (deps: RuntimeDeps, url: string) => {
       if (response.ok) {
         return;
       }
-    } catch {}
-    if (attempt === 2 || (attempt > 0 && attempt % 10 === 0)) {
-      log(`[wait] rpc ${url}`);
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] rpc ${url}: HTTP ${response.status}`);
+      }
+    } catch (error) {
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] rpc ${url}: ${toError(error).message}`);
+      }
     }
     await sleep(1000);
   }
@@ -482,29 +488,34 @@ const hostReachableMaterialUrl = (url: string) =>
 
 const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-const probeBootstrap = async (state: State, deps: RuntimeDeps) => {
+export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 0) => {
   const gateway = withHexPrefix(state.discovery!.gateway.KMS_GENERATION_ADDRESS);
   let actualKey = 0n;
   let actualCrs = 0n;
+  let actualFheKeyId = "";
+  let actualCrsKeyId = "";
   try {
     actualKey = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xd52f10eb");
     actualCrs = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
-  } catch {
+    if (actualKey === 0n || actualCrs === 0n) {
+      return false;
+    }
+    actualFheKeyId = actualKey.toString(16).padStart(64, "0");
+    actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
+    await ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
+    );
+    await ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
+    );
+  } catch (error) {
+    if (shouldLogRetry(attempt)) {
+      log(`[wait] bootstrap probe: ${toError(error).message}`);
+    }
     return false;
   }
-  if (actualKey === 0n || actualCrs === 0n) {
-    return false;
-  }
-  const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-  const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
-  await ensureMaterialUrl(
-    deps,
-    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
-  );
-  await ensureMaterialUrl(
-    deps,
-    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
-  );
   state.discovery!.actualFheKeyId = actualFheKeyId;
   state.discovery!.actualCrsKeyId = actualCrsKeyId;
   if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
@@ -517,10 +528,10 @@ const probeBootstrap = async (state: State, deps: RuntimeDeps) => {
 
 const waitForBootstrap = async (state: State, deps: RuntimeDeps, attempts = 120) => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (await probeBootstrap(state, deps)) {
+    if (await probeBootstrap(state, deps, attempt)) {
       return;
     }
-    if (attempt === 2 || (attempt > 0 && attempt % 10 === 0)) {
+    if (shouldLogRetry(attempt)) {
       log("[wait] bootstrap materials");
     }
     await sleep(2000);

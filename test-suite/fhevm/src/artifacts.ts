@@ -66,7 +66,7 @@ const composeEnv = async (state?: State) =>
 
 const ensureWritableDir = async (dir: string) => {
   await ensureDir(dir);
-  await fs.chmod(dir, 0o777);
+  await fs.chmod(dir, 0o755);
 };
 
 const LOCAL_BUILD_TAG = "fhevm-local";
@@ -558,10 +558,13 @@ export const composeDown = async (component: string, deps: Pick<ArtifactDeps, "l
   if (!(await exists(composePath(component)))) {
     return;
   }
-  await deps.liveRunner([...dockerArgs(component), "down", "-v"], {
+  const code = await deps.liveRunner([...dockerArgs(component), "down", "-v"], {
     allowFailure: true,
     env: await composeEnv(),
   });
+  if (code !== 0) {
+    console.warn(`[warn] compose down failed for ${component} (${code})`);
+  }
 };
 
 export const regen = async (state: State, deps: Pick<ArtifactDeps, "runner">) => {
