@@ -57,6 +57,7 @@ cd test-suite/fhevm
 ./fhevm-cli test public-decrypt-http-mixed
 ./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
+./fhevm-cli test hcu-block-cap
 
 # Boot with a local coprocessor override (all services)
 ./fhevm-cli up --target latest-release --override coprocessor

@@ -10,7 +10,7 @@ import {
   resolvedComposeEnv,
   rewriteCoprocessorDependsOn,
 } from "./artifacts";
-import { REPO_ROOT, STATE_DIR, composePath, resolveServiceOverrides } from "./layout";
+import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
 import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
 import { compatPolicyForState } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
@@ -889,6 +889,10 @@ describe("CLI argument validation", () => {
 });
 
 describe("command error paths", () => {
+  test("test includes hcu-block-cap profile", () => {
+    expect(TEST_GREP["hcu-block-cap"]).toBe("block cap scenarios");
+  });
+
   test("pause rejects missing scope", async () => {
     const { logs, restore } = captureConsole("error");
     try {

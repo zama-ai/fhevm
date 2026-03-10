@@ -161,6 +161,7 @@ This resolves every repo-owned image to `9587546` and keeps companion services (
 ./fhevm-cli logs relayer
 ./fhevm-cli test input-proof
 ./fhevm-cli test erc20
+./fhevm-cli test hcu-block-cap
 
 ./fhevm-cli down
 ./fhevm-cli clean --images
