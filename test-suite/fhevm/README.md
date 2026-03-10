@@ -149,6 +149,7 @@ This resolves every repo-owned image to `9587546` and keeps companion services (
 
 ```sh
 ./fhevm-cli up --target latest-release
+./fhevm-cli deploy --target latest-release
 ./fhevm-cli up --target sha --sha 9587546
 ./fhevm-cli up --target latest-release --resume --from-step relayer
 ./fhevm-cli up --target latest-release --override coprocessor

@@ -44,6 +44,7 @@ cd test-suite/fhevm
 
 # Boot the stack
 ./fhevm-cli up --target latest-release
+./fhevm-cli deploy --target latest-release
 ./fhevm-cli up --target sha --sha 9587546
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)

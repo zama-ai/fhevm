@@ -353,6 +353,26 @@ describe("runtime invariants", () => {
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
 
+  test("deploy --dry-run aliases up without creating runtime state", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    const runner = fakeRunner({
+      "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1": JSON.stringify([
+        { tag_name: "v0.11.0", draft: false, prerelease: false },
+      ]),
+      "which bun": "",
+      "which docker": "",
+      "which gh": "",
+      "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
+      ...portCheckResponses,
+    });
+    await main(
+      ["bun", "src/cli.ts", "deploy", "--target", "latest-release", "--dry-run"],
+      { ...noopDeps, runner },
+    );
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
   test("up --dry-run can use a lock file without GitHub resolution", async () => {
     const dir = await fixtureDir();
     process.chdir(REPO_ROOT);
