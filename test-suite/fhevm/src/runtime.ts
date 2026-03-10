@@ -1075,15 +1075,22 @@ export const resolveUpgradePlan = (state: Pick<State, "overrides" | "topology">,
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
+  const restartableServices = (services: string[]) =>
+    services.filter((service) => !service.endsWith("-db-migration"));
+  const plannedServices =
+    group === "coprocessor"
+      ? coprocessorServicesForOverrides(state, selectedServices)
+      : selectedServices.length
+        ? [...new Set(selectedServices)]
+        : GROUP_BUILD_SERVICES[group];
+  const services = restartableServices(plannedServices);
+  if (!services.length) {
+    throw new Error(`upgrade requires restartable runtime services for ${group}`);
+  }
   return {
     component,
     group,
-    services:
-      group === "coprocessor"
-        ? coprocessorServicesForOverrides(state, selectedServices)
-        : selectedServices.length
-          ? [...new Set(selectedServices)]
-          : GROUP_BUILD_SERVICES[group],
+    services,
     step: group === "coprocessor" ? "coprocessor" : group,
   } as const;
 };

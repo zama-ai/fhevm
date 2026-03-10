@@ -247,7 +247,7 @@ If a runtime override is already active and you only want to rebuild and restart
 ./fhevm-cli upgrade coprocessor
 ```
 
-`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`.
+`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. It rebuilds and restarts runtime services only; one-shot DB migration containers are not rerun.
 
 ## Dropped Convenience Commands
 

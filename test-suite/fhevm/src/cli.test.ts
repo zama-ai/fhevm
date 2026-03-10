@@ -283,9 +283,11 @@ describe("runtime invariants", () => {
     );
     expect(plan.component).toBe("coprocessor");
     expect(plan.step).toBe("coprocessor");
+    expect(plan.services).not.toContain("coprocessor-db-migration");
+    expect(plan.services).not.toContain("coprocessor1-db-migration");
     expect(plan.services).toContain("coprocessor-gw-listener");
     expect(plan.services).toContain("coprocessor1-gw-listener");
-    expect(plan.services).toHaveLength(16);
+    expect(plan.services).toHaveLength(14);
 
     const filteredPlan = resolveUpgradePlan(
       {
@@ -299,6 +301,19 @@ describe("runtime invariants", () => {
       "coprocessor-host-listener-poller",
       "coprocessor1-host-listener",
       "coprocessor1-host-listener-poller",
+    ]);
+
+    const connectorPlan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "kms-connector" }],
+        topology: { count: 1, threshold: 1, instances: {} },
+      },
+      "kms-connector",
+    );
+    expect(connectorPlan.services).toEqual([
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
     ]);
   });
 
