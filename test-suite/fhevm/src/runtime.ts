@@ -443,6 +443,11 @@ const minioIp = async (deps: RuntimeDeps) => {
   return ip;
 };
 
+const responseSnippet = async (response: Response) => {
+  const text = (await response.text()).trim();
+  return text ? `: ${text.slice(0, 200)}` : "";
+};
+
 const discoverSigner = async (deps: RuntimeDeps) => {
   const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
   const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
@@ -451,7 +456,7 @@ const discoverSigner = async (deps: RuntimeDeps) => {
   }
   const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
   if (!response.ok) {
-    throw new Error("Could not fetch KMS signer address");
+    throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
   }
   return (await response.text()).trim();
 };
@@ -536,11 +541,11 @@ const ethCallId = async (deps: RuntimeDeps, url: string, to: string, data: strin
     }),
   });
   if (!response.ok) {
-    throw new Error(`eth_call failed for ${data}`);
+    throw new Error(`eth_call failed for ${data} (HTTP ${response.status})${await responseSnippet(response)}`);
   }
-  const payload = (await response.json()) as { result?: string };
+  const payload = (await response.json()) as { result?: string; error?: { message?: string } };
   if (!payload.result) {
-    throw new Error(`Missing eth_call result for ${data}`);
+    throw new Error(`Missing eth_call result for ${data}${payload.error?.message ? `: ${payload.error.message}` : ""}`);
   }
   return BigInt(payload.result);
 };
