@@ -391,6 +391,96 @@ describe("runtime invariants", () => {
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
+
+  test("up --dry-run reports a helpful message when gh is missing", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        {
+          ...noopDeps,
+          runner: async (argv) => {
+            const key = argv.join(" ");
+            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
+              throw new Error("spawn gh ENOENT");
+            }
+            return { stdout: "", stderr: "", code: 0 };
+          },
+        },
+      );
+    } finally { restore(); }
+    expect(
+      logs.some((l) =>
+        l.includes("GitHub CLI `gh` is required for target resolution"),
+      ),
+    ).toBe(true);
+  });
+
+  test("up --dry-run reports authentication guidance for gh api failures", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        {
+          ...noopDeps,
+          runner: async (argv, options) => {
+            const key = argv.join(" ");
+            if (key === "which bun" || key === "which docker" || key === "which gh") {
+              return { stdout: "", stderr: "", code: 0 };
+            }
+            if (key === "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}") {
+              return { stdout: "", stderr: "", code: 0 };
+            }
+            if (key.startsWith("lsof -nP -iTCP:")) {
+              return { stdout: "", stderr: "", code: 1 };
+            }
+            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
+              throw new Error("gh api repos/zama-ai/fhevm/releases?per_page=100&page=1 failed (1)\nHTTP 401: authentication required");
+            }
+            return noopDeps.runner(argv, options);
+          },
+        },
+      );
+    } finally { restore(); }
+    expect(
+      logs.some((l) =>
+        l.includes("GitHub API access is not authenticated"),
+      ),
+    ).toBe(true);
+  });
+
+  test("up --dry-run reports rate limiting guidance for gh api failures", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        {
+          ...noopDeps,
+          runner: async (argv, options) => {
+            const key = argv.join(" ");
+            if (key === "which bun" || key === "which docker" || key === "which gh") {
+              return { stdout: "", stderr: "", code: 0 };
+            }
+            if (key === "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}") {
+              return { stdout: "", stderr: "", code: 0 };
+            }
+            if (key.startsWith("lsof -nP -iTCP:")) {
+              return { stdout: "", stderr: "", code: 1 };
+            }
+            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
+              throw new Error("gh api repos/zama-ai/fhevm/releases?per_page=100&page=1 failed (1)\nAPI rate limit exceeded");
+            }
+            return noopDeps.runner(argv, options);
+          },
+        },
+      );
+    } finally { restore(); }
+    expect(
+      logs.some((l) =>
+        l.includes("GitHub API rate limit hit while resolving versions"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("CLI argument validation", () => {
@@ -513,10 +603,22 @@ describe("command error paths", () => {
   });
 
   test("test requires completed bootstrap", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("error");
     try {
+      await fs.rm(stateDir, { recursive: true, force: true });
       await main(["bun", "src/cli.ts", "test", "input-proof"], noopDeps);
-    } finally { restore(); }
+    } finally {
+      restore();
+      if (hadState === undefined) {
+        await fs.rm(stateDir, { recursive: true, force: true });
+      } else {
+        await fs.mkdir(stateDir, { recursive: true });
+        await fs.writeFile(stateFile, hadState);
+      }
+    }
     expect(logs.some((l) => l.includes("bootstrap") || l.includes("fhevm-cli up"))).toBe(true);
   });
 

@@ -570,9 +570,22 @@ const resetAfterStep = async (step: StepName, deps: RuntimeDeps) => {
   }
 };
 
+const ensureCommand = async (deps: RuntimeDeps, command: string) => {
+  try {
+    await deps.runner(["which", command]);
+  } catch (error) {
+    if (command === "gh") {
+      throw new Error(
+        "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
+      );
+    }
+    throw error;
+  }
+};
+
 const preflight = async (state: State, deps: RuntimeDeps, strictPorts = true, needsGitHub = true) => {
   for (const cmd of ["bun", "docker", ...(needsGitHub ? ["gh"] : [])]) {
-    await deps.runner(["which", cmd]);
+    await ensureCommand(deps, cmd);
   }
   if (state.topology.count > 1) {
     await deps.runner(["which", "cast"]);

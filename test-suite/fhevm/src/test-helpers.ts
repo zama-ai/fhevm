@@ -80,7 +80,7 @@ export const captureConsole = (method: "log" | "error") => {
 };
 
 export const noopDeps = {
-  runner: async () => ({ stdout: "", stderr: "", code: 0 }) as RunResult,
+  runner: async (_argv?: string[], _options?: RunOptions) => ({ stdout: "", stderr: "", code: 0 }) as RunResult,
   liveRunner: async () => 0,
   now: () => "2026-03-06T00:00:00.000Z",
   fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,

@@ -2,7 +2,7 @@ import YAML from "yaml";
 
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import type { Runner, RunResult } from "./utils";
-import { normalizeRepository } from "./utils";
+import { normalizeRepository, toError } from "./utils";
 import type { VersionBundle, VersionTarget } from "./types";
 
 type GitHubClient = {
@@ -96,14 +96,57 @@ const GITOPS_REPO = "zama-zws/gitops";
 
 const parseJson = <T>(value: RunResult) => JSON.parse(value.stdout) as T;
 
+const explainGitHubCliError = (error: unknown) => {
+  const message = toError(error).message;
+  const lower = message.toLowerCase();
+  if (
+    message.includes("which gh failed") ||
+    lower.includes("spawn gh") ||
+    lower.includes("enoent") ||
+    lower.includes("gh: command not found")
+  ) {
+    return new Error(
+      "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
+    );
+  }
+  if (
+    lower.includes("authentication failed") ||
+    lower.includes("authentication required") ||
+    lower.includes("gh auth login") ||
+    lower.includes("http 401") ||
+    lower.includes("requires authentication")
+  ) {
+    return new Error(
+      "GitHub API access is not authenticated. Run `gh auth login`, export GH_TOKEN, or use --lock-file to skip GitHub resolution.",
+    );
+  }
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("secondary rate limit") ||
+    lower.includes("api rate limit exceeded") ||
+    lower.includes("http 429")
+  ) {
+    return new Error(
+      "GitHub API rate limit hit while resolving versions. Retry with an authenticated GH_TOKEN or use --lock-file to run with a pinned bundle.",
+    );
+  }
+  return error;
+};
+
+const runGhApi = async (runner: Runner, path: string) => {
+  try {
+    return await runner(["gh", "api", path]);
+  } catch (error) {
+    throw explainGitHubCliError(error);
+  }
+};
+
 const ghPages = async <T>(runner: Runner, path: string, limit = 1000) => {
   const items: T[] = [];
   let page = 1;
   while (items.length < limit) {
     const join = path.includes("?") ? "&" : "?";
-    const payload = parseJson<T[]>(
-      await runner(["gh", "api", `${path}${join}per_page=100&page=${page}`]),
-    );
+    const payload = parseJson<T[]>(await runGhApi(runner, `${path}${join}per_page=100&page=${page}`));
     if (!payload.length) {
       break;
     }
@@ -145,7 +188,7 @@ export const createGitHubClient = (runner: Runner): GitHubClient => ({
   },
   gitopsFile: async (file) => {
     const payload = parseJson<{ content: string }>(
-      await runner(["gh", "api", `repos/${GITOPS_REPO}/contents/${file}?ref=main`]),
+      await runGhApi(runner, `repos/${GITOPS_REPO}/contents/${file}?ref=main`),
     );
     return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8");
   },
