@@ -55,6 +55,7 @@ import { applyVersionEnvOverrides, createGitHubClient, describeBundle, resolveTa
 
 type UpOptions = {
   target: (typeof TARGETS)[number];
+  sha?: string;
   overrides: LocalOverride[];
   topology: Topology;
   fromStep?: StepName;
@@ -202,6 +203,7 @@ const parseCli = (argv: string[]) => {
     allowPositionals: true,
     options: {
       target: { type: "string", default: "latest-release" },
+      sha: { type: "string" },
       override: { type: "string", multiple: true, default: [] },
       coprocessors: { type: "string", default: "1" },
       threshold: { type: "string" },
@@ -221,6 +223,16 @@ const parseCli = (argv: string[]) => {
   if (!TARGETS.includes(target as (typeof TARGETS)[number])) {
     throw new Error(`Unsupported target ${target}`);
   }
+  const sha = parsed.values.sha as string | undefined;
+  if (target === "sha" && !sha) {
+    throw new Error("--target sha requires --sha");
+  }
+  if (target !== "sha" && sha) {
+    throw new Error("--sha requires --target sha");
+  }
+  if (sha && parsed.values["lock-file"]) {
+    throw new Error("--sha cannot be used with --lock-file");
+  }
   const count = Number(parsed.values.coprocessors);
   const threshold = parsed.values.threshold ? Number(parsed.values.threshold) : undefined;
   if (!Number.isInteger(count) || count < 1 || count > 5) {
@@ -238,7 +250,7 @@ const parseCli = (argv: string[]) => {
       parseInstanceArgs(parsed.values["instance-arg"] as string[]),
     ),
   );
-  return { command, parsed, target: target as UpOptions["target"], overrides, topology };
+  return { command, parsed, target: target as UpOptions["target"], sha, overrides, topology };
 };
 
 const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
@@ -267,19 +279,19 @@ const bundleFromFile = async (target: UpOptions["target"], lockFile: string) => 
   return { ...bundle, target };
 };
 
-const resolveBundle = async (options: Pick<UpOptions, "target" | "lockFile">, deps: RuntimeDeps) => {
+const resolveBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) => {
   const bundle = options.lockFile
     ? await bundleFromFile(options.target, options.lockFile)
-    : await resolveTarget(options.target, createGitHubClient(deps.runner));
+    : await resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha });
   const resolved = applyVersionEnvOverrides(bundle, deps.env);
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
 };
 
-const previewBundle = (options: Pick<UpOptions, "target" | "lockFile">, deps: RuntimeDeps) =>
+const previewBundle = (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) =>
   (options.lockFile
     ? bundleFromFile(options.target, options.lockFile)
-    : resolveTarget(options.target, createGitHubClient(deps.runner))).then((bundle) =>
+    : resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha })).then((bundle) =>
     applyVersionEnvOverrides(bundle, deps.env),
   );
 
@@ -1199,7 +1211,8 @@ Commands:
   test     run e2e tests in fhevm-test-suite-e2e-debug
 
 up options:
-  --target latest-main|latest-release|devnet|testnet|mainnet
+  --target latest-main|latest-release|sha|devnet|testnet|mainnet
+  --sha <git-sha>   required with --target sha
   --lock-file <path-to-bundle-json>
   --override <group[:svc1,svc2]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
   --coprocessors <n>
@@ -1229,6 +1242,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
           await runUpDry(
             {
               target: parsed.target,
+              sha: parsed.sha,
               overrides: parsed.overrides,
               topology: parsed.topology,
               fromStep,
@@ -1241,6 +1255,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
         await runUp(
           {
             target: parsed.target,
+            sha: parsed.sha,
             overrides: parsed.overrides,
             topology: parsed.topology,
             fromStep,

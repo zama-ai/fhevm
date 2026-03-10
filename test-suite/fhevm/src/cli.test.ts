@@ -103,6 +103,25 @@ describe("resolveTarget", () => {
     );
   });
 
+  test("sha resolves an explicit complete repo-owned image set", async () => {
+    const gh = createGitHubClient(fakeRunner(latestMainPackageResponses("1234abc")));
+    const bundle = await resolveTarget("sha", gh, { sha: "1234abc999999999999999999999999999999999" });
+    expect(bundle.lockName).toBe("sha-1234abc.json");
+    expect(bundle.env.GATEWAY_VERSION).toBe("1234abc");
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
+    expect(bundle.sources).toContain("requested-sha=1234abc999999999999999999999999999999999");
+  });
+
+  test("sha rejects missing repo-owned images", async () => {
+    const responses = latestMainPackageResponses("1234abc");
+    responses["gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fsns-worker/versions?per_page=100&page=1"] =
+      JSON.stringify([{ metadata: { container: { tags: ["other"] } } }]);
+    const gh = createGitHubClient(fakeRunner(responses));
+    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
+      "Could not find a complete sha image set for 1234abc; missing: fhevm/coprocessor/sns-worker",
+    );
+  });
+
   test("testnet bundle resolves from gitops-style files", async () => {
     const gh = {
       latestStableRelease: async () => "v0.11.0",
@@ -378,6 +397,49 @@ describe("CLI argument validation", () => {
       await main(["bun", "src/cli.ts", "up", "--coprocessors", "2", "--threshold", "3"], noopDeps);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--threshold must be between 1 and --coprocessors"))).toBe(true);
+  });
+
+  test("rejects --target sha without --sha", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--dry-run"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--target sha requires --sha"))).toBe(true);
+  });
+
+  test("rejects --sha without --target sha", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--target", "latest-release", "--sha", "1234abc", "--dry-run"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--sha requires --target sha"))).toBe(true);
+  });
+
+  test("rejects --sha with --lock-file", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main([
+        "bun",
+        "src/cli.ts",
+        "up",
+        "--target",
+        "sha",
+        "--sha",
+        "1234abc",
+        "--lock-file",
+        "/tmp/fake.json",
+        "--dry-run",
+      ], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--sha cannot be used with --lock-file"))).toBe(true);
+  });
+
+  test("rejects invalid sha format", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--sha", "notasha", "--dry-run"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Invalid sha notasha; expected 7 or 40 hex characters"))).toBe(true);
   });
 
   test("rejects unknown per-service override suffix", async () => {

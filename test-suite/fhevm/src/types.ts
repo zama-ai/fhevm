@@ -16,7 +16,7 @@ export const STEP_NAMES = [
   "test-suite",
 ] as const;
 
-export const TARGETS = ["latest-main", "latest-release", "devnet", "testnet", "mainnet"] as const;
+export const TARGETS = ["latest-main", "latest-release", "sha", "devnet", "testnet", "mainnet"] as const;
 export const OVERRIDE_GROUPS = [
   "coprocessor",
   "kms-connector",
