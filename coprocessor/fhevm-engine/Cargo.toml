@@ -114,5 +114,7 @@ codegen-units = 16
 
 [profile.coverage]
 inherits = "release"
+opt-level = 1
 lto = false
+debug = 1
 codegen-units = 16

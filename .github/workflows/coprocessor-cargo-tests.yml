@@ -31,7 +31,6 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
-              - ci/coverage-thresholds.json
   cargo-tests:
     name: coprocessor-cargo-test/cargo-tests (bpr)
     needs: check-changes
@@ -54,7 +53,7 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
       with:
-        toolchain: stable
+        toolchain: "1.91.1"
         components: llvm-tools-preview
 
     - name: Install cargo-llvm-cov
@@ -119,8 +118,13 @@ jobs:
       if: always()
       run: |
         echo '## Coverage: coprocessor/fhevm-engine' >> "$GITHUB_STEP_SUMMARY"
-        echo '```' >> "$GITHUB_STEP_SUMMARY"
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
-        cargo llvm-cov report --workspace --profile coverage >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo 'No coverage data available' >> "$GITHUB_STEP_SUMMARY"
-        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        REPORT=$(DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
+          cargo llvm-cov report --workspace --profile coverage 2>/dev/null) || true
+        if [ -n "$REPORT" ]; then
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo '*No coverage data available (tests may have failed before producing profiling data).*' >> "$GITHUB_STEP_SUMMARY"
+        fi
       working-directory: coprocessor/fhevm-engine
