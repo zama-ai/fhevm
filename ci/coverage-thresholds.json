@@ -1,5 +1,5 @@
 {
-  "coprocessor/fhevm-engine": 40,
-  "kms-connector": 50,
+  "coprocessor/fhevm-engine": 60,
+  "kms-connector": 60,
   "sdk/rust-sdk": 60
 }
