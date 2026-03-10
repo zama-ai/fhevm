@@ -111,14 +111,13 @@ jobs:
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
         TEST_GLOBAL_LOCALSTACK=1 \
-        cargo llvm-cov --workspace --profile coverage -- --test-threads=1
+        cargo llvm-cov --no-report --workspace --profile coverage -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
 
-    - name: Coverage summary
+    - name: Generate coverage report
       if: always()
       run: |
-        REPORT=$(DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
-          cargo llvm-cov report --workspace --profile coverage 2>/dev/null) || true
+        REPORT=$(cargo llvm-cov report --profile coverage 2>&1) || true
         {
           echo '## Coverage: coprocessor/fhevm-engine'
           if [ -n "$REPORT" ]; then
@@ -129,4 +128,5 @@ jobs:
             echo '*No coverage data available (tests may have failed before producing profiling data).*'
           fi
         } >> "$GITHUB_STEP_SUMMARY"
+        echo "$REPORT"
       working-directory: coprocessor/fhevm-engine
