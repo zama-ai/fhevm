@@ -38,7 +38,6 @@ where
         multichain_acl_address: Address,
         signer: AbstractSigner,
         gateway_provider: NonceManagedProvider<P>,
-        host_chain_provider: P,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
@@ -73,7 +72,6 @@ where
                 ops::delegate_user_decrypt::DelegateUserDecryptOperation::new(
                     multichain_acl_address,
                     gateway_provider.clone(),
-                    host_chain_provider,
                     conf.clone(),
                     gas,
                     db_pool.clone(),
