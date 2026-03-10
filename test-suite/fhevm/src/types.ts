@@ -32,12 +32,10 @@ export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 export type InstanceOverride = {
   env: Record<string, string>;
   args: Record<string, string[]>;
-  profile?: string;
 };
 
 export type LocalOverride = {
   group: OverrideGroup;
-  profile?: string;
   services?: string[];
 };
 

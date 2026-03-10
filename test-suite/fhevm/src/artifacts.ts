@@ -52,10 +52,9 @@ type ArtifactDeps = {
 
 const HAS_PLACEHOLDER = /(?<!\$)\$\{[A-Z0-9_]+\}/;
 
-export const resolvedComposeEnv = (state: Pick<State, "versions" | "overrides">): Record<string, string> => ({
+export const resolvedComposeEnv = (state: Pick<State, "versions">): Record<string, string> => ({
   ...state.versions.env,
   COMPOSE_IGNORE_ORPHANS: "true",
-  FHEVM_CARGO_PROFILE: state.overrides.find((item) => item.profile)?.profile ?? "release",
 });
 
 const composeEnv = async (state?: State) =>
@@ -213,9 +212,6 @@ const applyInstanceAdjustments = (
     next.healthcheck = { disable: true };
   }
   next.env_file = [envFileValue];
-  if (override?.profile) {
-    next.environment = { ...(next.environment as Record<string, string> | undefined), FHEVM_INSTANCE_PROFILE: override.profile };
-  }
   if (override?.env && Object.keys(override.env).length) {
     next.environment = { ...(next.environment as Record<string, string> | undefined), ...override.env };
   }
@@ -452,9 +448,6 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@db:5432/coprocessor_${index}`;
       next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       const instance = state.topology.instances[`coprocessor-${index}`];
-      if (instance?.profile) {
-        next.FHEVM_INSTANCE_PROFILE = instance.profile;
-      }
       Object.assign(next, instance?.env ?? {});
       resolveEnvMap(next);
       await writeEnvFile(envPath(`coprocessor.${index}`), next);
@@ -466,10 +459,7 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
   }
   await writeEnvFile(
     versionsEnvPath,
-    Object.fromEntries([
-      ...Object.entries(state.versions.env),
-      ["FHEVM_CARGO_PROFILE", state.overrides.find((item) => item.profile)?.profile ?? "release"],
-    ]),
+    state.versions.env,
   );
   await copyFile(TEMPLATE_RELAYER_CONFIG, relayerConfigPath);
 };

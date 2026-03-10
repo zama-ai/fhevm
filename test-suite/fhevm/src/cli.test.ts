@@ -146,7 +146,7 @@ describe("resolveTarget", () => {
 });
 
 describe("runtime invariants", () => {
-  test("resolvedComposeEnv preserves version keys and selected cargo profile", () => {
+  test("resolvedComposeEnv preserves version keys", () => {
     const env = resolvedComposeEnv({
       versions: {
         target: "latest-release",
@@ -157,11 +157,9 @@ describe("runtime invariants", () => {
           CORE_VERSION: "v0.13.0",
         },
       },
-      overrides: [{ group: "coprocessor", profile: "local" }],
     });
     expect(env.GATEWAY_VERSION).toBe("v0.11.0");
     expect(env.CORE_VERSION).toBe("v0.13.0");
-    expect(env.FHEVM_CARGO_PROFILE).toBe("local");
   });
 
   test("compat policy keeps legacy coprocessor API key flags for versions before v0.12.0", () => {
@@ -382,12 +380,12 @@ describe("CLI argument validation", () => {
     expect(logs.some((l) => l.includes("--threshold must be between 1 and --coprocessors"))).toBe(true);
   });
 
-  test("rejects --profile without --override", async () => {
+  test("rejects unknown per-service override suffix", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--profile", "debug"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--override", "coprocessor:local"], noopDeps);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("--profile requires at least one --override"))).toBe(true);
+    expect(logs.some((l) => l.includes('Unknown service "local" in group "coprocessor"'))).toBe(true);
   });
 
   test("rejects unsupported override group", async () => {
