@@ -260,12 +260,30 @@ const bundleFromFiles = async (client: GitHubClient, target: VersionTarget, file
 };
 
 const REPO_TAG = /^[0-9a-f]{7}$/;
+const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 const LATEST_MAIN_MIN_SHA = "acfa9775818406a119b53d2beb05a04742a49473";
 
+const repoPackageName = (pkg: string) => decodeURIComponent(pkg);
+
+const repoPackageTags = async (client: GitHubClient) =>
+  Object.fromEntries(
+    await Promise.all(
+      Object.entries(REPO_PACKAGES).map(async ([key, pkg]) => [key, await client.packageTags(pkg)] as const),
+    ),
+  );
+
+const missingRepoPackages = (packageTags: Record<string, Set<string>>, tag: string) =>
+  Object.entries(REPO_PACKAGES)
+    .filter(([key]) => !packageTags[key]?.has(tag))
+    .map(([, pkg]) => repoPackageName(pkg));
+
+const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+
 const presetBundle = (
-  target: "latest-release" | "latest-main",
+  target: "latest-release" | "latest-main" | "sha",
   repoVersion: string,
   lockName: string,
+  sources: string[] = [],
 ) => ({
   target,
   lockName,
@@ -280,10 +298,14 @@ const presetBundle = (
       return [key, version];
     }),
   ),
-  sources: [`preset=${target}`, `repo-owned=${repoVersion}`],
+  sources: [`preset=${target}`, `repo-owned=${repoVersion}`, ...sources],
 }) satisfies VersionBundle;
 
-export const resolveTarget = async (target: VersionTarget, client: GitHubClient): Promise<VersionBundle> => {
+export const resolveTarget = async (
+  target: VersionTarget,
+  client: GitHubClient,
+  options: { sha?: string } = {},
+): Promise<VersionBundle> => {
   if (target === "devnet") {
     return bundleFromFiles(client, target, DEVNET_FILES);
   }
@@ -299,10 +321,23 @@ export const resolveTarget = async (target: VersionTarget, client: GitHubClient)
     return presetBundle(target, release, `latest-release-${release}.json`);
   }
 
-  const tags = await Promise.all(
-    Object.entries(REPO_PACKAGES).map(async ([key, pkg]) => [key, await client.packageTags(pkg)] as const),
-  );
-  const packageTags = Object.fromEntries(tags);
+  if (target === "sha") {
+    const requested = options.sha?.trim();
+    if (!requested) {
+      throw new Error("--target sha requires --sha");
+    }
+    if (!SHA_REF.test(requested)) {
+      throw new Error(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
+    }
+    const tag = shortSha(requested);
+    const packageTags = await repoPackageTags(client);
+    const missing = missingRepoPackages(packageTags, tag);
+    if (missing.length) {
+      throw new Error(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
+    }
+    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
+  }
+  const packageTags = await repoPackageTags(client);
   const commits = await client.mainCommits(1000);
   const floor = commits.indexOf(LATEST_MAIN_MIN_SHA);
   if (floor < 0) {

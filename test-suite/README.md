@@ -40,9 +40,11 @@ cd test-suite/fhevm
 
 # Preview the resolved bundle and boot plan
 ./fhevm-cli up --target latest-release --dry-run
+./fhevm-cli up --target sha --sha 9587546 --dry-run
 
 # Boot the stack
 ./fhevm-cli up --target latest-release
+./fhevm-cli up --target sha --sha 9587546
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
 ./fhevm-cli up --target latest-release --coprocessors 2 --threshold 2

@@ -7,10 +7,12 @@ flowchart TD
   A["fhevm-cli up"] --> B["Resolve target"]
   B --> B1["latest-main: walk main SHAs until complete image set, but not before acfa977"]
   B --> B2["latest-release: latest stable release"]
-  B --> B3["devnet/testnet/mainnet: GitOps bundles"]
+  B --> B3["sha: exact repo-owned SHA, fail if any package tag is missing"]
+  B --> B4["devnet/testnet/mainnet: GitOps bundles"]
   B1 --> C["Lock resolved bundle"]
   B2 --> C
   B3 --> C
+  B4 --> C
 
   C --> D["Preflight"]
   D --> E["Generate runtime files under .fhevm"]

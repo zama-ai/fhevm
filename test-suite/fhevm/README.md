@@ -39,12 +39,14 @@ bun test
 
 - `latest-release`: latest stable fhevm release plus checked-in companion defaults
 - `latest-main`: newest complete repo-owned main SHA bundle at or after the tenant-refactor floor (`acfa977`)
+- `sha`: exact repo-owned SHA bundle plus `latest-release` companions
 - `devnet`
 - `testnet`
 - `mainnet`
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps. Non-network targets do not.
 `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
+`sha` requires `--sha <git-sha>` and fails fast unless every repo-owned package is available at that 7-character SHA tag.
 
 ## Pinning an Exact Version Bundle
 
@@ -134,10 +136,20 @@ COPROCESSOR_TFHE_WORKER_VERSION=abc1234 \
 
 The resolved lock file records which keys were overridden in its `sources` field.
 
+If you already know the exact repo SHA you want and all fhevm images were published with that tag:
+
+```sh
+./fhevm-cli up --target sha --sha 9587546
+./fhevm-cli up --target sha --sha 9587546 --dry-run
+```
+
+This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the current `latest-release` preset.
+
 ## Main Commands
 
 ```sh
 ./fhevm-cli up --target latest-release
+./fhevm-cli up --target sha --sha 9587546
 ./fhevm-cli up --target latest-release --resume --from-step relayer
 ./fhevm-cli up --target latest-release --override coprocessor
 ./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
