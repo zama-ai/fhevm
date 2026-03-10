@@ -8,7 +8,7 @@ on:
         default: "registry"
         type: string
       override:
-        description: "Comma-separated override values for workspace mode (for example: coprocessor or coprocessor:host-listener)"
+        description: "Comma-separated override values for workspace mode (for example: all, coprocessor, or coprocessor:host-listener)"
         default: ""
         type: string
       coprocessor-db-migration-version:

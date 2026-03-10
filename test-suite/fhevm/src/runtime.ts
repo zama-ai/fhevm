@@ -127,13 +127,18 @@ const createTopology = (count: number, threshold?: number, instances?: Record<st
   instances: instances ?? {},
 });
 
-const parseLocalOverride = (value: string): LocalOverride => {
+const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
+
+const parseLocalOverride = (value: string): LocalOverride[] => {
+  if (value === "all") {
+    return ALL_OVERRIDES;
+  }
   const colonIdx = value.indexOf(":");
   if (colonIdx < 0) {
     if (!OVERRIDE_GROUPS.includes(value as OverrideGroup)) {
       throw new Error(`Unsupported override ${value}`);
     }
-    return { group: value as OverrideGroup };
+    return [{ group: value as OverrideGroup }];
   }
   const group = value.slice(0, colonIdx);
   const rest = value.slice(colonIdx + 1);
@@ -148,7 +153,7 @@ const parseLocalOverride = (value: string): LocalOverride => {
   if (!parts.length) {
     throw new Error(`Expected at least one service name in override "${value}"`);
   }
-  return { group: overrideGroup, services: resolveServiceOverrides(overrideGroup, parts) };
+  return [{ group: overrideGroup, services: resolveServiceOverrides(overrideGroup, parts) }];
 };
 
 const parseKeyValue = (value: string) => {
@@ -256,7 +261,7 @@ const parseCli = (argv: string[]) => {
   if (threshold !== undefined && (!Number.isInteger(threshold) || threshold < 1 || threshold > count)) {
     throw new Error("--threshold must be between 1 and --coprocessors");
   }
-  const overrides = (parsed.values.override as string[]).map(parseLocalOverride);
+  const overrides = (parsed.values.override as string[]).flatMap(parseLocalOverride);
   const topology = createTopology(
     count,
     threshold,
