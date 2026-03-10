@@ -130,18 +130,10 @@ const parseLocalOverride = (value: string): LocalOverride => {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
-  const isServiceList = parts.length > 1 || GROUP_SERVICE_SUFFIXES[overrideGroup].includes(parts[0] ?? "");
-  if (isServiceList) {
-    return { group: overrideGroup, services: resolveServiceOverrides(overrideGroup, parts) };
+  if (!parts.length) {
+    throw new Error(`Expected at least one service name in override "${value}"`);
   }
-  if (parts.length === 1 && parts[0].includes("-")) {
-    throw new Error(
-      `Unknown service "${parts[0]}" in group "${overrideGroup}". ` +
-        `Valid services: ${GROUP_SERVICE_SUFFIXES[overrideGroup].join(", ")}. ` +
-        `If this is a cargo profile, use --profile instead.`,
-    );
-  }
-  return { group: overrideGroup, profile: rest };
+  return { group: overrideGroup, services: resolveServiceOverrides(overrideGroup, parts) };
 };
 
 const parseKeyValue = (value: string) => {
@@ -189,17 +181,6 @@ const parseInstanceArgs = (values: string[]) => {
   return out;
 };
 
-const parseInstanceProfiles = (values: string[]) => {
-  const out: Record<string, InstanceOverride> = {};
-  for (const value of values) {
-    const [index, profile] = parseInstanceKey(value);
-    const name = `coprocessor-${index}`;
-    out[name] ??= { env: {}, args: {} };
-    out[name].profile = profile;
-  }
-  return out;
-};
-
 const mergeInstanceOverrides = (...items: Record<string, InstanceOverride>[]) => {
   const out: Record<string, InstanceOverride> = {};
   for (const item of items) {
@@ -208,9 +189,6 @@ const mergeInstanceOverrides = (...items: Record<string, InstanceOverride>[]) =>
       Object.assign(out[name].env, override.env);
       for (const [service, args] of Object.entries(override.args)) {
         out[name].args[service] = [...(out[name].args[service] ?? []), ...args];
-      }
-      if (override.profile) {
-        out[name].profile = override.profile;
       }
     }
   }
@@ -225,7 +203,6 @@ const parseCli = (argv: string[]) => {
     options: {
       target: { type: "string", default: "latest-release" },
       override: { type: "string", multiple: true, default: [] },
-      profile: { type: "string" },
       coprocessors: { type: "string", default: "1" },
       threshold: { type: "string" },
       "from-step": { type: "string" },
@@ -238,7 +215,6 @@ const parseCli = (argv: string[]) => {
       verbose: { type: "boolean", default: false },
       "instance-env": { type: "string", multiple: true, default: [] },
       "instance-arg": { type: "string", multiple: true, default: [] },
-      "instance-profile": { type: "string", multiple: true, default: [] },
     },
   });
   const target = parsed.values.target as string;
@@ -253,19 +229,13 @@ const parseCli = (argv: string[]) => {
   if (threshold !== undefined && (!Number.isInteger(threshold) || threshold < 1 || threshold > count)) {
     throw new Error("--threshold must be between 1 and --coprocessors");
   }
-  const overrides = (parsed.values.override as string[]).map(parseLocalOverride).map((item) =>
-    item.profile || !parsed.values.profile ? item : { ...item, profile: parsed.values.profile as string },
-  );
-  if (parsed.values.profile && !overrides.length) {
-    throw new Error("--profile requires at least one --override");
-  }
+  const overrides = (parsed.values.override as string[]).map(parseLocalOverride);
   const topology = createTopology(
     count,
     threshold,
     mergeInstanceOverrides(
       parseInstanceEnv(parsed.values["instance-env"] as string[]),
       parseInstanceArgs(parsed.values["instance-arg"] as string[]),
-      parseInstanceProfiles(parsed.values["instance-profile"] as string[]),
     ),
   );
   return { command, parsed, target: target as UpOptions["target"], overrides, topology };
@@ -632,7 +602,7 @@ const printBundle = (bundle: VersionBundle) => {
 };
 
 const describeOverride = (item: LocalOverride) =>
-  `${item.group}${item.profile ? `:${item.profile}` : ""}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
+  `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
 export const overrideWarnings = (overrides: LocalOverride[]) =>
   overrides.flatMap((item) =>
@@ -1231,13 +1201,11 @@ Commands:
 up options:
   --target latest-main|latest-release|devnet|testnet|mainnet
   --lock-file <path-to-bundle-json>
-  --override <group[:profile|svc1,svc2]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
-  --profile <cargo-profile>
+  --override <group[:svc1,svc2]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
   --coprocessors <n>
   --threshold <t>
   --instance-env <idx:KEY=VALUE>
   --instance-arg <idx:service=--flag=value>
-  --instance-profile <idx:name>
   --from-step <${STEP_NAMES.join("|")}>   requires --resume, except in --dry-run
   --resume
   --dry-run

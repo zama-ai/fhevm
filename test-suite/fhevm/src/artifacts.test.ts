@@ -10,33 +10,6 @@ describe("resolvedComposeEnv", () => {
     expect(env.CORE_VERSION).toBe("v0.13.0");
     expect(env.COMPOSE_IGNORE_ORPHANS).toBe("true");
   });
-
-  test("defaults FHEVM_CARGO_PROFILE to release", () => {
-    const env = resolvedComposeEnv(stubState());
-    expect(env.FHEVM_CARGO_PROFILE).toBe("release");
-  });
-
-  test("uses override profile when present", () => {
-    const env = resolvedComposeEnv(stubState({ overrides: [{ group: "coprocessor", profile: "debug" }] }));
-    expect(env.FHEVM_CARGO_PROFILE).toBe("debug");
-  });
-
-  test("uses first override profile found", () => {
-    const env = resolvedComposeEnv(
-      stubState({
-        overrides: [
-          { group: "coprocessor", profile: "custom" },
-          { group: "test-suite", profile: "other" },
-        ],
-      }),
-    );
-    expect(env.FHEVM_CARGO_PROFILE).toBe("custom");
-  });
-
-  test("falls back to release when override has no profile", () => {
-    const env = resolvedComposeEnv(stubState({ overrides: [{ group: "coprocessor" }] }));
-    expect(env.FHEVM_CARGO_PROFILE).toBe("release");
-  });
 });
 
 describe("serviceNameList", () => {
