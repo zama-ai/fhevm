@@ -80,6 +80,7 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 # Override an entire group (builds all services locally)
 ./fhevm-cli up --target latest-release --override coprocessor
 
+
 # Override specific services within a group (others pull from registry)
 ./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
 ```
