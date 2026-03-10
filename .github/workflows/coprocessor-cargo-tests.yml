@@ -117,14 +117,16 @@ jobs:
     - name: Coverage summary
       if: always()
       run: |
-        echo '## Coverage: coprocessor/fhevm-engine' >> "$GITHUB_STEP_SUMMARY"
         REPORT=$(DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
           cargo llvm-cov report --workspace --profile coverage 2>/dev/null) || true
-        if [ -n "$REPORT" ]; then
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-        else
-          echo '*No coverage data available (tests may have failed before producing profiling data).*' >> "$GITHUB_STEP_SUMMARY"
-        fi
+        {
+          echo '## Coverage: coprocessor/fhevm-engine'
+          if [ -n "$REPORT" ]; then
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          else
+            echo '*No coverage data available (tests may have failed before producing profiling data).*'
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
       working-directory: coprocessor/fhevm-engine
