@@ -66,7 +66,7 @@ const composeEnv = async (state?: State) =>
 
 const ensureWritableDir = async (dir: string) => {
   await ensureDir(dir);
-  await fs.chmod(dir, 0o755);
+  await fs.chmod(dir, 0o777);
 };
 
 const LOCAL_BUILD_TAG = "fhevm-local";
