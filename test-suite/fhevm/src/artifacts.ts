@@ -3,7 +3,11 @@ import path from "node:path";
 
 import YAML from "yaml";
 
-import { compatPolicyForState, type CompatPolicy } from "./compat";
+import {
+  compatPolicyForState,
+  requiresMultichainAclAddress,
+  type CompatPolicy,
+} from "./compat";
 import {
   ADDRESS_DIR,
   COMPONENTS,
@@ -46,7 +50,9 @@ type ArtifactDeps = {
   liveRunner: (argv: string[], options?: Omit<RunOptions, "input">) => Promise<number>;
 };
 
-export const resolvedComposeEnv = (state: Pick<State, "versions" | "overrides">) => ({
+const HAS_PLACEHOLDER = /(?<!\$)\$\{[A-Z0-9_]+\}/;
+
+export const resolvedComposeEnv = (state: Pick<State, "versions" | "overrides">): Record<string, string> => ({
   ...state.versions.env,
   COMPOSE_IGNORE_ORPHANS: "true",
   FHEVM_CARGO_PROFILE: state.overrides.find((item) => item.profile)?.profile ?? "release",
@@ -72,9 +78,10 @@ const loadComposeDoc = async (component: string) =>
 const overriddenServicesForComponent = (state: State, component: string) =>
   new Set(
     state.overrides.flatMap((o) => {
-      if (!GROUP_BUILD_COMPONENTS[o.group].includes(component)) return [];
-      if (o.services?.length) return o.services;
-      return GROUP_BUILD_SERVICES[o.group];
+      if (!GROUP_BUILD_COMPONENTS[o.group].includes(component)) {
+        return [];
+      }
+      return o.services?.length ? o.services : GROUP_BUILD_SERVICES[o.group];
     }),
   );
 
@@ -133,7 +140,11 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 
-const resolveEnvMap = (env: Record<string, string>) => {
+export const resolveEnvMap = (env: Record<string, string>) => {
+  const unresolvedKeys = () =>
+    Object.entries(env)
+      .filter(([, value]) => HAS_PLACEHOLDER.test(value))
+      .map(([key]) => key);
   for (let attempt = 0; attempt < 4; attempt += 1) {
     let changed = false;
     for (const [key, raw] of Object.entries(env)) {
@@ -145,11 +156,31 @@ const resolveEnvMap = (env: Record<string, string>) => {
       }
     }
     if (!changed) {
+      const unresolved = unresolvedKeys();
+      if (unresolved.length) {
+        throw new Error(`Unresolved env interpolation for ${unresolved.join(", ")}`);
+      }
       return env;
     }
   }
+  const unresolved = unresolvedKeys();
+  if (unresolved.length) {
+    throw new Error(`Unresolved env interpolation for ${unresolved.join(", ")}`);
+  }
   return env;
 };
+
+export const rewriteCoprocessorDependsOn = (
+  dependsOn: Record<string, unknown>,
+  prefix: string,
+  clonedServices: ReadonlySet<string>,
+) =>
+  Object.fromEntries(
+    Object.entries(dependsOn).map(([dep, value]) => [
+      clonedServices.has(dep) ? `${prefix}${dep.replace(/^coprocessor-/, "")}` : dep,
+      value,
+    ]),
+  );
 
 const interpolateComposeValue = (value: unknown, vars: Record<string, string>): unknown => {
   if (typeof value === "string") {
@@ -208,14 +239,14 @@ const buildCoprocessorOverride = async (state: State) => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
   const next = structuredClone(doc);
   const overridden = overriddenServicesForComponent(state, "coprocessor");
+  const clonedServices = new Set(Object.keys(doc.services));
   const services: Record<string, Record<string, unknown>> = {};
   const baseOverride = state.topology.instances["coprocessor-0"];
   const baseEnv = await readEnvFile(envPath("coprocessor"));
   const compat = compatPolicyForState(state);
   for (const [name, service] of Object.entries(doc.services)) {
-    // Skip compat args for overridden services — local builds use HEAD code, not the resolved version.
-    const serviceCompatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
-    const adjusted = applyInstanceAdjustments(service, envPath("coprocessor"), baseEnv, baseOverride, serviceCompatArgs);
+    const compatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
+    const adjusted = applyInstanceAdjustments(service, envPath("coprocessor"), baseEnv, baseOverride, compatArgs);
     applyBuildPolicy(adjusted, overridden.has(name));
     services[name] = adjusted;
   }
@@ -225,22 +256,21 @@ const buildCoprocessorOverride = async (state: State) => {
     const instanceEnv = await readEnvFile(envPath(`coprocessor.${index}`));
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^coprocessor-/, "");
-      const instanceCompatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
+      const compatArgs = overridden.has(name) ? {} : compat.coprocessorArgs;
       const cloned = applyInstanceAdjustments(
         service,
         envPath(`coprocessor.${index}`),
         instanceEnv,
         override,
-        instanceCompatArgs,
+        compatArgs,
       );
       cloned.container_name = prefix + suffix;
       applyBuildPolicy(cloned, overridden.has(name));
       if (cloned.depends_on && typeof cloned.depends_on === "object") {
-        cloned.depends_on = Object.fromEntries(
-          Object.entries(cloned.depends_on as Record<string, unknown>).map(([dep, value]) => [
-            dep.replace(/^coprocessor-/, prefix),
-            value,
-          ]),
+        cloned.depends_on = rewriteCoprocessorDependsOn(
+          cloned.depends_on as Record<string, unknown>,
+          prefix,
+          clonedServices,
         );
       }
       services[prefix + suffix] = cloned;
@@ -371,7 +401,9 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       INPUT_VERIFIER_ADDRESS: state.discovery.host.INPUT_VERIFIER_CONTRACT_ADDRESS,
       INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
       CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
-      MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS,
+      ...(requiresMultichainAclAddress(state)
+        ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS }
+        : {}),
       KMS_GENERATION_ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
     });
     updateContracts(envs["kms-connector"], {
@@ -484,9 +516,7 @@ const maybeBuild = async (
     if (GROUP_BUILD_COMPONENTS[override.group].includes(component)) {
       const doc = YAML.parse(await fs.readFile(composePath(component), "utf8")) as ComposeDoc;
       const available = new Set(Object.keys(doc.services));
-      const candidates = override.services?.length
-        ? override.services
-        : GROUP_BUILD_SERVICES[override.group];
+      const candidates = override.services?.length ? override.services : GROUP_BUILD_SERVICES[override.group];
       const services = candidates.filter((s) => available.has(s));
       if (!services.length) {
         continue;
@@ -552,7 +582,7 @@ export const regen = async (state: State, deps: Pick<ArtifactDeps, "runner">) =>
   await writeComposeOverrides(state);
 };
 
-export const serviceNameList = (state: State, component: string) => {
+export const serviceNameList = (state: Pick<State, "topology">, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }

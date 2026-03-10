@@ -253,13 +253,14 @@ const bundleFromFiles = async (client: GitHubClient, target: VersionTarget, file
   };
   return {
     target,
-    lockName: target === "devnet" || target === "testnet" || target === "mainnet" ? `${target}.json` : `${target}.json`,
+    lockName: `${target}.json`,
     env,
     sources: Object.values(files),
   } satisfies VersionBundle;
 };
 
 const REPO_TAG = /^[0-9a-f]{7}$/;
+const LATEST_MAIN_MIN_SHA = "acfa9775818406a119b53d2beb05a04742a49473";
 
 const presetBundle = (
   target: "latest-release" | "latest-main",
@@ -302,12 +303,16 @@ export const resolveTarget = async (target: VersionTarget, client: GitHubClient)
     Object.entries(REPO_PACKAGES).map(async ([key, pkg]) => [key, await client.packageTags(pkg)] as const),
   );
   const packageTags = Object.fromEntries(tags);
-  const commits = await client.mainCommits();
-  const short = commits.map((sha) => sha.slice(0, 7)).find((sha) =>
+  const commits = await client.mainCommits(1000);
+  const floor = commits.indexOf(LATEST_MAIN_MIN_SHA);
+  if (floor < 0) {
+    throw new Error(`latest-main floor ${LATEST_MAIN_MIN_SHA} was not found in fetched main history`);
+  }
+  const short = commits.slice(0, floor + 1).map((sha) => sha.slice(0, 7)).find((sha) =>
     Object.values(packageTags).every((set) => set.has(sha) && REPO_TAG.test(sha)),
   );
   if (!short) {
-    throw new Error("Could not find a complete latest-main image set");
+    throw new Error("Could not find a supported modern latest-main image set");
   }
   return presetBundle(target, short, `latest-main-${short}.json`);
 };

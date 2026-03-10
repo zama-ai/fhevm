@@ -5,7 +5,7 @@ This is the high-level shape of the Bun-based `fhevm-cli`.
 ```mermaid
 flowchart TD
   A["fhevm-cli up"] --> B["Resolve target"]
-  B --> B1["latest-main: walk main SHAs until complete image set"]
+  B --> B1["latest-main: walk main SHAs until complete image set, but not before acfa977"]
   B --> B2["latest-release: latest stable release"]
   B --> B3["devnet/testnet/mainnet: GitOps bundles"]
   B1 --> C["Lock resolved bundle"]
@@ -32,7 +32,7 @@ flowchart TD
   F8 --> F9["relayer"]
   F9 --> F10["test-suite"]
 
-  G["Local overrides (group or per-service)"] --> E
+  G["Local overrides (group or runtime service)"] --> E
   H["Multicopro topology + per-instance overrides"] --> E
   I["Compatibility policy"] --> E
   I --> F7
@@ -66,8 +66,10 @@ the SHA-tagged images for every component built from the PR.
 ## Notes
 
 - Version selection is explicit. The CLI does not silently use a vague "latest".
+- `latest-main` is modern-only by construction. If no complete bundle exists after the floor SHA, resolution fails.
 - The resolved bundle is printed and locked before the real boot continues.
 - `.fhevm` is the only mutable runtime area owned by the CLI.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`, not "rerun the bash ritual and hope".
+- `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.

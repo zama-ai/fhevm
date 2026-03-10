@@ -138,12 +138,6 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
-      - name: Display component versions
-        env:
-          JSON_INPUT: ${{ toJSON(inputs) }}
-        run: |
-          echo "Component versions: $JSON_INPUT"
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile

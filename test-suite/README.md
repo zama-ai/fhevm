@@ -60,7 +60,7 @@ cd test-suite/fhevm
 # Boot with a local coprocessor override (all services)
 ./fhevm-cli up --target latest-release --override coprocessor --profile local
 
-# Boot with only specific coprocessor services built locally
+# Boot with only specific runtime services built locally
 ./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker --profile local
 
 # View logs
@@ -85,6 +85,7 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 ```
 
 Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
+Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
 
 When specifying individual services, use the short suffix after the group prefix (e.g., `host-listener` not `coprocessor-host-listener`). Services that share a Docker image are automatically co-selected (e.g., `host-listener` includes `host-listener-poller`).
 
