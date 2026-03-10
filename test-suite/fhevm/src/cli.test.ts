@@ -418,6 +418,85 @@ describe("runtime invariants", () => {
     void dir;
   });
 
+  test("up --dry-run rejects latest-release partial overrides when local migrations diverge", async () => {
+    const dir = await fixtureDir();
+    const lockFile = path.join(dir, "latest-release.json");
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
+    process.chdir(REPO_ROOT);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--target",
+          "latest-release",
+          "--lock-file",
+          lockFile,
+          "--override",
+          "coprocessor:host-listener",
+          "--dry-run",
+        ],
+        {
+          runner: fakeRunner({
+            "git rev-parse -q --verify v0.11.0^{commit}": "",
+            "git diff --quiet --exit-code v0.11.0 -- coprocessor/fhevm-engine/db-migration/migrations": {
+              stdout: "",
+              stderr: "",
+              code: 1,
+            },
+          }),
+          liveRunner: async () => 0,
+          now: () => "2026-03-06T00:00:00.000Z",
+          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+          env: {},
+        },
+      );
+    } finally {
+      restore();
+    }
+    expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from v0.11.0"))).toBe(true);
+  });
+
+  test("up --dry-run allows divergent partial overrides with --allow-schema-mismatch", async () => {
+    const dir = await fixtureDir();
+    const lockFile = path.join(dir, "latest-release.json");
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await main(
+      [
+        "bun",
+        "src/cli.ts",
+        "up",
+        "--target",
+        "latest-release",
+        "--lock-file",
+        lockFile,
+        "--override",
+        "coprocessor:host-listener",
+        "--allow-schema-mismatch",
+        "--dry-run",
+      ],
+      {
+        runner: fakeRunner({
+          "which bun": "",
+          "which docker": "",
+          "which cast": "",
+          "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
+          ...portCheckResponses,
+        }),
+        liveRunner: async () => 0,
+        now: () => "2026-03-06T00:00:00.000Z",
+        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+        env: {},
+      },
+    );
+    expect(process.exitCode).toBe(0);
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
   test("up --dry-run resolves without creating runtime state", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);

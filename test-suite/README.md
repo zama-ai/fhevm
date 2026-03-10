@@ -88,6 +88,7 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
 Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
 Local overrides always build release images.
+On `latest-release`, per-service overrides for `coprocessor` and `kms-connector` are rejected by default when local DB migrations diverge from the pinned release. Use the full-group override, or pass `--allow-schema-mismatch` if you know the mixed stack remains compatible.
 
 When specifying individual services, use the short suffix after the group prefix (e.g., `host-listener` not `coprocessor-host-listener`). Services that share a Docker image are automatically co-selected (e.g., `host-listener` includes `host-listener-poller`).
 

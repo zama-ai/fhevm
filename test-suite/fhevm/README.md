@@ -197,6 +197,7 @@ Use the short service suffix after the group prefix. Multiple services are comma
 Local overrides always build release images.
 
 `coprocessor` and `kms-connector` still share a database, so the CLI warns when you do a per-service override there. If your change includes schema or migration changes, use the full-group override instead.
+On `latest-release`, the CLI now compares the local migration directory against the pinned release and rejects a per-service override by default when they diverge. If you know your service remains compatible anyway, pass `--allow-schema-mismatch`.
 
 Available runtime suffixes:
 
@@ -232,6 +233,12 @@ COPROCESSOR_GW_LISTENER_VERSION=abc1234 \
 
 This builds `host-listener` (and `host-listener-poller`) locally, pulls `gw-listener` at tag
 `abc1234`, and pulls all other coprocessor services at the resolved target version.
+
+If you intentionally want to bypass the latest-release migration guard:
+
+```sh
+./fhevm-cli up --target latest-release --override coprocessor:host-listener --allow-schema-mismatch
+```
 
 If a runtime override is already active and you only want to rebuild and restart that local code path, use:
 

@@ -25,6 +25,7 @@ import {
   LOG_TARGETS,
   PORTS,
   PROJECT,
+  REPO_ROOT,
   STATE_DIR,
   STATE_FILE,
   TEST_GREP,
@@ -61,6 +62,7 @@ type UpOptions = {
   topology: Topology;
   fromStep?: StepName;
   lockFile?: string;
+  allowSchemaMismatch: boolean;
   resume: boolean;
   dryRun: boolean;
 };
@@ -76,6 +78,17 @@ type RuntimeDeps = {
   fetch: typeof globalThis.fetch;
   env: Record<string, string | undefined>;
 };
+
+const SCHEMA_GUARDS = {
+  "coprocessor": {
+    versionKey: "COPROCESSOR_DB_MIGRATION_VERSION",
+    repoPath: "coprocessor/fhevm-engine/db-migration/migrations",
+  },
+  "kms-connector": {
+    versionKey: "CONNECTOR_DB_MIGRATION_VERSION",
+    repoPath: "kms-connector/connector-db/migrations",
+  },
+} as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
 
 const defaultDeps: RuntimeDeps = {
   runner: run,
@@ -218,6 +231,7 @@ const parseCli = (argv: string[]) => {
       verbose: { type: "boolean", default: false },
       "instance-env": { type: "string", multiple: true, default: [] },
       "instance-arg": { type: "string", multiple: true, default: [] },
+      "allow-schema-mismatch": { type: "boolean", default: false },
     },
   });
   const target = parsed.values.target as string;
@@ -295,6 +309,56 @@ const previewBundle = (options: Pick<UpOptions, "target" | "sha" | "lockFile">, 
     : resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha })).then((bundle) =>
     applyVersionEnvOverrides(bundle, deps.env),
   );
+
+const partialSchemaOverrides = (overrides: LocalOverride[]) =>
+  overrides.filter(
+    (item): item is LocalOverride & { services: string[] } => !!item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group),
+  );
+
+const assertSchemaCompatibility = async (
+  bundle: VersionBundle,
+  overrides: LocalOverride[],
+  deps: RuntimeDeps,
+  allowSchemaMismatch: boolean,
+) => {
+  if (allowSchemaMismatch || bundle.target !== "latest-release") {
+    return;
+  }
+  for (const item of partialSchemaOverrides(overrides)) {
+    const guard = SCHEMA_GUARDS[item.group as keyof typeof SCHEMA_GUARDS];
+    if (!guard) {
+      continue;
+    }
+    const ref = bundle.env[guard.versionKey];
+    if (!ref) {
+      continue;
+    }
+    const verified = await deps.runner(["git", "rev-parse", "-q", "--verify", `${ref}^{commit}`], {
+      cwd: REPO_ROOT,
+      allowFailure: true,
+    });
+    if (verified.code !== 0) {
+      throw new Error(
+        `Cannot compare local ${item.group} migrations against ${ref}; local git ref is missing. ` +
+          `Run \`git fetch --tags\` or pass --allow-schema-mismatch.`,
+      );
+    }
+    const diff = await deps.runner(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
+      cwd: REPO_ROOT,
+      allowFailure: true,
+    });
+    if (diff.code === 0) {
+      continue;
+    }
+    if (diff.code === 1) {
+      throw new Error(
+        `${item.group}: local DB migrations diverge from ${ref}. ` +
+          `Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
+      );
+    }
+    throw new Error(`Failed to compare local ${item.group} migrations against ${ref}`);
+  }
+};
 
 const markStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
   if (!state.completedSteps.includes(step)) {
@@ -637,6 +701,7 @@ const preflight = async (state: State, deps: RuntimeDeps, strictPorts = true, ne
 
 const bootstrapState = async (options: UpOptions, deps: RuntimeDeps) => {
   const resolved = await resolveBundle(options, deps);
+  await assertSchemaCompatibility(resolved.bundle, options.overrides, deps, options.allowSchemaMismatch);
   const state: State = {
     target: options.target,
     lockPath: resolved.lockPath,
@@ -947,6 +1012,7 @@ const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
 
 const runUpDry = async (options: Omit<UpOptions, "resume" | "dryRun">, deps: RuntimeDeps) => {
   const bundle = await previewBundle(options, deps);
+  await assertSchemaCompatibility(bundle, options.overrides, deps, options.allowSchemaMismatch);
   const state = {
     target: options.target,
     versions: bundle,
@@ -1273,6 +1339,7 @@ up options:
   --sha <git-sha>   required with --target sha
   --lock-file <path-to-bundle-json>
   --override <group[:svc1,svc2]>    repeated; groups: ${OVERRIDE_GROUPS.join(", ")}
+  --allow-schema-mismatch          bypass latest-release shared-DB override guard
   --coprocessors <n>
   --threshold <t>
   --instance-env <idx:KEY=VALUE>
@@ -1306,6 +1373,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
               topology: parsed.topology,
               fromStep,
               lockFile: parsed.parsed.values["lock-file"] as string | undefined,
+              allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
             },
             runtime,
           );
@@ -1319,6 +1387,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
             topology: parsed.topology,
             fromStep,
             lockFile: parsed.parsed.values["lock-file"] as string | undefined,
+            allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
             resume: parsed.parsed.values.resume,
             dryRun: parsed.parsed.values["dry-run"],
           },
