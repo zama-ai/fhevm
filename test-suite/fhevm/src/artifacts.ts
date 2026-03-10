@@ -342,6 +342,12 @@ const deriveWallet = async (runner: Runner, mnemonic: string, index: number) => 
   const privateKey = (
     await runner(["cast", "wallet", "private-key", "--mnemonic", mnemonic, "--mnemonic-index", String(index)])
   ).stdout.trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw new Error(`cast returned invalid address for wallet ${index}: ${address}`);
+  }
+  if (!/^0x[a-fA-F0-9]{64}$/.test(privateKey)) {
+    throw new Error(`cast returned invalid private key for wallet ${index}`);
+  }
   return { address, privateKey };
 };
 

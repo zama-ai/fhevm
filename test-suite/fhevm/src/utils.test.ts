@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   mergeArgs,
@@ -8,7 +12,14 @@ import {
   toServiceName,
   uint256ToId,
   withHexPrefix,
+  writeEnvFile,
 } from "./utils";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
 
 describe("parseEnv", () => {
   test("parses simple KEY=VALUE pairs", () => {
@@ -97,6 +108,27 @@ describe("mergeArgs", () => {
 
   test("preserves order for non-conflicting args", () => {
     expect(mergeArgs(["--a=1", "--b=2"], ["--c=3"])).toEqual(["--a=1", "--b=2", "--c=3"]);
+  });
+
+  test("does not over-match bare flags by prefix", () => {
+    expect(mergeArgs(["--coprocessor-api-key-rotation", "--coprocessor-api-key"], ["--coprocessor-api-key"])).toEqual([
+      "--coprocessor-api-key-rotation",
+      "--coprocessor-api-key",
+    ]);
+  });
+});
+
+describe("writeEnvFile", () => {
+  test("single-quotes JSON values for docker compose env files", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-utils-"));
+    tempDirs.push(dir);
+    const file = path.join(dir, "test.env");
+    await writeEnvFile(file, {
+      KMS_CONNECTOR_HOST_CHAINS: '[{"url":"http://host-node:8545","chain_id":12345,"acl_address":"0x7"}]',
+    });
+    expect(await fs.readFile(file, "utf8")).toBe(
+      "KMS_CONNECTOR_HOST_CHAINS='[{\"url\":\"http://host-node:8545\",\"chain_id\":12345,\"acl_address\":\"0x7\"}]'\n",
+    );
   });
 });
 

@@ -86,11 +86,24 @@ export const parseEnv = (text: string) => {
 
 export const readEnvFile = async (file: string) => parseEnv(await fs.readFile(file, "utf8"));
 
+const quoteEnvValue = (value: string) => {
+  if (!needsQuotes(value)) {
+    return value;
+  }
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+  throw new Error(`Cannot safely encode env value containing both quote types: ${value}`);
+};
+
 export const writeEnvFile = async (file: string, env: Record<string, string>) => {
   await ensureDir(path.dirname(file));
   const body = Object.entries(env)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${needsQuotes(value) ? JSON.stringify(value) : value}`)
+    .map(([key, value]) => `${key}=${quoteEnvValue(value)}`)
     .join("\n");
   await fs.writeFile(file, `${body}\n`);
 };
@@ -128,9 +141,9 @@ export const predictedCrsId = () => uint256ToId((5n << 248n) + 1n);
 export const mergeArgs = (base: unknown, extras: string[]) => {
   const next = Array.isArray(base) ? [...base.map(String)] : [];
   for (const extra of extras) {
-    const prefix = extra.startsWith("--") && extra.includes("=") ? `${extra.split("=")[0]}=` : extra;
+    const prefix = extra.startsWith("--") && extra.includes("=") ? `${extra.split("=")[0]}=` : undefined;
     for (let i = next.length - 1; i >= 0; i -= 1) {
-      if (next[i] === extra || next[i].startsWith(prefix)) {
+      if (next[i] === extra || (prefix && next[i].startsWith(prefix))) {
         next.splice(i, 1);
       }
     }
