@@ -17,6 +17,7 @@ import {
   COMPONENT_BY_STEP,
   COMPONENTS,
   GROUP_SERVICE_SUFFIXES,
+  SCHEMA_COUPLED_GROUPS,
   LOCK_DIR,
   LOG_TARGETS,
   PORTS,
@@ -615,6 +616,15 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "topology">, from
   log(`[plan] target=${state.target}`);
   if (state.overrides.length) {
     log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
+    for (const o of state.overrides) {
+      if (o.services?.length && SCHEMA_COUPLED_GROUPS.includes(o.group)) {
+        log(
+          `[warn] ${o.group}: per-service override with a shared database. ` +
+            `If your changes include DB migrations, non-overridden services may fail. ` +
+            `Use --override ${o.group} (full group) in that case.`,
+        );
+      }
+    }
   }
   log(`[plan] topology=n${state.topology.count}/t${state.topology.threshold}`);
   log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);

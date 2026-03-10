@@ -125,6 +125,9 @@ for (const group of SIBLING_GROUPS) {
   }
 }
 
+/** Groups where all services share a database — per-service override requires schema compatibility. */
+export const SCHEMA_COUPLED_GROUPS: OverrideGroup[] = ["coprocessor", "kms-connector"];
+
 export const suffixToServiceName = (group: OverrideGroup, suffix: string): string => {
   const fullName = GROUP_PREFIX[group] + suffix;
   if (!GROUP_BUILD_SERVICES[group].includes(fullName)) {

@@ -180,6 +180,11 @@ Use the short service suffix after the colon (e.g., `host-listener` not `coproce
 Multiple services are comma-separated. Services that share a Docker image are automatically
 co-selected (e.g., `host-listener` includes `host-listener-poller`).
 
+> **Note:** `coprocessor` and `kms-connector` services share a database. Per-service overrides
+> work when your local changes don't include DB migrations. If your changes add or alter
+> migrations, non-overridden services will fail against the mismatched schema — use
+> `--override coprocessor` (full group) instead.
+
 Available suffixes per group:
 
 | Group | Suffixes |
