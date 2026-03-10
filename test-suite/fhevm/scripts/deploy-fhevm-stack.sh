@@ -372,7 +372,10 @@ prepare_local_env_file() {
     fi
 
     if [[ "$component" == "coprocessor" ]]; then
-        local otlp_endpoint="${preserved_otlp_endpoint:-http://jaeger:4317}"
+        local otlp_endpoint="$preserved_otlp_endpoint"
+        if [[ -z "$otlp_endpoint" || "$otlp_endpoint" == "http://jaeger:4317" ]]; then
+            otlp_endpoint="http://otel-collector:4317"
+        fi
         if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' "$local_env_file"; then
             sed -i.bak "s|^OTEL_EXPORTER_OTLP_ENDPOINT=.*|OTEL_EXPORTER_OTLP_ENDPOINT=${otlp_endpoint}|" "$local_env_file"
         else

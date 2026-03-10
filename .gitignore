@@ -37,6 +37,9 @@ logs/
 # If you have .env files specific to subprojects, e.g. subproject/.env,
 # the .env rule above will catch them.
 
+# Local validation scripts (not part of CI)
+test-suite/fhevm/scripts/validate-spanmetrics.sh
+
 # Build output & temporary directories (generic)
 .cache/
 .buildx-cache/
