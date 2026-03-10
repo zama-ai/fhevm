@@ -231,13 +231,18 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["sns-worker"]).toEqual([
       ["--tenant-api-key", "TENANT_API_KEY"],
     ]);
+    expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["transaction-sender"]).toEqual([
+      ["--host-chain-url", "RPC_WS_URL"],
+    ]);
 
     // v0.12.x: all legacy flags removed
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["host-listener"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
     // latest-main SHAs stay modern-only once resolution enforces the floor
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
   });
 
   test("coprocessor depends_on rewrite only renames cloned services", () => {

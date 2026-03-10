@@ -59,12 +59,12 @@ describe("serviceNameList", () => {
 });
 
 describe("compose templates", () => {
-  test("transaction sender passes host chain url", async () => {
+  test("transaction sender does not hardcode host chain url", async () => {
     const template = await fs.readFile(
       path.join(TEMPLATE_COMPOSE_DIR, "coprocessor-docker-compose.yml"),
       "utf8",
     );
-    expect(template.includes("--host-chain-url=${RPC_HTTP_URL}")).toBe(true);
+    expect(template.includes("--host-chain-url")).toBe(false);
   });
 
   test("coprocessor local builds are serialized", async () => {

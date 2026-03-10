@@ -1,7 +1,7 @@
 import type { State } from "./types";
 
 type CompatSemver = readonly [number, number, number];
-type CompatService = "host-listener" | "host-listener-poller" | "sns-worker";
+type CompatService = "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
 
 export type CompatPolicy = {
   coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, string]>>>;
@@ -25,10 +25,19 @@ const COMPAT_PROFILES = {
       KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
     },
   },
+  "legacy-tx-sender-host-chain-url": {
+    coprocessorArgs: {
+      "transaction-sender": [["--host-chain-url", "RPC_WS_URL"]],
+    },
+    connectorEnv: {},
+  },
 } as const satisfies Record<string, CompatPolicy>;
 
 const COMPAT_RULES = {
-  coprocessor: [{ before: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys" }],
+  coprocessor: [
+    { before: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys" },
+    { before: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url" },
+  ],
   connector: [{ before: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id" }],
 } as const;
 
