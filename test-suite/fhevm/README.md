@@ -261,11 +261,6 @@ Example:
 
 Generated env, compose overlays, addresses, locks, and state all live under `.fhevm/`.
 
-## Dropped Conveniences
-
-- `smoke` was a preset wrapper. Use `up --coprocessors ... --threshold ...` followed by `test input-proof`.
-- `test debug` was a thin shell shortcut. Use `docker exec -it fhevm-test-suite-e2e-debug bash`.
-
 ## Runtime State
 
 The CLI owns:
