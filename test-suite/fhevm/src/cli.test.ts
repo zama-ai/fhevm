@@ -7,16 +7,25 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { REPO_ROOT, STATE_DIR } from "./layout";
 import { main } from "./runtime";
 import { compatPolicyForState } from "./compat";
-import type { RunOptions, RunResult, Runner } from "./utils";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
 import type { State } from "./types";
+import {
+  STUB_VERSION_ENV,
+  captureConsole,
+  fakeRunner,
+  noopDeps,
+  portCheckResponses,
+  stubBundle,
+  stubState,
+} from "./test-helpers";
 
 const STATE_FILE = path.join(STATE_DIR, "state.json");
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  process.exitCode = 0;
   while (tempDirs.length) {
     await fs.rm(tempDirs.pop()!, { recursive: true, force: true });
   }
@@ -29,18 +38,6 @@ const fixtureDir = async () => {
 };
 
 const maybeRead = (file: string) => fs.readFile(file, "utf8").catch(() => undefined);
-
-const fakeRunner = (responses: Record<string, string | RunResult>): Runner => async (argv: string[], _options?: RunOptions) => {
-  const key = argv.join(" ");
-  const value = responses[key];
-  if (value === undefined) {
-    throw new Error(`Missing fake response for ${key}`);
-  }
-  if (typeof value === "string") {
-    return { stdout: value, stderr: "", code: 0 };
-  }
-  return value;
-};
 
 describe("resolveTarget", () => {
   test("latest-main walks back to the first complete sha bundle", async () => {
@@ -116,34 +113,8 @@ describe("resolveTarget", () => {
 
   test("version env overrides apply on top of the resolved bundle", async () => {
     const bundle = applyVersionEnvOverrides(
-      {
-        target: "latest-release",
-        lockName: "latest-release-v0.11.0.json",
-        sources: ["preset=latest-release", "repo-owned=v0.11.0"],
-        env: {
-          GATEWAY_VERSION: "v0.11.0",
-          HOST_VERSION: "v0.11.0",
-          COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
-          COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
-          COPROCESSOR_GW_LISTENER_VERSION: "v0.11.0",
-          COPROCESSOR_TX_SENDER_VERSION: "v0.11.0",
-          COPROCESSOR_TFHE_WORKER_VERSION: "v0.11.0",
-          COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.11.0",
-          COPROCESSOR_SNS_WORKER_VERSION: "v0.11.0",
-          CONNECTOR_DB_MIGRATION_VERSION: "v0.11.0",
-          CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
-          CONNECTOR_KMS_WORKER_VERSION: "v0.11.0",
-          CONNECTOR_TX_SENDER_VERSION: "v0.11.0",
-          CORE_VERSION: "v0.13.0",
-          RELAYER_VERSION: "v0.9.0",
-          RELAYER_MIGRATE_VERSION: "v0.9.0",
-          TEST_SUITE_VERSION: "v0.11.0",
-        },
-      },
-      {
-        GATEWAY_VERSION: "custom-gateway",
-        RELAYER_VERSION: "custom-relayer",
-      },
+      stubBundle({ lockName: "latest-release-v0.11.0.json", sources: ["preset=latest-release", "repo-owned=v0.11.0"] }),
+      { GATEWAY_VERSION: "custom-gateway", RELAYER_VERSION: "custom-relayer" },
     );
     expect(bundle.env.GATEWAY_VERSION).toBe("custom-gateway");
     expect(bundle.env.RELAYER_VERSION).toBe("custom-relayer");
@@ -154,54 +125,26 @@ describe("resolveTarget", () => {
 
 describe("runtime invariants", () => {
   test("compat policy keeps legacy coprocessor API key flags for versions before v0.12.0", () => {
-    const state = (version: string) =>
-      ({
-        target: "latest-release",
-        lockPath: "",
-        versions: {
-          target: "latest-release",
-          lockName: "",
-          sources: [],
-          env: {
-            GATEWAY_VERSION: "v0.11.0",
-            HOST_VERSION: "v0.11.0",
-            COPROCESSOR_DB_MIGRATION_VERSION: version,
-            COPROCESSOR_HOST_LISTENER_VERSION: version,
-            COPROCESSOR_GW_LISTENER_VERSION: version,
-            COPROCESSOR_TX_SENDER_VERSION: version,
-            COPROCESSOR_TFHE_WORKER_VERSION: version,
-            COPROCESSOR_ZKPROOF_WORKER_VERSION: version,
-            COPROCESSOR_SNS_WORKER_VERSION: version,
-            CONNECTOR_DB_MIGRATION_VERSION: "v0.11.0",
-            CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
-            CONNECTOR_KMS_WORKER_VERSION: "v0.11.0",
-            CONNECTOR_TX_SENDER_VERSION: "v0.11.0",
-            CORE_VERSION: "v0.13.0",
-            RELAYER_VERSION: "v0.9.0",
-            RELAYER_MIGRATE_VERSION: "v0.9.0",
-            TEST_SUITE_VERSION: "v0.11.0",
-          },
-        },
-        overrides: [],
-        topology: { count: 1, threshold: 1, instances: {} },
-        completedSteps: [],
-        updatedAt: "2026-03-09T00:00:00.000Z",
-      }) satisfies State;
+    const makeState = (version: string) =>
+      stubState({ envOverrides: {
+        COPROCESSOR_DB_MIGRATION_VERSION: version,
+        COPROCESSOR_HOST_LISTENER_VERSION: version,
+        COPROCESSOR_GW_LISTENER_VERSION: version,
+        COPROCESSOR_TX_SENDER_VERSION: version,
+        COPROCESSOR_TFHE_WORKER_VERSION: version,
+        COPROCESSOR_ZKPROOF_WORKER_VERSION: version,
+        COPROCESSOR_SNS_WORKER_VERSION: version,
+      }});
 
-    // v0.11.x: all coprocessor services still need legacy API key flags
-    expect(compatPolicyForState(state("v0.11.0")).coprocessorArgs["host-listener"]).toEqual([
+    expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["host-listener"]).toEqual([
       ["--coprocessor-api-key", "COPROCESSOR_API_KEY"],
     ]);
-    expect(compatPolicyForState(state("v0.11.0")).coprocessorArgs["sns-worker"]).toEqual([
+    expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["sns-worker"]).toEqual([
       ["--tenant-api-key", "TENANT_API_KEY"],
     ]);
-
-    // v0.12.x: all legacy flags removed
-    expect(compatPolicyForState(state("v0.12.0")).coprocessorArgs["host-listener"]).toBeUndefined();
-    expect(compatPolicyForState(state("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
-
-    // SHA versions: no legacy flags (assumed latest)
-    expect(compatPolicyForState(state("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["host-listener"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
   });
 
   test("predicted bootstrap ids are deterministic", () => {
@@ -210,25 +153,13 @@ describe("runtime invariants", () => {
   });
 
   test("up rejects unknown step before doing work", async () => {
-    const dir = await fixtureDir();
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
-    await main(
-      ["bun", "src/cli.ts", "up", "--from-step", "nope"],
-      {
-        runner: async () => ({ stdout: "", stderr: "", code: 0 }),
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-      },
-    );
-    process.exitCode = 0;
+    await main(["bun", "src/cli.ts", "up", "--from-step", "nope"], noopDeps);
     expect(await maybeRead(STATE_FILE)).toBe(before);
-    void dir;
   });
 
   test("up --dry-run resolves without creating runtime state", async () => {
-    const dir = await fixtureDir();
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     const runner = fakeRunner({
@@ -239,27 +170,13 @@ describe("runtime invariants", () => {
       "which docker": "",
       "which gh": "",
       "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
-      "lsof -nP -iTCP:3000 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:3001 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:5432 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:5433 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:8545 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:8546 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:9000 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:9001 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
+      ...portCheckResponses,
     });
     await main(
       ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
-      {
-        runner,
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-      },
+      { ...noopDeps, runner },
     );
-    process.exitCode = 0;
     expect(await maybeRead(STATE_FILE)).toBe(before);
-    void dir;
   });
 
   test("up --dry-run can use a lock file without GitHub resolution", async () => {
@@ -267,57 +184,226 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     const lockFile = path.join(dir, "ci-bundle.json");
-    await fs.writeFile(
-      lockFile,
-      JSON.stringify({
-        target: "latest-release",
-        lockName: "ci-workflow.json",
-        sources: ["test"],
-        env: {
-          GATEWAY_VERSION: "v0.11.0",
-          HOST_VERSION: "v0.11.0",
-          COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
-          COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
-          COPROCESSOR_GW_LISTENER_VERSION: "v0.11.0",
-          COPROCESSOR_TX_SENDER_VERSION: "v0.11.0",
-          COPROCESSOR_TFHE_WORKER_VERSION: "v0.11.0",
-          COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.11.0",
-          COPROCESSOR_SNS_WORKER_VERSION: "v0.11.0",
-          CONNECTOR_DB_MIGRATION_VERSION: "v0.11.0",
-          CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
-          CONNECTOR_KMS_WORKER_VERSION: "v0.11.0",
-          CONNECTOR_TX_SENDER_VERSION: "v0.11.0",
-          CORE_VERSION: "v0.13.0",
-          RELAYER_VERSION: "v0.9.0",
-          RELAYER_MIGRATE_VERSION: "v0.9.0",
-          TEST_SUITE_VERSION: "v0.11.0",
-        },
-      }),
-    );
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle({ lockName: "ci-workflow.json" })));
     const runner = fakeRunner({
       "which bun": "",
       "which docker": "",
       "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
-      "lsof -nP -iTCP:3000 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:3001 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:5432 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:5433 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:8545 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:8546 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:9000 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
-      "lsof -nP -iTCP:9001 -sTCP:LISTEN": { stdout: "", stderr: "", code: 1 },
+      ...portCheckResponses,
     });
     await main(
       ["bun", "src/cli.ts", "up", "--target", "latest-release", "--lock-file", lockFile, "--dry-run"],
-      {
-        runner,
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-      },
+      { ...noopDeps, runner },
     );
-    process.exitCode = 0;
     expect(await maybeRead(STATE_FILE)).toBe(before);
-    void dir;
+  });
+});
+
+describe("CLI argument validation", () => {
+  test("rejects unsupported target", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--target", "bogus"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Unsupported target"))).toBe(true);
+  });
+
+  test("rejects coprocessors outside 1-5 range", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "0"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "6"], noopDeps);
+    } finally { restore(); }
+    expect(logs.filter((l) => l.includes("--coprocessors must be between 1 and 5")).length).toBe(2);
+  });
+
+  test("rejects threshold > coprocessors", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "2", "--threshold", "3"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--threshold must be between 1 and --coprocessors"))).toBe(true);
+  });
+
+  test("rejects --profile without --override", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--profile", "debug"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--profile requires at least one --override"))).toBe(true);
+  });
+
+  test("rejects unsupported override group", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--override", "nonexistent"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Unsupported override"))).toBe(true);
+  });
+
+  test("rejects unknown command", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "bogus"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Unknown command bogus"))).toBe(true);
+  });
+
+  test("doctor shows removal message", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "doctor"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("doctor") && l.includes("removed"))).toBe(true);
+  });
+});
+
+describe("command error paths", () => {
+  test("pause rejects missing scope", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "pause"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("pause expects `host` or `gateway`"))).toBe(true);
+  });
+
+  test("unpause rejects missing scope", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "unpause"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("unpause expects `host` or `gateway`"))).toBe(true);
+  });
+
+  test("test requires completed bootstrap", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "test", "input-proof"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("bootstrap") || l.includes("fhevm-cli up"))).toBe(true);
+  });
+
+  test("test rejects unknown profile", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      const state = stubState({
+        discovery: {
+          gateway: {}, host: {}, kmsSigner: "", fheKeyId: "", crsKeyId: "",
+          actualFheKeyId: "abc",
+          endpoints: { gatewayHttp: "", gatewayWs: "", hostHttp: "", hostWs: "", minioInternal: "", minioExternal: "" },
+        },
+        completedSteps: ["bootstrap"],
+      });
+      await fs.writeFile(stateFile, JSON.stringify(state));
+      const { logs, restore } = captureConsole("error");
+      try {
+        await main(["bun", "src/cli.ts", "test", "nonexistent-profile"], noopDeps);
+      } finally { restore(); }
+      expect(logs.some((l) => l.includes("Unknown test profile"))).toBe(true);
+    } finally {
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+  });
+
+  test("help prints usage without error", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "help"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
+  });
+
+  test("no command prints usage", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
+  });
+
+  test("down runs without error", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "down"], noopDeps);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("nothing to stop") || l.includes("[down]"))).toBe(true);
+  });
+
+  test("status with no state shows containers", async () => {
+    const runner = fakeRunner({
+      "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}\t{{.Status}}": "",
+    });
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "status"], { ...noopDeps, runner });
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("No fhevm containers"))).toBe(true);
+  });
+});
+
+describe("compat policy edge cases", () => {
+  const stateWith = (coprocessorVersion: string, connectorVersion: string) =>
+    stubState({
+      envOverrides: {
+        COPROCESSOR_DB_MIGRATION_VERSION: coprocessorVersion,
+        COPROCESSOR_HOST_LISTENER_VERSION: coprocessorVersion,
+        COPROCESSOR_GW_LISTENER_VERSION: coprocessorVersion,
+        COPROCESSOR_TX_SENDER_VERSION: coprocessorVersion,
+        COPROCESSOR_TFHE_WORKER_VERSION: coprocessorVersion,
+        COPROCESSOR_ZKPROOF_WORKER_VERSION: coprocessorVersion,
+        COPROCESSOR_SNS_WORKER_VERSION: coprocessorVersion,
+        CONNECTOR_DB_MIGRATION_VERSION: connectorVersion,
+        CONNECTOR_GW_LISTENER_VERSION: connectorVersion,
+        CONNECTOR_KMS_WORKER_VERSION: connectorVersion,
+        CONNECTOR_TX_SENDER_VERSION: connectorVersion,
+      },
+    });
+
+  test("legacy connector chain ID mapping for versions before v0.11.0", () => {
+    const policy = compatPolicyForState(stateWith("v0.12.0", "v0.10.5"));
+    expect(policy.connectorEnv).toEqual({ KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID" });
+  });
+
+  test("no connector compat for v0.11.0+", () => {
+    const policy = compatPolicyForState(stateWith("v0.12.0", "v0.11.0"));
+    expect(policy.connectorEnv).toEqual({});
+  });
+
+  test("both compat policies active for old versions", () => {
+    const policy = compatPolicyForState(stateWith("v0.10.0", "v0.10.0"));
+    expect(policy.coprocessorArgs["host-listener"]).toBeDefined();
+    expect(policy.connectorEnv.KMS_CONNECTOR_CHAIN_ID).toBe("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
+  });
+
+  test("host-listener-poller gets legacy api key too", () => {
+    const policy = compatPolicyForState(stateWith("v0.11.0", "v0.11.0"));
+    expect(policy.coprocessorArgs["host-listener-poller"]).toEqual([
+      ["--coprocessor-api-key", "COPROCESSOR_API_KEY"],
+    ]);
+  });
+});
+
+describe("version resolution edge cases", () => {
+  test("env overrides with empty values are ignored", () => {
+    const bundle = applyVersionEnvOverrides(
+      stubBundle(),
+      { GATEWAY_VERSION: "", HOST_VERSION: undefined as unknown as string },
+    );
+    expect(bundle.env.GATEWAY_VERSION).toBe("v0.11.0");
+    expect(bundle.env.HOST_VERSION).toBe("v0.11.0");
+    expect(bundle.sources.length).toBe(1);
+  });
+
+  test("no overrides returns original bundle identity", () => {
+    const original = stubBundle();
+    const result = applyVersionEnvOverrides(original, {});
+    expect(result).toBe(original);
   });
 });
