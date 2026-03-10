@@ -86,6 +86,31 @@ export const mineNBlocks = async (n: number) => {
   }
 };
 
+export const waitForPendingTransactions = async (txHashes: string[], timeoutMs = 30_000): Promise<void> => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const pendingBlock = await ethers.provider.send('eth_getBlockByNumber', ['pending', false]);
+    const pendingTxHashes = new Set<string>(pendingBlock?.transactions ?? []);
+    if (txHashes.every((txHash) => pendingTxHashes.has(txHash))) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for pending txs: ${txHashes.join(', ')}`);
+};
+
+export const waitForTransactionReceipt = async (txHash: string, timeoutMs = 30_000): Promise<TransactionReceipt> => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const receipt = await ethers.provider.getTransactionReceipt(txHash);
+    if (receipt) {
+      return receipt;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for receipt: ${txHash}`);
+};
+
 export const bigIntToBytes64 = (value: bigint) => {
   return new Uint8Array(toBufferBE(value, 64));
 };
