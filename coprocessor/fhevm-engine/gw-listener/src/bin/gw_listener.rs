@@ -89,6 +89,9 @@ struct Conf {
         help = "Skip VerifyProofRequest events during replay"
     )]
     pub replay_skip_verify_proof: bool,
+
+    #[arg(long, help = "CiphertextCommits contract address for drift detection")]
+    ciphertext_commits_address: Option<Address>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -171,6 +174,7 @@ async fn main() -> anyhow::Result<()> {
         replay_from_block: conf.replay_from_block,
         replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
+        ciphertext_commits_address: conf.ciphertext_commits_address,
     };
 
     let gw_listener = GatewayListener::new(

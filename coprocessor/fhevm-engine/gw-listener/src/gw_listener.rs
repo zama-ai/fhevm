@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use crate::database::{insert_crs, insert_key, KeyRecord};
+use crate::drift_detector::DriftDetector;
 
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::digest::{digest_crs, digest_key};
@@ -27,6 +28,7 @@ use crate::KeyId;
 use crate::KeyType;
 use fhevm_engine_common::chain_id::ChainId;
 
+use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration;
 
@@ -127,6 +129,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
         let mut number_of_last_processed_updates: u64 = 0;
+        let mut drift_detector = DriftDetector::new();
         if let Some(from_block) = *replay_from_block {
             info!(from_block, "Replay starts");
             let from_block = if from_block >= 0 {
@@ -175,8 +178,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         std::cmp::min(max, current_block)
                     };
 
+                    let mut filter_addresses = vec![self.kms_generation_address, self.input_verification_address];
+                    if let Some(addr) = self.conf.ciphertext_commits_address {
+                        filter_addresses.push(addr);
+                    }
                     let filter = Filter::new()
-                        .address(vec![self.kms_generation_address, self.input_verification_address])
+                        .address(filter_addresses)
                         .from_block(from_block)
                         .to_block(to_block);
 
@@ -260,6 +267,22 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             } else {
                                 error!(log = ?log, "Failed to decode KMSGeneration event log");
                             }
+                        } else if Some(log.address()) == self.conf.ciphertext_commits_address {
+                            if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
+                                match event.data {
+                                    CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterial(e) => {
+                                        drift_detector.handle_add_ciphertext_material(e);
+                                    }
+                                    CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
+                                        if let Err(err) = drift_detector.handle_consensus(e, db_pool).await {
+                                            error!(error = %err, "Failed to process consensus event for drift detection");
+                                        }
+                                    }
+                                    _ => {} // Ignore Initialized, Upgraded events
+                                }
+                            } else {
+                                error!(log = ?log, "Failed to decode CiphertextCommits event log");
+                            }
                         } else {
                             error!(log = ?log, "Unexpected log address");
                         }
@@ -284,6 +307,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     CRS_DIGEST_MISMATCH_COUNTER.inc_by(crs_digest_mismatch);
                     ACTIVATE_KEY_SUCCESS_COUNTER.inc_by(activate_key_success);
                     KEY_DIGEST_MISMATCH_COUNTER.inc_by(key_digest_mismatch);
+                    drift_detector.flush_metrics();
 
                     if to_block < current_block {
                         debug!(to_block = to_block,

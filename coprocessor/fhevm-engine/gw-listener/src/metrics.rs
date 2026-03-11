@@ -96,3 +96,35 @@ pub(crate) static KEY_DIGEST_MISMATCH_COUNTER: LazyLock<IntCounter> = LazyLock::
     )
     .unwrap()
 });
+
+pub(crate) static DRIFT_DETECTED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_drift_detected_counter",
+        "Number of drift detections where local digest does not match consensus"
+    )
+    .unwrap()
+});
+
+pub(crate) static CONSENSUS_CONFIRMED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_consensus_confirmed_counter",
+        "Number of consensus events where local digest matches consensus"
+    )
+    .unwrap()
+});
+
+pub(crate) static DRIFT_EARLY_WARNING_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_drift_early_warning_counter",
+        "Number of early warnings where a peer submitted a different digest before consensus"
+    )
+    .unwrap()
+});
+
+pub(crate) static CONSENSUS_HANDLE_NOT_FOUND_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_consensus_handle_not_found_counter",
+        "Number of consensus events for handles not yet computed locally"
+    )
+    .unwrap()
+});
