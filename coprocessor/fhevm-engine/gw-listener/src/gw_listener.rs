@@ -274,9 +274,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                         drift_detector.handle_add_ciphertext_material(e);
                                     }
                                     CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
-                                        if let Err(err) = drift_detector.handle_consensus(e, db_pool).await {
-                                            error!(error = %err, "Failed to process consensus event for drift detection");
-                                        }
+                                        drift_detector.handle_consensus(e, db_pool).await?;
                                     }
                                     _ => {} // Ignore Initialized, Upgraded events
                                 }
@@ -287,6 +285,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             error!(log = ?log, "Unexpected log address");
                         }
                     }
+                    drift_detector.retry_pending(db_pool).await?;
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
                         if to_block == current_block {
