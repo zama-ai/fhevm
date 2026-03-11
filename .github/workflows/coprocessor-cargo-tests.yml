@@ -150,15 +150,17 @@ jobs:
     - name: Diff coverage of changed lines
       if: always()
       id: diff-cov
+      env:
+        BASE_REF: ${{ github.base_ref }}
       run: |
         if [ ! -f /tmp/lcov.info ]; then
           echo "diff_pct=N/A" >> "$GITHUB_OUTPUT"
           exit 0
         fi
         pip install --quiet diff-cover
-        git fetch origin "${{ github.base_ref }}"
+        git fetch origin "${BASE_REF}"
         diff-cover /tmp/lcov.info \
-          --compare-branch="origin/${{ github.base_ref }}" \
+          --compare-branch="origin/${BASE_REF}" \
           --diff-range-notation='...' \
           --format "json:/tmp/diff-cover.json,markdown:/tmp/diff-cover-report.md" \
           --fail-under 0 || true
@@ -171,10 +173,12 @@ jobs:
 
     - name: Build diff coverage comment
       if: always()
+      env:
+        DIFF_PCT: ${{ steps.diff-cov.outputs.diff_pct }}
       run: |
         {
           echo '### Changed Lines Coverage'
-          echo "Coverage of added/modified lines: **${{ steps.diff-cov.outputs.diff_pct }}**"
+          echo "Coverage of added/modified lines: **${DIFF_PCT}**"
           echo ''
           if [ -f /tmp/diff-cover-report.md ]; then
             echo '<details><summary>Per-file breakdown</summary>'
@@ -190,17 +194,18 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        GH_REPO: ${{ github.repository }}
       run: |
         MARKER="<!-- coverage-report -->"
         # Append hidden marker to comment body
         printf '%s\n%s\n' "$(cat /tmp/coverage-comment.md)" "$MARKER" > /tmp/coverage-comment-full.md
         # Find existing coverage comment by marker
-        EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+        EXISTING=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
           --paginate --jq '.[] | select(.body | contains("<!-- coverage-report -->")) | .id' | head -1)
         if [ -n "$EXISTING" ]; then
-          gh api "repos/${{ github.repository }}/issues/comments/${EXISTING}" \
+          gh api "repos/${GH_REPO}/issues/comments/${EXISTING}" \
             -X PATCH -F body=@/tmp/coverage-comment-full.md
         else
-          gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+          gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
             -F body=@/tmp/coverage-comment-full.md
         fi
