@@ -172,8 +172,6 @@ impl DriftDetector {
                 self.deferred_metrics.drift_detected += 1;
             }
         }
-
-        self.finish_if_complete(handle);
     }
 
     pub(crate) async fn handle_consensus(
@@ -452,18 +450,7 @@ impl DriftDetector {
             self.deferred_metrics.drift_detected += 1;
         }
 
-        let completed_without_consensus = self
-            .open_handles
-            .iter()
-            .filter_map(|(handle, state)| {
-                (state.submissions.len() == state.expected_senders.len()
-                    && state.consensus.is_none())
-                .then_some(*handle)
-            })
-            .collect::<Vec<_>>();
-        for handle in completed_without_consensus {
-            self.finish_if_complete(handle);
-        }
+        self.finalize_completed_without_consensus();
 
         self.evict_stale(current_block);
     }
@@ -473,6 +460,43 @@ impl DriftDetector {
             .values()
             .map(|state| state.first_seen_block)
             .min()
+    }
+
+    pub(crate) fn finalize_completed_without_consensus(&mut self) {
+        if !self.alerts_enabled {
+            return;
+        }
+
+        let completed_without_consensus = self
+            .open_handles
+            .iter()
+            .filter_map(|(handle, state)| {
+                (state.submissions.len() == state.expected_senders.len()
+                    && state.consensus.is_none())
+                .then_some(*handle)
+            })
+            .collect::<Vec<_>>();
+
+        for handle in completed_without_consensus {
+            let Some(state) = self.open_handles.get(&handle) else {
+                continue;
+            };
+
+            warn!(
+                handle = %handle,
+                host_chain_id = self.host_chain_id.as_i64(),
+                local_node_id = %self.local_node_id,
+                first_seen_block = state.first_seen_block,
+                first_seen_block_hash = ?state.first_seen_block_hash,
+                last_seen_block = state.last_seen_block,
+                seen_senders = ?seen_sender_strings(&state.submissions),
+                variant_count = variant_summaries(&state.submissions).len(),
+                variants = ?variant_summaries(&state.submissions),
+                "All expected coprocessors submitted but no consensus event was observed"
+            );
+            self.deferred_metrics.consensus_timeout += 1;
+            self.open_handles.remove(&handle);
+        }
     }
 
     fn finish_if_complete(&mut self, handle: FixedBytes<32>) {
@@ -489,27 +513,7 @@ impl DriftDetector {
                 return;
             }
             self.open_handles.remove(&handle);
-            return;
         }
-
-        if !self.alerts_enabled {
-            return;
-        }
-
-        warn!(
-            handle = %handle,
-            host_chain_id = self.host_chain_id.as_i64(),
-            local_node_id = %self.local_node_id,
-            first_seen_block = state.first_seen_block,
-            first_seen_block_hash = ?state.first_seen_block_hash,
-            last_seen_block = state.last_seen_block,
-            seen_senders = ?seen_sender_strings(&state.submissions),
-            variant_count = variant_summaries(&state.submissions).len(),
-            variants = ?variant_summaries(&state.submissions),
-            "All expected coprocessors submitted but no consensus event was observed"
-        );
-        self.deferred_metrics.consensus_timeout += 1;
-        self.open_handles.remove(&handle);
     }
 }
 
@@ -694,6 +698,7 @@ mod tests {
             ),
             context(12),
         );
+        detector.finalize_completed_without_consensus();
 
         assert_eq!(detector.earliest_open_block(), Some(20));
     }
@@ -891,6 +896,7 @@ mod tests {
                 context(11 + index as u64),
             );
         }
+        detector.finalize_completed_without_consensus();
 
         assert!(!detector.open_handles.contains_key(&handle_before_rotation));
         assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
@@ -918,13 +924,14 @@ mod tests {
             ),
             context(23),
         );
+        detector.finalize_completed_without_consensus();
 
         assert!(!detector.open_handles.contains_key(&handle_after_rotation));
         assert_eq!(detector.deferred_metrics.consensus_timeout, 2);
     }
 
     #[test]
-    fn all_expected_submissions_without_consensus_alert_and_drop() {
+    fn all_expected_submissions_without_consensus_alert_and_drop_after_finalize() {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
@@ -940,8 +947,54 @@ mod tests {
             );
         }
 
+        assert!(detector.open_handles.contains_key(&handle));
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+
+        detector.finalize_completed_without_consensus();
+
         assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
+    fn consensus_on_final_submission_survives_finalize_pass() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([23u8; 32]);
+        let expected = senders();
+
+        for (index, sender) in expected.iter().copied().enumerate() {
+            detector.observe_submission(
+                make_submission_event(
+                    handle,
+                    FixedBytes::from([2u8; 32]),
+                    FixedBytes::from([3u8; 32]),
+                    sender,
+                ),
+                context(10 + index as u64),
+            );
+        }
+
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
+            block_number: 12,
+            block_hash: None,
+            tx_hash: None,
+            log_index: None,
+            digests: DigestPair {
+                ciphertext_digest: FixedBytes::from([2u8; 32]),
+                ciphertext128_digest: FixedBytes::from([3u8; 32]),
+            },
+            senders: expected,
+        });
+        detector
+            .open_handles
+            .get_mut(&handle)
+            .unwrap()
+            .local_consensus_checked = true;
+
+        detector.finalize_completed_without_consensus();
+
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert!(detector.open_handles.contains_key(&handle));
     }
 
     #[test]

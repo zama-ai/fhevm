@@ -152,10 +152,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         } else {
             progress.earliest_open_ct_commits_block
         };
+        let sender_seed_block = replay_start_block
+            .map(|block| block.saturating_sub(1))
+            .or_else(|| {
+                progress
+                    .earliest_open_ct_commits_block
+                    .map(|block| block.saturating_sub(1))
+            })
+            .or(last_processed_block_num);
         let expected_coprocessor_tx_senders = self
-            .fetch_expected_coprocessor_tx_senders(
-                replay_start_block.map(|block| block.saturating_sub(1)),
-            )
+            .fetch_expected_coprocessor_tx_senders(sender_seed_block)
             .await?;
         let mut drift_detector = DriftDetector::new(
             expected_coprocessor_tx_senders,
@@ -313,6 +319,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         }
                     }
                     drift_detector.refresh_pending_consensus_checks(db_pool).await?;
+                    drift_detector.finalize_completed_without_consensus();
                     drift_detector.evict_stale(to_block);
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
