@@ -153,24 +153,25 @@ jobs:
         working-directory: test-suite/fhevm
         if: failure()
         run: |
+          snapshot_logs() {
+            local group="$1"
+            local container="$2"
+            echo "::group::${group}"
+            docker logs --tail 200 "${container}" 2>&1 || true
+            echo "::endgroup::"
+          }
           echo "::group::Relayer Logs"
-          timeout 20 ./fhevm-cli logs relayer || true
+          docker logs --tail 200 fhevm-relayer 2>&1 || true
           echo "::endgroup::"
           echo "::group::SNS Worker Logs"
-          timeout 20 ./fhevm-cli logs sns-worker | grep -v "Selected 0 rows to process" || true
+          docker logs --tail 200 coprocessor-sns-worker 2>&1 | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
-          timeout 20 ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process" || true
+          docker logs --tail 200 coprocessor-transaction-sender 2>&1 | grep -v "Selected 0 rows to process" || true
           echo "::endgroup::"
-          echo "::group::Coprocessor 2 - SNS Worker"
-          ./fhevm-cli logs coprocessor-2-sns-worker 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - Transaction Sender (filtered)"
-          ./fhevm-cli logs coprocessor-2-transaction-sender 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - TFHE Worker"
-          ./fhevm-cli logs coprocessor-2-tfhe-worker 2>/dev/null || true
-          echo "::endgroup::"
+          snapshot_logs "Coprocessor 2 - SNS Worker" coprocessor2-sns-worker | grep -v "Selected 0 rows to process" || true
+          snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor2-transaction-sender | grep -v "Selected 0 rows to process" || true
+          snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor2-tfhe-worker
 
       - name: Cleanup
         working-directory: test-suite/fhevm
