@@ -68,11 +68,11 @@ if $HAS_PREPUSH && $HAS_COVERAGE; then
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 HOOKS_SRC="$REPO_ROOT/.github/hooks"
 
-# Quality gates (blocking)
-"$HOOKS_SRC/pre-push" "$@" || exit $?
-
 # Coverage check (non-blocking)
 "$HOOKS_SRC/pre-push-coverage" "$@"
+
+# Quality gates (blocking)
+"$HOOKS_SRC/pre-push" "$@" || exit $?
 exit 0
 WRAPPER
   chmod +x "$GIT_HOOKS_DIR/pre-push"
