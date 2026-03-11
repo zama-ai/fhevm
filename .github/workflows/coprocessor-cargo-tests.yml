@@ -120,7 +120,7 @@ jobs:
       working-directory: coprocessor/fhevm-engine
 
     - name: Generate coverage report
-      if: always()
+      if: ${{ !cancelled() }}
       run: |
         if cargo llvm-cov report --profile coverage > /tmp/cov-report.txt 2>&1; then
           REPORT=$(cat /tmp/cov-report.txt)
@@ -143,12 +143,12 @@ jobs:
       working-directory: coprocessor/fhevm-engine
 
     - name: Export LCOV coverage data
-      if: always()
+      if: ${{ !cancelled() }}
       run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
       working-directory: coprocessor/fhevm-engine
 
     - name: Diff coverage of changed lines
-      if: always()
+      if: ${{ !cancelled() }}
       id: diff-cov
       env:
         BASE_REF: ${{ github.base_ref }}
@@ -172,7 +172,7 @@ jobs:
         echo "diff_pct=${DIFF_PCT}" >> "$GITHUB_OUTPUT"
 
     - name: Build diff coverage comment
-      if: always()
+      if: ${{ !cancelled() }}
       env:
         DIFF_PCT: ${{ steps.diff-cov.outputs.diff_pct }}
       run: |
@@ -190,7 +190,7 @@ jobs:
         } | tee -a "$GITHUB_STEP_SUMMARY" > /tmp/coverage-comment.md
 
     - name: Post coverage comment on PR
-      if: always()
+      if: ${{ !cancelled() }}
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
