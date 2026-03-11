@@ -58,7 +58,9 @@ export const readJson = async <T>(file: string) => JSON.parse(await fs.readFile(
 
 export const writeJson = async (file: string, value: unknown) => {
   await ensureDir(path.dirname(file));
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  await fs.rename(tmp, file);
 };
 
 export const parseEnv = (text: string) => {
@@ -108,11 +110,6 @@ export const writeEnvFile = async (file: string, env: Record<string, string>) =>
   await fs.writeFile(file, `${body}\n`);
 };
 
-export const copyFile = async (from: string, to: string) => {
-  await ensureDir(path.dirname(to));
-  await fs.copyFile(from, to);
-};
-
 export const exists = async (file: string) => {
   try {
     await fs.access(file);
@@ -156,5 +153,3 @@ export const toServiceName = (suffix: string, index: number) =>
   index === 0 ? `coprocessor-${suffix}` : `coprocessor${index}-${suffix}`;
 
 export const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
-
-export const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));

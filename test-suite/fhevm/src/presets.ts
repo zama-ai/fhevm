@@ -1,14 +1,20 @@
-const DEFAULT_COMPANIONS = {
+export const MODERN_RELAYER_VERSION = "sha-29b0750";
+export const MODERN_RELAYER_MIGRATE_VERSION = "sha-29b0750";
+
+const RELEASE_COMPANIONS = {
   CORE_VERSION: "v0.13.0",
-  RELAYER_VERSION: "v0.9.0",
-  RELAYER_MIGRATE_VERSION: "v0.9.0",
+  RELAYER_VERSION: "v0.10.0-rc.1",
+  RELAYER_MIGRATE_VERSION: "v0.10.0-rc.1",
+} as const;
+
+const MODERN_COMPANIONS = {
+  CORE_VERSION: "v0.13.0",
+  RELAYER_VERSION: MODERN_RELAYER_VERSION,
+  RELAYER_MIGRATE_VERSION: MODERN_RELAYER_MIGRATE_VERSION,
 } as const;
 
 export const NON_NETWORK_COMPANIONS = {
-  "latest-release": DEFAULT_COMPANIONS,
-  "latest-main": DEFAULT_COMPANIONS,
-  "sha": DEFAULT_COMPANIONS,
+  "latest-release": RELEASE_COMPANIONS,
+  "latest-main": MODERN_COMPANIONS,
+  "sha": MODERN_COMPANIONS,
 } as const;
-
-export const companionPreset = (target: keyof typeof NON_NETWORK_COMPANIONS) =>
-  NON_NETWORK_COMPANIONS[target];

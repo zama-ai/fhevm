@@ -9,10 +9,12 @@ import {
   needsQuotes,
   normalizeRepository,
   parseEnv,
+  readJson,
   toServiceName,
   uint256ToId,
   withHexPrefix,
   writeEnvFile,
+  writeJson,
 } from "./utils";
 
 const tempDirs: string[] = [];
@@ -160,6 +162,21 @@ describe("needsQuotes", () => {
     expect(needsQuotes("simple")).toBe(false);
     expect(needsQuotes("http://localhost:8080")).toBe(false);
     expect(needsQuotes("v0.11.0")).toBe(false);
+  });
+});
+
+describe("writeJson", () => {
+  test("writeJson uses atomic rename", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-wj-"));
+    tempDirs.push(dir);
+    const file = path.join(dir, "state.json");
+    await writeJson(file, { version: 1 });
+    expect(await readJson(file)).toEqual({ version: 1 });
+    // Overwrite — the .tmp must not linger
+    await writeJson(file, { version: 2 });
+    expect(await readJson(file)).toEqual({ version: 2 });
+    const tmpExists = await fs.access(`${file}.tmp`).then(() => true, () => false);
+    expect(tmpExists).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
+import { requiresMultichainAclAddress } from "./compat";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { requiresMultichainAclAddress } from "./compat";
 import type {
   Discovery,
   InstanceOverride,
@@ -49,7 +49,7 @@ import {
   runLive,
   sleep,
   toServiceName,
-  toError,
+  uint256ToId,
   withHexPrefix,
   writeJson,
 } from "./utils";
@@ -65,6 +65,7 @@ type UpOptions = {
   allowSchemaMismatch: boolean;
   resume: boolean;
   dryRun: boolean;
+  reset: boolean;
 };
 
 type CleanOptions = {
@@ -89,6 +90,7 @@ const SCHEMA_GUARDS = {
     repoPath: "kms-connector/connector-db/migrations",
   },
 } as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
+const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-release", "latest-main", "sha"]);
 
 const defaultDeps: RuntimeDeps = {
   runner: run,
@@ -105,15 +107,14 @@ const dockerInspect = async (runner: Runner, name: string) => {
   const result = await runner(["docker", "inspect", name], {
     allowFailure: true,
   });
-  try {
-    return JSON.parse(result.stdout || "[]") as Array<{
-      Name: string;
-      State: { Status: string; ExitCode: number; Health?: { Status: string } };
-      NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
-    }>;
-  } catch (error) {
-    throw new Error(`docker inspect ${name} returned invalid JSON: ${toError(error).message}\n${result.stdout || result.stderr || "<empty>"}`);
+  if (result.code !== 0) {
+    return [];
   }
+  return JSON.parse(result.stdout) as Array<{
+    Name: string;
+    State: { Status: string; ExitCode: number; Health?: { Status: string } };
+    NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
+  }>;
 };
 
 const loadState = async () => (await exists(STATE_FILE) ? readJson<State>(STATE_FILE) : undefined);
@@ -221,7 +222,7 @@ const parseCli = (argv: string[]) => {
     args: argv.slice(3),
     allowPositionals: true,
     options: {
-      target: { type: "string", default: "latest-release" },
+      target: { type: "string", default: "latest-main" },
       sha: { type: "string" },
       override: { type: "string", multiple: true, default: [] },
       coprocessors: { type: "string", default: "1" },
@@ -237,6 +238,7 @@ const parseCli = (argv: string[]) => {
       "instance-env": { type: "string", multiple: true, default: [] },
       "instance-arg": { type: "string", multiple: true, default: [] },
       "allow-schema-mismatch": { type: "boolean", default: false },
+      reset: { type: "boolean", default: false },
     },
   });
   const target = parsed.values.target as string;
@@ -299,21 +301,45 @@ const bundleFromFile = async (target: UpOptions["target"], lockFile: string) => 
   return { ...bundle, target };
 };
 
-const resolveBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) => {
-  const bundle = options.lockFile
-    ? await bundleFromFile(options.target, options.lockFile)
-    : await resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha });
+const resolveCachePath = (target: string, sha?: string) =>
+  path.join(LOCK_DIR, `.cache-${target}${sha ? `-${sha.toLowerCase().slice(0, 7)}` : ""}.json`);
+
+const cachedResolve = async (
+  options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">,
+  deps: RuntimeDeps,
+): Promise<VersionBundle> => {
+  if (options.lockFile) {
+    return bundleFromFile(options.target, options.lockFile);
+  }
+  const cachePath = resolveCachePath(options.target, options.sha);
+  if (!options.reset) {
+    try {
+      const bundle = await readJson<VersionBundle>(cachePath);
+      if (bundle.target === options.target) {
+        log("[resolve] using cached bundle");
+        return bundle;
+      }
+    } catch {
+      // no cache or invalid — resolve fresh
+    }
+  }
+  log("[resolve] fetching versions from GitHub...");
+  const bundle = await resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha });
+  await writeJson(cachePath, bundle);
+  return bundle;
+};
+
+const resolveBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">, deps: RuntimeDeps) => {
+  const bundle = await cachedResolve(options, deps);
   const resolved = applyVersionEnvOverrides(bundle, deps.env);
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
 };
 
-const previewBundle = (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) =>
-  (options.lockFile
-    ? bundleFromFile(options.target, options.lockFile)
-    : resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha })).then((bundle) =>
-    applyVersionEnvOverrides(bundle, deps.env),
-  );
+const previewBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">, deps: RuntimeDeps) => {
+  const bundle = await cachedResolve(options, deps);
+  return applyVersionEnvOverrides(bundle, deps.env);
+};
 
 const partialSchemaOverrides = (overrides: LocalOverride[]) =>
   overrides.filter(
@@ -326,7 +352,7 @@ const assertSchemaCompatibility = async (
   deps: RuntimeDeps,
   allowSchemaMismatch: boolean,
 ) => {
-  if (allowSchemaMismatch || bundle.target !== "latest-release") {
+  if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
     return;
   }
   for (const item of partialSchemaOverrides(overrides)) {
@@ -444,7 +470,7 @@ const waitForRpc = async (deps: RuntimeDeps, url: string) => {
       }
     } catch (error) {
       if (shouldLogRetry(attempt)) {
-        log(`[wait] rpc ${url}: ${toError(error).message}`);
+        log(`[wait] rpc ${url}: ${(error as Error).message}`);
       }
     }
     await sleep(1000);
@@ -461,22 +487,55 @@ const minioIp = async (deps: RuntimeDeps) => {
   return ip;
 };
 
+const defaultEndpoints = async (deps: RuntimeDeps): Promise<Discovery["endpoints"]> => ({
+  gatewayHttp: "http://gateway-node:8546",
+  gatewayWs: "ws://gateway-node:8546",
+  hostHttp: "http://host-node:8545",
+  hostWs: "ws://host-node:8545",
+  minioInternal: "http://minio:9000",
+  minioExternal: `http://${await minioIp(deps)}:9000`,
+});
+
 const responseSnippet = async (response: Response) => {
   const text = (await response.text()).trim();
   return text ? `: ${text.slice(0, 200)}` : "";
 };
 
-const discoverSigner = async (deps: RuntimeDeps) => {
-  const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
-  const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
-  if (!match) {
-    throw new Error("Could not extract KMS signer handle");
+/** Try both `PUB/PUB/` (KMS ≤ v0.12) and `PUB/` (KMS ≥ v0.13) prefixes. */
+const MINIO_KEY_PREFIXES = ["PUB/PUB", "PUB"] as const;
+
+const discoverSigner = async (deps: RuntimeDeps): Promise<{ address: string; minioKeyPrefix: string }> => {
+  let lastHandle = "";
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
+    const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
+    if (match) {
+      lastHandle = match[1];
+      for (const prefix of MINIO_KEY_PREFIXES) {
+        try {
+          const response = await deps.fetch(`http://localhost:9000/kms-public/${prefix}/VerfAddress/${lastHandle}`);
+          if (response.ok) {
+            return { address: (await response.text()).trim(), minioKeyPrefix: prefix };
+          }
+          // Consume body to avoid leaking connections
+          await response.text();
+        } catch {
+          // network error — retry
+        }
+      }
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] kms signer fetch (handle: ${lastHandle.slice(0, 12)}…)`);
+      }
+    } else if (shouldLogRetry(attempt)) {
+      log("[wait] kms signer handle");
+    }
+    await sleep(1000);
   }
-  const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
-  if (!response.ok) {
-    throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
-  }
-  return (await response.text()).trim();
+  throw new Error(
+    lastHandle
+      ? `KMS signer address not available in MinIO after 60 attempts (handle: ${lastHandle})`
+      : "Could not extract KMS signer handle from kms-core logs after 60 attempts",
+  );
 };
 
 const waitForKmsCore = async (deps: RuntimeDeps) => {
@@ -508,7 +567,7 @@ const discoverContracts = async (deps: RuntimeDeps): Promise<Pick<Discovery, "ga
   };
 };
 
-const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery">) => {
+const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides">) => {
   const discovery = state.discovery;
   if (!discovery) {
     throw new Error("Missing discovery state");
@@ -578,32 +637,34 @@ const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
 export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 0) => {
   const gateway = withHexPrefix(state.discovery!.gateway.KMS_GENERATION_ADDRESS);
-  let actualKey = 0n;
-  let actualCrs = 0n;
-  let actualFheKeyId = "";
-  let actualCrsKeyId = "";
+  let actualKey: bigint;
+  let actualCrs: bigint;
   try {
     actualKey = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xd52f10eb");
     actualCrs = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
-    if (actualKey === 0n || actualCrs === 0n) {
-      return false;
-    }
-    actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-    actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
-    await ensureMaterialUrl(
-      deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
-    );
-    await ensureMaterialUrl(
-      deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
-    );
   } catch (error) {
     if (shouldLogRetry(attempt)) {
-      log(`[wait] bootstrap probe: ${toError(error).message}`);
+      log(`[wait] bootstrap probe: ${(error as Error).message}`);
     }
     return false;
   }
+  if (actualKey === 0n || actualCrs === 0n) {
+    return false;
+  }
+  const actualFheKeyId = uint256ToId(actualKey);
+  const actualCrsKeyId = uint256ToId(actualCrs);
+  // Keys are on-chain — material MUST appear. Let ensureMaterialUrl throw if it doesn't.
+  const kp = state.discovery!.minioKeyPrefix ?? "PUB";
+  await Promise.all([
+    ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/${kp}/PublicKey/${actualFheKeyId}`),
+    ),
+    ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/${kp}/CRS/${actualCrsKeyId}`),
+    ),
+  ]);
   state.discovery!.actualFheKeyId = actualFheKeyId;
   state.discovery!.actualCrsKeyId = actualCrsKeyId;
   if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
@@ -637,9 +698,19 @@ const pauserRegistered = async (deps: RuntimeDeps, rpcUrl: string, contract: str
 
 const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await deps.fetch(url, { method: "HEAD" });
-    if (response.ok) {
-      return;
+    try {
+      const response = await deps.fetch(url, { method: "HEAD" });
+      if (response.ok) {
+        return;
+      }
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] material: HTTP ${response.status}`);
+      }
+    } catch (error) {
+      // network not ready yet (ECONNREFUSED, DNS, etc.) — retry
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] material: ${(error as Error).message}`);
+      }
     }
     await sleep(1000);
   }
@@ -687,15 +758,9 @@ const ensureRuntimeArtifacts = async (state: State, deps: Pick<RuntimeDeps, "run
 };
 
 const ensureCommand = async (deps: RuntimeDeps, command: string) => {
-  try {
-    await deps.runner(["which", command]);
-  } catch (error) {
-    if (command === "gh") {
-      throw new Error(
-        "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
-      );
-    }
-    throw error;
+  const result = await deps.runner(["which", command], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new Error(`Required command "${command}" not found`);
   }
 };
 
@@ -746,8 +811,10 @@ const printBundle = (bundle: VersionBundle) => {
 const describeOverride = (item: LocalOverride) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
-export const overrideWarnings = (overrides: LocalOverride[]) =>
-  overrides.flatMap((item) =>
+const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+
+export const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
+  const warnings = overrides.flatMap((item) =>
     item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group)
       ? [
           `${item.group}: per-service override with a shared database. ` +
@@ -756,9 +823,17 @@ export const overrideWarnings = (overrides: LocalOverride[]) =>
         ]
       : [],
   );
+  if (target && NETWORK_TARGETS.has(target) && overrides.length) {
+    warnings.push(
+      `Overriding on network target '${target}': ensure your local code is compatible ` +
+        `with ${target}'s DB schema, contract interfaces, and service versions.`,
+    );
+  }
+  return warnings;
+};
 
-const logOverrideWarnings = (overrides: LocalOverride[]) => {
-  for (const warning of overrideWarnings(overrides)) {
+const logOverrideWarnings = (overrides: LocalOverride[], target?: string) => {
+  for (const warning of overrideWarnings(overrides, target)) {
     log(`[warn] ${warning}`);
   }
 };
@@ -767,7 +842,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "topology">, from
   log(`[plan] target=${state.target}`);
   if (state.overrides.length) {
     log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
-    logOverrideWarnings(state.overrides);
+    logOverrideWarnings(state.overrides, state.target);
   }
   log(`[plan] topology=n${state.topology.count}/t${state.topology.threshold}`);
   log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
@@ -840,14 +915,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         kmsSigner: "",
         fheKeyId: predictedKeyId(),
         crsKeyId: predictedCrsId(),
-        endpoints: {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: await defaultEndpoints(deps),
       };
       await regen(state, deps);
       break;
@@ -858,25 +926,16 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         kmsSigner: "",
         fheKeyId: predictedKeyId(),
         crsKeyId: predictedCrsId(),
-        endpoints: {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: await defaultEndpoints(deps),
       };
-      state.discovery.kmsSigner = await discoverSigner(deps);
+      const signer = await discoverSigner(deps);
+      state.discovery.kmsSigner = signer.address;
+      state.discovery.minioKeyPrefix = signer.minioKeyPrefix;
       await regen(state, deps);
       break;
     case "gateway-deploy":
-      await composeUp("gateway-mocked-payment", state, deps, saveState, log, [
-        "gateway-deploy-mocked-zama-oft",
-        "gateway-set-relayer-mocked-payment",
-      ]);
+      await composeUp("gateway-mocked-payment", state, deps, saveState, log, ["gateway-deploy-mocked-zama-oft"]);
       await waitForContainer(deps, "gateway-deploy-mocked-zama-oft", "complete");
-      await waitForContainer(deps, "gateway-set-relayer-mocked-payment", "complete");
       await composeUp("gateway-sc", state, deps, saveState, log, ["gateway-sc-deploy"]);
       await waitForContainer(deps, "gateway-sc-deploy", "complete", "Contract deployment done!");
       state.discovery = {
@@ -887,16 +946,20 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
-        endpoints: state.discovery?.endpoints ?? {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        minioKeyPrefix: state.discovery?.minioKeyPrefix,
+        endpoints: state.discovery?.endpoints ?? await defaultEndpoints(deps),
       };
       await regen(state, deps);
+      await composeUp(
+        "gateway-mocked-payment",
+        state,
+        deps,
+        saveState,
+        log,
+        ["gateway-set-relayer-mocked-payment"],
+        { noDeps: true },
+      );
+      await waitForContainer(deps, "gateway-set-relayer-mocked-payment", "complete");
       break;
     case "host-deploy":
       await composeUp("host-sc", state, deps, saveState, log, ["host-sc-deploy"]);
@@ -912,14 +975,8 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
-        endpoints: state.discovery?.endpoints ?? {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        minioKeyPrefix: state.discovery?.minioKeyPrefix,
+        endpoints: state.discovery?.endpoints ?? await defaultEndpoints(deps),
       };
       break;
     }
@@ -1002,19 +1059,63 @@ const startStep = (state: State, options: Pick<UpOptions, "resume" | "fromStep">
   return remaining ?? STEP_NAMES[STEP_NAMES.length - 1];
 };
 
+const describeResumeState = (state: State) => [
+  `target=${state.target}`,
+  `topology=${state.topology.count}/${state.topology.threshold}`,
+  ...(state.overrides.length ? [`overrides=${state.overrides.map(describeOverride).join(", ")}`] : []),
+].join(" ");
+
+const ensureResumeOptions = (state: State, options: UpOptions) => {
+  const mismatches: string[] = [];
+  if (state.target !== options.target) {
+    mismatches.push(`target=${options.target}`);
+  }
+  if (options.sha) {
+    mismatches.push(`sha=${options.sha}`);
+  }
+  if (options.lockFile) {
+    mismatches.push(`lock-file=${options.lockFile}`);
+  }
+  if (options.overrides.length) {
+    mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
+  }
+  if (
+    options.topology.count !== state.topology.count ||
+    options.topology.threshold !== state.topology.threshold ||
+    Object.keys(options.topology.instances).length
+  ) {
+    mismatches.push(`topology=${options.topology.count}/${options.topology.threshold}`);
+  }
+  if (options.allowSchemaMismatch) {
+    mismatches.push("--allow-schema-mismatch");
+  }
+  if (mismatches.length) {
+    throw new Error(
+      `--resume uses the persisted stack configuration; remove ${mismatches.join(", ")} or start a fresh stack. ` +
+        `Persisted state: ${describeResumeState(state)}`,
+    );
+  }
+};
+
 const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   let state = options.resume ? await loadState() : undefined;
   if (options.resume && !state) {
     throw new Error("No .fhevm/state.json to resume from");
   }
+  if (!options.resume && (await loadState())) {
+    log("[up] cleaning previous run");
+    await runDown(deps);
+  }
   if (!state) {
     state = await bootstrapState(options, deps);
   }
-  if (options.resume && state.target !== options.target) {
-    throw new Error(`Resume target mismatch: state=${state.target}, requested=${options.target}`);
-  }
   if (options.resume) {
+    ensureResumeOptions(state, options);
     await ensureRuntimeArtifacts(state, deps, "resume");
+    if (!options.fromStep && STEP_NAMES.every((step) => state.completedSteps.includes(step))) {
+      log("[resume] nothing to do");
+      return;
+    }
   }
   logOverrideWarnings(state.overrides);
   if (options.resume && options.fromStep) {
@@ -1199,7 +1300,7 @@ const runStatus = async (deps: RuntimeDeps) => {
     log(`[target] ${state.target}`);
     if (state.overrides.length) {
       log(`[overrides] ${state.overrides.map(describeOverride).join(", ")}`);
-      logOverrideWarnings(state.overrides);
+      logOverrideWarnings(state.overrides, state.target);
     }
     log(`[topology] n=${state.topology.count} t=${state.topology.threshold}`);
     log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
@@ -1308,14 +1409,20 @@ const runWithHeartbeat = async (argv: string[], label: string, deps: RuntimeDeps
       log(`[wait] ${label} still running (${Math.floor(silent / 1000)}s)`);
     }
   }, 5_000);
-  const [code] = await Promise.all([
-    proc.exited,
-    pump(proc.stdout, process.stdout),
-    pump(proc.stderr, process.stderr),
-  ]);
-  clearInterval(timer);
-  if (code !== 0) {
-    throw new Error(`${argv.join(" ")} failed (${code})`);
+  try {
+    const [code] = await Promise.all([
+      proc.exited,
+      pump(proc.stdout, process.stdout),
+      pump(proc.stderr, process.stderr),
+    ]);
+    if (code !== 0) {
+      throw new Error(`${argv.join(" ")} failed (${code})`);
+    }
+  } catch (error) {
+    proc.kill();
+    throw error;
+  } finally {
+    clearInterval(timer);
   }
 };
 
@@ -1377,6 +1484,7 @@ up options:
   --from-step <${STEP_NAMES.join("|")}>   requires --resume, except in --dry-run
   --resume
   --dry-run
+  --reset                          re-resolve versions from GitHub (ignore cache)
 
 clean options:
   --images  remove CLI-owned local override images too
@@ -1385,9 +1493,10 @@ clean options:
 
 export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {}) => {
   const runtime = { ...defaultDeps, ...deps };
+  let command: string | undefined;
   try {
     const parsed = parseCli(argv);
-    const command = parsed.command === "deploy" ? "up" : parsed.command;
+    command = parsed.command === "deploy" ? "up" : parsed.command;
     const fromStep = ensureStep(parsed.parsed.values["from-step"] as string | undefined);
     if (command === "up" && fromStep && !parsed.parsed.values.resume && !parsed.parsed.values["dry-run"]) {
       throw new Error("--from-step requires --resume or --dry-run");
@@ -1404,6 +1513,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
               fromStep,
               lockFile: parsed.parsed.values["lock-file"] as string | undefined,
               allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
+              reset: parsed.parsed.values.reset,
             },
             runtime,
           );
@@ -1420,6 +1530,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
             allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
             resume: parsed.parsed.values.resume,
             dryRun: parsed.parsed.values["dry-run"],
+            reset: parsed.parsed.values.reset,
           },
           runtime,
         );
@@ -1457,6 +1568,8 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
       case "doctor":
         throw new Error("`doctor` was removed; use `fhevm-cli up --dry-run ...`");
       case "help":
+      case "--help":
+      case "-h":
       case undefined:
         usage();
         return;
@@ -1464,7 +1577,10 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
         throw new Error(`Unknown command ${parsed.command}`);
     }
   } catch (error) {
-    console.error(toError(error).message);
+    console.error((error as Error).message);
+    if (command === "up" && (await loadState())) {
+      console.error("Hint: run with --resume to continue, or without to start fresh.");
+    }
     process.exitCode = 1;
   }
 };

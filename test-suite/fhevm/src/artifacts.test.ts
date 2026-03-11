@@ -2,10 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import YAML from "yaml";
 
-import { composeUp, resolvedComposeEnv, serviceNameList } from "./artifacts";
-import { composePath, TEMPLATE_COMPOSE_DIR } from "./layout";
+import { composeUp, regen, resolvedComposeEnv, rewriteRelayerConfig, serviceNameList } from "./artifacts";
+import { composePath, envPath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { stubState } from "./test-helpers";
+import { readEnvFile } from "./utils";
 
 describe("resolvedComposeEnv", () => {
   test("includes version env and COMPOSE_IGNORE_ORPHANS", () => {
@@ -125,4 +127,145 @@ describe("compose templates", () => {
       ],
     ]);
   });
+
+  test("legacy relayer config keeps top-level readiness retry", () => {
+    const config = rewriteRelayerConfig(
+      {
+        gateway: {
+          readiness_checker: {
+            host_acl_check: { retry: { max_attempts: 3, retry_interval_ms: 1000 } },
+            gw_ciphertext_check: { retry: { max_attempts: 15, retry_interval_ms: 2000 } },
+            public_decrypt: { capacity: 1 },
+            user_decrypt: { capacity: 1 },
+          },
+        },
+      },
+      stubState(),
+    ) as { gateway: { readiness_checker: Record<string, unknown> } };
+    expect(config.gateway.readiness_checker.retry).toEqual({
+      max_attempts: 15,
+      retry_interval_ms: 2000,
+    });
+    expect(config.gateway.readiness_checker.host_acl_check).toBeUndefined();
+  });
+
+  test("modern relayer config stays unchanged", () => {
+    const input = {
+      gateway: {
+        readiness_checker: {
+          gw_ciphertext_check: { retry: { max_attempts: 15, retry_interval_ms: 2000 } },
+          host_acl_check: { retry: { max_attempts: 3, retry_interval_ms: 1000 } },
+        },
+      },
+    };
+    expect(
+      rewriteRelayerConfig(
+        structuredClone(input),
+        stubState({
+          envOverrides: {
+            RELAYER_VERSION: "sha-29b0750",
+            RELAYER_MIGRATE_VERSION: "sha-29b0750",
+          },
+        }),
+      ),
+    ).toEqual(input);
+  });
+
+  test("gateway mocked payment env uses discovered protocol payment address", async () => {
+    const file = envPath("gateway-mocked-payment");
+    const previous = await fs.readFile(file, "utf8").catch(() => "");
+    const hadPrevious = previous.length > 0;
+    try {
+      await regen(
+        stubState({
+          discovery: {
+            gateway: {
+              PROTOCOL_PAYMENT_ADDRESS: "0x1111111111111111111111111111111111111111",
+              INPUT_VERIFICATION_ADDRESS: "0x2222222222222222222222222222222222222222",
+              DECRYPTION_ADDRESS: "0x3333333333333333333333333333333333333333",
+              GATEWAY_CONFIG_ADDRESS: "0x4444444444444444444444444444444444444444",
+              KMS_GENERATION_ADDRESS: "0x5555555555555555555555555555555555555555",
+              CIPHERTEXT_COMMITS_ADDRESS: "0x6666666666666666666666666666666666666666",
+            },
+            host: {
+              ACL_CONTRACT_ADDRESS: "0x7777777777777777777777777777777777777777",
+              FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x8888888888888888888888888888888888888888",
+              INPUT_VERIFIER_CONTRACT_ADDRESS: "0x9999999999999999999999999999999999999999",
+              KMS_VERIFIER_CONTRACT_ADDRESS: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              PAUSER_SET_CONTRACT_ADDRESS: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            },
+            kmsSigner: "0xcccccccccccccccccccccccccccccccccccccccc",
+            fheKeyId: "fhe-key-id",
+            crsKeyId: "crs-key-id",
+            endpoints: {
+              gatewayHttp: "http://gateway-node:8546",
+              gatewayWs: "ws://gateway-node:8546",
+              hostHttp: "http://host-node:8545",
+              hostWs: "ws://host-node:8545",
+              minioInternal: "http://minio:9000",
+              minioExternal: "http://127.0.0.1:9000",
+            },
+          },
+        }),
+        {
+          runner: async () => ({ stdout: "", stderr: "", code: 0 }),
+        },
+      );
+      const env = await readEnvFile(file);
+      expect(env.PROTOCOL_PAYMENT_ADDRESS).toBe("0x1111111111111111111111111111111111111111");
+    } finally {
+      if (hadPrevious) {
+        await fs.writeFile(file, previous);
+      } else {
+        await fs.rm(file, { force: true });
+      }
+    }
+  });
+
+  test("legacy tx-sender compat injects literal retry flags", async () => {
+    const state = stubState({
+      discovery: {
+        gateway: {
+          PROTOCOL_PAYMENT_ADDRESS: "0x1111111111111111111111111111111111111111",
+          INPUT_VERIFICATION_ADDRESS: "0x2222222222222222222222222222222222222222",
+          DECRYPTION_ADDRESS: "0x3333333333333333333333333333333333333333",
+          GATEWAY_CONFIG_ADDRESS: "0x4444444444444444444444444444444444444444",
+          KMS_GENERATION_ADDRESS: "0x5555555555555555555555555555555555555555",
+          CIPHERTEXT_COMMITS_ADDRESS: "0x6666666666666666666666666666666666666666",
+          MULTICHAIN_ACL_ADDRESS: "0x7777777777777777777777777777777777777777",
+        },
+        host: {
+          ACL_CONTRACT_ADDRESS: "0x8888888888888888888888888888888888888888",
+          FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x9999999999999999999999999999999999999999",
+          INPUT_VERIFIER_CONTRACT_ADDRESS: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          KMS_VERIFIER_CONTRACT_ADDRESS: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          PAUSER_SET_CONTRACT_ADDRESS: "0xcccccccccccccccccccccccccccccccccccccccc",
+        },
+        kmsSigner: "0xdddddddddddddddddddddddddddddddddddddddd",
+        fheKeyId: "fhe-key-id",
+        crsKeyId: "crs-key-id",
+        endpoints: {
+          gatewayHttp: "http://gateway-node:8546",
+          gatewayWs: "ws://gateway-node:8546",
+          hostHttp: "http://host-node:8545",
+          hostWs: "ws://host-node:8545",
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://127.0.0.1:9000",
+        },
+      },
+    });
+    await regen(state, {
+      runner: async () => ({ stdout: "", stderr: "", code: 0 }),
+    });
+    const compose = YAML.parse(await fs.readFile(composePath("coprocessor"), "utf8")) as {
+      services: { "coprocessor-transaction-sender": { command: string[] } };
+    };
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("--delegation-fallback-polling");
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("30");
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("--delegation-max-retry");
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("100000");
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("--retry-immediately-on-nonce-error");
+    expect(compose.services["coprocessor-transaction-sender"].command).toContain("2");
+  });
+
 });

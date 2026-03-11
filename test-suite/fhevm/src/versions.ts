@@ -2,7 +2,7 @@ import YAML from "yaml";
 
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import type { Runner, RunResult } from "./utils";
-import { normalizeRepository, toError } from "./utils";
+import { normalizeRepository } from "./utils";
 import type { VersionBundle, VersionTarget } from "./types";
 
 type GitHubClient = {
@@ -97,35 +97,19 @@ const GITOPS_REPO = "zama-zws/gitops";
 const parseJson = <T>(value: RunResult) => JSON.parse(value.stdout) as T;
 
 const explainGitHubCliError = (error: unknown) => {
-  const message = toError(error).message;
-  const lower = message.toLowerCase();
-  if (
-    message.includes("which gh failed") ||
-    lower.includes("spawn gh") ||
-    lower.includes("enoent") ||
-    lower.includes("gh: command not found")
-  ) {
+  const msg = (error as Error).message ?? String(error);
+  const lower = msg.toLowerCase();
+  if (lower.includes("enoent") || lower.includes("not found")) {
     return new Error(
       "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
     );
   }
-  if (
-    lower.includes("authentication failed") ||
-    lower.includes("authentication required") ||
-    lower.includes("gh auth login") ||
-    lower.includes("http 401") ||
-    lower.includes("requires authentication")
-  ) {
+  if (lower.includes("401") || lower.includes("authentication")) {
     return new Error(
       "GitHub API access is not authenticated. Run `gh auth login`, export GH_TOKEN, or use --lock-file to skip GitHub resolution.",
     );
   }
-  if (
-    lower.includes("rate limit") ||
-    lower.includes("secondary rate limit") ||
-    lower.includes("api rate limit exceeded") ||
-    lower.includes("http 429")
-  ) {
+  if (lower.includes("rate limit") || lower.includes("429")) {
     return new Error(
       "GitHub API rate limit hit while resolving versions. Retry with an authenticated GH_TOKEN or use --lock-file to run with a pinned bundle.",
     );
@@ -304,9 +288,7 @@ const bundleFromFiles = async (client: GitHubClient, target: VersionTarget, file
 
 const REPO_TAG = /^[0-9a-f]{7}$/;
 const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
-const LATEST_MAIN_MIN_SHA = "acfa9775818406a119b53d2beb05a04742a49473";
-
-const repoPackageName = (pkg: string) => decodeURIComponent(pkg);
+const SIMPLE_ACL_MIN_SHA = "803f1048727eabf6d8b3df618203e3c7dda77890";
 
 const repoPackageTags = async (client: GitHubClient) =>
   Object.fromEntries(
@@ -318,9 +300,19 @@ const repoPackageTags = async (client: GitHubClient) =>
 const missingRepoPackages = (packageTags: Record<string, Set<string>>, tag: string) =>
   Object.entries(REPO_PACKAGES)
     .filter(([key]) => !packageTags[key]?.has(tag))
-    .map(([, pkg]) => repoPackageName(pkg));
+    .map(([, pkg]) => decodeURIComponent(pkg));
 
 const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+
+const simpleAclFloor = (commits: string[]) => {
+  const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
+  if (floor < 0) {
+    throw new Error(
+      `simple-acl floor ${SIMPLE_ACL_MIN_SHA} was not found in fetched main history; increase the main history fetch window`,
+    );
+  }
+  return floor;
+};
 
 const presetBundle = (
   target: "latest-release" | "latest-main" | "sha",
@@ -378,14 +370,20 @@ export const resolveTarget = async (
     if (missing.length) {
       throw new Error(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
     }
+    const commits = await client.mainCommits(5000);
+    const floor = simpleAclFloor(commits);
+    const index = commits.findIndex((sha) => sha.startsWith(tag));
+    if (index < 0) {
+      throw new Error(`sha target ${tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`);
+    }
+    if (index > floor) {
+      throw new Error(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
+    }
     return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
   }
   const packageTags = await repoPackageTags(client);
-  const commits = await client.mainCommits(1000);
-  const floor = commits.indexOf(LATEST_MAIN_MIN_SHA);
-  if (floor < 0) {
-    throw new Error(`latest-main floor ${LATEST_MAIN_MIN_SHA} was not found in fetched main history`);
-  }
+  const commits = await client.mainCommits(5000);
+  const floor = simpleAclFloor(commits);
   const short = commits.slice(0, floor + 1).map((sha) => sha.slice(0, 7)).find((sha) =>
     Object.values(packageTags).every((set) => set.has(sha) && REPO_TAG.test(sha)),
   );

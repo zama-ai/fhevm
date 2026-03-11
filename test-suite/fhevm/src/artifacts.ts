@@ -5,6 +5,8 @@ import YAML from "yaml";
 
 import {
   compatPolicyForState,
+  requiresLegacyRelayerReadinessConfig,
+  requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   type CompatPolicy,
 } from "./compat";
@@ -30,7 +32,6 @@ import {
 import type { BuiltImage, InstanceOverride, OverrideGroup, State } from "./types";
 import type { RunOptions, Runner } from "./utils";
 import {
-  copyFile,
   ensureDir,
   exists,
   mergeArgs,
@@ -97,10 +98,13 @@ const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolea
 
 const appendVolume = (service: Record<string, unknown>, value: string) => {
   const volumes = Array.isArray(service.volumes) ? [...service.volumes] : [];
-  if (!volumes.includes(value)) {
-    volumes.push(value);
+  const target = value.split(":").slice(1).join(":");
+  // Remove any existing mount to the same container path (e.g. named volumes)
+  const filtered = target ? volumes.filter((v) => typeof v !== "string" || v.split(":").slice(1).join(":") !== target) : volumes;
+  if (!filtered.includes(value)) {
+    filtered.push(value);
   }
-  service.volumes = volumes;
+  service.volumes = filtered;
 };
 
 const resolveComposePath = (value: string) =>
@@ -218,7 +222,12 @@ const applyInstanceAdjustments = (
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     const key = String(next.container_name ?? "").replace(/^coprocessor\d*-/, "") as keyof CompatPolicy["coprocessorArgs"];
-    const extras = (compatArgs[key] ?? []).flatMap(([flag, envKey]) => (envVars[envKey] ? [flag, envVars[envKey]] : []));
+    const extras = (compatArgs[key] ?? []).flatMap(([flag, source]) => {
+      if ("value" in source) {
+        return [flag, source.value];
+      }
+      return envVars[source.env] ? [flag, envVars[source.env]] : [];
+    });
     if (extras.length) {
       next.command = mergeArgs(current, extras);
     }
@@ -351,6 +360,33 @@ const deriveWallet = async (runner: Runner, mnemonic: string, index: number) => 
   return { address, privateKey };
 };
 
+export const rewriteRelayerConfig = (config: Record<string, unknown>, state: Pick<State, "versions">) => {
+  if (!requiresLegacyRelayerReadinessConfig(state)) {
+    return config;
+  }
+  const gateway = config.gateway;
+  if (!gateway || typeof gateway !== "object") {
+    return config;
+  }
+  const readiness = (gateway as Record<string, unknown>).readiness_checker;
+  if (!readiness || typeof readiness !== "object") {
+    return config;
+  }
+  const current = readiness as Record<string, unknown>;
+  (gateway as Record<string, unknown>).readiness_checker = Object.fromEntries(
+    Object.entries({
+      retry:
+        current.retry ??
+        (current.gw_ciphertext_check as Record<string, unknown> | undefined)?.retry ??
+        (current.host_acl_check as Record<string, unknown> | undefined)?.retry,
+      public_decrypt: current.public_decrypt,
+      user_decrypt: current.user_decrypt,
+      delegated_user_decrypt: current.delegated_user_decrypt,
+    }).filter(([, value]) => value !== undefined),
+  );
+  return config;
+};
+
 const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runner">) => {
   await ensureDir(ENV_DIR);
   const compat = compatPolicyForState(state);
@@ -369,13 +405,15 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
   envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.minioExternal ?? "http://minio:9000";
+  const kp = state.discovery?.minioKeyPrefix ?? "PUB";
+  const minioInt = state.discovery?.endpoints.minioInternal ?? "http://minio:9000";
   envs["coprocessor"].FHE_KEY_ID = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
-  envs["coprocessor"].KMS_PUBLIC_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/PublicKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_SERVER_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/ServerKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_SNS_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/SnsKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_CRS_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
-  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/PublicKey/${state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId()}`;
-  envs["relayer"].APP_KEYURL__CRS__URL = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
+  envs["coprocessor"].KMS_PUBLIC_KEY = `${minioInt}/kms-public/${kp}/PublicKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_SERVER_KEY = `${minioInt}/kms-public/${kp}/ServerKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_SNS_KEY = `${minioInt}/kms-public/${kp}/SnsKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_CRS_KEY = `${minioInt}/kms-public/${kp}/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
+  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${minioInt}/kms-public/${kp}/PublicKey/${state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId()}`;
+  envs["relayer"].APP_KEYURL__CRS__URL = `${minioInt}/kms-public/${kp}/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
   for (const [key, source] of Object.entries(compat.connectorEnv)) {
     if (envs["kms-connector"][source]) {
       envs["kms-connector"][key] = envs["kms-connector"][source];
@@ -388,6 +426,9 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
   }
   if (state.discovery) {
     updateContracts(envs["gateway-sc"], state.discovery.gateway);
+    updateContracts(envs["gateway-mocked-payment"], {
+      PROTOCOL_PAYMENT_ADDRESS: state.discovery.gateway.PROTOCOL_PAYMENT_ADDRESS,
+    });
     updateContracts(envs["host-sc"], {
       DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
       INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
@@ -415,7 +456,7 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       KMS_CONNECTOR_HOST_CHAINS: JSON.stringify([
         {
           url: state.discovery.endpoints.hostHttp,
-          chain_id: 12345,
+          chain_id: Number(envs["coprocessor"].CHAIN_ID ?? "12345"),
           acl_address: state.discovery.host.ACL_CONTRACT_ADDRESS,
         },
       ]),
@@ -432,6 +473,15 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       INPUT_VERIFIER_CONTRACT_ADDRESS: state.discovery.host.INPUT_VERIFIER_CONTRACT_ADDRESS,
       FHEVM_EXECUTOR_CONTRACT_ADDRESS: state.discovery.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
     });
+  }
+
+  // Modern test-suite SDK (>= v0.11.0) expects RELAYER_URL to include /v2;
+  // older SDKs append /v1/ internally, so the base URL must stay bare.
+  if (!requiresLegacyRelayerUrl(state)) {
+    const base = envs["test-suite"].RELAYER_URL ?? "";
+    if (base && !base.endsWith("/v2")) {
+      envs["test-suite"].RELAYER_URL = `${base}/v2`;
+    }
   }
 
   const indices = [5, 8, 9, 10, 11];
@@ -467,7 +517,11 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
     versionsEnvPath,
     state.versions.env,
   );
-  await copyFile(TEMPLATE_RELAYER_CONFIG, relayerConfigPath);
+  const relayerConfig = rewriteRelayerConfig(
+    YAML.parse(await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8")) as Record<string, unknown>,
+    state,
+  );
+  await fs.writeFile(relayerConfigPath, YAML.stringify(relayerConfig));
 };
 
 const imageRefsForServices = async (component: string, services: string[]) => {

@@ -80,10 +80,12 @@ jobs:
       connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
+      stack-era: ${{ steps.create-e2e-tests-input.outputs.stack-era }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: 'false'
 
       - id: create-e2e-tests-input
@@ -92,17 +94,23 @@ jobs:
           script: |
             const previousCommitHash = process.env.PREVIOUS_COMMIT_HASH;
             const newCommitHash = process.env.NEW_COMMIT_HASH;
+            const simpleAclCutover = '803f1048727eabf6d8b3df618203e3c7dda77890';
             console.log(`Previous commit hash: ${previousCommitHash}`)
             console.log(`New commit hash: ${newCommitHash}`)
             console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
 
             const { execSync } = require('child_process');
             const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
+            const selectedCommits = new Set();
+            function getSelectedCommit(key, build_result) {
+              return dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
+            }
             function getImageTagIfBuilt(key, build_result) {
-              let imageCommit = dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
+              const imageCommit = getSelectedCommit(key, build_result);
+              selectedCommits.add(imageCommit);
               let imageTag;
               try {
-                imageTag = execSync(`git rev-parse --short ${imageCommit}`, { encoding: 'utf8' }).trim();
+                imageTag = execSync(`git rev-parse --short=7 ${imageCommit}`, { encoding: 'utf8' }).trim();
               } catch (err) {
                 console.log(`Failed to resolve short hash for ${imageCommit}, falling back to substring`);
                 imageTag = imageCommit.substring(0, 7);
@@ -127,6 +135,19 @@ jobs:
             core.setOutput('gateway-version', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
             core.setOutput('host-version', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
             core.setOutput('test-suite-version', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
+
+            const needsModernRelayer = [...selectedCommits].some((commit) => {
+              try {
+                execSync(`git merge-base --is-ancestor ${simpleAclCutover} ${commit}`, { stdio: 'ignore' });
+                return true;
+              } catch (err) {
+                return false;
+              }
+            });
+            if (needsModernRelayer) {
+              console.log("Selected stack crosses simple-ACL cutover; assigning modern stack era");
+              core.setOutput('stack-era', 'modern');
+            }
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]
@@ -155,4 +176,5 @@ jobs:
       connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      stack-era: ${{ needs.create-e2e-tests-input.outputs.stack-era }}
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
