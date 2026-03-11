@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use crate::database::{insert_crs, insert_key, KeyRecord};
-use crate::drift_detector::DriftDetector;
+use crate::drift_detector::{DriftDetector, EventContext};
 
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::digest::{digest_crs, digest_key};
@@ -129,7 +129,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
         let mut number_of_last_processed_updates: u64 = 0;
-        let mut drift_detector = DriftDetector::new();
+        let mut drift_detector = DriftDetector::new(
+            self.conf.expected_coprocessor_tx_senders.clone(),
+            self.conf.host_chain_id,
+            self.conf.drift_no_consensus_timeout_blocks,
+            self.conf.drift_post_consensus_grace_blocks,
+        );
         if let Some(from_block) = *replay_from_block {
             info!(from_block, "Replay starts");
             let from_block = if from_block >= 0 {
@@ -268,13 +273,19 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 error!(log = ?log, "Failed to decode KMSGeneration event log");
                             }
                         } else if Some(log.address()) == self.conf.ciphertext_commits_address {
+                            let context = EventContext {
+                                block_number: log.block_number.unwrap_or(to_block),
+                                block_hash: log.block_hash,
+                                tx_hash: log.transaction_hash,
+                                log_index: log.log_index,
+                            };
                             if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
                                 match event.data {
                                     CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterial(e) => {
-                                        drift_detector.observe_submission(e);
+                                        drift_detector.observe_submission(e, context);
                                     }
                                     CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
-                                        drift_detector.handle_consensus(e, db_pool).await?;
+                                        drift_detector.handle_consensus(e, context, db_pool).await?;
                                     }
                                     _ => {} // Ignore Initialized, Upgraded events
                                 }
@@ -285,6 +296,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             error!(log = ?log, "Unexpected log address");
                         }
                     }
+                    drift_detector.evict_stale(current_block);
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
                         if to_block == current_block {

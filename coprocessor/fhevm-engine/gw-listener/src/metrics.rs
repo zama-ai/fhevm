@@ -104,3 +104,19 @@ pub(crate) static DRIFT_DETECTED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|
     )
     .unwrap()
 });
+
+pub(crate) static CONSENSUS_TIMEOUT_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_consensus_timeout_counter",
+        "Number of handles that timed out without a consensus event"
+    )
+    .unwrap()
+});
+
+pub(crate) static MISSING_SUBMISSION_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_missing_submission_counter",
+        "Number of handles where consensus was reached but some coprocessors never submitted"
+    )
+    .unwrap()
+});

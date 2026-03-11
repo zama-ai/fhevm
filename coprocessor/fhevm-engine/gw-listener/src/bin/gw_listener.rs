@@ -92,6 +92,29 @@ struct Conf {
 
     #[arg(long, help = "CiphertextCommits contract address for drift detection")]
     ciphertext_commits_address: Option<Address>,
+
+    #[arg(
+        long = "expected-coprocessor-tx-sender",
+        requires = "ciphertext_commits_address",
+        help = "Expected coprocessor tx-sender address. Repeat once per coprocessor."
+    )]
+    expected_coprocessor_tx_senders: Vec<Address>,
+
+    #[arg(
+        long,
+        default_value_t = 50,
+        requires = "ciphertext_commits_address",
+        help = "Drop a handle and alert if no consensus arrives after this many blocks"
+    )]
+    drift_no_consensus_timeout_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = 10,
+        requires = "ciphertext_commits_address",
+        help = "After consensus, wait this many blocks for missing coprocessor submissions"
+    )]
+    drift_post_consensus_grace_blocks: u64,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -159,6 +182,12 @@ async fn main() -> anyhow::Result<()> {
     else {
         anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
+    if conf.ciphertext_commits_address.is_some() && conf.expected_coprocessor_tx_senders.is_empty()
+    {
+        anyhow::bail!(
+            "--expected-coprocessor-tx-sender is required when --ciphertext-commits-address is set."
+        );
+    }
     let config = ConfigSettings {
         host_chain_id,
         database_url: conf.database_url.clone().unwrap_or_default(),
@@ -175,6 +204,9 @@ async fn main() -> anyhow::Result<()> {
         replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
         ciphertext_commits_address: conf.ciphertext_commits_address,
+        expected_coprocessor_tx_senders: conf.expected_coprocessor_tx_senders,
+        drift_no_consensus_timeout_blocks: conf.drift_no_consensus_timeout_blocks,
+        drift_post_consensus_grace_blocks: conf.drift_post_consensus_grace_blocks,
     };
 
     let gw_listener = GatewayListener::new(
