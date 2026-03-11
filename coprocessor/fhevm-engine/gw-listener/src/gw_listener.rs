@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
@@ -137,27 +138,32 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let progress = self.get_listener_progress(db_pool).await?;
         let mut last_processed_block_num = progress.last_processed_block_num;
         let mut number_of_last_processed_updates: u64 = 0;
-        let expected_coprocessor_tx_senders = self.fetch_expected_coprocessor_tx_senders().await?;
+        let replay_start_block = if let Some(from_block) = *replay_from_block {
+            info!(from_block, "Replay starts");
+            let replay_start_block = if from_block >= 0 {
+                from_block
+            } else {
+                let current_block = self.provider.get_block_number().await?;
+                current_block as i64 + from_block
+            }
+            .max(1) as u64;
+            last_processed_block_num = Some(replay_start_block.saturating_sub(1));
+            Some(replay_start_block)
+        } else {
+            progress.earliest_open_ct_commits_block
+        };
+        let expected_coprocessor_tx_senders = self
+            .fetch_expected_coprocessor_tx_senders(
+                replay_start_block.map(|block| block.saturating_sub(1)),
+            )
+            .await?;
         let mut drift_detector = DriftDetector::new(
             expected_coprocessor_tx_senders,
             self.conf.host_chain_id,
             self.conf.drift_no_consensus_timeout_blocks,
             self.conf.drift_post_consensus_grace_blocks,
         );
-        if let Some(from_block) = *replay_from_block {
-            info!(from_block, "Replay starts");
-            let from_block = if from_block >= 0 {
-                // start from specified block
-                from_block
-            } else {
-                // go N block in past
-                let current_block = self.provider.get_block_number().await?;
-                current_block as i64 + from_block
-            };
-            // clipped to positive block number
-            // note, we cannot replay block 0
-            last_processed_block_num = Some((from_block - 1).try_into().unwrap_or(0));
-        } else {
+        if replay_from_block.is_none() {
             self.rebuild_drift_detector(
                 db_pool,
                 &mut drift_detector,
@@ -202,6 +208,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
                     let mut filter_addresses = vec![self.kms_generation_address, self.input_verification_address];
                     if let Some(addr) = self.conf.ciphertext_commits_address {
+                        filter_addresses.push(addr);
+                    }
+                    if let Some(addr) = self.conf.gateway_config_address {
                         filter_addresses.push(addr);
                     }
                     let filter = Filter::new()
@@ -297,6 +306,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 db_pool,
                             )
                             .await?;
+                        } else if Some(log.address()) == self.conf.gateway_config_address {
+                            self.process_gateway_config_log(&mut drift_detector, log)?;
                         } else {
                             error!(log = ?log, "Unexpected log address");
                         }
@@ -348,16 +359,20 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(())
     }
 
-    async fn fetch_expected_coprocessor_tx_senders(&self) -> anyhow::Result<Vec<Address>> {
+    async fn fetch_expected_coprocessor_tx_senders(
+        &self,
+        at_block: Option<u64>,
+    ) -> anyhow::Result<Vec<Address>> {
         let Some(gateway_config_address) = self.conf.gateway_config_address else {
             return Ok(Vec::new());
         };
 
-        let expected_coprocessor_tx_senders =
-            GatewayConfig::new(gateway_config_address, self.provider.clone())
-                .getCoprocessorTxSenders()
-                .call()
-                .await?;
+        let gateway_config = GatewayConfig::new(gateway_config_address, self.provider.clone());
+        let call = gateway_config.getCoprocessorTxSenders();
+        let expected_coprocessor_tx_senders = match at_block {
+            Some(block) => call.block(BlockId::number(block)).call().await?,
+            None => call.call().await?,
+        };
 
         if expected_coprocessor_tx_senders.is_empty() {
             anyhow::bail!("GatewayConfig returned no coprocessor tx-senders");
@@ -398,7 +413,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 to_block,
             );
             let filter = Filter::new()
-                .address(ciphertext_commits_address)
+                .address(
+                    [
+                        Some(ciphertext_commits_address),
+                        self.conf.gateway_config_address,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>(),
+                )
                 .from_block(batch_from)
                 .to_block(batch_to);
             let logs = self
@@ -413,8 +436,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 })?;
 
             for log in logs {
-                self.process_ciphertext_commits_log(drift_detector, log, batch_to, db_pool)
-                    .await?;
+                if log.address() == ciphertext_commits_address {
+                    self.process_ciphertext_commits_log(drift_detector, log, batch_to, db_pool)
+                        .await?;
+                } else if Some(log.address()) == self.conf.gateway_config_address {
+                    self.process_gateway_config_log(drift_detector, log)?;
+                } else {
+                    error!(log = ?log, "Unexpected log address while rebuilding drift detector");
+                }
             }
 
             batch_from = batch_to.saturating_add(1);
@@ -465,6 +494,35 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         } else {
             error!(log = ?log, "Failed to decode CiphertextCommits event log");
         }
+        Ok(())
+    }
+
+    fn process_gateway_config_log(
+        &self,
+        drift_detector: &mut DriftDetector,
+        log: Log,
+    ) -> anyhow::Result<()> {
+        let event = GatewayConfig::GatewayConfigEvents::decode_log(&log.inner)
+            .map_err(|_| anyhow::anyhow!("Failed to decode GatewayConfig event log"))?;
+
+        if let GatewayConfig::GatewayConfigEvents::UpdateCoprocessors(update) = event.data {
+            let expected_senders = update
+                .newCoprocessors
+                .into_iter()
+                .map(|coprocessor| coprocessor.txSenderAddress)
+                .collect::<Vec<_>>();
+            if expected_senders.is_empty() {
+                anyhow::bail!("GatewayConfig update removed all coprocessor tx-senders");
+            }
+            info!(
+                block_number = ?log.block_number,
+                tx_hash = ?log.transaction_hash,
+                expected_senders = ?expected_senders,
+                "Refreshing expected coprocessor tx-senders from GatewayConfig"
+            );
+            drift_detector.set_current_expected_senders(expected_senders);
+        }
+
         Ok(())
     }
 

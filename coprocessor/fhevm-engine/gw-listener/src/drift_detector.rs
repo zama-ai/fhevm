@@ -47,6 +47,7 @@ struct HandleState {
     first_seen_block: u64,
     first_seen_block_hash: Option<B256>,
     last_seen_block: u64,
+    expected_senders: Vec<Address>,
     submissions: Vec<Submission>,
     consensus: Option<ConsensusState>,
     local_consensus_checked: bool,
@@ -62,7 +63,7 @@ struct DeferredMetrics {
 }
 
 pub(crate) struct DriftDetector {
-    expected_senders: Vec<Address>,
+    current_expected_senders: Vec<Address>,
     open_handles: HashMap<FixedBytes<32>, HandleState>,
     host_chain_id: ChainId,
     local_node_id: String,
@@ -80,7 +81,7 @@ impl DriftDetector {
         post_consensus_grace_blocks: u64,
     ) -> Self {
         Self {
-            expected_senders,
+            current_expected_senders: expected_senders,
             open_handles: HashMap::new(),
             host_chain_id,
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
@@ -95,6 +96,10 @@ impl DriftDetector {
         self.alerts_enabled = alerts_enabled;
     }
 
+    pub(crate) fn set_current_expected_senders(&mut self, expected_senders: Vec<Address>) {
+        self.current_expected_senders = expected_senders;
+    }
+
     pub(crate) fn observe_submission(
         &mut self,
         event: CiphertextCommits::AddCiphertextMaterial,
@@ -105,20 +110,12 @@ impl DriftDetector {
             ciphertext_digest: event.ciphertextDigest,
             ciphertext128_digest: event.snsCiphertextDigest,
         };
+        let expected_senders = self.current_expected_senders.clone();
 
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| HandleState {
-                first_seen_block: context.block_number,
-                first_seen_block_hash: context.block_hash,
-                last_seen_block: context.block_number,
-                submissions: Vec::with_capacity(self.expected_senders.len()),
-                consensus: None,
-                local_consensus_checked: false,
-                missing_submission_reported: false,
-                drift_reported: false,
-            });
+            .or_insert_with(|| new_handle_state(context, expected_senders));
         state.last_seen_block = context.block_number;
 
         if let Some(existing) = state
@@ -167,7 +164,7 @@ impl DriftDetector {
                     variant_count = variants.len(),
                     variants = ?variants,
                     seen_senders = ?seen_sender_strings(&state.submissions),
-                    missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                    missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
                     source = "peer_submission",
                     "Drift detected: observed multiple digest variants for handle"
                 );
@@ -186,19 +183,11 @@ impl DriftDetector {
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
         let handle = event.ctHandle;
+        let expected_senders = self.current_expected_senders.clone();
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| HandleState {
-                first_seen_block: context.block_number,
-                first_seen_block_hash: context.block_hash,
-                last_seen_block: context.block_number,
-                submissions: Vec::with_capacity(self.expected_senders.len()),
-                consensus: None,
-                local_consensus_checked: false,
-                missing_submission_reported: false,
-                drift_reported: false,
-            });
+            .or_insert_with(|| new_handle_state(context, expected_senders));
         state.last_seen_block = context.block_number;
         state.consensus = Some(ConsensusState {
             block_number: context.block_number,
@@ -307,6 +296,10 @@ impl DriftDetector {
             self.deferred_metrics.drift_detected += 1;
         }
 
+        if !self.alerts_enabled {
+            return Ok(());
+        }
+
         let Some(state) = self.open_handles.get_mut(&handle) else {
             return Ok(());
         };
@@ -344,7 +337,7 @@ impl DriftDetector {
                     continue;
                 }
 
-                if state.submissions.len() != self.expected_senders.len() {
+                if state.submissions.len() != state.expected_senders.len() {
                     if state.missing_submission_reported
                         || current_block.saturating_sub(consensus.block_number)
                             < self.post_consensus_grace_blocks
@@ -367,7 +360,7 @@ impl DriftDetector {
                         consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                         consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                         seen_senders = ?seen_sender_strings(&state.submissions),
-                        missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                        missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
                         variant_count = variant_summaries(&state.submissions).len(),
                         variants = ?variant_summaries(&state.submissions),
                         "Consensus reached but some coprocessors never submitted this handle"
@@ -395,7 +388,7 @@ impl DriftDetector {
                 first_seen_block_hash = ?state.first_seen_block_hash,
                 last_seen_block = state.last_seen_block,
                 seen_senders = ?seen_sender_strings(&state.submissions),
-                missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
                 variant_count = variant_summaries(&state.submissions).len(),
                 variants = ?variant_summaries(&state.submissions),
                 "Handle timed out before consensus was observed"
@@ -451,7 +444,7 @@ impl DriftDetector {
                 variant_count = variant_summaries(&state.submissions).len(),
                 variants = ?variant_summaries(&state.submissions),
                 seen_senders = ?seen_sender_strings(&state.submissions),
-                missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
                 source = "peer_submission",
                 "Drift detected: observed multiple digest variants for handle"
             );
@@ -463,7 +456,7 @@ impl DriftDetector {
             .open_handles
             .iter()
             .filter_map(|(handle, state)| {
-                (state.submissions.len() == self.expected_senders.len()
+                (state.submissions.len() == state.expected_senders.len()
                     && state.consensus.is_none())
                 .then_some(*handle)
             })
@@ -487,7 +480,7 @@ impl DriftDetector {
             return;
         };
 
-        if state.submissions.len() != self.expected_senders.len() {
+        if state.submissions.len() != state.expected_senders.len() {
             return;
         }
 
@@ -517,6 +510,21 @@ impl DriftDetector {
         );
         self.deferred_metrics.consensus_timeout += 1;
         self.open_handles.remove(&handle);
+    }
+}
+
+fn new_handle_state(context: EventContext, expected_senders: Vec<Address>) -> HandleState {
+    let submission_capacity = expected_senders.len();
+    HandleState {
+        first_seen_block: context.block_number,
+        first_seen_block_hash: context.block_hash,
+        last_seen_block: context.block_number,
+        expected_senders,
+        submissions: Vec::with_capacity(submission_capacity),
+        consensus: None,
+        local_consensus_checked: false,
+        missing_submission_reported: false,
+        drift_reported: false,
     }
 }
 
@@ -735,6 +743,7 @@ mod tests {
             first_seen_block: 10,
             first_seen_block_hash: None,
             last_seen_block: 12,
+            expected_senders: senders.clone(),
             submissions: vec![
                 Submission {
                     sender: senders[0],
@@ -847,6 +856,71 @@ mod tests {
         assert_eq!(detector.deferred_metrics.drift_detected, 1);
         let state = detector.open_handles.get(&handle).unwrap();
         assert_eq!(variant_summaries(&state.submissions).len(), 2);
+    }
+
+    #[test]
+    fn handle_keeps_expected_senders_snapshot_after_rotation() {
+        let mut detector = detector();
+        let old_senders = senders();
+        let handle_before_rotation = FixedBytes::from([21u8; 32]);
+        let handle_after_rotation = FixedBytes::from([22u8; 32]);
+        let new_sender = Address::left_padding_from(&[4]);
+
+        detector.observe_submission(
+            make_submission_event(
+                handle_before_rotation,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                old_senders[0],
+            ),
+            context(10),
+        );
+
+        let mut rotated_senders = old_senders.clone();
+        rotated_senders.push(new_sender);
+        detector.set_current_expected_senders(rotated_senders.clone());
+
+        for (index, sender) in old_senders.iter().copied().enumerate().skip(1) {
+            detector.observe_submission(
+                make_submission_event(
+                    handle_before_rotation,
+                    FixedBytes::from([2u8; 32]),
+                    FixedBytes::from([3u8; 32]),
+                    sender,
+                ),
+                context(11 + index as u64),
+            );
+        }
+
+        assert!(!detector.open_handles.contains_key(&handle_before_rotation));
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+
+        for (index, sender) in rotated_senders.iter().copied().take(3).enumerate() {
+            detector.observe_submission(
+                make_submission_event(
+                    handle_after_rotation,
+                    FixedBytes::from([4u8; 32]),
+                    FixedBytes::from([5u8; 32]),
+                    sender,
+                ),
+                context(20 + index as u64),
+            );
+        }
+
+        assert!(detector.open_handles.contains_key(&handle_after_rotation));
+
+        detector.observe_submission(
+            make_submission_event(
+                handle_after_rotation,
+                FixedBytes::from([4u8; 32]),
+                FixedBytes::from([5u8; 32]),
+                new_sender,
+            ),
+            context(23),
+        );
+
+        assert!(!detector.open_handles.contains_key(&handle_after_rotation));
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 2);
     }
 
     #[test]
@@ -1011,6 +1085,61 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn rebuild_defers_consensus_check_until_alerts_resume() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xAB; 32];
+
+        insert_ciphertext_digest(
+            &pool,
+            12345,
+            [0u8; 32],
+            &handle,
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+        )
+        .await
+        .unwrap();
+
+        let mut detector = detector();
+        detector.set_alerts_enabled(false);
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from([0xFF; 32]),
+                    FixedBytes::from([0xCC; 32]),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+
+        detector.set_alerts_enabled(true);
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
         assert_eq!(detector.deferred_metrics.drift_detected, 1);
     }
 }
