@@ -107,6 +107,10 @@ jobs:
       run: |
         docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:latest
 
+    - name: Clean previous coverage data
+      run: cargo llvm-cov clean --workspace --profile coverage
+      working-directory: coprocessor/fhevm-engine
+
     - name: Run tests with coverage
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
