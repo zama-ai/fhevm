@@ -271,7 +271,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
                                 match event.data {
                                     CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterial(e) => {
-                                        drift_detector.handle_add_ciphertext_material(e);
+                                        drift_detector.observe_submission(e);
                                     }
                                     CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
                                         drift_detector.handle_consensus(e, db_pool).await?;
@@ -285,7 +285,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             error!(log = ?log, "Unexpected log address");
                         }
                     }
-                    drift_detector.retry_pending(db_pool).await?;
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
                         if to_block == current_block {

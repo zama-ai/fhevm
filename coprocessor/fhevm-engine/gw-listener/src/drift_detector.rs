@@ -1,89 +1,63 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
-use alloy::primitives::{Address, FixedBytes};
+use alloy::primitives::FixedBytes;
 use fhevm_engine_common::utils::to_hex;
 use sqlx::{Pool, Postgres, Row};
 use tracing::{debug, warn};
 
-use crate::metrics::{
-    CONSENSUS_CONFIRMED_COUNTER, CONSENSUS_HANDLE_NOT_FOUND_COUNTER, DRIFT_DETECTED_COUNTER,
-    DRIFT_EARLY_WARNING_COUNTER,
-};
+use crate::metrics::DRIFT_DETECTED_COUNTER;
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 
-/// Maximum number of consensus events waiting for their local digest to appear.
-const MAX_PENDING_CONSENSUS: usize = 10_000;
-
-struct PerCoprocessorDigest {
-    #[allow(dead_code)] // needed for M2 recovery
-    coprocessor: Address,
-    ct64_digest: FixedBytes<32>,
-    ct128_digest: FixedBytes<32>,
-}
-
-/// Whether a consensus event could be resolved against a local digest.
-enum ConsensusResolution {
-    Resolved,
-    /// Local digest not yet available (SNS worker hasn't computed it).
-    NotYetAvailable,
+#[derive(Clone, Copy)]
+struct ObservedDigests {
+    ciphertext_digest: FixedBytes<32>,
+    ciphertext128_digest: FixedBytes<32>,
 }
 
 pub(crate) struct DriftDetector {
-    submissions: HashMap<FixedBytes<32>, Vec<PerCoprocessorDigest>>,
-    /// Consensus events whose local digest was not yet available.
-    pending_consensus: VecDeque<CiphertextCommits::AddCiphertextMaterialConsensus>,
+    first_seen_submissions: HashMap<FixedBytes<32>, ObservedDigests>,
     /// Deferred metric increments, flushed after the block's DB update succeeds.
-    drift_detected: u64,
-    consensus_confirmed: u64,
-    drift_early_warning: u64,
-    consensus_handle_not_found: u64,
+    deferred_drift_count: u64,
 }
 
 impl DriftDetector {
     pub(crate) fn new() -> Self {
         Self {
-            submissions: HashMap::new(),
-            pending_consensus: VecDeque::new(),
-            drift_detected: 0,
-            consensus_confirmed: 0,
-            drift_early_warning: 0,
-            consensus_handle_not_found: 0,
+            first_seen_submissions: HashMap::new(),
+            deferred_drift_count: 0,
         }
     }
 
-    pub(crate) fn handle_add_ciphertext_material(
-        &mut self,
-        event: CiphertextCommits::AddCiphertextMaterial,
-    ) {
-        let entry = self.submissions.entry(event.ctHandle).or_default();
-
-        let new_digest = PerCoprocessorDigest {
-            coprocessor: event.coprocessorTxSender,
-            ct64_digest: event.ciphertextDigest,
-            ct128_digest: event.snsCiphertextDigest,
+    pub(crate) fn observe_submission(&mut self, event: CiphertextCommits::AddCiphertextMaterial) {
+        let observed = ObservedDigests {
+            ciphertext_digest: event.ciphertextDigest,
+            ciphertext128_digest: event.snsCiphertextDigest,
         };
 
-        // Early warning: check if any existing entry has a different digest.
-        for existing in entry.iter() {
-            if existing.ct64_digest != new_digest.ct64_digest
-                || existing.ct128_digest != new_digest.ct128_digest
-            {
-                warn!(
-                    handle = %event.ctHandle,
-                    our_ct64_digest = %existing.ct64_digest,
-                    our_ct128_digest = %existing.ct128_digest,
-                    peer_ct64_digest = %new_digest.ct64_digest,
-                    peer_ct128_digest = %new_digest.ct128_digest,
-                    peer_address = %event.coprocessorTxSender,
-                    "Drift early warning: peer submitted different digest"
-                );
-                self.drift_early_warning += 1;
-                break;
+        match self.first_seen_submissions.entry(event.ctHandle) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(observed);
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                let first_seen = entry.get();
+                if first_seen.ciphertext_digest != observed.ciphertext_digest
+                    || first_seen.ciphertext128_digest != observed.ciphertext128_digest
+                {
+                    warn!(
+                        handle = %event.ctHandle,
+                        first_seen_ciphertext_digest = %first_seen.ciphertext_digest,
+                        first_seen_ciphertext128_digest = %first_seen.ciphertext128_digest,
+                        new_ciphertext_digest = %observed.ciphertext_digest,
+                        new_ciphertext128_digest = %observed.ciphertext128_digest,
+                        coprocessor_tx_sender = %event.coprocessorTxSender,
+                        source = "peer_submission",
+                        "Drift detected: peer submitted a different digest"
+                    );
+                    self.deferred_drift_count += 1;
+                }
             }
         }
-
-        entry.push(new_digest);
     }
 
     pub(crate) async fn handle_consensus(
@@ -91,44 +65,7 @@ impl DriftDetector {
         event: CiphertextCommits::AddCiphertextMaterialConsensus,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
-        // Clean up the in-memory buffer — consensus is final for this handle.
-        self.submissions.remove(&event.ctHandle);
-
-        match self.try_resolve_consensus(&event, db_pool).await? {
-            ConsensusResolution::Resolved => {}
-            ConsensusResolution::NotYetAvailable => {
-                self.enqueue_pending(event);
-            }
-        }
-        Ok(())
-    }
-
-    /// Retry pending consensus events whose local digest may now be available.
-    /// Call once per block tick, after processing new events.
-    pub(crate) async fn retry_pending(&mut self, db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
-        if self.pending_consensus.is_empty() {
-            return Ok(());
-        }
-        let pending = std::mem::take(&mut self.pending_consensus);
-        for event in pending {
-            match self.try_resolve_consensus(&event, db_pool).await? {
-                ConsensusResolution::Resolved => {}
-                ConsensusResolution::NotYetAvailable => {
-                    self.pending_consensus.push_back(event);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Attempt to resolve a consensus event against the local digest in DB.
-    /// Returns `NotYetAvailable` if the digest hasn't been computed locally yet.
-    /// DB errors propagate as `Err`.
-    async fn try_resolve_consensus(
-        &mut self,
-        event: &CiphertextCommits::AddCiphertextMaterialConsensus,
-        db_pool: &Pool<Postgres>,
-    ) -> anyhow::Result<ConsensusResolution> {
+        self.first_seen_submissions.remove(&event.ctHandle);
         let handle_bytes = event.ctHandle.as_slice();
 
         let row = sqlx::query(
@@ -141,78 +78,51 @@ impl DriftDetector {
         let Some(row) = row else {
             debug!(
                 handle = %event.ctHandle,
-                "Consensus event for handle not yet computed locally"
+                "Consensus arrived before local digest was available; skipping M1 drift check"
             );
-            return Ok(ConsensusResolution::NotYetAvailable);
+            return Ok(());
         };
 
-        let local_ct64: Option<Vec<u8>> = row.get("ciphertext");
-        let local_ct128: Option<Vec<u8>> = row.get("ciphertext128");
+        let local_ciphertext_digest: Option<Vec<u8>> = row.get("ciphertext");
+        let local_ciphertext128_digest: Option<Vec<u8>> = row.get("ciphertext128");
 
-        // If both digest columns are NULL the SNS worker hasn't computed yet.
-        let (Some(local_ct64), Some(local_ct128)) = (local_ct64, local_ct128) else {
+        let (Some(local_ciphertext_digest), Some(local_ciphertext128_digest)) =
+            (local_ciphertext_digest, local_ciphertext128_digest)
+        else {
             debug!(
                 handle = %event.ctHandle,
-                "Consensus event for handle whose digests are not yet computed locally"
+                "Consensus arrived before local digests were ready; skipping M1 drift check"
             );
-            return Ok(ConsensusResolution::NotYetAvailable);
+            return Ok(());
         };
 
-        let ct64_match = event.ciphertextDigest.as_slice() == local_ct64.as_slice();
-        let ct128_match = event.snsCiphertextDigest.as_slice() == local_ct128.as_slice();
-
-        if ct64_match && ct128_match {
-            self.consensus_confirmed += 1;
-        } else {
-            let local_ct64_hex = to_hex(&local_ct64);
-            let local_ct128_hex = to_hex(&local_ct128);
+        if event.ciphertextDigest.as_slice() != local_ciphertext_digest.as_slice()
+            || event.snsCiphertextDigest.as_slice() != local_ciphertext128_digest.as_slice()
+        {
             warn!(
                 handle = %event.ctHandle,
-                consensus_ct64_digest = %event.ciphertextDigest,
-                consensus_ct128_digest = %event.snsCiphertextDigest,
-                local_ct64_digest = %local_ct64_hex,
-                local_ct128_digest = %local_ct128_hex,
+                consensus_ciphertext_digest = %event.ciphertextDigest,
+                consensus_ciphertext128_digest = %event.snsCiphertextDigest,
+                local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
+                local_ciphertext128_digest = %to_hex(&local_ciphertext128_digest),
                 key_id = %event.keyId,
-                status = "detected",
+                source = "consensus",
                 "Drift detected: local digest does not match consensus"
             );
-            self.drift_detected += 1;
+            self.deferred_drift_count += 1;
         }
 
-        Ok(ConsensusResolution::Resolved)
-    }
-
-    fn enqueue_pending(&mut self, event: CiphertextCommits::AddCiphertextMaterialConsensus) {
-        if self.pending_consensus.len() >= MAX_PENDING_CONSENSUS {
-            let dropped = self.pending_consensus.pop_front().unwrap();
-            warn!(
-                handle = %dropped.ctHandle,
-                "Dropping oldest pending consensus event (queue full)"
-            );
-            self.consensus_handle_not_found += 1;
-        }
-        self.pending_consensus.push_back(event);
+        Ok(())
     }
 
     /// Flush deferred metric increments. Call after the block's DB update succeeds.
     pub(crate) fn flush_metrics(&mut self) {
-        if self.drift_detected == 0
-            && self.consensus_confirmed == 0
-            && self.drift_early_warning == 0
-            && self.consensus_handle_not_found == 0
-        {
+        if self.deferred_drift_count == 0 {
             return;
         }
 
-        DRIFT_DETECTED_COUNTER.inc_by(self.drift_detected);
-        CONSENSUS_CONFIRMED_COUNTER.inc_by(self.consensus_confirmed);
-        DRIFT_EARLY_WARNING_COUNTER.inc_by(self.drift_early_warning);
-        CONSENSUS_HANDLE_NOT_FOUND_COUNTER.inc_by(self.consensus_handle_not_found);
-
-        self.drift_detected = 0;
-        self.consensus_confirmed = 0;
-        self.drift_early_warning = 0;
-        self.consensus_handle_not_found = 0;
+        DRIFT_DETECTED_COUNTER.inc_by(self.deferred_drift_count);
+        self.deferred_drift_count = 0;
     }
 }
 
@@ -221,17 +131,17 @@ mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes, U256};
 
-    fn make_material_event(
+    fn make_submission_event(
         handle: FixedBytes<32>,
-        ct64_digest: FixedBytes<32>,
-        ct128_digest: FixedBytes<32>,
+        ciphertext_digest: FixedBytes<32>,
+        ciphertext128_digest: FixedBytes<32>,
         sender: Address,
     ) -> CiphertextCommits::AddCiphertextMaterial {
         CiphertextCommits::AddCiphertextMaterial {
             ctHandle: handle,
             keyId: U256::from(1),
-            ciphertextDigest: ct64_digest,
-            snsCiphertextDigest: ct128_digest,
+            ciphertextDigest: ciphertext_digest,
+            snsCiphertextDigest: ciphertext128_digest,
             coprocessorTxSender: sender,
         }
     }
@@ -250,120 +160,90 @@ mod tests {
         }
     }
 
-    // ── Unit tests (no DB) ──────────────────────────────────────────
-
     #[test]
-    fn matching_submissions_no_early_warning() {
+    fn matching_submissions_keep_single_first_seen_digest() {
         let mut d = DriftDetector::new();
         let handle = FixedBytes::from([1u8; 32]);
-        let digest64 = FixedBytes::from([2u8; 32]);
-        let digest128 = FixedBytes::from([3u8; 32]);
+        let ciphertext_digest = FixedBytes::from([2u8; 32]);
+        let ciphertext128_digest = FixedBytes::from([3u8; 32]);
 
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
-            digest64,
-            digest128,
+            ciphertext_digest,
+            ciphertext128_digest,
             Address::left_padding_from(&[1]),
         ));
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
-            digest64,
-            digest128,
+            ciphertext_digest,
+            ciphertext128_digest,
             Address::left_padding_from(&[2]),
         ));
 
-        assert_eq!(d.drift_early_warning, 0);
-        assert_eq!(d.submissions[&handle].len(), 2);
+        assert_eq!(d.deferred_drift_count, 0);
+        assert_eq!(d.first_seen_submissions.len(), 1);
+        let first_seen = d.first_seen_submissions.get(&handle).unwrap();
+        assert_eq!(first_seen.ciphertext_digest, ciphertext_digest);
+        assert_eq!(first_seen.ciphertext128_digest, ciphertext128_digest);
     }
 
     #[test]
-    fn differing_submissions_triggers_early_warning() {
+    fn differing_submissions_increment_drift_counter() {
         let mut d = DriftDetector::new();
         let handle = FixedBytes::from([1u8; 32]);
 
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
             FixedBytes::from([2u8; 32]),
             FixedBytes::from([3u8; 32]),
             Address::left_padding_from(&[1]),
         ));
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
             FixedBytes::from([9u8; 32]), // different ct64
             FixedBytes::from([3u8; 32]),
             Address::left_padding_from(&[2]),
         ));
 
-        assert_eq!(d.drift_early_warning, 1);
+        assert_eq!(d.deferred_drift_count, 1);
+        assert_eq!(d.first_seen_submissions.len(), 1);
     }
 
     #[test]
-    fn differing_ct128_only_triggers_early_warning() {
+    fn differing_ciphertext128_only_increments_drift_counter() {
         let mut d = DriftDetector::new();
         let handle = FixedBytes::from([1u8; 32]);
 
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
             FixedBytes::from([2u8; 32]),
             FixedBytes::from([3u8; 32]),
             Address::left_padding_from(&[1]),
         ));
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
             FixedBytes::from([2u8; 32]), // same ct64
             FixedBytes::from([9u8; 32]), // different ct128
             Address::left_padding_from(&[2]),
         ));
 
-        assert_eq!(d.drift_early_warning, 1);
+        assert_eq!(d.deferred_drift_count, 1);
     }
 
     #[test]
     fn flush_noop_when_all_zero() {
         let mut d = DriftDetector::new();
-        // Should not panic or touch atomics.
         d.flush_metrics();
-        assert_eq!(d.drift_detected, 0);
+        assert_eq!(d.deferred_drift_count, 0);
     }
 
     #[test]
     fn flush_resets_counters() {
         let mut d = DriftDetector::new();
-        d.drift_detected = 3;
-        d.consensus_confirmed = 5;
+        d.deferred_drift_count = 3;
         d.flush_metrics();
-        assert_eq!(d.drift_detected, 0);
-        assert_eq!(d.consensus_confirmed, 0);
+        assert_eq!(d.deferred_drift_count, 0);
     }
-
-    #[test]
-    fn pending_queue_overflow_drops_oldest() {
-        let mut d = DriftDetector::new();
-        // Pre-fill to capacity.
-        for _ in 0..MAX_PENDING_CONSENSUS {
-            d.pending_consensus.push_back(make_consensus_event(
-                FixedBytes::from([0xAA; 32]),
-                FixedBytes::from([0xEE; 32]),
-                FixedBytes::from([0xFF; 32]),
-            ));
-        }
-        assert_eq!(d.pending_consensus.len(), MAX_PENDING_CONSENSUS);
-        assert_eq!(d.consensus_handle_not_found, 0);
-
-        // Enqueue one more — should drop the oldest.
-        let new_handle = FixedBytes::from([0xFF; 32]);
-        d.enqueue_pending(make_consensus_event(
-            new_handle,
-            FixedBytes::from([0xEE; 32]),
-            FixedBytes::from([0xFF; 32]),
-        ));
-
-        assert_eq!(d.pending_consensus.len(), MAX_PENDING_CONSENSUS);
-        assert_eq!(d.consensus_handle_not_found, 1);
-        assert_eq!(d.pending_consensus.back().unwrap().ctHandle, new_handle);
-    }
-
-    // ── DB-backed tests ─────────────────────────────────────────────
 
     use serial_test::serial;
     use sqlx::postgres::PgPoolOptions;
@@ -393,28 +273,34 @@ mod tests {
     async fn consensus_match() {
         let (pool, _inst) = setup_db().await;
         let handle = [0xAA; 32];
-        let ct64 = [0xBB; 32];
-        let ct128 = [0xCC; 32];
+        let ciphertext_digest = [0xBB; 32];
+        let ciphertext128_digest = [0xCC; 32];
 
-        insert_ciphertext_digest(&pool, 12345, [0u8; 32], &handle, &ct64, &ct128, 0)
-            .await
-            .unwrap();
+        insert_ciphertext_digest(
+            &pool,
+            12345,
+            [0u8; 32],
+            &handle,
+            &ciphertext_digest,
+            &ciphertext128_digest,
+            0,
+        )
+        .await
+        .unwrap();
 
         let mut d = DriftDetector::new();
         d.handle_consensus(
             make_consensus_event(
                 FixedBytes::from(handle),
-                FixedBytes::from(ct64),
-                FixedBytes::from(ct128),
+                FixedBytes::from(ciphertext_digest),
+                FixedBytes::from(ciphertext128_digest),
             ),
             &pool,
         )
         .await
         .unwrap();
 
-        assert_eq!(d.consensus_confirmed, 1);
-        assert_eq!(d.drift_detected, 0);
-        assert!(d.pending_consensus.is_empty());
+        assert_eq!(d.deferred_drift_count, 0);
     }
 
     #[tokio::test]
@@ -447,14 +333,12 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(d.drift_detected, 1);
-        assert_eq!(d.consensus_confirmed, 0);
-        assert!(d.pending_consensus.is_empty());
+        assert_eq!(d.deferred_drift_count, 1);
     }
 
     #[tokio::test]
     #[serial(db)]
-    async fn consensus_handle_not_in_db_queued_for_retry() {
+    async fn consensus_handle_not_in_db_is_ignored_in_m1() {
         let (pool, _inst) = setup_db().await;
 
         let mut d = DriftDetector::new();
@@ -469,18 +353,15 @@ mod tests {
         .await
         .unwrap();
 
-        // Event should be queued, not counted as lost.
-        assert_eq!(d.pending_consensus.len(), 1);
-        assert_eq!(d.consensus_handle_not_found, 0);
+        assert_eq!(d.deferred_drift_count, 0);
     }
 
     #[tokio::test]
     #[serial(db)]
-    async fn consensus_null_digests_queued_for_retry() {
+    async fn consensus_null_digests_are_ignored_in_m1() {
         let (pool, _inst) = setup_db().await;
         let handle = [0xAA; 32];
 
-        // Insert row with NULL digests (SNS worker hasn't computed yet).
         sqlx::query(
             "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle) VALUES ($1, $2, $3)",
         )
@@ -503,9 +384,7 @@ mod tests {
         .await
         .unwrap();
 
-        // Event should be queued, not counted as lost.
-        assert_eq!(d.pending_consensus.len(), 1);
-        assert_eq!(d.consensus_handle_not_found, 0);
+        assert_eq!(d.deferred_drift_count, 0);
     }
 
     #[tokio::test]
@@ -515,16 +394,14 @@ mod tests {
         let handle = FixedBytes::from([0xAA; 32]);
 
         let mut d = DriftDetector::new();
-        // Buffer a submission.
-        d.handle_add_ciphertext_material(make_material_event(
+        d.observe_submission(make_submission_event(
             handle,
             FixedBytes::from([0xBB; 32]),
             FixedBytes::from([0xCC; 32]),
             Address::ZERO,
         ));
-        assert!(d.submissions.contains_key(&handle));
+        assert!(d.first_seen_submissions.contains_key(&handle));
 
-        // Consensus removes the buffer entry (handle not in DB → queued for retry).
         d.handle_consensus(
             make_consensus_event(
                 handle,
@@ -536,81 +413,6 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(!d.submissions.contains_key(&handle));
-    }
-
-    #[tokio::test]
-    #[serial(db)]
-    async fn pending_consensus_resolves_on_retry() {
-        let (pool, _inst) = setup_db().await;
-        let handle = [0xAA; 32];
-        let ct64 = [0xBB; 32];
-        let ct128 = [0xCC; 32];
-
-        let mut d = DriftDetector::new();
-
-        // Consensus arrives before local digest is ready → queued.
-        d.handle_consensus(
-            make_consensus_event(
-                FixedBytes::from(handle),
-                FixedBytes::from(ct64),
-                FixedBytes::from(ct128),
-            ),
-            &pool,
-        )
-        .await
-        .unwrap();
-        assert_eq!(d.pending_consensus.len(), 1);
-
-        // Now the SNS worker computes the digest.
-        insert_ciphertext_digest(&pool, 12345, [0u8; 32], &handle, &ct64, &ct128, 0)
-            .await
-            .unwrap();
-
-        // Retry resolves it.
-        d.retry_pending(&pool).await.unwrap();
-        assert!(d.pending_consensus.is_empty());
-        assert_eq!(d.consensus_confirmed, 1);
-    }
-
-    #[tokio::test]
-    #[serial(db)]
-    async fn pending_consensus_detects_drift_on_retry() {
-        let (pool, _inst) = setup_db().await;
-        let handle = [0xAA; 32];
-
-        let mut d = DriftDetector::new();
-
-        // Consensus arrives before local digest is ready → queued.
-        d.handle_consensus(
-            make_consensus_event(
-                FixedBytes::from(handle),
-                FixedBytes::from([0xFF; 32]), // consensus ct64
-                FixedBytes::from([0xCC; 32]),
-            ),
-            &pool,
-        )
-        .await
-        .unwrap();
-        assert_eq!(d.pending_consensus.len(), 1);
-
-        // Local digest differs from consensus.
-        insert_ciphertext_digest(
-            &pool,
-            12345,
-            [0u8; 32],
-            &handle,
-            &[0xBB; 32], // different from consensus
-            &[0xCC; 32],
-            0,
-        )
-        .await
-        .unwrap();
-
-        // Retry detects drift.
-        d.retry_pending(&pool).await.unwrap();
-        assert!(d.pending_consensus.is_empty());
-        assert_eq!(d.drift_detected, 1);
-        assert_eq!(d.consensus_confirmed, 0);
+        assert!(!d.first_seen_submissions.contains_key(&handle));
     }
 }
