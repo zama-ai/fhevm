@@ -33,12 +33,6 @@ sol!(
     "artifacts/CiphertextCommits.sol/CiphertextCommits.json"
 );
 
-sol!(
-    #[sol(rpc)]
-    MultichainACL,
-    "artifacts/MultichainACL.sol/MultichainACL.json"
-);
-
 pub enum SignerType {
     PrivateKey,
     AwsKms,

@@ -1,4 +1,4 @@
-import { assert } from 'chai';
+import { assert, expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
@@ -37,5 +37,19 @@ describe('HTTPPublicDecrypt', function () {
       [handleAddress]: '0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8',
     };
     assert.deepEqual(res.clearValues, expectedRes);
+  });
+
+  it('test public decrypt should fail for non-publicly-decryptable handle', async function () {
+    const factory = await ethers.getContractFactory('UserDecrypt');
+    const contract = await factory.connect(this.signers.alice).deploy();
+    await contract.waitForDeployment();
+    const handle = await contract.xBool();
+
+    try {
+      await this.instances.alice.publicDecrypt([handle]);
+      expect.fail('Expected an error - handle is not publicly decryptable');
+    } catch (error) {
+      expect(error.message).to.include('not allowed for public decryption');
+    }
   });
 });
