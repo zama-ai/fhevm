@@ -80,7 +80,7 @@ function usage {
   echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
-  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|debug)"
+  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|debug)"
   echo -e "  ${YELLOW}smoke${RESET} ${CYAN}[PROFILE]${RESET}      Run multicoproc smoke profile (multi-2-2|multi-3-5)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -102,6 +102,7 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli smoke multi-3-5${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test ciphertext-drift${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
@@ -349,6 +350,10 @@ case $COMMAND in
         input-proof-compute-decrypt)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test add 42 to uint64 input and decrypt")
+          ;;
+        ciphertext-drift)
+          echo -e "${LIGHT_BLUE}${BOLD}[TEST] CIPHERTEXT DRIFT${RESET}"
+          exec "${SCRIPT_DIR}/scripts/run-ciphertext-drift-e2e.sh"
           ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
