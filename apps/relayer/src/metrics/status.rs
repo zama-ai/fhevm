@@ -1,8 +1,8 @@
-use once_cell::sync::OnceCell;
 use prometheus::{
     register_gauge_vec_with_registry, register_histogram_vec_with_registry, GaugeVec,
     HistogramOpts, HistogramVec, Opts, Registry,
 };
+use std::sync::OnceLock;
 
 use crate::{
     config::settings::MetricsConfig, store::sql::models::req_status_enum_model::ReqStatus,
@@ -16,7 +16,7 @@ struct StatusMetrics {
     pub request_status_duration: HistogramVec,
 }
 
-static STATUS_METRICS: OnceCell<StatusMetrics> = OnceCell::new();
+static STATUS_METRICS: OnceLock<StatusMetrics> = OnceLock::new();
 
 pub fn init_statuses_metrics(registry: &Registry, config: MetricsConfig) {
     STATUS_METRICS.get_or_init(|| StatusMetrics {

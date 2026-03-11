@@ -1,11 +1,11 @@
-/// Blockchain transaction related metrics
-use once_cell::sync::OnceCell;
 use prometheus::{
     register_counter_vec_with_registry, register_gauge_vec_with_registry,
     register_histogram_vec_with_registry, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts,
     Registry,
 };
 use std::fmt;
+/// Blockchain transaction related metrics
+use std::sync::OnceLock;
 
 use crate::config::settings::MetricsConfig;
 use crate::gateway::utils::RevertReason;
@@ -28,7 +28,7 @@ struct TransactionMetrics {
     transaction_errors_total: CounterVec,
 }
 
-static TRANSACTION_METRICS: OnceCell<TransactionMetrics> = OnceCell::new();
+static TRANSACTION_METRICS: OnceLock<TransactionMetrics> = OnceLock::new();
 
 /// Initialize transaction metrics.
 /// Call this once at startup with the Prometheus registry.

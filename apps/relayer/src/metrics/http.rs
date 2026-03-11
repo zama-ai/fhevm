@@ -1,12 +1,12 @@
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
-use once_cell::sync::OnceCell;
 use prometheus::{
     register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec,
     HistogramOpts, HistogramVec, Opts, Registry,
 };
 use reqwest::StatusCode;
 use std::future::Future;
+use std::sync::OnceLock;
 use tokio::time::Instant;
 
 use crate::config::settings::HttpMetricsConfig;
@@ -18,7 +18,7 @@ struct HttpMetrics {
     request_duration_seconds: HistogramVec,
 }
 
-static HTTP_METRICS: OnceCell<HttpMetrics> = OnceCell::new();
+static HTTP_METRICS: OnceLock<HttpMetrics> = OnceLock::new();
 
 /// Initialize HTTP metrics. Call this once at startup with the Prometheus registry.
 pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {

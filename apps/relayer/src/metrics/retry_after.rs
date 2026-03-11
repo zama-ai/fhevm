@@ -4,8 +4,8 @@
 //! This allows observing the actual estimated completion times before they are
 //! adjusted and capped.
 
-use once_cell::sync::OnceCell;
 use prometheus::{register_histogram_vec_with_registry, HistogramOpts, HistogramVec, Registry};
+use std::sync::OnceLock;
 
 /// Request type for retry-after metrics.
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +32,7 @@ struct RetryAfterMetrics {
     raw_eta_histogram: HistogramVec,
 }
 
-static RETRY_AFTER_METRICS: OnceCell<RetryAfterMetrics> = OnceCell::new();
+static RETRY_AFTER_METRICS: OnceLock<RetryAfterMetrics> = OnceLock::new();
 
 /// Initialize retry-after metrics with the provided registry and histogram buckets.
 pub fn init_retry_after_metrics(registry: &Registry, buckets: Vec<f64>) {

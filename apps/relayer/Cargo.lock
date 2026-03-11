@@ -2074,7 +2074,6 @@ dependencies = [
  "humantime",
  "indexmap 2.13.0",
  "moka",
- "once_cell",
  "prometheus",
  "rand 0.10.0",
  "reqwest 0.13.2",

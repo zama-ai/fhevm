@@ -3,11 +3,11 @@
 // 3. TODO: Metric to mesure the error rate (After error handling on sql.)
 // TODO add on readiness and liveness health for DB.
 
-use once_cell::sync::OnceCell;
 use prometheus::{
     register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec,
     HistogramOpts, HistogramVec, Opts, Registry,
 };
+use std::sync::OnceLock;
 
 use crate::config::settings::MetricsConfig;
 
@@ -19,7 +19,7 @@ struct DbMetrics {
     db_errors_total: CounterVec,
 }
 
-static DB_METRICS: OnceCell<DbMetrics> = OnceCell::new();
+static DB_METRICS: OnceLock<DbMetrics> = OnceLock::new();
 
 pub fn init_db_metrics(registry: &Registry, config: MetricsConfig) {
     DB_METRICS.get_or_init(|| DbMetrics {

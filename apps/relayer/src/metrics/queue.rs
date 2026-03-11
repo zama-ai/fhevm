@@ -1,5 +1,5 @@
-use once_cell::sync::OnceCell;
 use prometheus::{register_gauge_vec_with_registry, GaugeVec, Opts, Registry};
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 struct QueueMetrics {
@@ -7,7 +7,7 @@ struct QueueMetrics {
     pub queue_size_count: GaugeVec,
 }
 
-static QUEUE_METRICS: OnceCell<QueueMetrics> = OnceCell::new();
+static QUEUE_METRICS: OnceLock<QueueMetrics> = OnceLock::new();
 
 pub fn init_queue_metrics(registry: &Registry) {
     QUEUE_METRICS.get_or_init(|| QueueMetrics {
