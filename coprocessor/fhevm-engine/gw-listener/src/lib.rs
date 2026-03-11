@@ -58,7 +58,7 @@ pub struct ConfigSettings {
     pub log_last_processed_every_number_of_updates: u64,
 
     pub ciphertext_commits_address: Option<Address>,
-    pub expected_coprocessor_tx_senders: Vec<Address>,
+    pub gateway_config_address: Option<Address>,
     pub drift_no_consensus_timeout_blocks: u64,
     pub drift_post_consensus_grace_blocks: u64,
 }
@@ -96,7 +96,7 @@ impl Default for ConfigSettings {
             replay_skip_verify_proof: false,
             log_last_processed_every_number_of_updates: 50,
             ciphertext_commits_address: None,
-            expected_coprocessor_tx_senders: Vec::new(),
+            gateway_config_address: None,
             drift_no_consensus_timeout_blocks: 50,
             drift_post_consensus_grace_blocks: 10,
         }

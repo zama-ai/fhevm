@@ -29,6 +29,7 @@ use crate::KeyType;
 use fhevm_engine_common::chain_id::ChainId;
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
+use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration;
 
@@ -129,8 +130,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
         let mut number_of_last_processed_updates: u64 = 0;
+        let expected_coprocessor_tx_senders = self.fetch_expected_coprocessor_tx_senders().await?;
         let mut drift_detector = DriftDetector::new(
-            self.conf.expected_coprocessor_tx_senders.clone(),
+            expected_coprocessor_tx_senders,
             self.conf.host_chain_id,
             self.conf.drift_no_consensus_timeout_blocks,
             self.conf.drift_post_consensus_grace_blocks,
@@ -332,6 +334,24 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             self.reset_sleep_duration(sleep_duration);
         }
         Ok(())
+    }
+
+    async fn fetch_expected_coprocessor_tx_senders(&self) -> anyhow::Result<Vec<Address>> {
+        let Some(gateway_config_address) = self.conf.gateway_config_address else {
+            return Ok(Vec::new());
+        };
+
+        let expected_coprocessor_tx_senders =
+            GatewayConfig::new(gateway_config_address, self.provider.clone())
+                .getCoprocessorTxSenders()
+                .call()
+                .await?;
+
+        if expected_coprocessor_tx_senders.is_empty() {
+            anyhow::bail!("GatewayConfig returned no coprocessor tx-senders");
+        }
+
+        Ok(expected_coprocessor_tx_senders)
     }
 
     async fn verify_proof_request(

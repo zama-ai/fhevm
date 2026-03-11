@@ -94,11 +94,11 @@ struct Conf {
     ciphertext_commits_address: Option<Address>,
 
     #[arg(
-        long = "expected-coprocessor-tx-sender",
+        long,
         requires = "ciphertext_commits_address",
-        help = "Expected coprocessor tx-sender address. Repeat once per coprocessor."
+        help = "GatewayConfig contract address used to fetch coprocessor tx-senders"
     )]
-    expected_coprocessor_tx_senders: Vec<Address>,
+    gateway_config_address: Option<Address>,
 
     #[arg(
         long,
@@ -182,10 +182,9 @@ async fn main() -> anyhow::Result<()> {
     else {
         anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
-    if conf.ciphertext_commits_address.is_some() && conf.expected_coprocessor_tx_senders.is_empty()
-    {
+    if conf.ciphertext_commits_address.is_some() && conf.gateway_config_address.is_none() {
         anyhow::bail!(
-            "--expected-coprocessor-tx-sender is required when --ciphertext-commits-address is set."
+            "--gateway-config-address is required when --ciphertext-commits-address is set."
         );
     }
     let config = ConfigSettings {
@@ -204,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
         replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
         ciphertext_commits_address: conf.ciphertext_commits_address,
-        expected_coprocessor_tx_senders: conf.expected_coprocessor_tx_senders,
+        gateway_config_address: conf.gateway_config_address,
         drift_no_consensus_timeout_blocks: conf.drift_no_consensus_timeout_blocks,
         drift_post_consensus_grace_blocks: conf.drift_post_consensus_grace_blocks,
     };
