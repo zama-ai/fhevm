@@ -1,0 +1,87 @@
+#!/bin/sh
+#
+# Pre-push hook: checks that a fresh coverage report exists
+# when pushing coprocessor changes. Non-blocking (always exits 0).
+#
+
+# Preserve Git LFS functionality
+command -v git-lfs >/dev/null 2>&1 && git lfs pre-push "$@"
+
+# Get the repo root
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REPORT_FILE="$REPO_ROOT/coprocessor/fhevm-engine/coverage-report.txt"
+COPROCESSOR_DIR="coprocessor/fhevm-engine/"
+
+# Determine the merge base to compare against (what's being pushed)
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+MERGE_BASE=$(git merge-base main HEAD 2>/dev/null || true)
+if [ -z "$MERGE_BASE" ]; then
+    exit 0
+fi
+
+# Get files changed on this branch vs main, filtered to crate subdirectories only
+# (ignores root-level config: Makefile, scripts/, Cargo.toml, etc.)
+CRATE_CHANGES=$(git diff --name-only "$MERGE_BASE"...HEAD -- "$COPROCESSOR_DIR" 2>/dev/null | \
+    while read -r f; do
+        # Strip the coprocessor/fhevm-engine/ prefix
+        rel=$(echo "$f" | sed "s|^$COPROCESSOR_DIR||")
+        # Extract top-level directory name
+        crate_name=$(echo "$rel" | cut -d/ -f1)
+        # Only include if it's an actual crate (has Cargo.toml)
+        if [ -f "$REPO_ROOT/$COPROCESSOR_DIR$crate_name/Cargo.toml" ]; then
+            echo "$crate_name"
+        fi
+    done | sort -u)
+
+if [ -z "$CRATE_CHANGES" ]; then
+    # No crate-level changes on this branch — nothing to check
+    exit 0
+fi
+
+# Get the timestamp of the latest crate-related commit on this branch
+LAST_COMMIT_TIME=""
+for crate in $CRATE_CHANGES; do
+    t=$(git log -1 --format=%ct "$MERGE_BASE"..HEAD -- "$COPROCESSOR_DIR$crate/" 2>/dev/null)
+    if [ -n "$t" ] && { [ -z "$LAST_COMMIT_TIME" ] || [ "$t" -gt "$LAST_COMMIT_TIME" ]; }; then
+        LAST_COMMIT_TIME="$t"
+    fi
+done
+
+if [ -z "$LAST_COMMIT_TIME" ]; then
+    exit 0
+fi
+
+# Check if coverage report exists
+if [ ! -f "$REPORT_FILE" ]; then
+    echo ""
+    echo "WARNING: No coverage report found for coprocessor."
+    echo "  Run 'make coverage-changed' in coprocessor/fhevm-engine/ to generate it."
+    echo ""
+    exit 0
+fi
+
+# Check report freshness: compare file mtime vs latest coprocessor commit time
+# Handle both macOS (stat -f %m) and Linux (stat -c %Y)
+if stat -f %m "$REPORT_FILE" >/dev/null 2>&1; then
+    REPORT_TIME=$(stat -f %m "$REPORT_FILE")
+else
+    REPORT_TIME=$(stat -c %Y "$REPORT_FILE")
+fi
+
+if [ "$REPORT_TIME" -lt "$LAST_COMMIT_TIME" ]; then
+    echo ""
+    echo "WARNING: Coverage report is stale (generated before latest coprocessor commit)."
+    echo "  Run 'make coverage' in coprocessor/fhevm-engine/ to regenerate."
+    echo ""
+    exit 0
+fi
+
+# Report is fresh — print summary
+TOTAL_LINE=$(grep "^TOTAL" "$REPORT_FILE" 2>/dev/null)
+if [ -n "$TOTAL_LINE" ]; then
+    echo ""
+    echo "Coverage: $TOTAL_LINE"
+    echo ""
+fi
+
+exit 0

@@ -269,6 +269,45 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
  - **AWS_SECRET_ACCESS_KEY** (i.e. password)
  - etc.
 
+## Code Coverage
+
+### Setup (one-time)
+
+Install the git hooks to enable pre-push coverage checks:
+
+```bash
+sh .githooks/install.sh
+```
+
+To uninstall and revert to the default `.git/hooks/` directory:
+
+```bash
+sh .githooks/uninstall.sh
+```
+
+### Running coverage locally
+
+```bash
+cd coprocessor/fhevm-engine
+
+# Only cover crates you changed (auto-detects vs main branch)
+make coverage-changed
+
+# Cover a specific crate
+make coverage-crate CRATE=host-listener
+
+# Cover the full workspace
+make coverage
+```
+
+All commands save the report to `coverage-report.txt`. If `fhevm-engine-common` is among the changed crates, `coverage-changed` automatically falls back to full workspace coverage since all crates depend on it.
+
+**Prerequisites:** PostgreSQL and LocalStack must be running (same as for regular tests).
+
+### Pre-push hook
+
+When pushing changes that touch `coprocessor/fhevm-engine/`, the pre-push hook checks for a fresh `coverage-report.txt`. If the report is missing or older than your latest commit, it prints a warning reminding you to run `make coverage-changed`. The hook is **non-blocking** and will never prevent a push.
+
 ## Telemetry Style Guide (Tracing + OTEL)
 
 Use `tracing` spans as the default telemetry API.

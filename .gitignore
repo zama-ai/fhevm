@@ -89,3 +89,6 @@ mochawesome-report/
 #-------------------------------------------------------------------------------
 # Build artifacts directory
 target/
+
+# Coverage reports (generated locally via `make coverage`)
+coverage-report.txt
