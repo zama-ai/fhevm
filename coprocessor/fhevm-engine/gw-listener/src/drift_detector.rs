@@ -348,6 +348,13 @@ impl DriftDetector {
         self.deferred_metrics = DeferredMetrics::default();
     }
 
+    pub(crate) fn earliest_open_block(&self) -> Option<u64> {
+        self.open_handles
+            .values()
+            .map(|state| state.first_seen_block)
+            .min()
+    }
+
     fn finish_if_complete(&mut self, handle: FixedBytes<32>) {
         let Some(state) = self.open_handles.get(&handle) else {
             return;
@@ -487,6 +494,66 @@ mod tests {
 
     fn detector() -> DriftDetector {
         DriftDetector::new(senders(), ChainId::try_from(12345_u64).unwrap(), 5, 2)
+    }
+
+    #[test]
+    fn earliest_open_block_tracks_oldest_open_handle() {
+        let mut detector = detector();
+        let senders = senders();
+        let handle_a = FixedBytes::from([1u8; 32]);
+        let handle_b = FixedBytes::from([2u8; 32]);
+        let digest_a = DigestPair {
+            ciphertext_digest: FixedBytes::from([3u8; 32]),
+            ciphertext128_digest: FixedBytes::from([4u8; 32]),
+        };
+        let digest_b = DigestPair {
+            ciphertext_digest: FixedBytes::from([5u8; 32]),
+            ciphertext128_digest: FixedBytes::from([6u8; 32]),
+        };
+
+        assert_eq!(detector.earliest_open_block(), None);
+
+        detector.observe_submission(
+            make_submission_event(
+                handle_b,
+                digest_b.ciphertext_digest,
+                digest_b.ciphertext128_digest,
+                senders[0],
+            ),
+            context(20),
+        );
+        detector.observe_submission(
+            make_submission_event(
+                handle_a,
+                digest_a.ciphertext_digest,
+                digest_a.ciphertext128_digest,
+                senders[0],
+            ),
+            context(10),
+        );
+
+        assert_eq!(detector.earliest_open_block(), Some(10));
+
+        detector.observe_submission(
+            make_submission_event(
+                handle_a,
+                digest_a.ciphertext_digest,
+                digest_a.ciphertext128_digest,
+                senders[1],
+            ),
+            context(11),
+        );
+        detector.observe_submission(
+            make_submission_event(
+                handle_a,
+                digest_a.ciphertext_digest,
+                digest_a.ciphertext128_digest,
+                senders[2],
+            ),
+            context(12),
+        );
+
+        assert_eq!(detector.earliest_open_block(), Some(20));
     }
 
     #[test]

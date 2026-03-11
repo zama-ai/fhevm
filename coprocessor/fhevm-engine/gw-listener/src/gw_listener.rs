@@ -6,7 +6,7 @@ use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::ty
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
 use futures_util::future::join_all;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -45,6 +45,12 @@ impl std::fmt::Display for DigestMismatchError {
 }
 
 impl std::error::Error for DigestMismatchError {}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ListenerProgress {
+    last_processed_block_num: Option<u64>,
+    earliest_open_ct_commits_block: Option<u64>,
+}
 
 #[derive(Clone)]
 pub struct GatewayListener<
@@ -128,7 +134,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         replay_from_block: &mut Option<i64>,
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
-        let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
+        let progress = self.get_listener_progress(db_pool).await?;
+        let mut last_processed_block_num = progress.last_processed_block_num;
         let mut number_of_last_processed_updates: u64 = 0;
         let expected_coprocessor_tx_senders = self.fetch_expected_coprocessor_tx_senders().await?;
         let mut drift_detector = DriftDetector::new(
@@ -150,6 +157,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             // clipped to positive block number
             // note, we cannot replay block 0
             last_processed_block_num = Some((from_block - 1).try_into().unwrap_or(0));
+        } else {
+            self.rebuild_drift_detector(
+                db_pool,
+                &mut drift_detector,
+                progress.earliest_open_ct_commits_block,
+                last_processed_block_num,
+            )
+            .await?;
         }
 
         loop {
@@ -275,25 +290,13 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 error!(log = ?log, "Failed to decode KMSGeneration event log");
                             }
                         } else if Some(log.address()) == self.conf.ciphertext_commits_address {
-                            let context = EventContext {
-                                block_number: log.block_number.unwrap_or(to_block),
-                                block_hash: log.block_hash,
-                                tx_hash: log.transaction_hash,
-                                log_index: log.log_index,
-                            };
-                            if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
-                                match event.data {
-                                    CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterial(e) => {
-                                        drift_detector.observe_submission(e, context);
-                                    }
-                                    CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
-                                        drift_detector.handle_consensus(e, context, db_pool).await?;
-                                    }
-                                    _ => {} // Ignore Initialized, Upgraded events
-                                }
-                            } else {
-                                error!(log = ?log, "Failed to decode CiphertextCommits event log");
-                            }
+                            self.process_ciphertext_commits_log(
+                                &mut drift_detector,
+                                log,
+                                to_block,
+                                db_pool,
+                            )
+                            .await?;
                         } else {
                             error!(log = ?log, "Unexpected log address");
                         }
@@ -310,7 +313,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             info!(replay_from_block, "Replay continues");
                         }
                     }
-                    self.update_last_block_num(db_pool, last_processed_block_num, &mut number_of_last_processed_updates).await?;
+                    self.update_listener_progress(
+                        db_pool,
+                        ListenerProgress {
+                            last_processed_block_num,
+                            earliest_open_ct_commits_block: drift_detector.earliest_open_block(),
+                        },
+                        &mut number_of_last_processed_updates,
+                    )
+                    .await?;
 
                     // Update metrics only after a successful DB update as we don't want to consider events that will be processed again
                     // if the DB update fails.
@@ -352,6 +363,103 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         }
 
         Ok(expected_coprocessor_tx_senders)
+    }
+
+    async fn rebuild_drift_detector(
+        &self,
+        db_pool: &Pool<Postgres>,
+        drift_detector: &mut DriftDetector,
+        earliest_open_ct_commits_block: Option<u64>,
+        last_processed_block_num: Option<u64>,
+    ) -> anyhow::Result<()> {
+        let Some(ciphertext_commits_address) = self.conf.ciphertext_commits_address else {
+            return Ok(());
+        };
+        let (Some(from_block), Some(to_block)) =
+            (earliest_open_ct_commits_block, last_processed_block_num)
+        else {
+            return Ok(());
+        };
+        if from_block > to_block {
+            return Ok(());
+        }
+
+        info!(
+            from_block,
+            to_block, "Rebuilding drift detector from persisted watermark"
+        );
+
+        let mut batch_from = from_block;
+        while batch_from <= to_block {
+            let batch_to = std::cmp::min(
+                batch_from.saturating_add(self.conf.get_logs_block_batch_size.saturating_sub(1)),
+                to_block,
+            );
+            let filter = Filter::new()
+                .address(ciphertext_commits_address)
+                .from_block(batch_from)
+                .to_block(batch_to);
+            let logs = self
+                .provider
+                .get_logs(&filter)
+                .await
+                .inspect(|_| {
+                    GET_LOGS_SUCCESS_COUNTER.inc();
+                })
+                .inspect_err(|_| {
+                    GET_LOGS_FAIL_COUNTER.inc();
+                })?;
+
+            for log in logs {
+                self.process_ciphertext_commits_log(drift_detector, log, batch_to, db_pool)
+                    .await?;
+            }
+
+            batch_from = batch_to.saturating_add(1);
+        }
+
+        let current_block = self
+            .provider
+            .get_block_number()
+            .await
+            .inspect(|_| {
+                GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
+            })
+            .inspect_err(|_| {
+                GET_BLOCK_NUM_FAIL_COUNTER.inc();
+            })?;
+        drift_detector.evict_stale(current_block);
+        drift_detector.flush_metrics();
+        Ok(())
+    }
+
+    async fn process_ciphertext_commits_log(
+        &self,
+        drift_detector: &mut DriftDetector,
+        log: Log,
+        fallback_block: u64,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        let context = EventContext {
+            block_number: log.block_number.unwrap_or(fallback_block),
+            block_hash: log.block_hash,
+            tx_hash: log.transaction_hash,
+            log_index: log.log_index,
+        };
+        if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
+            match event.data {
+                CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterial(e) => {
+                    drift_detector.observe_submission(e, context);
+                }
+                CiphertextCommits::CiphertextCommitsEvents::AddCiphertextMaterialConsensus(e) => {
+                    drift_detector.handle_consensus(e, context, db_pool).await?;
+                }
+                _ => {}
+            }
+        } else {
+            error!(log = ?log, "Failed to decode CiphertextCommits event log");
+        }
+        Ok(())
     }
 
     async fn verify_proof_request(
@@ -515,14 +623,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         *sleep_duration = std::cmp::min(*sleep_duration * 2, self.conf.error_sleep_max_secs as u64);
     }
 
-    async fn get_last_processed_block_num(
+    async fn get_listener_progress(
         &self,
         db_pool: &Pool<Postgres>,
-    ) -> anyhow::Result<Option<u64>> {
-        let rows = sqlx::query!(
-            "SELECT last_block_num
+    ) -> anyhow::Result<ListenerProgress> {
+        let rows = sqlx::query(
+            "SELECT last_block_num, earliest_open_ct_commits_block
             FROM gw_listener_last_block
-            WHERE dummy_id = true"
+            WHERE dummy_id = true",
         )
         .fetch_all(db_pool)
         .await?;
@@ -532,25 +640,43 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             rows.len()
         );
 
-        Ok(rows.first().and_then(|row| {
-            row.last_block_num
-                .map(|n| n.try_into().expect("Got an invalid block number"))
-        }))
+        let Some(row) = rows.first() else {
+            return Ok(ListenerProgress::default());
+        };
+
+        Ok(ListenerProgress {
+            last_processed_block_num: row
+                .get::<Option<i64>, _>("last_block_num")
+                .map(|n| n.try_into().expect("Got an invalid block number")),
+            earliest_open_ct_commits_block: row
+                .get::<Option<i64>, _>("earliest_open_ct_commits_block")
+                .map(|n| n.try_into().expect("Got an invalid block number")),
+        })
     }
 
-    async fn update_last_block_num(
+    async fn update_listener_progress(
         &self,
         db_pool: &Pool<Postgres>,
-        last_block: Option<u64>,
+        progress: ListenerProgress,
         number_of_last_processed_updates: &mut u64,
     ) -> anyhow::Result<()> {
-        let last_block = last_block.map(i64::try_from).transpose()?;
-        sqlx::query!(
-            "INSERT into gw_listener_last_block (dummy_id, last_block_num)
-            VALUES (true, $1)
-            ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num",
-            last_block
+        let last_block_num = progress
+            .last_processed_block_num
+            .map(i64::try_from)
+            .transpose()?;
+        let earliest_open_ct_commits_block = progress
+            .earliest_open_ct_commits_block
+            .map(i64::try_from)
+            .transpose()?;
+        sqlx::query(
+            "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
+            VALUES (true, $1, $2)
+            ON CONFLICT (dummy_id) DO UPDATE SET
+                last_block_num = EXCLUDED.last_block_num,
+                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
         )
+        .bind(last_block_num)
+        .bind(earliest_open_ct_commits_block)
         .execute(db_pool)
         .await?;
 
@@ -559,8 +685,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .is_multiple_of(self.conf.log_last_processed_every_number_of_updates)
         {
             info!(
-                last_block = last_block,
-                "Updated last processed block number"
+                last_block_num,
+                earliest_open_ct_commits_block, "Updated listener progress"
             );
         }
         Ok(())
