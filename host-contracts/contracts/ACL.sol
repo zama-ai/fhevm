@@ -268,19 +268,6 @@ contract ACL is
         address contractAddress,
         uint64 expirationDate
     ) public virtual whenNotPaused {
-        /**
-         * @dev Arbitrum block timestamps may be up to one hour ahead of L1.
-         *
-         * Since the expiration is propagated to the Gateway MultichainACL contract deployed on Arbitrum,
-         * we enforce a 1-hour lower bound to stay within Arbitrum’s valid timestamp range
-         * and avoid premature expiration due to clock drift.
-         *
-         * (See https://docs.arbitrum.io/build-decentralized-apps/arbitrum-vs-ethereum/block-numbers-and-time#block-timestamps-arbitrum-vs-ethereum)
-         */
-        if (expirationDate < block.timestamp + 1 hours) {
-            revert ExpirationDateBeforeOneHour();
-        }
-
         ACLStorage storage $ = _getACLStorage();
         UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
             contractAddress

@@ -75,6 +75,7 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
+      - --finality-lag=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -212,7 +213,6 @@ services:
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
-      - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --database-pool-size=10
       - --database-polling-interval-secs=20
       - --verify-proof-resp-database-channel=event_zkpok_computed
@@ -221,9 +221,6 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
-      - --delegation-fallback-polling=30
-      - --delegation-max-retry=100000
-      - --retry-immediately-on-nonce-error=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
