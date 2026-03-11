@@ -67,6 +67,7 @@ pub(crate) struct DriftDetector {
     no_consensus_timeout_blocks: u64,
     post_consensus_grace_blocks: u64,
     deferred_metrics: DeferredMetrics,
+    alerts_enabled: bool,
 }
 
 impl DriftDetector {
@@ -84,7 +85,12 @@ impl DriftDetector {
             no_consensus_timeout_blocks,
             post_consensus_grace_blocks,
             deferred_metrics: DeferredMetrics::default(),
+            alerts_enabled: true,
         }
+    }
+
+    pub(crate) fn set_alerts_enabled(&mut self, alerts_enabled: bool) {
+        self.alerts_enabled = alerts_enabled;
     }
 
     pub(crate) fn observe_submission(
@@ -116,7 +122,7 @@ impl DriftDetector {
             .iter()
             .find(|submission| submission.sender == event.coprocessorTxSender)
         {
-            if existing.digests != digests {
+            if self.alerts_enabled && existing.digests != digests {
                 warn!(
                     handle = %handle,
                     host_chain_id = self.host_chain_id.as_i64(),
@@ -141,7 +147,7 @@ impl DriftDetector {
             digests,
         });
 
-        if !state.drift_reported {
+        if self.alerts_enabled && !state.drift_reported {
             let variants = variant_summaries(&state.submissions);
             if variants.len() > 1 {
                 warn!(
@@ -239,8 +245,9 @@ impl DriftDetector {
             return Ok(());
         };
 
-        if event.ciphertextDigest.as_slice() != local_ciphertext_digest.as_slice()
-            || event.snsCiphertextDigest.as_slice() != local_ciphertext128_digest.as_slice()
+        if self.alerts_enabled
+            && (event.ciphertextDigest.as_slice() != local_ciphertext_digest.as_slice()
+                || event.snsCiphertextDigest.as_slice() != local_ciphertext128_digest.as_slice())
         {
             warn!(
                 handle = %handle,
@@ -348,6 +355,58 @@ impl DriftDetector {
         self.deferred_metrics = DeferredMetrics::default();
     }
 
+    pub(crate) fn evaluate_open_handles(&mut self, current_block: u64) {
+        if !self.alerts_enabled {
+            return;
+        }
+
+        let drift_handles = self
+            .open_handles
+            .iter()
+            .filter_map(|(handle, state)| {
+                (!state.drift_reported && variant_summaries(&state.submissions).len() > 1)
+                    .then_some(*handle)
+            })
+            .collect::<Vec<_>>();
+
+        for handle in drift_handles {
+            let Some(state) = self.open_handles.get_mut(&handle) else {
+                continue;
+            };
+            warn!(
+                handle = %handle,
+                host_chain_id = self.host_chain_id.as_i64(),
+                local_node_id = %self.local_node_id,
+                first_seen_block = state.first_seen_block,
+                first_seen_block_hash = ?state.first_seen_block_hash,
+                last_seen_block = state.last_seen_block,
+                variant_count = variant_summaries(&state.submissions).len(),
+                variants = ?variant_summaries(&state.submissions),
+                seen_senders = ?seen_sender_strings(&state.submissions),
+                missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                source = "peer_submission",
+                "Drift detected: observed multiple digest variants for handle"
+            );
+            state.drift_reported = true;
+            self.deferred_metrics.drift_detected += 1;
+        }
+
+        let completed_without_consensus = self
+            .open_handles
+            .iter()
+            .filter_map(|(handle, state)| {
+                (state.submissions.len() == self.expected_senders.len()
+                    && state.consensus.is_none())
+                .then_some(*handle)
+            })
+            .collect::<Vec<_>>();
+        for handle in completed_without_consensus {
+            self.finish_if_complete(handle);
+        }
+
+        self.evict_stale(current_block);
+    }
+
     pub(crate) fn earliest_open_block(&self) -> Option<u64> {
         self.open_handles
             .values()
@@ -366,6 +425,10 @@ impl DriftDetector {
 
         if state.consensus.is_some() {
             self.open_handles.remove(&handle);
+            return;
+        }
+
+        if !self.alerts_enabled {
             return;
         }
 
@@ -554,6 +617,42 @@ mod tests {
         );
 
         assert_eq!(detector.earliest_open_block(), Some(20));
+    }
+
+    #[test]
+    fn rebuild_replays_silently_then_alerts_once_on_evaluate() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([7u8; 32]);
+        let senders = senders();
+
+        detector.set_alerts_enabled(false);
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([8u8; 32]),
+                FixedBytes::from([9u8; 32]),
+                senders[0],
+            ),
+            context(10),
+        );
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([10u8; 32]),
+                FixedBytes::from([11u8; 32]),
+                senders[1],
+            ),
+            context(11),
+        );
+
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert!(!detector.open_handles.get(&handle).unwrap().drift_reported);
+
+        detector.set_alerts_enabled(true);
+        detector.evaluate_open_handles(11);
+
+        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert!(detector.open_handles.get(&handle).unwrap().drift_reported);
     }
 
     #[test]

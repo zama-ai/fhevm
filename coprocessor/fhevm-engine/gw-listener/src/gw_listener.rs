@@ -388,6 +388,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             from_block,
             to_block, "Rebuilding drift detector from persisted watermark"
         );
+        drift_detector.set_alerts_enabled(false);
 
         let mut batch_from = from_block;
         while batch_from <= to_block {
@@ -417,6 +418,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
             batch_from = batch_to.saturating_add(1);
         }
+        drift_detector.set_alerts_enabled(true);
 
         let current_block = self
             .provider
@@ -428,7 +430,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .inspect_err(|_| {
                 GET_BLOCK_NUM_FAIL_COUNTER.inc();
             })?;
-        drift_detector.evict_stale(current_block);
+        drift_detector.evaluate_open_handles(current_block);
         drift_detector.flush_metrics();
         Ok(())
     }
