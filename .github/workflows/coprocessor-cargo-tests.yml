@@ -121,7 +121,13 @@ jobs:
     - name: Generate coverage report
       if: always()
       run: |
-        REPORT=$(cargo llvm-cov report --profile coverage 2>&1) || true
+        if cargo llvm-cov report --profile coverage > /tmp/cov-report.txt 2>&1; then
+          REPORT=$(cat /tmp/cov-report.txt)
+        else
+          echo "cargo llvm-cov report failed:"
+          cat /tmp/cov-report.txt
+          REPORT=""
+        fi
         {
           echo '## Coverage: coprocessor/fhevm-engine'
           if [ -n "$REPORT" ]; then
