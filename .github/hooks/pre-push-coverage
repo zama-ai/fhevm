@@ -77,7 +77,6 @@ fi
 # Report is fresh — print summary
 TOTAL_LINE=$(grep "^TOTAL" "$REPORT_FILE" 2>/dev/null)
 if [ -n "$TOTAL_LINE" ]; then
-    # Extract percentages: region (col 4), function (col 7), line (col 10)
     REGION_PCT=$(echo "$TOTAL_LINE" | awk '{print $4}')
     FUNC_PCT=$(echo "$TOTAL_LINE" | awk '{print $7}')
     LINE_PCT=$(echo "$TOTAL_LINE" | awk '{print $10}')

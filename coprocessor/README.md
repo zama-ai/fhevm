@@ -273,13 +273,23 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
 
 ### Setup (one-time)
 
-Install the coverage pre-push hook:
+Install git hooks:
 
 ```bash
-sh .githooks/install.sh
+# Install both pre-push hooks
+sh .github/hooks/install.sh pre-push pre-push-coverage
+
+# Install only the coverage pre-push hook (non-blocking)
+sh .github/hooks/install.sh pre-push-coverage
+
+# Install only the quality gates pre-push hook (cargo fmt, clippy, test)
+sh .github/hooks/install.sh pre-push
+
+# Install all default hooks (commit-msg + quality gates pre-push)
+sh .github/hooks/install.sh
 ```
 
-> **Note:** This sets `core.hooksPath` to `.githooks/`, which replaces any existing git hooks (e.g. those from `.github/hooks/install.sh`). To revert, run `sh .githooks/uninstall.sh`.
+> To uninstall: `rm .git/hooks/pre-push`
 
 ### Running coverage locally
 
