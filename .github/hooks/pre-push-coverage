@@ -12,15 +12,12 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 REPORT_FILE="$REPO_ROOT/coprocessor/fhevm-engine/coverage-report.txt"
 COPROCESSOR_DIR="coprocessor/fhevm-engine/"
 
-# Determine the merge base to compare against (what's being pushed)
-MERGE_BASE=$(git merge-base main HEAD 2>/dev/null || true)
-if [ -z "$MERGE_BASE" ]; then
-    exit 0
-fi
+# Fetch latest remote to ensure accurate comparison
+git fetch origin main --quiet 2>/dev/null || true
 
-# Get changed files on this branch, filtered to actual crate directories only
+# Get changed files on this branch vs origin/main, filtered to actual crate directories only
 # (ignores root-level config: Makefile, scripts/, Cargo.toml, etc.)
-CRATE_CHANGES=$(git diff --name-only "$MERGE_BASE"...HEAD -- "$COPROCESSOR_DIR" 2>/dev/null | \
+CRATE_CHANGES=$(git diff --name-only "origin/main"...HEAD -- "$COPROCESSOR_DIR" 2>/dev/null | \
     while read -r f; do
         rel=$(echo "$f" | sed "s|^$COPROCESSOR_DIR||")
         crate_name=$(echo "$rel" | cut -d/ -f1)
@@ -33,19 +30,6 @@ if [ -z "$CRATE_CHANGES" ]; then
     exit 0
 fi
 
-# Get the timestamp of the latest crate-related commit on this branch
-LAST_COMMIT_TIME=""
-for crate in $CRATE_CHANGES; do
-    t=$(git log -1 --format=%ct "$MERGE_BASE"..HEAD -- "$COPROCESSOR_DIR$crate/" 2>/dev/null)
-    if [ -n "$t" ] && { [ -z "$LAST_COMMIT_TIME" ] || [ "$t" -gt "$LAST_COMMIT_TIME" ]; }; then
-        LAST_COMMIT_TIME="$t"
-    fi
-done
-
-if [ -z "$LAST_COMMIT_TIME" ]; then
-    exit 0
-fi
-
 # Check if coverage report exists
 if [ ! -f "$REPORT_FILE" ]; then
     echo ""
@@ -55,18 +39,33 @@ if [ ! -f "$REPORT_FILE" ]; then
     exit 0
 fi
 
-# Check report freshness
-if stat -f %m "$REPORT_FILE" >/dev/null 2>&1; then
-    REPORT_TIME=$(stat -f %m "$REPORT_FILE")
-else
-    REPORT_TIME=$(stat -c %Y "$REPORT_FILE" 2>/dev/null)
-fi
-
-if [ -z "$REPORT_TIME" ]; then
+# Check report freshness via embedded commit hash
+REPORT_COMMIT=$(grep "^# commit:" "$REPORT_FILE" 2>/dev/null | awk '{print $3}')
+if [ -z "$REPORT_COMMIT" ]; then
+    echo ""
+    echo "WARNING: Coverage report has no commit metadata (regenerate with latest tooling)."
+    echo "  Run 'make coverage-changed' in coprocessor/fhevm-engine/ to regenerate."
+    echo ""
     exit 0
 fi
 
-if [ "$REPORT_TIME" -lt "$LAST_COMMIT_TIME" ]; then
+# Get the latest crate-related commit on this branch
+LATEST_CRATE_COMMIT=""
+for crate in $CRATE_CHANGES; do
+    c=$(git log -1 --format=%H "origin/main"..HEAD -- "$COPROCESSOR_DIR$crate/" 2>/dev/null)
+    if [ -n "$c" ]; then
+        if [ -z "$LATEST_CRATE_COMMIT" ] || [ "$(git log -1 --format=%ct "$c")" -gt "$(git log -1 --format=%ct "$LATEST_CRATE_COMMIT")" ]; then
+            LATEST_CRATE_COMMIT="$c"
+        fi
+    fi
+done
+
+if [ -z "$LATEST_CRATE_COMMIT" ]; then
+    exit 0
+fi
+
+# Check if the report was generated at or after the latest crate commit
+if ! git merge-base --is-ancestor "$LATEST_CRATE_COMMIT" "$REPORT_COMMIT" 2>/dev/null; then
     echo ""
     echo "WARNING: Coverage report is stale (generated before latest coprocessor commit)."
     echo "  Run 'make coverage-changed' in coprocessor/fhevm-engine/ to regenerate."
