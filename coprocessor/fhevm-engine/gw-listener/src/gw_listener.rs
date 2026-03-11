@@ -301,7 +301,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             error!(log = ?log, "Unexpected log address");
                         }
                     }
-                    drift_detector.evict_stale(current_block);
+                    drift_detector.refresh_pending_consensus_checks(db_pool).await?;
+                    drift_detector.evict_stale(to_block);
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
                         if to_block == current_block {
@@ -419,6 +420,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             batch_from = batch_to.saturating_add(1);
         }
         drift_detector.set_alerts_enabled(true);
+        drift_detector
+            .refresh_pending_consensus_checks(db_pool)
+            .await?;
 
         let current_block = self
             .provider

@@ -49,6 +49,8 @@ struct HandleState {
     last_seen_block: u64,
     submissions: Vec<Submission>,
     consensus: Option<ConsensusState>,
+    local_consensus_checked: bool,
+    missing_submission_reported: bool,
     drift_reported: bool,
 }
 
@@ -113,6 +115,8 @@ impl DriftDetector {
                 last_seen_block: context.block_number,
                 submissions: Vec::with_capacity(self.expected_senders.len()),
                 consensus: None,
+                local_consensus_checked: false,
+                missing_submission_reported: false,
                 drift_reported: false,
             });
         state.last_seen_block = context.block_number;
@@ -191,6 +195,8 @@ impl DriftDetector {
                 last_seen_block: context.block_number,
                 submissions: Vec::with_capacity(self.expected_senders.len()),
                 consensus: None,
+                local_consensus_checked: false,
+                missing_submission_reported: false,
                 drift_reported: false,
             });
         state.last_seen_block = context.block_number;
@@ -205,12 +211,45 @@ impl DriftDetector {
             },
             senders: event.coprocessorTxSenders.clone(),
         });
+        state.local_consensus_checked = false;
+        self.try_check_local_consensus(handle, db_pool).await
+    }
 
-        let handle_bytes = handle.as_slice();
+    pub(crate) async fn refresh_pending_consensus_checks(
+        &mut self,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        let handles = self
+            .open_handles
+            .iter()
+            .filter_map(|(handle, state)| {
+                (state.consensus.is_some() && !state.local_consensus_checked).then_some(*handle)
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            self.try_check_local_consensus(handle, db_pool).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn try_check_local_consensus(
+        &mut self,
+        handle: FixedBytes<32>,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        let Some(state) = self.open_handles.get(&handle) else {
+            return Ok(());
+        };
+        let Some(consensus) = &state.consensus else {
+            return Ok(());
+        };
+
         let row = sqlx::query(
             "SELECT ciphertext, ciphertext128 FROM ciphertext_digest WHERE handle = $1",
         )
-        .bind(handle_bytes)
+        .bind(handle.as_slice())
         .fetch_optional(db_pool)
         .await?;
 
@@ -219,11 +258,10 @@ impl DriftDetector {
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = context.block_number,
-                tx_hash = ?context.tx_hash,
-                "Consensus arrived before local digest was available; skipping drift check"
+                block_number = consensus.block_number,
+                tx_hash = ?consensus.tx_hash,
+                "Consensus arrived before local digest was available; deferring drift check"
             );
-            self.finish_if_complete(handle);
             return Ok(());
         };
 
@@ -237,38 +275,42 @@ impl DriftDetector {
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = context.block_number,
-                tx_hash = ?context.tx_hash,
-                "Consensus arrived before local digests were ready; skipping drift check"
+                block_number = consensus.block_number,
+                tx_hash = ?consensus.tx_hash,
+                "Consensus arrived before local digests were ready; deferring drift check"
             );
-            self.finish_if_complete(handle);
             return Ok(());
         };
 
         if self.alerts_enabled
-            && (event.ciphertextDigest.as_slice() != local_ciphertext_digest.as_slice()
-                || event.snsCiphertextDigest.as_slice() != local_ciphertext128_digest.as_slice())
+            && (consensus.digests.ciphertext_digest.as_slice()
+                != local_ciphertext_digest.as_slice()
+                || consensus.digests.ciphertext128_digest.as_slice()
+                    != local_ciphertext128_digest.as_slice())
         {
             warn!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = context.block_number,
-                block_hash = ?context.block_hash,
-                tx_hash = ?context.tx_hash,
-                log_index = ?context.log_index,
-                consensus_senders = ?address_strings(&event.coprocessorTxSenders),
-                consensus_ciphertext_digest = %event.ciphertextDigest,
-                consensus_ciphertext128_digest = %event.snsCiphertextDigest,
+                block_number = consensus.block_number,
+                block_hash = ?consensus.block_hash,
+                tx_hash = ?consensus.tx_hash,
+                log_index = ?consensus.log_index,
+                consensus_senders = ?address_strings(&consensus.senders),
+                consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
+                consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                 local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
                 local_ciphertext128_digest = %to_hex(&local_ciphertext128_digest),
-                key_id = %event.keyId,
                 source = "consensus",
                 "Drift detected: local digest does not match consensus"
             );
             self.deferred_metrics.drift_detected += 1;
         }
 
+        let Some(state) = self.open_handles.get_mut(&handle) else {
+            return Ok(());
+        };
+        state.local_consensus_checked = true;
         self.finish_if_complete(handle);
         Ok(())
     }
@@ -276,40 +318,66 @@ impl DriftDetector {
     pub(crate) fn evict_stale(&mut self, current_block: u64) {
         let mut finished = Vec::new();
 
-        for (handle, state) in &self.open_handles {
-            if state.submissions.len() == self.expected_senders.len() {
-                continue;
-            }
-
+        for (handle, state) in &mut self.open_handles {
             if let Some(consensus) = &state.consensus {
-                if current_block.saturating_sub(consensus.block_number)
-                    < self.post_consensus_grace_blocks
-                {
+                if !state.local_consensus_checked {
+                    if current_block.saturating_sub(consensus.block_number)
+                        < self.no_consensus_timeout_blocks
+                    {
+                        continue;
+                    }
+
+                    warn!(
+                        handle = %handle,
+                        host_chain_id = self.host_chain_id.as_i64(),
+                        local_node_id = %self.local_node_id,
+                        first_seen_block = state.first_seen_block,
+                        first_seen_block_hash = ?state.first_seen_block_hash,
+                        last_seen_block = state.last_seen_block,
+                        consensus_block = consensus.block_number,
+                        consensus_block_hash = ?consensus.block_hash,
+                        consensus_tx_hash = ?consensus.tx_hash,
+                        consensus_log_index = ?consensus.log_index,
+                        "Consensus was observed but local digests never became available for comparison"
+                    );
+                    finished.push(*handle);
                     continue;
                 }
 
-                warn!(
-                    handle = %handle,
-                    host_chain_id = self.host_chain_id.as_i64(),
-                    local_node_id = %self.local_node_id,
-                    first_seen_block = state.first_seen_block,
-                    first_seen_block_hash = ?state.first_seen_block_hash,
-                    last_seen_block = state.last_seen_block,
-                    consensus_block = consensus.block_number,
-                    consensus_block_hash = ?consensus.block_hash,
-                    consensus_tx_hash = ?consensus.tx_hash,
-                    consensus_log_index = ?consensus.log_index,
-                    consensus_senders = ?address_strings(&consensus.senders),
-                    consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
-                    consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
-                    seen_senders = ?seen_sender_strings(&state.submissions),
-                    missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
-                    variant_count = variant_summaries(&state.submissions).len(),
-                    variants = ?variant_summaries(&state.submissions),
-                    "Consensus reached but some coprocessors never submitted this handle"
-                );
-                self.deferred_metrics.missing_submission += 1;
-                finished.push(*handle);
+                if state.submissions.len() != self.expected_senders.len() {
+                    if state.missing_submission_reported
+                        || current_block.saturating_sub(consensus.block_number)
+                            < self.post_consensus_grace_blocks
+                    {
+                        continue;
+                    }
+
+                    warn!(
+                        handle = %handle,
+                        host_chain_id = self.host_chain_id.as_i64(),
+                        local_node_id = %self.local_node_id,
+                        first_seen_block = state.first_seen_block,
+                        first_seen_block_hash = ?state.first_seen_block_hash,
+                        last_seen_block = state.last_seen_block,
+                        consensus_block = consensus.block_number,
+                        consensus_block_hash = ?consensus.block_hash,
+                        consensus_tx_hash = ?consensus.tx_hash,
+                        consensus_log_index = ?consensus.log_index,
+                        consensus_senders = ?address_strings(&consensus.senders),
+                        consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
+                        consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
+                        seen_senders = ?seen_sender_strings(&state.submissions),
+                        missing_senders = ?missing_sender_strings(&self.expected_senders, &state.submissions),
+                        variant_count = variant_summaries(&state.submissions).len(),
+                        variants = ?variant_summaries(&state.submissions),
+                        "Consensus reached but some coprocessors never submitted this handle"
+                    );
+                    self.deferred_metrics.missing_submission += 1;
+                    state.missing_submission_reported = true;
+                    finished.push(*handle);
+                    continue;
+                }
+
                 continue;
             }
 
@@ -424,6 +492,9 @@ impl DriftDetector {
         }
 
         if state.consensus.is_some() {
+            if !state.local_consensus_checked {
+                return;
+            }
             self.open_handles.remove(&handle);
             return;
         }
@@ -656,6 +727,67 @@ mod tests {
     }
 
     #[test]
+    fn consensus_handle_is_not_dropped_until_local_check_completes() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([12u8; 32]);
+        let senders = senders();
+        let state = HandleState {
+            first_seen_block: 10,
+            first_seen_block_hash: None,
+            last_seen_block: 12,
+            submissions: vec![
+                Submission {
+                    sender: senders[0],
+                    digests: DigestPair {
+                        ciphertext_digest: FixedBytes::from([13u8; 32]),
+                        ciphertext128_digest: FixedBytes::from([14u8; 32]),
+                    },
+                },
+                Submission {
+                    sender: senders[1],
+                    digests: DigestPair {
+                        ciphertext_digest: FixedBytes::from([13u8; 32]),
+                        ciphertext128_digest: FixedBytes::from([14u8; 32]),
+                    },
+                },
+                Submission {
+                    sender: senders[2],
+                    digests: DigestPair {
+                        ciphertext_digest: FixedBytes::from([13u8; 32]),
+                        ciphertext128_digest: FixedBytes::from([14u8; 32]),
+                    },
+                },
+            ],
+            consensus: Some(ConsensusState {
+                block_number: 12,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+                digests: DigestPair {
+                    ciphertext_digest: FixedBytes::from([13u8; 32]),
+                    ciphertext128_digest: FixedBytes::from([14u8; 32]),
+                },
+                senders,
+            }),
+            local_consensus_checked: false,
+            missing_submission_reported: false,
+            drift_reported: false,
+        };
+        detector.open_handles.insert(handle, state);
+
+        detector.finish_if_complete(handle);
+        assert!(detector.open_handles.contains_key(&handle));
+
+        detector
+            .open_handles
+            .get_mut(&handle)
+            .unwrap()
+            .local_consensus_checked = true;
+        detector.finish_if_complete(handle);
+        assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
     fn matching_submissions_keep_single_variant() {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
@@ -776,6 +908,7 @@ mod tests {
             },
             senders: vec![senders()[0], senders()[1]],
         });
+        detector.open_handles.get_mut(&handle).unwrap().local_consensus_checked = true;
 
         detector.evict_stale(14);
 
