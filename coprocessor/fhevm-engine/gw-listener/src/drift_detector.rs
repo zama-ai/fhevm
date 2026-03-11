@@ -908,7 +908,11 @@ mod tests {
             },
             senders: vec![senders()[0], senders()[1]],
         });
-        detector.open_handles.get_mut(&handle).unwrap().local_consensus_checked = true;
+        detector
+            .open_handles
+            .get_mut(&handle)
+            .unwrap()
+            .local_consensus_checked = true;
 
         detector.evict_stale(14);
 
