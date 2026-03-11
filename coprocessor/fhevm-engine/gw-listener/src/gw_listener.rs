@@ -201,19 +201,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 continue;
                             }
                             if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
-                                match event.data {
-                                    InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await.
-                                            inspect(|_| {
-                                                verify_proof_success += 1;
-                                            }).inspect_err(|e| {
-                                                error!(error = %e, "VerifyProofRequest processing failed");
-                                                VERIFY_PROOF_FAIL_COUNTER.inc();
-                                        })?;
-                                    },
-                                    _ => {
-                                        error!(log = ?log, "Unknown InputVerification event");
-                                    }
+                                // This listener only reacts to proof requests. Other known InputVerification
+                                // events are expected when multiple coprocessors interact with the gateway.
+                                if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
+                                    self.verify_proof_request(db_pool, request, log.clone()).await.
+                                        inspect(|_| {
+                                            verify_proof_success += 1;
+                                        }).inspect_err(|e| {
+                                            error!(error = %e, "VerifyProofRequest processing failed");
+                                            VERIFY_PROOF_FAIL_COUNTER.inc();
+                                    })?;
                                 }
                             } else {
                                 error!(log = ?log, "Failed to decode InputVerification event log");
