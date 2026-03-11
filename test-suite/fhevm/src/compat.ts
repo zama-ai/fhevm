@@ -73,8 +73,16 @@ const versionLt = (version: string, target: CompatSemver) => {
   return false;
 };
 
-export const requiresMultichainAclAddress = (state: Pick<State, "versions">) =>
-  versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
+const usesModernWorkspaceProtocol = (state: Pick<State, "overrides">) =>
+  ["coprocessor", "gateway-contracts", "host-contracts"].every((group) =>
+    state.overrides.some((override) => override.group === group),
+  );
+
+export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "overrides">) =>
+  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
+
+export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
+  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };

@@ -508,7 +508,7 @@ const discoverContracts = async (deps: RuntimeDeps): Promise<Pick<Discovery, "ga
   };
 };
 
-const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery">) => {
+const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides">) => {
   const discovery = state.discovery;
   if (!discovery) {
     throw new Error("Missing discovery state");

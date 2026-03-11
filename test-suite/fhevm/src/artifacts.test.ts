@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { composeUp, resolvedComposeEnv, serviceNameList } from "./artifacts";
+import { composeUp, resolvedComposeEnv, rewriteRelayerConfig, serviceNameList } from "./artifacts";
 import { composePath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { stubState } from "./test-helpers";
 
@@ -124,5 +124,26 @@ describe("compose templates", () => {
         "coprocessor-gw-listener",
       ],
     ]);
+  });
+
+  test("legacy relayer config keeps top-level readiness retry", () => {
+    const config = rewriteRelayerConfig(
+      {
+        gateway: {
+          readiness_checker: {
+            host_acl_check: { retry: { max_attempts: 3, retry_interval_ms: 1000 } },
+            gw_ciphertext_check: { retry: { max_attempts: 15, retry_interval_ms: 2000 } },
+            public_decrypt: { capacity: 1 },
+            user_decrypt: { capacity: 1 },
+          },
+        },
+      },
+      stubState(),
+    ) as { gateway: { readiness_checker: Record<string, unknown> } };
+    expect(config.gateway.readiness_checker.retry).toEqual({
+      max_attempts: 15,
+      retry_interval_ms: 2000,
+    });
+    expect(config.gateway.readiness_checker.host_acl_check).toBeUndefined();
   });
 });

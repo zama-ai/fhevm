@@ -5,6 +5,7 @@ import YAML from "yaml";
 
 import {
   compatPolicyForState,
+  requiresLegacyRelayerReadinessConfig,
   requiresMultichainAclAddress,
   type CompatPolicy,
 } from "./compat";
@@ -30,7 +31,6 @@ import {
 import type { BuiltImage, InstanceOverride, OverrideGroup, State } from "./types";
 import type { RunOptions, Runner } from "./utils";
 import {
-  copyFile,
   ensureDir,
   exists,
   mergeArgs,
@@ -351,6 +351,33 @@ const deriveWallet = async (runner: Runner, mnemonic: string, index: number) => 
   return { address, privateKey };
 };
 
+export const rewriteRelayerConfig = (config: Record<string, unknown>, state: Pick<State, "versions">) => {
+  if (!requiresLegacyRelayerReadinessConfig(state)) {
+    return config;
+  }
+  const gateway = config.gateway;
+  if (!gateway || typeof gateway !== "object") {
+    return config;
+  }
+  const readiness = (gateway as Record<string, unknown>).readiness_checker;
+  if (!readiness || typeof readiness !== "object") {
+    return config;
+  }
+  const current = readiness as Record<string, unknown>;
+  (gateway as Record<string, unknown>).readiness_checker = Object.fromEntries(
+    Object.entries({
+      retry:
+        current.retry ??
+        (current.gw_ciphertext_check as Record<string, unknown> | undefined)?.retry ??
+        (current.host_acl_check as Record<string, unknown> | undefined)?.retry,
+      public_decrypt: current.public_decrypt,
+      user_decrypt: current.user_decrypt,
+      delegated_user_decrypt: current.delegated_user_decrypt,
+    }).filter(([, value]) => value !== undefined),
+  );
+  return config;
+};
+
 const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runner">) => {
   await ensureDir(ENV_DIR);
   const compat = compatPolicyForState(state);
@@ -467,7 +494,11 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
     versionsEnvPath,
     state.versions.env,
   );
-  await copyFile(TEMPLATE_RELAYER_CONFIG, relayerConfigPath);
+  const relayerConfig = rewriteRelayerConfig(
+    YAML.parse(await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8")) as Record<string, unknown>,
+    state,
+  );
+  await fs.writeFile(relayerConfigPath, YAML.stringify(relayerConfig));
 };
 
 const imageRefsForServices = async (component: string, services: string[]) => {

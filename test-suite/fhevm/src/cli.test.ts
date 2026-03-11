@@ -12,7 +12,7 @@ import {
 } from "./artifacts";
 import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
 import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
-import { compatPolicyForState } from "./compat";
+import { compatPolicyForState, requiresMultichainAclAddress } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
 import {
@@ -357,6 +357,20 @@ describe("runtime invariants", () => {
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
     ]);
+  });
+
+  test("full modern workspace protocol overrides disable multichain acl discovery requirements", () => {
+    expect(
+      requiresMultichainAclAddress(
+        stubState({
+          overrides: [
+            { group: "coprocessor" },
+            { group: "gateway-contracts" },
+            { group: "host-contracts" },
+          ],
+        }),
+      ),
+    ).toBe(false);
   });
 
   test("probeBootstrap treats transient material fetch failures as retryable", async () => {
