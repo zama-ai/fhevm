@@ -111,7 +111,7 @@ jobs:
               selectedCommits.add(imageCommit);
               let imageTag;
               try {
-                imageTag = execSync(`git rev-parse --short ${imageCommit}`, { encoding: 'utf8' }).trim();
+                imageTag = execSync(`git rev-parse --short=7 ${imageCommit}`, { encoding: 'utf8' }).trim();
               } catch (err) {
                 console.log(`Failed to resolve short hash for ${imageCommit}, falling back to substring`);
                 imageTag = imageCommit.substring(0, 7);
