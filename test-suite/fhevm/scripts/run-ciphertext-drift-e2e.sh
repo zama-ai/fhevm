@@ -57,8 +57,6 @@ injector_pid=$!
 
 docker exec \
   -e GATEWAY_RPC_URL= \
-  -e CIPHERTEXT_COMMITS_ADDRESS= \
-  -e INPUT_VERIFICATION_ADDRESS= \
   "$TEST_CONTAINER" \
   ./run-tests.sh -n staging -g "$GREP_PATTERN"
 
