@@ -18,6 +18,8 @@
 
 mod common;
 
+use anyhow::{bail, Context};
+
 use alloy::primitives::{Address, Bytes, B256};
 use alloy::sol_types::SolCall;
 use common::utils::{host_acl_multicall_allow_response, random_handle};
@@ -64,7 +66,7 @@ struct RecoveryTestSetup {
 }
 
 impl RecoveryTestSetup {
-    async fn new() -> eyre::Result<Self> {
+    async fn new() -> anyhow::Result<Self> {
         let broken_port = get_free_port()?;
         let working_port = get_free_port()?;
         let host_port = get_free_port()?;
@@ -91,7 +93,7 @@ impl RecoveryTestSetup {
         let host_handle = host_server
             .start()
             .await
-            .map_err(|e| eyre::eyre!("Failed to start host mock server: {}", e))?;
+            .context("Failed to start host mock server")?;
 
         // Create broken gateway mock server
         let broken_config = MockConfig {
@@ -107,7 +109,7 @@ impl RecoveryTestSetup {
         let broken_handle = broken_server
             .start()
             .await
-            .map_err(|e| eyre::eyre!("Failed to start broken gateway: {}", e))?;
+            .context("Failed to start broken gateway")?;
 
         // Create working gateway mock server
         let working_config = MockConfig {
@@ -123,7 +125,7 @@ impl RecoveryTestSetup {
         let working_handle = working_server
             .start()
             .await
-            .map_err(|e| eyre::eyre!("Failed to start working gateway: {}", e))?;
+            .context("Failed to start working gateway")?;
 
         Ok(Self {
             broken_gateway_port: broken_port,
@@ -147,11 +149,11 @@ impl RecoveryTestSetup {
         &mut self,
         gateway_port: u16,
         modify_config: impl FnOnce(&mut Settings),
-    ) -> eyre::Result<()> {
+    ) -> anyhow::Result<()> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = temp_config_dir.path().join("test_config.yaml");
         std::fs::copy("config/local.yaml.example", &temp_config_path)
-            .map_err(|e| eyre::eyre!("Failed to copy config file: {}", e))?;
+            .context("Failed to copy config file")?;
 
         let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
             .expect("Failed to load configuration");
@@ -202,16 +204,16 @@ impl RecoveryTestSetup {
         let updated_settings = self
             .settings_rx
             .take()
-            .ok_or_else(|| eyre::eyre!("Settings receiver not available"))?
+            .context("Settings receiver not available")?
             .await
-            .map_err(|_| eyre::eyre!("Failed to receive settings from relayer"))?;
+            .context("Failed to receive settings from relayer")?;
 
         if let Some(endpoint) = updated_settings.http.endpoint {
             let port = endpoint
                 .split(':')
                 .next_back()
                 .and_then(|p| p.parse::<u16>().ok())
-                .ok_or_else(|| eyre::eyre!("Failed to parse HTTP port"))?;
+                .context("Failed to parse HTTP port")?;
             self.http_port = Some(port);
             tracing::info!("Relayer HTTP server running on port {}", port);
         }
@@ -324,18 +326,18 @@ impl RecoveryTestSetup {
     }
 
     /// Get repositories for DB access
-    async fn get_repositories(&self) -> eyre::Result<Repositories> {
+    async fn get_repositories(&self) -> anyhow::Result<Repositories> {
         let storage = self
             .storage_settings
             .as_ref()
-            .ok_or_else(|| eyre::eyre!("Storage settings not available"))?;
+            .context("Storage settings not available")?;
         Repositories::new(storage.clone())
             .await
-            .map_err(|e| eyre::eyre!("Failed to create repositories: {}", e))
+            .context("Failed to create repositories")
     }
 }
 
-fn get_free_port() -> eyre::Result<u16> {
+fn get_free_port() -> anyhow::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
@@ -381,7 +383,7 @@ fn register_host_acl_allow_all(
 }
 
 /// Clean up all incomplete requests from the database to start with a clean state
-async fn cleanup_incomplete_requests() -> eyre::Result<()> {
+async fn cleanup_incomplete_requests() -> anyhow::Result<()> {
     // Use the same database URL as the config
     let database_url = "postgresql://postgres:postgres@localhost:5433/relayer_db";
 
@@ -389,23 +391,23 @@ async fn cleanup_incomplete_requests() -> eyre::Result<()> {
         .max_connections(1)
         .connect(database_url)
         .await
-        .map_err(|e| eyre::eyre!("Failed to connect to database: {}", e))?;
+        .context("Failed to connect to database")?;
 
     // Delete all incomplete requests
     sqlx::query("DELETE FROM public_decrypt_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
         .execute(&pool)
         .await
-        .map_err(|e| eyre::eyre!("Failed to delete incomplete public decrypt requests: {}", e))?;
+        .context("Failed to delete incomplete public decrypt requests")?;
 
     sqlx::query("DELETE FROM user_decrypt_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
         .execute(&pool)
         .await
-        .map_err(|e| eyre::eyre!("Failed to delete incomplete user decrypt requests: {}", e))?;
+        .context("Failed to delete incomplete user decrypt requests")?;
 
     sqlx::query("DELETE FROM input_proof_req WHERE req_status IN ('queued', 'processing', 'tx_in_flight', 'receipt_received')")
         .execute(&pool)
         .await
-        .map_err(|e| eyre::eyre!("Failed to delete incomplete input proof requests: {}", e))?;
+        .context("Failed to delete incomplete input proof requests")?;
 
     tracing::info!("Cleaned up all incomplete requests from database");
     Ok(())
@@ -415,7 +417,7 @@ async fn cleanup_incomplete_requests() -> eyre::Result<()> {
 // Uses V2 for public decrypt and input proof (async, returns immediately)
 // Skips user decrypt for now as V2 format is different
 
-async fn send_public_decrypt_request(base_url: &str, handle: &str) -> eyre::Result<String> {
+async fn send_public_decrypt_request(base_url: &str, handle: &str) -> anyhow::Result<String> {
     let client = reqwest::Client::new();
     let payload = json!({
         "ciphertextHandles": [handle],
@@ -433,15 +435,15 @@ async fn send_public_decrypt_request(base_url: &str, handle: &str) -> eyre::Resu
     if status.is_success() || status.as_u16() == 202 {
         Ok(body["result"]["jobId"]
             .as_str()
-            .ok_or_else(|| eyre::eyre!("No jobId in response: {:?}", body))?
+            .with_context(|| format!("No jobId in response: {:?}", body))?
             .to_string())
     } else {
-        Err(eyre::eyre!("Request failed: {:?}", body))
+        Err(anyhow::anyhow!("Request failed: {:?}", body))
     }
 }
 
 #[allow(dead_code)]
-async fn send_input_proof_request(base_url: &str) -> eyre::Result<String> {
+async fn send_input_proof_request(base_url: &str) -> anyhow::Result<String> {
     let client = reqwest::Client::new();
     let payload = json!({
         "ciphertext": random_handle(),
@@ -461,10 +463,10 @@ async fn send_input_proof_request(base_url: &str) -> eyre::Result<String> {
     if status.is_success() || status.as_u16() == 202 {
         Ok(body["result"]["jobId"]
             .as_str()
-            .ok_or_else(|| eyre::eyre!("No jobId in response: {:?}", body))?
+            .with_context(|| format!("No jobId in response: {:?}", body))?
             .to_string())
     } else {
-        Err(eyre::eyre!("Request failed: {:?}", body))
+        Err(anyhow::anyhow!("Request failed: {:?}", body))
     }
 }
 
@@ -473,12 +475,12 @@ async fn poll_request_status(
     base_url: &str,
     request_type: &str,
     job_id: &str,
-) -> eyre::Result<serde_json::Value> {
+) -> anyhow::Result<serde_json::Value> {
     let client = reqwest::Client::new();
     let url = match request_type {
         "public" => format!("{}/v2/public-decrypt/{}", base_url, job_id),
         "input" => format!("{}/v2/input-proof/{}", base_url, job_id),
-        _ => return Err(eyre::eyre!("Unknown request type: {}", request_type)),
+        _ => bail!("Unknown request type: {}", request_type),
     };
 
     let response = client.get(url).send().await?;
@@ -489,7 +491,7 @@ async fn wait_for_completion(
     base_url: &str,
     requests: Vec<(&str, &str)>,
     timeout: Duration,
-) -> eyre::Result<()> {
+) -> anyhow::Result<()> {
     let start = tokio::time::Instant::now();
     let mut completed = vec![false; requests.len()];
 
@@ -519,7 +521,7 @@ async fn wait_for_completion(
                                 job_id,
                                 status
                             );
-                            return Err(eyre::eyre!("Request {} failed: {:?}", job_id, status));
+                            bail!("Request {} failed: {:?}", job_id, status);
                         } else {
                             // Still queued or processing
                             all_done = false;
@@ -541,7 +543,7 @@ async fn wait_for_completion(
         sleep(Duration::from_millis(500)).await;
     }
 
-    Err(eyre::eyre!(
+    Err(anyhow::anyhow!(
         "Timeout waiting for requests to complete after {:?}",
         timeout
     ))

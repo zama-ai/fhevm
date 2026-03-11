@@ -16,17 +16,18 @@ use crate::{
     orchestrator::Orchestrator,
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
+use anyhow::Context;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
 /// Initialize metrics gauges from current database state.
 /// Must be called before any operations that modify metrics.
-async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> eyre::Result<()> {
+async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
     let counts = repositories
         .public_decrypt
         .count_by_status()
         .await
-        .map_err(|e| eyre::eyre!("Failed to count public_decrypt by status: {}", e))?;
+        .context("Failed to count public_decrypt by status")?;
     for (status, count) in counts {
         metrics::set_req_status_count(metrics::RequestType::PublicDecrypt, status, count);
     }
@@ -35,7 +36,7 @@ async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> eyre::R
         .user_decrypt
         .count_by_status()
         .await
-        .map_err(|e| eyre::eyre!("Failed to count user_decrypt by status: {}", e))?;
+        .context("Failed to count user_decrypt by status")?;
     for (status, count) in counts {
         metrics::set_req_status_count(metrics::RequestType::UserDecrypt, status, count);
     }
@@ -44,7 +45,7 @@ async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> eyre::R
         .input_proof
         .count_by_status()
         .await
-        .map_err(|e| eyre::eyre!("Failed to count input_proof by status: {}", e))?;
+        .context("Failed to count input_proof by status")?;
     for (status, count) in counts {
         metrics::set_req_status_count(metrics::RequestType::InputProof, status, count);
     }
@@ -55,12 +56,12 @@ async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> eyre::R
 
 /// Reset all tx_in_flight requests to processing before recovery.
 /// This ensures clean state transitions and proper idempotency checks.
-async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::Result<()> {
+async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
     let public_decrypt_count = repositories
         .public_decrypt
         .reset_tx_in_flight_to_processing()
         .await
-        .map_err(|e| eyre::eyre!("Failed to reset public_decrypt: {}", e))?;
+        .context("Failed to reset public_decrypt")?;
 
     if public_decrypt_count > 0 {
         info!(
@@ -73,7 +74,7 @@ async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::
         .user_decrypt
         .reset_tx_in_flight_to_processing()
         .await
-        .map_err(|e| eyre::eyre!("Failed to reset user_decrypt: {}", e))?;
+        .context("Failed to reset user_decrypt")?;
 
     if user_decrypt_count > 0 {
         info!(
@@ -86,7 +87,7 @@ async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::
         .input_proof
         .reset_tx_in_flight_to_processing()
         .await
-        .map_err(|e| eyre::eyre!("Failed to reset input_proof: {}", e))?;
+        .context("Failed to reset input_proof")?;
 
     if input_proof_count > 0 {
         info!(
@@ -102,7 +103,7 @@ async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::
 pub async fn recover_incomplete_requests(
     orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
-) -> eyre::Result<usize> {
+) -> anyhow::Result<usize> {
     info!("Starting request recovery...");
 
     // Initialize metrics from DB before any operations that modify them
@@ -134,12 +135,12 @@ pub async fn recover_incomplete_requests(
 async fn recover_public_decrypt_requests(
     orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
-) -> eyre::Result<usize> {
+) -> anyhow::Result<usize> {
     let mut requests = repositories
         .public_decrypt
         .find_incomplete_requests()
         .await
-        .map_err(|e| eyre::eyre!("Failed to query incomplete public decrypt requests: {}", e))?;
+        .context("Failed to query incomplete public decrypt requests")?;
 
     // Process furthest-along requests first: TxInFlight > Processing > Queued
     requests.sort_by_key(|(_, _, status, _)| match status {
@@ -207,12 +208,12 @@ async fn recover_public_decrypt_requests(
 async fn recover_user_decrypt_requests(
     orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
-) -> eyre::Result<usize> {
+) -> anyhow::Result<usize> {
     let mut requests = repositories
         .user_decrypt
         .find_incomplete_requests()
         .await
-        .map_err(|e| eyre::eyre!("Failed to query incomplete user decrypt requests: {}", e))?;
+        .context("Failed to query incomplete user decrypt requests")?;
 
     requests.sort_by_key(|(_, _, status, _)| match status {
         ReqStatus::TxInFlight => 0,
@@ -278,12 +279,12 @@ async fn recover_user_decrypt_requests(
 async fn recover_input_proof_requests(
     orchestrator: &Arc<Orchestrator>,
     repositories: &Arc<Repositories>,
-) -> eyre::Result<usize> {
+) -> anyhow::Result<usize> {
     let mut requests = repositories
         .input_proof
         .find_incomplete_requests()
         .await
-        .map_err(|e| eyre::eyre!("Failed to query incomplete input proof requests: {}", e))?;
+        .context("Failed to query incomplete input proof requests")?;
 
     requests.sort_by_key(|(_, _, status, _)| match status {
         ReqStatus::TxInFlight => 0,

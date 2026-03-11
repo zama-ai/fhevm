@@ -69,8 +69,8 @@ pub enum GatewayTxnError {
     TransportError(String),
 }
 
-impl From<eyre::Report> for GatewayTxnError {
-    fn from(err: eyre::Report) -> Self {
+impl From<anyhow::Error> for GatewayTxnError {
+    fn from(err: anyhow::Error) -> Self {
         GatewayTxnError::RpcError(err.to_string())
     }
 }

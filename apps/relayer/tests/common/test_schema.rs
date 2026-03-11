@@ -1,4 +1,4 @@
-use eyre::Result;
+use anyhow::{Context, Result};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -86,7 +86,7 @@ impl TestSchema {
         sqlx::query(&query)
             .execute(pool)
             .await
-            .map_err(|e| eyre::eyre!("Failed to create schema {}: {}", schema_name, e))?;
+            .with_context(|| format!("Failed to create schema {}", schema_name))?;
 
         debug!("Schema {} created", schema_name);
         Ok(())
@@ -103,15 +103,13 @@ impl TestSchema {
             .max_connections(1)
             .connect(&database_url_with_schema)
             .await
-            .map_err(|e| eyre::eyre!("Failed to connect for migrations: {}", e))?;
+            .context("Failed to connect for migrations")?;
 
         // Run migrations (they will be created in the active schema due to search_path)
         sqlx::migrate!("./relayer-migrate/migrations")
             .run(&migration_pool)
             .await
-            .map_err(|e| {
-                eyre::eyre!("Failed to run migrations in schema {}: {}", schema_name, e)
-            })?;
+            .with_context(|| format!("Failed to run migrations in schema {}", schema_name))?;
 
         migration_pool.close().await;
 

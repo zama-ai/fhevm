@@ -33,7 +33,7 @@ impl Drop for FlushGuard {
 /// # Returns
 /// * `Ok(Some(FlushGuard))` - Chrome tracing guard if feature enabled
 /// * `Ok(None)` - If Chrome tracing is disabled
-/// * `Err(`[`eyre::Error`]`)` - If initialization failed
+/// * `Err(`[`anyhow::Error`]`)` - If initialization failed
 ///
 /// # Configuration Options
 /// - Log level (trace, debug, info, warn, error)
@@ -41,7 +41,7 @@ impl Drop for FlushGuard {
 /// - File and line number display
 /// - Thread ID display
 /// - Chrome tracing support (with feature flag)
-pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> {
+pub fn init_tracing(log_config: &LogConfig) -> anyhow::Result<Option<FlushGuard>> {
     // Default: WARN for dependencies, INFO for fhevm_relayer. Override with RUST_LOG env var.
     // Examples: RUST_LOG=debug | RUST_LOG=warn,fhevm_relayer=debug | RUST_LOG=warn,reqwest=debug
     let env_filter = EnvFilter::try_from_default_env()

@@ -22,7 +22,6 @@ alloy = { version = "1.7.3", features = [
 ] }
 dashmap = "6.1.0"
 derivative = "2.2"
-eyre = "0.6.12"
 futures = "0.3.32"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }

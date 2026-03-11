@@ -2,6 +2,7 @@
 //!
 //! Binary entry point for the fhevm-relayer that handles CLI parsing and tracing initialization.
 
+use anyhow::Context;
 use clap::Parser;
 use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::tracing::init_tracing;
@@ -23,12 +24,12 @@ pub struct Args {
 /// 3. Initializes logging
 /// 4. Delegates to the library function
 #[tokio::main]
-async fn main() -> eyre::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let args: Args = Args::parse();
 
     // === Initialize settings for tracing setup
-    let settings = Settings::new(args.config_file.clone())
-        .map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
+    let settings =
+        Settings::new(args.config_file.clone()).context("Failed to load configuration")?;
 
     // We need to keep the guard to force-flush on SIGINT
     let chrome_tracing_guard = init_tracing(&settings.log)?;

@@ -25,6 +25,7 @@
 
 use crate::gateway::{self, throttlers::init_throttlers};
 use crate::host::HostChainIdChecker;
+use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -58,7 +59,7 @@ pub async fn run_fhevm_relayer(
     settings: Settings,
     shutdown_token: CancellationToken,
     settings_sender: Option<oneshot::Sender<Settings>>,
-) -> eyre::Result<()> {
+) -> anyhow::Result<()> {
     // === Setup Phase ===
     // Initialize logging, metrics, and validate configuration
     info!("Starting relayer with configuration: {:?}", settings);
@@ -77,7 +78,7 @@ pub async fn run_fhevm_relayer(
     let repositories = Arc::new(
         Repositories::new(settings.storage.clone())
             .await
-            .map_err(|e| eyre::eyre!("Failed to initialize SQL repositories: {}", e))?,
+            .context("Failed to initialize SQL repositories")?,
     );
     info!("Initialized SQL repositories");
 
@@ -97,13 +98,13 @@ pub async fn run_fhevm_relayer(
         gateway_throttlers,
     )
     .await
-    .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
+    .context("Failed to initialize gateway")?;
 
     // Recover incomplete requests from previous runs
     info!("Recovering incomplete requests...");
     startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
         .await
-        .map_err(|e| eyre::eyre!("Failed to recover incomplete requests: {}", e))?;
+        .context("Failed to recover incomplete requests")?;
 
     // Start cron workers after configurable delay (skipped in test mode)
     if !settings.global.test_mock {
@@ -118,7 +119,7 @@ pub async fn run_fhevm_relayer(
         repositories
             .register_background_workers(&orchestrator, settings.storage.cron.clone())
             .await
-            .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
+            .context("Failed to register background workers")?;
     }
 
     // Build host chain validator from config
@@ -179,7 +180,7 @@ pub async fn run_fhevm_relayer(
     orchestrator
         .run_until_shutdown(shutdown_token)
         .await
-        .map_err(|e| eyre::eyre!("Failed during shutdown: {}", e))?;
+        .context("Failed during shutdown")?;
 
     // Ensure pools close cleanly before exit.
     repositories.close_pools().await;
@@ -190,7 +191,7 @@ pub async fn run_fhevm_relayer(
 }
 
 /// Initialize all global state exactly once
-fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
+fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> {
     let registry = GLOBAL_REGISTRY.get_or_init(|| {
         rustls::crypto::aws_lc_rs::default_provider()
             .install_default()

@@ -56,7 +56,8 @@ We use two libraries for error handling, each serving a distinct purpose:
   - Used at the application/boundary layer.
   - Provides ergonomic **dynamic errors** for bubbling failures upward.
   - Best practices:
-    - Use `.context("…")` or `.with_context(|| format!("…"))` to add helpful context at each step.
+    - Use `.context("…")` or `.with_context(|| format!("…"))` to add helpful context at each step. Requires `use anyhow::Context;` (it's a trait).
+    - Use `bail!("…")` to return early with an error (shorthand for `return Err(anyhow!("…"))`).
     - Use `anyhow!("…")` to construct new errors with messages.
     - Use `Result<T> = anyhow::Result<T>` as the return type in application code.
     - Use `?` to propagate errors, ensuring they carry their source and any attached context.

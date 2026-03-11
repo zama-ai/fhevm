@@ -1,5 +1,6 @@
 use std::net::TcpListener;
 
+use anyhow::Context;
 use ethereum_rpc_mock::{
     fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
 };
@@ -38,7 +39,7 @@ impl TestSetup {
     /// Create test setup with fast readiness config (4 attempts × 250ms = ~1s total)
     /// This config is used in tests for readiness check timing out.
     #[allow(dead_code)]
-    pub async fn new_with_fast_readiness() -> eyre::Result<Self> {
+    pub async fn new_with_fast_readiness() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path =
             create_readiness_config(&temp_config_dir, "fast_readiness.yaml", 4, 250)?;
@@ -48,7 +49,7 @@ impl TestSetup {
     /// Create test setup with minimal readiness retries (2 attempts × 50ms = ~100ms total)
     /// Use when the test doesn't need many retries (e.g., contract errors that fail immediately).
     #[allow(dead_code)]
-    pub async fn new_with_minimal_readiness() -> eyre::Result<Self> {
+    pub async fn new_with_minimal_readiness() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path =
             create_readiness_config(&temp_config_dir, "minimal_readiness.yaml", 2, 50)?;
@@ -58,7 +59,7 @@ impl TestSetup {
     /// Create test setup with low retry config (2 attempts × 100ms)
     /// This config is used in tests for max retries exceeded scenarios.
     #[allow(dead_code)]
-    pub async fn new_with_low_retries() -> eyre::Result<Self> {
+    pub async fn new_with_low_retries() -> anyhow::Result<Self> {
         // Create temp config with low retry settings
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = create_low_retry_config(&temp_config_dir)?;
@@ -68,7 +69,7 @@ impl TestSetup {
 
     /// Create isolated test setup with free ports and temp database
     #[allow(dead_code)]
-    pub async fn new() -> eyre::Result<Self> {
+    pub async fn new() -> anyhow::Result<Self> {
         // Create a temp config based on the example config
         let temp_config_dir = tempfile::TempDir::new()?;
         let temp_config_path = create_default_config(&temp_config_dir)?;
@@ -77,7 +78,7 @@ impl TestSetup {
 
     /// Create test setup with specified number of listener instances (for redundancy testing)
     #[allow(dead_code)]
-    pub async fn new_with_listeners(listener_count: usize) -> eyre::Result<Self> {
+    pub async fn new_with_listeners(listener_count: usize) -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = create_listener_config(&temp_config_dir, listener_count)?;
         Self::new_with_config_path(Some(temp_config_path)).await
@@ -85,7 +86,7 @@ impl TestSetup {
 
     /// Create test setup with two host chains (chain_id 8009 and 9001) for cross-chain tests.
     #[allow(dead_code)]
-    pub async fn new_with_multi_chain() -> eyre::Result<Self> {
+    pub async fn new_with_multi_chain() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = create_multi_chain_config(&temp_config_dir)?;
         Self::new_with_config_path(Some(temp_config_path)).await
@@ -93,7 +94,7 @@ impl TestSetup {
 
     /// Create test setup with admin endpoint enabled
     #[allow(dead_code)]
-    pub async fn new_with_admin_endpoint() -> eyre::Result<Self> {
+    pub async fn new_with_admin_endpoint() -> anyhow::Result<Self> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = create_admin_endpoint_config(&temp_config_dir)?;
         Self::new_with_config_path(Some(temp_config_path)).await
@@ -103,7 +104,7 @@ impl TestSetup {
     #[allow(dead_code)]
     pub async fn new_with_config_path(
         config_path: Option<std::path::PathBuf>,
-    ) -> eyre::Result<Self> {
+    ) -> anyhow::Result<Self> {
         // Create isolated test schema first
         let test_schema = TestSchema::new().await?;
         tracing::info!(
@@ -125,7 +126,7 @@ impl TestSetup {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = temp_config_dir.path().join("test_config.yaml");
         std::fs::copy("config/local.yaml.example", &temp_config_path)
-            .map_err(|e| eyre::eyre!("Failed to copy config file: {}", e))?;
+            .context("Failed to copy config file")?;
 
         // Configuration constants
         let decryption_addr: alloy::primitives::Address =
@@ -148,7 +149,7 @@ impl TestSetup {
         let host_handle = host_server
             .start()
             .await
-            .map_err(|e| eyre::eyre!("Failed to start host mock server: {}", e))?;
+            .context("Failed to start host mock server")?;
 
         // Create Gateway chain mock server
         tracing::debug!("Creating Gateway chain MockServer on port {}", gateway_port);
@@ -169,7 +170,7 @@ impl TestSetup {
         let gateway_handle = gateway_server
             .start()
             .await
-            .map_err(|e| eyre::eyre!("Failed to start gateway mock server: {}", e))?;
+            .context("Failed to start gateway mock server")?;
 
         // Create settings from config file (default or custom)
         let config_path_str = config_path.map(|p| p.to_string_lossy().to_string());
@@ -260,7 +261,7 @@ impl TestSetup {
         // Wait to receive settings with actual ports (this confirms servers are ready)
         let updated_settings = settings_rx
             .await
-            .map_err(|_| eyre::eyre!("Failed to receive settings from relayer"))?;
+            .context("Failed to receive settings from relayer")?;
 
         tracing::debug!("Relayer service started successfully with actual ports");
 
@@ -271,7 +272,7 @@ impl TestSetup {
             .as_ref()
             .and_then(|endpoint| endpoint.rsplit(':').next())
             .and_then(|port| port.parse::<u16>().ok())
-            .ok_or_else(|| eyre::eyre!("Failed to parse HTTP port from settings"))?;
+            .context("Failed to parse HTTP port from settings")?;
 
         tracing::info!(
             "Isolated test setup complete with actual ports - gateway: {}, http: {}, metrics: {}",
@@ -321,12 +322,12 @@ impl TestSetup {
 }
 
 /// Create a default config file based on the example
-fn create_default_config(temp_dir: &tempfile::TempDir) -> eyre::Result<std::path::PathBuf> {
+fn create_default_config(temp_dir: &tempfile::TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("test_config.yaml");
 
     // Simply copy the example config without modifications
     std::fs::copy("config/local.yaml.example", &temp_config_path)
-        .map_err(|e| eyre::eyre!("Failed to copy example config: {}", e))?;
+        .context("Failed to copy example config")?;
 
     Ok(temp_config_path)
 }
@@ -335,14 +336,14 @@ fn create_default_config(temp_dir: &tempfile::TempDir) -> eyre::Result<std::path
 ///
 /// Reads `local.yaml.example`, appends a host chain with `TEST_HOST_CHAIN_ID_2`
 /// and `TEST_HOST_ACL_ADDRESS_2`, and writes to a temp file.
-fn create_multi_chain_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+fn create_multi_chain_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("multi_chain.yaml");
 
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Append second host chain entry
     if let Some(host_chains) = config.get_mut("host_chains") {
@@ -364,11 +365,10 @@ fn create_multi_chain_config(temp_dir: &TempDir) -> eyre::Result<std::path::Path
         }
     }
 
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
@@ -379,16 +379,16 @@ fn create_readiness_config(
     filename: &str,
     max_attempts: u32,
     retry_interval_ms: u32,
-) -> eyre::Result<std::path::PathBuf> {
+) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join(filename);
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Modify the readiness checker retry settings (both gw_ciphertext_check and host_acl_check)
     if let Some(gateway) = config.get_mut("gateway") {
@@ -413,27 +413,26 @@ fn create_readiness_config(
     }
 
     // Serialize back to YAML and write to temp file
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
 
 /// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
 /// This config is used in tests for max retries exceeded scenarios.
-fn create_low_retry_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+fn create_low_retry_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("low_retry.yaml");
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Modify the tx_engine retry settings to low values
     if let Some(gateway) = config.get_mut("gateway") {
@@ -447,26 +446,25 @@ fn create_low_retry_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBu
     }
 
     // Serialize back to YAML and write to temp file
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
 
 /// Create a config file with admin endpoint enabled
-fn create_admin_endpoint_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+fn create_admin_endpoint_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("admin_endpoint.yaml");
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Enable admin endpoint
     if let Some(http) = config.get_mut("http") {
@@ -474,11 +472,10 @@ fn create_admin_endpoint_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
     }
 
     // Serialize back to YAML and write to temp file
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
@@ -487,16 +484,16 @@ fn create_admin_endpoint_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
 fn create_listener_config(
     temp_dir: &TempDir,
     listener_count: usize,
-) -> eyre::Result<std::path::PathBuf> {
+) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("listener_config.yaml");
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Modify the listeners array in listener_pool
     if let Some(gateway) = config.get_mut("gateway") {
@@ -520,11 +517,10 @@ fn create_listener_config(
     }
 
     // Serialize back to YAML and write to temp file
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
@@ -536,16 +532,16 @@ pub fn create_timeout_test_config(
     temp_dir: &TempDir,
     timeout_secs: u64,
     cron_interval_secs: u64,
-) -> eyre::Result<std::path::PathBuf> {
+) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("timeout_test.yaml");
 
     // Read the default config
     let config_content = std::fs::read_to_string("config/local.yaml.example")
-        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+        .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
-        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
     // Set test_mock to false to enable background workers
     if let Some(global) = config.get_mut("global") {
@@ -567,11 +563,10 @@ pub fn create_timeout_test_config(
     }
 
     // Serialize back to YAML and write to temp file
-    let modified_content = serde_yaml::to_string(&config)
-        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
 
-    std::fs::write(&temp_config_path, modified_content)
-        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
 }
@@ -579,12 +574,11 @@ pub fn create_timeout_test_config(
 /// Get a free port by binding to port 0
 /// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]
-fn get_free_port() -> eyre::Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| eyre::eyre!("Failed to bind to free port: {}", e))?;
+fn get_free_port() -> anyhow::Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").context("Failed to bind to free port")?;
     let port = listener
         .local_addr()
-        .map_err(|e| eyre::eyre!("Failed to get local address: {}", e))?
+        .context("Failed to get local address")?
         .port();
     Ok(port)
 }
