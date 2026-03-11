@@ -641,13 +641,21 @@ impl Settings {
 
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {
-            panic!("HTTP metrics histogram buckets must be set in the configuration file.");
+            return Err(AppConfigError::Config(
+                "HTTP metrics histogram buckets must be set in the configuration file.".into(),
+            ));
         }
+
+        // Validate contract addresses
+        settings.validate_addresses()?;
+
+        // Validate listener pool configuration
+        settings.validate_listener_pool_config()?;
 
         Ok(settings)
     }
 
-    pub fn validate_addresses(&self) -> Result<(), AppConfigError> {
+    fn validate_addresses(&self) -> Result<(), AppConfigError> {
         use alloy::primitives::Address;
         use std::str::FromStr;
 
@@ -705,7 +713,7 @@ impl Settings {
         Ok(())
     }
 
-    pub fn validate_listener_pool_config(&self) -> Result<(), AppConfigError> {
+    fn validate_listener_pool_config(&self) -> Result<(), AppConfigError> {
         let pool_config = &self.gateway.listener_pool;
 
         // Validate listener count
@@ -1088,6 +1096,33 @@ mod tests {
         assert_eq!(
             settings.gateway.listener_pool.listeners[0].url,
             "ws://localhost:8757"
+        );
+    }
+
+    #[test]
+    fn test_settings_new_rejects_invalid_address() {
+        let builder = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .set_field(
+                "gateway.contracts.decryption_address",
+                serde_yaml::Value::String("not-a-valid-address".into()),
+            );
+
+        let content = serde_yaml::to_string(&builder.config).expect("Failed to serialize");
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config_path = dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, content).expect("Failed to write config file");
+
+        let result = Settings::new(Some(config_path.to_string_lossy().to_string()));
+
+        assert!(
+            result.is_err(),
+            "Settings::new() should fail with an invalid address"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Invalid") && err.contains("address"),
+            "Error should mention invalid address, got: {err}"
         );
     }
 }
