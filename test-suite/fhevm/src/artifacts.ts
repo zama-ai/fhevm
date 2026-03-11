@@ -415,6 +415,9 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
   }
   if (state.discovery) {
     updateContracts(envs["gateway-sc"], state.discovery.gateway);
+    updateContracts(envs["gateway-mocked-payment"], {
+      PROTOCOL_PAYMENT_ADDRESS: state.discovery.gateway.PROTOCOL_PAYMENT_ADDRESS,
+    });
     updateContracts(envs["host-sc"], {
       DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
       INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,

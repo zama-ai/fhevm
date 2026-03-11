@@ -871,12 +871,8 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
       await regen(state, deps);
       break;
     case "gateway-deploy":
-      await composeUp("gateway-mocked-payment", state, deps, saveState, log, [
-        "gateway-deploy-mocked-zama-oft",
-        "gateway-set-relayer-mocked-payment",
-      ]);
+      await composeUp("gateway-mocked-payment", state, deps, saveState, log, ["gateway-deploy-mocked-zama-oft"]);
       await waitForContainer(deps, "gateway-deploy-mocked-zama-oft", "complete");
-      await waitForContainer(deps, "gateway-set-relayer-mocked-payment", "complete");
       await composeUp("gateway-sc", state, deps, saveState, log, ["gateway-sc-deploy"]);
       await waitForContainer(deps, "gateway-sc-deploy", "complete", "Contract deployment done!");
       state.discovery = {
@@ -897,6 +893,16 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         },
       };
       await regen(state, deps);
+      await composeUp(
+        "gateway-mocked-payment",
+        state,
+        deps,
+        saveState,
+        log,
+        ["gateway-set-relayer-mocked-payment"],
+        { noDeps: true },
+      );
+      await waitForContainer(deps, "gateway-set-relayer-mocked-payment", "complete");
       break;
     case "host-deploy":
       await composeUp("host-sc", state, deps, saveState, log, ["host-sc-deploy"]);
