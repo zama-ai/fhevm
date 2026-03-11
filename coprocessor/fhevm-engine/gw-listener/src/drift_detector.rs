@@ -78,7 +78,7 @@ impl DriftDetector {
         let Some(row) = row else {
             debug!(
                 handle = %event.ctHandle,
-                "Consensus arrived before local digest was available; skipping M1 drift check"
+                "Consensus arrived before local digest was available; skipping drift check"
             );
             return Ok(());
         };
@@ -91,7 +91,7 @@ impl DriftDetector {
         else {
             debug!(
                 handle = %event.ctHandle,
-                "Consensus arrived before local digests were ready; skipping M1 drift check"
+                "Consensus arrived before local digests were ready; skipping drift check"
             );
             return Ok(());
         };
@@ -338,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
-    async fn consensus_handle_not_in_db_is_ignored_in_m1() {
+    async fn consensus_handle_not_in_db_is_ignored() {
         let (pool, _inst) = setup_db().await;
 
         let mut d = DriftDetector::new();
@@ -358,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
-    async fn consensus_null_digests_are_ignored_in_m1() {
+    async fn consensus_null_digests_are_ignored() {
         let (pool, _inst) = setup_db().await;
         let handle = [0xAA; 32];
 
