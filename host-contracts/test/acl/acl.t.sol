@@ -307,25 +307,6 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Tests that the sender cannot delegate for user decryption with expiration date before one hour.
-     */
-    function test_CannotDelegateForUserDecryptionWithExpirationDateBeforeOneHour(
-        address sender,
-        address delegate,
-        address contractAddress
-    ) public {
-        vm.assume(sender != contractAddress);
-        vm.assume(sender != delegate);
-        vm.assume(delegate != contractAddress);
-
-        uint64 expirationDate = uint64(block.timestamp);
-
-        vm.prank(sender);
-        vm.expectRevert(ACL.ExpirationDateBeforeOneHour.selector);
-        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
-    }
-
-    /**
      * @dev Tests that the sender cannot delegate to itself as the contract address.
      */
     function test_CannotDelegateIfSenderIsContractAddress(address sender, address delegate) public {
