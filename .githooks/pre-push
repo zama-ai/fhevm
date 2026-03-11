@@ -13,28 +13,23 @@ REPORT_FILE="$REPO_ROOT/coprocessor/fhevm-engine/coverage-report.txt"
 COPROCESSOR_DIR="coprocessor/fhevm-engine/"
 
 # Determine the merge base to compare against (what's being pushed)
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 MERGE_BASE=$(git merge-base main HEAD 2>/dev/null || true)
 if [ -z "$MERGE_BASE" ]; then
     exit 0
 fi
 
-# Get files changed on this branch vs main, filtered to crate subdirectories only
+# Get changed files on this branch, filtered to actual crate directories only
 # (ignores root-level config: Makefile, scripts/, Cargo.toml, etc.)
 CRATE_CHANGES=$(git diff --name-only "$MERGE_BASE"...HEAD -- "$COPROCESSOR_DIR" 2>/dev/null | \
     while read -r f; do
-        # Strip the coprocessor/fhevm-engine/ prefix
         rel=$(echo "$f" | sed "s|^$COPROCESSOR_DIR||")
-        # Extract top-level directory name
         crate_name=$(echo "$rel" | cut -d/ -f1)
-        # Only include if it's an actual crate (has Cargo.toml)
         if [ -f "$REPO_ROOT/$COPROCESSOR_DIR$crate_name/Cargo.toml" ]; then
             echo "$crate_name"
         fi
     done | sort -u)
 
 if [ -z "$CRATE_CHANGES" ]; then
-    # No crate-level changes on this branch — nothing to check
     exit 0
 fi
 
@@ -60,18 +55,21 @@ if [ ! -f "$REPORT_FILE" ]; then
     exit 0
 fi
 
-# Check report freshness: compare file mtime vs latest coprocessor commit time
-# Handle both macOS (stat -f %m) and Linux (stat -c %Y)
+# Check report freshness
 if stat -f %m "$REPORT_FILE" >/dev/null 2>&1; then
     REPORT_TIME=$(stat -f %m "$REPORT_FILE")
 else
-    REPORT_TIME=$(stat -c %Y "$REPORT_FILE")
+    REPORT_TIME=$(stat -c %Y "$REPORT_FILE" 2>/dev/null)
+fi
+
+if [ -z "$REPORT_TIME" ]; then
+    exit 0
 fi
 
 if [ "$REPORT_TIME" -lt "$LAST_COMMIT_TIME" ]; then
     echo ""
     echo "WARNING: Coverage report is stale (generated before latest coprocessor commit)."
-    echo "  Run 'make coverage' in coprocessor/fhevm-engine/ to regenerate."
+    echo "  Run 'make coverage-changed' in coprocessor/fhevm-engine/ to regenerate."
     echo ""
     exit 0
 fi
@@ -79,8 +77,12 @@ fi
 # Report is fresh — print summary
 TOTAL_LINE=$(grep "^TOTAL" "$REPORT_FILE" 2>/dev/null)
 if [ -n "$TOTAL_LINE" ]; then
+    # Extract percentages: region (col 4), function (col 7), line (col 10)
+    REGION_PCT=$(echo "$TOTAL_LINE" | awk '{print $4}')
+    FUNC_PCT=$(echo "$TOTAL_LINE" | awk '{print $7}')
+    LINE_PCT=$(echo "$TOTAL_LINE" | awk '{print $10}')
     echo ""
-    echo "Coverage: $TOTAL_LINE"
+    echo "Coverage: Lines: $LINE_PCT | Functions: $FUNC_PCT | Regions: $REGION_PCT"
     echo ""
 fi
 

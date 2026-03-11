@@ -273,17 +273,13 @@ When using the `aws-kms` signer type, standard `AWS_*` environment variables are
 
 ### Setup (one-time)
 
-Install the git hooks to enable pre-push coverage checks:
+Install the coverage pre-push hook:
 
 ```bash
 sh .githooks/install.sh
 ```
 
-To uninstall and revert to the default `.git/hooks/` directory:
-
-```bash
-sh .githooks/uninstall.sh
-```
+> **Note:** This sets `core.hooksPath` to `.githooks/`, which replaces any existing git hooks (e.g. those from `.github/hooks/install.sh`). To revert, run `sh .githooks/uninstall.sh`.
 
 ### Running coverage locally
 
@@ -306,7 +302,7 @@ All commands save the report to `coverage-report.txt`. If `fhevm-engine-common` 
 
 ### Pre-push hook
 
-When pushing changes that touch `coprocessor/fhevm-engine/`, the pre-push hook checks for a fresh `coverage-report.txt`. If the report is missing or older than your latest commit, it prints a warning reminding you to run `make coverage-changed`. The hook is **non-blocking** and will never prevent a push.
+When pushing changes that touch coprocessor crate code, the pre-push hook checks for a fresh `coverage-report.txt`. If the report is missing or older than your latest commit, it prints a warning reminding you to run `make coverage-changed`. The hook is **non-blocking** and will never prevent a push.
 
 ## Telemetry Style Guide (Tracing + OTEL)
 

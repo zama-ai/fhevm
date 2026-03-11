@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# Restores the default git hooks directory (.git/hooks/).
+# Uninstall coverage hooks and revert to the default .git/hooks/ directory.
 #
-cd "$(git rev-parse --show-toplevel)" || exit 1
+
 git config --unset core.hooksPath
-echo "Git hooks uninstalled: reverted to default .git/hooks/ directory"
+echo "Reverted git hooks to default (.git/hooks/)."
