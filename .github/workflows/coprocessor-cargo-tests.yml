@@ -158,7 +158,8 @@ jobs:
           exit 0
         fi
         pip install --quiet diff-cover
-        git fetch origin "${BASE_REF}"
+        git fetch --unshallow origin
+        git fetch origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
         diff-cover /tmp/lcov.info \
           --compare-branch="origin/${BASE_REF}" \
           --diff-range-notation='...' \
