@@ -100,13 +100,13 @@ const latestMainPackageResponses = (tag: string) =>
   );
 
 describe("resolveTarget", () => {
-  test("latest-main walks back to the first complete sha bundle after the tenant floor", async () => {
+  test("latest-main walks back to the first complete sha bundle after the simple-acl floor", async () => {
     const gh = createGitHubClient(
       fakeRunner({
         "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
           JSON.stringify([
             { sha: "1111111000000000000000000000000000000000" },
-            { sha: "acfa9775818406a119b53d2beb05a04742a49473" },
+            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
             { sha: "2222222000000000000000000000000000000000" },
           ]),
         ...latestMainPackageResponses("1111111"),
@@ -118,13 +118,13 @@ describe("resolveTarget", () => {
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
   });
 
-  test("latest-main rejects complete bundles older than the tenant floor", async () => {
+  test("latest-main rejects complete bundles older than the simple-acl floor", async () => {
     const gh = createGitHubClient(
       fakeRunner({
         "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
           JSON.stringify([
             { sha: "1111111000000000000000000000000000000000" },
-            { sha: "acfa9775818406a119b53d2beb05a04742a49473" },
+            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
             { sha: "2222222000000000000000000000000000000000" },
           ]),
         ...latestMainPackageResponses("2222222"),
@@ -136,12 +136,50 @@ describe("resolveTarget", () => {
   });
 
   test("sha resolves an explicit complete repo-owned image set", async () => {
-    const gh = createGitHubClient(fakeRunner(latestMainPackageResponses("1234abc")));
+    const gh = createGitHubClient(
+      fakeRunner({
+        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
+          JSON.stringify([
+            { sha: "1234abc999999999999999999999999999999999" },
+            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
+          ]),
+        ...latestMainPackageResponses("1234abc"),
+      }),
+    );
     const bundle = await resolveTarget("sha", gh, { sha: "1234abc999999999999999999999999999999999" });
     expect(bundle.lockName).toBe("sha-1234abc.json");
     expect(bundle.env.GATEWAY_VERSION).toBe("1234abc");
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
     expect(bundle.sources).toContain("requested-sha=1234abc999999999999999999999999999999999");
+  });
+
+  test("sha rejects commits older than the simple-acl floor", async () => {
+    const gh = createGitHubClient(
+      fakeRunner({
+        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
+          JSON.stringify([
+            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
+            { sha: "1234abc999999999999999999999999999999999" },
+          ]),
+        ...latestMainPackageResponses("1234abc"),
+      }),
+    );
+    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
+      "sha target 1234abc predates the simple-ACL cutover and is unsupported",
+    );
+  });
+
+  test("sha rejects non-main commits even if images exist", async () => {
+    const gh = createGitHubClient(
+      fakeRunner({
+        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
+          JSON.stringify([{ sha: "803f1048727eabf6d8b3df618203e3c7dda77890" }]),
+        ...latestMainPackageResponses("1234abc"),
+      }),
+    );
+    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
+      "sha target 1234abc is unsupported; only main commits at or after 803f104 are supported",
+    );
   });
 
   test("sha rejects missing repo-owned images", async () => {
@@ -232,6 +270,10 @@ describe("runtime invariants", () => {
       ["--tenant-api-key", "TENANT_API_KEY"],
     ]);
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["transaction-sender"]).toEqual([
+      ["--multichain-acl-address", "MULTICHAIN_ACL_ADDRESS"],
+      ["--delegation-fallback-polling", "30"],
+      ["--delegation-max-retry", "100000"],
+      ["--retry-immediately-on-nonce-error", "2"],
       ["--host-chain-url", "RPC_WS_URL"],
     ]);
 

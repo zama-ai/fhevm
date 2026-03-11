@@ -38,7 +38,7 @@ bun test
 ## Targets
 
 - `latest-release`: latest stable fhevm release plus checked-in companion defaults
-- `latest-main`: newest complete repo-owned main SHA bundle at or after the tenant-refactor floor (`acfa977`)
+- `latest-main`: newest complete repo-owned main SHA bundle at or after the simple-ACL floor (`803f104`)
 - `sha`: exact repo-owned SHA bundle plus `latest-release` companions
 - `devnet`
 - `testnet`
@@ -46,7 +46,7 @@ bun test
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps. Non-network targets do not.
 `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
-`sha` requires `--sha <git-sha>` and fails fast unless every repo-owned package is available at that 7-character SHA tag.
+`sha` requires `--sha <git-sha>` and fails fast unless every repo-owned package is available at that 7-character SHA tag, the SHA is on `main`, and it is at or after the simple-ACL floor.
 
 ## Pinning an Exact Version Bundle
 

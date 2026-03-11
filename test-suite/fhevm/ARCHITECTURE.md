@@ -5,9 +5,9 @@ This is the high-level shape of the Bun-based `fhevm-cli`.
 ```mermaid
 flowchart TD
   A["fhevm-cli up"] --> B["Resolve target"]
-  B --> B1["latest-main: walk main SHAs until complete image set, but not before acfa977"]
+  B --> B1["latest-main: walk main SHAs until complete image set, but not before 803f104"]
   B --> B2["latest-release: latest stable release"]
-  B --> B3["sha: exact repo-owned SHA, fail if any package tag is missing"]
+  B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104"]
   B --> B4["devnet/testnet/mainnet: GitOps bundles"]
   B1 --> C["Lock resolved bundle"]
   B2 --> C

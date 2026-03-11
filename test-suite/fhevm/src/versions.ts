@@ -304,7 +304,7 @@ const bundleFromFiles = async (client: GitHubClient, target: VersionTarget, file
 
 const REPO_TAG = /^[0-9a-f]{7}$/;
 const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
-const LATEST_MAIN_MIN_SHA = "acfa9775818406a119b53d2beb05a04742a49473";
+const SIMPLE_ACL_MIN_SHA = "803f1048727eabf6d8b3df618203e3c7dda77890";
 
 const repoPackageName = (pkg: string) => decodeURIComponent(pkg);
 
@@ -321,6 +321,14 @@ const missingRepoPackages = (packageTags: Record<string, Set<string>>, tag: stri
     .map(([, pkg]) => repoPackageName(pkg));
 
 const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+
+const simpleAclFloor = (commits: string[]) => {
+  const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
+  if (floor < 0) {
+    throw new Error(`simple-acl floor ${SIMPLE_ACL_MIN_SHA} was not found in fetched main history`);
+  }
+  return floor;
+};
 
 const presetBundle = (
   target: "latest-release" | "latest-main" | "sha",
@@ -378,14 +386,20 @@ export const resolveTarget = async (
     if (missing.length) {
       throw new Error(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
     }
+    const commits = await client.mainCommits(1000);
+    const floor = simpleAclFloor(commits);
+    const index = commits.findIndex((sha) => sha.startsWith(tag));
+    if (index < 0) {
+      throw new Error(`sha target ${tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`);
+    }
+    if (index > floor) {
+      throw new Error(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
+    }
     return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
   }
   const packageTags = await repoPackageTags(client);
   const commits = await client.mainCommits(1000);
-  const floor = commits.indexOf(LATEST_MAIN_MIN_SHA);
-  if (floor < 0) {
-    throw new Error(`latest-main floor ${LATEST_MAIN_MIN_SHA} was not found in fetched main history`);
-  }
+  const floor = simpleAclFloor(commits);
   const short = commits.slice(0, floor + 1).map((sha) => sha.slice(0, 7)).find((sha) =>
     Object.values(packageTags).every((set) => set.has(sha) && REPO_TAG.test(sha)),
   );

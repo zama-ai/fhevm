@@ -8,8 +8,6 @@ export type CompatPolicy = {
   connectorEnv: Record<string, string>;
 };
 
-export const requiresMultichainAclAddress = (_state: Pick<State, "target" | "versions">) => true;
-
 const COMPAT_PROFILES = {
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {
@@ -31,11 +29,23 @@ const COMPAT_PROFILES = {
     },
     connectorEnv: {},
   },
+  "legacy-tx-sender-gateway-flags": {
+    coprocessorArgs: {
+      "transaction-sender": [
+        ["--multichain-acl-address", "MULTICHAIN_ACL_ADDRESS"],
+        ["--delegation-fallback-polling", "30"],
+        ["--delegation-max-retry", "100000"],
+        ["--retry-immediately-on-nonce-error", "2"],
+      ],
+    },
+    connectorEnv: {},
+  },
 } as const satisfies Record<string, CompatPolicy>;
 
 const COMPAT_RULES = {
   coprocessor: [
     { before: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys" },
+    { before: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags" },
     { before: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url" },
   ],
   connector: [{ before: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id" }],
@@ -62,6 +72,9 @@ const versionLt = (version: string, target: CompatSemver) => {
   }
   return false;
 };
+
+export const requiresMultichainAclAddress = (state: Pick<State, "versions">) =>
+  versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };

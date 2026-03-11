@@ -1,7 +1,7 @@
+import { requiresMultichainAclAddress } from "./compat";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { requiresMultichainAclAddress } from "./compat";
 import type {
   Discovery,
   InstanceOverride,
