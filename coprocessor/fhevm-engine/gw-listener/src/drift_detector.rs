@@ -172,6 +172,8 @@ impl DriftDetector {
                 self.deferred_metrics.drift_detected += 1;
             }
         }
+
+        self.finish_if_complete(handle);
     }
 
     pub(crate) async fn handle_consensus(

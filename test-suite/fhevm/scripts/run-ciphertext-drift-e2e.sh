@@ -51,14 +51,19 @@ baseline_metric="$(metric_total)"
 "${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
 injector_pid=$!
 
+test_exit=0
 docker exec \
   -e GATEWAY_RPC_URL= \
   "$TEST_CONTAINER" \
-  ./run-tests.sh -n staging -g "$GREP_PATTERN"
+  ./run-tests.sh -n staging -g "$GREP_PATTERN" || test_exit=$?
 
 wait "$injector_pid"
 injector_pid=""
 handle_hex="$(cat "$HANDLE_FILE")"
+
+if [ "$test_exit" -ne 0 ]; then
+  exit "$test_exit"
+fi
 
 if ! updated_metric="$(wait_for_metric_increment "$baseline_metric")"; then
   echo "drift metric did not increase after injecting handle ${handle_hex}" >&2
