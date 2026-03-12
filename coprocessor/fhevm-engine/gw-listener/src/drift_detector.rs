@@ -759,6 +759,27 @@ mod tests {
         DriftDetector::new(senders(), ChainId::try_from(12345_u64).unwrap(), 5, 2)
     }
 
+    fn make_consensus_state(
+        block_number: u64,
+        ciphertext_digest: FixedBytes<32>,
+        ciphertext128_digest: FixedBytes<32>,
+        senders: Vec<Address>,
+    ) -> ConsensusState {
+        ConsensusState {
+            context: EventContext {
+                block_number,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+            },
+            digests: DigestPair {
+                ciphertext_digest,
+                ciphertext128_digest,
+            },
+            senders,
+        }
+    }
+
     #[test]
     fn earliest_open_block_tracks_oldest_open_handle() {
         let mut detector = detector();
@@ -889,19 +910,12 @@ mod tests {
                     },
                 },
             ],
-            consensus: Some(ConsensusState {
-                context: EventContext {
-                    block_number: 12,
-                    block_hash: None,
-                    tx_hash: None,
-                    log_index: None,
-                },
-                digests: DigestPair {
-                    ciphertext_digest: FixedBytes::from([13u8; 32]),
-                    ciphertext128_digest: FixedBytes::from([14u8; 32]),
-                },
+            consensus: Some(make_consensus_state(
+                12,
+                FixedBytes::from([13u8; 32]),
+                FixedBytes::from([14u8; 32]),
                 senders,
-            }),
+            )),
             local_consensus_checked: false,
             drift_reported: false,
         };
@@ -1092,19 +1106,12 @@ mod tests {
             );
         }
 
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            context: EventContext {
-                block_number: 12,
-                block_hash: None,
-                tx_hash: None,
-                log_index: None,
-            },
-            digests: DigestPair {
-                ciphertext_digest: FixedBytes::from([2u8; 32]),
-                ciphertext128_digest: FixedBytes::from([3u8; 32]),
-            },
-            senders: expected,
-        });
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+            12,
+            FixedBytes::from([2u8; 32]),
+            FixedBytes::from([3u8; 32]),
+            expected,
+        ));
         detector
             .open_handles
             .get_mut(&handle)
@@ -1141,22 +1148,12 @@ mod tests {
             context(11),
         );
 
-        let pool = None::<Pool<Postgres>>;
-        drop(pool);
-
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            context: EventContext {
-                block_number: 12,
-                block_hash: None,
-                tx_hash: None,
-                log_index: None,
-            },
-            digests: DigestPair {
-                ciphertext_digest: FixedBytes::from([2u8; 32]),
-                ciphertext128_digest: FixedBytes::from([3u8; 32]),
-            },
-            senders: vec![senders()[0], senders()[1]],
-        });
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+            12,
+            FixedBytes::from([2u8; 32]),
+            FixedBytes::from([3u8; 32]),
+            vec![senders()[0], senders()[1]],
+        ));
         detector
             .open_handles
             .get_mut(&handle)
@@ -1215,19 +1212,12 @@ mod tests {
         );
 
         // Inject consensus at block 12 and mark local check done.
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            context: EventContext {
-                block_number: 12,
-                block_hash: None,
-                tx_hash: None,
-                log_index: None,
-            },
-            digests: DigestPair {
-                ciphertext_digest: FixedBytes::from([2u8; 32]),
-                ciphertext128_digest: FixedBytes::from([3u8; 32]),
-            },
-            senders: vec![senders()[0], senders()[1]],
-        });
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+            12,
+            FixedBytes::from([2u8; 32]),
+            FixedBytes::from([3u8; 32]),
+            vec![senders()[0], senders()[1]],
+        ));
         detector
             .open_handles
             .get_mut(&handle)
@@ -1292,19 +1282,7 @@ mod tests {
                 last_seen_block: 20,
                 expected_senders: senders(),
                 submissions: Vec::new(),
-                consensus: Some(ConsensusState {
-                    context: EventContext {
-                        block_number: 20,
-                        block_hash: None,
-                        tx_hash: None,
-                        log_index: None,
-                    },
-                    digests: DigestPair {
-                        ciphertext_digest: digest,
-                        ciphertext128_digest: digest128,
-                    },
-                    senders: senders(),
-                }),
+                consensus: Some(make_consensus_state(20, digest, digest128, senders())),
                 local_consensus_checked: true,
                 drift_reported: false,
             },
@@ -1409,19 +1387,12 @@ mod tests {
             context(10),
         );
 
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            context: EventContext {
-                block_number: 12,
-                block_hash: None,
-                tx_hash: None,
-                log_index: None,
-            },
-            digests: DigestPair {
-                ciphertext_digest: FixedBytes::from([2u8; 32]),
-                ciphertext128_digest: FixedBytes::from([3u8; 32]),
-            },
-            senders: vec![senders()[0]],
-        });
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+            12,
+            FixedBytes::from([2u8; 32]),
+            FixedBytes::from([3u8; 32]),
+            vec![senders()[0]],
+        ));
         // local_consensus_checked remains false (default).
 
         // Within timeout: 16 - 12 = 4 < 5, should not evict.
@@ -1431,6 +1402,11 @@ mod tests {
         // At timeout: 17 - 12 = 5, should evict.
         detector.evict_stale(17);
         assert!(!detector.open_handles.contains_key(&handle));
+        // This path (consensus observed, local digests never available) should not
+        // bump consensus_timeout or missing_submission — it's a distinct warning.
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert_eq!(detector.deferred_metrics.missing_submission, 0);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
     }
 
     #[test]
