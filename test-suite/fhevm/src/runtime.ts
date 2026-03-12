@@ -473,11 +473,17 @@ const discoverSigner = async (deps: RuntimeDeps) => {
     const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
     const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
     if (match) {
-      const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
-      if (!response.ok) {
-        throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
+      try {
+        const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
+        if (!response.ok) {
+          throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
+        }
+        return (await response.text()).trim();
+      } catch (error) {
+        if (shouldLogRetry(attempt)) {
+          log(`[wait] kms signer fetch: ${toError(error).message}`);
+        }
       }
-      return (await response.text()).trim();
     }
     if (shouldLogRetry(attempt)) {
       log("[wait] kms signer handle");
@@ -650,6 +656,9 @@ const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
       const response = await deps.fetch(url, { method: "HEAD" });
       if (response.ok) {
         return;
+      }
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] material: HTTP ${response.status}`);
       }
     } catch (error) {
       // network not ready yet (ECONNREFUSED, DNS, etc.) — retry
