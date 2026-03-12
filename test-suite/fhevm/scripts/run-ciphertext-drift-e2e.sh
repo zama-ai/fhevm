@@ -5,35 +5,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAULTY_INSTANCE_INDEX="${FAULTY_INSTANCE_INDEX:-1}"
 TEST_CONTAINER="${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}"
 GREP_PATTERN="${GREP_PATTERN:-test user input uint64 \\(non-trivial\\)}"
-METRIC_NAME="coprocessor_gw_listener_drift_detected_counter"
-METRIC_TIMEOUT_SECONDS="${DRIFT_METRIC_TIMEOUT_SECONDS:-180}"
-METRIC_POLL_INTERVAL_SECONDS="${DRIFT_METRIC_POLL_INTERVAL_SECONDS:-2}"
+DRIFT_ALERT_TIMEOUT_SECONDS="${DRIFT_ALERT_TIMEOUT_SECONDS:-180}"
+DRIFT_ALERT_POLL_INTERVAL_SECONDS="${DRIFT_ALERT_POLL_INTERVAL_SECONDS:-2}"
 HANDLE_FILE="$(mktemp)"
 injector_pid=""
+LOG_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-metric_total() {
-  local total=0
+wait_for_drift_log() {
+  local handle_hex="$1"
+  local deadline=$((SECONDS + DRIFT_ALERT_TIMEOUT_SECONDS))
   local container
-  while IFS= read -r container; do
-    [ -z "$container" ] && continue
-    local value
-    value="$(docker exec "$container" curl -fsS http://127.0.0.1:9100/metrics 2>/dev/null | awk -v metric="$METRIC_NAME" '$1 == metric {sum += $2} END {print sum + 0}')"
-    total=$((total + value))
-  done < <(docker ps --format '{{.Names}}' | grep -E '^coprocessor([0-9]+)?-gw-listener$' || true)
-  echo "$total"
-}
-
-wait_for_metric_increment() {
-  local baseline="$1"
-  local deadline=$((SECONDS + METRIC_TIMEOUT_SECONDS))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    local current
-    current="$(metric_total)"
-    if [ "$current" -gt "$baseline" ]; then
-      echo "$current"
-      return 0
-    fi
-    sleep "$METRIC_POLL_INTERVAL_SECONDS"
+    while IFS= read -r container; do
+      [ -z "$container" ] && continue
+      if docker logs --since "$LOG_SINCE" "$container" 2>&1 \
+        | grep -F '"message":"Drift detected: observed multiple digest variants for handle"' \
+        | grep -F "\"handle\":\"0x${handle_hex}\"" >/dev/null; then
+        echo "$container"
+        return 0
+      fi
+    done < <(docker ps --format '{{.Names}}' | grep -E '^coprocessor([0-9]+)?-gw-listener$' || true)
+    sleep "$DRIFT_ALERT_POLL_INTERVAL_SECONDS"
   done
   return 1
 }
@@ -47,7 +39,6 @@ cleanup() {
 
 trap cleanup EXIT
 
-baseline_metric="$(metric_total)"
 "${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
 injector_pid=$!
 
@@ -65,9 +56,9 @@ if [ "$test_exit" -ne 0 ]; then
   exit "$test_exit"
 fi
 
-if ! updated_metric="$(wait_for_metric_increment "$baseline_metric")"; then
-  echo "drift metric did not increase after injecting handle ${handle_hex}" >&2
+if ! detecting_container="$(wait_for_drift_log "$handle_hex")"; then
+  echo "drift warning was not observed for injected handle ${handle_hex}" >&2
   exit 1
 fi
 
-echo "drift detected for handle ${handle_hex} (${METRIC_NAME}: ${baseline_metric} -> ${updated_metric})"
+echo "drift detected for handle ${handle_hex} in ${detecting_container}"
