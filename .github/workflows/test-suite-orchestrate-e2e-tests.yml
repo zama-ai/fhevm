@@ -80,7 +80,7 @@ jobs:
       connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
-      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
+      stack-era: ${{ steps.create-e2e-tests-input.outputs.stack-era }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -95,7 +95,6 @@ jobs:
             const previousCommitHash = process.env.PREVIOUS_COMMIT_HASH;
             const newCommitHash = process.env.NEW_COMMIT_HASH;
             const simpleAclCutover = '803f1048727eabf6d8b3df618203e3c7dda77890';
-            const modernRelayerVersion = 'sha-29b0750';
             console.log(`Previous commit hash: ${previousCommitHash}`)
             console.log(`New commit hash: ${newCommitHash}`)
             console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
@@ -146,8 +145,8 @@ jobs:
               }
             });
             if (needsModernRelayer) {
-              console.log(`Selected stack crosses simple-ACL cutover; assigning relayer version '${modernRelayerVersion}'`);
-              core.setOutput('relayer-version', modernRelayerVersion);
+              console.log("Selected stack crosses simple-ACL cutover; assigning modern stack era");
+              core.setOutput('stack-era', 'modern');
             }
 
   run-e2e-tests:
@@ -177,5 +176,5 @@ jobs:
       connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      stack-era: ${{ needs.create-e2e-tests-input.outputs.stack-era }}
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

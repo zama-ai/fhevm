@@ -11,6 +11,7 @@ import {
   rewriteCoprocessorDependsOn,
 } from "./artifacts";
 import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
+import { STEP_NAMES } from "./types";
 import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
 import { compatPolicyForState, requiresMultichainAclAddress } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
@@ -116,6 +117,8 @@ describe("resolveTarget", () => {
     expect(bundle.lockName).toBe("latest-main-1111111.json");
     expect(bundle.env.GATEWAY_VERSION).toBe("1111111");
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
+    expect(bundle.env.RELAYER_VERSION).toBe("sha-29b0750");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
   });
 
   test("latest-main rejects complete bundles older than the simple-acl floor", async () => {
@@ -150,6 +153,8 @@ describe("resolveTarget", () => {
     expect(bundle.lockName).toBe("sha-1234abc.json");
     expect(bundle.env.GATEWAY_VERSION).toBe("1234abc");
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
+    expect(bundle.env.RELAYER_VERSION).toBe("sha-29b0750");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
     expect(bundle.sources).toContain("requested-sha=1234abc999999999999999999999999999999999");
   });
 
@@ -264,18 +269,18 @@ describe("runtime invariants", () => {
       }});
 
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["host-listener"]).toEqual([
-      ["--coprocessor-api-key", "COPROCESSOR_API_KEY"],
-    ]);
+      ["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }],
+    ] as const);
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["sns-worker"]).toEqual([
-      ["--tenant-api-key", "TENANT_API_KEY"],
-    ]);
+      ["--tenant-api-key", { env: "TENANT_API_KEY" }],
+    ] as const);
     expect(compatPolicyForState(makeState("v0.11.0")).coprocessorArgs["transaction-sender"]).toEqual([
-      ["--multichain-acl-address", "MULTICHAIN_ACL_ADDRESS"],
-      ["--delegation-fallback-polling", "30"],
-      ["--delegation-max-retry", "100000"],
-      ["--retry-immediately-on-nonce-error", "2"],
-      ["--host-chain-url", "RPC_WS_URL"],
-    ]);
+      ["--multichain-acl-address", { env: "MULTICHAIN_ACL_ADDRESS" }],
+      ["--delegation-fallback-polling", { value: "30" }],
+      ["--delegation-max-retry", { value: "100000" }],
+      ["--retry-immediately-on-nonce-error", { value: "2" }],
+      ["--host-chain-url", { env: "RPC_WS_URL" }],
+    ] as const);
 
     // v0.12.x: all legacy flags removed
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["host-listener"]).toBeUndefined();
@@ -371,6 +376,19 @@ describe("runtime invariants", () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  test("compat keys tx-sender flags off tx-sender version", () => {
+    expect(
+      compatPolicyForState(
+        stubState({
+          envOverrides: {
+            COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.0",
+            COPROCESSOR_TX_SENDER_VERSION: "v0.11.0",
+          },
+        }),
+      ).coprocessorArgs["transaction-sender"],
+    ).toBeDefined();
   });
 
   test("probeBootstrap treats transient material fetch failures as retryable", async () => {
@@ -534,6 +552,96 @@ describe("runtime invariants", () => {
       restore();
     }
     expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from v0.11.0"))).toBe(true);
+  });
+
+  test("up --dry-run rejects latest-main partial overrides when local migrations diverge", async () => {
+    const dir = await fixtureDir();
+    const lockFile = path.join(dir, "latest-main.json");
+    await fs.writeFile(
+      lockFile,
+      JSON.stringify({
+        ...stubBundle({ lockName: "latest-main.json", env: { COPROCESSOR_DB_MIGRATION_VERSION: "803f104" }, sources: ["test"] }),
+        target: "latest-main",
+      }),
+    );
+    process.chdir(REPO_ROOT);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--target",
+          "latest-main",
+          "--lock-file",
+          lockFile,
+          "--override",
+          "coprocessor:host-listener",
+          "--dry-run",
+        ],
+        {
+          runner: fakeRunner({
+            "git rev-parse -q --verify 803f104^{commit}": "",
+            "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
+            "git diff --quiet --exit-code 803f104 -- coprocessor/fhevm-engine/db-migration/migrations": {
+              stdout: "",
+              stderr: "",
+              code: 1,
+            },
+          }),
+          liveRunner: async () => 0,
+          now: () => "2026-03-06T00:00:00.000Z",
+          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+          env: {},
+        },
+      );
+    } finally {
+      restore();
+    }
+    expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from 803f104"))).toBe(true);
+  });
+
+  test("up --dry-run rejects kms-connector partial overrides when local migrations diverge", async () => {
+    const dir = await fixtureDir();
+    const lockFile = path.join(dir, "latest-release.json");
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
+    process.chdir(REPO_ROOT);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--target",
+          "latest-release",
+          "--lock-file",
+          lockFile,
+          "--override",
+          "kms-connector:gw-listener",
+          "--dry-run",
+        ],
+        {
+          runner: fakeRunner({
+            "git rev-parse -q --verify v0.11.0^{commit}": "",
+            "git ls-files --others --exclude-standard -- kms-connector/connector-db/migrations": "",
+            "git diff --quiet --exit-code v0.11.0 -- kms-connector/connector-db/migrations": {
+              stdout: "",
+              stderr: "",
+              code: 1,
+            },
+          }),
+          liveRunner: async () => 0,
+          now: () => "2026-03-06T00:00:00.000Z",
+          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
+          env: {},
+        },
+      );
+    } finally {
+      restore();
+    }
+    expect(logs.some((l) => l.includes("kms-connector: local DB migrations diverge from v0.11.0"))).toBe(true);
   });
 
   test("up --dry-run rejects latest-release partial overrides with untracked local migrations", async () => {
@@ -725,6 +833,63 @@ describe("runtime invariants", () => {
         await fs.writeFile(STATE_FILE, before);
       }
     }
+  });
+
+  test("resume rejects new overrides and topology flags", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--target",
+          "latest-release",
+          "--resume",
+          "--override",
+          "coprocessor",
+          "--coprocessors",
+          "2",
+        ],
+        noopDeps,
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((l) => l.includes("--resume uses the persisted stack configuration"))).toBe(true);
+  });
+
+  test("resume logs when there is nothing left to do", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        noopDeps,
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((l) => l.includes("[resume] nothing to do"))).toBe(true);
   });
 
   test("down restores generated runtime artifacts from state before teardown", async () => {
@@ -1107,8 +1272,8 @@ describe("compat policy edge cases", () => {
   test("host-listener-poller gets legacy api key too", () => {
     const policy = compatPolicyForState(stateWith("v0.11.0", "v0.11.0"));
     expect(policy.coprocessorArgs["host-listener-poller"]).toEqual([
-      ["--coprocessor-api-key", "COPROCESSOR_API_KEY"],
-    ]);
+      ["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }],
+    ] as const);
   });
 });
 

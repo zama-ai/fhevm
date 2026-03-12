@@ -2,18 +2,19 @@ import type { State } from "./types";
 
 type CompatSemver = readonly [number, number, number];
 type CompatService = "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
+type CompatArgValue = { env: string } | { value: string };
 
 export type CompatPolicy = {
-  coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, string]>>>;
+  coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, CompatArgValue]>>>;
   connectorEnv: Record<string, string>;
 };
 
 const COMPAT_PROFILES = {
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {
-      "host-listener": [["--coprocessor-api-key", "COPROCESSOR_API_KEY"]],
-      "host-listener-poller": [["--coprocessor-api-key", "COPROCESSOR_API_KEY"]],
-      "sns-worker": [["--tenant-api-key", "TENANT_API_KEY"]],
+      "host-listener": [["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }]],
+      "host-listener-poller": [["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }]],
+      "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     connectorEnv: {},
   },
@@ -25,17 +26,17 @@ const COMPAT_PROFILES = {
   },
   "legacy-tx-sender-host-chain-url": {
     coprocessorArgs: {
-      "transaction-sender": [["--host-chain-url", "RPC_WS_URL"]],
+      "transaction-sender": [["--host-chain-url", { env: "RPC_WS_URL" }]],
     },
     connectorEnv: {},
   },
   "legacy-tx-sender-gateway-flags": {
     coprocessorArgs: {
       "transaction-sender": [
-        ["--multichain-acl-address", "MULTICHAIN_ACL_ADDRESS"],
-        ["--delegation-fallback-polling", "30"],
-        ["--delegation-max-retry", "100000"],
-        ["--retry-immediately-on-nonce-error", "2"],
+        ["--multichain-acl-address", { env: "MULTICHAIN_ACL_ADDRESS" }],
+        ["--delegation-fallback-polling", { value: "30" }],
+        ["--delegation-max-retry", { value: "100000" }],
+        ["--retry-immediately-on-nonce-error", { value: "2" }],
       ],
     },
     connectorEnv: {},
@@ -44,11 +45,29 @@ const COMPAT_PROFILES = {
 
 const COMPAT_RULES = {
   coprocessor: [
-    { before: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys" },
-    { before: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags" },
-    { before: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url" },
+    {
+      before: [0, 12, 0] as CompatSemver,
+      profile: "legacy-coprocessor-api-keys",
+      versionKey: "COPROCESSOR_HOST_LISTENER_VERSION",
+    },
+    {
+      before: [0, 12, 0] as CompatSemver,
+      profile: "legacy-tx-sender-gateway-flags",
+      versionKey: "COPROCESSOR_TX_SENDER_VERSION",
+    },
+    {
+      before: [0, 11, 1] as CompatSemver,
+      profile: "legacy-tx-sender-host-chain-url",
+      versionKey: "COPROCESSOR_TX_SENDER_VERSION",
+    },
   ],
-  connector: [{ before: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id" }],
+  connector: [
+    {
+      before: [0, 11, 0] as CompatSemver,
+      profile: "legacy-connector-chain-id",
+      versionKey: "CONNECTOR_GW_LISTENER_VERSION",
+    },
+  ],
 } as const;
 
 const parseCompatVersion = (version: string) => {
@@ -87,7 +106,7 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "version
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
   for (const rule of COMPAT_RULES.coprocessor) {
-    if (!versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", rule.before)) {
+    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before)) {
       continue;
     }
     const profile = COMPAT_PROFILES[rule.profile];
@@ -99,7 +118,7 @@ export const compatPolicyForState = (state: State): CompatPolicy => {
     }
   }
   for (const rule of COMPAT_RULES.connector) {
-    if (!versionLt(state.versions.env.CONNECTOR_GW_LISTENER_VERSION ?? "", rule.before)) {
+    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before)) {
       continue;
     }
     Object.assign(policy.connectorEnv, COMPAT_PROFILES[rule.profile].connectorEnv);

@@ -325,7 +325,9 @@ const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 const simpleAclFloor = (commits: string[]) => {
   const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
   if (floor < 0) {
-    throw new Error(`simple-acl floor ${SIMPLE_ACL_MIN_SHA} was not found in fetched main history`);
+    throw new Error(
+      `simple-acl floor ${SIMPLE_ACL_MIN_SHA} was not found in fetched main history; increase the main history fetch window`,
+    );
   }
   return floor;
 };
@@ -386,7 +388,7 @@ export const resolveTarget = async (
     if (missing.length) {
       throw new Error(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
     }
-    const commits = await client.mainCommits(1000);
+    const commits = await client.mainCommits(5000);
     const floor = simpleAclFloor(commits);
     const index = commits.findIndex((sha) => sha.startsWith(tag));
     if (index < 0) {
@@ -398,7 +400,7 @@ export const resolveTarget = async (
     return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
   }
   const packageTags = await repoPackageTags(client);
-  const commits = await client.mainCommits(1000);
+  const commits = await client.mainCommits(5000);
   const floor = simpleAclFloor(commits);
   const short = commits.slice(0, floor + 1).map((sha) => sha.slice(0, 7)).find((sha) =>
     Object.values(packageTags).every((set) => set.has(sha) && REPO_TAG.test(sha)),

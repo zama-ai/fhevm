@@ -89,6 +89,7 @@ const SCHEMA_GUARDS = {
     repoPath: "kms-connector/connector-db/migrations",
   },
 } as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
+const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-release", "latest-main", "sha"]);
 
 const defaultDeps: RuntimeDeps = {
   runner: run,
@@ -326,7 +327,7 @@ const assertSchemaCompatibility = async (
   deps: RuntimeDeps,
   allowSchemaMismatch: boolean,
 ) => {
-  if (allowSchemaMismatch || bundle.target !== "latest-release") {
+  if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
     return;
   }
   for (const item of partialSchemaOverrides(overrides)) {
@@ -1008,6 +1009,44 @@ const startStep = (state: State, options: Pick<UpOptions, "resume" | "fromStep">
   return remaining ?? STEP_NAMES[STEP_NAMES.length - 1];
 };
 
+const describeResumeState = (state: State) => [
+  `target=${state.target}`,
+  `topology=${state.topology.count}/${state.topology.threshold}`,
+  ...(state.overrides.length ? [`overrides=${state.overrides.map(describeOverride).join(", ")}`] : []),
+].join(" ");
+
+const ensureResumeOptions = (state: State, options: UpOptions) => {
+  const mismatches: string[] = [];
+  if (state.target !== options.target) {
+    mismatches.push(`target=${options.target}`);
+  }
+  if (options.sha) {
+    mismatches.push(`sha=${options.sha}`);
+  }
+  if (options.lockFile) {
+    mismatches.push(`lock-file=${options.lockFile}`);
+  }
+  if (options.overrides.length) {
+    mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
+  }
+  if (
+    options.topology.count !== state.topology.count ||
+    options.topology.threshold !== state.topology.threshold ||
+    Object.keys(options.topology.instances).length
+  ) {
+    mismatches.push(`topology=${options.topology.count}/${options.topology.threshold}`);
+  }
+  if (options.allowSchemaMismatch) {
+    mismatches.push("--allow-schema-mismatch");
+  }
+  if (mismatches.length) {
+    throw new Error(
+      `--resume uses the persisted stack configuration; remove ${mismatches.join(", ")} or start a fresh stack. ` +
+        `Persisted state: ${describeResumeState(state)}`,
+    );
+  }
+};
+
 const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   let state = options.resume ? await loadState() : undefined;
   if (options.resume && !state) {
@@ -1016,11 +1055,13 @@ const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   if (!state) {
     state = await bootstrapState(options, deps);
   }
-  if (options.resume && state.target !== options.target) {
-    throw new Error(`Resume target mismatch: state=${state.target}, requested=${options.target}`);
-  }
   if (options.resume) {
+    ensureResumeOptions(state, options);
     await ensureRuntimeArtifacts(state, deps, "resume");
+    if (!options.fromStep && STEP_NAMES.every((step) => state.completedSteps.includes(step))) {
+      log("[resume] nothing to do");
+      return;
+    }
   }
   logOverrideWarnings(state.overrides);
   if (options.resume && options.fromStep) {

@@ -156,22 +156,28 @@ jobs:
           snapshot_logs() {
             local group="$1"
             local container="$2"
+            local filter="${3:-}"
             echo "::group::${group}"
-            docker logs --tail 200 "${container}" 2>&1 || true
+            if [ -n "$filter" ]; then
+              docker logs --tail 200 "${container}" 2>&1 | grep -v "$filter" || true
+            else
+              docker logs --tail 200 "${container}" 2>&1 || true
+            fi
             echo "::endgroup::"
           }
-          echo "::group::Relayer Logs"
-          docker logs --tail 200 fhevm-relayer 2>&1 || true
-          echo "::endgroup::"
-          echo "::group::SNS Worker Logs"
-          docker logs --tail 200 coprocessor-sns-worker 2>&1 | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Transaction Sender Logs (filtered)"
-          docker logs --tail 200 coprocessor-transaction-sender 2>&1 | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          snapshot_logs "Coprocessor 2 - SNS Worker" coprocessor2-sns-worker | grep -v "Selected 0 rows to process" || true
-          snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor2-transaction-sender | grep -v "Selected 0 rows to process" || true
-          snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor2-tfhe-worker
+          snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "Host Listener" coprocessor-host-listener
+          snapshot_logs "Gateway Listener" coprocessor-gw-listener
+          snapshot_logs "SNS Worker Logs" coprocessor-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Transaction Sender Logs (filtered)" coprocessor-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "ZKProof Worker" coprocessor-zkproof-worker
+          snapshot_logs "TFHE Worker" coprocessor-tfhe-worker
+          snapshot_logs "Coprocessor 2 - Host Listener" coprocessor1-host-listener
+          snapshot_logs "Coprocessor 2 - Gateway Listener" coprocessor1-gw-listener
+          snapshot_logs "Coprocessor 2 - SNS Worker" coprocessor1-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor1-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "Coprocessor 2 - ZKProof Worker" coprocessor1-zkproof-worker
+          snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor1-tfhe-worker
 
       - name: Cleanup
         working-directory: test-suite/fhevm

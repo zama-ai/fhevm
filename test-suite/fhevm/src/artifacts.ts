@@ -218,7 +218,12 @@ const applyInstanceAdjustments = (
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     const key = String(next.container_name ?? "").replace(/^coprocessor\d*-/, "") as keyof CompatPolicy["coprocessorArgs"];
-    const extras = (compatArgs[key] ?? []).flatMap(([flag, envKey]) => (envVars[envKey] ? [flag, envVars[envKey]] : []));
+    const extras = (compatArgs[key] ?? []).flatMap(([flag, source]) => {
+      if ("value" in source) {
+        return [flag, source.value];
+      }
+      return envVars[source.env] ? [flag, envVars[source.env]] : [];
+    });
     if (extras.length) {
       next.command = mergeArgs(current, extras);
     }
@@ -445,7 +450,7 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       KMS_CONNECTOR_HOST_CHAINS: JSON.stringify([
         {
           url: state.discovery.endpoints.hostHttp,
-          chain_id: 12345,
+          chain_id: Number(envs["coprocessor"].CHAIN_ID ?? "12345"),
           acl_address: state.discovery.host.ACL_CONTRACT_ADDRESS,
         },
       ]),
