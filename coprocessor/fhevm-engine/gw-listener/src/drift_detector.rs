@@ -193,8 +193,10 @@ impl DriftDetector {
             senders: event.coprocessorTxSenders.clone(),
         });
         state.local_consensus_checked = false;
-        CONSENSUS_LATENCY_BLOCKS_HISTOGRAM
-            .observe(context.block_number.saturating_sub(state.first_seen_block) as f64);
+        if self.alerts_enabled {
+            CONSENSUS_LATENCY_BLOCKS_HISTOGRAM
+                .observe(context.block_number.saturating_sub(state.first_seen_block) as f64);
+        }
         self.try_check_local_consensus(handle, db_pool).await
     }
 
@@ -222,6 +224,12 @@ impl DriftDetector {
         handle: FixedBytes<32>,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
+        if !self.alerts_enabled {
+            // During rebuild replay, skip DB queries. The handle will be re-checked
+            // via refresh_pending_consensus_checks once alerts are re-enabled.
+            return Ok(());
+        }
+
         let Some(state) = self.open_handles.get(&handle) else {
             return Ok(());
         };
@@ -300,10 +308,6 @@ impl DriftDetector {
                 "Drift detected: local digest does not match consensus"
             );
             self.deferred_metrics.drift_detected += 1;
-        }
-
-        if !self.alerts_enabled {
-            return Ok(());
         }
 
         let Some(state) = self.open_handles.get_mut(&handle) else {
@@ -514,7 +518,7 @@ impl DriftDetector {
             return;
         };
 
-        if state.submissions.len() != state.expected_senders.len() {
+        if state.submissions.len() < state.expected_senders.len() {
             return;
         }
 
@@ -1605,6 +1609,59 @@ mod tests {
         assert!(state.local_consensus_checked);
         // Consensus digest [0xFF] != local digest [0xBB] → drift.
         assert_eq!(detector.deferred_metrics.drift_detected, 1);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn unexpected_sender_does_not_block_completion() {
+        let (pool, _inst) = setup_db().await;
+        let handle_bytes = [0xAE; 32];
+        let handle = FixedBytes::from(handle_bytes);
+        let digest = FixedBytes::from([0xEE; 32]);
+        let digest128 = FixedBytes::from([0xDD; 32]);
+
+        insert_ciphertext_digest(
+            &pool,
+            12345,
+            [0u8; 32],
+            &handle_bytes,
+            &[0xEE; 32],
+            &[0xDD; 32],
+            0,
+        )
+        .await
+        .unwrap();
+
+        let mut detector = detector(); // expects 3 senders
+
+        // Submit from 3 expected senders + 1 unexpected sender.
+        for &sender in &senders() {
+            detector.observe_submission(
+                make_submission_event(handle, digest, digest128, sender),
+                context(10),
+            );
+        }
+        let unexpected_sender = Address::left_padding_from(&[99]);
+        detector.observe_submission(
+            make_submission_event(handle, digest, digest128, unexpected_sender),
+            context(10),
+        );
+
+        // Process consensus.
+        detector
+            .handle_consensus(
+                make_consensus_event(handle, digest, digest128, senders()),
+                context(11),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        // Handle should be completed and removed (not stuck open).
+        assert!(
+            !detector.open_handles.contains_key(&handle),
+            "handle with unexpected sender should still complete"
+        );
     }
 
     #[tokio::test]

@@ -48,12 +48,18 @@ docker exec \
   "$TEST_CONTAINER" \
   ./run-tests.sh -n staging -g "$GREP_PATTERN" || test_exit=$?
 
-wait "$injector_pid"
+injector_exit=0
+wait "$injector_pid" || injector_exit=$?
 injector_pid=""
 handle_hex="$(cat "$HANDLE_FILE")"
 
 if [ "$test_exit" -ne 0 ]; then
   exit "$test_exit"
+fi
+
+if [ "$injector_exit" -ne 0 ]; then
+  echo "drift injector failed with exit code ${injector_exit}" >&2
+  exit "$injector_exit"
 fi
 
 if ! detecting_container="$(wait_for_drift_log "$handle_hex")"; then
