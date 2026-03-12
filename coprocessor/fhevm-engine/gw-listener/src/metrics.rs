@@ -1,4 +1,4 @@
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use std::sync::LazyLock;
 
 pub(crate) static VERIFY_PROOF_SUCCESS_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -120,3 +120,30 @@ pub(crate) static MISSING_SUBMISSION_COUNTER: LazyLock<IntCounter> = LazyLock::n
     )
     .unwrap()
 });
+
+pub(crate) static CONSENSUS_LATENCY_BLOCKS_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    // Use this distribution to tune `--drift-no-consensus-timeout-blocks`.
+    // In steady state, that timeout should sit above the normal tail of
+    // `consensus_block - first_seen_block` so we alert on truly stalled handles
+    // without retaining healthy ones for too long.
+    register_histogram!(
+        "coprocessor_gw_listener_consensus_latency_blocks",
+        "Block distance between first observed submission and consensus",
+        vec![1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0, 144.0]
+    )
+    .unwrap()
+});
+
+pub(crate) static POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM: LazyLock<Histogram> =
+    LazyLock::new(|| {
+        // Use this distribution to tune `--drift-post-consensus-grace-blocks`.
+        // In steady state, that grace window should sit above the normal tail of
+        // `all_submissions_seen_block - consensus_block` so lagging-but-healthy
+        // coprocessors do not page, while truly missing submissions age out.
+        register_histogram!(
+            "coprocessor_gw_listener_post_consensus_completion_blocks",
+            "Block distance between consensus and seeing all expected submissions",
+            vec![0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0]
+        )
+        .unwrap()
+    });

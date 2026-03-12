@@ -7,7 +7,8 @@ use sqlx::{Pool, Postgres, Row};
 use tracing::{debug, warn};
 
 use crate::metrics::{
-    CONSENSUS_TIMEOUT_COUNTER, DRIFT_DETECTED_COUNTER, MISSING_SUBMISSION_COUNTER,
+    CONSENSUS_LATENCY_BLOCKS_HISTOGRAM, CONSENSUS_TIMEOUT_COUNTER, DRIFT_DETECTED_COUNTER,
+    MISSING_SUBMISSION_COUNTER, POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM,
 };
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
@@ -201,6 +202,8 @@ impl DriftDetector {
             senders: event.coprocessorTxSenders.clone(),
         });
         state.local_consensus_checked = false;
+        CONSENSUS_LATENCY_BLOCKS_HISTOGRAM
+            .observe(context.block_number.saturating_sub(state.first_seen_block) as f64);
         self.try_check_local_consensus(handle, db_pool).await
     }
 
@@ -526,6 +529,13 @@ impl DriftDetector {
             if !state.local_consensus_checked {
                 return;
             }
+            let consensus_block = state
+                .consensus
+                .as_ref()
+                .map(|consensus| consensus.block_number)
+                .unwrap_or(state.last_seen_block);
+            POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM
+                .observe(state.last_seen_block.saturating_sub(consensus_block) as f64);
             self.open_handles.remove(&handle);
         }
     }
@@ -636,6 +646,69 @@ fn address_strings(addresses: &[Address]) -> Vec<String> {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+
+    #[test]
+    fn rebuild_preserves_state_across_batches() {
+        let sender_a = Address::from([0x11; 20]);
+        let sender_b = Address::from([0x22; 20]);
+        let sender_c = Address::from([0x33; 20]);
+        let handle = FixedBytes::from([0x44; 32]);
+        let digest_a = FixedBytes::from([0x55; 32]);
+        let digest_b = FixedBytes::from([0x66; 32]);
+        let digest_128 = FixedBytes::from([0x77; 32]);
+        let mut detector = DriftDetector::new(
+            vec![sender_a, sender_b, sender_c],
+            ChainId::try_from(12345_u64).unwrap(),
+            50,
+            10,
+        );
+
+        detector.set_alerts_enabled(false);
+
+        detector.observe_submission(
+            make_submission_event(handle, digest_a, digest_128, sender_a),
+            EventContext {
+                block_number: 100,
+                block_hash: None,
+                tx_hash: None,
+                log_index: Some(0),
+            },
+        );
+        detector.observe_submission(
+            make_submission_event(handle, digest_b, digest_128, sender_b),
+            EventContext {
+                block_number: 103,
+                block_hash: None,
+                tx_hash: None,
+                log_index: Some(0),
+            },
+        );
+
+        let state = detector
+            .open_handles
+            .get(&handle)
+            .expect("handle is tracked");
+        assert_eq!(state.first_seen_block, 100);
+        assert_eq!(state.last_seen_block, 103);
+        assert_eq!(state.submissions.len(), 2);
+        assert_eq!(variant_summaries(&state.submissions).len(), 2);
+        assert!(!state.drift_reported);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+
+        detector.set_alerts_enabled(true);
+        detector.evaluate_open_handles(103);
+
+        let state = detector
+            .open_handles
+            .get(&handle)
+            .expect("handle remains open");
+        assert!(state.drift_reported);
+        assert_eq!(state.first_seen_block, 100);
+        assert_eq!(state.last_seen_block, 103);
+        assert_eq!(state.submissions.len(), 2);
+        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+    }
 
     fn make_submission_event(
         handle: FixedBytes<32>,
