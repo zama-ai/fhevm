@@ -170,16 +170,23 @@ jobs:
                 echo "::error::image_mode=workspace requires override"
                 exit 1
               fi
+              workspace_all=false
               IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
               for raw in "${overrides[@]}"; do
                 override="${raw#"${raw%%[![:space:]]*}"}"
                 override="${override%"${override##*[![:space:]]}"}"
                 [ -n "$override" ] || continue
+                if [ "$override" = "all" ]; then
+                  workspace_all=true
+                fi
                 printf '%s\n%s\n' --override "$override" >> "$args_file"
               done
               if ! grep -qx -- --override "$args_file"; then
                 echo "::error::override did not contain any usable values"
                 exit 1
+              fi
+              if [ "$workspace_all" = true ] && [ -z "${RELAYER_VERSION:-}" ]; then
+                echo "RELAYER_VERSION=sha-29b0750" >> "$GITHUB_ENV"
               fi
               ;;
             *)
