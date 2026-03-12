@@ -144,7 +144,7 @@ describe('User decryption', function () {
           privateKeyBob,
           publicKeyBob,
         );
-        expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
+        expect.fail('Expected an error to be thrown - user is not allowed for handle');
       } catch (error) {
         expect(error.message).to.equal(
           `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
