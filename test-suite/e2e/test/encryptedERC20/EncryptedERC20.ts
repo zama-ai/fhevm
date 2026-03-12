@@ -101,23 +101,6 @@ describe('EncryptedERC20', function () {
     );
 
     expect(balanceBob).to.equal(1337);
-
-    // on the other hand, Bob should be unable to read Alice's balance
-    try {
-      await userDecryptSingleHandle(
-        balanceHandleAlice,
-        this.contractAddress,
-        this.instances.bob,
-        this.signers.bob,
-        privateKeyBob,
-        publicKeyBob,
-      );
-      expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
-    } catch (error) {
-      expect(error.message).to.equal(
-        `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${balanceHandleAlice}!`,
-      );
-    }
   });
 
   it('should not transfer tokens between two users', async function () {
@@ -250,5 +233,41 @@ describe('EncryptedERC20', function () {
       publicKeyBob,
     );
     expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
+  });
+
+  describe('negative', function () {
+    it('should reject when user is not allowed for handle', async function () {
+      const transaction = await this.erc20.mint(10000);
+      await transaction.wait();
+
+      const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+      input.add64(1337);
+      const encryptedTransferAmount = await input.encrypt();
+      const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+        this.signers.bob.address,
+        encryptedTransferAmount.handles[0],
+        encryptedTransferAmount.inputProof,
+      );
+      await tx.wait();
+
+      const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
+      const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
+
+      try {
+        await userDecryptSingleHandle(
+          balanceHandleAlice,
+          this.contractAddress,
+          this.instances.bob,
+          this.signers.bob,
+          privateKeyBob,
+          publicKeyBob,
+        );
+        expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
+      } catch (error) {
+        expect(error.message).to.equal(
+          `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${balanceHandleAlice}!`,
+        );
+      }
+    });
   });
 });
