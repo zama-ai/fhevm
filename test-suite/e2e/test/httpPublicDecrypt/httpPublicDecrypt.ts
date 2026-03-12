@@ -44,7 +44,7 @@ describe('HTTPPublicDecrypt', function () {
       const factory = await ethers.getContractFactory('UserDecrypt');
       const contract = await factory.connect(this.signers.alice).deploy();
       await contract.waitForDeployment();
-      const handle = await contract.xBool();
+      const handle = await contract.xUint8();
 
       try {
         await this.instances.alice.publicDecrypt([handle]);
