@@ -1191,6 +1191,249 @@ mod tests {
     }
 
     #[test]
+    fn missing_submission_within_grace_period_is_not_evicted() {
+        let mut detector = detector(); // post_consensus_grace_blocks = 2
+        let handle = FixedBytes::from([1u8; 32]);
+
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                senders()[0],
+            ),
+            context(10),
+        );
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                senders()[1],
+            ),
+            context(11),
+        );
+
+        // Inject consensus at block 12 and mark local check done.
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
+            context: EventContext {
+                block_number: 12,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+            },
+            digests: DigestPair {
+                ciphertext_digest: FixedBytes::from([2u8; 32]),
+                ciphertext128_digest: FixedBytes::from([3u8; 32]),
+            },
+            senders: vec![senders()[0], senders()[1]],
+        });
+        detector
+            .open_handles
+            .get_mut(&handle)
+            .unwrap()
+            .local_consensus_checked = true;
+
+        // Block 13: 13 - 12 = 1 < 2 (grace), should NOT evict.
+        detector.evict_stale(13);
+
+        assert_eq!(detector.deferred_metrics.missing_submission, 0);
+        assert!(detector.open_handles.contains_key(&handle));
+
+        // Block 14: 14 - 12 = 2, NOT < 2, should evict.
+        detector.evict_stale(14);
+
+        assert_eq!(detector.deferred_metrics.missing_submission, 1);
+        assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
+    fn timeout_within_no_consensus_window_is_not_evicted() {
+        let mut detector = detector(); // no_consensus_timeout_blocks = 5
+        let handle = FixedBytes::from([1u8; 32]);
+
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                senders()[0],
+            ),
+            context(10),
+        );
+
+        // Block 14: 14 - 10 = 4 < 5 (timeout window), should NOT evict.
+        detector.evict_stale(14);
+
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert!(detector.open_handles.contains_key(&handle));
+
+        // Block 15: 15 - 10 = 5, NOT < 5, should evict.
+        detector.evict_stale(15);
+
+        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+        assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
+    fn consensus_before_any_submission_creates_handle_state() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([0xBE; 32]);
+        let digest = FixedBytes::from([0xAA; 32]);
+        let digest128 = FixedBytes::from([0xBB; 32]);
+
+        // Manually inject consensus without any prior observe_submission.
+        // This simulates consensus arriving before any peer submission is seen.
+        detector.open_handles.insert(
+            handle,
+            HandleState {
+                first_seen_block: 20,
+                first_seen_block_hash: None,
+                last_seen_block: 20,
+                expected_senders: senders(),
+                submissions: Vec::new(),
+                consensus: Some(ConsensusState {
+                    context: EventContext {
+                        block_number: 20,
+                        block_hash: None,
+                        tx_hash: None,
+                        log_index: None,
+                    },
+                    digests: DigestPair {
+                        ciphertext_digest: digest,
+                        ciphertext128_digest: digest128,
+                    },
+                    senders: senders(),
+                }),
+                local_consensus_checked: true,
+                drift_reported: false,
+            },
+        );
+
+        // Handle should remain open (0 submissions != 3 expected senders).
+        detector.finish_if_complete(handle);
+        assert!(detector.open_handles.contains_key(&handle));
+
+        // After grace period, should alert about missing submissions.
+        detector.evict_stale(23); // 23 - 20 = 3 > post_consensus_grace_blocks(2)
+        assert_eq!(detector.deferred_metrics.missing_submission, 1);
+        assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
+    fn equivocation_warns_but_does_not_duplicate_submission() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([1u8; 32]);
+        let sender = senders()[0];
+
+        // First submission from sender.
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                sender,
+            ),
+            context(10),
+        );
+
+        // Same sender, different digests (equivocation).
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([9u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                sender,
+            ),
+            context(11),
+        );
+
+        let state = detector.open_handles.get(&handle).unwrap();
+        // Should still have only 1 submission (the first one).
+        assert_eq!(state.submissions.len(), 1);
+        assert_eq!(
+            state.submissions[0].digests.ciphertext_digest,
+            FixedBytes::from([2u8; 32])
+        );
+        // No drift_detected metric (equivocation is not multi-variant drift).
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+    }
+
+    #[test]
+    fn duplicate_submission_same_digests_is_ignored() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([1u8; 32]);
+        let sender = senders()[0];
+
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                sender,
+            ),
+            context(10),
+        );
+
+        // Exact same submission again.
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                sender,
+            ),
+            context(11),
+        );
+
+        let state = detector.open_handles.get(&handle).unwrap();
+        assert_eq!(state.submissions.len(), 1);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+    }
+
+    #[test]
+    fn local_check_not_ready_evicts_after_timeout() {
+        // Consensus arrives but local_consensus_checked stays false (simulating
+        // the DB digest never becoming available). After no_consensus_timeout_blocks
+        // the handle should be evicted with a warning.
+        let mut detector = detector(); // no_consensus_timeout_blocks = 5
+        let handle = FixedBytes::from([0xDD; 32]);
+
+        detector.observe_submission(
+            make_submission_event(
+                handle,
+                FixedBytes::from([2u8; 32]),
+                FixedBytes::from([3u8; 32]),
+                senders()[0],
+            ),
+            context(10),
+        );
+
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
+            context: EventContext {
+                block_number: 12,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+            },
+            digests: DigestPair {
+                ciphertext_digest: FixedBytes::from([2u8; 32]),
+                ciphertext128_digest: FixedBytes::from([3u8; 32]),
+            },
+            senders: vec![senders()[0]],
+        });
+        // local_consensus_checked remains false (default).
+
+        // Within timeout: 16 - 12 = 4 < 5, should not evict.
+        detector.evict_stale(16);
+        assert!(detector.open_handles.contains_key(&handle));
+
+        // At timeout: 17 - 12 = 5, should evict.
+        detector.evict_stale(17);
+        assert!(!detector.open_handles.contains_key(&handle));
+    }
+
+    #[test]
     fn flush_resets_counters() {
         let mut detector = detector();
         detector.deferred_metrics.drift_detected = 1;
@@ -1316,5 +1559,111 @@ mod tests {
             .unwrap();
         assert!(state.local_consensus_checked);
         assert_eq!(detector.deferred_metrics.drift_detected, 1);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_defers_when_local_digests_are_null() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xAC; 32];
+
+        // Insert a row with NULL ciphertext digests (digest computation not yet complete).
+        sqlx::query(
+            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count)
+             VALUES (12345, $1, $2, $3, $4, 0)",
+        )
+        .bind(&[0u8; 32][..])
+        .bind(&handle[..])
+        .bind(None::<&[u8]>)
+        .bind(None::<&[u8]>)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from([0xFF; 32]),
+                    FixedBytes::from([0xCC; 32]),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        // Consensus was processed but local check should be deferred (digests NULL).
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+
+        // Now populate the digests (simulating the worker finishing computation).
+        let local_ct = vec![0xBBu8; 32];
+        let local_ct128 = vec![0xCCu8; 32];
+        sqlx::query(
+            "UPDATE ciphertext_digest SET ciphertext = $1, ciphertext128 = $2 WHERE handle = $3",
+        )
+        .bind(&local_ct)
+        .bind(&local_ct128)
+        .bind(&handle[..])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // refresh should now complete the check and detect the mismatch.
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        // Consensus digest [0xFF] != local digest [0xBB] → drift.
+        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_no_drift_when_local_digests_match() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xAD; 32];
+        let digest = [0xEE; 32];
+        let digest128 = [0xDD; 32];
+
+        insert_ciphertext_digest(&pool, 12345, [0u8; 32], &handle, &digest, &digest128, 0)
+            .await
+            .unwrap();
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(digest),
+                    FixedBytes::from(digest128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        // Digests match → no drift, local check complete.
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        assert_eq!(detector.deferred_metrics.drift_detected, 0);
     }
 }
