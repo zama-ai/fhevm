@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAULTY_INSTANCE_INDEX="${FAULTY_INSTANCE_INDEX:-1}"
-FAULTY_TX_SENDER_CONTAINER="${FAULTY_TX_SENDER_CONTAINER:-coprocessor${FAULTY_INSTANCE_INDEX}-transaction-sender}"
 TEST_CONTAINER="${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}"
 GREP_PATTERN="${GREP_PATTERN:-test user input uint64 \\(non-trivial\\)}"
 METRIC_NAME="coprocessor_gw_listener_drift_detected_counter"
@@ -43,16 +42,13 @@ cleanup() {
   if [ -n "$injector_pid" ] && kill -0 "$injector_pid" >/dev/null 2>&1; then
     kill "$injector_pid" >/dev/null 2>&1 || true
   fi
-  docker start "$FAULTY_TX_SENDER_CONTAINER" >/dev/null 2>&1 || true
   rm -f "$HANDLE_FILE"
 }
 
 trap cleanup EXIT
 
 baseline_metric="$(metric_total)"
-
-TX_SENDER_CONTAINER="$FAULTY_TX_SENDER_CONTAINER" \
-  "${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
+"${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
 injector_pid=$!
 
 docker exec \
