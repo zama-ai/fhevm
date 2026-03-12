@@ -277,6 +277,13 @@ impl DriftDetector {
                 || consensus.digests.ciphertext128_digest.as_slice()
                     != local_ciphertext128_digest.as_slice())
         {
+            let local_digests =
+                digest_pair_from_db_digests(&local_ciphertext_digest, &local_ciphertext128_digest)?;
+            let local_variant_sender_count =
+                sender_count_for_variant(&state.submissions, local_digests);
+            let consensus_variant_sender_count =
+                sender_count_for_variant(&state.submissions, consensus.digests);
+            let observed_variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
@@ -290,6 +297,11 @@ impl DriftDetector {
                 consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                 local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
                 local_ciphertext128_digest = %to_hex(&local_ciphertext128_digest),
+                local_matches_observed_variant = local_variant_sender_count > 0,
+                local_variant_sender_count,
+                consensus_variant_sender_count,
+                observed_variant_count = observed_variants.len(),
+                observed_variants = ?observed_variants,
                 source = "consensus",
                 "Drift detected: local digest does not match consensus"
             );
@@ -582,6 +594,38 @@ fn missing_sender_strings(expected_senders: &[Address], submissions: &[Submissio
             .filter(|sender| !seen.contains(sender))
             .collect::<Vec<_>>(),
     )
+}
+
+fn sender_count_for_variant(submissions: &[Submission], digests: DigestPair) -> usize {
+    submissions
+        .iter()
+        .filter(|submission| submission.digests == digests)
+        .count()
+}
+
+fn digest_pair_from_db_digests(
+    ciphertext_digest: &[u8],
+    ciphertext128_digest: &[u8],
+) -> anyhow::Result<DigestPair> {
+    let ciphertext_digest: [u8; 32] = ciphertext_digest.try_into().map_err(|_| {
+        anyhow::anyhow!(
+            "Failed to convert local ciphertext digest to [u8; 32] (len={}): 0x{}",
+            ciphertext_digest.len(),
+            to_hex(ciphertext_digest)
+        )
+    })?;
+    let ciphertext128_digest: [u8; 32] = ciphertext128_digest.try_into().map_err(|_| {
+        anyhow::anyhow!(
+            "Failed to convert local ciphertext128 digest to [u8; 32] (len={}): 0x{}",
+            ciphertext128_digest.len(),
+            to_hex(ciphertext128_digest)
+        )
+    })?;
+
+    Ok(DigestPair {
+        ciphertext_digest: FixedBytes::from(ciphertext_digest),
+        ciphertext128_digest: FixedBytes::from(ciphertext128_digest),
+    })
 }
 
 fn address_strings(addresses: &[Address]) -> Vec<String> {
