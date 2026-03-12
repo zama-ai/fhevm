@@ -169,6 +169,7 @@ jobs:
           args_file="$RUNNER_TEMP/fhevm-up-args"
           modern_relayer_version=sha-29b0750
           modern_relayer_migrate_version=sha-29b0750
+          workspace_all=false
           printf '%s\n%s\n%s\n%s\n%s\n%s\n' --target latest-release --coprocessors 2 --threshold 2 > "$args_file"
           case "$IMAGE_MODE" in
             registry)
@@ -182,7 +183,6 @@ jobs:
                 echo "::error::image_mode=workspace requires override"
                 exit 1
               fi
-              workspace_all=false
               IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
               for raw in "${overrides[@]}"; do
                 override="${raw#"${raw%%[![:space:]]*}"}"
