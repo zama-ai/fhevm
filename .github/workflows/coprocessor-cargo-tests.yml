@@ -51,6 +51,9 @@ jobs:
     - name: Checkout LFS objects
       run: git lfs checkout
 
+    - name: Setup Rust toolchain file
+      run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
+
     - name: Setup Rust
       uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
 
