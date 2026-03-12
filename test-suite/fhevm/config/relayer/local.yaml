@@ -1,3 +1,7 @@
+host_chains:
+  - chain_id: 12345
+    url: "http://host-node:8545"
+    acl_address: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
 
 gateway:
   blockchain_rpc:
@@ -70,9 +74,14 @@ gateway:
     tx_throttler_capacity: 11000 # To allow actual capacity of 10k, after accounting for safety margin.
     tx_throttler_safety_margin: 1000
   readiness_checker:
-    retry:
-      max_attempts: 30
-      retry_interval_ms: 2000
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 15
+        retry_interval_ms: 2000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -86,24 +95,23 @@ gateway:
       capacity: 11000
       safety_margin: 1000
   contracts:
-    decryption_address: "0x35760912360E875DA50D40a74305575c23D55783"
-    input_verification_address: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+    decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
 log:
-
-  format: "compact"          # compact, pretty, or json
+  format: "compact" # compact, pretty, or json
   show_file_line: true
   show_thread_ids: true
   show_timestamp: true
   show_target: true
 
 keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "http://0.0.0.0:3001/publicKey.bin"
-    crs:
-      data_id: "crs-data-id"
-      url: "http://0.0.0.0:3001/crs2048.bin"
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://0.0.0.0:3001/publicKey.bin"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://0.0.0.0:3001/crs2048.bin"
 
 http:
   endpoint: "0.0.0.0:3000"
