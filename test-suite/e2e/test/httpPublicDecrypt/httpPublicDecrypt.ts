@@ -39,17 +39,19 @@ describe('HTTPPublicDecrypt', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('test public decrypt should fail for non-publicly-decryptable handle', async function () {
-    const factory = await ethers.getContractFactory('UserDecrypt');
-    const contract = await factory.connect(this.signers.alice).deploy();
-    await contract.waitForDeployment();
-    const handle = await contract.xBool();
+  describe('negative', function () {
+    it('should reject when handle is not publicly decryptable', async function () {
+      const factory = await ethers.getContractFactory('UserDecrypt');
+      const contract = await factory.connect(this.signers.alice).deploy();
+      await contract.waitForDeployment();
+      const handle = await contract.xBool();
 
-    try {
-      await this.instances.alice.publicDecrypt([handle]);
-      expect.fail('Expected an error - handle is not publicly decryptable');
-    } catch (error) {
-      expect(error.message).to.include('not allowed for public decryption');
-    }
+      try {
+        await this.instances.alice.publicDecrypt([handle]);
+        expect.fail('Expected an error - handle is not publicly decryptable');
+      } catch (error) {
+        expect(error.message).to.include('not allowed for public decryption');
+      }
+    });
   });
 });
