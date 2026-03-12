@@ -58,7 +58,9 @@ export const readJson = async <T>(file: string) => JSON.parse(await fs.readFile(
 
 export const writeJson = async (file: string, value: unknown) => {
   await ensureDir(path.dirname(file));
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  await fs.rename(tmp, file);
 };
 
 export const parseEnv = (text: string) => {
