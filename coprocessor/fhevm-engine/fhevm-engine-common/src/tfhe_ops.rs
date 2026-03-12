@@ -291,10 +291,10 @@ pub fn extract_ct_list(
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     let mut res = Vec::new();
     for idx in 0..expanded.len() {
-        let Some(data_kind) = expanded.get_kind_of(idx) else {
+        let data_kind = expanded.get_kind_of(idx).ok_or_else(|| {
             tracing::error!(len = expanded.len(), idx, "get_kind_of returned None");
-            continue;
-        };
+            FhevmError::MissingTfheRsData
+        })?;
 
         match data_kind {
             tfhe::FheTypes::Bool => {
