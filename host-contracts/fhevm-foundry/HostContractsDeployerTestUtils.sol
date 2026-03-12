@@ -84,7 +84,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address verifyingContractSource,
         uint64 chainIDSource,
         address[] memory initialSigners,
-        uint256 initialThreshold
+        uint256 initialThreshold,
+        KMSVerifier.MpcNode[] memory mpcNodes,
+        string memory softwareVersion,
+        KMSVerifier.PcrValues[] memory pcrValues
     ) internal returns (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
@@ -103,7 +106,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
             kmsVerifierImplementation,
             abi.encodeCall(
                 KMSVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
+                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold, mpcNodes, softwareVersion, pcrValues)
             )
         );
 
@@ -178,7 +181,16 @@ abstract contract HostContractsDeployerTestUtils is Test {
         PauserSet pauserSet = _deployPauserSet();
         (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
-        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource, kmsSigners, kmsThreshold);
+        _deployKMSVerifier(
+            owner,
+            kmsVerifyingSource,
+            chainIDSource,
+            kmsSigners,
+            kmsThreshold,
+            new KMSVerifier.MpcNode[](0),
+            "",
+            new KMSVerifier.PcrValues[](0)
+        );
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
 
         vm.prank(owner);

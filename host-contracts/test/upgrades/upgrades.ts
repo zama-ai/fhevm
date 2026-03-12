@@ -49,10 +49,10 @@ describe('Upgrades', function () {
     });
     const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, { unsafeAllow: ['missing-initializer'] });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.2.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.3.0');
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
-    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
+    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.4.0');
   });
 
   it('deploy upgradeable FHEVMExecutor', async function () {
@@ -83,7 +83,10 @@ describe('Upgrades', function () {
       kind: 'uups',
     });
     const payment = await upgrades.upgradeProxy(emptyUUPS, paymentFactory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')],
+      },
     });
     await payment.waitForDeployment();
     expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');

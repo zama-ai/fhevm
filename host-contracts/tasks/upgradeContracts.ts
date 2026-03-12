@@ -299,12 +299,7 @@ task('task:upgradeHCULimit')
     '5000000',
     types.string,
   )
-  .addOptionalParam(
-    'maxHcuPerTx',
-    'Max total HCU per transaction (default: 20000000)',
-    '20000000',
-    types.string,
-  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (
     {
       currentImplementation,
