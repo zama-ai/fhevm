@@ -50,6 +50,7 @@ import {
   sleep,
   toServiceName,
   toError,
+  uint256ToId,
   withHexPrefix,
   writeJson,
 } from "./utils";
@@ -478,7 +479,7 @@ const discoverSigner = async (deps: RuntimeDeps) => {
       }
       return (await response.text()).trim();
     }
-    if (attempt === 2 || (attempt > 0 && attempt % 10 === 0)) {
+    if (shouldLogRetry(attempt)) {
       log("[wait] kms signer handle");
     }
     await sleep(1000);
@@ -599,17 +600,19 @@ export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 
   if (actualKey === 0n || actualCrs === 0n) {
     return false;
   }
-  const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-  const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
+  const actualFheKeyId = uint256ToId(actualKey);
+  const actualCrsKeyId = uint256ToId(actualCrs);
   // Keys are on-chain — material MUST appear. Let ensureMaterialUrl throw if it doesn't.
-  await ensureMaterialUrl(
-    deps,
-    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
-  );
-  await ensureMaterialUrl(
-    deps,
-    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
-  );
+  await Promise.all([
+    ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
+    ),
+    ensureMaterialUrl(
+      deps,
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
+    ),
+  ]);
   state.discovery!.actualFheKeyId = actualFheKeyId;
   state.discovery!.actualCrsKeyId = actualCrsKeyId;
   if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
@@ -648,8 +651,11 @@ const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
       if (response.ok) {
         return;
       }
-    } catch {
+    } catch (error) {
       // network not ready yet (ECONNREFUSED, DNS, etc.) — retry
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] material: ${toError(error).message}`);
+      }
     }
     await sleep(1000);
   }
