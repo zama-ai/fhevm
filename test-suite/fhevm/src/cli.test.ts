@@ -391,7 +391,7 @@ describe("runtime invariants", () => {
     ).toBeDefined();
   });
 
-  test("probeBootstrap treats transient material fetch failures as retryable", async () => {
+  test("probeBootstrap treats ethCallId failures as retryable", async () => {
     const state = stubState({
       discovery: {
         gateway: { KMS_GENERATION_ADDRESS: "0x1234" },
@@ -415,9 +415,7 @@ describe("runtime invariants", () => {
         ...noopDeps,
         fetch: (async (_url: string | URL, init?: RequestInit) => {
           if (init?.method === "POST") {
-            const payload = JSON.parse(String(init.body)) as { data: string };
-            const result = payload.data === "0xd52f10eb" ? `0x${"1".padStart(64, "0")}` : `0x${"2".padStart(64, "0")}`;
-            return new Response(JSON.stringify({ result }), { status: 200 });
+            throw new Error("RPC not ready");
           }
           throw new Error("minio not ready");
         }) as typeof fetch,
@@ -427,6 +425,49 @@ describe("runtime invariants", () => {
     expect(result).toBe(false);
     expect(state.discovery?.actualFheKeyId).toBeUndefined();
   });
+
+  test("probeBootstrap rethrows ensureMaterialUrl timeout as permanent failure", async () => {
+    const state = stubState({
+      discovery: {
+        gateway: { KMS_GENERATION_ADDRESS: "0x1234" },
+        host: {},
+        kmsSigner: "",
+        fheKeyId: predictedKeyId(),
+        crsKeyId: predictedCrsId(),
+        endpoints: {
+          gatewayHttp: "http://localhost:8546",
+          gatewayWs: "",
+          hostHttp: "http://localhost:8545",
+          hostWs: "",
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+    });
+    let fetchCount = 0;
+    const deps = {
+      ...noopDeps,
+      fetch: (async (_url: string | URL, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { params: { data: string }[] };
+          const selector = body.params[0].data;
+          if (selector === "0xd52f10eb") {
+            return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${predictedKeyId()}` }));
+          }
+          if (selector === "0xbaff211e") {
+            return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${predictedCrsId()}` }));
+          }
+        }
+        if (init?.method === "HEAD") {
+          fetchCount++;
+          return new Response("", { status: 404 });
+        }
+        return new Response("{}");
+      }) as typeof fetch,
+    };
+    await expect(probeBootstrap(state, deps, 0)).rejects.toThrow("Material endpoint not ready");
+    expect(fetchCount).toBeGreaterThanOrEqual(30);
+  }, 45_000);
 
   test("composeDown warns on non-zero exit", async () => {
     const file = composePath("database");
@@ -1216,11 +1257,28 @@ describe("command error paths", () => {
   });
 
   test("down runs without error", async () => {
-    const { logs, restore } = captureConsole("log");
+    const stateFile = STATE_FILE;
+    const hadState = await maybeRead(stateFile);
     try {
-      await main(["bun", "src/cli.ts", "down"], noopDeps);
-    } finally { restore(); }
-    expect(logs.some((l) => l.includes("nothing to stop") || l.includes("[down]"))).toBe(true);
+      // Remove ambient state so down takes the no-state path
+      await fs.rm(stateFile, { force: true });
+      const { logs, restore } = captureConsole("log");
+      const { logs: errLogs, restore: restoreErr } = captureConsole("error");
+      try {
+        await main(["bun", "src/cli.ts", "down"], noopDeps);
+      } finally {
+        restore();
+        restoreErr();
+      }
+      expect(errLogs.length).toBe(0);
+      expect(logs.some((l) => l.includes("nothing to stop") || l.includes("[down]"))).toBe(true);
+    } finally {
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
   });
 
   test("status with no state shows containers", async () => {

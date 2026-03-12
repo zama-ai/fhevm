@@ -222,7 +222,7 @@ const parseCli = (argv: string[]) => {
     args: argv.slice(3),
     allowPositionals: true,
     options: {
-      target: { type: "string", default: "latest-release" },
+      target: { type: "string", default: "latest-main" },
       sha: { type: "string" },
       override: { type: "string", multiple: true, default: [] },
       coprocessors: { type: "string", default: "1" },
@@ -468,16 +468,22 @@ const responseSnippet = async (response: Response) => {
 };
 
 const discoverSigner = async (deps: RuntimeDeps) => {
-  const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
-  const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
-  if (!match) {
-    throw new Error("Could not extract KMS signer handle");
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
+    const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
+    if (match) {
+      const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
+      if (!response.ok) {
+        throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
+      }
+      return (await response.text()).trim();
+    }
+    if (attempt === 2 || (attempt > 0 && attempt % 10 === 0)) {
+      log("[wait] kms signer handle");
+    }
+    await sleep(1000);
   }
-  const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
-  if (!response.ok) {
-    throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
-  }
-  return (await response.text()).trim();
+  throw new Error("Could not extract KMS signer handle from kms-core logs after 30 attempts");
 };
 
 const waitForKmsCore = async (deps: RuntimeDeps) => {
@@ -579,32 +585,31 @@ const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
 export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 0) => {
   const gateway = withHexPrefix(state.discovery!.gateway.KMS_GENERATION_ADDRESS);
-  let actualKey = 0n;
-  let actualCrs = 0n;
-  let actualFheKeyId = "";
-  let actualCrsKeyId = "";
+  let actualKey: bigint;
+  let actualCrs: bigint;
   try {
     actualKey = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xd52f10eb");
     actualCrs = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
-    if (actualKey === 0n || actualCrs === 0n) {
-      return false;
-    }
-    actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-    actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
-    await ensureMaterialUrl(
-      deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
-    );
-    await ensureMaterialUrl(
-      deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
-    );
   } catch (error) {
     if (shouldLogRetry(attempt)) {
       log(`[wait] bootstrap probe: ${toError(error).message}`);
     }
     return false;
   }
+  if (actualKey === 0n || actualCrs === 0n) {
+    return false;
+  }
+  const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
+  const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
+  // Keys are on-chain — material MUST appear. Let ensureMaterialUrl throw if it doesn't.
+  await ensureMaterialUrl(
+    deps,
+    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
+  );
+  await ensureMaterialUrl(
+    deps,
+    hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
+  );
   state.discovery!.actualFheKeyId = actualFheKeyId;
   state.discovery!.actualCrsKeyId = actualCrsKeyId;
   if (state.discovery!.fheKeyId !== actualFheKeyId || state.discovery!.crsKeyId !== actualCrsKeyId) {
@@ -638,9 +643,13 @@ const pauserRegistered = async (deps: RuntimeDeps, rpcUrl: string, contract: str
 
 const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await deps.fetch(url, { method: "HEAD" });
-    if (response.ok) {
-      return;
+    try {
+      const response = await deps.fetch(url, { method: "HEAD" });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // network not ready yet (ECONNREFUSED, DNS, etc.) — retry
     }
     await sleep(1000);
   }
@@ -1355,14 +1364,20 @@ const runWithHeartbeat = async (argv: string[], label: string, deps: RuntimeDeps
       log(`[wait] ${label} still running (${Math.floor(silent / 1000)}s)`);
     }
   }, 5_000);
-  const [code] = await Promise.all([
-    proc.exited,
-    pump(proc.stdout, process.stdout),
-    pump(proc.stderr, process.stderr),
-  ]);
-  clearInterval(timer);
-  if (code !== 0) {
-    throw new Error(`${argv.join(" ")} failed (${code})`);
+  try {
+    const [code] = await Promise.all([
+      proc.exited,
+      pump(proc.stdout, process.stdout),
+      pump(proc.stderr, process.stderr),
+    ]);
+    if (code !== 0) {
+      throw new Error(`${argv.join(" ")} failed (${code})`);
+    }
+  } catch (error) {
+    proc.kill();
+    throw error;
+  } finally {
+    clearInterval(timer);
   }
 };
 
