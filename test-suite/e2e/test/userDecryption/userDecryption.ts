@@ -30,66 +30,6 @@ describe('User decryption', function () {
       publicKey,
     );
     expect(decryptedValue).to.equal(true);
-
-    // on the other hand, Bob should be unable to read Alice's handle
-    try {
-      const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-      await userDecryptSingleHandle(
-        handle,
-        this.contractAddress,
-        this.instances.bob,
-        this.signers.bob,
-        privateKeyBob,
-        publicKeyBob,
-      );
-      expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
-    } catch (error) {
-      expect(error.message).to.equal(
-        `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
-      );
-    }
-
-    // and should be impossible to call userDecrypt if contractAddress is in list of userAddresses
-    try {
-      const handleContractPairs = [
-        {
-          handle: handle,
-          contractAddress: this.signers.alice.address, // this should be impossible, as expected by this test
-        },
-      ];
-      const startTimeStamp = Math.floor(Date.now() / 1000);
-      const durationDays = 10;
-      const contractAddresses = [this.signers.alice.address]; // this should be impossible, as expected by this test
-
-      // Use the new createEIP712 function
-      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
-
-      // Update the signing to match the new primaryType
-      const signature = await this.signers.alice.signTypedData(
-        eip712.domain,
-        {
-          UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
-        },
-        eip712.message,
-      );
-
-      await this.instances.alice.userDecrypt(
-        handleContractPairs,
-        privateKey,
-        publicKey,
-        signature.replace('0x', ''),
-        contractAddresses,
-        this.signers.alice.address,
-        startTimeStamp,
-        durationDays,
-      );
-
-      expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
-    } catch (error) {
-      expect(error.message).to.equal(
-        `User address ${this.signers.alice.address} should not be equal to contract address when requesting user decryption!`,
-      );
-    }
   });
 
   it('test user decrypt euint8', async function () {
@@ -190,82 +130,146 @@ describe('User decryption', function () {
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
   });
 
-  it('test user decrypt should fail when dapp contract is not allowed for handle', async function () {
-    const handle = await this.contract.xBool();
-    // Deploy a second contract to get an address NOT allowed on the handle
-    const factory2 = await ethers.getContractFactory('HTTPPublicDecrypt');
-    const contract2 = await factory2.connect(this.signers.alice).deploy();
-    await contract2.waitForDeployment();
-    const wrongContractAddress = await contract2.getAddress();
+  describe('negative', function () {
+    it('should reject when user is not allowed for handle', async function () {
+      const handle = await this.contract.xBool();
+      const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
 
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const handleContractPairs = [{ handle, contractAddress: wrongContractAddress }];
-    const startTimeStamp = Math.floor(Date.now() / 1000);
-    const durationDays = 10;
-    const contractAddresses = [wrongContractAddress];
-    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
-    const signature = await this.signers.alice.signTypedData(
-      eip712.domain,
-      { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
-      eip712.message,
-    );
+      try {
+        await userDecryptSingleHandle(
+          handle,
+          this.contractAddress,
+          this.instances.bob,
+          this.signers.bob,
+          privateKeyBob,
+          publicKeyBob,
+        );
+        expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
+      } catch (error) {
+        expect(error.message).to.equal(
+          `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
+        );
+      }
+    });
 
-    try {
-      await this.instances.alice.userDecrypt(
-        handleContractPairs,
-        privateKey,
-        publicKey,
-        signature.replace('0x', ''),
-        contractAddresses,
-        this.signers.alice.address,
-        startTimeStamp,
-        durationDays,
+    it('should reject when userAddress equals contractAddress', async function () {
+      const handle = await this.contract.xBool();
+      const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+
+      try {
+        const handleContractPairs = [
+          {
+            handle: handle,
+            contractAddress: this.signers.alice.address,
+          },
+        ];
+        const startTimeStamp = Math.floor(Date.now() / 1000);
+        const durationDays = 10;
+        const contractAddresses = [this.signers.alice.address];
+
+        const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+
+        const signature = await this.signers.alice.signTypedData(
+          eip712.domain,
+          {
+            UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+          },
+          eip712.message,
+        );
+
+        await this.instances.alice.userDecrypt(
+          handleContractPairs,
+          privateKey,
+          publicKey,
+          signature.replace('0x', ''),
+          contractAddresses,
+          this.signers.alice.address,
+          startTimeStamp,
+          durationDays,
+        );
+
+        expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
+      } catch (error) {
+        expect(error.message).to.equal(
+          `User address ${this.signers.alice.address} should not be equal to contract address when requesting user decryption!`,
+        );
+      }
+    });
+
+    it('should reject when contract is not allowed for handle', async function () {
+      const handle = await this.contract.xBool();
+      const factory2 = await ethers.getContractFactory('HTTPPublicDecrypt');
+      const contract2 = await factory2.connect(this.signers.alice).deploy();
+      await contract2.waitForDeployment();
+      const wrongContractAddress = await contract2.getAddress();
+
+      const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+      const handleContractPairs = [{ handle, contractAddress: wrongContractAddress }];
+      const startTimeStamp = Math.floor(Date.now() / 1000);
+      const durationDays = 10;
+      const contractAddresses = [wrongContractAddress];
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+      const signature = await this.signers.alice.signTypedData(
+        eip712.domain,
+        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+        eip712.message,
       );
-      expect.fail('Expected an error - contract should not be allowed');
-    } catch (error) {
-      expect(error.message).to.include('is not authorized to user decrypt handle');
-    }
-  });
 
-  it('test user decrypt request expired', async function () {
-    const handle = await this.contract.xBool();
-    const HandleContractPairs = [
-      {
-        handle: handle,
-        contractAddress: this.contractAddress,
-      },
-    ];
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const startTimeStamp = Number(BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n);
-    const durationDays = 10;
-    const contractAddresses = [this.contractAddress];
+      try {
+        await this.instances.alice.userDecrypt(
+          handleContractPairs,
+          privateKey,
+          publicKey,
+          signature.replace('0x', ''),
+          contractAddresses,
+          this.signers.alice.address,
+          startTimeStamp,
+          durationDays,
+        );
+        expect.fail('Expected an error - contract should not be allowed');
+      } catch (error) {
+        expect(error.message).to.include('is not authorized to user decrypt handle');
+      }
+    });
 
-    // Use the new createEIP712 function
-    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+    it('should reject when request has expired', async function () {
+      const handle = await this.contract.xBool();
+      const handleContractPairs = [
+        {
+          handle: handle,
+          contractAddress: this.contractAddress,
+        },
+      ];
+      const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+      const startTimeStamp = Number(BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n);
+      const durationDays = 10;
+      const contractAddresses = [this.contractAddress];
 
-    // Update the signing to match the new primaryType
-    const signature = await this.signers.alice.signTypedData(
-      eip712.domain,
-      {
-        UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
-      },
-      eip712.message,
-    );
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
 
-    try {
-      await this.instances.alice.userDecrypt(
-        HandleContractPairs,
-        privateKey,
-        publicKey,
-        signature.replace('0x', ''),
-        contractAddresses,
-        this.signers.alice.address,
-        startTimeStamp,
-        durationDays,
+      const signature = await this.signers.alice.signTypedData(
+        eip712.domain,
+        {
+          UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+        },
+        eip712.message,
       );
-      expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
-    } catch (error) {
-      expect(error.message).to.equal('User decrypt request has expired');
-    }
+
+      try {
+        await this.instances.alice.userDecrypt(
+          handleContractPairs,
+          privateKey,
+          publicKey,
+          signature.replace('0x', ''),
+          contractAddresses,
+          this.signers.alice.address,
+          startTimeStamp,
+          durationDays,
+        );
+        expect.fail('Expected an error to be thrown - request should have expired');
+      } catch (error) {
+        expect(error.message).to.equal('User decrypt request has expired');
+      }
+    });
   });
 });
