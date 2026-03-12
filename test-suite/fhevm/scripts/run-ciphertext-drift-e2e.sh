@@ -50,9 +50,9 @@ cleanup() {
 trap cleanup EXIT
 
 baseline_metric="$(metric_total)"
-docker stop "$FAULTY_TX_SENDER_CONTAINER" >/dev/null
 
-"${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
+TX_SENDER_CONTAINER="$FAULTY_TX_SENDER_CONTAINER" \
+  "${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
 injector_pid=$!
 
 docker exec \
@@ -63,8 +63,6 @@ docker exec \
 wait "$injector_pid"
 injector_pid=""
 handle_hex="$(cat "$HANDLE_FILE")"
-
-docker start "$FAULTY_TX_SENDER_CONTAINER" >/dev/null
 
 if ! updated_metric="$(wait_for_metric_increment "$baseline_metric")"; then
   echo "drift metric did not increase after injecting handle ${handle_hex}" >&2

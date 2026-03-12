@@ -509,8 +509,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         drift_detector: &mut DriftDetector,
         log: Log,
     ) -> anyhow::Result<()> {
-        let event = GatewayConfig::GatewayConfigEvents::decode_log(&log.inner)
-            .map_err(|_| anyhow::anyhow!("Failed to decode GatewayConfig event log"))?;
+        let Ok(event) = GatewayConfig::GatewayConfigEvents::decode_log(&log.inner) else {
+            error!(log = ?log, "Failed to decode GatewayConfig event log");
+            return Ok(());
+        };
 
         if let GatewayConfig::GatewayConfigEvents::UpdateCoprocessors(update) = event.data {
             let expected_senders = update

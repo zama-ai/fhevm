@@ -7,6 +7,7 @@ POLL_INTERVAL_SECONDS="${DRIFT_INJECT_POLL_INTERVAL_SECONDS:-2}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-coprocessor-and-kms-db}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
+MANAGE_TX_SENDER="${MANAGE_TX_SENDER:-1}"
 
 if ! [[ "$INSTANCE_INDEX" =~ ^[0-9]+$ ]]; then
   echo "instance index must be a non-negative integer" >&2
@@ -17,6 +18,12 @@ db_name="coprocessor"
 if [ "$INSTANCE_INDEX" -gt 0 ]; then
   db_name="coprocessor_${INSTANCE_INDEX}"
 fi
+
+default_tx_sender_container="coprocessor-transaction-sender"
+if [ "$INSTANCE_INDEX" -gt 0 ]; then
+  default_tx_sender_container="coprocessor${INSTANCE_INDEX}-transaction-sender"
+fi
+TX_SENDER_CONTAINER="${TX_SENDER_CONTAINER:-$default_tx_sender_container}"
 
 psql_query() {
   docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" \
@@ -34,7 +41,13 @@ while [ "$SECONDS" -lt "$deadline" ]; do
       continue
     fi
 
+    if [ "$MANAGE_TX_SENDER" = "1" ]; then
+      docker stop "$TX_SENDER_CONTAINER" >/dev/null
+    fi
     psql_query "UPDATE ciphertext_digest SET ciphertext = set_byte(ciphertext, 0, get_byte(ciphertext, 0) # 1) WHERE handle = decode('${handle_hex}', 'hex') AND txn_is_sent = false;"
+    if [ "$MANAGE_TX_SENDER" = "1" ]; then
+      docker start "$TX_SENDER_CONTAINER" >/dev/null
+    fi
     echo "$handle_hex"
     exit 0
   done <<< "$ready_handles"
