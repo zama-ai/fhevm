@@ -38,11 +38,6 @@ pub struct ConfigSettings {
     pub gas_limit_overprovision_percent: u32,
 
     pub graceful_shutdown_timeout: Duration,
-
-    pub delegation_block_delay: u64,
-    pub delegation_clear_after_n_blocks: u64,
-    pub delegation_fallback_polling: u64,
-    pub delegation_max_retry: u64,
 }
 
 impl Default for ConfigSettings {
@@ -67,10 +62,6 @@ impl Default for ConfigSettings {
             health_check_timeout: Duration::from_secs(4),
             gas_limit_overprovision_percent: DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT,
             graceful_shutdown_timeout: Duration::from_secs(8),
-            delegation_block_delay: 10,
-            delegation_clear_after_n_blocks: 7776000 / 12, // 3 months assuming 12s block time
-            delegation_fallback_polling: 30,
-            delegation_max_retry: 100_000,
         }
     }
 }

@@ -68,6 +68,12 @@ spec:
               value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
+            - name: KMS_CONNECTOR_ETHEREUM_URL
+              value: {{ .Values.commonConfig.ethereumUrl | quote }}
+            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+              value: {{ .Values.commonConfig.ethereumChainId | quote }}
+            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
+              value: {{ .Values.commonConfig.ethereumContractAddresses.kmsVerifier | quote }}
             {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
             - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
               valueFrom:

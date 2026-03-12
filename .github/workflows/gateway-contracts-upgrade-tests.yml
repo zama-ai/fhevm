@@ -15,6 +15,8 @@ concurrency:
 # - CHAIN_ID_GATEWAY: Should match the chain ID used in the anvil node in the docker-compose.yml file
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
+  # Bump this tag each release cycle to test upgrades from the previous version
+  UPGRADE_FROM_TAG: v0.11.0
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
   CHAIN_ID_GATEWAY: 54321
@@ -54,9 +56,7 @@ jobs:
       - name: Checkout previous release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          # This version should be updated whenever we release new contract versions or
-          # touch a contract upgrade path.
-          ref: v0.10.0
+          ref: ${{ env.UPGRADE_FROM_TAG }}
           path: previous-fhevm
           persist-credentials: 'false'
 
@@ -79,21 +79,17 @@ jobs:
       - name: Check smart contract deployment from previous release
         working-directory: previous-fhevm/gateway-contracts
         run: |
-
-          ## Check Contracts Deployment
           timeout 300s bash -c 'while docker ps --filter "name=deploy-gateway-contracts" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
           docker compose logs deploy-gateway-contracts > deployment_logs.txt
-          EXIT_CODE_SC=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
-          # display logs for debugging
-          # cat deployment_logs.txt
-          if [ "$EXIT_CODE_SC" -ne 0 ]; then
-            echo "Deployment failed with exit code $EXIT_CODE_SC"
+          cat deployment_logs.txt
+          EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-contracts)
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "Deployment failed with exit code $EXIT_CODE"
             exit 1
           elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
             echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
             exit 1
-          else
-            echo "Deployment completed successfully with expected completion message"
           fi
 
       - name: Checkout current code
@@ -101,6 +97,9 @@ jobs:
         with:
           persist-credentials: 'false'
           path: current-fhevm
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Install dependencies
         working-directory: current-fhevm/gateway-contracts
@@ -117,89 +116,114 @@ jobs:
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
           docker cp deploy-gateway-contracts:/app/addresses ./
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade GatewayConfig contract
+      - name: Run contract upgrades
         working-directory: current-fhevm/gateway-contracts
-        # if: false
         run: |
-          npx hardhat task:upgradeGatewayConfig \
-            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
-            --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
-            --use-internal-proxy-address true \
-            --verify-contract false
+          set -euo pipefail
+          UPGRADED=0
+          SKIPPED=0
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade Decryption contract
-        working-directory: current-fhevm/gateway-contracts
-        # if: false
-        run: |
-          npx hardhat task:upgradeDecryption \
-            --current-implementation previous-contracts/Decryption.sol:Decryption \
-            --new-implementation contracts/Decryption.sol:Decryption \
-            --use-internal-proxy-address true \
-            --verify-contract false
+          # Iterate over contracts listed in the upgrade manifest
+          for name in $(jq -r '.[]' upgrade-manifest.json); do
+            # Fail fast if the contract is missing from current code (manifest out of sync)
+            if [ ! -f "contracts/${name}.sol" ]; then
+              echo "::error::$name listed in upgrade-manifest.json but contracts/${name}.sol not found"
+              exit 1
+            fi
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade CiphertextCommits contract
-        working-directory: current-fhevm/gateway-contracts
-        if: false
-        run: |
-          npx hardhat task:upgradeCiphertextCommits \
-            --current-implementation previous-contracts/CiphertextCommits.sol:CiphertextCommits \
-            --new-implementation contracts/CiphertextCommits.sol:CiphertextCommits \
-            --use-internal-proxy-address true \
-            --verify-contract false
+            # Skip contracts not present in the previous release (e.g. newly added)
+            if [ ! -f "previous-contracts/${name}.sol" ]; then
+              echo "Skipping $name (not present in previous release)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade InputVerification contract
-        working-directory: current-fhevm/gateway-contracts
-        if: false
-        run: |
-          npx hardhat task:upgradeInputVerification \
-            --current-implementation previous-contracts/InputVerification.sol:InputVerification \
-            --new-implementation contracts/InputVerification.sol:InputVerification \
-            --use-internal-proxy-address true \
-            --verify-contract false
+            # Extract REINITIALIZER_VERSION from both versions
+            old_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+              "previous-contracts/${name}.sol")
+            new_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+              "contracts/${name}.sol")
+            if [ -z "$old_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from previous-contracts/${name}.sol"
+              exit 1
+            fi
+            if [ -z "$new_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from contracts/${name}.sol"
+              exit 1
+            fi
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade MultichainACL contract
-        working-directory: current-fhevm/gateway-contracts
-        if: false
-        run: |
-          npx hardhat task:upgradeMultichainACL \
-            --current-implementation previous-contracts/MultichainACL.sol:MultichainACL \
-            --new-implementation contracts/MultichainACL.sol:MultichainACL \
-            --use-internal-proxy-address true \
-            --verify-contract false
+            # Upgrade only if reinitializer version changed
+            if [ "$old_ver" != "$new_ver" ]; then
+              echo "::group::Upgrading $name (reinitializer $old_ver → $new_ver)"
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      # See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade KMSGeneration contract
-        working-directory: current-fhevm/gateway-contracts
-        if: false
-        run: |
-          npx hardhat task:upgradeKMSGeneration \
-            --current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration \
-            --new-implementation contracts/KMSGeneration.sol:KMSGeneration \
-            --use-internal-proxy-address true \
-            --verify-contract false
+              npx hardhat "task:upgrade${name}" \
+                --current-implementation "previous-contracts/${name}.sol:${name}" \
+                --new-implementation "contracts/${name}.sol:${name}" \
+                --use-internal-proxy-address true \
+                --verify-contract false
 
-      # TODO: We should instead automatically detect if the contract needs to be upgraded
-      # See https://github.com/zama-ai/fhevm-internal/issues/379
-      - name: Upgrade ProtocolPayment contract
+              # OZ upgradeProxy does not wait for the upgradeToAndCall tx to be mined.
+              # With Anvil's interval mining (--block-time), flush it before moving on.
+              cast rpc evm_mine --rpc-url "$RPC_URL" > /dev/null
+
+              echo "::endgroup::"
+              UPGRADED=$((UPGRADED + 1))
+            else
+              echo "Skipping $name (reinitializer unchanged: $old_ver)"
+              SKIPPED=$((SKIPPED + 1))
+            fi
+          done
+
+          echo "::notice::Upgrade summary: $UPGRADED upgraded, $SKIPPED skipped"
+          if [ "$UPGRADED" -eq 0 ]; then
+            echo "::warning::No contracts needed upgrading — consider bumping UPGRADE_FROM_TAG"
+          fi
+
+      - name: Verify contract versions
         working-directory: current-fhevm/gateway-contracts
-        if: false
         run: |
-          npx hardhat task:upgradeProtocolPayment \
-            --current-implementation previous-contracts/ProtocolPayment.sol:ProtocolPayment \
-            --new-implementation contracts/ProtocolPayment.sol:ProtocolPayment \
-            --use-internal-proxy-address true \
-            --verify-contract false
+          source addresses/.env.gateway
+          # shellcheck disable=SC2034 # variables used via indirect expansion ${!addr_var}
+          GatewayConfigAddress=$GATEWAY_CONFIG_ADDRESS
+          # shellcheck disable=SC2034
+          DecryptionAddress=$DECRYPTION_ADDRESS
+          # shellcheck disable=SC2034
+          CiphertextCommitsAddress=$CIPHERTEXT_COMMITS_ADDRESS
+          # shellcheck disable=SC2034
+          InputVerificationAddress=$INPUT_VERIFICATION_ADDRESS
+          # shellcheck disable=SC2034
+          MultichainACLAddress=$MULTICHAIN_ACL_ADDRESS
+          # shellcheck disable=SC2034
+          KMSGenerationAddress=$KMS_GENERATION_ADDRESS
+
+          for name in $(jq -r '.[]' upgrade-manifest.json); do
+            addr_var="${name}Address"
+            addr="${!addr_var:-}"
+            if [ -z "$addr" ]; then
+              # New contract (not in previous release) — no deployment to verify
+              if [ ! -f "previous-contracts/${name}.sol" ]; then
+                echo "Skipping $name version check (new contract, not previously deployed)"
+                continue
+              fi
+              echo "::error::$name existed in previous release but ${addr_var} is not set — check address mapping"
+              exit 1
+            fi
+
+            # Build expected version from source constants: "<Name> v<MAJOR>.<MINOR>.<PATCH>"
+            sol="contracts/${name}.sol"
+            major=$(sed -n 's/.*MAJOR_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+            minor=$(sed -n 's/.*MINOR_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+            patch=$(sed -n 's/.*PATCH_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$sol")
+            expected="${name} v${major}.${minor}.${patch}"
+
+            actual=$(cast call "$addr" "getVersion()(string)" --rpc-url "$RPC_URL" | tr -d '"')
+
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$name version mismatch: expected '$expected', got '$actual'"
+              exit 1
+            fi
+            echo "$name: $actual"
+          done
 
       - name: Clean up
         working-directory: previous-fhevm/gateway-contracts
