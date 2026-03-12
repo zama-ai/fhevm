@@ -179,6 +179,17 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .await?;
         }
 
+        let filter_addresses = {
+            let mut addrs = vec![self.kms_generation_address, self.input_verification_address];
+            if let Some(addr) = self.conf.ciphertext_commits_address {
+                addrs.push(addr);
+            }
+            if let Some(addr) = self.conf.gateway_config_address {
+                addrs.push(addr);
+            }
+            addrs
+        };
+
         loop {
             tokio::select! {
                 biased;
@@ -212,15 +223,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         std::cmp::min(max, current_block)
                     };
 
-                    let mut filter_addresses = vec![self.kms_generation_address, self.input_verification_address];
-                    if let Some(addr) = self.conf.ciphertext_commits_address {
-                        filter_addresses.push(addr);
-                    }
-                    if let Some(addr) = self.conf.gateway_config_address {
-                        filter_addresses.push(addr);
-                    }
                     let filter = Filter::new()
-                        .address(filter_addresses)
+                        .address(filter_addresses.clone())
                         .from_block(from_block)
                         .to_block(to_block);
 
@@ -700,20 +704,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<ListenerProgress> {
-        let rows = sqlx::query(
+        let row = sqlx::query(
             "SELECT last_block_num, earliest_open_ct_commits_block
             FROM gw_listener_last_block
             WHERE dummy_id = true",
         )
-        .fetch_all(db_pool)
+        .fetch_optional(db_pool)
         .await?;
-        assert!(
-            rows.len() <= 1,
-            "Expected at most one row in gw_listener_last_block, found {}",
-            rows.len()
-        );
 
-        let Some(row) = rows.first() else {
+        let Some(row) = row else {
             return Ok(ListenerProgress::default());
         };
 

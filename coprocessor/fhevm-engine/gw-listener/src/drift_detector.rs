@@ -35,10 +35,7 @@ struct Submission {
 
 #[derive(Clone, Debug)]
 struct ConsensusState {
-    block_number: u64,
-    block_hash: Option<B256>,
-    tx_hash: Option<B256>,
-    log_index: Option<u64>,
+    context: EventContext,
     digests: DigestPair,
     senders: Vec<Address>,
 }
@@ -52,7 +49,6 @@ struct HandleState {
     submissions: Vec<Submission>,
     consensus: Option<ConsensusState>,
     local_consensus_checked: bool,
-    missing_submission_reported: bool,
     drift_reported: bool,
 }
 
@@ -111,12 +107,11 @@ impl DriftDetector {
             ciphertext_digest: event.ciphertextDigest,
             ciphertext128_digest: event.snsCiphertextDigest,
         };
-        let expected_senders = self.current_expected_senders.clone();
 
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| new_handle_state(context, expected_senders));
+            .or_insert_with(|| new_handle_state(context, self.current_expected_senders.clone()));
         state.last_seen_block = context.block_number;
 
         if let Some(existing) = state
@@ -184,17 +179,13 @@ impl DriftDetector {
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
         let handle = event.ctHandle;
-        let expected_senders = self.current_expected_senders.clone();
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| new_handle_state(context, expected_senders));
+            .or_insert_with(|| new_handle_state(context, self.current_expected_senders.clone()));
         state.last_seen_block = context.block_number;
         state.consensus = Some(ConsensusState {
-            block_number: context.block_number,
-            block_hash: context.block_hash,
-            tx_hash: context.tx_hash,
-            log_index: context.log_index,
+            context,
             digests: DigestPair {
                 ciphertext_digest: event.ciphertextDigest,
                 ciphertext128_digest: event.snsCiphertextDigest,
@@ -250,8 +241,8 @@ impl DriftDetector {
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = consensus.block_number,
-                tx_hash = ?consensus.tx_hash,
+                block_number = consensus.context.block_number,
+                tx_hash = ?consensus.context.tx_hash,
                 "Consensus arrived before local digest was available; deferring drift check"
             );
             return Ok(());
@@ -267,8 +258,8 @@ impl DriftDetector {
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = consensus.block_number,
-                tx_hash = ?consensus.tx_hash,
+                block_number = consensus.context.block_number,
+                tx_hash = ?consensus.context.tx_hash,
                 "Consensus arrived before local digests were ready; deferring drift check"
             );
             return Ok(());
@@ -291,10 +282,10 @@ impl DriftDetector {
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
-                block_number = consensus.block_number,
-                block_hash = ?consensus.block_hash,
-                tx_hash = ?consensus.tx_hash,
-                log_index = ?consensus.log_index,
+                block_number = consensus.context.block_number,
+                block_hash = ?consensus.context.block_hash,
+                tx_hash = ?consensus.context.tx_hash,
+                log_index = ?consensus.context.log_index,
                 consensus_senders = ?address_strings(&consensus.senders),
                 consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                 consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
@@ -329,7 +320,7 @@ impl DriftDetector {
         for (handle, state) in &mut self.open_handles {
             if let Some(consensus) = &state.consensus {
                 if !state.local_consensus_checked {
-                    if current_block.saturating_sub(consensus.block_number)
+                    if current_block.saturating_sub(consensus.context.block_number)
                         < self.no_consensus_timeout_blocks
                     {
                         continue;
@@ -342,10 +333,10 @@ impl DriftDetector {
                         first_seen_block = state.first_seen_block,
                         first_seen_block_hash = ?state.first_seen_block_hash,
                         last_seen_block = state.last_seen_block,
-                        consensus_block = consensus.block_number,
-                        consensus_block_hash = ?consensus.block_hash,
-                        consensus_tx_hash = ?consensus.tx_hash,
-                        consensus_log_index = ?consensus.log_index,
+                        consensus_block = consensus.context.block_number,
+                        consensus_block_hash = ?consensus.context.block_hash,
+                        consensus_tx_hash = ?consensus.context.tx_hash,
+                        consensus_log_index = ?consensus.context.log_index,
                         "Consensus was observed but local digests never became available for comparison"
                     );
                     finished.push(*handle);
@@ -353,13 +344,13 @@ impl DriftDetector {
                 }
 
                 if state.submissions.len() != state.expected_senders.len() {
-                    if state.missing_submission_reported
-                        || current_block.saturating_sub(consensus.block_number)
-                            < self.post_consensus_grace_blocks
+                    if current_block.saturating_sub(consensus.context.block_number)
+                        < self.post_consensus_grace_blocks
                     {
                         continue;
                     }
 
+                    let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
                         host_chain_id = self.host_chain_id.as_i64(),
@@ -367,21 +358,20 @@ impl DriftDetector {
                         first_seen_block = state.first_seen_block,
                         first_seen_block_hash = ?state.first_seen_block_hash,
                         last_seen_block = state.last_seen_block,
-                        consensus_block = consensus.block_number,
-                        consensus_block_hash = ?consensus.block_hash,
-                        consensus_tx_hash = ?consensus.tx_hash,
-                        consensus_log_index = ?consensus.log_index,
+                        consensus_block = consensus.context.block_number,
+                        consensus_block_hash = ?consensus.context.block_hash,
+                        consensus_tx_hash = ?consensus.context.tx_hash,
+                        consensus_log_index = ?consensus.context.log_index,
                         consensus_senders = ?address_strings(&consensus.senders),
                         consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                         consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                         seen_senders = ?seen_sender_strings(&state.submissions),
                         missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
-                        variant_count = variant_summaries(&state.submissions).len(),
-                        variants = ?variant_summaries(&state.submissions),
+                        variant_count = variants.len(),
+                        variants = ?variants,
                         "Consensus reached but some coprocessors never submitted this handle"
                     );
                     self.deferred_metrics.missing_submission += 1;
-                    state.missing_submission_reported = true;
                     finished.push(*handle);
                     continue;
                 }
@@ -395,6 +385,7 @@ impl DriftDetector {
                 continue;
             }
 
+            let variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
@@ -404,8 +395,8 @@ impl DriftDetector {
                 last_seen_block = state.last_seen_block,
                 seen_senders = ?seen_sender_strings(&state.submissions),
                 missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
-                variant_count = variant_summaries(&state.submissions).len(),
-                variants = ?variant_summaries(&state.submissions),
+                variant_count = variants.len(),
+                variants = ?variants,
                 "Handle timed out before consensus was observed"
             );
             self.deferred_metrics.consensus_timeout += 1;
@@ -440,7 +431,7 @@ impl DriftDetector {
             .open_handles
             .iter()
             .filter_map(|(handle, state)| {
-                (!state.drift_reported && variant_summaries(&state.submissions).len() > 1)
+                (!state.drift_reported && has_multiple_variants(&state.submissions))
                     .then_some(*handle)
             })
             .collect::<Vec<_>>();
@@ -449,6 +440,7 @@ impl DriftDetector {
             let Some(state) = self.open_handles.get_mut(&handle) else {
                 continue;
             };
+            let variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
@@ -456,8 +448,8 @@ impl DriftDetector {
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
                 last_seen_block = state.last_seen_block,
-                variant_count = variant_summaries(&state.submissions).len(),
-                variants = ?variant_summaries(&state.submissions),
+                variant_count = variants.len(),
+                variants = ?variants,
                 seen_senders = ?seen_sender_strings(&state.submissions),
                 missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
                 source = "peer_submission",
@@ -499,6 +491,7 @@ impl DriftDetector {
                 continue;
             };
 
+            let variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
@@ -507,8 +500,8 @@ impl DriftDetector {
                 first_seen_block_hash = ?state.first_seen_block_hash,
                 last_seen_block = state.last_seen_block,
                 seen_senders = ?seen_sender_strings(&state.submissions),
-                variant_count = variant_summaries(&state.submissions).len(),
-                variants = ?variant_summaries(&state.submissions),
+                variant_count = variants.len(),
+                variants = ?variants,
                 "All expected coprocessors submitted but no consensus event was observed"
             );
             self.deferred_metrics.consensus_timeout += 1;
@@ -532,7 +525,7 @@ impl DriftDetector {
             let consensus_block = state
                 .consensus
                 .as_ref()
-                .map(|consensus| consensus.block_number)
+                .map(|consensus| consensus.context.block_number)
                 .unwrap_or(state.last_seen_block);
             POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM
                 .observe(state.last_seen_block.saturating_sub(consensus_block) as f64);
@@ -551,9 +544,14 @@ fn new_handle_state(context: EventContext, expected_senders: Vec<Address>) -> Ha
         submissions: Vec::with_capacity(submission_capacity),
         consensus: None,
         local_consensus_checked: false,
-        missing_submission_reported: false,
         drift_reported: false,
     }
+}
+
+fn has_multiple_variants(submissions: &[Submission]) -> bool {
+    submissions
+        .iter()
+        .any(|s| submissions.iter().any(|t| t.digests != s.digests))
 }
 
 fn variant_summaries(submissions: &[Submission]) -> Vec<String> {
@@ -892,10 +890,12 @@ mod tests {
                 },
             ],
             consensus: Some(ConsensusState {
-                block_number: 12,
-                block_hash: None,
-                tx_hash: None,
-                log_index: None,
+                context: EventContext {
+                    block_number: 12,
+                    block_hash: None,
+                    tx_hash: None,
+                    log_index: None,
+                },
                 digests: DigestPair {
                     ciphertext_digest: FixedBytes::from([13u8; 32]),
                     ciphertext128_digest: FixedBytes::from([14u8; 32]),
@@ -903,7 +903,6 @@ mod tests {
                 senders,
             }),
             local_consensus_checked: false,
-            missing_submission_reported: false,
             drift_reported: false,
         };
         detector.open_handles.insert(handle, state);
@@ -1094,10 +1093,12 @@ mod tests {
         }
 
         detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            block_number: 12,
-            block_hash: None,
-            tx_hash: None,
-            log_index: None,
+            context: EventContext {
+                block_number: 12,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+            },
             digests: DigestPair {
                 ciphertext_digest: FixedBytes::from([2u8; 32]),
                 ciphertext128_digest: FixedBytes::from([3u8; 32]),
@@ -1144,10 +1145,12 @@ mod tests {
         drop(pool);
 
         detector.open_handles.get_mut(&handle).unwrap().consensus = Some(ConsensusState {
-            block_number: 12,
-            block_hash: None,
-            tx_hash: None,
-            log_index: None,
+            context: EventContext {
+                block_number: 12,
+                block_hash: None,
+                tx_hash: None,
+                log_index: None,
+            },
             digests: DigestPair {
                 ciphertext_digest: FixedBytes::from([2u8; 32]),
                 ciphertext128_digest: FixedBytes::from([3u8; 32]),
