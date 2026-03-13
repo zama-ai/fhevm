@@ -13,8 +13,8 @@ jobs:
   check-changes:
     name: contracts-upgrade-hygiene/check-changes
     permissions:
-      contents: 'read'
-      pull-requests: 'read'
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request for paths-filter
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
@@ -42,7 +42,7 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
