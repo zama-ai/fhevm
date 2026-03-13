@@ -233,6 +233,11 @@ jobs:
         run: |
           ./fhevm-cli test hcu-block-cap
 
+      - name: Ciphertext drift test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test ciphertext-drift
+
       - name: Host listener poller test
         working-directory: test-suite/fhevm
         run: |
