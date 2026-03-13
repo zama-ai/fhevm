@@ -156,8 +156,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .map(|block| block.saturating_sub(1))
             .or(last_processed_block_num);
         let expected_senders = if let Some(gw_config_addr) = self.conf.gateway_config_address {
-            self.fetch_expected_senders(gw_config_addr, sender_seed_block)
-                .await?
+            match self
+                .fetch_expected_senders(gw_config_addr, sender_seed_block)
+                .await
+            {
+                Ok(senders) => senders,
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch expected tx-senders; drift detection disabled until GatewayConfig event arrives");
+                    Vec::new()
+                }
+            }
         } else {
             Vec::new()
         };
@@ -168,13 +176,17 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             self.conf.drift_post_consensus_grace_blocks,
         );
         if replay_from_block.is_none() {
-            self.rebuild_drift_detector(
-                db_pool,
-                &mut drift_detector,
-                progress.earliest_open_ct_commits_block,
-                last_processed_block_num,
-            )
-            .await?;
+            if let Err(e) = self
+                .rebuild_drift_detector(
+                    db_pool,
+                    &mut drift_detector,
+                    progress.earliest_open_ct_commits_block,
+                    last_processed_block_num,
+                )
+                .await
+            {
+                error!(error = %e, "Failed to rebuild drift detector; continuing with partial state");
+            }
         }
 
         let filter_addresses = {
@@ -310,23 +322,29 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 }
                             }
                             a if Some(a) == self.conf.ciphertext_commits_address => {
-                                self.process_ciphertext_commits_log(
+                                if let Err(e) = self.process_ciphertext_commits_log(
                                     &mut drift_detector,
                                     log,
                                     to_block,
                                     db_pool,
                                 )
-                                .await?;
+                                .await {
+                                    error!(error = %e, "Failed to process CiphertextCommits log");
+                                }
                             }
                             a if Some(a) == self.conf.gateway_config_address => {
-                                self.process_gateway_config_log(&mut drift_detector, log)?;
+                                if let Err(e) = self.process_gateway_config_log(&mut drift_detector, log) {
+                                    error!(error = %e, "Failed to process GatewayConfig log");
+                                }
                             }
                             _ => {
                                 error!(log = ?log, "Unexpected log address");
                             }
                         }
                     }
-                    drift_detector.end_of_batch(to_block, db_pool).await?;
+                    if let Err(e) = drift_detector.end_of_batch(to_block, db_pool).await {
+                        error!(error = %e, "Drift detector end_of_batch failed");
+                    }
                     last_processed_block_num = Some(to_block);
                     if replay_from_block.is_some() {
                         if to_block == current_block {
