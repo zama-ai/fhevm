@@ -28,12 +28,12 @@ jobs:
           filters: |
             host-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
-              - ci/check-upgrade-hygiene.sh
+              - ci/check-upgrade-hygiene.ts
               - ci/stubs/host-contracts/**
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
-              - ci/check-upgrade-hygiene.sh
+              - ci/check-upgrade-hygiene.ts
               - ci/stubs/gateway-contracts/**
               - gateway-contracts/**
 
@@ -65,6 +65,9 @@ jobs:
           ref: main
           path: main-branch
           persist-credentials: 'false'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
@@ -99,4 +102,4 @@ jobs:
       - name: Run upgrade hygiene check
         env:
           PACKAGE: ${{ matrix.package }}
-        run: ./ci/check-upgrade-hygiene.sh "main-branch/$PACKAGE" "$PACKAGE"
+        run: bun ci/check-upgrade-hygiene.ts "main-branch/$PACKAGE" "$PACKAGE"
