@@ -17,8 +17,7 @@ jobs:
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
-      host-contracts: ${{ steps.filter.outputs.host-contracts }}
-      gateway-contracts: ${{ steps.filter.outputs.gateway-contracts }}
+      packages: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -30,19 +29,30 @@ jobs:
             host-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
               - ci/check-upgrade-hygiene.sh
+              - ci/stubs/host-contracts/**
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
               - ci/check-upgrade-hygiene.sh
+              - ci/stubs/gateway-contracts/**
               - gateway-contracts/**
 
-  host-contracts:
-    name: contracts-upgrade-hygiene/host-contracts
+  check:
+    name: contracts-upgrade-hygiene/${{ matrix.package }}
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.host-contracts == 'true' }}
+    if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
       contents: 'read'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.check-changes.outputs.packages) }}
+        include:
+          - package: host-contracts
+            extra-deps: forge soldeer install
+          - package: gateway-contracts
+            extra-deps: ''
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -59,93 +69,24 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
-      - name: Install PR dependencies
-        working-directory: host-contracts
+      - name: Install dependencies
         run: |
-          npm ci
-          forge soldeer install
-
-      - name: Install main dependencies
-        working-directory: main-branch/host-contracts
-        run: |
-          npm ci
-          forge soldeer install
+          npm --prefix ${{ matrix.package }} ci
+          npm --prefix main-branch/${{ matrix.package }} ci
+          if [ -n "${{ matrix.extra-deps }}" ]; then
+            (cd ${{ matrix.package }} && ${{ matrix.extra-deps }})
+            (cd main-branch/${{ matrix.package }} && ${{ matrix.extra-deps }})
+          fi
 
       - name: Align compilation settings
-        run: cp host-contracts/foundry.toml main-branch/host-contracts/foundry.toml
+        run: cp ${{ matrix.package }}/foundry.toml main-branch/${{ matrix.package }}/foundry.toml
 
       - name: Generate address stubs
         run: |
-          # Host contracts need addresses/FHEVMHostAddresses.sol (generated at deploy time).
-          # Create identical stubs in both copies so bytecode comparison is not affected.
-          mkdir -p host-contracts/addresses main-branch/host-contracts/addresses
-          cat > /tmp/FHEVMHostAddresses.sol << 'SOL'
-          // SPDX-License-Identifier: BSD-3-Clause-Clear
-          pragma solidity ^0.8.24;
-          address constant aclAdd = 0x0000000000000000000000000000000000000001;
-          address constant fhevmExecutorAdd = 0x0000000000000000000000000000000000000002;
-          address constant kmsVerifierAdd = 0x0000000000000000000000000000000000000003;
-          address constant inputVerifierAdd = 0x0000000000000000000000000000000000000004;
-          address constant hcuLimitAdd = 0x0000000000000000000000000000000000000005;
-          address constant pauserSetAdd = 0x0000000000000000000000000000000000000006;
-          SOL
-          cp /tmp/FHEVMHostAddresses.sol host-contracts/addresses/FHEVMHostAddresses.sol
-          cp /tmp/FHEVMHostAddresses.sol main-branch/host-contracts/addresses/FHEVMHostAddresses.sol
+          for dir in ${{ matrix.package }} main-branch/${{ matrix.package }}; do
+            mkdir -p "$dir/addresses"
+            cp ci/stubs/${{ matrix.package }}/*.sol "$dir/addresses/"
+          done
 
       - name: Run upgrade hygiene check
-        run: ./ci/check-upgrade-hygiene.sh main-branch/host-contracts host-contracts
-
-  gateway-contracts:
-    name: contracts-upgrade-hygiene/gateway-contracts
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.gateway-contracts == 'true' }}
-    permissions:
-      contents: 'read'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-
-      - name: Checkout main branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: main
-          path: main-branch
-          persist-credentials: 'false'
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-
-      - name: Install PR dependencies
-        working-directory: gateway-contracts
-        run: npm ci
-
-      - name: Install main dependencies
-        working-directory: main-branch/gateway-contracts
-        run: npm ci
-
-      - name: Align compilation settings
-        run: cp gateway-contracts/foundry.toml main-branch/gateway-contracts/foundry.toml
-
-      - name: Generate address stubs
-        run: |
-          # Gateway contracts need addresses/GatewayAddresses.sol (generated at deploy time).
-          mkdir -p gateway-contracts/addresses main-branch/gateway-contracts/addresses
-          cat > /tmp/GatewayAddresses.sol << 'SOL'
-          // SPDX-License-Identifier: BSD-3-Clause-Clear
-          pragma solidity ^0.8.24;
-          address constant gatewayConfigAddress = 0x0000000000000000000000000000000000000001;
-          address constant decryptionAddress = 0x0000000000000000000000000000000000000002;
-          address constant ciphertextCommitsAddress = 0x0000000000000000000000000000000000000003;
-          address constant inputVerificationAddress = 0x0000000000000000000000000000000000000004;
-          address constant kmsGenerationAddress = 0x0000000000000000000000000000000000000005;
-          address constant protocolPaymentAddress = 0x0000000000000000000000000000000000000006;
-          address constant pauserSetAddress = 0x0000000000000000000000000000000000000007;
-          SOL
-          cp /tmp/GatewayAddresses.sol gateway-contracts/addresses/GatewayAddresses.sol
-          cp /tmp/GatewayAddresses.sol main-branch/gateway-contracts/addresses/GatewayAddresses.sol
-
-      - name: Run upgrade hygiene check
-        run: ./ci/check-upgrade-hygiene.sh main-branch/gateway-contracts gateway-contracts
+        run: ./ci/check-upgrade-hygiene.sh main-branch/${{ matrix.package }} ${{ matrix.package }}
