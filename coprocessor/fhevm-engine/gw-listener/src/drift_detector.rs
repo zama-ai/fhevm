@@ -147,6 +147,17 @@ impl DriftDetector {
         if self.alerts_enabled && !state.drift_reported {
             let variants = variant_summaries(&state.submissions);
             if variants.len() > 1 {
+                let seen: Vec<String> = state
+                    .submissions
+                    .iter()
+                    .map(|s| s.sender.to_string())
+                    .collect();
+                let missing: Vec<String> = state
+                    .expected_senders
+                    .iter()
+                    .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                    .map(ToString::to_string)
+                    .collect();
                 warn!(
                     handle = %handle,
                     host_chain_id = self.host_chain_id.as_i64(),
@@ -159,8 +170,8 @@ impl DriftDetector {
                     log_index = ?context.log_index,
                     variant_count = variants.len(),
                     variants = ?variants,
-                    seen_senders = ?seen_sender_strings(&state.submissions),
-                    missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
+                    seen_senders = ?seen,
+                    missing_senders = ?missing,
                     source = "peer_submission",
                     "Drift detected: observed multiple digest variants for handle"
                 );
@@ -279,8 +290,16 @@ impl DriftDetector {
                 || consensus.digests.ciphertext128_digest.as_slice()
                     != local_ciphertext128_digest.as_slice())
         {
-            let local_digests =
-                digest_pair_from_db_digests(&local_ciphertext_digest, &local_ciphertext128_digest)?;
+            let local_digests = DigestPair {
+                ciphertext_digest: FixedBytes::from(
+                    <[u8; 32]>::try_from(local_ciphertext_digest.as_slice())
+                        .map_err(|_| anyhow::anyhow!("local ciphertext digest not 32 bytes"))?,
+                ),
+                ciphertext128_digest: FixedBytes::from(
+                    <[u8; 32]>::try_from(local_ciphertext128_digest.as_slice())
+                        .map_err(|_| anyhow::anyhow!("local ciphertext128 digest not 32 bytes"))?,
+                ),
+            };
             let local_variant_sender_count =
                 sender_count_for_variant(&state.submissions, local_digests);
             let consensus_variant_sender_count =
@@ -294,7 +313,7 @@ impl DriftDetector {
                 block_hash = ?consensus.context.block_hash,
                 tx_hash = ?consensus.context.tx_hash,
                 log_index = ?consensus.context.log_index,
-                consensus_senders = ?address_strings(&consensus.senders),
+                consensus_senders = ?consensus.senders.iter().map(ToString::to_string).collect::<Vec<_>>(),
                 consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                 consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                 local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
@@ -366,11 +385,13 @@ impl DriftDetector {
                         consensus_block_hash = ?consensus.context.block_hash,
                         consensus_tx_hash = ?consensus.context.tx_hash,
                         consensus_log_index = ?consensus.context.log_index,
-                        consensus_senders = ?address_strings(&consensus.senders),
+                        consensus_senders = ?consensus.senders.iter().map(ToString::to_string).collect::<Vec<_>>(),
                         consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                         consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
-                        seen_senders = ?seen_sender_strings(&state.submissions),
-                        missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
+                        seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
+                        missing_senders = ?state.expected_senders.iter()
+                            .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                            .map(ToString::to_string).collect::<Vec<_>>(),
                         variant_count = variants.len(),
                         variants = ?variants,
                         "Consensus reached but some coprocessors never submitted this handle"
@@ -397,8 +418,10 @@ impl DriftDetector {
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
                 last_seen_block = state.last_seen_block,
-                seen_senders = ?seen_sender_strings(&state.submissions),
-                missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
+                seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
+                missing_senders = ?state.expected_senders.iter()
+                    .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                    .map(ToString::to_string).collect::<Vec<_>>(),
                 variant_count = variants.len(),
                 variants = ?variants,
                 "Handle timed out before consensus was observed"
@@ -435,7 +458,7 @@ impl DriftDetector {
             .open_handles
             .iter()
             .filter_map(|(handle, state)| {
-                (!state.drift_reported && has_multiple_variants(&state.submissions))
+                (!state.drift_reported && variant_summaries(&state.submissions).len() > 1)
                     .then_some(*handle)
             })
             .collect::<Vec<_>>();
@@ -454,8 +477,10 @@ impl DriftDetector {
                 last_seen_block = state.last_seen_block,
                 variant_count = variants.len(),
                 variants = ?variants,
-                seen_senders = ?seen_sender_strings(&state.submissions),
-                missing_senders = ?missing_sender_strings(&state.expected_senders, &state.submissions),
+                seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
+                missing_senders = ?state.expected_senders.iter()
+                    .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                    .map(ToString::to_string).collect::<Vec<_>>(),
                 source = "peer_submission",
                 "Drift detected: observed multiple digest variants for handle"
             );
@@ -507,7 +532,7 @@ impl DriftDetector {
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
                 last_seen_block = state.last_seen_block,
-                seen_senders = ?seen_sender_strings(&state.submissions),
+                seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
                 variant_count = variants.len(),
                 variants = ?variants,
                 "All expected coprocessors submitted but no consensus event was observed"
@@ -556,12 +581,6 @@ fn new_handle_state(context: EventContext, expected_senders: Vec<Address>) -> Ha
     }
 }
 
-fn has_multiple_variants(submissions: &[Submission]) -> bool {
-    submissions
-        .iter()
-        .any(|s| submissions.iter().any(|t| t.digests != s.digests))
-}
-
 fn variant_summaries(submissions: &[Submission]) -> Vec<String> {
     let mut variants: Vec<(DigestPair, Vec<Address>)> = Vec::new();
 
@@ -583,33 +602,13 @@ fn variant_summaries(submissions: &[Submission]) -> Vec<String> {
                 "ct64={} ct128={} senders={:?}",
                 digests.ciphertext_digest,
                 digests.ciphertext128_digest,
-                address_strings(&senders)
+                senders
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
             )
         })
         .collect()
-}
-
-fn seen_sender_strings(submissions: &[Submission]) -> Vec<String> {
-    address_strings(
-        &submissions
-            .iter()
-            .map(|submission| submission.sender)
-            .collect::<Vec<_>>(),
-    )
-}
-
-fn missing_sender_strings(expected_senders: &[Address], submissions: &[Submission]) -> Vec<String> {
-    let seen = submissions
-        .iter()
-        .map(|submission| submission.sender)
-        .collect::<Vec<_>>();
-    address_strings(
-        &expected_senders
-            .iter()
-            .copied()
-            .filter(|sender| !seen.contains(sender))
-            .collect::<Vec<_>>(),
-    )
 }
 
 fn sender_count_for_variant(submissions: &[Submission], digests: DigestPair) -> usize {
@@ -617,35 +616,6 @@ fn sender_count_for_variant(submissions: &[Submission], digests: DigestPair) -> 
         .iter()
         .filter(|submission| submission.digests == digests)
         .count()
-}
-
-fn digest_pair_from_db_digests(
-    ciphertext_digest: &[u8],
-    ciphertext128_digest: &[u8],
-) -> anyhow::Result<DigestPair> {
-    let ciphertext_digest: [u8; 32] = ciphertext_digest.try_into().map_err(|_| {
-        anyhow::anyhow!(
-            "Failed to convert local ciphertext digest to [u8; 32] (len={}): 0x{}",
-            ciphertext_digest.len(),
-            to_hex(ciphertext_digest)
-        )
-    })?;
-    let ciphertext128_digest: [u8; 32] = ciphertext128_digest.try_into().map_err(|_| {
-        anyhow::anyhow!(
-            "Failed to convert local ciphertext128 digest to [u8; 32] (len={}): 0x{}",
-            ciphertext128_digest.len(),
-            to_hex(ciphertext128_digest)
-        )
-    })?;
-
-    Ok(DigestPair {
-        ciphertext_digest: FixedBytes::from(ciphertext_digest),
-        ciphertext128_digest: FixedBytes::from(ciphertext128_digest),
-    })
-}
-
-fn address_strings(addresses: &[Address]) -> Vec<String> {
-    addresses.iter().map(ToString::to_string).collect()
 }
 
 #[cfg(test)]
@@ -755,6 +725,20 @@ mod tests {
         }
     }
 
+    fn submit(
+        d: &mut DriftDetector,
+        handle: FixedBytes<32>,
+        ct: impl Into<FixedBytes<32>>,
+        ct128: impl Into<FixedBytes<32>>,
+        sender: Address,
+        block: u64,
+    ) {
+        d.observe_submission(
+            make_submission_event(handle, ct.into(), ct128.into(), sender),
+            context(block),
+        );
+    }
+
     fn senders() -> Vec<Address> {
         vec![
             Address::left_padding_from(&[1]),
@@ -805,44 +789,40 @@ mod tests {
 
         assert_eq!(detector.earliest_open_block(), None);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle_b,
-                digest_b.ciphertext_digest,
-                digest_b.ciphertext128_digest,
-                senders[0],
-            ),
-            context(20),
+        submit(
+            &mut detector,
+            handle_b,
+            digest_b.ciphertext_digest,
+            digest_b.ciphertext128_digest,
+            senders[0],
+            20,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle_a,
-                digest_a.ciphertext_digest,
-                digest_a.ciphertext128_digest,
-                senders[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle_a,
+            digest_a.ciphertext_digest,
+            digest_a.ciphertext128_digest,
+            senders[0],
+            10,
         );
 
         assert_eq!(detector.earliest_open_block(), Some(10));
 
-        detector.observe_submission(
-            make_submission_event(
-                handle_a,
-                digest_a.ciphertext_digest,
-                digest_a.ciphertext128_digest,
-                senders[1],
-            ),
-            context(11),
+        submit(
+            &mut detector,
+            handle_a,
+            digest_a.ciphertext_digest,
+            digest_a.ciphertext128_digest,
+            senders[1],
+            11,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle_a,
-                digest_a.ciphertext_digest,
-                digest_a.ciphertext128_digest,
-                senders[2],
-            ),
-            context(12),
+        submit(
+            &mut detector,
+            handle_a,
+            digest_a.ciphertext_digest,
+            digest_a.ciphertext128_digest,
+            senders[2],
+            12,
         );
         detector.finalize_completed_without_consensus();
 
@@ -856,23 +836,14 @@ mod tests {
         let senders = senders();
 
         detector.set_alerts_enabled(false);
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([8u8; 32]),
-                FixedBytes::from([9u8; 32]),
-                senders[0],
-            ),
-            context(10),
-        );
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([10u8; 32]),
-                FixedBytes::from([11u8; 32]),
-                senders[1],
-            ),
-            context(11),
+        submit(&mut detector, handle, [8u8; 32], [9u8; 32], senders[0], 10);
+        submit(
+            &mut detector,
+            handle,
+            [10u8; 32],
+            [11u8; 32],
+            senders[1],
+            11,
         );
 
         assert_eq!(detector.deferred_metrics.drift_detected, 0);
@@ -950,23 +921,21 @@ mod tests {
             ciphertext128_digest: FixedBytes::from([3u8; 32]),
         };
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                digests.ciphertext_digest,
-                digests.ciphertext128_digest,
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            digests.ciphertext_digest,
+            digests.ciphertext128_digest,
+            senders()[0],
+            10,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                digests.ciphertext_digest,
-                digests.ciphertext128_digest,
-                senders()[1],
-            ),
-            context(11),
+        submit(
+            &mut detector,
+            handle,
+            digests.ciphertext_digest,
+            digests.ciphertext128_digest,
+            senders()[1],
+            11,
         );
 
         let state = detector.open_handles.get(&handle).unwrap();
@@ -979,23 +948,21 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([9u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[1],
-            ),
-            context(11),
+        submit(
+            &mut detector,
+            handle,
+            [9u8; 32],
+            [3u8; 32],
+            senders()[1],
+            11,
         );
 
         assert_eq!(detector.deferred_metrics.drift_detected, 1);
@@ -1011,29 +978,27 @@ mod tests {
         let handle_after_rotation = FixedBytes::from([22u8; 32]);
         let new_sender = Address::left_padding_from(&[4]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle_before_rotation,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                old_senders[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle_before_rotation,
+            [2u8; 32],
+            [3u8; 32],
+            old_senders[0],
+            10,
         );
 
         let mut rotated_senders = old_senders.clone();
         rotated_senders.push(new_sender);
         detector.set_current_expected_senders(rotated_senders.clone());
 
-        for (index, sender) in old_senders.iter().copied().enumerate().skip(1) {
-            detector.observe_submission(
-                make_submission_event(
-                    handle_before_rotation,
-                    FixedBytes::from([2u8; 32]),
-                    FixedBytes::from([3u8; 32]),
-                    sender,
-                ),
-                context(11 + index as u64),
+        for (i, sender) in old_senders.iter().copied().enumerate().skip(1) {
+            submit(
+                &mut detector,
+                handle_before_rotation,
+                [2u8; 32],
+                [3u8; 32],
+                sender,
+                11 + i as u64,
             );
         }
         detector.finalize_completed_without_consensus();
@@ -1041,28 +1006,26 @@ mod tests {
         assert!(!detector.open_handles.contains_key(&handle_before_rotation));
         assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
 
-        for (index, sender) in rotated_senders.iter().copied().take(3).enumerate() {
-            detector.observe_submission(
-                make_submission_event(
-                    handle_after_rotation,
-                    FixedBytes::from([4u8; 32]),
-                    FixedBytes::from([5u8; 32]),
-                    sender,
-                ),
-                context(20 + index as u64),
+        for (i, sender) in rotated_senders.iter().copied().take(3).enumerate() {
+            submit(
+                &mut detector,
+                handle_after_rotation,
+                [4u8; 32],
+                [5u8; 32],
+                sender,
+                20 + i as u64,
             );
         }
 
         assert!(detector.open_handles.contains_key(&handle_after_rotation));
 
-        detector.observe_submission(
-            make_submission_event(
-                handle_after_rotation,
-                FixedBytes::from([4u8; 32]),
-                FixedBytes::from([5u8; 32]),
-                new_sender,
-            ),
-            context(23),
+        submit(
+            &mut detector,
+            handle_after_rotation,
+            [4u8; 32],
+            [5u8; 32],
+            new_sender,
+            23,
         );
         detector.finalize_completed_without_consensus();
 
@@ -1075,15 +1038,14 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        for (index, sender) in senders().into_iter().enumerate() {
-            detector.observe_submission(
-                make_submission_event(
-                    handle,
-                    FixedBytes::from([2u8; 32]),
-                    FixedBytes::from([3u8; 32]),
-                    sender,
-                ),
-                context(10 + index as u64),
+        for (i, sender) in senders().into_iter().enumerate() {
+            submit(
+                &mut detector,
+                handle,
+                [2u8; 32],
+                [3u8; 32],
+                sender,
+                10 + i as u64,
             );
         }
 
@@ -1102,15 +1064,14 @@ mod tests {
         let handle = FixedBytes::from([23u8; 32]);
         let expected = senders();
 
-        for (index, sender) in expected.iter().copied().enumerate() {
-            detector.observe_submission(
-                make_submission_event(
-                    handle,
-                    FixedBytes::from([2u8; 32]),
-                    FixedBytes::from([3u8; 32]),
-                    sender,
-                ),
-                context(10 + index as u64),
+        for (i, sender) in expected.iter().copied().enumerate() {
+            submit(
+                &mut detector,
+                handle,
+                [2u8; 32],
+                [3u8; 32],
+                sender,
+                10 + i as u64,
             );
         }
 
@@ -1137,23 +1098,21 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[1],
-            ),
-            context(11),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[1],
+            11,
         );
 
         detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
@@ -1179,14 +1138,13 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
 
         detector.evict_stale(15);
@@ -1200,23 +1158,21 @@ mod tests {
         let mut detector = detector(); // post_consensus_grace_blocks = 2
         let handle = FixedBytes::from([1u8; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[1],
-            ),
-            context(11),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[1],
+            11,
         );
 
         // Inject consensus at block 12 and mark local check done.
@@ -1250,14 +1206,13 @@ mod tests {
         let mut detector = detector(); // no_consensus_timeout_blocks = 5
         let handle = FixedBytes::from([1u8; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
 
         // Block 14: 14 - 10 = 4 < 5 (timeout window), should NOT evict.
@@ -1313,26 +1268,10 @@ mod tests {
         let sender = senders()[0];
 
         // First submission from sender.
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                sender,
-            ),
-            context(10),
-        );
+        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 10);
 
         // Same sender, different digests (equivocation).
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([9u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                sender,
-            ),
-            context(11),
-        );
+        submit(&mut detector, handle, [9u8; 32], [3u8; 32], sender, 11);
 
         let state = detector.open_handles.get(&handle).unwrap();
         // Should still have only 1 submission (the first one).
@@ -1351,26 +1290,10 @@ mod tests {
         let handle = FixedBytes::from([1u8; 32]);
         let sender = senders()[0];
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                sender,
-            ),
-            context(10),
-        );
+        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 10);
 
         // Exact same submission again.
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                sender,
-            ),
-            context(11),
-        );
+        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 11);
 
         let state = detector.open_handles.get(&handle).unwrap();
         assert_eq!(state.submissions.len(), 1);
@@ -1385,14 +1308,13 @@ mod tests {
         let mut detector = detector(); // no_consensus_timeout_blocks = 5
         let handle = FixedBytes::from([0xDD; 32]);
 
-        detector.observe_submission(
-            make_submission_event(
-                handle,
-                FixedBytes::from([2u8; 32]),
-                FixedBytes::from([3u8; 32]),
-                senders()[0],
-            ),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            senders()[0],
+            10,
         );
 
         detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
@@ -1640,15 +1562,16 @@ mod tests {
 
         // Submit from 3 expected senders + 1 unexpected sender.
         for &sender in &senders() {
-            detector.observe_submission(
-                make_submission_event(handle, digest, digest128, sender),
-                context(10),
-            );
+            submit(&mut detector, handle, digest, digest128, sender, 10);
         }
         let unexpected_sender = Address::left_padding_from(&[99]);
-        detector.observe_submission(
-            make_submission_event(handle, digest, digest128, unexpected_sender),
-            context(10),
+        submit(
+            &mut detector,
+            handle,
+            digest,
+            digest128,
+            unexpected_sender,
+            10,
         );
 
         // Process consensus.

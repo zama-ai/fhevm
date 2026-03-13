@@ -154,11 +154,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         };
         let sender_seed_block = replay_start_block
             .map(|block| block.saturating_sub(1))
-            .or_else(|| {
-                progress
-                    .earliest_open_ct_commits_block
-                    .map(|block| block.saturating_sub(1))
-            })
             .or(last_processed_block_num);
         let expected_coprocessor_tx_senders = self
             .fetch_expected_coprocessor_tx_senders(sender_seed_block)
@@ -243,83 +238,89 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         info!(from_block, to_block, nb_events=logs.len(), "Replay get_logs");
                     }
                     for log in logs {
-                        if log.address() == self.input_verification_address {
-                            if replay_from_block.is_some() && self.conf.replay_skip_verify_proof {
-                                debug!(log = ?log, "Skipping VerifyProofRequest during replay");
-                                continue;
-                            }
-                            if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
-                                // This listener only reacts to proof requests. Other known InputVerification
-                                // events are expected when multiple coprocessors interact with the gateway.
-                                if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
-                                    self.verify_proof_request(db_pool, request, log.clone()).await.
-                                        inspect(|_| {
-                                            verify_proof_success += 1;
-                                        }).inspect_err(|e| {
-                                            error!(error = %e, "VerifyProofRequest processing failed");
-                                            VERIFY_PROOF_FAIL_COUNTER.inc();
-                                    })?;
+                        match log.address() {
+                            a if a == self.input_verification_address => {
+                                if replay_from_block.is_some() && self.conf.replay_skip_verify_proof {
+                                    debug!(log = ?log, "Skipping VerifyProofRequest during replay");
+                                    continue;
                                 }
-                            } else {
-                                error!(log = ?log, "Failed to decode InputVerification event log");
-                            }
-                        } else if log.address() == self.kms_generation_address {
-                            if let Ok(event) = KMSGeneration::KMSGenerationEvents::decode_log(&log.inner) {
-                                match event.data {
-                                    KMSGeneration::KMSGenerationEvents::ActivateCrs(a) => {
-                                        // IMPORTANT: If we ignore the event due to digest mismatch, this might lead to inconsistency between coprocessors.
-                                        // We choose to ignore the event and then manually fix if it happens.
-                                        match self.activate_crs(db_pool, a, &self.aws_s3_client).await {
-                                            Ok(_) => {
-                                                activate_crs_success += 1;
-                                                info!("ActivateCrs event successful");
-                                            },
-                                            Err(e) if e.is::<DigestMismatchError>() => {
-                                                crs_digest_mismatch += 1;
-                                                error!(error = %e, "CRS digest mismatch, ignoring event");
-                                            }
-                                            Err(e) => {
-                                                ACTIVATE_CRS_FAIL_COUNTER.inc();
-                                                return Err(e);
-                                            }
-                                        }
-                                    },
-                                    // IMPORTANT: See comment above.
-                                    KMSGeneration::KMSGenerationEvents::ActivateKey(a) => {
-                                        match self.activate_key(db_pool, a, &self.aws_s3_client).await {
-                                            Ok(_) => {
-                                                activate_key_success += 1;
-                                                info!("ActivateKey event successful");
-                                            }
-                                            Err(e) if e.is::<DigestMismatchError>() => {
-                                                key_digest_mismatch += 1;
-                                                error!(error = %e, "Key digest mismatch, ignoring event");
-                                            }
-                                            Err(e) => {
-                                                ACTIVATE_KEY_FAIL_COUNTER.inc();
-                                                return Err(e);
-                                            }
-                                        };
-                                    },
-                                    _ => {
-                                        error!(log = ?log, "Unknown KMSGeneration event")
+                                if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
+                                    // This listener only reacts to proof requests. Other known InputVerification
+                                    // events are expected when multiple coprocessors interact with the gateway.
+                                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
+                                        self.verify_proof_request(db_pool, request, log.clone()).await.
+                                            inspect(|_| {
+                                                verify_proof_success += 1;
+                                            }).inspect_err(|e| {
+                                                error!(error = %e, "VerifyProofRequest processing failed");
+                                                VERIFY_PROOF_FAIL_COUNTER.inc();
+                                        })?;
                                     }
+                                } else {
+                                    error!(log = ?log, "Failed to decode InputVerification event log");
                                 }
-                            } else {
-                                error!(log = ?log, "Failed to decode KMSGeneration event log");
                             }
-                        } else if Some(log.address()) == self.conf.ciphertext_commits_address {
-                            self.process_ciphertext_commits_log(
-                                &mut drift_detector,
-                                log,
-                                to_block,
-                                db_pool,
-                            )
-                            .await?;
-                        } else if Some(log.address()) == self.conf.gateway_config_address {
-                            self.process_gateway_config_log(&mut drift_detector, log)?;
-                        } else {
-                            error!(log = ?log, "Unexpected log address");
+                            a if a == self.kms_generation_address => {
+                                if let Ok(event) = KMSGeneration::KMSGenerationEvents::decode_log(&log.inner) {
+                                    match event.data {
+                                        KMSGeneration::KMSGenerationEvents::ActivateCrs(a) => {
+                                            // IMPORTANT: If we ignore the event due to digest mismatch, this might lead to inconsistency between coprocessors.
+                                            // We choose to ignore the event and then manually fix if it happens.
+                                            match self.activate_crs(db_pool, a, &self.aws_s3_client).await {
+                                                Ok(_) => {
+                                                    activate_crs_success += 1;
+                                                    info!("ActivateCrs event successful");
+                                                },
+                                                Err(e) if e.is::<DigestMismatchError>() => {
+                                                    crs_digest_mismatch += 1;
+                                                    error!(error = %e, "CRS digest mismatch, ignoring event");
+                                                }
+                                                Err(e) => {
+                                                    ACTIVATE_CRS_FAIL_COUNTER.inc();
+                                                    return Err(e);
+                                                }
+                                            }
+                                        },
+                                        // IMPORTANT: See comment above.
+                                        KMSGeneration::KMSGenerationEvents::ActivateKey(a) => {
+                                            match self.activate_key(db_pool, a, &self.aws_s3_client).await {
+                                                Ok(_) => {
+                                                    activate_key_success += 1;
+                                                    info!("ActivateKey event successful");
+                                                }
+                                                Err(e) if e.is::<DigestMismatchError>() => {
+                                                    key_digest_mismatch += 1;
+                                                    error!(error = %e, "Key digest mismatch, ignoring event");
+                                                }
+                                                Err(e) => {
+                                                    ACTIVATE_KEY_FAIL_COUNTER.inc();
+                                                    return Err(e);
+                                                }
+                                            };
+                                        },
+                                        _ => {
+                                            error!(log = ?log, "Unknown KMSGeneration event")
+                                        }
+                                    }
+                                } else {
+                                    error!(log = ?log, "Failed to decode KMSGeneration event log");
+                                }
+                            }
+                            a if Some(a) == self.conf.ciphertext_commits_address => {
+                                self.process_ciphertext_commits_log(
+                                    &mut drift_detector,
+                                    log,
+                                    to_block,
+                                    db_pool,
+                                )
+                                .await?;
+                            }
+                            a if Some(a) == self.conf.gateway_config_address => {
+                                self.process_gateway_config_log(&mut drift_detector, log)?;
+                            }
+                            _ => {
+                                error!(log = ?log, "Unexpected log address");
+                            }
                         }
                     }
                     drift_detector.refresh_pending_consensus_checks(db_pool).await?;
