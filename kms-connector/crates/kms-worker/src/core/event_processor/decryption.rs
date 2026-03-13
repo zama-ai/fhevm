@@ -67,26 +67,6 @@ where
         }
     }
 
-    pub async fn check_decryption_not_already_done(
-        &self,
-        decryption_id: U256,
-    ) -> Result<(), ProcessingError> {
-        let is_decryption_done = self
-            .decryption_contract
-            .isDecryptionDone(decryption_id)
-            .call()
-            .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
-
-        if is_decryption_done {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "Decryption already done on the Gateway"
-            )));
-        }
-
-        Ok(())
-    }
-
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
@@ -407,58 +387,8 @@ mod tests {
     enum ExpectedOutcome {
         Ok,
         Recoverable,
+        #[allow(unused)]
         Irrecoverable,
-    }
-
-    enum DecryptionReadyMock {
-        Failure(&'static str),
-        Success(bool),
-    }
-
-    #[rstest]
-    #[case::transport_error(
-        DecryptionReadyMock::Failure("Transport Error"),
-        ExpectedOutcome::Recoverable
-    )]
-    #[case::not_done(DecryptionReadyMock::Success(false), ExpectedOutcome::Ok)]
-    #[case::already_done(DecryptionReadyMock::Success(true), ExpectedOutcome::Irrecoverable)]
-    #[tokio::test]
-    async fn check_decryption_not_already_done(
-        #[case] mock_response: DecryptionReadyMock,
-        #[case] expected: ExpectedOutcome,
-    ) {
-        let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-        let acl_contracts_mock = HashMap::from([(
-            u64::default(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
-
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
-
-        match mock_response {
-            DecryptionReadyMock::Failure(msg) => asserter.push_failure_msg(msg),
-            DecryptionReadyMock::Success(val) => asserter.push_success(&val.abi_encode()),
-        }
-
-        let result = decryption_processor
-            .check_decryption_not_already_done(U256::ZERO)
-            .await;
-
-        match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
-            }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
-        }
     }
 
     enum PubDecryptACLMock {

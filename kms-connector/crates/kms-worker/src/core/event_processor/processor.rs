@@ -124,9 +124,6 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
         let request = match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_decryption_not_already_done(req.decryptionId)
-                    .await?;
-                self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
                     .await?;
 
