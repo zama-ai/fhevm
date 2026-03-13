@@ -5,6 +5,8 @@ libs = ['node_modules', 'lib', "dependencies"]
 test = 'test'
 cache_path  = 'cache_forge'
 solc = '0.8.24'
+cbor_metadata = false
+bytecode_hash = 'none'
 
 remappings = [
     '@fhevm-foundry/=./fhevm-foundry/',
