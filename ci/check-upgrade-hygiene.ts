@@ -21,21 +21,22 @@ if (!existsSync(manifestPath)) {
 const VERSION_RE = /(?<name>REINITIALIZER_VERSION|MAJOR_VERSION|MINOR_VERSION|PATCH_VERSION)\s*=\s*(?<value>\d+)/g;
 
 function extractVersions(filePath: string) {
-  const src = readFileSync(filePath, "utf-8");
+  const source = readFileSync(filePath, "utf-8");
   const versions: Record<string, number> = {};
-  for (const { groups } of src.matchAll(VERSION_RE)) {
+  for (const { groups } of source.matchAll(VERSION_RE)) {
     versions[groups!.name] = Number(groups!.value);
   }
-  return versions;
+  return { versions, source };
 }
 
 function forgeInspect(contract: string, root: string): string | null {
   try {
     return execSync(`forge inspect "contracts/${contract}.sol:${contract}" --root "${root}" deployedBytecode`, {
       encoding: "utf-8",
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: ["pipe", "pipe", "pipe"],
     }).trim();
-  } catch {
+  } catch (e: any) {
+    if (e.stderr) console.error(String(e.stderr));
     return null;
   }
 }
@@ -45,99 +46,94 @@ let errors = 0;
 
 for (const name of contracts) {
   console.log(`::group::Checking ${name}`);
+  try {
+    const mainSol = join(mainDir, "contracts", `${name}.sol`);
+    const prSol = join(prDir, "contracts", `${name}.sol`);
 
-  const mainSol = join(mainDir, "contracts", `${name}.sol`);
-  const prSol = join(prDir, "contracts", `${name}.sol`);
-
-  if (!existsSync(mainSol)) {
-    console.log(`Skipping ${name} (new contract, not on main)`);
-    console.log("::endgroup::");
-    continue;
-  }
-
-  if (!existsSync(prSol)) {
-    console.error(`::error::${name} listed in upgrade-manifest.json but missing in PR`);
-    errors++;
-    console.log("::endgroup::");
-    continue;
-  }
-
-  const mainV = extractVersions(mainSol);
-  const prV = extractVersions(prSol);
-
-  for (const key of ["REINITIALIZER_VERSION", "MAJOR_VERSION", "MINOR_VERSION", "PATCH_VERSION"]) {
-    if (mainV[key] == null || prV[key] == null) {
-      console.error(`::error::Failed to parse ${key} for ${name}`);
-      errors++;
+    if (!existsSync(mainSol)) {
+      console.log(`Skipping ${name} (new contract, not on main)`);
+      continue;
     }
-  }
-  if (errors > 0) {
-    console.log("::endgroup::");
-    continue;
-  }
 
-  const mainBytecode = forgeInspect(name, mainDir);
-  if (mainBytecode == null) {
-    console.error(`::error::Failed to compile ${name} on main`);
-    errors++;
-    console.log("::endgroup::");
-    continue;
-  }
+    if (!existsSync(prSol)) {
+      console.error(`::error::${name} listed in upgrade-manifest.json but missing in PR`);
+      errors++;
+      continue;
+    }
 
-  const prBytecode = forgeInspect(name, prDir);
-  if (prBytecode == null) {
-    console.error(`::error::Failed to compile ${name} on PR`);
-    errors++;
-    console.log("::endgroup::");
-    continue;
-  }
+    const { versions: mainV } = extractVersions(mainSol);
+    const { versions: prV, source: prSrc } = extractVersions(prSol);
 
-  const bytecodeChanged = mainBytecode !== prBytecode;
-  const reinitChanged = mainV.REINITIALIZER_VERSION !== prV.REINITIALIZER_VERSION;
-  const versionChanged =
-    mainV.MAJOR_VERSION !== prV.MAJOR_VERSION ||
-    mainV.MINOR_VERSION !== prV.MINOR_VERSION ||
-    mainV.PATCH_VERSION !== prV.PATCH_VERSION;
+    let parseFailed = false;
+    for (const key of ["REINITIALIZER_VERSION", "MAJOR_VERSION", "MINOR_VERSION", "PATCH_VERSION"]) {
+      if (mainV[key] == null || prV[key] == null) {
+        console.error(`::error::Failed to parse ${key} for ${name}`);
+        errors++;
+        parseFailed = true;
+      }
+    }
+    if (parseFailed) continue;
 
-  if (!bytecodeChanged) {
-    console.log(`${name}: bytecode unchanged`);
-    if (reinitChanged) {
+    const mainBytecode = forgeInspect(name, mainDir);
+    if (mainBytecode == null) {
+      console.error(`::error::Failed to compile ${name} on main`);
+      errors++;
+      continue;
+    }
+
+    const prBytecode = forgeInspect(name, prDir);
+    if (prBytecode == null) {
+      console.error(`::error::Failed to compile ${name} on PR`);
+      errors++;
+      continue;
+    }
+
+    const bytecodeChanged = mainBytecode !== prBytecode;
+    const reinitChanged = mainV.REINITIALIZER_VERSION !== prV.REINITIALIZER_VERSION;
+    const versionChanged =
+      mainV.MAJOR_VERSION !== prV.MAJOR_VERSION ||
+      mainV.MINOR_VERSION !== prV.MINOR_VERSION ||
+      mainV.PATCH_VERSION !== prV.PATCH_VERSION;
+
+    if (!bytecodeChanged) {
+      console.log(`${name}: bytecode unchanged`);
+      if (reinitChanged) {
+        console.error(
+          `::error::${name} REINITIALIZER_VERSION bumped (${mainV.REINITIALIZER_VERSION} -> ${prV.REINITIALIZER_VERSION}) but bytecode is unchanged`,
+        );
+        errors++;
+      }
+      continue;
+    }
+
+    console.log(`${name}: bytecode CHANGED`);
+
+    if (!reinitChanged) {
       console.error(
-        `::error::${name} REINITIALIZER_VERSION bumped (${mainV.REINITIALIZER_VERSION} -> ${prV.REINITIALIZER_VERSION}) but bytecode is unchanged`,
+        `::error::${name} bytecode changed but REINITIALIZER_VERSION was not bumped (still ${prV.REINITIALIZER_VERSION})`,
+      );
+      errors++;
+    } else {
+      // Convention: reinitializeV{N-1} for REINITIALIZER_VERSION=N
+      const expectedFn = `reinitializeV${prV.REINITIALIZER_VERSION - 1}`;
+      const uncommented = prSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      if (!new RegExp(`function\\s+${expectedFn}\\s*\\(`).test(uncommented)) {
+        console.error(
+          `::error::${name} has REINITIALIZER_VERSION=${prV.REINITIALIZER_VERSION} but no ${expectedFn}() function found`,
+        );
+        errors++;
+      }
+    }
+
+    if (!versionChanged) {
+      console.error(
+        `::error::${name} bytecode changed but semantic version was not bumped (still v${prV.MAJOR_VERSION}.${prV.MINOR_VERSION}.${prV.PATCH_VERSION})`,
       );
       errors++;
     }
+  } finally {
     console.log("::endgroup::");
-    continue;
   }
-
-  console.log(`${name}: bytecode CHANGED`);
-
-  if (!reinitChanged) {
-    console.error(
-      `::error::${name} bytecode changed but REINITIALIZER_VERSION was not bumped (still ${prV.REINITIALIZER_VERSION})`,
-    );
-    errors++;
-  } else {
-    // Convention: reinitializeV{N-1} for REINITIALIZER_VERSION=N
-    const expectedFn = `reinitializeV${prV.REINITIALIZER_VERSION - 1}`;
-    const prSrc = readFileSync(prSol, "utf-8");
-    if (!new RegExp(`function\\s+${expectedFn}\\s*\\(`).test(prSrc)) {
-      console.error(
-        `::error::${name} has REINITIALIZER_VERSION=${prV.REINITIALIZER_VERSION} but no ${expectedFn}() function found`,
-      );
-      errors++;
-    }
-  }
-
-  if (!versionChanged) {
-    console.error(
-      `::error::${name} bytecode changed but semantic version was not bumped (still v${prV.MAJOR_VERSION}.${prV.MINOR_VERSION}.${prV.PATCH_VERSION})`,
-    );
-    errors++;
-  }
-
-  console.log("::endgroup::");
 }
 
 if (errors > 0) {

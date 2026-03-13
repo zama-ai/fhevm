@@ -93,6 +93,7 @@ jobs:
         env:
           PACKAGE: ${{ matrix.package }}
         run: |
+          # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "main-branch/$PACKAGE/foundry.toml"
           for dir in "$PACKAGE" "main-branch/$PACKAGE"; do
             mkdir -p "$dir/addresses"
