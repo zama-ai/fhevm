@@ -489,6 +489,15 @@ const minioIp = async (deps: RuntimeDeps) => {
   return ip;
 };
 
+const defaultEndpoints = async (deps: RuntimeDeps): Promise<Discovery["endpoints"]> => ({
+  gatewayHttp: "http://gateway-node:8546",
+  gatewayWs: "ws://gateway-node:8546",
+  hostHttp: "http://host-node:8545",
+  hostWs: "ws://host-node:8545",
+  minioInternal: "http://minio:9000",
+  minioExternal: `http://${await minioIp(deps)}:9000`,
+});
+
 const responseSnippet = async (response: Response) => {
   const text = (await response.text()).trim();
   return text ? `: ${text.slice(0, 200)}` : "";
@@ -914,14 +923,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         kmsSigner: "",
         fheKeyId: predictedKeyId(),
         crsKeyId: predictedCrsId(),
-        endpoints: {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: await defaultEndpoints(deps),
       };
       await regen(state, deps);
       break;
@@ -932,14 +934,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         kmsSigner: "",
         fheKeyId: predictedKeyId(),
         crsKeyId: predictedCrsId(),
-        endpoints: {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: await defaultEndpoints(deps),
       };
       const signer = await discoverSigner(deps);
       state.discovery.kmsSigner = signer.address;
@@ -960,14 +955,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
         minioKeyPrefix: state.discovery?.minioKeyPrefix,
-        endpoints: state.discovery?.endpoints ?? {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: state.discovery?.endpoints ?? await defaultEndpoints(deps),
       };
       await regen(state, deps);
       await composeUp(
@@ -996,14 +984,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
         minioKeyPrefix: state.discovery?.minioKeyPrefix,
-        endpoints: state.discovery?.endpoints ?? {
-          gatewayHttp: "http://gateway-node:8546",
-          gatewayWs: "ws://gateway-node:8546",
-          hostHttp: "http://host-node:8545",
-          hostWs: "ws://host-node:8545",
-          minioInternal: "http://minio:9000",
-          minioExternal: `http://${await minioIp(deps)}:9000`,
-        },
+        endpoints: state.discovery?.endpoints ?? await defaultEndpoints(deps),
       };
       break;
     }

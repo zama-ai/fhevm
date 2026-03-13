@@ -80,26 +80,14 @@ const parseCompatVersion = (version: string) => {
 };
 
 /**
- * Compare an unparseable version (SHA) conservatively: treat as old.
- * Safe for additive compat rules (extra CLI args that older versions need).
+ * Return true when `version` is older than `target`.
+ * When the version string is unparseable (e.g. a SHA tag), `unknownIsOld` controls the result:
+ *   true  (default) — conservative, safe for additive compat rules (extra CLI args).
+ *   false           — optimistic, safe for destructive compat rules (removing config fields).
  */
-const versionLt = (version: string, target: CompatSemver) => {
+const versionLt = (version: string, target: CompatSemver, unknownIsOld = true) => {
   const parsed = parseCompatVersion(version);
-  if (!parsed) return true;
-  for (let index = 0; index < parsed.length; index += 1) {
-    if (parsed[index] !== target[index]) return parsed[index] < target[index];
-  }
-  return false;
-};
-
-/**
- * Compare an unparseable version (SHA) optimistically: treat as modern.
- * Use for destructive compat rules (removing config fields that modern versions require).
- * All known old versions in GitOps use semver; SHAs come from CI which pins modern builds.
- */
-const versionLtStrict = (version: string, target: CompatSemver) => {
-  const parsed = parseCompatVersion(version);
-  if (!parsed) return false;
+  if (!parsed) return unknownIsOld;
   for (let index = 0; index < parsed.length; index += 1) {
     if (parsed[index] !== target[index]) return parsed[index] < target[index];
   }
@@ -115,11 +103,11 @@ export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "ov
   !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
-  versionLtStrict(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
+  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0], false);
 
 /** Test-suite SDK < v0.11.0 appends /v1/ to RELAYER_URL; >= v0.11.0 expects the URL to include the version path. */
 export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
-  versionLtStrict(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
+  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0], false);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };

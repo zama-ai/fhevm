@@ -18,6 +18,3 @@ export const NON_NETWORK_COMPANIONS = {
   "latest-main": MODERN_COMPANIONS,
   "sha": MODERN_COMPANIONS,
 } as const;
-
-export const companionPreset = (target: keyof typeof NON_NETWORK_COMPANIONS) =>
-  NON_NETWORK_COMPANIONS[target];
