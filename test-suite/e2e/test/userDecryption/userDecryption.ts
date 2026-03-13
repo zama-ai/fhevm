@@ -130,7 +130,7 @@ describe('User decryption', function () {
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
   });
 
-  describe('negative', function () {
+  describe('negative-acl', function () {
     it('should reject when user is not allowed for handle', async function () {
       const handle = await this.contract.xBool();
       const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();

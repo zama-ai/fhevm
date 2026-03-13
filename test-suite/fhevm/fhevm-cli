@@ -392,7 +392,7 @@ case $COMMAND in
           ;;
         negative-acl)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] NEGATIVE ACL${RESET}"
-          docker_args+=("-g" "negative")
+          docker_args+=("-g" "negative-acl")
           ;;
         paused-host-contracts)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST CONTRACTS${RESET}"

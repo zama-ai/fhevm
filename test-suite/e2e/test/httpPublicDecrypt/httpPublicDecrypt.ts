@@ -39,7 +39,7 @@ describe('HTTPPublicDecrypt', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  describe('negative', function () {
+  describe('negative-acl', function () {
     it('should reject when handle is not publicly decryptable', async function () {
       const factory = await ethers.getContractFactory('UserDecrypt');
       const contract = await factory.connect(this.signers.alice).deploy();

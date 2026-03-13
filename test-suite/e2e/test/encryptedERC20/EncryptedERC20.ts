@@ -235,7 +235,7 @@ describe('EncryptedERC20', function () {
     expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });
 
-  describe('negative', function () {
+  describe('negative-acl', function () {
     it('should reject when user is not allowed for handle', async function () {
       const transaction = await this.erc20.mint(10000);
       await transaction.wait();

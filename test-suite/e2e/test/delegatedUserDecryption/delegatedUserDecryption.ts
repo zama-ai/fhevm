@@ -200,7 +200,7 @@ describe('Delegated user decryption', function () {
     expect(Number(decryptedBalanceBefore) - Number(decryptedBalanceAfter)).to.equal(Number(transferAmount));
   });
 
-  describe('negative', function () {
+  describe('negative-acl', function () {
     it('should reject when delegation has been revoked', async function () {
       // First, ensure Bob has delegation.
       const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
