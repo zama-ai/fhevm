@@ -105,6 +105,10 @@ export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "ov
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
   versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
+/** Test-suite SDK < v0.11.0 appends /v1/ to RELAYER_URL; >= v0.11.0 expects the URL to include the version path. */
+export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
+  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
+
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
   for (const rule of COMPAT_RULES.coprocessor) {

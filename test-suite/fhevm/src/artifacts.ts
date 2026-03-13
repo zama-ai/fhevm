@@ -6,6 +6,7 @@ import YAML from "yaml";
 import {
   compatPolicyForState,
   requiresLegacyRelayerReadinessConfig,
+  requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   type CompatPolicy,
 } from "./compat";
@@ -472,6 +473,15 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
       INPUT_VERIFIER_CONTRACT_ADDRESS: state.discovery.host.INPUT_VERIFIER_CONTRACT_ADDRESS,
       FHEVM_EXECUTOR_CONTRACT_ADDRESS: state.discovery.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
     });
+  }
+
+  // Modern test-suite SDK (>= v0.11.0) expects RELAYER_URL to include /v2;
+  // older SDKs append /v1/ internally, so the base URL must stay bare.
+  if (!requiresLegacyRelayerUrl(state)) {
+    const base = envs["test-suite"].RELAYER_URL ?? "";
+    if (base && !base.endsWith("/v2")) {
+      envs["test-suite"].RELAYER_URL = `${base}/v2`;
+    }
   }
 
   const indices = [5, 8, 9, 10, 11];
