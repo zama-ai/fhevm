@@ -61,8 +61,15 @@ gateway:
       - type: subscription
         url: "wss://rpc.testnet.zama.org"
   tx_engine:
-    # USE YOUR OWN PRIVATE KEY - Need to approve spender
-    private_key: ""
+    signer:
+      # Private key signer (local dev / CI)
+      type: "private_key"
+      # USE YOUR OWN PRIVATE KEY - Need to approve spender
+      private_key: ""
+      # Alternative: AWS KMS signer (for deployment)
+      # type: "aws_kms"
+      # key_id: "arn:aws:kms:us-east-1:123456789012:key/your-key-id"
+      # region: "us-east-1"
     max_concurrency: 100
     retry:
       max_attempts: 100

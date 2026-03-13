@@ -206,11 +206,31 @@ pub struct ListenerPoolConfig {
     pub listeners: Vec<ListenerInstanceConfig>,
 }
 
+/// Signer configuration — explicitly tagged by type.
+/// Invalid combinations are unrepresentable.
+#[derive(Clone, Deserialize, Derivative)]
+#[derivative(Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SignerConfig {
+    /// Local private key signer (for local dev and CI)
+    PrivateKey {
+        #[derivative(Debug(format_with = "redact"))]
+        private_key: String,
+    },
+    /// AWS KMS signer (for deployment)
+    AwsKms {
+        #[derivative(Debug(format_with = "redact"))]
+        key_id: String,
+        region: String,
+        #[derivative(Debug(format_with = "redact"))]
+        endpoint: Option<String>,
+    },
+}
+
 #[derive(Deserialize, Clone, Derivative)]
 #[derivative(Debug)]
 pub struct TxEngineConfig {
-    #[derivative(Debug(format_with = "redact"))]
-    pub private_key: String,
+    pub signer: SignerConfig,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
     pub tx_throttlers: TxThrottlersConfig,
@@ -918,10 +938,11 @@ mod tests {
 
     #[test]
     fn test_private_key_is_redacted_in_debug_output() {
-        // Create a test TxEngineConfig with a dummy private key
         let tx_engine_config = TxEngineConfig {
-            private_key: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-                .to_string(),
+            signer: SignerConfig::PrivateKey {
+                private_key: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                    .to_string(),
+            },
             max_concurrency: 10,
             retry: RetrySettings {
                 max_attempts: 3,
@@ -946,21 +967,153 @@ mod tests {
             },
         };
 
-        // Get the debug output
         let debug_output = format!("{:?}", tx_engine_config);
 
-        // Verify that the actual private key is NOT in the debug output
         assert!(
             !debug_output.contains("1234567890abcdef"),
             "Private key should not appear in debug output. Got: {}",
             debug_output
         );
 
-        // Verify the exact format: private_key: [REDACTED]
         assert!(
             debug_output.contains("private_key: [REDACTED]"),
             "Debug output should contain 'private_key: [REDACTED]' but got: {}",
             debug_output
+        );
+    }
+
+    #[test]
+    fn test_aws_kms_fields_are_redacted_in_debug_output() {
+        let tx_engine_config = TxEngineConfig {
+            signer: SignerConfig::AwsKms {
+                key_id: "arn:aws:kms:us-east-1:123456789012:key/secret-key-id".to_string(),
+                region: "us-east-1".to_string(),
+                endpoint: Some("http://localhost:4566".to_string()),
+            },
+            max_concurrency: 10,
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 1000,
+            },
+            tx_throttlers: TxThrottlersConfig {
+                input_proof: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+                public_decrypt: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+                user_decrypt: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+            },
+        };
+
+        let debug_output = format!("{:?}", tx_engine_config);
+
+        assert!(
+            !debug_output.contains("secret-key-id"),
+            "AWS KMS key_id should not appear in debug output. Got: {}",
+            debug_output
+        );
+        assert!(
+            !debug_output.contains("localhost:4566"),
+            "AWS KMS endpoint should not appear in debug output. Got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("key_id: [REDACTED]"),
+            "Debug output should contain 'key_id: [REDACTED]' but got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("endpoint: [REDACTED]"),
+            "Debug output should contain 'endpoint: [REDACTED]' but got: {}",
+            debug_output
+        );
+    }
+
+    #[test]
+    fn test_signer_config_deserialize_private_key() {
+        let yaml = r#"
+            type: "private_key"
+            private_key: "0xabc123"
+        "#;
+        let config: SignerConfig = serde_yaml::from_str(yaml).unwrap();
+        match config {
+            SignerConfig::PrivateKey { private_key } => {
+                assert_eq!(private_key, "0xabc123");
+            }
+            _ => panic!("Expected PrivateKey variant"),
+        }
+    }
+
+    #[test]
+    fn test_signer_config_deserialize_aws_kms() {
+        let yaml = r#"
+            type: "aws_kms"
+            key_id: "arn:aws:kms:us-east-1:123456789012:key/abc"
+            region: "us-east-1"
+            endpoint: "http://localhost:4566"
+        "#;
+        let config: SignerConfig = serde_yaml::from_str(yaml).unwrap();
+        match config {
+            SignerConfig::AwsKms {
+                key_id,
+                region,
+                endpoint,
+            } => {
+                assert_eq!(key_id, "arn:aws:kms:us-east-1:123456789012:key/abc");
+                assert_eq!(region, "us-east-1");
+                assert_eq!(endpoint.unwrap(), "http://localhost:4566");
+            }
+            _ => panic!("Expected AwsKms variant"),
+        }
+    }
+
+    #[test]
+    fn test_signer_config_deserialize_aws_kms_without_endpoint() {
+        let yaml = r#"
+            type: "aws_kms"
+            key_id: "arn:aws:kms:us-east-1:123456789012:key/abc"
+            region: "us-east-1"
+        "#;
+        let config: SignerConfig = serde_yaml::from_str(yaml).unwrap();
+        match config {
+            SignerConfig::AwsKms { endpoint, .. } => {
+                assert!(endpoint.is_none());
+            }
+            _ => panic!("Expected AwsKms variant"),
+        }
+    }
+
+    #[test]
+    fn test_signer_config_deserialize_invalid_type() {
+        let yaml = r#"
+            type: "invalid"
+            key: "value"
+        "#;
+        let result: Result<SignerConfig, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Invalid signer type should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn test_signer_config_deserialize_missing_type() {
+        let yaml = r#"
+            private_key: "0xabc123"
+        "#;
+        let result: Result<SignerConfig, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Missing type field should fail deserialization"
         );
     }
 

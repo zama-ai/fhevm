@@ -10,7 +10,7 @@ use alloy::{
         Identity, Network, Provider, ProviderBuilder, RootProvider,
     },
     rpc::{json_rpc::ErrorPayload, types::TransactionRequest},
-    signers::{Signature, Signer},
+    signers::{aws::AwsSigner, Signature, Signer},
     transports::{http::reqwest::Url, RpcError},
 };
 use anyhow::Result;
@@ -20,7 +20,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    config::settings::{BlockchainRpcConfig, TxEngineConfig},
+    config::settings::{BlockchainRpcConfig, SignerConfig, TxEngineConfig},
     core::job_id::JobId,
     gateway::arbitrum::{
         parse_private_key,
@@ -115,27 +115,48 @@ impl
         Ethereum,      // N: The network.
     >
 {
-    pub fn new(
+    pub async fn new(
         blockchain_rpc_config: BlockchainRpcConfig,
         tx_engine_config: TxEngineConfig,
-    ) -> Self {
-        let mut signer = parse_private_key(&tx_engine_config.private_key).unwrap();
-        signer.set_chain_id(Some(blockchain_rpc_config.chain_id));
+    ) -> Result<Self> {
+        let chain_id = blockchain_rpc_config.chain_id;
 
-        // Clone the signer for multiple consumers
-        let signer = Arc::new(signer);
+        let (signer, wallet): (Arc<dyn SignerCombined>, EthereumWallet) =
+            match &tx_engine_config.signer {
+                SignerConfig::PrivateKey { private_key } => {
+                    let mut s = parse_private_key(private_key)?;
+                    s.set_chain_id(Some(chain_id));
+                    let s = Arc::new(s);
+                    let w = EthereumWallet::from(s.clone());
+                    (s, w)
+                }
+                SignerConfig::AwsKms {
+                    key_id,
+                    region,
+                    endpoint,
+                } => {
+                    let aws_signer = Box::pin(build_aws_kms_signer(
+                        key_id,
+                        region,
+                        endpoint.as_deref(),
+                        Some(chain_id),
+                    ))
+                    .await?;
+                    let w = EthereumWallet::from(aws_signer.clone());
+                    let s: Arc<dyn SignerCombined> = Arc::new(aws_signer);
+                    (s, w)
+                }
+            };
 
         let signer_address = <dyn SignerCombined as alloy::signers::Signer>::address(&*signer);
-        let wallet = EthereumWallet::from(signer.clone());
 
         let rpc_url = Url::parse(&blockchain_rpc_config.http_url)
-            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid URL: {e}")))
-            .unwrap();
+            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid URL: {e}")))?;
 
         let provider = ProviderBuilder::new()
-            .network::<Ethereum>() // Use the concrete network type
+            .network::<Ethereum>()
             .filler(GasFiller)
-            .filler(ChainIdFiller::new(Some(blockchain_rpc_config.chain_id)))
+            .filler(ChainIdFiller::new(Some(chain_id)))
             .filler(WalletFiller::new(wallet))
             .connect_http(rpc_url.clone());
 
@@ -143,7 +164,7 @@ impl
         let managed_provider =
             NonceManagedProvider::new(provider, signer_address, nonce_manager.clone());
 
-        Self {
+        Ok(Self {
             provider: Arc::new(managed_provider),
             signer,
             nonce_manager,
@@ -151,7 +172,7 @@ impl
             ms_retry_delay: tx_engine_config.retry.retry_interval_ms,
             tx_max_retries: tx_engine_config.retry.max_attempts,
             gas_estimation_max_retries: tx_engine_config.retry.max_attempts,
-        }
+        })
     }
 
     pub fn sender_address(&self) -> Address {
@@ -540,4 +561,20 @@ impl
         );
         Ok(pending_receipt)
     }
+}
+
+async fn build_aws_kms_signer(
+    key_id: &str,
+    region: &str,
+    endpoint: Option<&str>,
+    chain_id: Option<u64>,
+) -> anyhow::Result<AwsSigner> {
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_config::Region::new(region.to_owned()));
+    if let Some(endpoint) = endpoint {
+        loader = loader.endpoint_url(endpoint);
+    }
+    let config = loader.load().await;
+    let client = aws_sdk_kms::Client::new(&config);
+    Ok(AwsSigner::new(client, key_id.to_owned(), chain_id).await?)
 }

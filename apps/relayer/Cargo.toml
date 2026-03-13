@@ -20,7 +20,10 @@ alloy = { version = "1.7.3", features = [
   "json-rpc",
   "provider-ws",
   "serde",
+  "signer-aws",
 ] }
+aws-config = "1.8"
+aws-sdk-kms = "1.86"
 dashmap = "6.1.0"
 derivative = "2.2"
 futures = "0.3.32"
