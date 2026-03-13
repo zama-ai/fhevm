@@ -79,19 +79,24 @@ jobs:
 
       - name: Install Forge dependencies
         if: matrix.extra-deps != ''
+        env:
+          PACKAGE: ${{ matrix.package }}
+          EXTRA_DEPS: ${{ matrix.extra-deps }}
         run: |
-          (cd ${{ matrix.package }} && ${{ matrix.extra-deps }})
-          (cd main-branch/${{ matrix.package }} && ${{ matrix.extra-deps }})
+          (cd "$PACKAGE" && $EXTRA_DEPS)
+          (cd "main-branch/$PACKAGE" && $EXTRA_DEPS)
 
-      - name: Align compilation settings
-        run: cp ${{ matrix.package }}/foundry.toml main-branch/${{ matrix.package }}/foundry.toml
-
-      - name: Generate address stubs
+      - name: Setup compilation
+        env:
+          PACKAGE: ${{ matrix.package }}
         run: |
-          for dir in ${{ matrix.package }} main-branch/${{ matrix.package }}; do
+          cp "$PACKAGE/foundry.toml" "main-branch/$PACKAGE/foundry.toml"
+          for dir in "$PACKAGE" "main-branch/$PACKAGE"; do
             mkdir -p "$dir/addresses"
-            cp ci/stubs/${{ matrix.package }}/*.sol "$dir/addresses/"
+            cp ci/stubs/"$PACKAGE"/*.sol "$dir/addresses/"
           done
 
       - name: Run upgrade hygiene check
-        run: ./ci/check-upgrade-hygiene.sh main-branch/${{ matrix.package }} ${{ matrix.package }}
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: ./ci/check-upgrade-hygiene.sh "main-branch/$PACKAGE" "$PACKAGE"
