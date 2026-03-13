@@ -1,5 +1,6 @@
 mod aws_upload;
 mod executor;
+pub(crate) mod json_sidecar;
 mod keyset;
 mod squash_noise;
 
@@ -9,6 +10,7 @@ pub mod metrics;
 mod tests;
 
 use std::{
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -16,6 +18,11 @@ use std::{
     time::Duration,
 };
 
+use alloy::signers::{
+    aws::{aws_sdk_kms, AwsSigner},
+    local::PrivateKeySigner,
+};
+use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
@@ -24,7 +31,7 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    types::FhevmError,
+    types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
 };
 use futures::join;
@@ -121,6 +128,8 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    pub signer_type: SignerType,
+    pub private_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -249,13 +258,17 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
+        let ct128_format: i16 = self.ct128.format().into();
+
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO ciphertext_digest
+            (host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             self.host_chain_id.as_i64(),
             &self.key_id_gw,
             self.handle,
             self.transaction_id,
+            ct128_format,
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -370,6 +383,9 @@ pub enum ExecutionError {
 
     #[error("Internal send error: {0}")]
     InternalSendError(String),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(Clone)]
@@ -444,6 +460,7 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
@@ -457,7 +474,8 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+    let handle_uploader =
+        spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready, signer).await?;
     let _res = join!(handle_resubmit, handle_uploader);
 
     info!("Uploader stopped");
@@ -501,7 +519,7 @@ pub async fn run_all(
     config: Config,
     parent_token: CancellationToken,
     events_tx: InternalEvents,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<()> {
     // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
     // to avoid blocking the worker
     // and to allow for some burst of uploads
@@ -551,10 +569,29 @@ pub async fn run_all(
             pg_mngr.pool().clone(),
         );
     }
+    let signer: CoproSigner = match conf.signer_type {
+        SignerType::PrivateKey => {
+            let Some(private_key) = conf.private_key.clone() else {
+                error!("Private key is required for PrivateKey signer");
+                anyhow::bail!("Private key is required for PrivateKey signer");
+            };
+            let signer = PrivateKeySigner::from_str(private_key.trim())?;
+            Arc::new(signer)
+        }
+        SignerType::AwsKms => {
+            let key_id = std::env::var("AWS_KEY_ID")
+                .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
+            Arc::new(AwsSigner::new(aws_kms_client, key_id, None).await?)
+        }
+    };
 
     // Spawns a task to handle S3 uploads
     spawn(async move {
-        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
+        if let Err(err) =
+            run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
+        {
             error!(error = %err, "Failed to run the upload-worker");
         }
     });
