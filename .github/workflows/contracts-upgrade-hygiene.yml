@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-changes:
@@ -38,7 +38,7 @@ jobs:
               - gateway-contracts/**
 
   check:
-    name: contracts-upgrade-hygiene/${{ matrix.package }}
+    name: contracts-upgrade-hygiene/${{ matrix.package }} (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
