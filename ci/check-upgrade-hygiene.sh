@@ -33,10 +33,11 @@ ERRORS=0
 # Returns: REINITIALIZER_VERSION MAJOR_VERSION MINOR_VERSION PATCH_VERSION
 extract_versions() {
   awk '
-    /REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*[0-9]/ { gsub(/[^0-9]/,"",$NF); reinit=$NF }
-    /MAJOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); major=$NF }
-    /MINOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); minor=$NF }
-    /PATCH_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); patch=$NF }
+    function val_after_eq(line) { sub(/.*=[[:space:]]*/, "", line); sub(/[^0-9].*/, "", line); return line }
+    /REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*[0-9]/ { reinit = val_after_eq($0) }
+    /MAJOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { major  = val_after_eq($0) }
+    /MINOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { minor  = val_after_eq($0) }
+    /PATCH_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { patch  = val_after_eq($0) }
     END { print reinit, major, minor, patch }
   ' "$1"
 }
