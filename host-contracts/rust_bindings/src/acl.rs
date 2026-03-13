@@ -13,7 +13,6 @@ interface ACL {
     error EnforcedPause();
     error ExpectedPause();
     error ExpirationDateAlreadySetToSameValue(address delegator, address delegate, address contractAddress, uint256 expirationDate);
-    error ExpirationDateBeforeOneHour();
     error FailedCall();
     error HandlesListIsEmpty();
     error InvalidInitialization();
@@ -961,11 +960,6 @@ interface ACL {
         "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "ExpirationDateBeforeOneHour",
-    "inputs": []
   },
   {
     "type": "error",
@@ -1985,81 +1979,6 @@ error ExpirationDateAlreadySetToSameValue(address delegator, address delegate, a
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
                 )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ExpirationDateBeforeOneHour()` and selector `0xcabc2529`.
-```solidity
-error ExpirationDateBeforeOneHour();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct ExpirationDateBeforeOneHour;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<ExpirationDateBeforeOneHour>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: ExpirationDateBeforeOneHour) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ExpirationDateBeforeOneHour {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for ExpirationDateBeforeOneHour {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ExpirationDateBeforeOneHour()";
-            const SELECTOR: [u8; 4] = [202u8, 188u8, 37u8, 41u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -11050,8 +10969,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         ExpirationDateAlreadySetToSameValue(ExpirationDateAlreadySetToSameValue),
         #[allow(missing_docs)]
-        ExpirationDateBeforeOneHour(ExpirationDateBeforeOneHour),
-        #[allow(missing_docs)]
         FailedCall(FailedCall),
         #[allow(missing_docs)]
         HandlesListIsEmpty(HandlesListIsEmpty),
@@ -11109,7 +11026,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             [173u8, 241u8, 105u8, 218u8],
             [179u8, 152u8, 151u8, 159u8],
             [194u8, 39u8, 233u8, 5u8],
-            [202u8, 188u8, 37u8, 41u8],
             [208u8, 210u8, 89u8, 118u8],
             [214u8, 189u8, 162u8, 117u8],
             [215u8, 230u8, 188u8, 248u8],
@@ -11123,7 +11039,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::SolInterface for ACLErrors {
         const NAME: &'static str = "ACLErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 26usize;
+        const COUNT: usize = 25usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -11156,9 +11072,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::ExpirationDateAlreadySetToSameValue(_) => {
                     <ExpirationDateAlreadySetToSameValue as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::ExpirationDateBeforeOneHour(_) => {
-                    <ExpirationDateBeforeOneHour as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::FailedCall(_) => {
                     <FailedCall as alloy_sol_types::SolError>::SELECTOR
@@ -11407,17 +11320,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(ACLErrors::NotDelegatedYet)
                     }
                     NotDelegatedYet
-                },
-                {
-                    fn ExpirationDateBeforeOneHour(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ACLErrors> {
-                        <ExpirationDateBeforeOneHour as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ACLErrors::ExpirationDateBeforeOneHour)
-                    }
-                    ExpirationDateBeforeOneHour
                 },
                 {
                     fn SenderNotAllowed(
@@ -11703,17 +11605,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotDelegatedYet
                 },
                 {
-                    fn ExpirationDateBeforeOneHour(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ACLErrors> {
-                        <ExpirationDateBeforeOneHour as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ACLErrors::ExpirationDateBeforeOneHour)
-                    }
-                    ExpirationDateBeforeOneHour
-                },
-                {
                     fn SenderNotAllowed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ACLErrors> {
@@ -11843,11 +11734,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::ExpirationDateAlreadySetToSameValue(inner) => {
                     <ExpirationDateAlreadySetToSameValue as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::ExpirationDateBeforeOneHour(inner) => {
-                    <ExpirationDateBeforeOneHour as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11981,12 +11867,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::ExpirationDateAlreadySetToSameValue(inner) => {
                     <ExpirationDateAlreadySetToSameValue as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::ExpirationDateBeforeOneHour(inner) => {
-                    <ExpirationDateBeforeOneHour as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

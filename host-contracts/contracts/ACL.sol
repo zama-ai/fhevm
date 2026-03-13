@@ -70,9 +70,6 @@ contract ACL is
         uint256 expirationDate
     );
 
-    /// @notice Returned if the requested expiration date for user decryption delegation is before the next hour.
-    error ExpirationDateBeforeOneHour();
-
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
