@@ -568,6 +568,8 @@ impl DriftDetector {
         }
     }
 
+    /// Finalize a normal log-polling batch: check deferred consensus results,
+    /// alert on completed-without-consensus handles, and evict stale handles.
     pub(crate) async fn end_of_batch(
         &mut self,
         current_block: u64,
@@ -579,6 +581,9 @@ impl DriftDetector {
         Ok(())
     }
 
+    /// Finalize a rebuild replay: check deferred consensus results and evaluate
+    /// all open handles against the current chain tip. Called by
+    /// `rebuild_drift_detector` in `gw_listener.rs` after log replay completes.
     pub(crate) async fn end_of_rebuild(
         &mut self,
         current_block: u64,

@@ -391,6 +391,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(expected_coprocessor_tx_senders)
     }
 
+    /// Reconstruct the drift detector's in-memory state after a restart.
+    ///
+    /// The detector tracks open ciphertext-commit handles in memory. On restart
+    /// that state is lost, but the listener persists `earliest_open_ct_commits_block`
+    /// (the oldest block with a still-open handle). This method replays
+    /// CiphertextCommits and GatewayConfig logs from that watermark up to
+    /// `last_processed_block_num` so handles that were open before the restart
+    /// are not silently forgotten. Alerts are suppressed during replay to avoid
+    /// duplicates; `end_of_rebuild` fires the checks once against current chain
+    /// state.
     async fn rebuild_drift_detector(
         &self,
         db_pool: &Pool<Postgres>,
