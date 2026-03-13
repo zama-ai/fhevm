@@ -61,8 +61,11 @@ describe('User decryption', function () {
       const durationDays = 10;
       const contractAddresses = [this.signers.alice.address]; // this should be impossible, as expected by this test
 
+      // Build the extraData field
+      const extraData = await this.instances.alice.getExtraData();
+
       // Use the new createEIP712 function
-      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
       // Update the signing to match the new primaryType
       const signature = await this.signers.alice.signTypedData(
@@ -203,7 +206,12 @@ describe('User decryption', function () {
     const startTimeStamp = Math.floor(Date.now() / 1000);
     const durationDays = 10;
     const contractAddresses = [wrongContractAddress];
-    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+
+    // Build the extraData field
+    const extraData = await this.instances.alice.getExtraData();
+
+    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
+
     const signature = await this.signers.alice.signTypedData(
       eip712.domain,
       { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
@@ -220,6 +228,7 @@ describe('User decryption', function () {
         this.signers.alice.address,
         startTimeStamp,
         durationDays,
+        extraData,
       );
       expect.fail('Expected an error - contract should not be allowed');
     } catch (error) {
@@ -240,8 +249,11 @@ describe('User decryption', function () {
     const durationDays = 10;
     const contractAddresses = [this.contractAddress];
 
+    // Build the extraData field
+    const extraData = await this.instances.alice.getExtraData();
+
     // Use the new createEIP712 function
-    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+    const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
     // Update the signing to match the new primaryType
     const signature = await this.signers.alice.signTypedData(
@@ -262,6 +274,7 @@ describe('User decryption', function () {
         this.signers.alice.address,
         startTimeStamp,
         durationDays,
+        extraData,
       );
       expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
     } catch (error) {
