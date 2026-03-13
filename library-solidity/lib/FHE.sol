@@ -9369,6 +9369,10 @@ library FHE {
     ///      - the ACL contract must not be paused.
     ///        Reverts via an {PausableUpgradeable-EnforcedPause} error otherwise.
     ///
+    ///      - `expirationDate` must be strictly in the future.
+    ///        i.e. `expirationDate > block.timestamp`
+    ///        Reverts with an {IACL-ExpirationDateInThePast} error otherwise.
+    ///
     ///      - `expirationDate` must differ from the current value.
     ///        Reverts with an {IACL-ExpirationDateAlreadySetToSameValue} error otherwise.
     ///

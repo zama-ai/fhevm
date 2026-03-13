@@ -70,6 +70,9 @@ contract ACL is
         uint256 expirationDate
     );
 
+    /// @notice Returned if the requested expiration date for user decryption delegation is in the past.
+    error ExpirationDateInThePast();
+
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
@@ -286,6 +289,9 @@ contract ACL is
         }
         if (delegate == contractAddress) {
             revert DelegateCannotBeContractAddress(contractAddress);
+        }
+        if (expirationDate <= block.timestamp) {
+            revert ExpirationDateInThePast();
         }
 
         uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
