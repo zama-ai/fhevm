@@ -18,6 +18,83 @@ describe('User decryption', function () {
     this.instances = await createInstances(this.signers);
   });
 
+  it('test user decrypt ebool', async function () {
+    const handle = await this.contract.xBool();
+    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
+    const decryptedValue = await userDecryptSingleHandle(
+      handle,
+      this.contractAddress,
+      this.instances.alice,
+      this.signers.alice,
+      privateKey,
+      publicKey,
+    );
+    expect(decryptedValue).to.equal(true);
+
+    // on the other hand, Bob should be unable to read Alice's handle
+    try {
+      const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
+      await userDecryptSingleHandle(
+        handle,
+        this.contractAddress,
+        this.instances.bob,
+        this.signers.bob,
+        privateKeyBob,
+        publicKeyBob,
+      );
+      expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
+    } catch (error) {
+      expect(error.message).to.equal(
+        `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
+      );
+    }
+
+    // and should be impossible to call userDecrypt if contractAddress is in list of userAddresses
+    try {
+      const handleContractPairs = [
+        {
+          handle: handle,
+          contractAddress: this.signers.alice.address, // this should be impossible, as expected by this test
+        },
+      ];
+      const startTimeStamp = Math.floor(Date.now() / 1000);
+      const durationDays = 10;
+      const contractAddresses = [this.signers.alice.address]; // this should be impossible, as expected by this test
+
+      // Build the extraData field
+      const extraData = await this.instances.alice.getExtraData();
+
+      // Use the new createEIP712 function
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
+
+      // Update the signing to match the new primaryType
+      const signature = await this.signers.alice.signTypedData(
+        eip712.domain,
+        {
+          UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+        },
+        eip712.message,
+      );
+
+      await this.instances.alice.userDecrypt(
+        handleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace('0x', ''),
+        contractAddresses,
+        this.signers.alice.address,
+        startTimeStamp,
+        durationDays,
+      );
+
+      expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
+    } catch (error) {
+      expect(error.message).to.equal(
+        `User address ${this.signers.alice.address} should not be equal to contract address when requesting user decryption!`,
+      );
+    }
+  });
+
   it('test user decrypt euint8', async function () {
     const handle = await this.contract.xUint8();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
@@ -134,6 +211,7 @@ describe('User decryption', function () {
     const extraData = await this.instances.alice.getExtraData();
 
     const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
+
     const signature = await this.signers.alice.signTypedData(
       eip712.domain,
       { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
