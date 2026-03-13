@@ -225,7 +225,7 @@ impl DriftDetector {
                 ciphertext_digest: event.ciphertextDigest,
                 ciphertext128_digest: event.snsCiphertextDigest,
             },
-            senders: event.coprocessorTxSenders.clone(),
+            senders: event.coprocessorTxSenders,
         });
         state.local_consensus_checked = false;
         if !self.replaying {
@@ -279,31 +279,19 @@ impl DriftDetector {
         .fetch_optional(db_pool)
         .await?;
 
-        let Some(row) = row else {
+        let local_digests = row.and_then(|r| {
+            let ct: Option<Vec<u8>> = r.get("ciphertext");
+            let ct128: Option<Vec<u8>> = r.get("ciphertext128");
+            ct.zip(ct128)
+        });
+        let Some((local_ciphertext_digest, local_ciphertext128_digest)) = local_digests else {
             debug!(
                 handle = %handle,
                 host_chain_id = self.host_chain_id.as_i64(),
                 local_node_id = %self.local_node_id,
                 block_number = consensus.context.block_number,
                 tx_hash = ?consensus.context.tx_hash,
-                "Consensus arrived before local digest was available; deferring drift check"
-            );
-            return Ok(());
-        };
-
-        let local_ciphertext_digest: Option<Vec<u8>> = row.get("ciphertext");
-        let local_ciphertext128_digest: Option<Vec<u8>> = row.get("ciphertext128");
-
-        let (Some(local_ciphertext_digest), Some(local_ciphertext128_digest)) =
-            (local_ciphertext_digest, local_ciphertext128_digest)
-        else {
-            debug!(
-                handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
-                local_node_id = %self.local_node_id,
-                block_number = consensus.context.block_number,
-                tx_hash = ?consensus.context.tx_hash,
-                "Consensus arrived before local digests were ready; deferring drift check"
+                "Local digests not yet available; deferring drift check"
             );
             return Ok(());
         };
@@ -370,7 +358,9 @@ impl DriftDetector {
             ) {
                 HandleOutcome::Pending => {}
                 HandleOutcome::LocalDigestNeverAppeared => {
-                    let consensus = state.consensus.as_ref().unwrap();
+                    let Some(consensus) = state.consensus.as_ref() else {
+                        continue;
+                    };
                     warn!(
                         handle = %handle,
                         host_chain_id = self.host_chain_id.as_i64(),
@@ -387,7 +377,9 @@ impl DriftDetector {
                     finished.push(*handle);
                 }
                 HandleOutcome::NotAllCoprocessorsSubmitted => {
-                    let consensus = state.consensus.as_ref().unwrap();
+                    let Some(consensus) = state.consensus.as_ref() else {
+                        continue;
+                    };
                     let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
@@ -503,10 +495,6 @@ impl DriftDetector {
     }
 
     fn finalize_completed_without_consensus(&mut self) {
-        if self.replaying {
-            return;
-        }
-
         // Invariant: the gateway emits consensus as part of processing the final
         // agreeing submission. Once every expected sender has submitted, the
         // absence of a consensus event is already anomalous, so we alert
@@ -608,7 +596,7 @@ fn classify_handle(
             };
         }
 
-        if state.submissions.len() != state.expected_senders.len() {
+        if state.submissions.len() < state.expected_senders.len() {
             return if current_block.saturating_sub(consensus.context.block_number)
                 >= post_consensus_grace_blocks
             {
@@ -618,7 +606,7 @@ fn classify_handle(
             };
         }
 
-        return HandleOutcome::Pending;
+        unreachable!("handle should have been removed by finish_if_complete");
     }
 
     if current_block.saturating_sub(state.first_seen_block) >= no_consensus_timeout_blocks {

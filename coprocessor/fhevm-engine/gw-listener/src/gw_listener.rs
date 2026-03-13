@@ -155,15 +155,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let sender_seed_block = replay_start_block
             .map(|block| block.saturating_sub(1))
             .or(last_processed_block_num);
-        let expected_coprocessor_tx_senders =
-            if let Some(gw_config_addr) = self.conf.gateway_config_address {
-                self.fetch_expected_coprocessor_tx_senders(gw_config_addr, sender_seed_block)
-                    .await?
-            } else {
-                Vec::new()
-            };
+        let expected_senders = if let Some(gw_config_addr) = self.conf.gateway_config_address {
+            self.fetch_expected_senders(gw_config_addr, sender_seed_block)
+                .await?
+        } else {
+            Vec::new()
+        };
         let mut drift_detector = DriftDetector::new(
-            expected_coprocessor_tx_senders,
+            expected_senders,
             self.conf.host_chain_id,
             self.conf.drift_no_consensus_timeout_blocks,
             self.conf.drift_post_consensus_grace_blocks,
@@ -373,23 +372,23 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(())
     }
 
-    async fn fetch_expected_coprocessor_tx_senders(
+    async fn fetch_expected_senders(
         &self,
         gateway_config_address: Address,
         at_block: Option<u64>,
     ) -> anyhow::Result<Vec<Address>> {
         let gateway_config = GatewayConfig::new(gateway_config_address, self.provider.clone());
         let call = gateway_config.getCoprocessorTxSenders();
-        let expected_coprocessor_tx_senders = match at_block {
+        let senders = match at_block {
             Some(block) => call.block(BlockId::number(block)).call().await?,
             None => call.call().await?,
         };
 
-        if expected_coprocessor_tx_senders.is_empty() {
+        if senders.is_empty() {
             anyhow::bail!("GatewayConfig returned no coprocessor tx-senders");
         }
 
-        Ok(expected_coprocessor_tx_senders)
+        Ok(senders)
     }
 
     /// Reconstruct the drift detector's in-memory state after a restart.
@@ -584,12 +583,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             self.conf.verify_proof_req_db_channel
         )
         .execute(db_pool)
-        .await.
-        inspect(|_| {
-            VERIFY_PROOF_SUCCESS_COUNTER.inc();
-        }).inspect_err(|_| {
-            VERIFY_PROOF_FAIL_COUNTER.inc();
-        })?;
+        .await?;
         Ok(())
     }
 
