@@ -81,7 +81,7 @@ const parseCompatVersion = (version: string) => {
 
 /**
  * Return true when `version` is older than `target`.
- * When the version string is unparseable (e.g. a SHA tag), `unknownIsOld` controls the result:
+ * When the version string is unparsable (e.g. a SHA tag), `unknownIsOld` controls the result:
  *   true  (default) — conservative, safe for additive compat rules (extra CLI args).
  *   false           — optimistic, safe for destructive compat rules (removing config fields).
  */
@@ -100,7 +100,7 @@ const usesModernWorkspaceProtocol = (state: Pick<State, "overrides">) =>
   );
 
 export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "overrides">) =>
-  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
+  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0], false);
 
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
   versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0], false);

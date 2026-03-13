@@ -287,7 +287,7 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
-    // unparseable SHAs are treated conservatively (apply all compat rules)
+    // unparsable SHAs are treated conservatively (apply all compat rules)
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toEqual([
       ["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }],
     ] as const);
