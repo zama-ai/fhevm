@@ -455,6 +455,34 @@ async fn dep_chain_id_for_output_handle(
     Ok(dep_chain_id)
 }
 
+// Polls Anvil until the block number advances past `after_block`.
+// If `after_block` is `None`, queries the current block first.
+async fn wait_for_next_block(
+    url: &str,
+    after_block: Option<u64>,
+    timeout: tokio::time::Duration,
+) -> Result<u64, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(url))
+        .await?;
+    let current = match after_block {
+        Some(b) => b,
+        None => provider.get_block_number().await?,
+    };
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let block = provider.get_block_number().await?;
+        if block > current {
+            return Ok(block);
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timeout waiting for block > {current}, still at {block}"
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
 // Polls the database until both `computations` and `allowed_handles` counts
 // satisfy `predicate`, returning the final `(tfhe_count, acl_count)`.
 // Panics with `context` if `timeout` elapses before the condition is met.
@@ -616,7 +644,7 @@ async fn test_schedule_priority_migration_contract() -> Result<(), anyhow::Error
 #[serial(db)]
 async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
 ) -> Result<(), anyhow::Error> {
-    let setup = setup_with_block_time(None, 3.0).await?;
+    let setup = setup_with_block_time(None, 1.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
         setup.chain_id,
@@ -660,7 +688,16 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
         .await?;
 
         current_handle = Some(last_output_handle);
-        tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+        let last_block = receipts
+            .last()
+            .and_then(|r| r.block_number)
+            .expect("receipt has block number");
+        wait_for_next_block(
+            &setup.args.url,
+            Some(last_block),
+            tokio::time::Duration::from_secs(10),
+        )
+        .await?;
     }
 
     assert!(
@@ -743,7 +780,7 @@ async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locall
 #[serial(db)]
 async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
 ) -> Result<(), anyhow::Error> {
-    let setup = setup_with_block_time(None, 3.0).await?;
+    let setup = setup_with_block_time(None, 1.0).await?;
     let mut db = Database::new(
         &setup.args.database_url,
         setup.chain_id,
@@ -764,7 +801,12 @@ async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
     .await?;
     assert_eq!(initial_priority, 1, "first pass should mark chain slow");
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+    wait_for_next_block(
+        &setup.args.url,
+        None,
+        tokio::time::Duration::from_secs(10),
+    )
+    .await?;
 
     let second_output = ingest_dependent_burst_seeded(
         &mut db,
