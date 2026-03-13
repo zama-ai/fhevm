@@ -110,11 +110,6 @@ export const writeEnvFile = async (file: string, env: Record<string, string>) =>
   await fs.writeFile(file, `${body}\n`);
 };
 
-export const copyFile = async (from: string, to: string) => {
-  await ensureDir(path.dirname(to));
-  await fs.copyFile(from, to);
-};
-
 export const exists = async (file: string) => {
   try {
     await fs.access(file);
@@ -158,5 +153,3 @@ export const toServiceName = (suffix: string, index: number) =>
   index === 0 ? `coprocessor-${suffix}` : `coprocessor${index}-${suffix}`;
 
 export const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
-
-export const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));

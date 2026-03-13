@@ -2,7 +2,7 @@ import YAML from "yaml";
 
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import type { Runner, RunResult } from "./utils";
-import { normalizeRepository, toError } from "./utils";
+import { normalizeRepository } from "./utils";
 import type { VersionBundle, VersionTarget } from "./types";
 
 type GitHubClient = {
@@ -97,35 +97,19 @@ const GITOPS_REPO = "zama-zws/gitops";
 const parseJson = <T>(value: RunResult) => JSON.parse(value.stdout) as T;
 
 const explainGitHubCliError = (error: unknown) => {
-  const message = toError(error).message;
-  const lower = message.toLowerCase();
-  if (
-    message.includes("which gh failed") ||
-    lower.includes("spawn gh") ||
-    lower.includes("enoent") ||
-    lower.includes("gh: command not found")
-  ) {
+  const msg = (error as Error).message ?? String(error);
+  const lower = msg.toLowerCase();
+  if (lower.includes("enoent") || lower.includes("not found")) {
     return new Error(
       "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
     );
   }
-  if (
-    lower.includes("authentication failed") ||
-    lower.includes("authentication required") ||
-    lower.includes("gh auth login") ||
-    lower.includes("http 401") ||
-    lower.includes("requires authentication")
-  ) {
+  if (lower.includes("401") || lower.includes("authentication")) {
     return new Error(
       "GitHub API access is not authenticated. Run `gh auth login`, export GH_TOKEN, or use --lock-file to skip GitHub resolution.",
     );
   }
-  if (
-    lower.includes("rate limit") ||
-    lower.includes("secondary rate limit") ||
-    lower.includes("api rate limit exceeded") ||
-    lower.includes("http 429")
-  ) {
+  if (lower.includes("rate limit") || lower.includes("429")) {
     return new Error(
       "GitHub API rate limit hit while resolving versions. Retry with an authenticated GH_TOKEN or use --lock-file to run with a pinned bundle.",
     );
@@ -306,8 +290,6 @@ const REPO_TAG = /^[0-9a-f]{7}$/;
 const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 const SIMPLE_ACL_MIN_SHA = "803f1048727eabf6d8b3df618203e3c7dda77890";
 
-const repoPackageName = (pkg: string) => decodeURIComponent(pkg);
-
 const repoPackageTags = async (client: GitHubClient) =>
   Object.fromEntries(
     await Promise.all(
@@ -318,7 +300,7 @@ const repoPackageTags = async (client: GitHubClient) =>
 const missingRepoPackages = (packageTags: Record<string, Set<string>>, tag: string) =>
   Object.entries(REPO_PACKAGES)
     .filter(([key]) => !packageTags[key]?.has(tag))
-    .map(([, pkg]) => repoPackageName(pkg));
+    .map(([, pkg]) => decodeURIComponent(pkg));
 
 const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 

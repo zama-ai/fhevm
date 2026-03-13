@@ -165,7 +165,6 @@ export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
 export const composePath = (name: string) => path.join(COMPOSE_OUT_DIR, `${name}.yml`);
-export const baseCompose = (name: string) => path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`);
 export const versionsEnvPath = path.join(ENV_DIR, "versions.env");
 export const relayerConfigPath = path.join(CONFIG_DIR, "relayer.local.yaml");
 export const gatewayAddressesPath = path.join(ADDRESS_DIR, "gateway", ".env.gateway");

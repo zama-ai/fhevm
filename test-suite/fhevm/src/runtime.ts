@@ -49,7 +49,6 @@ import {
   runLive,
   sleep,
   toServiceName,
-  toError,
   uint256ToId,
   withHexPrefix,
   writeJson,
@@ -108,15 +107,14 @@ const dockerInspect = async (runner: Runner, name: string) => {
   const result = await runner(["docker", "inspect", name], {
     allowFailure: true,
   });
-  try {
-    return JSON.parse(result.stdout || "[]") as Array<{
-      Name: string;
-      State: { Status: string; ExitCode: number; Health?: { Status: string } };
-      NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
-    }>;
-  } catch (error) {
-    throw new Error(`docker inspect ${name} returned invalid JSON: ${toError(error).message}\n${result.stdout || result.stderr || "<empty>"}`);
+  if (result.code !== 0) {
+    return [];
   }
+  return JSON.parse(result.stdout) as Array<{
+    Name: string;
+    State: { Status: string; ExitCode: number; Health?: { Status: string } };
+    NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
+  }>;
 };
 
 const loadState = async () => (await exists(STATE_FILE) ? readJson<State>(STATE_FILE) : undefined);
@@ -472,7 +470,7 @@ const waitForRpc = async (deps: RuntimeDeps, url: string) => {
       }
     } catch (error) {
       if (shouldLogRetry(attempt)) {
-        log(`[wait] rpc ${url}: ${toError(error).message}`);
+        log(`[wait] rpc ${url}: ${(error as Error).message}`);
       }
     }
     await sleep(1000);
@@ -646,7 +644,7 @@ export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 
     actualCrs = await ethCallId(deps, state.discovery!.endpoints.gatewayHttp, gateway, "0xbaff211e");
   } catch (error) {
     if (shouldLogRetry(attempt)) {
-      log(`[wait] bootstrap probe: ${toError(error).message}`);
+      log(`[wait] bootstrap probe: ${(error as Error).message}`);
     }
     return false;
   }
@@ -711,7 +709,7 @@ const ensureMaterialUrl = async (deps: RuntimeDeps, url: string) => {
     } catch (error) {
       // network not ready yet (ECONNREFUSED, DNS, etc.) — retry
       if (shouldLogRetry(attempt)) {
-        log(`[wait] material: ${toError(error).message}`);
+        log(`[wait] material: ${(error as Error).message}`);
       }
     }
     await sleep(1000);
@@ -760,15 +758,9 @@ const ensureRuntimeArtifacts = async (state: State, deps: Pick<RuntimeDeps, "run
 };
 
 const ensureCommand = async (deps: RuntimeDeps, command: string) => {
-  try {
-    await deps.runner(["which", command]);
-  } catch (error) {
-    if (command === "gh") {
-      throw new Error(
-        "GitHub CLI `gh` is required for target resolution. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file to skip GitHub resolution.",
-      );
-    }
-    throw error;
+  const result = await deps.runner(["which", command], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new Error(`Required command "${command}" not found`);
   }
 };
 
@@ -1585,7 +1577,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
         throw new Error(`Unknown command ${parsed.command}`);
     }
   } catch (error) {
-    console.error(toError(error).message);
+    console.error((error as Error).message);
     if (command === "up" && (await loadState())) {
       console.error("Hint: run with --resume to continue, or without to start fresh.");
     }
