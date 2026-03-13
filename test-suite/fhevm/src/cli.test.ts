@@ -287,17 +287,10 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
-    // unparsable SHAs are treated conservatively (apply all compat rules)
-    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toEqual([
-      ["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }],
-    ] as const);
-    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toEqual([
-      ["--multichain-acl-address", { env: "MULTICHAIN_ACL_ADDRESS" }],
-      ["--delegation-fallback-polling", { value: "30" }],
-      ["--delegation-max-retry", { value: "100000" }],
-      ["--retry-immediately-on-nonce-error", { value: "2" }],
-      ["--host-chain-url", { env: "RPC_WS_URL" }],
-    ] as const);
+    // unparsable SHAs are treated as modern (no compat rules applied)
+    // workspace-built binaries are latest HEAD and reject removed CLI flags
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
   });
 
   test("coprocessor depends_on rewrite only renames cloned services", () => {

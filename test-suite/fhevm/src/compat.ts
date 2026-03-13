@@ -81,13 +81,12 @@ const parseCompatVersion = (version: string) => {
 
 /**
  * Return true when `version` is older than `target`.
- * When the version string is unparsable (e.g. a SHA tag), `unknownIsOld` controls the result:
- *   true  (default) — conservative, safe for additive compat rules (extra CLI args).
- *   false           — optimistic, safe for destructive compat rules (removing config fields).
+ * Unparsable versions (e.g. SHA tags from workspace builds) are treated as modern (returns false)
+ * because workspace-built binaries are always latest HEAD and reject removed CLI flags.
  */
-const versionLt = (version: string, target: CompatSemver, unknownIsOld = true) => {
+const versionLt = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
-  if (!parsed) return unknownIsOld;
+  if (!parsed) return false;
   for (let index = 0; index < parsed.length; index += 1) {
     if (parsed[index] !== target[index]) return parsed[index] < target[index];
   }
@@ -100,14 +99,14 @@ const usesModernWorkspaceProtocol = (state: Pick<State, "overrides">) =>
   );
 
 export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "overrides">) =>
-  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0], false);
+  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
-  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0], false);
+  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
 /** Test-suite SDK < v0.11.0 appends /v1/ to RELAYER_URL; >= v0.11.0 expects the URL to include the version path. */
 export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
-  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0], false);
+  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
