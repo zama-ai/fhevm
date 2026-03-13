@@ -22,7 +22,6 @@ services:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_DB_MIGRATION:-type=gha}
@@ -39,7 +38,6 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: gw-listener
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
@@ -59,7 +57,6 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: kms-worker
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
@@ -77,7 +74,6 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: tx-sender
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
