@@ -118,6 +118,7 @@ pub async fn insert_event(
         is_allowed,
         block_number: 0,
         block_timestamp: PrimitiveDateTime::MAX,
+        block_hash: FixedBytes::<32>::ZERO,
         dependence_chain: tx_id,
         tx_depth_size: 0,
         log_index: log.log_index,
