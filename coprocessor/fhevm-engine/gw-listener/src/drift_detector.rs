@@ -70,11 +70,11 @@ impl HandleState {
     }
 }
 
-enum HandleDisposition {
-    KeepWaiting,
-    ConsensusUncheckedTimeout,
-    MissingSubmissionPostGrace,
-    NoConsensusTimeout,
+enum HandleOutcome {
+    Pending,
+    LocalDigestNeverAppeared,
+    NotAllCoprocessorsSubmitted,
+    GatewayNeverReachedConsensus,
 }
 
 pub(crate) struct DriftDetector {
@@ -368,8 +368,8 @@ impl DriftDetector {
                 self.no_consensus_timeout_blocks,
                 self.post_consensus_grace_blocks,
             ) {
-                HandleDisposition::KeepWaiting => {}
-                HandleDisposition::ConsensusUncheckedTimeout => {
+                HandleOutcome::Pending => {}
+                HandleOutcome::LocalDigestNeverAppeared => {
                     let consensus = state.consensus.as_ref().unwrap();
                     warn!(
                         handle = %handle,
@@ -386,7 +386,7 @@ impl DriftDetector {
                     );
                     finished.push(*handle);
                 }
-                HandleDisposition::MissingSubmissionPostGrace => {
+                HandleOutcome::NotAllCoprocessorsSubmitted => {
                     let consensus = state.consensus.as_ref().unwrap();
                     let variants = variant_summaries(&state.submissions);
                     warn!(
@@ -414,7 +414,7 @@ impl DriftDetector {
                     self.deferred_missing_submission += 1;
                     finished.push(*handle);
                 }
-                HandleDisposition::NoConsensusTimeout => {
+                HandleOutcome::GatewayNeverReachedConsensus => {
                     let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
@@ -596,15 +596,15 @@ fn classify_handle(
     current_block: u64,
     no_consensus_timeout_blocks: u64,
     post_consensus_grace_blocks: u64,
-) -> HandleDisposition {
+) -> HandleOutcome {
     if let Some(consensus) = &state.consensus {
         if !state.local_consensus_checked {
             return if current_block.saturating_sub(consensus.context.block_number)
                 >= no_consensus_timeout_blocks
             {
-                HandleDisposition::ConsensusUncheckedTimeout
+                HandleOutcome::LocalDigestNeverAppeared
             } else {
-                HandleDisposition::KeepWaiting
+                HandleOutcome::Pending
             };
         }
 
@@ -612,19 +612,19 @@ fn classify_handle(
             return if current_block.saturating_sub(consensus.context.block_number)
                 >= post_consensus_grace_blocks
             {
-                HandleDisposition::MissingSubmissionPostGrace
+                HandleOutcome::NotAllCoprocessorsSubmitted
             } else {
-                HandleDisposition::KeepWaiting
+                HandleOutcome::Pending
             };
         }
 
-        return HandleDisposition::KeepWaiting;
+        return HandleOutcome::Pending;
     }
 
     if current_block.saturating_sub(state.first_seen_block) >= no_consensus_timeout_blocks {
-        HandleDisposition::NoConsensusTimeout
+        HandleOutcome::GatewayNeverReachedConsensus
     } else {
-        HandleDisposition::KeepWaiting
+        HandleOutcome::Pending
     }
 }
 
