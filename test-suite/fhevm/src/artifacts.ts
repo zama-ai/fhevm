@@ -97,10 +97,13 @@ const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolea
 
 const appendVolume = (service: Record<string, unknown>, value: string) => {
   const volumes = Array.isArray(service.volumes) ? [...service.volumes] : [];
-  if (!volumes.includes(value)) {
-    volumes.push(value);
+  const target = value.split(":").slice(1).join(":");
+  // Remove any existing mount to the same container path (e.g. named volumes)
+  const filtered = target ? volumes.filter((v) => typeof v !== "string" || v.split(":").slice(1).join(":") !== target) : volumes;
+  if (!filtered.includes(value)) {
+    filtered.push(value);
   }
-  service.volumes = volumes;
+  service.volumes = filtered;
 };
 
 const resolveComposePath = (value: string) =>
@@ -401,13 +404,15 @@ const writeRuntimeEnvFiles = async (state: State, deps: Pick<ArtifactDeps, "runn
   envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.minioExternal ?? "http://minio:9000";
+  const kp = state.discovery?.minioKeyPrefix ?? "PUB";
+  const minioInt = state.discovery?.endpoints.minioInternal ?? "http://minio:9000";
   envs["coprocessor"].FHE_KEY_ID = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
-  envs["coprocessor"].KMS_PUBLIC_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/PublicKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_SERVER_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/ServerKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_SNS_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/SnsKey/${envs["coprocessor"].FHE_KEY_ID}`;
-  envs["coprocessor"].KMS_CRS_KEY = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
-  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/PublicKey/${state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId()}`;
-  envs["relayer"].APP_KEYURL__CRS__URL = `${state.discovery?.endpoints.minioInternal ?? "http://minio:9000"}/kms-public/PUB/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
+  envs["coprocessor"].KMS_PUBLIC_KEY = `${minioInt}/kms-public/${kp}/PublicKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_SERVER_KEY = `${minioInt}/kms-public/${kp}/ServerKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_SNS_KEY = `${minioInt}/kms-public/${kp}/SnsKey/${envs["coprocessor"].FHE_KEY_ID}`;
+  envs["coprocessor"].KMS_CRS_KEY = `${minioInt}/kms-public/${kp}/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
+  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${minioInt}/kms-public/${kp}/PublicKey/${state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId()}`;
+  envs["relayer"].APP_KEYURL__CRS__URL = `${minioInt}/kms-public/${kp}/CRS/${state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId()}`;
   for (const [key, source] of Object.entries(compat.connectorEnv)) {
     if (envs["kms-connector"][source]) {
       envs["kms-connector"][key] = envs["kms-connector"][source];

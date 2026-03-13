@@ -82,7 +82,9 @@ const parseCompatVersion = (version: string) => {
 const versionLt = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
   if (!parsed) {
-    return false;
+    // Non-semver (SHA tags): treat as old — safer to apply compat rules
+    // than to skip them and have the service crash.
+    return true;
   }
   for (let index = 0; index < parsed.length; index += 1) {
     if (parsed[index] !== target[index]) {

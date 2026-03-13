@@ -53,6 +53,7 @@ export type Discovery = {
   crsKeyId: string;
   actualFheKeyId?: string;
   actualCrsKeyId?: string;
+  minioKeyPrefix?: string;
   endpoints: {
     gatewayHttp: string;
     gatewayWs: string;

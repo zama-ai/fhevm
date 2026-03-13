@@ -66,6 +66,7 @@ type UpOptions = {
   allowSchemaMismatch: boolean;
   resume: boolean;
   dryRun: boolean;
+  reset: boolean;
 };
 
 type CleanOptions = {
@@ -239,6 +240,7 @@ const parseCli = (argv: string[]) => {
       "instance-env": { type: "string", multiple: true, default: [] },
       "instance-arg": { type: "string", multiple: true, default: [] },
       "allow-schema-mismatch": { type: "boolean", default: false },
+      reset: { type: "boolean", default: false },
     },
   });
   const target = parsed.values.target as string;
@@ -301,21 +303,45 @@ const bundleFromFile = async (target: UpOptions["target"], lockFile: string) => 
   return { ...bundle, target };
 };
 
-const resolveBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) => {
-  const bundle = options.lockFile
-    ? await bundleFromFile(options.target, options.lockFile)
-    : await resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha });
+const resolveCachePath = (target: string, sha?: string) =>
+  path.join(LOCK_DIR, `.cache-${target}${sha ? `-${sha.toLowerCase().slice(0, 7)}` : ""}.json`);
+
+const cachedResolve = async (
+  options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">,
+  deps: RuntimeDeps,
+): Promise<VersionBundle> => {
+  if (options.lockFile) {
+    return bundleFromFile(options.target, options.lockFile);
+  }
+  const cachePath = resolveCachePath(options.target, options.sha);
+  if (!options.reset) {
+    try {
+      const bundle = await readJson<VersionBundle>(cachePath);
+      if (bundle.target === options.target) {
+        log("[resolve] using cached bundle");
+        return bundle;
+      }
+    } catch {
+      // no cache or invalid — resolve fresh
+    }
+  }
+  log("[resolve] fetching versions from GitHub...");
+  const bundle = await resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha });
+  await writeJson(cachePath, bundle);
+  return bundle;
+};
+
+const resolveBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">, deps: RuntimeDeps) => {
+  const bundle = await cachedResolve(options, deps);
   const resolved = applyVersionEnvOverrides(bundle, deps.env);
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
 };
 
-const previewBundle = (options: Pick<UpOptions, "target" | "sha" | "lockFile">, deps: RuntimeDeps) =>
-  (options.lockFile
-    ? bundleFromFile(options.target, options.lockFile)
-    : resolveTarget(options.target, createGitHubClient(deps.runner), { sha: options.sha })).then((bundle) =>
-    applyVersionEnvOverrides(bundle, deps.env),
-  );
+const previewBundle = async (options: Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">, deps: RuntimeDeps) => {
+  const bundle = await cachedResolve(options, deps);
+  return applyVersionEnvOverrides(bundle, deps.env);
+};
 
 const partialSchemaOverrides = (overrides: LocalOverride[]) =>
   overrides.filter(
@@ -468,29 +494,41 @@ const responseSnippet = async (response: Response) => {
   return text ? `: ${text.slice(0, 200)}` : "";
 };
 
-const discoverSigner = async (deps: RuntimeDeps) => {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+/** Try both `PUB/PUB/` (KMS ≤ v0.12) and `PUB/` (KMS ≥ v0.13) prefixes. */
+const MINIO_KEY_PREFIXES = ["PUB/PUB", "PUB"] as const;
+
+const discoverSigner = async (deps: RuntimeDeps): Promise<{ address: string; minioKeyPrefix: string }> => {
+  let lastHandle = "";
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const logs = await deps.runner(["docker", "logs", "kms-core"], { allowFailure: true });
     const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
     if (match) {
-      try {
-        const response = await deps.fetch(`http://localhost:9000/kms-public/PUB/VerfAddress/${match[1]}`);
-        if (!response.ok) {
-          throw new Error(`Could not fetch KMS signer address (HTTP ${response.status})${await responseSnippet(response)}`);
-        }
-        return (await response.text()).trim();
-      } catch (error) {
-        if (shouldLogRetry(attempt)) {
-          log(`[wait] kms signer fetch: ${toError(error).message}`);
+      lastHandle = match[1];
+      for (const prefix of MINIO_KEY_PREFIXES) {
+        try {
+          const response = await deps.fetch(`http://localhost:9000/kms-public/${prefix}/VerfAddress/${lastHandle}`);
+          if (response.ok) {
+            return { address: (await response.text()).trim(), minioKeyPrefix: prefix };
+          }
+          // Consume body to avoid leaking connections
+          await response.text();
+        } catch {
+          // network error — retry
         }
       }
-    }
-    if (shouldLogRetry(attempt)) {
+      if (shouldLogRetry(attempt)) {
+        log(`[wait] kms signer fetch (handle: ${lastHandle.slice(0, 12)}…)`);
+      }
+    } else if (shouldLogRetry(attempt)) {
       log("[wait] kms signer handle");
     }
     await sleep(1000);
   }
-  throw new Error("Could not extract KMS signer handle from kms-core logs after 30 attempts");
+  throw new Error(
+    lastHandle
+      ? `KMS signer address not available in MinIO after 60 attempts (handle: ${lastHandle})`
+      : "Could not extract KMS signer handle from kms-core logs after 60 attempts",
+  );
 };
 
 const waitForKmsCore = async (deps: RuntimeDeps) => {
@@ -609,14 +647,15 @@ export const probeBootstrap = async (state: State, deps: RuntimeDeps, attempt = 
   const actualFheKeyId = uint256ToId(actualKey);
   const actualCrsKeyId = uint256ToId(actualCrs);
   // Keys are on-chain — material MUST appear. Let ensureMaterialUrl throw if it doesn't.
+  const kp = state.discovery!.minioKeyPrefix ?? "PUB";
   await Promise.all([
     ensureMaterialUrl(
       deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/PublicKey/${actualFheKeyId}`),
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/${kp}/PublicKey/${actualFheKeyId}`),
     ),
     ensureMaterialUrl(
       deps,
-      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/PUB/CRS/${actualCrsKeyId}`),
+      hostReachableMaterialUrl(`${state.discovery!.endpoints.minioExternal}/kms-public/${kp}/CRS/${actualCrsKeyId}`),
     ),
   ]);
   state.discovery!.actualFheKeyId = actualFheKeyId;
@@ -892,7 +931,9 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
           minioExternal: `http://${await minioIp(deps)}:9000`,
         },
       };
-      state.discovery.kmsSigner = await discoverSigner(deps);
+      const signer = await discoverSigner(deps);
+      state.discovery.kmsSigner = signer.address;
+      state.discovery.minioKeyPrefix = signer.minioKeyPrefix;
       await regen(state, deps);
       break;
     case "gateway-deploy":
@@ -908,6 +949,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
+        minioKeyPrefix: state.discovery?.minioKeyPrefix,
         endpoints: state.discovery?.endpoints ?? {
           gatewayHttp: "http://gateway-node:8546",
           gatewayWs: "ws://gateway-node:8546",
@@ -943,6 +985,7 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
         crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
         actualFheKeyId: state.discovery?.actualFheKeyId,
         actualCrsKeyId: state.discovery?.actualCrsKeyId,
+        minioKeyPrefix: state.discovery?.minioKeyPrefix,
         endpoints: state.discovery?.endpoints ?? {
           gatewayHttp: "http://gateway-node:8546",
           gatewayWs: "ws://gateway-node:8546",
@@ -1075,6 +1118,10 @@ const runUp = async (options: UpOptions, deps: RuntimeDeps) => {
   let state = options.resume ? await loadState() : undefined;
   if (options.resume && !state) {
     throw new Error("No .fhevm/state.json to resume from");
+  }
+  if (!options.resume && (await loadState())) {
+    log("[up] cleaning previous run");
+    await runDown(deps);
   }
   if (!state) {
     state = await bootstrapState(options, deps);
@@ -1454,6 +1501,7 @@ up options:
   --from-step <${STEP_NAMES.join("|")}>   requires --resume, except in --dry-run
   --resume
   --dry-run
+  --reset                          re-resolve versions from GitHub (ignore cache)
 
 clean options:
   --images  remove CLI-owned local override images too
@@ -1462,9 +1510,10 @@ clean options:
 
 export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {}) => {
   const runtime = { ...defaultDeps, ...deps };
+  let command: string | undefined;
   try {
     const parsed = parseCli(argv);
-    const command = parsed.command === "deploy" ? "up" : parsed.command;
+    command = parsed.command === "deploy" ? "up" : parsed.command;
     const fromStep = ensureStep(parsed.parsed.values["from-step"] as string | undefined);
     if (command === "up" && fromStep && !parsed.parsed.values.resume && !parsed.parsed.values["dry-run"]) {
       throw new Error("--from-step requires --resume or --dry-run");
@@ -1481,6 +1530,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
               fromStep,
               lockFile: parsed.parsed.values["lock-file"] as string | undefined,
               allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
+              reset: parsed.parsed.values.reset,
             },
             runtime,
           );
@@ -1497,6 +1547,7 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
             allowSchemaMismatch: parsed.parsed.values["allow-schema-mismatch"],
             resume: parsed.parsed.values.resume,
             dryRun: parsed.parsed.values["dry-run"],
+            reset: parsed.parsed.values.reset,
           },
           runtime,
         );
@@ -1534,6 +1585,8 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
       case "doctor":
         throw new Error("`doctor` was removed; use `fhevm-cli up --dry-run ...`");
       case "help":
+      case "--help":
+      case "-h":
       case undefined:
         usage();
         return;
@@ -1542,6 +1595,9 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
     }
   } catch (error) {
     console.error(toError(error).message);
+    if (command === "up" && (await loadState())) {
+      console.error("Hint: run with --resume to continue, or without to start fresh.");
+    }
     process.exitCode = 1;
   }
 };
