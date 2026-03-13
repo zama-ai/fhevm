@@ -424,7 +424,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             from_block,
             to_block, "Rebuilding drift detector from persisted watermark"
         );
-        drift_detector.set_alerts_enabled(false);
+        drift_detector.set_replaying(true);
 
         let mut batch_from = from_block;
         while batch_from <= to_block {
@@ -468,7 +468,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
             batch_from = batch_to.saturating_add(1);
         }
-        drift_detector.set_alerts_enabled(true);
+        drift_detector.set_replaying(false);
         let current_block = self
             .provider
             .get_block_number()

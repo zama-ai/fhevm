@@ -85,7 +85,7 @@ pub(crate) struct DriftDetector {
     deferred_drift_detected: u64,
     deferred_consensus_timeout: u64,
     deferred_missing_submission: u64,
-    alerts_enabled: bool,
+    replaying: bool,
 }
 
 impl DriftDetector {
@@ -105,12 +105,12 @@ impl DriftDetector {
             deferred_drift_detected: 0,
             deferred_consensus_timeout: 0,
             deferred_missing_submission: 0,
-            alerts_enabled: true,
+            replaying: false,
         }
     }
 
-    pub(crate) fn set_alerts_enabled(&mut self, alerts_enabled: bool) {
-        self.alerts_enabled = alerts_enabled;
+    pub(crate) fn set_replaying(&mut self, replaying: bool) {
+        self.replaying = replaying;
     }
 
     pub(crate) fn set_current_expected_senders(&mut self, expected_senders: Vec<Address>) {
@@ -139,7 +139,7 @@ impl DriftDetector {
             .iter()
             .find(|submission| submission.sender == event.coprocessorTxSender)
         {
-            if self.alerts_enabled && existing.digests != digests {
+            if !self.replaying && existing.digests != digests {
                 warn!(
                     handle = %handle,
                     host_chain_id = self.host_chain_id.as_i64(),
@@ -164,8 +164,7 @@ impl DriftDetector {
             digests,
         });
 
-        if self.alerts_enabled && !state.drift_reported && has_multiple_variants(&state.submissions)
-        {
+        if !self.replaying && !state.drift_reported && has_multiple_variants(&state.submissions) {
             let variants = variant_summaries(&state.submissions);
             let seen: Vec<String> = state
                 .submissions
@@ -223,7 +222,7 @@ impl DriftDetector {
             senders: event.coprocessorTxSenders.clone(),
         });
         state.local_consensus_checked = false;
-        if self.alerts_enabled {
+        if !self.replaying {
             CONSENSUS_LATENCY_BLOCKS_HISTOGRAM
                 .observe(context.block_number.saturating_sub(state.first_seen_block) as f64);
         }
@@ -254,9 +253,9 @@ impl DriftDetector {
         handle: FixedBytes<32>,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
-        if !self.alerts_enabled {
+        if self.replaying {
             // During rebuild replay, skip DB queries. The handle will be re-checked
-            // via refresh_pending_consensus_checks once alerts are re-enabled.
+            // via refresh_pending_consensus_checks once replay finishes.
             return Ok(());
         }
 
@@ -303,11 +302,9 @@ impl DriftDetector {
             return Ok(());
         };
 
-        if self.alerts_enabled
-            && (consensus.digests.ciphertext_digest.as_slice()
-                != local_ciphertext_digest.as_slice()
-                || consensus.digests.ciphertext128_digest.as_slice()
-                    != local_ciphertext128_digest.as_slice())
+        if consensus.digests.ciphertext_digest.as_slice() != local_ciphertext_digest.as_slice()
+            || consensus.digests.ciphertext128_digest.as_slice()
+                != local_ciphertext128_digest.as_slice()
         {
             let local_digests = DigestPair {
                 ciphertext_digest: FixedBytes::from(
@@ -456,7 +453,7 @@ impl DriftDetector {
     }
 
     fn evaluate_open_handles(&mut self, current_block: u64) {
-        if !self.alerts_enabled {
+        if self.replaying {
             return;
         }
 
@@ -507,7 +504,7 @@ impl DriftDetector {
     }
 
     fn finalize_completed_without_consensus(&mut self) {
-        if !self.alerts_enabled {
+        if self.replaying {
             return;
         }
 
@@ -697,7 +694,7 @@ mod tests {
             10,
         );
 
-        detector.set_alerts_enabled(false);
+        detector.set_replaying(true);
 
         detector.observe_submission(
             make_submission_event(handle, digest_a, digest_128, sender_a),
@@ -729,7 +726,7 @@ mod tests {
         assert!(!state.drift_reported);
         assert_eq!(detector.deferred_drift_detected, 0);
 
-        detector.set_alerts_enabled(true);
+        detector.set_replaying(false);
         detector.evaluate_open_handles(103);
 
         let state = detector
@@ -893,7 +890,7 @@ mod tests {
         let handle = FixedBytes::from([7u8; 32]);
         let senders = senders();
 
-        detector.set_alerts_enabled(false);
+        detector.set_replaying(true);
         submit_digest_event_and_drift_check(
             &mut detector,
             handle,
@@ -914,7 +911,7 @@ mod tests {
         assert_eq!(detector.deferred_drift_detected, 0);
         assert!(!detector.open_handles.get(&handle).unwrap().drift_reported);
 
-        detector.set_alerts_enabled(true);
+        detector.set_replaying(false);
         detector.evaluate_open_handles(11);
 
         assert_eq!(detector.deferred_drift_detected, 1);
@@ -1524,7 +1521,7 @@ mod tests {
         .unwrap();
 
         let mut detector = detector();
-        detector.set_alerts_enabled(false);
+        detector.set_replaying(true);
         detector
             .handle_consensus(
                 make_consensus_event(
@@ -1546,7 +1543,7 @@ mod tests {
         assert!(!state.local_consensus_checked);
         assert_eq!(detector.deferred_drift_detected, 0);
 
-        detector.set_alerts_enabled(true);
+        detector.set_replaying(false);
         detector
             .refresh_pending_consensus_checks(&pool)
             .await
