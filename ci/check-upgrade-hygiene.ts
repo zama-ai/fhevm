@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 // Checks that upgradeable contracts have proper version bumps when bytecode changes.
-// Usage: bun ci/check-upgrade-hygiene.ts <main-pkg-dir> <pr-pkg-dir>
+// Usage: bun ci/check-upgrade-hygiene.ts <baseline-pkg-dir> <pr-pkg-dir>
 
 import { readFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 
-const [mainDir, prDir] = process.argv.slice(2);
-if (!mainDir || !prDir) {
-  console.error("Usage: bun ci/check-upgrade-hygiene.ts <main-pkg-dir> <pr-pkg-dir>");
+const [baselineDir, prDir] = process.argv.slice(2);
+if (!baselineDir || !prDir) {
+  console.error("Usage: bun ci/check-upgrade-hygiene.ts <baseline-pkg-dir> <pr-pkg-dir>");
   process.exit(1);
 }
 
@@ -51,11 +51,11 @@ let errors = 0;
 for (const name of contracts) {
   console.log(`::group::Checking ${name}`);
   try {
-    const mainSol = join(mainDir, "contracts", `${name}.sol`);
+    const baseSol = join(baselineDir, "contracts", `${name}.sol`);
     const prSol = join(prDir, "contracts", `${name}.sol`);
 
-    if (!existsSync(mainSol)) {
-      console.log(`Skipping ${name} (new contract, not on main)`);
+    if (!existsSync(baseSol)) {
+      console.log(`Skipping ${name} (new contract, not in baseline)`);
       continue;
     }
 
@@ -65,25 +65,18 @@ for (const name of contracts) {
       continue;
     }
 
-    const { versions: mainV } = extractVersions(mainSol);
+    const { versions: baseV } = extractVersions(baseSol);
     const { versions: prV, source: prSrc } = extractVersions(prSol);
 
     let parseFailed = false;
     for (const key of ["REINITIALIZER_VERSION", "MAJOR_VERSION", "MINOR_VERSION", "PATCH_VERSION"]) {
-      if (mainV[key] == null || prV[key] == null) {
+      if (baseV[key] == null || prV[key] == null) {
         console.error(`::error::Failed to parse ${key} for ${name}`);
         errors++;
         parseFailed = true;
       }
     }
     if (parseFailed) continue;
-
-    const mainBytecode = forgeInspect(name, mainDir);
-    if (mainBytecode == null) {
-      console.error(`::error::Failed to compile ${name} on main`);
-      errors++;
-      continue;
-    }
 
     const prBytecode = forgeInspect(name, prDir);
     if (prBytecode == null) {
@@ -92,18 +85,24 @@ for (const name of contracts) {
       continue;
     }
 
-    const bytecodeChanged = mainBytecode !== prBytecode;
-    const reinitChanged = mainV.REINITIALIZER_VERSION !== prV.REINITIALIZER_VERSION;
+    // Baseline may fail to compile if the contract was restructured (e.g. address imports changed).
+    // In that case, bytecode definitely changed — proceed to version checks.
+    const baseBytecode = forgeInspect(name, baselineDir);
+    const bytecodeChanged = baseBytecode == null || baseBytecode !== prBytecode;
+    if (baseBytecode == null) {
+      console.log(`${name}: baseline compilation failed (contract restructured), treating as changed`);
+    }
+    const reinitChanged = baseV.REINITIALIZER_VERSION !== prV.REINITIALIZER_VERSION;
     const versionChanged =
-      mainV.MAJOR_VERSION !== prV.MAJOR_VERSION ||
-      mainV.MINOR_VERSION !== prV.MINOR_VERSION ||
-      mainV.PATCH_VERSION !== prV.PATCH_VERSION;
+      baseV.MAJOR_VERSION !== prV.MAJOR_VERSION ||
+      baseV.MINOR_VERSION !== prV.MINOR_VERSION ||
+      baseV.PATCH_VERSION !== prV.PATCH_VERSION;
 
     if (!bytecodeChanged) {
       console.log(`${name}: bytecode unchanged`);
       if (reinitChanged) {
         console.error(
-          `::error::${name} REINITIALIZER_VERSION bumped (${mainV.REINITIALIZER_VERSION} -> ${prV.REINITIALIZER_VERSION}) but bytecode is unchanged`,
+          `::error::${name} REINITIALIZER_VERSION bumped (${baseV.REINITIALIZER_VERSION} -> ${prV.REINITIALIZER_VERSION}) but bytecode is unchanged`,
         );
         errors++;
       }

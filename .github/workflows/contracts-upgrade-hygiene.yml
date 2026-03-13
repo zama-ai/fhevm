@@ -5,6 +5,12 @@ permissions: {}
 on:
   pull_request:
 
+# Compare PR bytecode against the last deployed release, not main.
+# This avoids unnecessary reinitializer bumps when multiple PRs modify
+# the same contract between deployments. Keep in sync with *-upgrade-tests.yml.
+env:
+  UPGRADE_FROM_TAG: v0.11.0
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -57,11 +63,11 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - name: Checkout main branch
+      - name: Checkout baseline (last deployed release)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: main
-          path: main-branch
+          ref: ${{ env.UPGRADE_FROM_TAG }}
+          path: baseline
           persist-credentials: 'false'
 
       - name: Install Bun
@@ -74,8 +80,8 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: npm ci
 
-      - name: Install main dependencies
-        working-directory: main-branch/${{ matrix.package }}
+      - name: Install baseline dependencies
+        working-directory: baseline/${{ matrix.package }}
         run: npm ci
 
       - name: Install Forge dependencies
@@ -85,7 +91,7 @@ jobs:
           EXTRA_DEPS: ${{ matrix.extra-deps }}
         run: |
           (cd "$PACKAGE" && $EXTRA_DEPS)
-          (cd "main-branch/$PACKAGE" && $EXTRA_DEPS)
+          (cd "baseline/$PACKAGE" && $EXTRA_DEPS)
 
       - name: Setup compilation
         env:
@@ -94,11 +100,11 @@ jobs:
           # Generate addresses once and share — both sides must use identical values
           # because address constants are compiled into bytecode
           (cd "$PACKAGE" && make ensure-addresses)
-          cp -r "$PACKAGE/addresses" "main-branch/$PACKAGE/addresses"
+          cp -r "$PACKAGE/addresses" "baseline/$PACKAGE/addresses"
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
-          cp "$PACKAGE/foundry.toml" "main-branch/$PACKAGE/foundry.toml"
+          cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
       - name: Run upgrade hygiene check
         env:
           PACKAGE: ${{ matrix.package }}
-        run: bun ci/check-upgrade-hygiene.ts "main-branch/$PACKAGE" "$PACKAGE"
+        run: bun ci/check-upgrade-hygiene.ts "baseline/$PACKAGE" "$PACKAGE"
