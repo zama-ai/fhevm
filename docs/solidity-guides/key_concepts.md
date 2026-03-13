@@ -45,11 +45,11 @@ fhevm enables symbolic execution of encrypted operations, supporting:
 - **Comparison:** `FHE.eq`, `FHE.ne`, `FHE.lt`, `FHE.le`, `FHE.gt`, `FHE.ge`
 - **Advanced:** `FHE.select` for branching on encrypted conditions, `FHE.randEuintX` for on-chain randomness.
 
-For more information on operations, see [Operations on encrypted types](operations.md).&#x20;
+For more information on operations, see [Operations on encrypted types](operations/README.md).&#x20;
 
-For more information on conditional branching, see [Conditional logic in FHE](conditions.md).&#x20;
+For more information on conditional branching, see [Conditional logic in FHE](logics/conditions.md).&#x20;
 
-For more information on random number generation, see [Generate Random Encrypted Numbers](random.md).
+For more information on random number generation, see [Generate Random Encrypted Numbers](operations/random.md).
 
 ### Access control mechanism
 
@@ -59,4 +59,4 @@ fhevm enforces access control with a blockchain-based Access Control List (ACL):
 - **Transient access**: `FHE.allowTransient` provides temporary access for specific transactions.
 - **Validation**: `FHE.isSenderAllowed` ensures that only authorized entities can interact with ciphertexts.
 
-For more information see [ACL](acl).
+For more information see [ACL](acl/README.md).

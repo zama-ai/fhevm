@@ -30,7 +30,7 @@ The `FHE` library currently supports the following encrypted types:
 | Euint32  | 32         | add, sub, mul, div, rem, and, or, xor, shl, shr, rotl, rotr, eq, ne, ge, gt, le, lt, min, max, neg, not, select, rand, randBounded |                                    |
 | Euint64  | 64         | add, sub, mul, div, rem, and, or, xor, shl, shr, rotl, rotr, eq, ne, ge, gt, le, lt, min, max, neg, not, select, rand, randBounded |                                    |
 | Euint128 | 128        | add, sub, mul, div, rem, and, or, xor, shl, shr, rotl, rotr, eq, ne, ge, gt, le, lt, min, max, neg, not, select, rand, randBounded |                                    |
-| Euint160 | 160        |                                                                                                                                    | Eaddress (eq, ne, select)          |
+| Euint160 | 160        | eq, ne, select                                                                                                                     | Eaddress — `eaddress` is an alias for `euint160`, used for encrypted Ethereum addresses |
 | Euint256 | 256        | and, or, xor, shl, shr, rotl, rotr, eq, ne, neg, not, select, rand, randBounded                                                    |                                    |
 
 {% hint style="info" %}  
