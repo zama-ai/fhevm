@@ -52,11 +52,27 @@ struct HandleState {
     drift_reported: bool,
 }
 
-#[derive(Default)]
-struct DeferredMetrics {
-    drift_detected: u64,
-    consensus_timeout: u64,
-    missing_submission: u64,
+impl HandleState {
+    fn new(context: EventContext, expected_senders: Vec<Address>) -> Self {
+        let submission_capacity = expected_senders.len();
+        Self {
+            first_seen_block: context.block_number,
+            first_seen_block_hash: context.block_hash,
+            last_seen_block: context.block_number,
+            expected_senders,
+            submissions: Vec::with_capacity(submission_capacity),
+            consensus: None,
+            local_consensus_checked: false,
+            drift_reported: false,
+        }
+    }
+}
+
+enum HandleDisposition {
+    KeepWaiting,
+    ConsensusUncheckedTimeout,
+    MissingSubmissionPostGrace,
+    NoConsensusTimeout,
 }
 
 pub(crate) struct DriftDetector {
@@ -66,7 +82,9 @@ pub(crate) struct DriftDetector {
     local_node_id: String,
     no_consensus_timeout_blocks: u64,
     post_consensus_grace_blocks: u64,
-    deferred_metrics: DeferredMetrics,
+    deferred_drift_detected: u64,
+    deferred_consensus_timeout: u64,
+    deferred_missing_submission: u64,
     alerts_enabled: bool,
 }
 
@@ -84,7 +102,9 @@ impl DriftDetector {
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
             no_consensus_timeout_blocks,
             post_consensus_grace_blocks,
-            deferred_metrics: DeferredMetrics::default(),
+            deferred_drift_detected: 0,
+            deferred_consensus_timeout: 0,
+            deferred_missing_submission: 0,
             alerts_enabled: true,
         }
     }
@@ -111,7 +131,7 @@ impl DriftDetector {
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| new_handle_state(context, self.current_expected_senders.clone()));
+            .or_insert_with(|| HandleState::new(context, self.current_expected_senders.clone()));
         state.last_seen_block = context.block_number;
 
         if let Some(existing) = state
@@ -144,40 +164,39 @@ impl DriftDetector {
             digests,
         });
 
-        if self.alerts_enabled && !state.drift_reported {
+        if self.alerts_enabled && !state.drift_reported && has_multiple_variants(&state.submissions)
+        {
             let variants = variant_summaries(&state.submissions);
-            if variants.len() > 1 {
-                let seen: Vec<String> = state
-                    .submissions
-                    .iter()
-                    .map(|s| s.sender.to_string())
-                    .collect();
-                let missing: Vec<String> = state
-                    .expected_senders
-                    .iter()
-                    .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
-                    .map(ToString::to_string)
-                    .collect();
-                warn!(
-                    handle = %handle,
-                    host_chain_id = self.host_chain_id.as_i64(),
-                    local_node_id = %self.local_node_id,
-                    first_seen_block = state.first_seen_block,
-                    first_seen_block_hash = ?state.first_seen_block_hash,
-                    block_number = context.block_number,
-                    block_hash = ?context.block_hash,
-                    tx_hash = ?context.tx_hash,
-                    log_index = ?context.log_index,
-                    variant_count = variants.len(),
-                    variants = ?variants,
-                    seen_senders = ?seen,
-                    missing_senders = ?missing,
-                    source = "peer_submission",
-                    "Drift detected: observed multiple digest variants for handle"
-                );
-                state.drift_reported = true;
-                self.deferred_metrics.drift_detected += 1;
-            }
+            let seen: Vec<String> = state
+                .submissions
+                .iter()
+                .map(|s| s.sender.to_string())
+                .collect();
+            let missing: Vec<String> = state
+                .expected_senders
+                .iter()
+                .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                .map(ToString::to_string)
+                .collect();
+            warn!(
+                handle = %handle,
+                host_chain_id = self.host_chain_id.as_i64(),
+                local_node_id = %self.local_node_id,
+                first_seen_block = state.first_seen_block,
+                first_seen_block_hash = ?state.first_seen_block_hash,
+                block_number = context.block_number,
+                block_hash = ?context.block_hash,
+                tx_hash = ?context.tx_hash,
+                log_index = ?context.log_index,
+                variant_count = variants.len(),
+                variants = ?variants,
+                seen_senders = ?seen,
+                missing_senders = ?missing,
+                source = "peer_submission",
+                "Drift detected: observed multiple digest variants for handle"
+            );
+            state.drift_reported = true;
+            self.deferred_drift_detected += 1;
         }
 
         self.finish_if_complete(handle);
@@ -193,7 +212,7 @@ impl DriftDetector {
         let state = self
             .open_handles
             .entry(handle)
-            .or_insert_with(|| new_handle_state(context, self.current_expected_senders.clone()));
+            .or_insert_with(|| HandleState::new(context, self.current_expected_senders.clone()));
         state.last_seen_block = context.block_number;
         state.consensus = Some(ConsensusState {
             context,
@@ -211,7 +230,7 @@ impl DriftDetector {
         self.try_check_local_consensus(handle, db_pool).await
     }
 
-    pub(crate) async fn refresh_pending_consensus_checks(
+    async fn refresh_pending_consensus_checks(
         &mut self,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
@@ -313,7 +332,6 @@ impl DriftDetector {
                 block_hash = ?consensus.context.block_hash,
                 tx_hash = ?consensus.context.tx_hash,
                 log_index = ?consensus.context.log_index,
-                consensus_senders = ?consensus.senders.iter().map(ToString::to_string).collect::<Vec<_>>(),
                 consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                 consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
                 local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
@@ -326,7 +344,7 @@ impl DriftDetector {
                 source = "consensus",
                 "Drift detected: local digest does not match consensus"
             );
-            self.deferred_metrics.drift_detected += 1;
+            self.deferred_drift_detected += 1;
         }
 
         let Some(state) = self.open_handles.get_mut(&handle) else {
@@ -337,18 +355,19 @@ impl DriftDetector {
         Ok(())
     }
 
-    pub(crate) fn evict_stale(&mut self, current_block: u64) {
+    fn evict_stale(&mut self, current_block: u64) {
         let mut finished = Vec::new();
 
-        for (handle, state) in &mut self.open_handles {
-            if let Some(consensus) = &state.consensus {
-                if !state.local_consensus_checked {
-                    if current_block.saturating_sub(consensus.context.block_number)
-                        < self.no_consensus_timeout_blocks
-                    {
-                        continue;
-                    }
-
+        for (handle, state) in &self.open_handles {
+            match classify_handle(
+                state,
+                current_block,
+                self.no_consensus_timeout_blocks,
+                self.post_consensus_grace_blocks,
+            ) {
+                HandleDisposition::KeepWaiting => {}
+                HandleDisposition::ConsensusUncheckedTimeout => {
+                    let consensus = state.consensus.as_ref().unwrap();
                     warn!(
                         handle = %handle,
                         host_chain_id = self.host_chain_id.as_i64(),
@@ -363,16 +382,9 @@ impl DriftDetector {
                         "Consensus was observed but local digests never became available for comparison"
                     );
                     finished.push(*handle);
-                    continue;
                 }
-
-                if state.submissions.len() != state.expected_senders.len() {
-                    if current_block.saturating_sub(consensus.context.block_number)
-                        < self.post_consensus_grace_blocks
-                    {
-                        continue;
-                    }
-
+                HandleDisposition::MissingSubmissionPostGrace => {
+                    let consensus = state.consensus.as_ref().unwrap();
                     let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
@@ -394,40 +406,32 @@ impl DriftDetector {
                             .map(ToString::to_string).collect::<Vec<_>>(),
                         variant_count = variants.len(),
                         variants = ?variants,
-                        "Consensus reached but some coprocessors never submitted this handle"
+                        "Not all expected coprocessors submitted before post-consensus grace period expired"
                     );
-                    self.deferred_metrics.missing_submission += 1;
+                    self.deferred_missing_submission += 1;
                     finished.push(*handle);
-                    continue;
                 }
-
-                continue;
+                HandleDisposition::NoConsensusTimeout => {
+                    let variants = variant_summaries(&state.submissions);
+                    warn!(
+                        handle = %handle,
+                        host_chain_id = self.host_chain_id.as_i64(),
+                        local_node_id = %self.local_node_id,
+                        first_seen_block = state.first_seen_block,
+                        first_seen_block_hash = ?state.first_seen_block_hash,
+                        last_seen_block = state.last_seen_block,
+                        seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
+                        missing_senders = ?state.expected_senders.iter()
+                            .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
+                            .map(ToString::to_string).collect::<Vec<_>>(),
+                        variant_count = variants.len(),
+                        variants = ?variants,
+                        "Handle timed out before consensus was observed"
+                    );
+                    self.deferred_consensus_timeout += 1;
+                    finished.push(*handle);
+                }
             }
-
-            if current_block.saturating_sub(state.first_seen_block)
-                < self.no_consensus_timeout_blocks
-            {
-                continue;
-            }
-
-            let variants = variant_summaries(&state.submissions);
-            warn!(
-                handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
-                local_node_id = %self.local_node_id,
-                first_seen_block = state.first_seen_block,
-                first_seen_block_hash = ?state.first_seen_block_hash,
-                last_seen_block = state.last_seen_block,
-                seen_senders = ?state.submissions.iter().map(|s| s.sender.to_string()).collect::<Vec<_>>(),
-                missing_senders = ?state.expected_senders.iter()
-                    .filter(|s| !state.submissions.iter().any(|sub| sub.sender == **s))
-                    .map(ToString::to_string).collect::<Vec<_>>(),
-                variant_count = variants.len(),
-                variants = ?variants,
-                "Handle timed out before consensus was observed"
-            );
-            self.deferred_metrics.consensus_timeout += 1;
-            finished.push(*handle);
         }
 
         for handle in finished {
@@ -436,20 +440,22 @@ impl DriftDetector {
     }
 
     pub(crate) fn flush_metrics(&mut self) {
-        if self.deferred_metrics.drift_detected == 0
-            && self.deferred_metrics.consensus_timeout == 0
-            && self.deferred_metrics.missing_submission == 0
+        if self.deferred_drift_detected == 0
+            && self.deferred_consensus_timeout == 0
+            && self.deferred_missing_submission == 0
         {
             return;
         }
 
-        DRIFT_DETECTED_COUNTER.inc_by(self.deferred_metrics.drift_detected);
-        CONSENSUS_TIMEOUT_COUNTER.inc_by(self.deferred_metrics.consensus_timeout);
-        MISSING_SUBMISSION_COUNTER.inc_by(self.deferred_metrics.missing_submission);
-        self.deferred_metrics = DeferredMetrics::default();
+        DRIFT_DETECTED_COUNTER.inc_by(self.deferred_drift_detected);
+        CONSENSUS_TIMEOUT_COUNTER.inc_by(self.deferred_consensus_timeout);
+        MISSING_SUBMISSION_COUNTER.inc_by(self.deferred_missing_submission);
+        self.deferred_drift_detected = 0;
+        self.deferred_consensus_timeout = 0;
+        self.deferred_missing_submission = 0;
     }
 
-    pub(crate) fn evaluate_open_handles(&mut self, current_block: u64) {
+    fn evaluate_open_handles(&mut self, current_block: u64) {
         if !self.alerts_enabled {
             return;
         }
@@ -458,7 +464,7 @@ impl DriftDetector {
             .open_handles
             .iter()
             .filter_map(|(handle, state)| {
-                (!state.drift_reported && variant_summaries(&state.submissions).len() > 1)
+                (!state.drift_reported && has_multiple_variants(&state.submissions))
                     .then_some(*handle)
             })
             .collect::<Vec<_>>();
@@ -485,7 +491,7 @@ impl DriftDetector {
                 "Drift detected: observed multiple digest variants for handle"
             );
             state.drift_reported = true;
-            self.deferred_metrics.drift_detected += 1;
+            self.deferred_drift_detected += 1;
         }
 
         self.finalize_completed_without_consensus();
@@ -500,7 +506,7 @@ impl DriftDetector {
             .min()
     }
 
-    pub(crate) fn finalize_completed_without_consensus(&mut self) {
+    fn finalize_completed_without_consensus(&mut self) {
         if !self.alerts_enabled {
             return;
         }
@@ -537,7 +543,7 @@ impl DriftDetector {
                 variants = ?variants,
                 "All expected coprocessors submitted but no consensus event was observed"
             );
-            self.deferred_metrics.consensus_timeout += 1;
+            self.deferred_consensus_timeout += 1;
             self.open_handles.remove(&handle);
         }
     }
@@ -555,30 +561,77 @@ impl DriftDetector {
             if !state.local_consensus_checked {
                 return;
             }
-            let consensus_block = state
-                .consensus
-                .as_ref()
-                .map(|consensus| consensus.context.block_number)
-                .unwrap_or(state.last_seen_block);
+            let consensus_block = state.consensus.as_ref().unwrap().context.block_number;
             POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM
                 .observe(state.last_seen_block.saturating_sub(consensus_block) as f64);
             self.open_handles.remove(&handle);
         }
     }
+
+    pub(crate) async fn end_of_batch(
+        &mut self,
+        current_block: u64,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        self.refresh_pending_consensus_checks(db_pool).await?;
+        self.finalize_completed_without_consensus();
+        self.evict_stale(current_block);
+        Ok(())
+    }
+
+    pub(crate) async fn end_of_rebuild(
+        &mut self,
+        current_block: u64,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        self.refresh_pending_consensus_checks(db_pool).await?;
+        self.evaluate_open_handles(current_block);
+        Ok(())
+    }
 }
 
-fn new_handle_state(context: EventContext, expected_senders: Vec<Address>) -> HandleState {
-    let submission_capacity = expected_senders.len();
-    HandleState {
-        first_seen_block: context.block_number,
-        first_seen_block_hash: context.block_hash,
-        last_seen_block: context.block_number,
-        expected_senders,
-        submissions: Vec::with_capacity(submission_capacity),
-        consensus: None,
-        local_consensus_checked: false,
-        drift_reported: false,
+fn classify_handle(
+    state: &HandleState,
+    current_block: u64,
+    no_consensus_timeout_blocks: u64,
+    post_consensus_grace_blocks: u64,
+) -> HandleDisposition {
+    if let Some(consensus) = &state.consensus {
+        if !state.local_consensus_checked {
+            return if current_block.saturating_sub(consensus.context.block_number)
+                >= no_consensus_timeout_blocks
+            {
+                HandleDisposition::ConsensusUncheckedTimeout
+            } else {
+                HandleDisposition::KeepWaiting
+            };
+        }
+
+        if state.submissions.len() != state.expected_senders.len() {
+            return if current_block.saturating_sub(consensus.context.block_number)
+                >= post_consensus_grace_blocks
+            {
+                HandleDisposition::MissingSubmissionPostGrace
+            } else {
+                HandleDisposition::KeepWaiting
+            };
+        }
+
+        return HandleDisposition::KeepWaiting;
     }
+
+    if current_block.saturating_sub(state.first_seen_block) >= no_consensus_timeout_blocks {
+        HandleDisposition::NoConsensusTimeout
+    } else {
+        HandleDisposition::KeepWaiting
+    }
+}
+
+fn has_multiple_variants(submissions: &[Submission]) -> bool {
+    let Some(first) = submissions.first() else {
+        return false;
+    };
+    submissions[1..].iter().any(|s| s.digests != first.digests)
 }
 
 fn variant_summaries(submissions: &[Submission]) -> Vec<String> {
@@ -667,9 +720,9 @@ mod tests {
         assert_eq!(state.first_seen_block, 100);
         assert_eq!(state.last_seen_block, 103);
         assert_eq!(state.submissions.len(), 2);
-        assert_eq!(variant_summaries(&state.submissions).len(), 2);
+        assert!(has_multiple_variants(&state.submissions));
         assert!(!state.drift_reported);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
 
         detector.set_alerts_enabled(true);
         detector.evaluate_open_handles(103);
@@ -682,8 +735,8 @@ mod tests {
         assert_eq!(state.first_seen_block, 100);
         assert_eq!(state.last_seen_block, 103);
         assert_eq!(state.submissions.len(), 2);
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert_eq!(detector.deferred_drift_detected, 1);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
     }
 
     fn make_submission_event(
@@ -853,13 +906,13 @@ mod tests {
             11,
         );
 
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
         assert!(!detector.open_handles.get(&handle).unwrap().drift_reported);
 
         detector.set_alerts_enabled(true);
         detector.evaluate_open_handles(11);
 
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_drift_detected, 1);
         assert!(detector.open_handles.get(&handle).unwrap().drift_reported);
     }
 
@@ -946,8 +999,8 @@ mod tests {
         );
 
         let state = detector.open_handles.get(&handle).unwrap();
-        assert_eq!(variant_summaries(&state.submissions).len(), 1);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert!(!has_multiple_variants(&state.submissions));
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 
     #[test]
@@ -972,9 +1025,9 @@ mod tests {
             11,
         );
 
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_drift_detected, 1);
         let state = detector.open_handles.get(&handle).unwrap();
-        assert_eq!(variant_summaries(&state.submissions).len(), 2);
+        assert!(has_multiple_variants(&state.submissions));
     }
 
     #[test]
@@ -1011,7 +1064,7 @@ mod tests {
         detector.finalize_completed_without_consensus();
 
         assert!(!detector.open_handles.contains_key(&handle_before_rotation));
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+        assert_eq!(detector.deferred_consensus_timeout, 1);
 
         for (i, sender) in rotated_senders.iter().copied().take(3).enumerate() {
             submit_digest_event_and_drift_check(
@@ -1037,7 +1090,7 @@ mod tests {
         detector.finalize_completed_without_consensus();
 
         assert!(!detector.open_handles.contains_key(&handle_after_rotation));
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 2);
+        assert_eq!(detector.deferred_consensus_timeout, 2);
     }
 
     #[test]
@@ -1057,11 +1110,11 @@ mod tests {
         }
 
         assert!(detector.open_handles.contains_key(&handle));
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
 
         detector.finalize_completed_without_consensus();
 
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+        assert_eq!(detector.deferred_consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1096,7 +1149,7 @@ mod tests {
 
         detector.finalize_completed_without_consensus();
 
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
         assert!(detector.open_handles.contains_key(&handle));
     }
 
@@ -1136,7 +1189,7 @@ mod tests {
 
         detector.evict_stale(14);
 
-        assert_eq!(detector.deferred_metrics.missing_submission, 1);
+        assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1156,7 +1209,7 @@ mod tests {
 
         detector.evict_stale(15);
 
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+        assert_eq!(detector.deferred_consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1198,13 +1251,13 @@ mod tests {
         // Block 13: 13 - 12 = 1 < 2 (grace), should NOT evict.
         detector.evict_stale(13);
 
-        assert_eq!(detector.deferred_metrics.missing_submission, 0);
+        assert_eq!(detector.deferred_missing_submission, 0);
         assert!(detector.open_handles.contains_key(&handle));
 
         // Block 14: 14 - 12 = 2, NOT < 2, should evict.
         detector.evict_stale(14);
 
-        assert_eq!(detector.deferred_metrics.missing_submission, 1);
+        assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1225,13 +1278,13 @@ mod tests {
         // Block 14: 14 - 10 = 4 < 5 (timeout window), should NOT evict.
         detector.evict_stale(14);
 
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
         assert!(detector.open_handles.contains_key(&handle));
 
         // Block 15: 15 - 10 = 5, NOT < 5, should evict.
         detector.evict_stale(15);
 
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
+        assert_eq!(detector.deferred_consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1264,7 +1317,7 @@ mod tests {
 
         // After grace period, should alert about missing submissions.
         detector.evict_stale(23); // 23 - 20 = 3 > post_consensus_grace_blocks(2)
-        assert_eq!(detector.deferred_metrics.missing_submission, 1);
+        assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
 
@@ -1302,7 +1355,7 @@ mod tests {
             FixedBytes::from([2u8; 32])
         );
         // No drift_detected metric (equivocation is not multi-variant drift).
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 
     #[test]
@@ -1332,7 +1385,7 @@ mod tests {
 
         let state = detector.open_handles.get(&handle).unwrap();
         assert_eq!(state.submissions.len(), 1);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 
     #[test]
@@ -1369,23 +1422,23 @@ mod tests {
         assert!(!detector.open_handles.contains_key(&handle));
         // This path (consensus observed, local digests never available) should not
         // bump consensus_timeout or missing_submission — it's a distinct warning.
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
-        assert_eq!(detector.deferred_metrics.missing_submission, 0);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
+        assert_eq!(detector.deferred_missing_submission, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 
     #[test]
     fn flush_resets_counters() {
         let mut detector = detector();
-        detector.deferred_metrics.drift_detected = 1;
-        detector.deferred_metrics.consensus_timeout = 2;
-        detector.deferred_metrics.missing_submission = 3;
+        detector.deferred_drift_detected = 1;
+        detector.deferred_consensus_timeout = 2;
+        detector.deferred_missing_submission = 3;
 
         detector.flush_metrics();
 
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
-        assert_eq!(detector.deferred_metrics.consensus_timeout, 0);
-        assert_eq!(detector.deferred_metrics.missing_submission, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
+        assert_eq!(detector.deferred_missing_submission, 0);
     }
 
     use serial_test::serial;
@@ -1444,7 +1497,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_drift_detected, 1);
     }
 
     #[tokio::test]
@@ -1486,7 +1539,7 @@ mod tests {
             .get(&FixedBytes::from(handle))
             .unwrap();
         assert!(!state.local_consensus_checked);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
 
         detector.set_alerts_enabled(true);
         detector
@@ -1499,7 +1552,7 @@ mod tests {
             .get(&FixedBytes::from(handle))
             .unwrap();
         assert!(state.local_consensus_checked);
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_drift_detected, 1);
     }
 
     #[tokio::test]
@@ -1542,7 +1595,7 @@ mod tests {
             .get(&FixedBytes::from(handle))
             .unwrap();
         assert!(!state.local_consensus_checked);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
 
         // Now populate the digests (simulating the worker finishing computation).
         let local_ct = vec![0xBBu8; 32];
@@ -1569,7 +1622,7 @@ mod tests {
             .unwrap();
         assert!(state.local_consensus_checked);
         // Consensus digest [0xFF] != local digest [0xBB] → drift.
-        assert_eq!(detector.deferred_metrics.drift_detected, 1);
+        assert_eq!(detector.deferred_drift_detected, 1);
     }
 
     #[tokio::test]
@@ -1666,6 +1719,6 @@ mod tests {
             .get(&FixedBytes::from(handle))
             .unwrap();
         assert!(state.local_consensus_checked);
-        assert_eq!(detector.deferred_metrics.drift_detected, 0);
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 }
