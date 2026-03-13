@@ -455,6 +455,38 @@ async fn dep_chain_id_for_output_handle(
     Ok(dep_chain_id)
 }
 
+// Polls the database until both `computations` and `allowed_handles` counts
+// satisfy `predicate`, returning the final `(tfhe_count, acl_count)`.
+// Panics with `context` if `timeout` elapses before the condition is met.
+async fn wait_for_event_counts(
+    db_pool: &sqlx::PgPool,
+    timeout: tokio::time::Duration,
+    context: &str,
+    predicate: impl Fn(i64, i64) -> bool,
+) -> Result<(i64, i64), anyhow::Error> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let tfhe = sqlx::query!("SELECT COUNT(*) FROM computations")
+            .fetch_one(db_pool)
+            .await?
+            .count
+            .unwrap_or(0);
+        let acl = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+            .fetch_one(db_pool)
+            .await?
+            .count
+            .unwrap_or(0);
+        if predicate(tfhe, acl) {
+            return Ok((tfhe, acl));
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timeout {context}: tfhe={tfhe}, acl={acl}"
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
@@ -1190,21 +1222,17 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
     args.catchup_paging = 3;
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
-    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await; // time to catchup
-
-    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
     let nb_wallets = setup.wallets.len() as i64;
-    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
-    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
+    let expected = nb_wallets * nb_event_per_wallet;
+    let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        &format!("waiting for first catchup (expected {expected})"),
+        |tfhe, acl| tfhe >= expected && acl >= expected,
+    )
+    .await?;
+    assert_eq!(tfhe_events_count, expected);
+    assert_eq!(acl_events_count, expected);
     assert!(!listener_handle.is_finished(), "Listener should continue");
     let wallets_clone = setup.wallets.clone();
     let url_clone = setup.args.url.clone();
@@ -1219,20 +1247,17 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
         nb_event_per_wallet,
     )
     .await;
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    assert_eq!(tfhe_events_count, 2 * nb_wallets * nb_event_per_wallet);
-    assert_eq!(acl_events_count, 2 * nb_wallets * nb_event_per_wallet);
+    let expected2 = 2 * nb_wallets * nb_event_per_wallet;
+    let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        &format!("waiting for second batch (expected {expected2})"),
+        |tfhe, acl| tfhe >= expected2 && acl >= expected2,
+    )
+    .await?;
+    assert_eq!(tfhe_events_count, expected2);
+    assert_eq!(acl_events_count, expected2);
     listener_handle.abort();
     Ok(())
 }
@@ -1265,23 +1290,28 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
     args.catchup_paging = 2;
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
-    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await; // time to catchup
-
-    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
     let nb_wallets = setup.wallets.len() as i64;
+    let expected = nb_wallets * nb_event_per_wallet;
+    let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        &format!("waiting for catchup (expected {expected})"),
+        |tfhe, acl| tfhe >= expected && acl >= expected,
+    )
+    .await?;
     eprintln!("End block {:?}", args.end_at_block);
-    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
-    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
-    assert!(listener_handle.is_finished(), "Listener should stop");
+    assert_eq!(tfhe_events_count, expected);
+    assert_eq!(acl_events_count, expected);
+    // Allow the listener to finish after ingesting all events
+    let finish_deadline =
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
+    while !listener_handle.is_finished() {
+        assert!(
+            tokio::time::Instant::now() < finish_deadline,
+            "Listener should stop"
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
     Ok(())
 }
 
@@ -1324,19 +1354,15 @@ where
 
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
-    tokio::time::sleep(tokio::time::Duration::from_secs(sleep_secs)).await;
-
-    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
     let nb_wallets = setup.wallets.len() as i64;
+    let expected = nb_wallets * nb_event_per_wallet;
+    let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(sleep_secs.max(30)),
+        &format!("waiting for catchup in scenario (expected {expected})"),
+        |tfhe, acl| tfhe >= expected && acl >= expected,
+    )
+    .await?;
 
     Ok(CatchupOutcome {
         _setup: setup,
@@ -1427,30 +1453,16 @@ async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
     )
     .await;
 
-    // Wait enough time for another catchup iteration to complete
-    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
-
-    let tfhe_events_count_after =
-        sqlx::query!("SELECT COUNT(*) FROM computations")
-            .fetch_one(&setup.db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-    let acl_events_count_after =
-        sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-            .fetch_one(&setup.db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-
-    assert!(
-        tfhe_events_count_after > first_tfhe_events_count,
-        "Second catchup iteration should ingest additional TFHE events"
-    );
-    assert!(
-        acl_events_count_after > first_acl_events_count,
-        "Second catchup iteration should ingest additional ACL events"
-    );
+    // Poll until second catchup iteration ingests additional events
+    wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        "waiting for second catchup iteration",
+        |tfhe, acl| {
+            tfhe > first_tfhe_events_count && acl > first_acl_events_count
+        },
+    )
+    .await?;
 
     // Listener should still be running
     assert!(
