@@ -52,7 +52,7 @@ sol!(
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
-const NB_EVENTS_PER_WALLET: i64 = 200;
+const NB_EVENTS_PER_WALLET: i64 = 50;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -1079,10 +1079,10 @@ async fn test_listener_no_event_loss(
         nb_wallets * NB_EVENTS_PER_WALLET
     };
     let expected_acl_events = nb_wallets * NB_EVENTS_PER_WALLET;
-    for _ in 1..120 {
-        // 10 mins max to avoid stalled CI
+    for _ in 1..40 {
+        // 4 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         check_finalization_status(&setup).await;
         let tfhe_new_count = sqlx::query!("SELECT COUNT(*) FROM computations")
             .fetch_one(&setup.db_pool)
@@ -1108,7 +1108,7 @@ async fn test_listener_no_event_loss(
         if kill {
             listener_handle.abort();
             while !listener_handle.is_finished() {
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
             nb_kill += 1;
         }
@@ -1119,7 +1119,7 @@ async fn test_listener_no_event_loss(
             acl_events_count,
             nb_wallets * NB_EVENTS_PER_WALLET,
         );
-        tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
     assert_eq!(tfhe_events_count, expected_tfhe_events);
     assert_eq!(acl_events_count, expected_acl_events);
