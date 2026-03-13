@@ -69,14 +69,19 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
-      - name: Install dependencies
+      - name: Install PR dependencies
+        working-directory: ${{ matrix.package }}
+        run: npm ci
+
+      - name: Install main dependencies
+        working-directory: main-branch/${{ matrix.package }}
+        run: npm ci
+
+      - name: Install Forge dependencies
+        if: matrix.extra-deps != ''
         run: |
-          npm --prefix ${{ matrix.package }} ci
-          npm --prefix main-branch/${{ matrix.package }} ci
-          if [ -n "${{ matrix.extra-deps }}" ]; then
-            (cd ${{ matrix.package }} && ${{ matrix.extra-deps }})
-            (cd main-branch/${{ matrix.package }} && ${{ matrix.extra-deps }})
-          fi
+          (cd ${{ matrix.package }} && ${{ matrix.extra-deps }})
+          (cd main-branch/${{ matrix.package }} && ${{ matrix.extra-deps }})
 
       - name: Align compilation settings
         run: cp ${{ matrix.package }}/foundry.toml main-branch/${{ matrix.package }}/foundry.toml
