@@ -810,8 +810,10 @@ const printBundle = (bundle: VersionBundle) => {
 const describeOverride = (item: LocalOverride) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
-export const overrideWarnings = (overrides: LocalOverride[]) =>
-  overrides.flatMap((item) =>
+const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+
+export const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
+  const warnings = overrides.flatMap((item) =>
     item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group)
       ? [
           `${item.group}: per-service override with a shared database. ` +
@@ -820,9 +822,17 @@ export const overrideWarnings = (overrides: LocalOverride[]) =>
         ]
       : [],
   );
+  if (target && NETWORK_TARGETS.has(target) && overrides.length) {
+    warnings.push(
+      `Overriding on network target '${target}': ensure your local code is compatible ` +
+        `with ${target}'s DB schema, contract interfaces, and service versions.`,
+    );
+  }
+  return warnings;
+};
 
-const logOverrideWarnings = (overrides: LocalOverride[]) => {
-  for (const warning of overrideWarnings(overrides)) {
+const logOverrideWarnings = (overrides: LocalOverride[], target?: string) => {
+  for (const warning of overrideWarnings(overrides, target)) {
     log(`[warn] ${warning}`);
   }
 };
@@ -831,7 +841,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "topology">, from
   log(`[plan] target=${state.target}`);
   if (state.overrides.length) {
     log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
-    logOverrideWarnings(state.overrides);
+    logOverrideWarnings(state.overrides, state.target);
   }
   log(`[plan] topology=n${state.topology.count}/t${state.topology.threshold}`);
   log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
@@ -1317,7 +1327,7 @@ const runStatus = async (deps: RuntimeDeps) => {
     log(`[target] ${state.target}`);
     if (state.overrides.length) {
       log(`[overrides] ${state.overrides.map(describeOverride).join(", ")}`);
-      logOverrideWarnings(state.overrides);
+      logOverrideWarnings(state.overrides, state.target);
     }
     log(`[topology] n=${state.topology.count} t=${state.topology.threshold}`);
     log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
