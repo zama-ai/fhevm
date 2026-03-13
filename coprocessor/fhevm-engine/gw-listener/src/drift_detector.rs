@@ -725,7 +725,7 @@ mod tests {
         }
     }
 
-    fn submit(
+    fn submit_digest_event_and_drift_check(
         d: &mut DriftDetector,
         handle: FixedBytes<32>,
         ct: impl Into<FixedBytes<32>>,
@@ -789,7 +789,7 @@ mod tests {
 
         assert_eq!(detector.earliest_open_block(), None);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_b,
             digest_b.ciphertext_digest,
@@ -797,7 +797,7 @@ mod tests {
             senders[0],
             20,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_a,
             digest_a.ciphertext_digest,
@@ -808,7 +808,7 @@ mod tests {
 
         assert_eq!(detector.earliest_open_block(), Some(10));
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_a,
             digest_a.ciphertext_digest,
@@ -816,7 +816,7 @@ mod tests {
             senders[1],
             11,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_a,
             digest_a.ciphertext_digest,
@@ -836,8 +836,15 @@ mod tests {
         let senders = senders();
 
         detector.set_alerts_enabled(false);
-        submit(&mut detector, handle, [8u8; 32], [9u8; 32], senders[0], 10);
-        submit(
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [8u8; 32],
+            [9u8; 32],
+            senders[0],
+            10,
+        );
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [10u8; 32],
@@ -921,7 +928,7 @@ mod tests {
             ciphertext128_digest: FixedBytes::from([3u8; 32]),
         };
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             digests.ciphertext_digest,
@@ -929,7 +936,7 @@ mod tests {
             senders()[0],
             10,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             digests.ciphertext_digest,
@@ -948,7 +955,7 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -956,7 +963,7 @@ mod tests {
             senders()[0],
             10,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [9u8; 32],
@@ -978,7 +985,7 @@ mod tests {
         let handle_after_rotation = FixedBytes::from([22u8; 32]);
         let new_sender = Address::left_padding_from(&[4]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_before_rotation,
             [2u8; 32],
@@ -992,7 +999,7 @@ mod tests {
         detector.set_current_expected_senders(rotated_senders.clone());
 
         for (i, sender) in old_senders.iter().copied().enumerate().skip(1) {
-            submit(
+            submit_digest_event_and_drift_check(
                 &mut detector,
                 handle_before_rotation,
                 [2u8; 32],
@@ -1007,7 +1014,7 @@ mod tests {
         assert_eq!(detector.deferred_metrics.consensus_timeout, 1);
 
         for (i, sender) in rotated_senders.iter().copied().take(3).enumerate() {
-            submit(
+            submit_digest_event_and_drift_check(
                 &mut detector,
                 handle_after_rotation,
                 [4u8; 32],
@@ -1019,7 +1026,7 @@ mod tests {
 
         assert!(detector.open_handles.contains_key(&handle_after_rotation));
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle_after_rotation,
             [4u8; 32],
@@ -1039,7 +1046,7 @@ mod tests {
         let handle = FixedBytes::from([1u8; 32]);
 
         for (i, sender) in senders().into_iter().enumerate() {
-            submit(
+            submit_digest_event_and_drift_check(
                 &mut detector,
                 handle,
                 [2u8; 32],
@@ -1065,7 +1072,7 @@ mod tests {
         let expected = senders();
 
         for (i, sender) in expected.iter().copied().enumerate() {
-            submit(
+            submit_digest_event_and_drift_check(
                 &mut detector,
                 handle,
                 [2u8; 32],
@@ -1098,7 +1105,7 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1106,7 +1113,7 @@ mod tests {
             senders()[0],
             10,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1138,7 +1145,7 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([1u8; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1158,7 +1165,7 @@ mod tests {
         let mut detector = detector(); // post_consensus_grace_blocks = 2
         let handle = FixedBytes::from([1u8; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1166,7 +1173,7 @@ mod tests {
             senders()[0],
             10,
         );
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1206,7 +1213,7 @@ mod tests {
         let mut detector = detector(); // no_consensus_timeout_blocks = 5
         let handle = FixedBytes::from([1u8; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1268,10 +1275,24 @@ mod tests {
         let sender = senders()[0];
 
         // First submission from sender.
-        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 10);
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            sender,
+            10,
+        );
 
         // Same sender, different digests (equivocation).
-        submit(&mut detector, handle, [9u8; 32], [3u8; 32], sender, 11);
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [9u8; 32],
+            [3u8; 32],
+            sender,
+            11,
+        );
 
         let state = detector.open_handles.get(&handle).unwrap();
         // Should still have only 1 submission (the first one).
@@ -1290,10 +1311,24 @@ mod tests {
         let handle = FixedBytes::from([1u8; 32]);
         let sender = senders()[0];
 
-        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 10);
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            sender,
+            10,
+        );
 
         // Exact same submission again.
-        submit(&mut detector, handle, [2u8; 32], [3u8; 32], sender, 11);
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [2u8; 32],
+            [3u8; 32],
+            sender,
+            11,
+        );
 
         let state = detector.open_handles.get(&handle).unwrap();
         assert_eq!(state.submissions.len(), 1);
@@ -1308,7 +1343,7 @@ mod tests {
         let mut detector = detector(); // no_consensus_timeout_blocks = 5
         let handle = FixedBytes::from([0xDD; 32]);
 
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             [2u8; 32],
@@ -1562,10 +1597,17 @@ mod tests {
 
         // Submit from 3 expected senders + 1 unexpected sender.
         for &sender in &senders() {
-            submit(&mut detector, handle, digest, digest128, sender, 10);
+            submit_digest_event_and_drift_check(
+                &mut detector,
+                handle,
+                digest,
+                digest128,
+                sender,
+                10,
+            );
         }
         let unexpected_sender = Address::left_padding_from(&[99]);
-        submit(
+        submit_digest_event_and_drift_check(
             &mut detector,
             handle,
             digest,
