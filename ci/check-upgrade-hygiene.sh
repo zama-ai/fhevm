@@ -29,10 +29,25 @@ fi
 
 ERRORS=0
 
-extract_const() {
-  local file="$1" const="$2"
-  sed -n "s/.*${const}[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p" "$file"
+# Extract all four version constants from a .sol file in a single pass.
+# Returns: REINITIALIZER_VERSION MAJOR_VERSION MINOR_VERSION PATCH_VERSION
+extract_versions() {
+  awk '
+    /REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*[0-9]/ { gsub(/[^0-9]/,"",$NF); reinit=$NF }
+    /MAJOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); major=$NF }
+    /MINOR_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); minor=$NF }
+    /PATCH_VERSION[[:space:]]*=[[:space:]]*[0-9]/         { gsub(/[^0-9]/,"",$NF); patch=$NF }
+    END { print reinit, major, minor, patch }
+  ' "$1"
 }
+
+# Pre-compile both roots in parallel so all forge inspect calls are cache hits.
+forge build --root "$MAIN_DIR" &
+pid_main=$!
+forge build --root "$PR_DIR" &
+pid_pr=$!
+wait "$pid_main" || { echo "::error::forge build failed for $MAIN_DIR"; exit 1; }
+wait "$pid_pr"   || { echo "::error::forge build failed for $PR_DIR"; exit 1; }
 
 for name in $(jq -r '.[]' "$PR_DIR/upgrade-manifest.json"); do
   echo "::group::Checking $name"
@@ -54,15 +69,9 @@ for name in $(jq -r '.[]' "$PR_DIR/upgrade-manifest.json"); do
     continue
   fi
 
-  # --- Extract version constants from both ---
-  main_reinit=$(extract_const "$main_sol" "REINITIALIZER_VERSION")
-  pr_reinit=$(extract_const "$pr_sol" "REINITIALIZER_VERSION")
-  main_major=$(extract_const "$main_sol" "MAJOR_VERSION")
-  pr_major=$(extract_const "$pr_sol" "MAJOR_VERSION")
-  main_minor=$(extract_const "$main_sol" "MINOR_VERSION")
-  pr_minor=$(extract_const "$pr_sol" "MINOR_VERSION")
-  main_patch=$(extract_const "$main_sol" "PATCH_VERSION")
-  pr_patch=$(extract_const "$pr_sol" "PATCH_VERSION")
+  # --- Extract version constants from both (single pass per file) ---
+  read -r main_reinit main_major main_minor main_patch < <(extract_versions "$main_sol")
+  read -r pr_reinit pr_major pr_minor pr_patch < <(extract_versions "$pr_sol")
 
   for var in main_reinit pr_reinit main_major pr_major main_minor pr_minor main_patch pr_patch; do
     if [ -z "${!var}" ]; then
@@ -73,9 +82,19 @@ for name in $(jq -r '.[]' "$PR_DIR/upgrade-manifest.json"); do
     fi
   done
 
-  # --- Compare bytecodes (paths relative to --root) ---
-  main_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$MAIN_DIR" deployedBytecode)
-  pr_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$PR_DIR" deployedBytecode)
+  # --- Compare bytecodes (paths relative to --root, builds are cached) ---
+  if ! main_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$MAIN_DIR" deployedBytecode 2>&1); then
+    echo "::error::Failed to inspect $name on main: $main_bytecode"
+    ERRORS=$((ERRORS + 1))
+    echo "::endgroup::"
+    continue
+  fi
+  if ! pr_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$PR_DIR" deployedBytecode 2>&1); then
+    echo "::error::Failed to inspect $name on PR: $pr_bytecode"
+    ERRORS=$((ERRORS + 1))
+    echo "::endgroup::"
+    continue
+  fi
 
   bytecode_changed=false
   if [ "$main_bytecode" != "$pr_bytecode" ]; then

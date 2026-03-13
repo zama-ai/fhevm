@@ -93,9 +93,7 @@ jobs:
           cp /tmp/FHEVMHostAddresses.sol main-branch/host-contracts/addresses/FHEVMHostAddresses.sol
 
       - name: Run upgrade hygiene check
-        run: |
-          chmod +x ci/check-upgrade-hygiene.sh
-          ./ci/check-upgrade-hygiene.sh main-branch/host-contracts host-contracts
+        run: ./ci/check-upgrade-hygiene.sh main-branch/host-contracts host-contracts
 
   gateway-contracts:
     name: contracts-upgrade-hygiene/gateway-contracts
@@ -150,6 +148,4 @@ jobs:
           cp /tmp/GatewayAddresses.sol main-branch/gateway-contracts/addresses/GatewayAddresses.sol
 
       - name: Run upgrade hygiene check
-        run: |
-          chmod +x ci/check-upgrade-hygiene.sh
-          ./ci/check-upgrade-hygiene.sh main-branch/gateway-contracts gateway-contracts
+        run: ./ci/check-upgrade-hygiene.sh main-branch/gateway-contracts gateway-contracts
