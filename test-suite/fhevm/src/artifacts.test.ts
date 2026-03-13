@@ -163,8 +163,8 @@ describe("compose templates", () => {
         structuredClone(input),
         stubState({
           envOverrides: {
-            RELAYER_VERSION: "v0.10.0",
-            RELAYER_MIGRATE_VERSION: "v0.10.0",
+            RELAYER_VERSION: "sha-29b0750",
+            RELAYER_MIGRATE_VERSION: "sha-29b0750",
           },
         }),
       ),

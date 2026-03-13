@@ -79,17 +79,29 @@ const parseCompatVersion = (version: string) => {
   return [Number(major), Number(minor), Number(patch)] as const;
 };
 
+/**
+ * Compare an unparseable version (SHA) conservatively: treat as old.
+ * Safe for additive compat rules (extra CLI args that older versions need).
+ */
 const versionLt = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
-  if (!parsed) {
-    // Non-semver (SHA tags): treat as old — safer to apply compat rules
-    // than to skip them and have the service crash.
-    return true;
-  }
+  if (!parsed) return true;
   for (let index = 0; index < parsed.length; index += 1) {
-    if (parsed[index] !== target[index]) {
-      return parsed[index] < target[index];
-    }
+    if (parsed[index] !== target[index]) return parsed[index] < target[index];
+  }
+  return false;
+};
+
+/**
+ * Compare an unparseable version (SHA) optimistically: treat as modern.
+ * Use for destructive compat rules (removing config fields that modern versions require).
+ * All known old versions in GitOps use semver; SHAs come from CI which pins modern builds.
+ */
+const versionLtStrict = (version: string, target: CompatSemver) => {
+  const parsed = parseCompatVersion(version);
+  if (!parsed) return false;
+  for (let index = 0; index < parsed.length; index += 1) {
+    if (parsed[index] !== target[index]) return parsed[index] < target[index];
   }
   return false;
 };
@@ -103,11 +115,11 @@ export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "ov
   !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
-  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
+  versionLtStrict(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
 /** Test-suite SDK < v0.11.0 appends /v1/ to RELAYER_URL; >= v0.11.0 expects the URL to include the version path. */
 export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
-  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
+  versionLtStrict(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
