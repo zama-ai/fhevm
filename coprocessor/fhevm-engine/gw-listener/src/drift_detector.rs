@@ -21,10 +21,12 @@ pub(crate) struct EventContext {
     pub(crate) log_index: Option<u64>,
 }
 
+type CiphertextDigest = FixedBytes<32>;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct DigestPair {
-    ciphertext_digest: FixedBytes<32>,
-    ciphertext128_digest: FixedBytes<32>,
+    ciphertext_digest: CiphertextDigest,
+    ciphertext128_digest: CiphertextDigest,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -77,7 +79,11 @@ enum HandleDisposition {
 
 pub(crate) struct DriftDetector {
     current_expected_senders: Vec<Address>,
-    open_handles: HashMap<FixedBytes<32>, HandleState>,
+    /// Handles waiting for consensus or post-consensus grace. Bounded implicitly:
+    /// `evict_stale` removes entries after `no_consensus_timeout_blocks` (no consensus)
+    /// or `post_consensus_grace_blocks` (consensus reached). Steady-state size is
+    /// proportional to handle throughput * max(timeout, grace) in blocks.
+    open_handles: HashMap<CiphertextDigest, HandleState>,
     host_chain_id: ChainId,
     local_node_id: String,
     no_consensus_timeout_blocks: u64,
@@ -250,7 +256,7 @@ impl DriftDetector {
 
     async fn try_check_local_consensus(
         &mut self,
-        handle: FixedBytes<32>,
+        handle: CiphertextDigest,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<()> {
         if self.replaying {
@@ -437,13 +443,6 @@ impl DriftDetector {
     }
 
     pub(crate) fn flush_metrics(&mut self) {
-        if self.deferred_drift_detected == 0
-            && self.deferred_consensus_timeout == 0
-            && self.deferred_missing_submission == 0
-        {
-            return;
-        }
-
         DRIFT_DETECTED_COUNTER.inc_by(self.deferred_drift_detected);
         CONSENSUS_TIMEOUT_COUNTER.inc_by(self.deferred_consensus_timeout);
         MISSING_SUBMISSION_COUNTER.inc_by(self.deferred_missing_submission);
@@ -545,7 +544,7 @@ impl DriftDetector {
         }
     }
 
-    fn finish_if_complete(&mut self, handle: FixedBytes<32>) {
+    fn finish_if_complete(&mut self, handle: CiphertextDigest) {
         let Some(state) = self.open_handles.get(&handle) else {
             return;
         };
@@ -742,9 +741,9 @@ mod tests {
     }
 
     fn make_submission_event(
-        handle: FixedBytes<32>,
-        ciphertext_digest: FixedBytes<32>,
-        ciphertext128_digest: FixedBytes<32>,
+        handle: CiphertextDigest,
+        ciphertext_digest: CiphertextDigest,
+        ciphertext128_digest: CiphertextDigest,
         sender: Address,
     ) -> CiphertextCommits::AddCiphertextMaterial {
         CiphertextCommits::AddCiphertextMaterial {
@@ -757,9 +756,9 @@ mod tests {
     }
 
     fn make_consensus_event(
-        handle: FixedBytes<32>,
-        ciphertext_digest: FixedBytes<32>,
-        ciphertext128_digest: FixedBytes<32>,
+        handle: CiphertextDigest,
+        ciphertext_digest: CiphertextDigest,
+        ciphertext128_digest: CiphertextDigest,
         senders: Vec<Address>,
     ) -> CiphertextCommits::AddCiphertextMaterialConsensus {
         CiphertextCommits::AddCiphertextMaterialConsensus {
@@ -782,9 +781,9 @@ mod tests {
 
     fn submit_digest_event_and_drift_check(
         d: &mut DriftDetector,
-        handle: FixedBytes<32>,
-        ct: impl Into<FixedBytes<32>>,
-        ct128: impl Into<FixedBytes<32>>,
+        handle: CiphertextDigest,
+        ct: impl Into<CiphertextDigest>,
+        ct128: impl Into<CiphertextDigest>,
         sender: Address,
         block: u64,
     ) {
@@ -808,8 +807,8 @@ mod tests {
 
     fn make_consensus_state(
         block_number: u64,
-        ciphertext_digest: FixedBytes<32>,
-        ciphertext128_digest: FixedBytes<32>,
+        ciphertext_digest: CiphertextDigest,
+        ciphertext128_digest: CiphertextDigest,
         senders: Vec<Address>,
     ) -> ConsensusState {
         ConsensusState {
