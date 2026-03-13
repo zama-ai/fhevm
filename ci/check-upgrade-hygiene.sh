@@ -84,14 +84,16 @@ for name in $(jq -r '.[]' "$PR_DIR/upgrade-manifest.json"); do
   done
 
   # --- Compare bytecodes (paths relative to --root, builds are cached) ---
-  if ! main_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$MAIN_DIR" deployedBytecode 2>&1); then
-    echo "::error::Failed to inspect $name on main: $main_bytecode"
+  # Capture only stdout for bytecode; stderr goes to /dev/null on success (warnings),
+  # but on failure we re-run to capture the error message.
+  if ! main_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$MAIN_DIR" deployedBytecode 2>/dev/null); then
+    echo "::error::Failed to inspect $name on main:$(forge inspect "contracts/${name}.sol:$name" --root "$MAIN_DIR" deployedBytecode 2>&1 || true)"
     ERRORS=$((ERRORS + 1))
     echo "::endgroup::"
     continue
   fi
-  if ! pr_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$PR_DIR" deployedBytecode 2>&1); then
-    echo "::error::Failed to inspect $name on PR: $pr_bytecode"
+  if ! pr_bytecode=$(forge inspect "contracts/${name}.sol:$name" --root "$PR_DIR" deployedBytecode 2>/dev/null); then
+    echo "::error::Failed to inspect $name on PR:$(forge inspect "contracts/${name}.sol:$name" --root "$PR_DIR" deployedBytecode 2>&1 || true)"
     ERRORS=$((ERRORS + 1))
     echo "::endgroup::"
     continue
