@@ -71,6 +71,9 @@ jobs:
           npm ci
           forge soldeer install
 
+      - name: Align compilation settings
+        run: cp host-contracts/foundry.toml main-branch/host-contracts/foundry.toml
+
       - name: Generate address stubs
         run: |
           # Host contracts need addresses/FHEVMHostAddresses.sol (generated at deploy time).
@@ -124,6 +127,9 @@ jobs:
       - name: Install main dependencies
         working-directory: main-branch/gateway-contracts
         run: npm ci
+
+      - name: Align compilation settings
+        run: cp gateway-contracts/foundry.toml main-branch/gateway-contracts/foundry.toml
 
       - name: Generate address stubs
         run: |
