@@ -480,6 +480,10 @@ impl DriftDetector {
             return;
         }
 
+        // Invariant: the gateway emits consensus as part of processing the final
+        // agreeing submission. Once every expected sender has submitted, the
+        // absence of a consensus event is already anomalous, so we alert
+        // immediately instead of waiting for `no_consensus_timeout_blocks`.
         let completed_without_consensus = self
             .open_handles
             .iter()
