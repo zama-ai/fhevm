@@ -23,8 +23,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: db-migration
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -44,8 +42,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -69,8 +65,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -93,8 +87,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: gw-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     healthcheck:
@@ -125,8 +117,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: tfhe-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
       cache_to:
@@ -154,8 +144,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: zkproof-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -179,8 +167,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: sns-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
@@ -216,8 +202,6 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: transaction-sender
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:

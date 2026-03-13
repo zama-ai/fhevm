@@ -222,6 +222,49 @@ export const delegatedUserDecryptSingleHandle = async (
   return result[handle];
 };
 
+/**
+ * Retry delegated decryption until the ciphertext is ready on the gateway chain.
+ * After a transfer, the new ciphertext may not be immediately available for
+ * decryption because the coprocessor/gateway pipeline needs time to process it.
+ * This helper polls instead of relying on a fixed block wait.
+ */
+export const awaitDelegatedDecrypt = async (
+  instance: any,
+  handle: string,
+  contractAddress: string,
+  delegatorAddress: string,
+  delegateAddress: string,
+  signer: Signer,
+  delegatePrivateKey: string,
+  delegatePublicKey: string,
+  { maxAttempts = 30, delayMs = 2000 } = {},
+): Promise<bigint | boolean | string> => {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await delegatedUserDecryptSingleHandle(
+        instance,
+        handle,
+        contractAddress,
+        delegatorAddress,
+        delegateAddress,
+        signer,
+        delegatePrivateKey,
+        delegatePublicKey,
+      );
+    } catch (err: any) {
+      const label = err?.relayerApiError?.label ?? '';
+      const msg = err?.message ?? err?.relayerApiError?.message ?? '';
+      const text = `${label} ${msg}`;
+      const isTransient = /ciphertext.{0,20}not ready|not ready.{0,20}decryption/i.test(text);
+      if (!isTransient || attempt === maxAttempts - 1) {
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error('unreachable');
+};
+
 const abi = [
   'event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
   'event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
