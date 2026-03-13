@@ -90,7 +90,11 @@ struct Conf {
     )]
     pub replay_skip_verify_proof: bool,
 
-    #[arg(long, help = "CiphertextCommits contract address for drift detection")]
+    #[arg(
+        long,
+        requires = "gateway_config_address",
+        help = "CiphertextCommits contract address for drift detection"
+    )]
     ciphertext_commits_address: Option<Address>,
 
     #[arg(
@@ -100,20 +104,17 @@ struct Conf {
     )]
     gateway_config_address: Option<Address>,
 
-    #[arg(
-        long,
-        default_value_t = 50,
-        requires = "ciphertext_commits_address",
-        help = "Drop a handle and alert if no consensus arrives after this many blocks"
-    )]
+    /// How long to wait for the gateway to emit a consensus event after the
+    /// first submission is seen. Measured in blocks — with 100ms block times
+    /// the default of 3000 blocks ≈ 5 minutes, which accommodates coprocessors
+    /// that may be stuck for a few minutes.
+    #[arg(long, default_value_t = 3000, requires = "ciphertext_commits_address")]
     drift_no_consensus_timeout_blocks: u64,
 
-    #[arg(
-        long,
-        default_value_t = 10,
-        requires = "ciphertext_commits_address",
-        help = "After consensus, wait this many blocks for missing coprocessor submissions"
-    )]
+    /// After consensus, how many additional blocks to wait for remaining
+    /// coprocessors to submit their ciphertext material. Measured in blocks —
+    /// with 100ms block times the default of 3000 blocks ≈ 5 minutes.
+    #[arg(long, default_value_t = 3000, requires = "ciphertext_commits_address")]
     drift_post_consensus_grace_blocks: u64,
 }
 
@@ -182,11 +183,6 @@ async fn main() -> anyhow::Result<()> {
     else {
         anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
-    if conf.ciphertext_commits_address.is_some() && conf.gateway_config_address.is_none() {
-        anyhow::bail!(
-            "--gateway-config-address is required when --ciphertext-commits-address is set."
-        );
-    }
     let config = ConfigSettings {
         host_chain_id,
         database_url: conf.database_url.clone().unwrap_or_default(),

@@ -100,7 +100,7 @@ pub(crate) static KEY_DIGEST_MISMATCH_COUNTER: LazyLock<IntCounter> = LazyLock::
 pub(crate) static DRIFT_DETECTED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "coprocessor_gw_listener_drift_detected_counter",
-        "Number of handles where coprocessor digests diverged (peer-to-peer or local-vs-consensus)"
+        "Number of handles where coprocessor digests diverged; does not discriminate whether divergence comes from the local coprocessor or another coprocessor in the network"
     )
     .unwrap()
 });
