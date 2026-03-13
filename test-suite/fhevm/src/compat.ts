@@ -81,13 +81,12 @@ const parseCompatVersion = (version: string) => {
 
 /**
  * Return true when `version` is older than `target`.
- * `unknownIsOld` controls how unparsable versions (e.g. SHA tags) are treated:
- *   true  → conservative (assume old) — used for registry images that may be genuinely old
- *   false → optimistic (assume modern) — used for workspace builds (always latest HEAD)
+ * Unparsable versions (e.g. SHA tags) are treated as modern (returns false).
+ * The preset and CI systems already treat SHA targets as modern — compat agrees.
  */
-const versionLt = (version: string, target: CompatSemver, unknownIsOld = false) => {
+const versionLt = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
-  if (!parsed) return unknownIsOld;
+  if (!parsed) return false;
   for (let index = 0; index < parsed.length; index += 1) {
     if (parsed[index] !== target[index]) return parsed[index] < target[index];
   }
@@ -110,11 +109,9 @@ export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
 export const compatPolicyForState = (state: State): CompatPolicy => {
-  const hasCoprocessorOverride = state.overrides.some((o) => o.group === "coprocessor");
-  const hasConnectorOverride = state.overrides.some((o) => o.group === "kms-connector");
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
   for (const rule of COMPAT_RULES.coprocessor) {
-    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before, !hasCoprocessorOverride)) {
+    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before)) {
       continue;
     }
     const profile = COMPAT_PROFILES[rule.profile];
@@ -126,7 +123,7 @@ export const compatPolicyForState = (state: State): CompatPolicy => {
     }
   }
   for (const rule of COMPAT_RULES.connector) {
-    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before, !hasConnectorOverride)) {
+    if (!versionLt(state.versions.env[rule.versionKey] ?? "", rule.before)) {
       continue;
     }
     Object.assign(policy.connectorEnv, COMPAT_PROFILES[rule.profile].connectorEnv);

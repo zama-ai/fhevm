@@ -287,27 +287,10 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
-    // unparsable SHAs without workspace overrides are treated as old (conservative — apply compat)
-    // because registry images tagged with a SHA could be genuinely old
-    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeDefined();
-    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeDefined();
-
-    // unparsable SHAs WITH a coprocessor workspace override are treated as modern (skip compat)
-    // because workspace-built binaries are always latest HEAD
-    const shaWithOverride = stubState({
-      envOverrides: {
-        COPROCESSOR_DB_MIGRATION_VERSION: "58aebb0",
-        COPROCESSOR_HOST_LISTENER_VERSION: "58aebb0",
-        COPROCESSOR_GW_LISTENER_VERSION: "58aebb0",
-        COPROCESSOR_TX_SENDER_VERSION: "58aebb0",
-        COPROCESSOR_TFHE_WORKER_VERSION: "58aebb0",
-        COPROCESSOR_ZKPROOF_WORKER_VERSION: "58aebb0",
-        COPROCESSOR_SNS_WORKER_VERSION: "58aebb0",
-      },
-      overrides: [{ group: "coprocessor" }],
-    });
-    expect(compatPolicyForState(shaWithOverride).coprocessorArgs["host-listener"]).toBeUndefined();
-    expect(compatPolicyForState(shaWithOverride).coprocessorArgs["transaction-sender"]).toBeUndefined();
+    // unparsable SHAs are always treated as modern (no compat rules applied)
+    // presets, CI orchestration, and stack-era all treat SHA targets as modern
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
   });
 
   test("coprocessor depends_on rewrite only renames cloned services", () => {
