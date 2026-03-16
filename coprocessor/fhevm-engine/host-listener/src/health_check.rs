@@ -62,3 +62,74 @@ impl HealthCheckService for HealthCheck {
         default_get_version()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to build a HealthCheck without real DB/provider connections.
+    fn build_test_health_check() -> HealthCheck {
+        let db_url = "postgres://test:test@localhost:5432/test";
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy(db_url)
+            .unwrap();
+        HealthCheck {
+            blockchain_timeout_tick: HeartBeat::new(),
+            blockchain_tick: HeartBeat::new(),
+            blockchain_provider: Arc::new(RwLock::new(None)),
+            database_pool: Arc::new(RwLock::new(pool)),
+            database_tick: HeartBeat::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn is_alive_after_blockchain_tick_update() {
+        let health_check = build_test_health_check();
+        health_check.blockchain_tick.update();
+        assert!(
+            health_check.is_alive().await,
+            "should be alive when blockchain_tick is fresh"
+        );
+    }
+
+    #[tokio::test]
+    async fn is_alive_after_timeout_tick_update() {
+        let health_check = build_test_health_check();
+        health_check.blockchain_timeout_tick.update();
+        assert!(
+            health_check.is_alive().await,
+            "should be alive when blockchain_timeout_tick is fresh"
+        );
+    }
+
+    #[tokio::test]
+    async fn is_alive_after_database_tick_update() {
+        let health_check = build_test_health_check();
+        health_check.database_tick.update();
+        assert!(
+            health_check.is_alive().await,
+            "should be alive when database_tick is fresh"
+        );
+    }
+
+    #[tokio::test]
+    async fn is_alive_after_all_ticks_update() {
+        let health_check = build_test_health_check();
+        health_check.blockchain_timeout_tick.update();
+        health_check.blockchain_tick.update();
+        health_check.database_tick.update();
+        assert!(
+            health_check.is_alive().await,
+            "should be alive after all ticks update"
+        );
+    }
+
+    #[tokio::test]
+    async fn is_alive_at_creation() {
+        let health_check = build_test_health_check();
+        assert!(
+            health_check.is_alive().await,
+            "should be alive immediately after creation"
+        );
+    }
+}
