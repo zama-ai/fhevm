@@ -161,6 +161,10 @@ export const TEST_GREP: Record<string, string> = {
   "erc20": "should transfer tokens between two users.",
 };
 
+export const TEST_PARALLEL: Record<string, boolean> = {
+  operators: true,
+};
+
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);

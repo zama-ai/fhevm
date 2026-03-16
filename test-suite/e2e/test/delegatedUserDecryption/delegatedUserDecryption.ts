@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { awaitDelegatedDecrypt, delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
+import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
 const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 
@@ -183,12 +183,9 @@ describe('Delegated user decryption', function () {
     await executeTx.wait();
 
     // Verify the smartWallet balance decreased.
-    // After executeTx, the new ciphertext may not be immediately available for
-    // decryption — the coprocessor/gateway pipeline needs time to process it.
-    // Use awaitDelegatedDecrypt to poll until ready instead of a fixed block wait.
     const smartWalletBalanceAfter = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey: pkAfter, privateKey: skAfter } = this.instances.bob.generateKeypair();
-    const decryptedBalanceAfter = await awaitDelegatedDecrypt(
+    const decryptedBalanceAfter = await delegatedUserDecryptSingleHandle(
       this.instances.bob,
       smartWalletBalanceAfter,
       this.tokenAddress,

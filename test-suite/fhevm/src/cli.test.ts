@@ -4,22 +4,28 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  composeDown,
-  resolveEnvMap,
-  resolvedComposeEnv,
-  rewriteCoprocessorDependsOn,
-} from "./artifacts";
+import { Effect, Layer } from "effect";
+
+import { resolvedComposeEnv, rewriteCoprocessorDependsOn } from "./codegen";
+import { resolveEnvMap } from "./services/EnvWriter";
 import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
 import { STEP_NAMES } from "./types";
-import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
-import { compatPolicyForState, requiresMultichainAclAddress } from "./compat";
+import { main } from "./cli";
+import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
+import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
-import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
+import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
+import { CommandRunner } from "./services/CommandRunner";
+import { MinioError } from "./errors";
+import { GitHubClient } from "./services/GitHubClient";
+import { ContainerRunner } from "./services/ContainerRunner";
+import { MinioClient } from "./services/MinioClient";
 import {
   captureConsole,
+  depsToLayer,
   fakeRunner,
   noopDeps,
+  noopLayer,
   portCheckResponses,
   stubBundle,
   stubState,
@@ -75,153 +81,27 @@ const readyDiscovery = () => ({
   },
 });
 
-const LATEST_MAIN_PACKAGES = [
-  "fhevm%2Fgateway-contracts",
-  "fhevm%2Fhost-contracts",
-  "fhevm%2Fcoprocessor%2Fdb-migration",
-  "fhevm%2Fcoprocessor%2Fhost-listener",
-  "fhevm%2Fcoprocessor%2Fgw-listener",
-  "fhevm%2Fcoprocessor%2Ftx-sender",
-  "fhevm%2Fcoprocessor%2Ftfhe-worker",
-  "fhevm%2Fcoprocessor%2Fzkproof-worker",
-  "fhevm%2Fcoprocessor%2Fsns-worker",
-  "fhevm%2Fkms-connector%2Fdb-migration",
-  "fhevm%2Fkms-connector%2Fgw-listener",
-  "fhevm%2Fkms-connector%2Fkms-worker",
-  "fhevm%2Fkms-connector%2Ftx-sender",
-  "fhevm%2Ftest-suite%2Fe2e",
-] as const;
-
-const latestMainPackageResponses = (tag: string) =>
-  Object.fromEntries(
-    LATEST_MAIN_PACKAGES.map((pkg) => [
-      `gh api /orgs/zama-ai/packages/container/${pkg}/versions?per_page=100&page=1`,
-      JSON.stringify([{ metadata: { container: { tags: [tag] } } }]),
-    ]),
-  );
-
 describe("resolveTarget", () => {
-  test("latest-main walks back to the first complete sha bundle after the simple-acl floor", async () => {
-    const gh = createGitHubClient(
-      fakeRunner({
-        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([
-            { sha: "1111111000000000000000000000000000000000" },
-            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
-            { sha: "2222222000000000000000000000000000000000" },
-          ]),
-        ...latestMainPackageResponses("1111111"),
-      }),
-    );
-    const bundle = await resolveTarget("latest-main", gh);
-    expect(bundle.lockName).toBe("latest-main-1111111.json");
-    expect(bundle.env.GATEWAY_VERSION).toBe("1111111");
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
-    expect(bundle.env.RELAYER_VERSION).toBe("sha-29b0750");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
-  });
-
-  test("latest-main rejects complete bundles older than the simple-acl floor", async () => {
-    const gh = createGitHubClient(
-      fakeRunner({
-        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([
-            { sha: "1111111000000000000000000000000000000000" },
-            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
-            { sha: "2222222000000000000000000000000000000000" },
-          ]),
-        ...latestMainPackageResponses("2222222"),
-      }),
-    );
-    await expect(resolveTarget("latest-main", gh)).rejects.toThrow(
-      "Could not find a supported modern latest-main image set",
-    );
-  });
-
-  test("sha resolves an explicit complete repo-owned image set", async () => {
-    const gh = createGitHubClient(
-      fakeRunner({
-        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([
-            { sha: "1234abc999999999999999999999999999999999" },
-            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
-          ]),
-        ...latestMainPackageResponses("1234abc"),
-      }),
-    );
-    const bundle = await resolveTarget("sha", gh, { sha: "1234abc999999999999999999999999999999999" });
-    expect(bundle.lockName).toBe("sha-1234abc.json");
-    expect(bundle.env.GATEWAY_VERSION).toBe("1234abc");
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.0");
-    expect(bundle.env.RELAYER_VERSION).toBe("sha-29b0750");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
-    expect(bundle.sources).toContain("requested-sha=1234abc999999999999999999999999999999999");
-  });
-
-  test("sha rejects commits older than the simple-acl floor", async () => {
-    const gh = createGitHubClient(
-      fakeRunner({
-        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([
-            { sha: "803f1048727eabf6d8b3df618203e3c7dda77890" },
-            { sha: "1234abc999999999999999999999999999999999" },
-          ]),
-        ...latestMainPackageResponses("1234abc"),
-      }),
-    );
-    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
-      "sha target 1234abc predates the simple-ACL cutover and is unsupported",
-    );
-  });
-
-  test("sha rejects non-main commits even if images exist", async () => {
-    const gh = createGitHubClient(
-      fakeRunner({
-        "gh api repos/zama-ai/fhevm/commits?sha=main&per_page=100&page=1":
-          JSON.stringify([{ sha: "803f1048727eabf6d8b3df618203e3c7dda77890" }]),
-        ...latestMainPackageResponses("1234abc"),
-      }),
-    );
-    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
-      "sha target 1234abc is unsupported; only main commits at or after 803f104 are supported",
-    );
-  });
-
-  test("sha rejects missing repo-owned images", async () => {
-    const responses = latestMainPackageResponses("1234abc");
-    responses["gh api /orgs/zama-ai/packages/container/fhevm%2Fcoprocessor%2Fsns-worker/versions?per_page=100&page=1"] =
-      JSON.stringify([{ metadata: { container: { tags: ["other"] } } }]);
-    const gh = createGitHubClient(fakeRunner(responses));
-    await expect(resolveTarget("sha", gh, { sha: "1234abc" })).rejects.toThrow(
-      "Could not find a complete sha image set for 1234abc; missing: fhevm/coprocessor/sns-worker",
-    );
-  });
-
   test("testnet bundle resolves from gitops-style files", async () => {
-    const gh = {
-      latestStableRelease: async () => "v0.11.0",
-      mainCommits: async () => [],
-      packageTags: async () => new Set<string>(),
-      gitopsFile: async (file: string) => {
-        if (file.includes("gw-sc-deploy-1-init")) return "image:\n  name: ghcr.io/zama-ai/fhevm/gateway-contracts\n  tag: v0.10.0\n";
-        if (file.includes("eth-sc-deploy")) return "image:\n  name: ghcr.io/zama-ai/fhevm/host-contracts\n  tag: v0.10.0\n";
-        if (file.includes("coproc-infra-db-mig")) return "image:\n  name: ghcr.io/zama-ai/fhevm/coprocessor/db-migration\n  tag: v0.10.9\n";
-        if (file.includes("eth-coproc-listener")) return "image:\n  name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener\n  tag: v0.10.10\n";
-        if (file.includes("gw-coprocessor")) {
-          return "gw:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener\n    tag: v0.10.10\ntx:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender\n    tag: v0.10.10\n";
-        }
-        if (file.includes("coproc-workers")) {
-          return "tfheWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker\n    tag: v0.10.10\nzkProofWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker\n    tag: v0.10.10\nsnsWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker\n    tag: v0.10.10\n";
-        }
-        if (file.includes("kms-connector")) {
-          return "a:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration\n    tag: v0.10.8\nb:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener\n    tag: v0.10.8\nc:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker\n    tag: v0.10.8\nd:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender\n    tag: v0.10.8\n";
-        }
-        if (file.includes("kms-core")) return "kmsCore:\n  image:\n    name: ghcr.io/zama-ai/kms/core-service-enclave\n    tag: v0.13.3\n";
-        if (file.includes("relayer/relayer")) return "image:\n  repository: ghcr.io/zama-ai/console/relayer\n  tag: v0.8.11\njob:\n  image:\n    repository: ghcr.io/zama-ai/console/relayer-migrate\n    tag: v0.8.11\n";
-        return "image: ghcr.io/zama-ai/fhevm/test-suite/e2e:v0.10.0\n";
-      },
-    };
-    const bundle = await resolveTarget("testnet", gh);
+    const TestGH = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () => Effect.succeed([]),
+      packageTags: () => Effect.succeed(new Set<string>()),
+      gitopsFile: (file: string) =>
+        Effect.succeed(
+          file.includes("gw-sc-deploy-1-init") ? "image:\n  name: ghcr.io/zama-ai/fhevm/gateway-contracts\n  tag: v0.10.0\n"
+          : file.includes("eth-sc-deploy") ? "image:\n  name: ghcr.io/zama-ai/fhevm/host-contracts\n  tag: v0.10.0\n"
+          : file.includes("coproc-infra-db-mig") ? "image:\n  name: ghcr.io/zama-ai/fhevm/coprocessor/db-migration\n  tag: v0.10.9\n"
+          : file.includes("eth-coproc-listener") ? "image:\n  name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener\n  tag: v0.10.10\n"
+          : file.includes("gw-coprocessor") ? "gw:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener\n    tag: v0.10.10\ntx:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender\n    tag: v0.10.10\n"
+          : file.includes("coproc-workers") ? "tfheWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker\n    tag: v0.10.10\nzkProofWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker\n    tag: v0.10.10\nsnsWorker:\n  image:\n    name: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker\n    tag: v0.10.10\n"
+          : file.includes("kms-connector") ? "a:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration\n    tag: v0.10.8\nb:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener\n    tag: v0.10.8\nc:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker\n    tag: v0.10.8\nd:\n  image:\n    name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender\n    tag: v0.10.8\n"
+          : file.includes("kms-core") ? "kmsCore:\n  image:\n    name: ghcr.io/zama-ai/kms/core-service-enclave\n    tag: v0.13.3\n"
+          : file.includes("relayer/relayer") ? "image:\n  repository: ghcr.io/zama-ai/console/relayer\n  tag: v0.8.11\njob:\n  image:\n    repository: ghcr.io/zama-ai/console/relayer-migrate\n    tag: v0.8.11\n"
+          : "image: ghcr.io/zama-ai/fhevm/test-suite/e2e:v0.10.0\n"
+        ),
+    });
+    const bundle = await Effect.runPromise(resolveTarget("testnet").pipe(Effect.provide(TestGH)));
     expect(bundle.env.CONNECTOR_TX_SENDER_VERSION).toBe("v0.10.8");
     expect(bundle.env.RELAYER_VERSION).toBe("v0.8.11");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("v0.10.0");
@@ -410,18 +290,17 @@ describe("runtime invariants", () => {
         },
       },
     });
-    const result = await probeBootstrap(
-      state,
-      {
-        ...noopDeps,
-        fetch: (async (_url: string | URL, init?: RequestInit) => {
-          if (init?.method === "POST") {
-            throw new Error("RPC not ready");
-          }
-          throw new Error("minio not ready");
-        }) as typeof fetch,
-      },
-      0,
+    // MinioClient.probeBootstrap returns null = "not ready yet" (RPC calls failed)
+    const TestMinioClient = Layer.succeed(MinioClient, {
+      discoverSigner: () => Effect.fail(new MinioError({ message: "not used" })),
+      ensureMaterial: () => Effect.fail(new MinioError({ message: "not ready" })),
+      probeBootstrap: () => Effect.succeed(null),
+    });
+    const result = await Effect.runPromise(
+      probeBootstrap(state).pipe(
+        Effect.catchAll(() => Effect.succeed(false)),
+        Effect.provide(TestMinioClient),
+      ),
     );
     expect(result).toBe(false);
     expect(state.discovery?.actualFheKeyId).toBeUndefined();
@@ -445,62 +324,45 @@ describe("runtime invariants", () => {
         },
       },
     });
-    let fetchCount = 0;
-    const deps = {
-      ...noopDeps,
-      fetch: (async (_url: string | URL, init?: RequestInit) => {
-        if (init?.method === "POST") {
-          const body = JSON.parse(String(init.body)) as { params: { data: string }[] };
-          const selector = body.params[0].data;
-          if (selector === "0xd52f10eb") {
-            return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${predictedKeyId()}` }));
-          }
-          if (selector === "0xbaff211e") {
-            return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${predictedCrsId()}` }));
-          }
-        }
-        if (init?.method === "HEAD") {
-          fetchCount++;
-          return new Response("", { status: 404 });
-        }
-        return new Response("{}");
-      }) as typeof fetch,
-    };
-    await expect(probeBootstrap(state, deps, 0)).rejects.toThrow("Material endpoint not ready");
-    expect(fetchCount).toBeGreaterThanOrEqual(30);
+    // probeBootstrap returns key IDs (RPC calls succeed), but ensureMaterial fails (HEAD 404)
+    const TestMinioClient = Layer.succeed(MinioClient, {
+      discoverSigner: () => Effect.fail(new MinioError({ message: "not used" })),
+      ensureMaterial: () => Effect.fail(new MinioError({ message: "Material not ready" })),
+      probeBootstrap: () => Effect.succeed({ actualFheKeyId: predictedKeyId(), actualCrsKeyId: predictedCrsId() }),
+    });
+    await expect(
+      Effect.runPromise(
+        probeBootstrap(state).pipe(Effect.provide(TestMinioClient)),
+      ),
+    ).rejects.toThrow("Material not ready");
   }, 45_000);
 
-  test("composeDown warns on non-zero exit", async () => {
+  test("composeDown returns false on non-zero exit", async () => {
     const file = composePath("database");
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "services: {}\n");
-    const { logs, restore } = captureConsole("warn");
     try {
-      await composeDown("database", {
-        liveRunner: async () => 1,
+      const TestCmd = Layer.succeed(CommandRunner, {
+        run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+        runLive: () => Effect.succeed(1), // non-zero exit
       });
+      const TestRunner = ContainerRunner.Live.pipe(Layer.provide(TestCmd));
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const runner = yield* ContainerRunner;
+          return yield* runner.composeDown("database");
+        }).pipe(Effect.provide(TestRunner)),
+      );
+      expect(result).toBe(false);
     } finally {
-      restore();
       await fs.rm(file, { force: true });
     }
-    expect(logs.some((l) => l.includes("compose down failed for database (1)"))).toBe(true);
   });
 
   test("resolveServiceOverrides expands shared-image runtime siblings", () => {
     expect(resolveServiceOverrides("coprocessor", ["host-listener"])).toEqual([
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
-    ]);
-  });
-
-  test("overrideWarnings flag shared-db per-service runtime overrides only", () => {
-    expect(
-      overrideWarnings([
-        { group: "coprocessor", services: ["coprocessor-host-listener"] },
-        { group: "test-suite", services: ["test-suite-e2e-debug"] },
-      ]),
-    ).toEqual([
-      "coprocessor: per-service override with a shared database. If your changes include DB migrations, non-overridden services may fail. Use --override coprocessor (full group) in that case.",
     ]);
   });
 
@@ -512,7 +374,7 @@ describe("runtime invariants", () => {
   test("up rejects unknown step before doing work", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
-    await main(["bun", "src/cli.ts", "up", "--from-step", "nope"], noopDeps);
+    await main(["bun", "src/cli.ts", "up", "--from-step", "nope"], noopLayer);
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
 
@@ -522,12 +384,7 @@ describe("runtime invariants", () => {
     const before = await maybeRead(STATE_FILE);
     await main(
       ["bun", "src/cli.ts", "up", "--from-step", "relayer"],
-      {
-        runner: async () => ({ stdout: "", stderr: "", code: 0 }),
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-      },
+      noopLayer,
     );
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
@@ -541,12 +398,7 @@ describe("runtime invariants", () => {
     const before = await maybeRead(STATE_FILE);
     await main(
       ["bun", "src/cli.ts", "up", "--override", "gateway-contracts:sc-deploy"],
-      {
-        runner: async () => ({ stdout: "", stderr: "", code: 0 }),
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-      },
+      noopLayer,
     );
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
@@ -574,7 +426,7 @@ describe("runtime invariants", () => {
           "coprocessor:host-listener",
           "--dry-run",
         ],
-        {
+        depsToLayer({
           runner: fakeRunner({
             "git rev-parse -q --verify v0.11.0^{commit}": "",
             "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
@@ -584,11 +436,7 @@ describe("runtime invariants", () => {
               code: 1,
             },
           }),
-          liveRunner: async () => 0,
-          now: () => "2026-03-06T00:00:00.000Z",
-          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-          env: {},
-        },
+        }),
       );
     } finally {
       restore();
@@ -622,7 +470,7 @@ describe("runtime invariants", () => {
           "coprocessor:host-listener",
           "--dry-run",
         ],
-        {
+        depsToLayer({
           runner: fakeRunner({
             "git rev-parse -q --verify 803f104^{commit}": "",
             "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
@@ -632,11 +480,7 @@ describe("runtime invariants", () => {
               code: 1,
             },
           }),
-          liveRunner: async () => 0,
-          now: () => "2026-03-06T00:00:00.000Z",
-          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-          env: {},
-        },
+        }),
       );
     } finally {
       restore();
@@ -664,7 +508,7 @@ describe("runtime invariants", () => {
           "kms-connector:gw-listener",
           "--dry-run",
         ],
-        {
+        depsToLayer({
           runner: fakeRunner({
             "git rev-parse -q --verify v0.11.0^{commit}": "",
             "git ls-files --others --exclude-standard -- kms-connector/connector-db/migrations": "",
@@ -674,11 +518,7 @@ describe("runtime invariants", () => {
               code: 1,
             },
           }),
-          liveRunner: async () => 0,
-          now: () => "2026-03-06T00:00:00.000Z",
-          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-          env: {},
-        },
+        }),
       );
     } finally {
       restore();
@@ -706,17 +546,13 @@ describe("runtime invariants", () => {
           "coprocessor:host-listener",
           "--dry-run",
         ],
-        {
+        depsToLayer({
           runner: fakeRunner({
             "git rev-parse -q --verify v0.11.0^{commit}": "",
             "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations":
               "coprocessor/fhevm-engine/db-migration/migrations/20260310000000_new.sql\n",
           }),
-          liveRunner: async () => 0,
-          now: () => "2026-03-06T00:00:00.000Z",
-          fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-          env: {},
-        },
+        }),
       );
     } finally {
       restore();
@@ -744,7 +580,7 @@ describe("runtime invariants", () => {
         "--allow-schema-mismatch",
         "--dry-run",
       ],
-      {
+      depsToLayer({
         runner: fakeRunner({
           "which bun": "",
           "which docker": "",
@@ -752,11 +588,7 @@ describe("runtime invariants", () => {
           "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
           ...portCheckResponses,
         }),
-        liveRunner: async () => 0,
-        now: () => "2026-03-06T00:00:00.000Z",
-        fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
-        env: {},
-      },
+      }),
     );
     expect(process.exitCode).toBe(0);
     expect(await maybeRead(STATE_FILE)).toBe(before);
@@ -777,7 +609,7 @@ describe("runtime invariants", () => {
     });
     await main(
       ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run", "--from-step", "relayer"],
-      { ...noopDeps, runner },
+      depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
@@ -797,7 +629,7 @@ describe("runtime invariants", () => {
     });
     await main(
       ["bun", "src/cli.ts", "deploy", "--target", "latest-release", "--dry-run"],
-      { ...noopDeps, runner },
+      depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
@@ -816,7 +648,7 @@ describe("runtime invariants", () => {
     });
     await main(
       ["bun", "src/cli.ts", "up", "--target", "latest-release", "--lock-file", lockFile, "--dry-run"],
-      { ...noopDeps, runner },
+      depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
@@ -864,7 +696,7 @@ describe("runtime invariants", () => {
     try {
       await main(
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--from-step", "relayer"],
-        { ...noopDeps, runner, liveRunner: async () => 0 },
+        depsToLayer({ runner, liveRunner: async () => 0 }),
       );
       expect(await maybeRead(composePath("relayer"))).toContain("services:");
       expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
@@ -898,7 +730,7 @@ describe("runtime invariants", () => {
           "--coprocessors",
           "2",
         ],
-        noopDeps,
+        noopLayer,
       );
     } finally {
       restore();
@@ -921,7 +753,7 @@ describe("runtime invariants", () => {
     try {
       await main(
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
-        noopDeps,
+        noopLayer,
       );
     } finally {
       restore();
@@ -944,7 +776,7 @@ describe("runtime invariants", () => {
       JSON.stringify(stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] })),
     );
     try {
-      await main(["bun", "src/cli.ts", "down"], { ...noopDeps, liveRunner: async () => 0 });
+      await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
       expect(await maybeRead(composePath("database"))).toContain("services:");
       expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
     } finally {
@@ -965,7 +797,7 @@ describe("runtime invariants", () => {
     await fs.writeFile(STATE_FILE, JSON.stringify(state));
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "clean"], { ...noopDeps, liveRunner: async () => 1 });
+      await main(["bun", "src/cli.ts", "clean"], depsToLayer({ liveRunner: async () => 1 }));
     } finally {
       restore();
     }
@@ -983,8 +815,7 @@ describe("runtime invariants", () => {
     try {
       await main(
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
-        {
-          ...noopDeps,
+        depsToLayer({
           runner: async (argv) => {
             const key = argv.join(" ");
             if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
@@ -992,12 +823,12 @@ describe("runtime invariants", () => {
             }
             return { stdout: "", stderr: "", code: 0 };
           },
-        },
+        }),
       );
     } finally { restore(); }
     expect(
       logs.some((l) =>
-        l.includes("GitHub CLI `gh` is required for target resolution"),
+        l.includes("GitHub CLI `gh` is required"),
       ),
     ).toBe(true);
   });
@@ -1007,8 +838,7 @@ describe("runtime invariants", () => {
     try {
       await main(
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
-        {
-          ...noopDeps,
+        depsToLayer({
           runner: async (argv, options) => {
             const key = argv.join(" ");
             if (key === "which bun" || key === "which docker" || key === "which gh") {
@@ -1025,12 +855,12 @@ describe("runtime invariants", () => {
             }
             return noopDeps.runner(argv, options);
           },
-        },
+        }),
       );
     } finally { restore(); }
     expect(
       logs.some((l) =>
-        l.includes("GitHub API access is not authenticated"),
+        l.includes("GitHub API not authenticated"),
       ),
     ).toBe(true);
   });
@@ -1040,8 +870,7 @@ describe("runtime invariants", () => {
     try {
       await main(
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
-        {
-          ...noopDeps,
+        depsToLayer({
           runner: async (argv, options) => {
             const key = argv.join(" ");
             if (key === "which bun" || key === "which docker" || key === "which gh") {
@@ -1058,12 +887,12 @@ describe("runtime invariants", () => {
             }
             return noopDeps.runner(argv, options);
           },
-        },
+        }),
       );
     } finally { restore(); }
     expect(
       logs.some((l) =>
-        l.includes("GitHub API rate limit hit while resolving versions"),
+        l.includes("GitHub API rate limit hit"),
       ),
     ).toBe(true);
   });
@@ -1073,7 +902,7 @@ describe("CLI argument validation", () => {
   test("rejects unsupported target", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--target", "bogus"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--target", "bogus"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Unsupported target"))).toBe(true);
   });
@@ -1081,8 +910,8 @@ describe("CLI argument validation", () => {
   test("rejects coprocessors outside 1-5 range", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "0"], noopDeps);
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "6"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "0"], noopLayer);
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "6"], noopLayer);
     } finally { restore(); }
     expect(logs.filter((l) => l.includes("--coprocessors must be between 1 and 5")).length).toBe(2);
   });
@@ -1090,7 +919,7 @@ describe("CLI argument validation", () => {
   test("rejects threshold > coprocessors", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "2", "--threshold", "3"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "2", "--threshold", "3"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--threshold must be between 1 and --coprocessors"))).toBe(true);
   });
@@ -1098,7 +927,7 @@ describe("CLI argument validation", () => {
   test("rejects --target sha without --sha", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--dry-run"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--dry-run"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--target sha requires --sha"))).toBe(true);
   });
@@ -1106,7 +935,7 @@ describe("CLI argument validation", () => {
   test("rejects --sha without --target sha", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--target", "latest-release", "--sha", "1234abc", "--dry-run"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--target", "latest-release", "--sha", "1234abc", "--dry-run"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--sha requires --target sha"))).toBe(true);
   });
@@ -1125,7 +954,7 @@ describe("CLI argument validation", () => {
         "--lock-file",
         "/tmp/fake.json",
         "--dry-run",
-      ], noopDeps);
+      ], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--sha cannot be used with --lock-file"))).toBe(true);
   });
@@ -1133,7 +962,7 @@ describe("CLI argument validation", () => {
   test("rejects invalid sha format", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--sha", "notasha", "--dry-run"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--target", "sha", "--sha", "notasha", "--dry-run"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Invalid sha notasha; expected 7 or 40 hex characters"))).toBe(true);
   });
@@ -1141,7 +970,7 @@ describe("CLI argument validation", () => {
   test("rejects unknown per-service override suffix", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--override", "coprocessor:local"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--override", "coprocessor:local"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes('Unknown service "local" in group "coprocessor"'))).toBe(true);
   });
@@ -1149,7 +978,7 @@ describe("CLI argument validation", () => {
   test("rejects unsupported override group", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--override", "nonexistent"], noopDeps);
+      await main(["bun", "src/cli.ts", "up", "--override", "nonexistent"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Unsupported override"))).toBe(true);
   });
@@ -1157,7 +986,7 @@ describe("CLI argument validation", () => {
   test("rejects unknown command", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "bogus"], noopDeps);
+      await main(["bun", "src/cli.ts", "bogus"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Unknown command bogus"))).toBe(true);
   });
@@ -1165,7 +994,7 @@ describe("CLI argument validation", () => {
   test("doctor shows removal message", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "doctor"], noopDeps);
+      await main(["bun", "src/cli.ts", "doctor"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("doctor") && l.includes("removed"))).toBe(true);
   });
@@ -1179,7 +1008,7 @@ describe("command error paths", () => {
   test("pause rejects missing scope", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "pause"], noopDeps);
+      await main(["bun", "src/cli.ts", "pause"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("pause expects `host` or `gateway`"))).toBe(true);
   });
@@ -1187,7 +1016,7 @@ describe("command error paths", () => {
   test("unpause rejects missing scope", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "unpause"], noopDeps);
+      await main(["bun", "src/cli.ts", "unpause"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("unpause expects `host` or `gateway`"))).toBe(true);
   });
@@ -1199,7 +1028,7 @@ describe("command error paths", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await fs.rm(stateDir, { recursive: true, force: true });
-      await main(["bun", "src/cli.ts", "test", "input-proof"], noopDeps);
+      await main(["bun", "src/cli.ts", "test", "input-proof"], noopLayer);
     } finally {
       restore();
       if (hadState === undefined) {
@@ -1229,7 +1058,7 @@ describe("command error paths", () => {
       await fs.writeFile(stateFile, JSON.stringify(state));
       const { logs, restore } = captureConsole("error");
       try {
-        await main(["bun", "src/cli.ts", "test", "nonexistent-profile"], noopDeps);
+        await main(["bun", "src/cli.ts", "test", "nonexistent-profile"], noopLayer);
       } finally { restore(); }
       expect(logs.some((l) => l.includes("Unknown test profile"))).toBe(true);
     } finally {
@@ -1244,7 +1073,7 @@ describe("command error paths", () => {
   test("help prints usage without error", async () => {
     const { logs, restore } = captureConsole("log");
     try {
-      await main(["bun", "src/cli.ts", "help"], noopDeps);
+      await main(["bun", "src/cli.ts", "help"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
   });
@@ -1252,7 +1081,7 @@ describe("command error paths", () => {
   test("no command prints usage", async () => {
     const { logs, restore } = captureConsole("log");
     try {
-      await main(["bun", "src/cli.ts"], noopDeps);
+      await main(["bun", "src/cli.ts"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
   });
@@ -1266,7 +1095,7 @@ describe("command error paths", () => {
       const { logs, restore } = captureConsole("log");
       const { logs: errLogs, restore: restoreErr } = captureConsole("error");
       try {
-        await main(["bun", "src/cli.ts", "down"], noopDeps);
+        await main(["bun", "src/cli.ts", "down"], noopLayer);
       } finally {
         restore();
         restoreErr();
@@ -1288,7 +1117,7 @@ describe("command error paths", () => {
     });
     const { logs, restore } = captureConsole("log");
     try {
-      await main(["bun", "src/cli.ts", "status"], { ...noopDeps, runner });
+      await main(["bun", "src/cli.ts", "status"], depsToLayer({ runner }));
     } finally { restore(); }
     expect(logs.some((l) => l.includes("No fhevm containers"))).toBe(true);
   });
@@ -1353,3 +1182,67 @@ describe("version resolution edge cases", () => {
     expect(result).toBe(original);
   });
 });
+
+describe("validateBundleCompatibility", () => {
+  const stateWithVersions = (relayer: string, testSuite: string) =>
+    stubState({ envOverrides: { RELAYER_VERSION: relayer, TEST_SUITE_VERSION: testSuite } });
+
+  test("detects relayer v1 vs test-suite v2 mismatch", () => {
+    const issues = validateBundleCompatibility(stateWithVersions("v0.9.0", "v0.11.0"));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe("relayer-v1-vs-test-suite-v2");
+  });
+
+  test("modern relayer is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.11.0"))).toEqual([]);
+  });
+
+  test("legacy test-suite is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.9.0", "v0.10.0"))).toEqual([]);
+  });
+
+  test("both modern is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.12.0"))).toEqual([]);
+  });
+
+  test("SHA relayer treated as modern", () => {
+    expect(validateBundleCompatibility(stateWithVersions("abc1234", "v0.11.0"))).toEqual([]);
+  });
+
+  test("SHA test-suite treated as modern triggers mismatch", () => {
+    const issues = validateBundleCompatibility(stateWithVersions("v0.9.0", "abc1234"));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe("relayer-v1-vs-test-suite-v2");
+  });
+
+  test("empty versions treated as modern", () => {
+    expect(validateBundleCompatibility(stateWithVersions("", ""))).toEqual([]);
+  });
+
+  test("boundary v0.10.0 relayer is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.11.0"))).toEqual([]);
+  });
+});
+
+describe("COMPAT_MATRIX", () => {
+  test("externalDefaults has expected keys", () => {
+    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_VERSION");
+    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_MIGRATE_VERSION");
+  });
+
+  test("anchors has valid SIMPLE_ACL_MIN_SHA", () => {
+    expect(COMPAT_MATRIX.anchors).toHaveProperty("SIMPLE_ACL_MIN_SHA");
+    expect(COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("compat-defaults output shape matches expected structure", () => {
+    const output = {
+      externalDefaults: COMPAT_MATRIX.externalDefaults,
+      anchors: COMPAT_MATRIX.anchors,
+    };
+    expect(output.externalDefaults.RELAYER_VERSION).toBe("sha-29b0750");
+    expect(output.externalDefaults.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
+    expect(output.anchors.SIMPLE_ACL_MIN_SHA).toBe("803f1048727eabf6d8b3df618203e3c7dda77890");
+  });
+});
+

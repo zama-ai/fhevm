@@ -8,6 +8,7 @@
     "start": "bun run src/cli.ts"
   },
   "dependencies": {
+    "effect": "^3.19.19",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

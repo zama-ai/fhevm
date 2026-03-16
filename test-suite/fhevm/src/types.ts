@@ -88,3 +88,27 @@ export type State = {
   completedSteps: StepName[];
   updatedAt: string;
 };
+
+export type UpOptions = {
+  target: VersionTarget;
+  sha?: string;
+  overrides: LocalOverride[];
+  topology: Topology;
+  fromStep?: StepName;
+  lockFile?: string;
+  allowSchemaMismatch: boolean;
+  resume: boolean;
+  dryRun: boolean;
+  reset: boolean;
+};
+
+export type CleanOptions = {
+  images: boolean;
+};
+
+export type TestOptions = {
+  grep?: string;
+  network: string;
+  verbose: boolean;
+  parallel?: boolean;
+};

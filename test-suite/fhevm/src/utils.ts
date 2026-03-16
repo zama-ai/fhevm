@@ -153,3 +153,13 @@ export const toServiceName = (suffix: string, index: number) =>
   index === 0 ? `coprocessor-${suffix}` : `coprocessor${index}-${suffix}`;
 
 export const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
+
+export const hostReachableRpcUrl = (url: string) =>
+  url
+    .replace("http://gateway-node:8546", "http://localhost:8546")
+    .replace("http://host-node:8545", "http://localhost:8545");
+
+export const hostReachableMaterialUrl = (url: string) =>
+  url
+    .replace(/http:\/\/[^/]+:9000/, "http://localhost:9000")
+    .replace("http://minio:9000", "http://localhost:9000");

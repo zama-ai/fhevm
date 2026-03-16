@@ -4,7 +4,8 @@ This is the high-level shape of the Bun-based `fhevm-cli`.
 
 ```mermaid
 flowchart TD
-  A["fhevm-cli up"] --> B["Resolve target"]
+  A["fhevm-cli up"] --> P["1. preflight"]
+  P --> B["2. resolve target"]
   B --> B1["latest-main: walk main SHAs until complete image set, but not before 803f104"]
   B --> B2["latest-release: latest stable release"]
   B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104"]
@@ -14,8 +15,7 @@ flowchart TD
   B3 --> C
   B4 --> C
 
-  C --> D["Preflight"]
-  D --> E["Generate runtime files under .fhevm"]
+  C --> E["3. generate runtime files under .fhevm"]
   E --> E1["env/"]
   E --> E2["compose/"]
   E --> E3["locks/"]
@@ -23,28 +23,29 @@ flowchart TD
   E --> E5["state.json"]
 
   E --> F["Boot pipeline"]
-  F --> F1["base"]
-  F1 --> F2["kms-signer"]
-  F2 --> F3["gateway-deploy"]
-  F3 --> F4["host-deploy"]
-  F4 --> F5["discover"]
-  F5 --> F6["regenerate + validate"]
-  F6 --> F7["coprocessor + kms-connector"]
-  F7 --> F8["bootstrap"]
-  F8 --> F9["relayer"]
-  F9 --> F10["test-suite"]
+  F --> F1["4. base"]
+  F1 --> F2["5. kms-signer"]
+  F2 --> F3["6. gateway-deploy"]
+  F3 --> F4["7. host-deploy"]
+  F4 --> F5["8. discover"]
+  F5 --> F6["9. regenerate"]
+  F6 --> F7["10. validate"]
+  F7 --> F8["11. coprocessor"]
+  F8 --> F9["12. kms-connector"]
+  F9 --> F10["13. bootstrap"]
+  F10 --> F11["14. relayer"]
+  F11 --> F12["15. test-suite"]
 
   G["Local overrides (group or runtime service)"] --> E
   H["Multicopro topology + per-instance overrides"] --> E
   I["Compatibility policy"] --> E
-  I --> F7
+  I --> F8
 
   E5 --> J["resume / from-step"]
   J --> F
 
-  K["fhevm-cli test"] --> F10
-  L["fhevm-cli up --dry-run"] --> B
-  L --> D
+  K["fhevm-cli test"] --> F12
+  L["fhevm-cli up --dry-run"] --> P
 ```
 
 ## Version Override (CI Integration)

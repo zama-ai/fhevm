@@ -1,6 +1,17 @@
+import { Effect, Layer } from "effect";
 import type { RunOptions, RunResult, Runner } from "./utils";
 import type { LocalOverride, State, VersionBundle } from "./types";
 import { PORTS } from "./layout";
+import { CommandRunner } from "./services/CommandRunner";
+import { ContainerRunner } from "./services/ContainerRunner";
+import { ContainerProbe } from "./services/ContainerProbe";
+import { ImageBuilder } from "./services/ImageBuilder";
+import { RpcClient } from "./services/RpcClient";
+import { MinioClient } from "./services/MinioClient";
+import { GitHubClient } from "./services/GitHubClient";
+import { EnvWriter } from "./services/EnvWriter";
+import { StateManager } from "./services/StateManager";
+import { CommandError } from "./errors";
 
 export const STUB_VERSION_ENV: Record<string, string> = {
   GATEWAY_VERSION: "v0.11.0",
@@ -86,3 +97,65 @@ export const noopDeps = {
   fetch: ((async () => new Response("{}")) as unknown) as typeof fetch,
   env: {},
 };
+
+/**
+ * Converts old-style deps object to an Effect Layer for testing.
+ * This bridges the old test pattern `main(argv, deps)` to the new
+ * Effect-based `main(argv, layer)`.
+ */
+export const depsToLayer = (deps: {
+  runner?: Runner;
+  liveRunner?: (...args: any[]) => Promise<number>;
+  fetch?: typeof globalThis.fetch;
+  env?: Record<string, string>;
+}) => {
+  const TestCommandRunner = Layer.succeed(CommandRunner, {
+    run: (argv: string[], options?: any) =>
+      Effect.tryPromise({
+        try: () => (deps.runner ?? noopDeps.runner)(argv, options),
+        catch: (e) =>
+          new CommandError({
+            argv,
+            code: 1,
+            stderr: e instanceof Error ? e.message : String(e),
+          }),
+      }),
+    runLive: (argv: string[], options?: any) =>
+      Effect.tryPromise({
+        try: () => (deps.liveRunner ?? noopDeps.liveRunner)(argv, options as any),
+        catch: (e) =>
+          new CommandError({
+            argv,
+            code: 1,
+            stderr: e instanceof Error ? e.message : String(e),
+          }),
+      }),
+  });
+
+  // Build the full layer with TestCommandRunner replacing the real one.
+  // All services that depend on CommandRunner will use the test one.
+  const TestContainerRunner = ContainerRunner.Live.pipe(Layer.provide(TestCommandRunner));
+  const TestContainerProbe = ContainerProbe.Live.pipe(Layer.provide(TestCommandRunner));
+  const TestGitHubClient = GitHubClient.Live.pipe(Layer.provide(TestCommandRunner));
+  const TestEnvWriter = EnvWriter.Live.pipe(Layer.provide(TestCommandRunner));
+  const TestImageBuilder = ImageBuilder.Live.pipe(
+    Layer.provide(TestCommandRunner),
+    Layer.provide(TestContainerRunner),
+  );
+  const TestMinioClient = MinioClient.Live.pipe(Layer.provide(TestCommandRunner));
+  const TestRpcClient = RpcClient.Live.pipe(Layer.provide(TestCommandRunner));
+
+  return Layer.mergeAll(
+    TestCommandRunner,
+    TestContainerRunner,
+    TestContainerProbe,
+    TestGitHubClient,
+    TestEnvWriter,
+    TestImageBuilder,
+    TestMinioClient,
+    TestRpcClient,
+    StateManager.Live,
+  );
+};
+
+export const noopLayer = depsToLayer(noopDeps);
