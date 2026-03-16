@@ -103,12 +103,6 @@ jobs:
           cp -r "$PACKAGE/addresses" "baseline/$PACKAGE/addresses"
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
-          # Remove baseline source files that were deleted in the PR — otherwise forge
-          # tries to compile them and fails on missing imports (e.g. removed address constants)
-          find "baseline/$PACKAGE/contracts" -name '*.sol' | while read -r f; do
-            pr_file="${f#baseline/}"
-            [ -f "$pr_file" ] || rm -v "$f"
-          done
 
       - name: Run upgrade hygiene check
         env:

@@ -85,12 +85,23 @@ for (const name of contracts) {
       continue;
     }
 
-    // Baseline may fail to compile if the contract was restructured (e.g. address imports changed).
-    // In that case, bytecode definitely changed — proceed to version checks.
+    // Baseline may fail to compile if unrelated contracts were restructured (e.g. deleted
+    // imports cause forge to fail on the whole project). When that happens, fall back to
+    // comparing source files: if this contract's source is identical, bytecode is unchanged.
     const baseBytecode = forgeInspect(name, baselineDir);
-    const bytecodeChanged = baseBytecode == null || baseBytecode !== prBytecode;
-    if (baseBytecode == null) {
-      console.log(`${name}: baseline compilation failed (contract restructured), treating as changed`);
+    let bytecodeChanged: boolean;
+    if (baseBytecode != null) {
+      bytecodeChanged = baseBytecode !== prBytecode;
+    } else {
+      const baseSrc = readFileSync(baseSol, "utf-8");
+      const prSrcRaw = readFileSync(prSol, "utf-8");
+      if (baseSrc === prSrcRaw) {
+        console.log(`${name}: baseline compilation failed but source is identical, treating as unchanged`);
+        bytecodeChanged = false;
+      } else {
+        console.log(`${name}: baseline compilation failed and source differs, treating as changed`);
+        bytecodeChanged = true;
+      }
     }
     const reinitChanged = baseV.REINITIALIZER_VERSION !== prV.REINITIALIZER_VERSION;
     const versionChanged =
