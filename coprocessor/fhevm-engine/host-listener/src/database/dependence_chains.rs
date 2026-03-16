@@ -1048,4 +1048,17 @@ mod tests {
         assert!(logs[2].dependence_chain == tx3);
         assert_eq!(cache.read().await.len(), 3);
     }
+
+    #[tokio::test]
+    async fn test_dependence_chains_empty_logs() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs: Vec<LogTfhe> = vec![];
+
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+
+        assert!(chains.is_empty());
+        assert_eq!(cache.read().await.len(), 0);
+    }
 }
