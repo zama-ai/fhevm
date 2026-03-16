@@ -1077,8 +1077,7 @@ mod tests {
         let tx1 = TransactionHash::with_last_byte(1);
         let _v = op1(past_handle, &mut logs, tx1);
 
-        let chains =
-            dependence_chains(&mut logs, &cache, false, false).await;
+        let chains = dependence_chains(&mut logs, &cache, false, false).await;
 
         assert_eq!(chains.len(), 1);
         // Chain is local (tx1), not the past chain
@@ -1105,8 +1104,7 @@ mod tests {
         let tx1 = TransactionHash::with_last_byte(2);
         let _v = op2(past_handle1, past_handle2, &mut logs, tx1);
 
-        let chains =
-            dependence_chains(&mut logs, &cache, true, true).await;
+        let chains = dependence_chains(&mut logs, &cache, true, true).await;
 
         assert_eq!(chains.len(), 1);
         assert_eq!(cache.read().await.len(), 3);
