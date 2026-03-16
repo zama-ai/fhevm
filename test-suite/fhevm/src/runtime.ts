@@ -1,4 +1,4 @@
-import { requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
+import { COMPAT_MATRIX, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -1627,6 +1627,12 @@ export const main = async (argv = process.argv, deps: Partial<RuntimeDeps> = {})
           parsed.parsed.values.verbose,
           runtime,
         );
+        return;
+      case "compat-defaults":
+        console.log(JSON.stringify({
+          externalDefaults: COMPAT_MATRIX.externalDefaults,
+          anchors: COMPAT_MATRIX.anchors,
+        }));
         return;
       case "doctor":
         throw new Error("`doctor` was removed; use `fhevm-cli up --dry-run ...`");

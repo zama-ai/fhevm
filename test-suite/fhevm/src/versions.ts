@@ -1,5 +1,6 @@
 import YAML from "yaml";
 
+import { COMPAT_MATRIX } from "./compat";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import type { Runner, RunResult } from "./utils";
 import { normalizeRepository } from "./utils";
@@ -288,7 +289,7 @@ const bundleFromFiles = async (client: GitHubClient, target: VersionTarget, file
 
 const REPO_TAG = /^[0-9a-f]{7}$/;
 const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
-const SIMPLE_ACL_MIN_SHA = "803f1048727eabf6d8b3df618203e3c7dda77890";
+const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 
 const repoPackageTags = async (client: GitHubClient) =>
   Object.fromEntries(

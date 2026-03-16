@@ -145,6 +145,37 @@ If you already know the exact repo SHA you want and all fhevm images were publis
 
 This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the current `latest-release` preset.
 
+## Compatibility Matrix
+
+All version compatibility rules live in a single source of truth: `src/compat.ts` → `COMPAT_MATRIX`.
+
+The matrix has four sections:
+
+| Section | Purpose | Example |
+|---------|---------|---------|
+| `incompatibilities` | Version pairs that break at runtime | relayer v1 + test-suite v2 |
+| `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
+| `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
+| `anchors` | Git history reference points | simple-ACL cutover commit |
+
+CI workflows read these values via `./fhevm-cli compat-defaults` instead of hardcoding them.
+
+### How to update
+
+**Bump the relayer pin:**
+Edit `COMPAT_MATRIX.externalDefaults` in `src/compat.ts`. CI reads it automatically via `./fhevm-cli compat-defaults`.
+
+**Add a new incompatibility:**
+Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.
+
+**Add a legacy shim for a breaking change:**
+1. Add a profile to `SHIM_PROFILES` describing the legacy flags/env
+2. Add an entry to `COMPAT_MATRIX.legacyShims` specifying which version key and threshold
+3. Run `bun test` to verify
+
+**Remove a legacy shim:**
+When the minimum supported version passes the threshold, delete the `legacyShims` entry and its `SHIM_PROFILES` profile. Run `bun test`.
+
 ## Main Commands
 
 ```sh

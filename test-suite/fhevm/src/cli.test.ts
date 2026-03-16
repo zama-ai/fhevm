@@ -13,7 +13,7 @@ import {
 import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
 import { STEP_NAMES } from "./types";
 import { main, overrideWarnings, postBootHealthGate, probeBootstrap, resolveUpgradePlan } from "./runtime";
-import { compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
+import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
 import {
@@ -1392,6 +1392,28 @@ describe("validateBundleCompatibility", () => {
 
   test("boundary v0.10.0 relayer is OK", () => {
     expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.11.0"))).toEqual([]);
+  });
+});
+
+describe("COMPAT_MATRIX", () => {
+  test("externalDefaults has expected keys", () => {
+    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_VERSION");
+    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_MIGRATE_VERSION");
+  });
+
+  test("anchors has valid SIMPLE_ACL_MIN_SHA", () => {
+    expect(COMPAT_MATRIX.anchors).toHaveProperty("SIMPLE_ACL_MIN_SHA");
+    expect(COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("compat-defaults output shape matches expected structure", () => {
+    const output = {
+      externalDefaults: COMPAT_MATRIX.externalDefaults,
+      anchors: COMPAT_MATRIX.anchors,
+    };
+    expect(output.externalDefaults.RELAYER_VERSION).toBe("sha-29b0750");
+    expect(output.externalDefaults.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
+    expect(output.anchors.SIMPLE_ACL_MIN_SHA).toBe("803f1048727eabf6d8b3df618203e3c7dda77890");
   });
 });
 
