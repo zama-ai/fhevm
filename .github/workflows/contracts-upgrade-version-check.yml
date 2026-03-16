@@ -1,4 +1,4 @@
-name: contracts-upgrade-hygiene
+name: contracts-upgrade-version-check
 
 permissions: {}
 
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: contracts-upgrade-hygiene/check-changes
+    name: contracts-upgrade-version-check/check-changes
     permissions:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request for paths-filter
@@ -33,18 +33,18 @@ jobs:
         with:
           filters: |
             host-contracts:
-              - .github/workflows/contracts-upgrade-hygiene.yml
-              - ci/check-upgrade-hygiene.ts
+              - .github/workflows/contracts-upgrade-version-check.yml
+              - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
               - host-contracts/**
             gateway-contracts:
-              - .github/workflows/contracts-upgrade-hygiene.yml
-              - ci/check-upgrade-hygiene.ts
+              - .github/workflows/contracts-upgrade-version-check.yml
+              - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
               - gateway-contracts/**
 
   check:
-    name: contracts-upgrade-hygiene/${{ matrix.package }} (bpr)
+    name: contracts-upgrade-version-check/${{ matrix.package }} (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
@@ -112,7 +112,7 @@ jobs:
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
-      - name: Run upgrade hygiene check
+      - name: Run upgrade version check
         env:
           PACKAGE: ${{ matrix.package }}
-        run: bun ci/check-upgrade-hygiene.ts "baseline/$PACKAGE" "$PACKAGE"
+        run: bun ci/check-upgrade-versions.ts "baseline/$PACKAGE" "$PACKAGE"

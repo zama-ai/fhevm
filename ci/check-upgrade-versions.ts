@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Checks that upgradeable contracts have proper version bumps when bytecode changes.
-// Usage: bun ci/check-upgrade-hygiene.ts <baseline-pkg-dir> <pr-pkg-dir>
+// Usage: bun ci/check-upgrade-versions.ts <baseline-pkg-dir> <pr-pkg-dir>
 
 import { readFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
@@ -8,7 +8,7 @@ import { join } from "path";
 
 const [baselineDir, prDir] = process.argv.slice(2);
 if (!baselineDir || !prDir) {
-  console.error("Usage: bun ci/check-upgrade-hygiene.ts <baseline-pkg-dir> <pr-pkg-dir>");
+  console.error("Usage: bun ci/check-upgrade-versions.ts <baseline-pkg-dir> <pr-pkg-dir>");
   process.exit(1);
 }
 
@@ -140,8 +140,8 @@ for (const name of contracts) {
 }
 
 if (errors > 0) {
-  console.error(`::error::Upgrade hygiene check failed with ${errors} error(s)`);
+  console.error(`::error::Upgrade version check failed with ${errors} error(s)`);
   process.exit(1);
 }
 
-console.log("All contracts passed upgrade hygiene checks");
+console.log("All contracts passed upgrade version checks");
