@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use alloy::primitives::{Address, FixedBytes, B256};
 use fhevm_engine_common::chain_id::ChainId;
@@ -19,6 +20,7 @@ pub(crate) struct EventContext {
     pub(crate) block_hash: Option<B256>,
     pub(crate) tx_hash: Option<B256>,
     pub(crate) log_index: Option<u64>,
+    pub(crate) observed_at: Instant,
 }
 
 type CiphertextDigest = FixedBytes<32>;
@@ -38,6 +40,7 @@ struct Submission {
 #[derive(Clone, Debug)]
 struct ConsensusState {
     context: EventContext,
+    received_at: Instant,
     digests: DigestPair,
     senders: Vec<Address>,
 }
@@ -46,6 +49,7 @@ struct ConsensusState {
 struct HandleState {
     first_seen_block: u64,
     first_seen_block_hash: Option<B256>,
+    first_seen_at: Instant,
     last_seen_block: u64,
     expected_senders: Vec<Address>,
     submissions: Vec<Submission>,
@@ -60,6 +64,7 @@ impl HandleState {
         Self {
             first_seen_block: context.block_number,
             first_seen_block_hash: context.block_hash,
+            first_seen_at: context.observed_at,
             last_seen_block: context.block_number,
             expected_senders,
             submissions: Vec::with_capacity(submission_capacity),
@@ -80,14 +85,14 @@ enum HandleOutcome {
 pub(crate) struct DriftDetector {
     current_expected_senders: Vec<Address>,
     /// Handles waiting for consensus or post-consensus grace. Bounded implicitly:
-    /// `evict_stale` removes entries after `no_consensus_timeout_blocks` (no consensus)
-    /// or `post_consensus_grace_blocks` (consensus reached). Steady-state size is
-    /// proportional to handle throughput * max(timeout, grace) in blocks.
+    /// `evict_stale` removes entries after `no_consensus_timeout` (no consensus)
+    /// or `post_consensus_grace` (consensus reached). Steady-state size is
+    /// proportional to handle throughput * timeout duration.
     open_handles: HashMap<CiphertextDigest, HandleState>,
     host_chain_id: ChainId,
     local_node_id: String,
-    no_consensus_timeout_blocks: u64,
-    post_consensus_grace_blocks: u64,
+    no_consensus_timeout: Duration,
+    post_consensus_grace: Duration,
     deferred_drift_detected: u64,
     deferred_consensus_timeout: u64,
     deferred_missing_submission: u64,
@@ -98,16 +103,16 @@ impl DriftDetector {
     pub(crate) fn new(
         expected_senders: Vec<Address>,
         host_chain_id: ChainId,
-        no_consensus_timeout_blocks: u64,
-        post_consensus_grace_blocks: u64,
+        no_consensus_timeout: Duration,
+        post_consensus_grace: Duration,
     ) -> Self {
         Self {
             current_expected_senders: expected_senders,
             open_handles: HashMap::new(),
             host_chain_id,
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
-            no_consensus_timeout_blocks,
-            post_consensus_grace_blocks,
+            no_consensus_timeout,
+            post_consensus_grace,
             deferred_drift_detected: 0,
             deferred_consensus_timeout: 0,
             deferred_missing_submission: 0,
@@ -221,6 +226,7 @@ impl DriftDetector {
         state.last_seen_block = context.block_number;
         state.consensus = Some(ConsensusState {
             context,
+            received_at: context.observed_at,
             digests: DigestPair {
                 ciphertext_digest: event.ciphertextDigest,
                 ciphertext128_digest: event.snsCiphertextDigest,
@@ -346,15 +352,15 @@ impl DriftDetector {
         Ok(())
     }
 
-    fn evict_stale(&mut self, current_block: u64) {
+    fn evict_stale(&mut self, now: Instant) {
         let mut finished = Vec::new();
 
         for (handle, state) in &self.open_handles {
             match classify_handle(
                 state,
-                current_block,
-                self.no_consensus_timeout_blocks,
-                self.post_consensus_grace_blocks,
+                now,
+                self.no_consensus_timeout,
+                self.post_consensus_grace,
             ) {
                 HandleOutcome::Pending => {}
                 HandleOutcome::LocalDigestNeverAppeared => {
@@ -443,7 +449,7 @@ impl DriftDetector {
         self.deferred_missing_submission = 0;
     }
 
-    fn evaluate_open_handles(&mut self, current_block: u64) {
+    fn evaluate_open_handles(&mut self, now: Instant) {
         if self.replaying {
             return;
         }
@@ -484,7 +490,7 @@ impl DriftDetector {
 
         self.finalize_completed_without_consensus();
 
-        self.evict_stale(current_block);
+        self.evict_stale(now);
     }
 
     pub(crate) fn earliest_open_block(&self) -> Option<u64> {
@@ -498,7 +504,7 @@ impl DriftDetector {
         // Invariant: the gateway emits consensus as part of processing the final
         // agreeing submission. Once every expected sender has submitted, the
         // absence of a consensus event is already anomalous, so we alert
-        // immediately instead of waiting for `no_consensus_timeout_blocks`.
+        // immediately instead of waiting for `no_consensus_timeout`.
         let completed_without_consensus = self
             .open_handles
             .iter()
@@ -554,42 +560,32 @@ impl DriftDetector {
 
     /// Finalize a normal log-polling batch: check deferred consensus results,
     /// alert on completed-without-consensus handles, and evict stale handles.
-    pub(crate) async fn end_of_batch(
-        &mut self,
-        current_block: u64,
-        db_pool: &Pool<Postgres>,
-    ) -> anyhow::Result<()> {
+    pub(crate) async fn end_of_batch(&mut self, db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
         self.refresh_pending_consensus_checks(db_pool).await?;
         self.finalize_completed_without_consensus();
-        self.evict_stale(current_block);
+        self.evict_stale(Instant::now());
         Ok(())
     }
 
     /// Finalize a rebuild replay: check deferred consensus results and evaluate
     /// all open handles against the current chain tip. Called by
     /// `rebuild_drift_detector` in `gw_listener.rs` after log replay completes.
-    pub(crate) async fn end_of_rebuild(
-        &mut self,
-        current_block: u64,
-        db_pool: &Pool<Postgres>,
-    ) -> anyhow::Result<()> {
+    pub(crate) async fn end_of_rebuild(&mut self, db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
         self.refresh_pending_consensus_checks(db_pool).await?;
-        self.evaluate_open_handles(current_block);
+        self.evaluate_open_handles(Instant::now());
         Ok(())
     }
 }
 
 fn classify_handle(
     state: &HandleState,
-    current_block: u64,
-    no_consensus_timeout_blocks: u64,
-    post_consensus_grace_blocks: u64,
+    now: Instant,
+    no_consensus_timeout: Duration,
+    post_consensus_grace: Duration,
 ) -> HandleOutcome {
     if let Some(consensus) = &state.consensus {
         if !state.local_consensus_checked {
-            return if current_block.saturating_sub(consensus.context.block_number)
-                >= no_consensus_timeout_blocks
-            {
+            return if now.duration_since(consensus.received_at) >= no_consensus_timeout {
                 HandleOutcome::LocalDigestNeverAppeared
             } else {
                 HandleOutcome::Pending
@@ -597,9 +593,7 @@ fn classify_handle(
         }
 
         if state.submissions.len() < state.expected_senders.len() {
-            return if current_block.saturating_sub(consensus.context.block_number)
-                >= post_consensus_grace_blocks
-            {
+            return if now.duration_since(consensus.received_at) >= post_consensus_grace {
                 HandleOutcome::NotAllCoprocessorsSubmitted
             } else {
                 HandleOutcome::Pending
@@ -609,7 +603,7 @@ fn classify_handle(
         unreachable!("handle should have been removed by finish_if_complete");
     }
 
-    if current_block.saturating_sub(state.first_seen_block) >= no_consensus_timeout_blocks {
+    if now.duration_since(state.first_seen_at) >= no_consensus_timeout {
         HandleOutcome::GatewayNeverReachedConsensus
     } else {
         HandleOutcome::Pending
@@ -674,32 +668,23 @@ mod tests {
         let digest_a = FixedBytes::from([0x55; 32]);
         let digest_b = FixedBytes::from([0x66; 32]);
         let digest_128 = FixedBytes::from([0x77; 32]);
+        let base = Instant::now();
         let mut detector = DriftDetector::new(
             vec![sender_a, sender_b, sender_c],
             ChainId::try_from(12345_u64).unwrap(),
-            50,
-            10,
+            Duration::from_secs(50),
+            Duration::from_secs(10),
         );
 
         detector.set_replaying(true);
 
         detector.observe_submission(
             make_submission_event(handle, digest_a, digest_128, sender_a),
-            EventContext {
-                block_number: 100,
-                block_hash: None,
-                tx_hash: None,
-                log_index: Some(0),
-            },
+            context_at(100, base),
         );
         detector.observe_submission(
             make_submission_event(handle, digest_b, digest_128, sender_b),
-            EventContext {
-                block_number: 103,
-                block_hash: None,
-                tx_hash: None,
-                log_index: Some(0),
-            },
+            context_at(103, base),
         );
 
         let state = detector
@@ -714,7 +699,7 @@ mod tests {
         assert_eq!(detector.deferred_drift_detected, 0);
 
         detector.set_replaying(false);
-        detector.evaluate_open_handles(103);
+        detector.evaluate_open_handles(base);
 
         let state = detector
             .open_handles
@@ -764,6 +749,17 @@ mod tests {
             block_hash: None,
             tx_hash: None,
             log_index: None,
+            observed_at: Instant::now(),
+        }
+    }
+
+    fn context_at(block_number: u64, at: Instant) -> EventContext {
+        EventContext {
+            block_number,
+            block_hash: None,
+            tx_hash: None,
+            log_index: None,
+            observed_at: at,
         }
     }
 
@@ -781,6 +777,21 @@ mod tests {
         );
     }
 
+    fn submit_at(
+        d: &mut DriftDetector,
+        handle: CiphertextDigest,
+        ct: impl Into<CiphertextDigest>,
+        ct128: impl Into<CiphertextDigest>,
+        sender: Address,
+        block: u64,
+        at: Instant,
+    ) {
+        d.observe_submission(
+            make_submission_event(handle, ct.into(), ct128.into(), sender),
+            context_at(block, at),
+        );
+    }
+
     fn senders() -> Vec<Address> {
         vec![
             Address::left_padding_from(&[1]),
@@ -790,7 +801,12 @@ mod tests {
     }
 
     fn detector() -> DriftDetector {
-        DriftDetector::new(senders(), ChainId::try_from(12345_u64).unwrap(), 5, 2)
+        DriftDetector::new(
+            senders(),
+            ChainId::try_from(12345_u64).unwrap(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+        )
     }
 
     fn make_consensus_state(
@@ -799,13 +815,31 @@ mod tests {
         ciphertext128_digest: CiphertextDigest,
         senders: Vec<Address>,
     ) -> ConsensusState {
+        make_consensus_state_at(
+            block_number,
+            ciphertext_digest,
+            ciphertext128_digest,
+            senders,
+            Instant::now(),
+        )
+    }
+
+    fn make_consensus_state_at(
+        block_number: u64,
+        ciphertext_digest: CiphertextDigest,
+        ciphertext128_digest: CiphertextDigest,
+        senders: Vec<Address>,
+        at: Instant,
+    ) -> ConsensusState {
         ConsensusState {
             context: EventContext {
                 block_number,
                 block_hash: None,
                 tx_hash: None,
                 log_index: None,
+                observed_at: at,
             },
+            received_at: at,
             digests: DigestPair {
                 ciphertext_digest,
                 ciphertext128_digest,
@@ -876,30 +910,33 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([7u8; 32]);
         let senders = senders();
+        let base = Instant::now();
 
         detector.set_replaying(true);
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [8u8; 32],
             [9u8; 32],
             senders[0],
             10,
+            base,
         );
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [10u8; 32],
             [11u8; 32],
             senders[1],
             11,
+            base,
         );
 
         assert_eq!(detector.deferred_drift_detected, 0);
         assert!(!detector.open_handles.get(&handle).unwrap().drift_reported);
 
         detector.set_replaying(false);
-        detector.evaluate_open_handles(11);
+        detector.evaluate_open_handles(base);
 
         assert_eq!(detector.deferred_drift_detected, 1);
         assert!(detector.open_handles.get(&handle).unwrap().drift_reported);
@@ -910,9 +947,11 @@ mod tests {
         let mut detector = detector();
         let handle = FixedBytes::from([12u8; 32]);
         let senders = senders();
+        let base = Instant::now();
         let state = HandleState {
             first_seen_block: 10,
             first_seen_block_hash: None,
+            first_seen_at: base,
             last_seen_block: 12,
             expected_senders: senders.clone(),
             submissions: vec![
@@ -1144,31 +1183,35 @@ mod tests {
 
     #[test]
     fn consensus_with_missing_submission_after_grace_alerts_and_drops() {
-        let mut detector = detector();
+        let mut detector = detector(); // post_consensus_grace = 2s
         let handle = FixedBytes::from([1u8; 32]);
+        let base = Instant::now();
 
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[0],
             10,
+            base,
         );
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[1],
             11,
+            base,
         );
 
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state_at(
             12,
             FixedBytes::from([2u8; 32]),
             FixedBytes::from([3u8; 32]),
             vec![senders()[0], senders()[1]],
+            base,
         ));
         detector
             .open_handles
@@ -1176,7 +1219,8 @@ mod tests {
             .unwrap()
             .local_consensus_checked = true;
 
-        detector.evict_stale(14);
+        // base + 2s: elapsed since consensus (base) = 2s >= 2s grace, should evict.
+        detector.evict_stale(base + Duration::from_secs(2));
 
         assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
@@ -1184,19 +1228,22 @@ mod tests {
 
     #[test]
     fn timeout_without_consensus_alerts_and_drops() {
-        let mut detector = detector();
+        let mut detector = detector(); // no_consensus_timeout = 5s
         let handle = FixedBytes::from([1u8; 32]);
+        let base = Instant::now();
 
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[0],
             10,
+            base,
         );
 
-        detector.evict_stale(15);
+        // base + 5s: elapsed since first_seen (base) = 5s >= 5s timeout, should evict.
+        detector.evict_stale(base + Duration::from_secs(5));
 
         assert_eq!(detector.deferred_consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
@@ -1204,32 +1251,37 @@ mod tests {
 
     #[test]
     fn missing_submission_within_grace_period_is_not_evicted() {
-        let mut detector = detector(); // post_consensus_grace_blocks = 2
+        let mut detector = detector(); // post_consensus_grace = 2s
         let handle = FixedBytes::from([1u8; 32]);
+        let base = Instant::now();
 
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[0],
             10,
+            base,
         );
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[1],
             11,
+            base,
         );
 
-        // Inject consensus at block 12 and mark local check done.
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+        // Inject consensus at base + 1s and mark local check done.
+        let consensus_at = base + Duration::from_secs(1);
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state_at(
             12,
             FixedBytes::from([2u8; 32]),
             FixedBytes::from([3u8; 32]),
             vec![senders()[0], senders()[1]],
+            consensus_at,
         ));
         detector
             .open_handles
@@ -1237,14 +1289,14 @@ mod tests {
             .unwrap()
             .local_consensus_checked = true;
 
-        // Block 13: 13 - 12 = 1 < 2 (grace), should NOT evict.
-        detector.evict_stale(13);
+        // consensus_at + 1s: 1 < 2 (grace), should NOT evict.
+        detector.evict_stale(consensus_at + Duration::from_secs(1));
 
         assert_eq!(detector.deferred_missing_submission, 0);
         assert!(detector.open_handles.contains_key(&handle));
 
-        // Block 14: 14 - 12 = 2, NOT < 2, should evict.
-        detector.evict_stale(14);
+        // consensus_at + 2s: 2 >= 2 (grace), should evict.
+        detector.evict_stale(consensus_at + Duration::from_secs(2));
 
         assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
@@ -1252,26 +1304,28 @@ mod tests {
 
     #[test]
     fn timeout_within_no_consensus_window_is_not_evicted() {
-        let mut detector = detector(); // no_consensus_timeout_blocks = 5
+        let mut detector = detector(); // no_consensus_timeout = 5s
         let handle = FixedBytes::from([1u8; 32]);
+        let base = Instant::now();
 
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[0],
             10,
+            base,
         );
 
-        // Block 14: 14 - 10 = 4 < 5 (timeout window), should NOT evict.
-        detector.evict_stale(14);
+        // base + 4s: 4 < 5 (timeout window), should NOT evict.
+        detector.evict_stale(base + Duration::from_secs(4));
 
         assert_eq!(detector.deferred_consensus_timeout, 0);
         assert!(detector.open_handles.contains_key(&handle));
 
-        // Block 15: 15 - 10 = 5, NOT < 5, should evict.
-        detector.evict_stale(15);
+        // base + 5s: 5 >= 5, should evict.
+        detector.evict_stale(base + Duration::from_secs(5));
 
         assert_eq!(detector.deferred_consensus_timeout, 1);
         assert!(!detector.open_handles.contains_key(&handle));
@@ -1279,10 +1333,11 @@ mod tests {
 
     #[test]
     fn consensus_before_any_submission_creates_handle_state() {
-        let mut detector = detector();
+        let mut detector = detector(); // post_consensus_grace = 2s
         let handle = FixedBytes::from([0xBE; 32]);
         let digest = FixedBytes::from([0xAA; 32]);
         let digest128 = FixedBytes::from([0xBB; 32]);
+        let base = Instant::now();
 
         // Manually inject consensus without any prior observe_submission.
         // This simulates consensus arriving before any peer submission is seen.
@@ -1291,10 +1346,17 @@ mod tests {
             HandleState {
                 first_seen_block: 20,
                 first_seen_block_hash: None,
+                first_seen_at: base,
                 last_seen_block: 20,
                 expected_senders: senders(),
                 submissions: Vec::new(),
-                consensus: Some(make_consensus_state(20, digest, digest128, senders())),
+                consensus: Some(make_consensus_state_at(
+                    20,
+                    digest,
+                    digest128,
+                    senders(),
+                    base,
+                )),
                 local_consensus_checked: true,
                 drift_reported: false,
             },
@@ -1304,8 +1366,8 @@ mod tests {
         detector.finish_if_complete(handle);
         assert!(detector.open_handles.contains_key(&handle));
 
-        // After grace period, should alert about missing submissions.
-        detector.evict_stale(23); // 23 - 20 = 3 > post_consensus_grace_blocks(2)
+        // After grace period (2s), should alert about missing submissions.
+        detector.evict_stale(base + Duration::from_secs(3));
         assert_eq!(detector.deferred_missing_submission, 1);
         assert!(!detector.open_handles.contains_key(&handle));
     }
@@ -1380,34 +1442,38 @@ mod tests {
     #[test]
     fn local_check_not_ready_evicts_after_timeout() {
         // Consensus arrives but local_consensus_checked stays false (simulating
-        // the DB digest never becoming available). After no_consensus_timeout_blocks
+        // the DB digest never becoming available). After no_consensus_timeout
         // the handle should be evicted with a warning.
-        let mut detector = detector(); // no_consensus_timeout_blocks = 5
+        let mut detector = detector(); // no_consensus_timeout = 5s
         let handle = FixedBytes::from([0xDD; 32]);
+        let base = Instant::now();
 
-        submit_digest_event_and_drift_check(
+        submit_at(
             &mut detector,
             handle,
             [2u8; 32],
             [3u8; 32],
             senders()[0],
             10,
+            base,
         );
 
-        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state(
+        let consensus_at = base + Duration::from_secs(1);
+        detector.open_handles.get_mut(&handle).unwrap().consensus = Some(make_consensus_state_at(
             12,
             FixedBytes::from([2u8; 32]),
             FixedBytes::from([3u8; 32]),
             vec![senders()[0]],
+            consensus_at,
         ));
         // local_consensus_checked remains false (default).
 
-        // Within timeout: 16 - 12 = 4 < 5, should not evict.
-        detector.evict_stale(16);
+        // Within timeout: consensus_at + 4s = 4 < 5, should not evict.
+        detector.evict_stale(consensus_at + Duration::from_secs(4));
         assert!(detector.open_handles.contains_key(&handle));
 
-        // At timeout: 17 - 12 = 5, should evict.
-        detector.evict_stale(17);
+        // At timeout: consensus_at + 5s = 5 >= 5, should evict.
+        detector.evict_stale(consensus_at + Duration::from_secs(5));
         assert!(!detector.open_handles.contains_key(&handle));
         // This path (consensus observed, local digests never available) should not
         // bump consensus_timeout or missing_submission — it's a distinct warning.

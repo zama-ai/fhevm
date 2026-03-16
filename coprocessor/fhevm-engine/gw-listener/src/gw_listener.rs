@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
@@ -172,8 +172,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut drift_detector = DriftDetector::new(
             expected_senders,
             self.conf.host_chain_id,
-            self.conf.drift_no_consensus_timeout_blocks,
-            self.conf.drift_post_consensus_grace_blocks,
+            self.conf.drift_no_consensus_timeout,
+            self.conf.drift_post_consensus_grace,
         );
         if replay_from_block.is_none() {
             if let Err(e) = self
@@ -342,7 +342,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                             }
                         }
                     }
-                    if let Err(e) = drift_detector.end_of_batch(to_block, db_pool).await {
+                    if let Err(e) = drift_detector.end_of_batch(db_pool).await {
                         error!(error = %e, "Drift detector end_of_batch failed");
                     }
                     last_processed_block_num = Some(to_block);
@@ -487,19 +487,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             batch_from = batch_to.saturating_add(1);
         }
         drift_detector.set_replaying(false);
-        let current_block = self
-            .provider
-            .get_block_number()
-            .await
-            .inspect(|_| {
-                GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
-            })
-            .inspect_err(|_| {
-                GET_BLOCK_NUM_FAIL_COUNTER.inc();
-            })?;
-        drift_detector
-            .end_of_rebuild(current_block, db_pool)
-            .await?;
+        drift_detector.end_of_rebuild(db_pool).await?;
         drift_detector.flush_metrics();
         Ok(())
     }
@@ -516,6 +504,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             block_hash: log.block_hash,
             tx_hash: log.transaction_hash,
             log_index: log.log_index,
+            observed_at: Instant::now(),
         };
         if let Ok(event) = CiphertextCommits::CiphertextCommitsEvents::decode_log(&log.inner) {
             match event.data {

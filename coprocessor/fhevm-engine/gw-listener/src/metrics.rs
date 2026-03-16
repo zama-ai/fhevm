@@ -122,10 +122,9 @@ pub(crate) static MISSING_SUBMISSION_COUNTER: LazyLock<IntCounter> = LazyLock::n
 });
 
 pub(crate) static CONSENSUS_LATENCY_BLOCKS_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    // Use this distribution to tune `--drift-no-consensus-timeout-blocks`.
-    // In steady state, that timeout should sit above the normal tail of
-    // `consensus_block - first_seen_block` so we alert on truly stalled handles
-    // without retaining healthy ones for too long.
+    // Diagnostic: block distance between first observed submission and consensus.
+    // Useful for understanding on-chain latency; timeouts are wall-clock based
+    // and configured via --drift-no-consensus-timeout.
     register_histogram!(
         "coprocessor_gw_listener_consensus_latency_blocks",
         "Block distance between first observed submission and consensus",
@@ -136,10 +135,10 @@ pub(crate) static CONSENSUS_LATENCY_BLOCKS_HISTOGRAM: LazyLock<Histogram> = Lazy
 
 pub(crate) static POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM: LazyLock<Histogram> =
     LazyLock::new(|| {
-        // Use this distribution to tune `--drift-post-consensus-grace-blocks`.
-        // In steady state, that grace window should sit above the normal tail of
-        // `all_submissions_seen_block - consensus_block` so lagging-but-healthy
-        // coprocessors do not page, while truly missing submissions age out.
+        // Diagnostic: block distance between consensus and seeing all expected
+        // submissions. Useful for understanding on-chain completion latency;
+        // the grace window is wall-clock based and configured via
+        // --drift-post-consensus-grace.
         register_histogram!(
             "coprocessor_gw_listener_post_consensus_completion_blocks",
             "Block distance between consensus and seeing all expected submissions",
