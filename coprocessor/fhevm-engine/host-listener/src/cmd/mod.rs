@@ -1136,3 +1136,138 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     cancel_token.cancel();
     anyhow::Result::Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+
+    use alloy::node_bindings::Anvil;
+    use alloy::providers::ext::AnvilApi;
+    use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+    use tokio::sync::RwLock;
+
+    use fhevm_engine_common::utils::HeartBeat;
+
+    use super::*;
+
+    fn new_test_iter(reorg_max: u64) -> InfiniteLogIter {
+        InfiniteLogIter {
+            url: String::new(),
+            block_time: 12,
+            contract_addresses: vec![],
+            catchup_blocks: None,
+            next_blocklogs: VecDeque::new(),
+            stream: None,
+            provider: Arc::new(RwLock::new(None)),
+            last_valid_block: None,
+            start_at_block: None,
+            end_at_block: None,
+            absolute_end_at_block: None,
+            catchup_margin: 5,
+            catchup_paging: 100,
+            tick_timeout: HeartBeat::new(),
+            tick_block: HeartBeat::new(),
+            reorg_maximum_duration_in_blocks: reorg_max,
+            block_history: BlockHistory::new(reorg_max as usize),
+            catchup_finalization_in_blocks: 20,
+            timeout_request_websocket: 15,
+        }
+    }
+
+    async fn setup_iter_with_chain(
+        num_blocks: u64,
+        reorg_max: u64,
+        known: std::ops::RangeInclusive<usize>,
+    ) -> (
+        alloy::node_bindings::AnvilInstance,
+        InfiniteLogIter,
+        Vec<BlockSummary>,
+    ) {
+        let anvil = Anvil::new().spawn();
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new().connect_ws(ws).await.unwrap();
+        provider.anvil_mine(Some(num_blocks), None).await.unwrap();
+        let mut blocks = Vec::with_capacity((num_blocks + 1) as usize);
+        for i in 0..=num_blocks {
+            let b = provider
+                .get_block_by_number(i.into())
+                .await
+                .unwrap()
+                .unwrap();
+            blocks.push(BlockSummary::from(b));
+        }
+        let mut iter = new_test_iter(reorg_max);
+        for b in &blocks[known] {
+            iter.block_history.add_block(*b);
+        }
+        *iter.provider.write().await = Some(provider);
+        (anvil, iter, blocks)
+    }
+
+    // Walks back 2 blocks before finding a known ancestor in history.
+    // Tests the common case where only a few blocks were missed.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_shallow_reorg() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(5, 50, 0..=2).await;
+
+        let missing = iter.get_missing_ancestors(blocks[5]).await;
+
+        assert_eq!(missing.len(), 2);
+        assert_eq!(missing[0].number, 3);
+        assert_eq!(missing[1].number, 4);
+        assert_eq!(missing[0].parent_hash, blocks[2].hash);
+    }
+
+    // Walks back 13 blocks through a long gap before hitting a known ancestor.
+    // Tests that the walk handles a long gap correctly.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_deep_reorg() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(15, 50, 0..=1).await;
+
+        let missing = iter.get_missing_ancestors(blocks[15]).await;
+
+        assert_eq!(missing.len(), 13);
+        assert_eq!(missing[0].number, 2);
+        assert_eq!(missing.last().unwrap().number, 14);
+    }
+
+    // Stops walking at reorg_maximum_duration_in_blocks even if more unknown ancestors remain.
+    // Tests that the function doesn't walk forever and respects the configured max depth.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_beyond_max_depth() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(10, 3, 0..=0).await;
+
+        let missing = iter.get_missing_ancestors(blocks[10]).await;
+
+        assert_eq!(missing.len(), 3);
+    }
+
+    // Skips reorg detection when history has fewer than 2 blocks and just adds the block.
+    // Tests that the guard condition prevents false reorg detection.
+    #[tokio::test]
+    async fn test_check_missing_ancestors_not_ready() {
+        let mut iter = new_test_iter(50);
+        assert!(!iter.block_history.is_ready_to_detect_reorg());
+
+        let block_a = BlockSummary {
+            number: 100,
+            hash: BlockHash::with_last_byte(0xAA),
+            parent_hash: BlockHash::with_last_byte(0x99),
+            timestamp: 1000,
+        };
+        iter.check_missing_ancestors(block_a).await;
+        assert!(iter.block_history.is_known(&block_a.hash));
+        assert!(!iter.block_history.is_ready_to_detect_reorg());
+
+        let block_b = BlockSummary {
+            number: 101,
+            hash: BlockHash::with_last_byte(0xBB),
+            parent_hash: BlockHash::with_last_byte(0xAA),
+            timestamp: 1012,
+        };
+        iter.check_missing_ancestors(block_b).await;
+        assert!(iter.block_history.is_known(&block_b.hash));
+        assert!(iter.block_history.is_ready_to_detect_reorg());
+    }
+}
