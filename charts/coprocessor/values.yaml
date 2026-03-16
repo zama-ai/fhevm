@@ -417,12 +417,31 @@ gwListener:
   replicas: 1
 
   env:
-    # =========================================================================
-    # NEW ENVIRONMENT VARIABLES
-    # =========================================================================
-    # The address of the KMSGeneration contract
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: INPUT_VERIFICATION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: input_verification.address
     - name: KMS_GENERATION_ADDRESS
-      value: ""
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: kms_generation.address
+    - name: CIPHERTEXT_COMMITS_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: ciphertext_commits.address
+    - name: GATEWAY_CONFIG_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gateway-sc-addresses
+          key: gateway_config.address
 
   # Command line arguments for the gateway listener
   args:
@@ -432,6 +451,8 @@ gwListener:
     - --gw-url=ws://gateway-rpc-node:8548
     - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
     - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+    - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
     - --error-sleep-initial-secs=1
     - --error-sleep-max-secs=10
     - --health-check-port=8080

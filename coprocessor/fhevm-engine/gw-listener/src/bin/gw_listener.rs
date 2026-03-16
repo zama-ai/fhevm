@@ -89,6 +89,31 @@ struct Conf {
         help = "Skip VerifyProofRequest events during replay"
     )]
     pub replay_skip_verify_proof: bool,
+
+    #[arg(
+        long,
+        requires = "gateway_config_address",
+        help = "CiphertextCommits contract address for drift detection"
+    )]
+    ciphertext_commits_address: Option<Address>,
+
+    #[arg(
+        long,
+        requires = "ciphertext_commits_address",
+        help = "GatewayConfig contract address used to fetch coprocessor tx-senders"
+    )]
+    gateway_config_address: Option<Address>,
+
+    /// How long to wait for the gateway to emit a consensus event after the
+    /// first submission is seen. Wall-clock duration — the default of 5 minutes
+    /// accommodates coprocessors that may be stuck for a few minutes.
+    #[arg(long, default_value = "5m", value_parser = parse_duration, requires = "ciphertext_commits_address")]
+    drift_no_consensus_timeout: Duration,
+
+    /// After consensus, how many additional blocks to wait for remaining
+    /// coprocessors to submit their ciphertext material. Wall-clock duration.
+    #[arg(long, default_value = "5m", value_parser = parse_duration, requires = "ciphertext_commits_address")]
+    drift_post_consensus_grace: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -171,6 +196,10 @@ async fn main() -> anyhow::Result<()> {
         replay_from_block: conf.replay_from_block,
         replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
+        ciphertext_commits_address: conf.ciphertext_commits_address,
+        gateway_config_address: conf.gateway_config_address,
+        drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
+        drift_post_consensus_grace: conf.drift_post_consensus_grace,
     };
 
     let gw_listener = GatewayListener::new(
