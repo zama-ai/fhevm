@@ -35,10 +35,12 @@ jobs:
             host-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
               - ci/check-upgrade-hygiene.ts
+              - ci/merge-address-constants.ts
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-hygiene.yml
               - ci/check-upgrade-hygiene.ts
+              - ci/merge-address-constants.ts
               - gateway-contracts/**
 
   check:
@@ -97,10 +99,16 @@ jobs:
         env:
           PACKAGE: ${{ matrix.package }}
         run: |
-          # Generate addresses once and share — both sides must use identical values
-          # because address constants are compiled into bytecode
+          # Generate addresses on both sides independently, then merge them.
+          # Address constants are embedded in bytecode, so both sides must compile
+          # with identical values.  We can't just copy one side's addresses to the
+          # other because contracts may be added or removed between versions — the
+          # baseline would fail to compile if it references a removed constant, or
+          # the PR would fail if it references a new one.  Merging gives both sides
+          # the full union of constants with consistent values (PR wins for shared).
           (cd "$PACKAGE" && make ensure-addresses)
-          cp -r "$PACKAGE/addresses" "baseline/$PACKAGE/addresses"
+          (cd "baseline/$PACKAGE" && make ensure-addresses)
+          bun ci/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
