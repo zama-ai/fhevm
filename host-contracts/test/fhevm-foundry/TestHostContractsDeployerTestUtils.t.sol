@@ -24,7 +24,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(address(aclProxy), aclAdd, "ACL proxy address mismatch");
         assertNotEq(aclImplementation, address(0), "Implementation not deployed");
         assertEq(aclProxy.owner(), OWNER, "Owner mismatch");
-        assertEq(aclProxy.getVersion(), "ACL v0.2.0", "Version mismatch");
+        assertEq(aclProxy.getVersion(), "ACL v0.3.0", "Version mismatch");
         assertEq(_readImplementationSlot(aclAdd), aclImplementation, "Implementation slot mismatch");
     }
 

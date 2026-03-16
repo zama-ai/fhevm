@@ -223,6 +223,11 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
+      - name: Negative ACL tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test negative-acl
+
       - name: Random operators test (subset)
         working-directory: test-suite/fhevm
         run: |
