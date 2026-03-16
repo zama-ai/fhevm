@@ -85,14 +85,14 @@ enum HandleOutcome {
 pub(crate) struct DriftDetector {
     current_expected_senders: Vec<Address>,
     /// Handles waiting for consensus or post-consensus grace. Bounded implicitly:
-    /// `evict_stale` removes entries after `no_consensus_timeout` (no consensus)
-    /// or `post_consensus_grace` (consensus reached). Steady-state size is
+    /// `evict_stale` removes entries after `drift_no_consensus_timeout` (no consensus)
+    /// or `drift_post_consensus_grace` (consensus reached). Steady-state size is
     /// proportional to handle throughput * timeout duration.
     open_handles: HashMap<CiphertextDigest, HandleState>,
     host_chain_id: ChainId,
     local_node_id: String,
-    no_consensus_timeout: Duration,
-    post_consensus_grace: Duration,
+    drift_no_consensus_timeout: Duration,
+    drift_post_consensus_grace: Duration,
     deferred_drift_detected: u64,
     deferred_consensus_timeout: u64,
     deferred_missing_submission: u64,
@@ -103,16 +103,16 @@ impl DriftDetector {
     pub(crate) fn new(
         expected_senders: Vec<Address>,
         host_chain_id: ChainId,
-        no_consensus_timeout: Duration,
-        post_consensus_grace: Duration,
+        drift_no_consensus_timeout: Duration,
+        drift_post_consensus_grace: Duration,
     ) -> Self {
         Self {
             current_expected_senders: expected_senders,
             open_handles: HashMap::new(),
             host_chain_id,
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
-            no_consensus_timeout,
-            post_consensus_grace,
+            drift_no_consensus_timeout,
+            drift_post_consensus_grace,
             deferred_drift_detected: 0,
             deferred_consensus_timeout: 0,
             deferred_missing_submission: 0,
@@ -356,12 +356,7 @@ impl DriftDetector {
         let mut finished = Vec::new();
 
         for (handle, state) in &self.open_handles {
-            match classify_handle(
-                state,
-                now,
-                self.no_consensus_timeout,
-                self.post_consensus_grace,
-            ) {
+            match self.classify_handle(state, now) {
                 HandleOutcome::Pending => {}
                 HandleOutcome::LocalDigestNeverAppeared => {
                     let Some(consensus) = state.consensus.as_ref() else {
@@ -575,38 +570,37 @@ impl DriftDetector {
         self.evaluate_open_handles(Instant::now());
         Ok(())
     }
-}
 
-fn classify_handle(
-    state: &HandleState,
-    now: Instant,
-    no_consensus_timeout: Duration,
-    post_consensus_grace: Duration,
-) -> HandleOutcome {
-    if let Some(consensus) = &state.consensus {
-        if !state.local_consensus_checked {
-            return if now.duration_since(consensus.received_at) >= no_consensus_timeout {
-                HandleOutcome::LocalDigestNeverAppeared
-            } else {
-                HandleOutcome::Pending
-            };
+    fn classify_handle(&self, state: &HandleState, now: Instant) -> HandleOutcome {
+        if let Some(consensus) = &state.consensus {
+            if !state.local_consensus_checked {
+                return if now.duration_since(consensus.received_at)
+                    >= self.drift_no_consensus_timeout
+                {
+                    HandleOutcome::LocalDigestNeverAppeared
+                } else {
+                    HandleOutcome::Pending
+                };
+            }
+
+            if state.submissions.len() < state.expected_senders.len() {
+                return if now.duration_since(consensus.received_at)
+                    >= self.drift_post_consensus_grace
+                {
+                    HandleOutcome::NotAllCoprocessorsSubmitted
+                } else {
+                    HandleOutcome::Pending
+                };
+            }
+
+            unreachable!("handle should have been removed by finish_if_complete");
         }
 
-        if state.submissions.len() < state.expected_senders.len() {
-            return if now.duration_since(consensus.received_at) >= post_consensus_grace {
-                HandleOutcome::NotAllCoprocessorsSubmitted
-            } else {
-                HandleOutcome::Pending
-            };
+        if now.duration_since(state.first_seen_at) >= self.drift_no_consensus_timeout {
+            HandleOutcome::GatewayNeverReachedConsensus
+        } else {
+            HandleOutcome::Pending
         }
-
-        unreachable!("handle should have been removed by finish_if_complete");
-    }
-
-    if now.duration_since(state.first_seen_at) >= no_consensus_timeout {
-        HandleOutcome::GatewayNeverReachedConsensus
-    } else {
-        HandleOutcome::Pending
     }
 }
 
