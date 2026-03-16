@@ -78,6 +78,8 @@ pub fn chain_id_from_env() -> Option<ChainId> {
     }
 }
 
+/// Default is used by unit tests only. Production defaults come from
+/// the CLI arg definitions in `bin/gw_listener.rs` (e.g. `--drift-no-consensus-timeout 5m`).
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {

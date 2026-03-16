@@ -137,11 +137,11 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 #### Metric Name: `coprocessor_gw_listener_consensus_latency_blocks`
  - **Type**: Histogram
- - **Description**: Block distance between the first observed submission and the consensus event for a handle. Use this distribution to tune `--drift-no-consensus-timeout-blocks`: the timeout should sit above the normal tail so it alerts on truly stalled handles without retaining healthy ones for too long. Bucket boundaries: 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144.
+ - **Description**: Block distance between the first observed submission and the consensus event for a handle. Diagnostic metric for understanding on-chain latency; timeouts are wall-clock based and configured via `--drift-no-consensus-timeout`. Bucket boundaries: 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144.
 
 #### Metric Name: `coprocessor_gw_listener_post_consensus_completion_blocks`
  - **Type**: Histogram
- - **Description**: Block distance between the consensus event and seeing all expected submissions for a handle. Use this distribution to tune `--drift-post-consensus-grace-blocks`: the grace window should sit above the normal tail so lagging-but-healthy coprocessors do not alert, while truly missing submissions age out. Bucket boundaries: 0, 1, 2, 3, 5, 8, 13, 21, 34.
+ - **Description**: Block distance between the consensus event and seeing all expected submissions for a handle. Diagnostic metric for understanding on-chain completion latency; the grace window is wall-clock based and configured via `--drift-post-consensus-grace`. Bucket boundaries: 0, 1, 2, 3, 5, 8, 13, 21, 34.
 
 ### zkproof-worker
 
