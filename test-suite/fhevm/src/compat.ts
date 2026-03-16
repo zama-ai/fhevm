@@ -108,6 +108,33 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "version
 export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
+export type BundleIncompatibility = { severity: "error"; code: string; message: string };
+
+/**
+ * Detect cross-component version incompatibilities that would cause runtime failures.
+ * Returns an empty array when the bundle is consistent.
+ */
+export const validateBundleCompatibility = (
+  state: Pick<State, "versions">,
+): BundleIncompatibility[] => {
+  const issues: BundleIncompatibility[] = [];
+  const relayerVersion = state.versions.env.RELAYER_VERSION ?? "";
+  const testSuiteVersion = state.versions.env.TEST_SUITE_VERSION ?? "";
+  if (
+    versionLt(relayerVersion, [0, 10, 0]) &&
+    !versionLt(testSuiteVersion, [0, 11, 0])
+  ) {
+    issues.push({
+      severity: "error",
+      code: "relayer-v1-vs-test-suite-v2",
+      message:
+        `RELAYER_VERSION ${relayerVersion} only serves /v1 API, but TEST_SUITE_VERSION ${testSuiteVersion} expects /v2. ` +
+        `Upgrade the relayer to >= v0.10.0 or pin TEST_SUITE_VERSION below v0.11.0.`,
+    });
+  }
+  return issues;
+};
+
 export const compatPolicyForState = (state: State): CompatPolicy => {
   const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
   for (const rule of COMPAT_RULES.coprocessor) {

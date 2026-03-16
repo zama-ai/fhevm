@@ -1,4 +1,4 @@
-import { requiresMultichainAclAddress } from "./compat";
+import { requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -115,6 +115,59 @@ const dockerInspect = async (runner: Runner, name: string) => {
     State: { Status: string; ExitCode: number; Health?: { Status: string } };
     NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
   }>;
+};
+
+const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
+
+const KMS_CONNECTOR_HEALTH_CONTAINERS = [
+  "kms-connector-gw-listener",
+  "kms-connector-kms-worker",
+  "kms-connector-tx-sender",
+];
+
+const coprocessorHealthContainers = (state: Pick<State, "topology">): string[] => {
+  const suffixes = GROUP_SERVICE_SUFFIXES["coprocessor"].filter((s) => !s.includes("migration"));
+  const names: string[] = [];
+  for (let index = 0; index < state.topology.count; index += 1) {
+    for (const suffix of suffixes) {
+      names.push(toServiceName(suffix, index));
+    }
+  }
+  return names;
+};
+
+export const postBootHealthGate = async (
+  deps: Pick<RuntimeDeps, "runner">,
+  containerNames: string[],
+  delayMs = POST_BOOT_HEALTH_GATE_DELAY_MS,
+) => {
+  if (delayMs > 0) await sleep(delayMs);
+  const crashed: { name: string; exitCode: number; logs: string }[] = [];
+  for (const name of containerNames) {
+    const [inspect] = await dockerInspect(deps.runner, name);
+    if (!inspect) {
+      crashed.push({ name, exitCode: -1, logs: "(container not found)" });
+      continue;
+    }
+    if (inspect.State.Status === "exited" && inspect.State.ExitCode !== 0) {
+      const result = await deps.runner(["docker", "logs", "--tail", "30", name], {
+        allowFailure: true,
+      });
+      crashed.push({
+        name,
+        exitCode: inspect.State.ExitCode,
+        logs: (result.stdout + result.stderr).trim(),
+      });
+    }
+  }
+  if (crashed.length) {
+    const details = crashed
+      .map((c) => `  ${c.name} (exit ${c.exitCode}):\n    ${c.logs.split("\n").join("\n    ")}`)
+      .join("\n");
+    throw new Error(
+      `Post-boot health gate: ${crashed.length} container(s) crashed shortly after starting:\n${details}`,
+    );
+  }
 };
 
 const loadState = async () => (await exists(STATE_FILE) ? readJson<State>(STATE_FILE) : undefined);
@@ -983,16 +1036,26 @@ const runStep = async (state: State, step: StepName, deps: RuntimeDeps) => {
     case "regenerate":
       await regen(state, deps);
       break;
-    case "validate":
+    case "validate": {
       validateDiscovery(state);
+      const incompatibilities = validateBundleCompatibility(state);
+      if (incompatibilities.length) {
+        throw new Error(
+          `Bundle version incompatibilities detected:\n` +
+            incompatibilities.map((i) => `  - ${i.message}`).join("\n"),
+        );
+      }
       break;
+    }
     case "coprocessor":
       await composeUp("coprocessor", state, deps, saveState, log, serviceNameList(state, "coprocessor"));
       await waitForCoprocessor(state, deps);
+      await postBootHealthGate(deps, coprocessorHealthContainers(state));
       break;
     case "kms-connector":
       await composeUp("kms-connector", state, deps, saveState, log);
       await waitForKmsConnector(deps);
+      await postBootHealthGate(deps, KMS_CONNECTOR_HEALTH_CONTAINERS);
       break;
     case "bootstrap":
       await composeUp("gateway-sc", state, deps, saveState, log, ["gateway-sc-add-network"], { noDeps: true });

@@ -12,8 +12,8 @@ import {
 } from "./artifacts";
 import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
 import { STEP_NAMES } from "./types";
-import { main, overrideWarnings, probeBootstrap, resolveUpgradePlan } from "./runtime";
-import { compatPolicyForState, requiresMultichainAclAddress } from "./compat";
+import { main, overrideWarnings, postBootHealthGate, probeBootstrap, resolveUpgradePlan } from "./runtime";
+import { compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, createGitHubClient, resolveTarget } from "./versions";
 import {
@@ -1351,5 +1351,86 @@ describe("version resolution edge cases", () => {
     const original = stubBundle();
     const result = applyVersionEnvOverrides(original, {});
     expect(result).toBe(original);
+  });
+});
+
+describe("validateBundleCompatibility", () => {
+  const stateWithVersions = (relayer: string, testSuite: string) =>
+    stubState({ envOverrides: { RELAYER_VERSION: relayer, TEST_SUITE_VERSION: testSuite } });
+
+  test("detects relayer v1 vs test-suite v2 mismatch", () => {
+    const issues = validateBundleCompatibility(stateWithVersions("v0.9.0", "v0.11.0"));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe("relayer-v1-vs-test-suite-v2");
+  });
+
+  test("modern relayer is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.11.0"))).toEqual([]);
+  });
+
+  test("legacy test-suite is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.9.0", "v0.10.0"))).toEqual([]);
+  });
+
+  test("both modern is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.12.0"))).toEqual([]);
+  });
+
+  test("SHA relayer treated as modern", () => {
+    expect(validateBundleCompatibility(stateWithVersions("abc1234", "v0.11.0"))).toEqual([]);
+  });
+
+  test("SHA test-suite treated as modern triggers mismatch", () => {
+    const issues = validateBundleCompatibility(stateWithVersions("v0.9.0", "abc1234"));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe("relayer-v1-vs-test-suite-v2");
+  });
+
+  test("empty versions treated as modern", () => {
+    expect(validateBundleCompatibility(stateWithVersions("", ""))).toEqual([]);
+  });
+
+  test("boundary v0.10.0 relayer is OK", () => {
+    expect(validateBundleCompatibility(stateWithVersions("v0.10.0", "v0.11.0"))).toEqual([]);
+  });
+});
+
+describe("postBootHealthGate", () => {
+  const inspectResult = (status: string, exitCode: number) =>
+    JSON.stringify([{ Name: "test", State: { Status: status, ExitCode: exitCode }, NetworkSettings: { Networks: {} } }]);
+
+  test("resolves when all containers are running", async () => {
+    const runner = fakeRunner({
+      "docker inspect container-a": inspectResult("running", 0),
+      "docker inspect container-b": inspectResult("running", 0),
+    });
+    await postBootHealthGate({ runner }, ["container-a", "container-b"], 0);
+  });
+
+  test("throws when a container crashed", async () => {
+    const runner = fakeRunner({
+      "docker inspect container-a": inspectResult("running", 0),
+      "docker inspect container-b": inspectResult("exited", 1),
+      "docker logs --tail 30 container-b": "Error: missing API key",
+    });
+    await expect(
+      postBootHealthGate({ runner }, ["container-a", "container-b"], 0),
+    ).rejects.toThrow(/container-b.*exit 1/);
+  });
+
+  test("throws when container not found", async () => {
+    const runner = fakeRunner({
+      "docker inspect container-a": { stdout: "", stderr: "", code: 1 },
+    });
+    await expect(
+      postBootHealthGate({ runner }, ["container-a"], 0),
+    ).rejects.toThrow(/container not found/);
+  });
+
+  test("ignores containers that exited with code 0 (migrations)", async () => {
+    const runner = fakeRunner({
+      "docker inspect container-a": inspectResult("exited", 0),
+    });
+    await postBootHealthGate({ runner }, ["container-a"], 0);
   });
 });
