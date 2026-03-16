@@ -159,6 +159,7 @@ export const TEST_GREP: Record<string, string> = {
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
+  "negative-acl": "negative-acl",
 };
 
 export const TEST_PARALLEL: Record<string, boolean> = {

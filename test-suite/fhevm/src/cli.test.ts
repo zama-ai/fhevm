@@ -988,7 +988,8 @@ describe("CLI argument validation", () => {
     try {
       await main(["bun", "src/cli.ts", "bogus"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("Unknown command bogus"))).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(logs.some((l) => l.includes("Invalid subcommand"))).toBe(true);
   });
 
   test("doctor shows removal message", async () => {
@@ -1073,9 +1074,10 @@ describe("command error paths", () => {
   test("help prints usage without error", async () => {
     const { logs, restore } = captureConsole("log");
     try {
-      await main(["bun", "src/cli.ts", "help"], noopLayer);
+      await main(["bun", "src/cli.ts", "--help"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
+    expect(process.exitCode).toBe(0);
+    expect(logs.some((l) => l.includes("fhevm-cli"))).toBe(true);
   });
 
   test("no command prints usage", async () => {
@@ -1083,7 +1085,8 @@ describe("command error paths", () => {
     try {
       await main(["bun", "src/cli.ts"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("Usage: fhevm-cli"))).toBe(true);
+    expect(process.exitCode).toBe(0);
+    expect(logs.some((l) => l.includes("fhevm-cli"))).toBe(true);
   });
 
   test("down runs without error", async () => {

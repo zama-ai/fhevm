@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect";
+import { BunContext } from "@effect/platform-bun";
 import type { RunOptions, RunResult, Runner } from "./utils";
 import type { LocalOverride, State, VersionBundle } from "./types";
 import { PORTS } from "./layout";
@@ -155,6 +156,7 @@ export const depsToLayer = (deps: {
     TestMinioClient,
     TestRpcClient,
     StateManager.Live,
+    BunContext.layer,
   );
 };
 
