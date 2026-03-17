@@ -1617,3 +1617,86 @@ async fn test_listener_delegations() -> Result<(), anyhow::Error> {
     listener_handle.abort();
     Ok(())
 }
+
+/// Tests that the host-listener can re-process events after a revert.
+///
+/// 1. Start listener, emit events, wait until all are in the DB.
+/// 2. Stop listener, run the revert SQL to delete half the blocks.
+/// 3. Restart listener in catchup mode, wait until all events are back.
+#[tokio::test]
+#[serial(db)]
+async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
+{
+    let setup = setup(None).await?;
+    let chain_id = setup.chain_id.as_i64();
+    let nb_events_per_wallet: i64 = 5;
+    let expected = setup.wallets.len() as i64 * nb_events_per_wallet;
+
+    // Start listener, emit events, wait for all to be processed.
+    let listener = tokio::spawn(main(setup.args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    emit_events(
+        &setup.wallets,
+        &setup.args.url,
+        setup.tfhe_contract.clone(),
+        setup.acl_contract.clone(),
+        false,
+        nb_events_per_wallet,
+    )
+    .await;
+    wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(60),
+        "waiting for initial processing",
+        |tfhe, acl| tfhe >= expected && acl >= expected,
+    )
+    .await?;
+
+    // Stop listener.
+    listener.abort();
+    let _ = listener.await;
+
+    // Prepare: the revert script needs host_chains and poller_state rows.
+    sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'test', '0x0') ON CONFLICT DO NOTHING")
+        .bind(chain_id).execute(&setup.db_pool).await?;
+    let max_block: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = $1")
+        .bind(chain_id).fetch_one(&setup.db_pool).await?;
+    sqlx::query("INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) VALUES ($1, $2) ON CONFLICT (chain_id) DO UPDATE SET last_caught_up_block = $2")
+        .bind(chain_id).bind(max_block).execute(&setup.db_pool).await?;
+
+    // Revert to midway. Verify some data was deleted.
+    let revert_to = max_block / 2;
+    let sql = test_harness::db_utils::revert_coprocessor_db_state_sql(
+        chain_id, revert_to,
+    );
+    sqlx::raw_sql(&sql)
+        .execute(&setup.db_pool)
+        .await
+        .expect("revert failed");
+    let after_revert: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM computations")
+            .fetch_one(&setup.db_pool)
+            .await?;
+    assert!(
+        after_revert < expected,
+        "revert should delete some computations: {after_revert} < {expected}"
+    );
+
+    // Restart listener in catchup mode, wait for all events to come back.
+    let mut args = setup.args.clone();
+    args.start_at_block = Some(0);
+    let listener = tokio::spawn(main(args));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    let (tfhe, acl) = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(60),
+        "waiting for re-processing after revert",
+        |tfhe, acl| tfhe >= expected && acl >= expected,
+    )
+    .await?;
+    assert_eq!(tfhe, expected, "computations after revert");
+    assert_eq!(acl, expected, "allowed_handles after revert");
+
+    listener.abort();
+    Ok(())
+}

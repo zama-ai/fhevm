@@ -238,6 +238,7 @@ pub async fn allow_handle(
         String::new(),
         AllowEvents::AllowedForDecryption,
         None,
+        0,
     )
     .await
 }
