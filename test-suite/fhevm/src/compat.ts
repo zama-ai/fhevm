@@ -1,5 +1,6 @@
 import type { RuntimePlan } from "./runtime-plan";
 import type { State } from "./types";
+import { effectiveOverrides } from "./scenario";
 
 type CompatSemver = readonly [number, number, number];
 type CompatService =
@@ -13,6 +14,7 @@ type CompatArgValue = { env: string } | { value: string };
 export type CompatPolicy = {
   coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, CompatArgValue]>>>;
   coprocessorDropFlags: Partial<Record<CompatService, string[]>>;
+  coprocessorDisableHealthcheck: Partial<Record<CompatService, true>>;
   connectorEnv: Record<string, string>;
 };
 
@@ -86,6 +88,9 @@ const SHIM_PROFILES = {
     coprocessorDropFlags: {
       "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
     },
+    coprocessorDisableHealthcheck: {
+      "gw-listener": true,
+    },
     connectorEnv: {},
   },
   "legacy-coprocessor-api-keys": {
@@ -95,11 +100,13 @@ const SHIM_PROFILES = {
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     coprocessorDropFlags: {},
+    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
   "legacy-connector-chain-id": {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
+    coprocessorDisableHealthcheck: {},
     connectorEnv: {
       KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
     },
@@ -109,6 +116,7 @@ const SHIM_PROFILES = {
       "transaction-sender": [["--host-chain-url", { env: "RPC_WS_URL" }]],
     },
     coprocessorDropFlags: {},
+    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
   "legacy-tx-sender-gateway-flags": {
@@ -121,6 +129,7 @@ const SHIM_PROFILES = {
       ],
     },
     coprocessorDropFlags: {},
+    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
 } as const satisfies Record<string, CompatPolicy>;
@@ -152,11 +161,19 @@ const versionLt = (
   return false;
 };
 
-type CompatState = Pick<State, "versions" | "overrides"> | Pick<RuntimePlan, "versions" | "overrides">;
+type CompatState =
+  | Pick<State, "versions" | "overrides" | "scenario">
+  | Pick<RuntimePlan, "versions" | "overrides" | "coprocessor">;
 
-const usesModernWorkspaceProtocol = (state: Pick<CompatState, "overrides">) =>
+const effectiveCompatOverrides = (state: CompatState) =>
+  effectiveOverrides(
+    state.overrides,
+    "scenario" in state ? state.scenario : state.coprocessor,
+  );
+
+const usesModernWorkspaceProtocol = (state: CompatState) =>
   ["coprocessor", "gateway-contracts", "host-contracts"].every((group) =>
-    state.overrides.some((override) => override.group === group),
+    effectiveCompatOverrides(state).some((override) => override.group === group),
   );
 
 export const requiresMultichainAclAddress = (state: CompatState) =>
@@ -197,6 +214,7 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   const policy: CompatPolicy = {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
+    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   };
   for (const shim of COMPAT_MATRIX.legacyShims) {
@@ -215,6 +233,11 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
         ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
         ...flags,
       ];
+    }
+    for (const [service, disabled] of Object.entries(profile.coprocessorDisableHealthcheck)) {
+      if (disabled) {
+        policy.coprocessorDisableHealthcheck[service as CompatService] = true;
+      }
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }

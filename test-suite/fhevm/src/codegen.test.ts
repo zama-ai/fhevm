@@ -333,7 +333,7 @@ describe("interpolateString", () => {
 describe("applyInstanceAdjustments", () => {
   test("injects env_file", () => {
     const service = { container_name: "coprocessor-tfhe-worker", command: ["run"] };
-    const result = applyInstanceAdjustments(service, "/path/to/env", {});
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/path/to/env", {});
     expect(result.env_file).toEqual(["/path/to/env"]);
   });
 
@@ -342,20 +342,29 @@ describe("applyInstanceAdjustments", () => {
       container_name: "coprocessor-tfhe-worker",
       command: ["run", "--key-cache-size", "100"],
     };
-    const result = applyInstanceAdjustments(service, "/env", {});
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {});
     expect(result.command).toContain("--tenant-key-cache-size");
     expect(result.command).not.toContain("--key-cache-size");
   });
 
-  test("disables healthcheck for gw-listener", () => {
+  test("disables healthcheck for gw-listener only when compat requests it", () => {
     const service = { container_name: "coprocessor-gw-listener" };
-    const result = applyInstanceAdjustments(service, "/env", {});
+    const result = applyInstanceAdjustments(
+      "coprocessor-gw-listener",
+      service,
+      "/env",
+      {},
+      undefined,
+      {},
+      {},
+      { "gw-listener": true },
+    );
     expect(result.healthcheck).toEqual({ disable: true });
   });
 
   test("does not disable healthcheck for non-gw-listener", () => {
     const service = { container_name: "coprocessor-tfhe-worker" };
-    const result = applyInstanceAdjustments(service, "/env", {});
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {});
     expect(result.healthcheck).toBeUndefined();
   });
 
@@ -365,14 +374,14 @@ describe("applyInstanceAdjustments", () => {
       environment: { EXISTING: "value" },
     };
     const override = { env: { EXTRA: "extra-value" }, args: {} };
-    const result = applyInstanceAdjustments(service, "/env", {}, override);
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {}, override);
     expect(result.environment).toEqual({ EXISTING: "value", EXTRA: "extra-value" });
   });
 
   test("does not set environment when override has empty env", () => {
     const service = { container_name: "coprocessor-tfhe-worker" };
     const override = { env: {}, args: {} };
-    const result = applyInstanceAdjustments(service, "/env", {}, override);
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {}, override);
     expect(result.environment).toBeUndefined();
   });
 
@@ -387,7 +396,7 @@ describe("applyInstanceAdjustments", () => {
       ] as Array<readonly [string, { env: string } | { value: string }]>,
     };
     const envVars = { COPROCESSOR_API_KEY: "my-key" };
-    const result = applyInstanceAdjustments(service, "/env", envVars, undefined, compatArgs);
+    const result = applyInstanceAdjustments("coprocessor-host-listener", service, "/env", envVars, undefined, compatArgs);
     expect(result.command).toContain("--coprocessor-api-key");
     expect(result.command).toContain("my-key");
   });
@@ -403,6 +412,7 @@ describe("applyInstanceAdjustments", () => {
       ],
     };
     const result = applyInstanceAdjustments(
+      "coprocessor-gw-listener",
       service,
       "/env",
       {
@@ -432,7 +442,7 @@ describe("applyInstanceAdjustments", () => {
         ["--delegation-fallback-polling", { value: "30" }],
       ] as Array<readonly [string, { env: string } | { value: string }]>,
     };
-    const result = applyInstanceAdjustments(service, "/env", {}, undefined, compatArgs);
+    const result = applyInstanceAdjustments("coprocessor-transaction-sender", service, "/env", {}, undefined, compatArgs);
     expect(result.command).toContain("--delegation-fallback-polling");
     expect(result.command).toContain("30");
   });
@@ -447,7 +457,7 @@ describe("applyInstanceAdjustments", () => {
         ["--coprocessor-api-key", { env: "MISSING_KEY" }],
       ] as Array<readonly [string, { env: string } | { value: string }]>,
     };
-    const result = applyInstanceAdjustments(service, "/env", {}, undefined, compatArgs);
+    const result = applyInstanceAdjustments("coprocessor-host-listener", service, "/env", {}, undefined, compatArgs);
     expect(result.command).not.toContain("--coprocessor-api-key");
   });
 
@@ -457,7 +467,7 @@ describe("applyInstanceAdjustments", () => {
       command: ["run", "--existing"],
     };
     const override = { env: {}, args: { "tfhe-worker": ["--extra-flag", "val"] } };
-    const result = applyInstanceAdjustments(service, "/env", {}, override);
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {}, override);
     expect(result.command).toContain("--extra-flag");
     expect(result.command).toContain("val");
   });
@@ -468,7 +478,7 @@ describe("applyInstanceAdjustments", () => {
       command: ["run"],
     };
     const override = { env: {}, args: { "*": ["--global-flag"] } };
-    const result = applyInstanceAdjustments(service, "/env", {}, override);
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {}, override);
     expect(result.command).toContain("--global-flag");
   });
 
@@ -477,7 +487,7 @@ describe("applyInstanceAdjustments", () => {
       container_name: "coprocessor-tfhe-worker",
       image: "ghcr.io/example:${MY_VERSION}",
     };
-    const result = applyInstanceAdjustments(service, "/env", { MY_VERSION: "v1.2.3" });
+    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", { MY_VERSION: "v1.2.3" });
     expect(result.image).toBe("ghcr.io/example:v1.2.3");
   });
 
@@ -487,7 +497,7 @@ describe("applyInstanceAdjustments", () => {
       command: ["run"],
     };
     const original = structuredClone(service);
-    applyInstanceAdjustments(service, "/env", {});
+    applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {});
     expect(service).toEqual(original);
   });
 });

@@ -59,20 +59,25 @@ const program = Effect.gen(function* () {
           ],
           { allowFailure: true },
         );
-        const handleHex = yield* Fiber.join(injector);
+        const injectedHandleHex = yield* Fiber.join(injector);
         if (testExit !== 0) {
           return yield* Effect.fail(
             new Error(`ciphertext drift test command failed with exit code ${testExit}`),
           );
         }
-        return yield* waitForDriftWarning(handleHex, {
+        const warning = yield* waitForDriftWarning(injectedHandleHex, {
           since: logSince,
           timeoutSeconds: driftAlertTimeoutSeconds,
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
         });
+        return { injectedHandleHex, warning };
       }),
   );
-  console.log(`drift detected in ${detected}`);
+  console.log(
+    detected.warning.exact
+      ? `drift detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`
+      : `drift detected in ${detected.warning.container} for handle 0x${detected.warning.handleHex ?? "unknown"} after injecting 0x${detected.injectedHandleHex}`,
+  );
 });
 
 await Effect.runPromise(

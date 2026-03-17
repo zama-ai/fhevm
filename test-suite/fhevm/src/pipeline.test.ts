@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Either } from "effect";
 
 import {
+  assertSchemaCompatibility,
   coprocessorHealthContainers,
   coprocessorServicesForOverrides,
   overrideWarnings,
@@ -12,6 +13,7 @@ import {
   validateDiscovery,
 } from "./pipeline";
 import { depsToLayer, fakeRunner, portCheckResponses } from "./test-helpers";
+import { stubBundle } from "./test-helpers";
 import { defaultCoprocessorScenario } from "./scenario";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import type { Discovery, LocalOverride, State } from "./types";
@@ -188,6 +190,50 @@ describe("preflight", () => {
       ),
     );
     expect(error.message).toContain("docker daemon unavailable");
+  });
+});
+
+describe("assertSchemaCompatibility", () => {
+  test("treats local coprocessor services from scenarios like partial overrides", async () => {
+    const error = await Effect.runPromise(
+      assertSchemaCompatibility(
+        stubBundle(),
+        [],
+        {
+          version: 1,
+          kind: "coprocessor-consensus",
+          origin: "file",
+          topology: { count: 2, threshold: 2 },
+          instances: [
+            { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
+            {
+              index: 1,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+              localServices: ["coprocessor-host-listener"],
+            },
+          ],
+        },
+        false,
+      ).pipe(
+        Effect.provide(
+          depsToLayer({
+            runner: fakeRunner({
+              "git rev-parse -q --verify v0.11.0^{commit}": "",
+              "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
+              "git diff --quiet --exit-code v0.11.0 -- coprocessor/fhevm-engine/db-migration/migrations": {
+                stdout: "",
+                stderr: "",
+                code: 1,
+              },
+            }),
+          }),
+        ),
+        Effect.flip,
+      ),
+    );
+    expect(error.message).toContain("local DB migrations diverge");
   });
 });
 

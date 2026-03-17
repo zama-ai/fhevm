@@ -8,4 +8,6 @@ export const logsCommand = Command.make(
   { noFollow: noFollowOption, service: serviceArg },
   ({ noFollow, service }) =>
     logs(Option.getOrUndefined(service), { follow: !noFollow }),
+).pipe(
+  Command.withDescription("Show logs for a stack container or a well-known alias."),
 );

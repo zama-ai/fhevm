@@ -26,6 +26,7 @@ import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
 import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
+import { applyInstanceAdjustments } from "./render-compose";
 import { CommandRunner } from "./services/CommandRunner";
 import { MinioError } from "./errors";
 import { GitHubClient } from "./services/GitHubClient";
@@ -338,6 +339,50 @@ describe("runtime invariants", () => {
     ).toBe(false);
   });
 
+  test("workspace-all semantics also apply when coprocessor local services come from a scenario", () => {
+    expect(
+      requiresMultichainAclAddress(
+        stubState({
+          overrides: [
+            { group: "gateway-contracts" },
+            { group: "host-contracts" },
+          ],
+          count: 2,
+          threshold: 2,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      requiresMultichainAclAddress({
+        ...stubState({
+          overrides: [
+            { group: "gateway-contracts" },
+            { group: "host-contracts" },
+            { group: "test-suite" },
+          ],
+          count: 2,
+          threshold: 2,
+        }),
+        scenario: {
+          version: 1,
+          kind: "coprocessor-consensus",
+          origin: "file",
+          topology: { count: 2, threshold: 2 },
+          instances: [
+            { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
+            {
+              index: 1,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+              localServices: ["coprocessor-host-listener"],
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+  });
+
   test("compat keys tx-sender flags off tx-sender version", () => {
     expect(
       compatPolicyForState(
@@ -349,6 +394,33 @@ describe("runtime invariants", () => {
         }),
       ).coprocessorArgs["transaction-sender"],
     ).toBeDefined();
+  });
+
+  test("gw-listener healthcheck is only disabled by compat policy", () => {
+    const baseService = {
+      container_name: "coprocessor-gw-listener",
+      healthcheck: { test: ["CMD", "curl"] },
+      command: ["gw_listener"],
+    };
+    const modern = applyInstanceAdjustments(
+      "coprocessor-gw-listener",
+      baseService,
+      "/tmp/coprocessor.env",
+      {},
+    );
+    expect(modern.healthcheck).toEqual({ test: ["CMD", "curl"] });
+
+    const legacy = applyInstanceAdjustments(
+      "coprocessor-gw-listener",
+      baseService,
+      "/tmp/coprocessor.env",
+      {},
+      { env: {}, args: {} },
+      {},
+      {},
+      { "gw-listener": true },
+    );
+    expect(legacy.healthcheck).toEqual({ disable: true });
   });
 
   test("probeBootstrap treats ethCallId failures as retryable", async () => {
@@ -469,6 +541,35 @@ describe("runtime invariants", () => {
     process.exitCode = 0;
     expect(await maybeRead(STATE_FILE)).toBe(before);
     void dir;
+  });
+
+  test("validation errors do not emit a stale resume hint even when state exists", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify(
+        stubState({
+          completedSteps: ["resolve", "generate"],
+        }),
+      ),
+    );
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--from-step", "relayer"],
+        noopLayer,
+      );
+    } finally {
+      restore();
+    }
+    expect(logs.some((line) => line.includes("--from-step requires --resume or --dry-run"))).toBe(true);
+    expect(logs.some((line) => line.includes("Hint: run with --resume"))).toBe(false);
+    if (before) {
+      await fs.writeFile(STATE_FILE, before);
+    } else {
+      await fs.rm(STATE_FILE, { force: true });
+    }
   });
 
   test("up rejects per-service overrides for non-runtime groups before doing work", async () => {
@@ -1273,6 +1374,16 @@ describe("command error paths", () => {
     } finally { restore(); }
     expect(process.exitCode).toBe(0);
     expect(logs.some((l) => l.includes("fhevm-cli"))).toBe(true);
+    expect(logs.some((l) => l.includes("doctor"))).toBe(false);
+  });
+
+  test("subcommand help includes domain-specific descriptions", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--help"], noopLayer);
+    } finally { restore(); }
+    expect(logs.some((line) => line.includes("Path to a coprocessor consensus scenario file"))).toBe(true);
+    expect(logs.some((line) => line.includes("Boot the fhevm stack from a target, lock file, or persisted state"))).toBe(true);
   });
 
   test("no command prints usage", async () => {

@@ -6,4 +6,6 @@ export const cleanCommand = Command.make(
   "clean",
   { images: imagesOption },
   ({ images }) => clean({ images }),
+).pipe(
+  Command.withDescription("Tear down the stack and remove generated runtime artifacts."),
 );

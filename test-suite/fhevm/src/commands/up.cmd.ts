@@ -18,7 +18,10 @@ import type { StepName, VersionTarget } from "../types";
 import { up, upDryRun } from "./up";
 
 const upOptions = {
-  target: Options.text("target").pipe(Options.optional),
+  target: Options.text("target").pipe(
+    Options.withDescription("Version source to boot: latest-main, latest-release, sha, or a network target."),
+    Options.optional,
+  ),
   sha: shaOption,
   override: overrideOption,
   fromStep: fromStepOption,
@@ -137,6 +140,10 @@ const upHandler = (parsed: {
     }
   });
 
-export const upCommand = Command.make("up", upOptions, upHandler);
+export const upCommand = Command.make("up", upOptions, upHandler).pipe(
+  Command.withDescription("Boot the fhevm stack from a target, lock file, or persisted state."),
+);
 
-export const deployCommand = Command.make("deploy", upOptions, upHandler);
+export const deployCommand = Command.make("deploy", upOptions, upHandler).pipe(
+  Command.withDescription("Alias of `up` kept for deployment-oriented workflows."),
+);

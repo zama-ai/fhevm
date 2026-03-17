@@ -13,6 +13,6 @@ export const compatDefaults = Effect.sync(() => {
     JSON.stringify({
       externalDefaults: COMPAT_MATRIX.externalDefaults,
       anchors: COMPAT_MATRIX.anchors,
-    }),
+    }, null, 2),
   );
 });

@@ -124,13 +124,14 @@ const bootstrapState = (options: UpOptions) =>
   Effect.gen(function* () {
     const stateManager = yield* StateManager;
     const resolved = yield* resolveBundle(options, process.env);
+    const scenario = yield* resolveScenarioForOptions(options);
     yield* assertSchemaCompatibility(
       resolved.bundle,
       options.overrides,
+      scenario,
       options.allowSchemaMismatch,
     );
     yield* ensureLockSnapshot(resolved.lockPath, resolved.bundle);
-    const scenario = yield* resolveScenarioForOptions(options);
     const state: State = {
       target: options.target,
       lockPath: resolved.lockPath,
@@ -239,7 +240,7 @@ export const upDryRun = (
       state.requiresGitHub ??= true;
       state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
-      yield* preflight(state, true, state.requiresGitHub);
+      yield* preflight(state, false, state.requiresGitHub);
       yield* printBundle(state.versions);
       yield* printPlan(state, options.fromStep ?? startStep(state, options));
       yield* Effect.log(
@@ -248,12 +249,13 @@ export const upDryRun = (
       return;
     }
     const bundle = yield* previewBundle(options, process.env);
+    const scenario = yield* resolveScenarioForOptions(options);
     yield* assertSchemaCompatibility(
       bundle,
       options.overrides,
+      scenario,
       options.allowSchemaMismatch,
     );
-    const scenario = yield* resolveScenarioForOptions(options);
     const state = {
       target: options.target,
       versions: bundle,

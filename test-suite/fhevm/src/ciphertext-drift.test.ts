@@ -7,6 +7,7 @@ import {
   parseDriftInstanceIndex,
   parsePositiveInteger,
 } from "./ciphertext-drift";
+import { findDriftWarning } from "./ciphertext-drift-runner";
 
 describe("ciphertext-drift", () => {
   test("driftDatabaseName maps primary and replica instances", () => {
@@ -33,5 +34,18 @@ describe("ciphertext-drift", () => {
     expect(DRIFT_INSTALL_SQL).toContain("CREATE TRIGGER ciphertext_drift_injector");
     expect(DRIFT_CLEANUP_SQL).toContain("DROP TRIGGER IF EXISTS ciphertext_drift_injector");
     expect(DRIFT_CLEANUP_SQL).toContain("DROP TABLE IF EXISTS drift_injection_state");
+  });
+
+  test("findDriftWarning prefers the injected handle but falls back to any drift warning", () => {
+    const other = '{"message":"Drift detected: observed multiple digest variants for handle","handle":"0xaaaa"}';
+    const exact = '{"message":"Drift detected: observed multiple digest variants for handle","handle":"0xbbbb"}';
+    expect(findDriftWarning(`${other}\n${exact}`, "bbbb")).toEqual({
+      handleHex: "bbbb",
+      exact: true,
+    });
+    expect(findDriftWarning(other, "bbbb")).toEqual({
+      handleHex: "aaaa",
+      exact: false,
+    });
   });
 });

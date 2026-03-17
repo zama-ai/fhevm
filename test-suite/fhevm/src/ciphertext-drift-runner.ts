@@ -10,6 +10,7 @@ import {
 
 const DRIFT_WARNING =
   '"message":"Drift detected: observed multiple digest variants for handle"';
+const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 
 type DriftInjectorOptions = {
   instanceIndex: number;
@@ -24,6 +25,30 @@ type DriftLogOptions = {
   since: string;
   timeoutSeconds: number;
   pollIntervalSeconds: number;
+};
+
+export type DriftWarningMatch = {
+  container: string;
+  handleHex?: string;
+  exact: boolean;
+};
+
+export const findDriftWarning = (
+  output: string,
+  expectedHandleHex: string,
+): Omit<DriftWarningMatch, "container"> | undefined => {
+  let fallback: Omit<DriftWarningMatch, "container"> | undefined;
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.includes(DRIFT_WARNING)) {
+      continue;
+    }
+    const matchedHandle = line.match(DRIFT_HANDLE)?.[1];
+    if (matchedHandle?.toLowerCase() === expectedHandleHex.toLowerCase()) {
+      return { handleHex: matchedHandle, exact: true };
+    }
+    fallback ??= { handleHex: matchedHandle, exact: false };
+  }
+  return fallback;
 };
 
 const psql = (
@@ -143,15 +168,21 @@ export const waitForDriftWarning = (
   Effect.gen(function* () {
     const cmd = yield* CommandRunner;
     const containers = yield* coprocessorGwListeners;
+    let detected: DriftWarningMatch | undefined;
     for (const container of containers) {
       const logs = yield* cmd.run(
         ["docker", "logs", "--since", options.since, container],
         { allowFailure: true },
       );
       const output = logs.stdout + logs.stderr;
-      if (output.includes(DRIFT_WARNING) && output.includes(`"handle":"0x${handleHex}"`)) {
-        return container;
+      const match = findDriftWarning(output, handleHex);
+      if (match?.exact) {
+        return { container, ...match };
       }
+      detected ??= match ? { container, ...match } : undefined;
+    }
+    if (detected) {
+      return detected;
     }
     return yield* Effect.fail("not-ready" as const);
   }).pipe(
@@ -174,7 +205,7 @@ export const waitForDriftWarning = (
     Effect.mapError((error) =>
       error === "not-ready"
         ? new PreflightError({
-            message: `drift warning was not observed for injected handle ${handleHex}`,
+            message: `drift warning was not observed after injecting handle ${handleHex}`,
           })
         : error,
     ),

@@ -86,15 +86,20 @@ export const test = (
                 ],
                 "test ciphertext-drift",
               );
-              const handleHex = yield* Fiber.join(injector);
-              return yield* waitForDriftWarning(handleHex, {
+              const injectedHandleHex = yield* Fiber.join(injector);
+              const warning = yield* waitForDriftWarning(injectedHandleHex, {
                 since: logSince,
                 timeoutSeconds: driftAlertTimeoutSeconds,
                 pollIntervalSeconds: driftAlertPollIntervalSeconds,
-              });
+                });
+              return { injectedHandleHex, warning };
             }),
         );
-        yield* Effect.log(`[drift] detected in ${detected}`);
+        yield* Effect.log(
+          detected.warning.exact
+            ? `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`
+            : `[drift] detected in ${detected.warning.container} for handle 0x${detected.warning.handleHex ?? "unknown"} after injecting 0x${detected.injectedHandleHex}`,
+        );
         yield* Effect.log(`[pass] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);
       } catch (error) {
         yield* Effect.log(`[fail] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);

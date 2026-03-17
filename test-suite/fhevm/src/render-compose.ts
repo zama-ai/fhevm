@@ -142,6 +142,7 @@ export const rewriteCoprocessorDependsOn = (
   );
 
 export const applyInstanceAdjustments = (
+  baseServiceName: string,
   service: Record<string, unknown>,
   envFileValue: string,
   envVars: Record<string, string>,
@@ -151,14 +152,15 @@ export const applyInstanceAdjustments = (
   },
   compatArgs: CompatPolicy["coprocessorArgs"] = {},
   compatDropFlags: CompatPolicy["coprocessorDropFlags"] = {},
+  compatDisableHealthcheck: CompatPolicy["coprocessorDisableHealthcheck"] = {},
 ) => {
   const next = interpolateComposeValue(structuredClone(service), envVars) as Record<string, unknown>;
-  const containerName = String(next.container_name ?? "");
+  const serviceKey = baseServiceName.replace(/^coprocessor-/, "");
   const command = Array.isArray(next.command) ? next.command.map((item) => String(item)) : undefined;
   if (command?.some((item) => item.startsWith("--key-cache-size"))) {
     next.command = command.map((item) => item.replace("--key-cache-size", "--tenant-key-cache-size"));
   }
-  if (containerName.endsWith("gw-listener")) {
+  if (compatDisableHealthcheck[serviceKey as keyof CompatPolicy["coprocessorDisableHealthcheck"]]) {
     next.healthcheck = { disable: true };
   }
   next.env_file = [envFileValue];
@@ -167,10 +169,7 @@ export const applyInstanceAdjustments = (
   }
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
-    const key = containerName.replace(
-      /^coprocessor\d*-/,
-      "",
-    ) as keyof CompatPolicy["coprocessorArgs"];
+    const key = serviceKey as keyof CompatPolicy["coprocessorArgs"];
     const dropFlags = compatDropFlags[key] ?? [];
     const filtered: string[] = [];
     for (let index = 0; index < current.length; index += 1) {
@@ -197,8 +196,7 @@ export const applyInstanceAdjustments = (
   }
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
-    const key = containerName.replace(/^coprocessor\d*-/, "");
-    next.command = mergeArgs(current, override.args[key] ?? override.args["*"] ?? []);
+    next.command = mergeArgs(current, override.args[serviceKey] ?? override.args["*"] ?? []);
   }
   return next;
 };
@@ -296,13 +294,16 @@ const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
           instance.source.mode === "local" && localServicesForInstance(instance).has(name);
         const compatArgs = locallyBuilt ? {} : compat.coprocessorArgs;
         const compatDropFlags = locallyBuilt ? {} : compat.coprocessorDropFlags;
+        const compatDisableHealthcheck = locallyBuilt ? {} : compat.coprocessorDisableHealthcheck;
         const adjusted = applyInstanceAdjustments(
+          name,
           service,
           envFileValue,
           instanceEnv,
           instance,
           compatArgs,
           compatDropFlags,
+          compatDisableHealthcheck,
         );
         adjusted.container_name = serviceName;
         applyCoprocessorSource(adjusted, name, instance);

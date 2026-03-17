@@ -77,6 +77,13 @@ export type CliError =
   | PreflightError
   | SchemaGuardError;
 
+const buildKitDnsHint = (stderr: string) =>
+  /(no such host|temporary failure in name resolution|failed to resolve|dns|lookup .* on .*:53)/i.test(
+    stderr,
+  )
+    ? "\nHint: Docker BuildKit could not resolve an external host. Check Docker DNS / proxy settings and retry."
+    : "";
+
 export const formatCliError = (error: unknown): string | undefined => {
   if (!error || typeof error !== "object") {
     return error === undefined ? undefined : String(error);
@@ -104,7 +111,7 @@ export const formatCliError = (error: unknown): string | undefined => {
       }
       case "BuildError": {
         const build = error as BuildError;
-        return `${build.component} build failed\n${build.stderr}`.trim();
+        return `${build.component} build failed\n${build.stderr}${buildKitDnsHint(build.stderr)}`.trim();
       }
       case "ProbeTimeout": {
         const timeout = error as ProbeTimeout;

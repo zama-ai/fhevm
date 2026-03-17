@@ -22,7 +22,6 @@ import { testCommand } from "./commands/test.cmd";
 import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
 import { compatDefaultsCommand } from "./commands/compat-defaults.cmd";
-import { doctorCommand } from "./commands/doctor.cmd";
 
 // Re-export parse helpers for backward compatibility
 export {
@@ -47,7 +46,6 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     pauseCommand,
     unpauseCommand,
     compatDefaultsCommand,
-    doctorCommand,
   ]),
 );
 
@@ -68,12 +66,19 @@ export const main = async (
   argv = process.argv,
   layerOverride?: Layer.Layer<any, never, never>,
 ) => {
+  if (argv[2] === "doctor") {
+    console.error("`doctor` was removed; use `fhevm-cli up --dry-run ...`");
+    process.exitCode = 1;
+    return;
+  }
   const layer = layerOverride ?? LiveLayer;
+  let failure: unknown;
 
   const program = cli(argv).pipe(
     Effect.provide(layer),
     Effect.provide(BunContext.layer),
     Effect.catchAll((error) => {
+      failure = error;
       const message = formatCliError(error);
       if (message) {
         console.error(message);
@@ -86,7 +91,14 @@ export const main = async (
   await Effect.runPromise(program as Effect.Effect<void, never, never>);
 
   // Show resume hint if 'up' failed
-  if (process.exitCode === 1) {
+  if (
+    process.exitCode === 1 &&
+    !argv.includes("--dry-run") &&
+    failure &&
+    typeof failure === "object" &&
+    "_tag" in failure &&
+    !["PreflightError", "ResumeError", "SchemaGuardError"].includes(String((failure as { _tag?: string })._tag))
+  ) {
     const command = argv[2];
     if (command === "up" || command === "deploy") {
       try {

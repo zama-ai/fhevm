@@ -25,6 +25,8 @@ export const logs = (service: string | undefined, options: { follow: boolean } =
     const requested = service
       ? LOG_TARGETS[service] ?? service
       : undefined;
+    const matchesRequested = (item: string) =>
+      !requested || item === requested || item.endsWith(`-${requested}`);
     const list = (includeExited: boolean) =>
       cmd
         .run(dockerPsNames(includeExited), { allowFailure: true })
@@ -42,7 +44,7 @@ export const logs = (service: string | undefined, options: { follow: boolean } =
         .split("\n")
         .map((item: string) => item.trim())
         .filter(Boolean)
-        .filter((item: string) => !service || item.includes(service));
+        .filter(matchesRequested);
     let containers = pickContainers(running.stdout);
     const hasRequestedMatch = () =>
       requested

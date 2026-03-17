@@ -27,4 +27,25 @@ describe("logs", () => {
     );
     expect(liveCalls).toEqual([["docker", "logs", "--tail", "200", "coprocessor-gw-listener"]]);
   });
+
+  test("resolves aliases before matching candidate containers", async () => {
+    const liveCalls: string[][] = [];
+    await Effect.runPromise(
+      logs("gateway", { follow: false }).pipe(
+        Effect.provide(
+          depsToLayer({
+            runner: fakeRunner({
+              "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}":
+                "gateway-sc-deploy\ngateway-mocked-payment\ngateway-node",
+            }),
+            liveRunner: async (argv: string[]) => {
+              liveCalls.push(argv);
+              return 0;
+            },
+          }),
+        ),
+      ),
+    );
+    expect(liveCalls).toEqual([["docker", "logs", "--tail", "200", "gateway-node"]]);
+  });
 });

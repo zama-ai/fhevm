@@ -7,7 +7,11 @@
  */
 import { Effect } from "effect";
 
-import { validateBundleCompatibility, requiresMultichainAclAddress } from "./compat";
+import {
+  compatPolicyForState,
+  requiresMultichainAclAddress,
+  validateBundleCompatibility,
+} from "./compat";
 import { ensureLockSnapshot } from "./cache";
 import {
   generatedComposeComponents,
@@ -16,6 +20,7 @@ import {
   serviceNameList,
 } from "./codegen";
 import { runtimePlanForState } from "./runtime-plan";
+import { effectiveOverrides } from "./scenario";
 import { describeBundle } from "./resolve";
 import {
   BootstrapTimeout,
@@ -183,7 +188,7 @@ export const coprocessorServicesForOverrides = (
 };
 
 export const validateDiscovery = (
-  state: Pick<State, "target" | "versions" | "discovery" | "overrides">,
+  state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">,
 ): Effect.Effect<void, PreflightError> =>
   Effect.gen(function* () {
     const discovery = state.discovery;
@@ -437,6 +442,7 @@ export const preflight = (
 export const assertSchemaCompatibility = (
   bundle: VersionBundle,
   overrides: LocalOverride[],
+  scenario: State["scenario"],
   allowSchemaMismatch: boolean,
 ) =>
   Effect.gen(function* () {
@@ -444,7 +450,7 @@ export const assertSchemaCompatibility = (
       return;
     }
     const cmd = yield* CommandRunner;
-    for (const item of partialSchemaOverrides(overrides)) {
+    for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
       const guard =
         SCHEMA_GUARDS[item.group as keyof typeof SCHEMA_GUARDS];
       if (!guard) {
@@ -660,12 +666,17 @@ const waitForCoprocessorServices = (
 ) =>
   Effect.gen(function* () {
     const probe = yield* ContainerProbe;
+    const compat = compatPolicyForState(runtimePlanForState(state));
+    const legacyGwListener =
+      compat.coprocessorDisableHealthcheck["gw-listener"] === true;
     for (let index = 0; index < state.topology.count; index += 1) {
       if (!skipMigration) {
         yield* probe.waitForComplete(toServiceName("db-migration", index));
       }
       yield* probe.waitForRunning(toServiceName("host-listener", index));
-      yield* probe.waitForRunning(toServiceName("gw-listener", index));
+      yield* (legacyGwListener
+        ? probe.waitForRunning(toServiceName("gw-listener", index))
+        : probe.waitForHealthy(toServiceName("gw-listener", index)));
       yield* probe.waitForRunning(toServiceName("tfhe-worker", index));
       yield* probe.waitForRunning(toServiceName("zkproof-worker", index));
       yield* probe.waitForRunning(toServiceName("sns-worker", index));

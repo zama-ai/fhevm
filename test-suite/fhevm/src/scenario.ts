@@ -270,6 +270,53 @@ const mergeOverrideServices = (overrides: LocalOverride[]) => {
   return [...new Set(coprocessorOverrides.flatMap((item) => item.services ?? []))];
 };
 
+export const localCoprocessorOverride = (
+  scenario: Pick<ResolvedCoprocessorScenario, "instances">,
+): LocalOverride | undefined => {
+  const localInstances = scenario.instances.filter(
+    (instance) => instance.source.mode === "local",
+  );
+  if (!localInstances.length) {
+    return undefined;
+  }
+  if (localInstances.some((instance) => !instance.localServices?.length)) {
+    return { group: "coprocessor" };
+  }
+  return {
+    group: "coprocessor",
+    services: [...new Set(localInstances.flatMap((instance) => instance.localServices ?? []))],
+  };
+};
+
+export const effectiveOverrides = (
+  overrides: LocalOverride[],
+  scenario: Pick<ResolvedCoprocessorScenario, "instances">,
+): LocalOverride[] => {
+  const local = localCoprocessorOverride(scenario);
+  if (!local) {
+    return overrides;
+  }
+  const existing = overrides.find((override) => override.group === "coprocessor");
+  if (!existing) {
+    return [...overrides, local];
+  }
+  if (!existing.services?.length || !local.services?.length) {
+    return overrides.map((override) =>
+      override.group === "coprocessor" ? { group: "coprocessor" } : override,
+    );
+  }
+  const existingServices = existing.services ?? [];
+  const localServices = local.services ?? [];
+  return overrides.map((override) =>
+    override.group === "coprocessor"
+      ? {
+          group: "coprocessor",
+          services: [...new Set([...existingServices, ...localServices])],
+        }
+      : override,
+  );
+};
+
 export const synthesizeOverrideScenario = (
   overrides: LocalOverride[],
 ): ResolvedCoprocessorScenario | undefined => {
