@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEnvMap, rewriteRelayerConfig } from "./EnvWriter";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { resolveEnvMap, rewriteRelayerConfig, writeWritableFile } from "./EnvWriter";
 
 describe("resolveEnvMap", () => {
   test("resolves single-level interpolation", () => {
@@ -84,5 +87,15 @@ describe("rewriteRelayerConfig", () => {
     const state = { versions: { target: "latest-release" as const, lockName: "t", env: { RELAYER_VERSION: "v0.9.0" }, sources: [] } };
     const result = rewriteRelayerConfig(config, state);
     expect(result).toEqual(config);
+  });
+});
+
+describe("writeWritableFile", () => {
+  test("writes files with group/world writable mode for bind-mounted address artifacts", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-env-writer-"));
+    const file = path.join(dir, ".env.gateway");
+    await writeWritableFile(file, "A=1\n");
+    const stat = await fs.stat(file);
+    expect(stat.mode & 0o777).toBe(0o666);
   });
 });

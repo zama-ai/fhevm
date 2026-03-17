@@ -39,6 +39,11 @@ const ensureWritableDir = async (dir: string) => {
   await fs.chmod(dir, 0o777);
 };
 
+export const writeWritableFile = async (file: string, contents: string) => {
+  await fs.writeFile(file, contents);
+  await fs.chmod(file, 0o666);
+};
+
 export { resolveEnvMap } from "../render-env";
 export { rewriteRelayerConfig } from "../render-config";
 
@@ -137,25 +142,25 @@ export class EnvWriter extends Context.Tag("EnvWriter")<
                 ),
               );
               if (state.discovery) {
-                await fs.writeFile(
+                await writeWritableFile(
                   gatewayAddressesPath,
                   renderGatewayAddressesEnv(state),
                 );
-                await fs.writeFile(
+                await writeWritableFile(
                   gatewayAddressesSolidityPath,
                   renderGatewayAddressesSolidity(state),
                 );
-                await fs.writeFile(
+                await writeWritableFile(
                   paymentBridgingAddressesSolidityPath,
                   renderPaymentBridgingAddressesSolidity(
                     rendered.componentEnvs["gateway-sc"],
                   ),
                 );
-                await fs.writeFile(
+                await writeWritableFile(
                   hostAddressesPath,
                   renderHostAddressesEnv(state),
                 );
-                await fs.writeFile(
+                await writeWritableFile(
                   hostAddressesSolidityPath,
                   renderHostAddressesSolidity(state),
                 );
