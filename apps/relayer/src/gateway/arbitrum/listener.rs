@@ -4,7 +4,6 @@ use crate::{
     config::settings::GatewayConfig,
     core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
     core::job_id::INTERNAL_EVENT_JOB_ID,
-    gateway::arbitrum::bindings::{Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
     logging::ListenerStep,
     orchestrator::{HealthCheck, Orchestrator},
@@ -16,7 +15,6 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     pubsub::{Subscription, SubscriptionStream},
     rpc::types::{BlockNumberOrTag, Filter, Log},
-    sol_types::SolEvent,
     transports::ws::WebSocketConfig,
 };
 use async_trait::async_trait;
@@ -488,22 +486,9 @@ impl ArbitrumListener {
         contract_addresses: &[Address],
         starting_block: u64,
     ) -> anyhow::Result<Subscription<Log>> {
-        // All gateway response events the relayer handles
-        let event_signatures = vec![
-            // User decrypt: shares + consensus
-            Decryption::UserDecryptionResponse::SIGNATURE_HASH,
-            Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
-            // Public decrypt
-            Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
-            // Input proof: accept + reject
-            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
-            InputVerification::RejectProofResponse::SIGNATURE_HASH,
-        ];
-
         let filter = Filter::new()
             .from_block(BlockNumberOrTag::Number(starting_block))
-            .address(contract_addresses.to_vec())
-            .event_signature(event_signatures);
+            .address(contract_addresses.to_vec());
 
         provider
             .subscribe_logs(&filter)
