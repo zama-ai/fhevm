@@ -23,3 +23,8 @@
   - [Swap ERC7984 to ERC7984](openzeppelin/swapERC7984ToERC7984.md)
 - [Vesting Wallet](openzeppelin/vesting-wallet.md)
 - [Integration guide for wallets](./wallet-guide.md)
+
+## Auctions
+
+- [Sealed-Bid Auction](sealed-bid-auction.md)
+  - [Tutorial](sealed-bid-auction-tutorial.md)

@@ -1,4 +1,4 @@
-This section contains comprehensive guides and examples for using [OpenZeppelin's confidential smart contracts library](https://github.com/OpenZeppelin/openzeppelin-confidential-contracts) with FHEVM. The library provides contracts and utilities that utilize the FHE (Fully Homomorphic Encryption) capabilities of the Zama fhEVM coprocessor to perform confidential transactions.
+This section contains comprehensive guides and examples for using [OpenZeppelin's confidential smart contracts library](https://github.com/OpenZeppelin/openzeppelin-confidential-contracts) with FHEVM. The library provides contracts and utilities that utilize the FHE (Fully Homomorphic Encryption) capabilities of the Zama Protocol to perform confidential transactions.
 
 The library includes the ERC7984 confidential fungible token standard, an ERC20-to-ERC7984 wrapper, confidential vesting wallets, and encrypted voting utilities. See the [official OpenZeppelin documentation](https://docs.openzeppelin.com/confidential-contracts) for more details.
 
