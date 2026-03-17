@@ -25,12 +25,9 @@ export const test = (
       );
     }
 
-    // ciphertext-drift is a special orchestration test that shells out to a
-    // dedicated bash script (SQL trigger injection + log polling).
-    // TODO: rewrite scripts/inject-coprocessor-drift.sh and
-    // scripts/run-ciphertext-drift-e2e.sh in Bun/Effect-TS to eliminate the
-    // bash dependency and integrate with the Effect service layer (CommandRunner,
-    // ContainerProbe patterns).
+    // ciphertext-drift still uses a small bash orchestrator for the test/log
+    // loop, but the trigger injection itself now runs through Bun so the drift
+    // path stays inside the typed CLI codebase.
     if (testName === "ciphertext-drift") {
       yield* Effect.log("[test] ciphertext-drift");
       const started = Date.now();

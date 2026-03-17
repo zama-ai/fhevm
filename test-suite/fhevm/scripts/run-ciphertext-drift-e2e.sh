@@ -39,7 +39,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-"${SCRIPT_DIR}/inject-coprocessor-drift.sh" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
+bun run "${SCRIPT_DIR}/inject-coprocessor-drift.ts" "$FAULTY_INSTANCE_INDEX" > "$HANDLE_FILE" &
 injector_pid=$!
 
 test_exit=0
