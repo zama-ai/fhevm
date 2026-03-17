@@ -82,6 +82,7 @@ async fn setup_test_app_custom_docker(
     mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
     let container = GenericImage::new("postgres", "15.7")
+        .with_exposed_port(5432.into())
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
         ))
