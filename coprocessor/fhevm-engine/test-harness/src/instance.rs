@@ -78,11 +78,13 @@ async fn setup_test_app_existing_localhost(
     })
 }
 
+const POSTGRES_PORT: u16 = 5432;
+
 async fn setup_test_app_custom_docker(
     mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
     let container = GenericImage::new("postgres", "15.7")
-        .with_exposed_port(5432.into())
+        .with_exposed_port(POSTGRES_PORT.into())
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
         ))
@@ -95,7 +97,7 @@ async fn setup_test_app_custom_docker(
     info!("Postgres container started");
 
     let cont_host = container.get_host().await?;
-    let cont_port = container.get_host_port_ipv4(5432).await?;
+    let cont_port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
 
     let admin_db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/postgres");
     let db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/coprocessor");
