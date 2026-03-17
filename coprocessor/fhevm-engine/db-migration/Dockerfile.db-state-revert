@@ -1,0 +1,6 @@
+FROM cgr.dev/zama.ai/postgres:17
+
+COPY coprocessor/fhevm-engine/db-migration/db-scripts/revert_coprocessor_db_state.sql /revert_coprocessor_db_state.sql
+COPY coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
+
+ENTRYPOINT ["/bin/bash", "/revert_coprocessor_db_state.sh"]
