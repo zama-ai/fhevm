@@ -80,7 +80,7 @@ jobs:
           persist-credentials: "false"
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1
 
       - name: Read version from package.json
         id: version
