@@ -89,4 +89,5 @@ jobs:
       - name: Publish to Soldeer
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_TOKEN }}
-        run: forge soldeer push @fhevm-solidity~${{ steps.version.outputs.version }} . --skip-warnings
+          VERSION: ${{ steps.version.outputs.version }}
+        run: forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings
