@@ -503,7 +503,7 @@ impl GatewayHandler {
         // Pre-compute hex-encoded values to avoid lifetime issues with closures
         let share_hex = hex::encode(&user_decrypt_response.userDecryptedShare);
         let kms_signature_hex = hex::encode(&user_decrypt_response.signature);
-        let extra_data_hex = hex::encode(&user_decrypt_response.extraData);
+        let extra_data_hex = format!("0x{}", hex::encode(&user_decrypt_response.extraData));
 
         let params = ShareInsertParams {
             gw_reference_id: user_decryption_id,

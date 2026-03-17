@@ -749,7 +749,7 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
         &helpers::v2_public_decrypt_post_url(&setup),
         base_payload,
         with_invalid_field("extraData", json!("invalid")),
-        expect_v2_validation_error("extraData", constants_validation::EXACT_MUST_BE_0X00),
+        expect_v2_validation_error("extraData", constants_validation::INVALID_EXTRA_DATA_FORMAT),
     )
     .await;
 
@@ -765,9 +765,9 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
 #[case::ciphertext_handle_without_0x_prefix("ciphertextHandles", json!(["abcdef123456789012345678901234567890123456789012345678901234567890"]), constants_validation::HEX_MUST_START_WITH_0X)]
 #[case::empty_string_ciphertext_handle("ciphertextHandles", json!([""]), constants_validation::HEX_MUST_START_WITH_0X)]
 // Extra data validation
-#[case::empty_extra_data("extraData", json!(""), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::empty_extra_data("extraData", json!(""), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
 #[tokio::test]
 async fn test_error_invalid_fields(
     #[case] field: &str,

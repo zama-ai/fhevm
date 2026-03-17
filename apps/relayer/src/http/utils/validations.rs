@@ -25,7 +25,8 @@ pub mod validation_messages {
     // Generic collection validation messages
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
-    pub const EXACT_MUST_BE_0X00: &str = "Must be 0x00";
+    pub const INVALID_EXTRA_DATA_FORMAT: &str =
+        "Must be 0x00 or versioned format: version byte followed by payload (e.g. 0x01 + bytes)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -96,10 +97,34 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
+/// Validates the extraData field format for decryption requests.
+///
+/// Accepted formats:
+/// - `"0x00"`: Legacy format (version 0)
+/// - `"0x01" + 64 hex chars`: Versioned format (version 1: 1 byte version + 32 bytes payload)
+pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
+    match extra_data {
+        "0x00" => Ok(()),
+        s if s.len() == 68 && s.starts_with("0x01") => {
+            // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
+            hex::decode(&s[2..]).map_err(|_| {
+                ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+            })?;
+            Ok(())
+        }
+        _ => Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
+    }
+}
+
+/// Validates the extraData field for input proof requests.
+///
+/// Only accepts `"0x00"` for now. Versioned extraData for input proofs will come in a future release.
+pub fn validate_extra_data_field_input_proof(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
         return Err(ValidationError::new("validation_error")
-            .with_message(validation_messages::EXACT_MUST_BE_0X00.into()));
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
     }
     Ok(())
 }

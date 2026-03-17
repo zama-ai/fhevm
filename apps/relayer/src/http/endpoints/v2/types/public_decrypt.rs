@@ -14,7 +14,7 @@ pub struct PublicDecryptRequestJson {
     )]
     pub ciphertext_handles: Vec<String>,
     #[schema(value_type = String, example = "0x00")]
-    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
 }
 

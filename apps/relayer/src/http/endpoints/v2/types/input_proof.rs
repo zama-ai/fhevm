@@ -25,7 +25,7 @@ pub struct InputProofRequestJson {
     )]
     #[derivative(Debug(format_with = "redact_len"))]
     pub ciphertext_with_input_verification: String,
-    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field_input_proof"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
 }

@@ -875,7 +875,7 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
         &helpers::v2_delegated_user_decrypt_post_url(&setup),
         base_payload,
         with_invalid_field("extraData", json!("invalid")),
-        expect_v2_validation_error("extraData", constants_validation::EXACT_MUST_BE_0X00),
+        expect_v2_validation_error("extraData", constants_validation::INVALID_EXTRA_DATA_FORMAT),
     )
     .await;
 
@@ -978,9 +978,9 @@ async fn test_error_invalid_fields_set_2(
 #[case::public_key_with_0x_prefix("publicKey", json!("0xabcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants_validation::HEX_MUST_NOT_START_WITH_0X)]
 #[case::public_key_with_invalid_hex_g("publicKey", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890g"), constants_validation::HEX_INVALID_STRING)]
 #[case::empty_public_key("publicKey", json!(""), constants_validation::MUST_NOT_BE_EMPTY)]
-#[case::empty_extra_data("extraData", json!(""), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::empty_extra_data("extraData", json!(""), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
 #[tokio::test]
 async fn test_error_invalid_fields_set_3(
     #[case] field: &str,

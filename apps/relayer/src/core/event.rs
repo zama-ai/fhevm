@@ -680,15 +680,8 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // Validate and parse extraData
-        let extra_data = if value.extra_data == "0x00" {
-            Bytes::from(vec![0x00])
-        } else {
-            return Err(anyhow::anyhow!(
-                "extraData must be 0x00, got: {}",
-                value.extra_data
-            ));
-        };
+        // Parse extraData (validated at HTTP layer)
+        let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
@@ -751,15 +744,8 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // Validate and parse extraData
-        let extra_data = if value.extra_data == "0x00" {
-            Bytes::from(vec![0x00])
-        } else {
-            return Err(anyhow::anyhow!(
-                "extraData must be 0x00, got: {}",
-                value.extra_data
-            ));
-        };
+        // Parse extraData (validated at HTTP layer)
+        let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(DelegatedUserDecryptRequest {
             ct_handle_contract_pairs,
@@ -957,15 +943,9 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         })?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
-        // Validate and parse extraData
-        let extra_data = if json.extra_data == "0x00" {
-            Bytes::from(vec![0x00])
-        } else {
-            return Err(anyhow::anyhow!(
-                "extraData must be 0x00, got: {}",
-                json.extra_data
-            ));
-        };
+        // Parse extraData (validated at HTTP layer)
+        let extra_data = Bytes::from_str(&json.extra_data)?;
+
         Ok(InputProofRequest {
             contract_chain_id,
             contract_address,

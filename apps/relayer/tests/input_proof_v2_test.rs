@@ -818,9 +818,9 @@ async fn test_error_invalid_fields_set_2(
 #[case::ciphertext_with_invalid_hex_g("ciphertextWithInputVerification", json!("abcdefg"), constants_validation::HEX_INVALID_STRING)]
 #[case::ciphertext_with_0x_prefix("ciphertextWithInputVerification", json!("0xabcdef"), constants_validation::HEX_MUST_NOT_START_WITH_0X)]
 // Extra data validation
-#[case::empty_extra_data("extraData", json!(""), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::EXACT_MUST_BE_0X00)]
-#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::empty_extra_data("extraData", json!(""), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
 #[tokio::test]
 async fn test_error_invalid_fields_set_3(
     #[case] field: &str,

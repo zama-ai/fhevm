@@ -39,7 +39,7 @@ pub struct UserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[derivative(Debug(format_with = "redact_len"))]
     pub public_key: String,
-    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
 }
@@ -76,7 +76,7 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(length(min = 2, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     pub public_key: String,
-    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
 }
@@ -105,16 +105,13 @@ pub struct UserDecryptResponseJson {
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct UserDecryptResponsePayloadJson {
     #[schema(value_type = String)]
     pub payload: Bytes,
     #[schema(value_type = String)]
     pub signature: Bytes,
-    // Note: extra_data field is not serialized for TKMS library compatibility (used while decrypting to plain text)
-    // TODO: Check with TKMS library and re-align if needed
-    // serde(skip) - field is completely skipped during serialization AND deserialization
     #[schema(value_type = String)]
-    #[serde(skip)]
     pub extra_data: String,
 }
 
@@ -124,9 +121,10 @@ impl Serialize for UserDecryptResponsePayloadJson {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 2)?;
+        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 3)?;
         state.serialize_field("payload", &serialize_vec_as_hex(&self.payload.to_vec()))?;
         state.serialize_field("signature", &serialize_vec_as_hex(&self.signature.to_vec()))?;
+        state.serialize_field("extraData", &self.extra_data)?;
         state.end()
     }
 }
