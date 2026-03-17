@@ -16,7 +16,14 @@ import {
   COMPONENTS,
 } from "./layout";
 import type { ResolvedCoprocessorScenarioInstance, State } from "./types";
-import { ensureDir, mergeArgs, readEnvFile, remove, toServiceName } from "./utils";
+import {
+  ensureDir,
+  exists,
+  mergeArgs,
+  readEnvFile,
+  remove,
+  toServiceName,
+} from "./utils";
 
 export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
@@ -220,6 +227,35 @@ export const loadComposeDoc = (component: string) =>
       new Error(`Failed to load compose template for ${component}: ${cause}`),
   });
 
+export const loadGeneratedComposeDoc = (component: string) =>
+  Effect.tryPromise({
+    try: () =>
+      fs
+        .readFile(composePath(component), "utf8")
+        .then((text) => YAML.parse(text) as ComposeDoc),
+    catch: (cause) =>
+      new Error(`Failed to load generated compose override for ${component}: ${cause}`),
+  });
+
+export const mergeComposeDocs = (base: ComposeDoc, override: ComposeDoc): ComposeDoc => ({
+  ...base,
+  ...override,
+  services: {
+    ...(base.services ?? {}),
+    ...(override.services ?? {}),
+  },
+});
+
+export const loadMergedComposeDoc = (component: string) =>
+  Effect.gen(function* () {
+    const base = yield* loadComposeDoc(component);
+    if (!(yield* Effect.promise(() => exists(composePath(component))))) {
+      return base;
+    }
+    const override = yield* loadGeneratedComposeDoc(component);
+    return mergeComposeDocs(base, override);
+  });
+
 const localServicesForInstance = (instance: ResolvedCoprocessorScenarioInstance) =>
   new Set(instance.localServices ?? GROUP_BUILD_SERVICES["coprocessor"]);
 
@@ -293,12 +329,18 @@ export const buildComposeOverride = (
     if (component === "coprocessor") {
       return yield* buildCoprocessorOverride(state, plan);
     }
-    const doc = rewriteComposePaths(structuredClone(yield* loadComposeDoc(component)));
+    const template = rewriteComposePaths(structuredClone(yield* loadComposeDoc(component)));
     const overridden = overriddenServicesForComponent(plan, component);
-    for (const [name, service] of Object.entries(doc.services)) {
-      applyBuildPolicy(service, overridden.has(name));
+    const services: ComposeDoc["services"] = {};
+    for (const [name, service] of Object.entries(template.services)) {
+      if (!overridden.has(name)) {
+        continue;
+      }
+      const next = structuredClone(service);
+      applyBuildPolicy(next, true);
+      services[name] = next;
     }
-    return doc;
+    return { services };
   });
 
 export const generatedComposeComponents = (plan: Pick<RuntimePlan, "overrides">) =>

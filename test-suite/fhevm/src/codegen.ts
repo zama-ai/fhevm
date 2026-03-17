@@ -18,6 +18,8 @@ export {
   interpolateString,
   localInstanceTag,
   loadComposeDoc,
+  loadMergedComposeDoc,
+  mergeComposeDocs,
   overriddenServicesForComponent,
   resolvedComposeEnv,
   resolveComposePath,

@@ -107,15 +107,12 @@ const upHandler = (parsed: {
         }),
       );
     }
-    const topology = { count: 1, threshold: 1 };
-
     if (parsed.dryRun) {
       yield* upDryRun({
         target: validTarget,
         requestedTarget: target as VersionTarget | undefined,
         sha,
         overrides,
-        topology,
         scenarioPath,
         fromStep,
         lockFile,
@@ -129,7 +126,6 @@ const upHandler = (parsed: {
         requestedTarget: target as VersionTarget | undefined,
         sha,
         overrides,
-        topology,
         scenarioPath,
         fromStep,
         lockFile,

@@ -1,15 +1,10 @@
 import { Context, Effect, Layer } from "effect";
-import fs from "node:fs/promises";
-import YAML from "yaml";
 import { CommandRunner } from "./CommandRunner";
 import { ContainerRunner } from "./ContainerRunner";
 import { BuildError, ContainerStartError } from "../errors";
 import type { BuiltImage, State } from "../types";
-import { GROUP_BUILD_COMPONENTS, GROUP_BUILD_SERVICES, effectiveComposePath } from "../layout";
-
-type ComposeDoc = Record<string, unknown> & {
-  services: Record<string, Record<string, unknown>>;
-};
+import { GROUP_BUILD_COMPONENTS, GROUP_BUILD_SERVICES } from "../layout";
+import { loadMergedComposeDoc, type ComposeDoc } from "../codegen";
 
 export class ImageBuilder extends Context.Tag("ImageBuilder")<
   ImageBuilder,
@@ -91,9 +86,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
         maybeBuild: (component, state, saveState) =>
           Effect.gen(function* () {
             if (component === "coprocessor") {
-              const doc = YAML.parse(
-                yield* Effect.promise(() => fs.readFile(effectiveComposePath(component), "utf8")),
-              ) as ComposeDoc;
+              const doc = yield* loadMergedComposeDoc(component);
               const services = Object.entries(doc.services)
                 .filter(([, service]) => !!service.build)
                 .map(([name]) => name);
@@ -126,10 +119,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
             for (const override of state.overrides) {
               if (!GROUP_BUILD_COMPONENTS[override.group].includes(component)) continue;
 
-              // Parse compose file once for the entire override
-              const doc = YAML.parse(
-                yield* Effect.promise(() => fs.readFile(effectiveComposePath(component), "utf8")),
-              ) as ComposeDoc;
+              const doc = yield* loadMergedComposeDoc(component);
               const available = new Set(Object.keys(doc.services));
               const candidates = override.services?.length
                 ? override.services

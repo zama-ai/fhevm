@@ -167,11 +167,14 @@ jobs:
         run: |
           set -euo pipefail
           args_file="$RUNNER_TEMP/fhevm-up-args"
+          scenario_file="$RUNNER_TEMP/fhevm-scenario.yaml"
           defaults=$(./fhevm-cli compat-defaults)
           modern_relayer_version=$(echo "$defaults" | jq -r .externalDefaults.RELAYER_VERSION)
           modern_relayer_migrate_version=$(echo "$defaults" | jq -r .externalDefaults.RELAYER_MIGRATE_VERSION)
           workspace_all=false
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n' --target latest-release --coprocessors 2 --threshold 2 > "$args_file"
+          coprocessor_local=false
+          coprocessor_local_services=()
+          scenario_path="./scenarios/two-of-two.yaml"
           case "$IMAGE_MODE" in
             registry)
               if [ -n "$WORKSPACE_OVERRIDE" ]; then
@@ -191,10 +194,51 @@ jobs:
                 [ -n "$override" ] || continue
                 if [ "$override" = "all" ]; then
                   workspace_all=true
+                  coprocessor_local=true
+                  continue
                 fi
-                printf '%s\n%s\n' --override "$override" >> "$args_file"
+                if [ "$override" = "coprocessor" ]; then
+                  coprocessor_local=true
+                  continue
+                fi
+                if [[ "$override" == coprocessor:* ]]; then
+                  coprocessor_local=true
+                  suffixes="${override#coprocessor:}"
+                  IFS=',' read -r -a services <<< "$suffixes"
+                  for service in "${services[@]}"; do
+                    service="${service#"${service%%[![:space:]]*}"}"
+                    service="${service%"${service##*[![:space:]]}"}"
+                    [ -n "$service" ] || continue
+                    coprocessor_local_services+=("$service")
+                  done
+                  continue
+                fi
               done
-              if ! grep -qx -- --override "$args_file"; then
+              if [ "$coprocessor_local" = false ] && [ "${#overrides[@]}" -eq 0 ]; then
+                echo "::error::override did not contain any usable values"
+                exit 1
+              fi
+              if [ "$coprocessor_local" = true ]; then
+                {
+                  echo "version: 1"
+                  echo "kind: coprocessor-consensus"
+                  echo "topology:"
+                  echo "  count: 2"
+                  echo "  threshold: 2"
+                  echo "instances:"
+                  echo "  - index: 1"
+                  echo "    source:"
+                  echo "      mode: local"
+                  if [ "${#coprocessor_local_services[@]}" -gt 0 ]; then
+                    echo "    localServices:"
+                    for service in "${coprocessor_local_services[@]}"; do
+                      echo "      - ${service}"
+                    done
+                  fi
+                } > "$scenario_file"
+                scenario_path="$scenario_file"
+              fi
+              if [ -z "$WORKSPACE_OVERRIDE" ]; then
                 echo "::error::override did not contain any usable values"
                 exit 1
               fi
@@ -204,6 +248,29 @@ jobs:
               exit 1
               ;;
           esac
+          printf '%s\n%s\n%s\n%s\n' --target latest-release --scenario "$scenario_path" > "$args_file"
+          if [ "$IMAGE_MODE" = "workspace" ]; then
+            IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
+            for raw in "${overrides[@]}"; do
+              override="${raw#"${raw%%[![:space:]]*}"}"
+              override="${override%"${override##*[![:space:]]}"}"
+              [ -n "$override" ] || continue
+              case "$override" in
+                all)
+                  printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+                    --override gateway-contracts \
+                    --override host-contracts \
+                    --override kms-connector \
+                    --override test-suite >> "$args_file"
+                  ;;
+                coprocessor|coprocessor:*)
+                  ;;
+                *)
+                  printf '%s\n%s\n' --override "$override" >> "$args_file"
+                  ;;
+              esac
+            done
+          fi
           if { [ "$workspace_all" = true ] || [ "${STACK_ERA:-}" = "modern" ]; } && [ -z "${RELAYER_VERSION:-}" ]; then
             echo "RELAYER_VERSION=$modern_relayer_version" >> "$GITHUB_ENV"
           fi

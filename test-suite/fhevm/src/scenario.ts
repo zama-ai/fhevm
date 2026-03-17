@@ -10,6 +10,7 @@ import {
   GROUP_SERVICE_SUFFIXES,
   MAX_COPROCESSOR_INSTANCES,
   REPO_ROOT,
+  resolveServiceOverrides,
 } from "./layout";
 import type {
   CoprocessorInstanceSource,
@@ -171,11 +172,31 @@ export const parseCoprocessorScenario = (
     if (args !== undefined && (!args || typeof args !== "object" || Array.isArray(args))) {
       throw new Error(`${sourceLabel}: instances[${offset}].args must be a map`);
     }
+    const localServices = instance.localServices;
+    if (localServices !== undefined && !Array.isArray(localServices)) {
+      throw new Error(`${sourceLabel}: instances[${offset}].localServices must be an array`);
+    }
     const normalizedArgs = normalizeArgs(
       args as Record<string, unknown> | undefined,
       `${sourceLabel}: instances[${offset}].args`,
     );
     validateInstanceArgs(normalizedArgs, `${sourceLabel}: instances[${offset}]`);
+    const normalizedLocalServices = localServices
+      ? resolveServiceOverrides(
+          "coprocessor",
+          localServices.map((value, serviceIndex) =>
+            normalizeScalar(
+              value,
+              `${sourceLabel}: instances[${offset}].localServices[${serviceIndex}]`,
+            ),
+          ),
+        )
+      : undefined;
+    if (normalizedLocalServices && normalizedSource?.mode !== "local") {
+      throw new Error(
+        `${sourceLabel}: instances[${offset}].localServices requires source.mode=local`,
+      );
+    }
     return {
       index,
       source: normalizedSource,
@@ -186,6 +207,7 @@ export const parseCoprocessorScenario = (
         ]),
       ),
       args: normalizedArgs,
+      localServices: normalizedLocalServices,
     };
   });
   return {
@@ -231,6 +253,7 @@ export const resolveScenarioFile = (
         source: normalizeSource(instance?.source),
         env: { ...(instance?.env ?? {}) },
         args: normalizeArgs(instance?.args, "scenario.args"),
+        localServices: instance?.localServices,
       } satisfies ResolvedCoprocessorScenarioInstance;
     }),
   };

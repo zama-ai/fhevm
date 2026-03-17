@@ -3,11 +3,18 @@
  *
  * Runs e2e tests inside the fhevm-test-suite-e2e-debug container.
  */
-import path from "node:path";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 
 import { PreflightError } from "../errors";
-import { CLI_DIR, TEST_GREP, TEST_PARALLEL } from "../layout";
+import { TEST_GREP, TEST_PARALLEL } from "../layout";
+import {
+  parseDriftInstanceIndex,
+  parsePositiveInteger,
+} from "../ciphertext-drift";
+import {
+  waitForDriftWarning,
+  withDriftInjector,
+} from "../ciphertext-drift-runner";
 import { shellEscape, runWithHeartbeat } from "../pipeline";
 import { StateManager } from "../services/StateManager";
 import type { TestOptions } from "../types";
@@ -25,15 +32,69 @@ export const test = (
       );
     }
 
-    // ciphertext-drift still uses a small bash orchestrator for the test/log
-    // loop, but the trigger injection itself now runs through Bun so the drift
-    // path stays inside the typed CLI codebase.
     if (testName === "ciphertext-drift") {
       yield* Effect.log("[test] ciphertext-drift");
       const started = Date.now();
-      const script = path.join(CLI_DIR, "scripts", "run-ciphertext-drift-e2e.sh");
+      const logSince = new Date().toISOString();
+      const faultyInstanceIndex = parseDriftInstanceIndex(
+        process.env.FAULTY_INSTANCE_INDEX ?? "1",
+      );
+      const driftInjectTimeoutSeconds = parsePositiveInteger(
+        process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180",
+        "DRIFT_INJECT_TIMEOUT_SECONDS",
+      );
+      const driftInjectPollIntervalSeconds = parsePositiveInteger(
+        process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2",
+        "DRIFT_INJECT_POLL_INTERVAL_SECONDS",
+      );
+      const driftAlertTimeoutSeconds = parsePositiveInteger(
+        process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180",
+        "DRIFT_ALERT_TIMEOUT_SECONDS",
+      );
+      const driftAlertPollIntervalSeconds = parsePositiveInteger(
+        process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2",
+        "DRIFT_ALERT_POLL_INTERVAL_SECONDS",
+      );
+      const grepPattern =
+        process.env.GREP_PATTERN ??
+        "test user input uint64 \\(non-trivial\\)";
       try {
-        yield* runWithHeartbeat(["bash", script], "test ciphertext-drift");
+        const detected = yield* withDriftInjector(
+          {
+            instanceIndex: faultyInstanceIndex,
+            timeoutSeconds: driftInjectTimeoutSeconds,
+            pollIntervalSeconds: driftInjectPollIntervalSeconds,
+            postgresContainer:
+              process.env.POSTGRES_CONTAINER ?? "coprocessor-and-kms-db",
+            postgresUser: process.env.POSTGRES_USER ?? "postgres",
+            postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
+          },
+          (injector) =>
+            Effect.gen(function* () {
+              yield* runWithHeartbeat(
+                [
+                  "docker",
+                  "exec",
+                  "-e",
+                  "GATEWAY_RPC_URL=",
+                  process.env.TEST_CONTAINER ?? "fhevm-test-suite-e2e-debug",
+                  "./run-tests.sh",
+                  "-n",
+                  "staging",
+                  "-g",
+                  grepPattern,
+                ],
+                "test ciphertext-drift",
+              );
+              const handleHex = yield* Fiber.join(injector);
+              return yield* waitForDriftWarning(handleHex, {
+                since: logSince,
+                timeoutSeconds: driftAlertTimeoutSeconds,
+                pollIntervalSeconds: driftAlertPollIntervalSeconds,
+              });
+            }),
+        );
+        yield* Effect.log(`[drift] detected in ${detected}`);
         yield* Effect.log(`[pass] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);
       } catch (error) {
         yield* Effect.log(`[fail] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);

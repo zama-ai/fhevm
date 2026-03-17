@@ -341,6 +341,7 @@ Use `--scenario <file>` for consensus and rollout matrices. The file is the sour
 - per-instance source mode: `inherit`, `registry`, or `local`
 - per-instance env overrides
 - per-instance runtime args
+- optional `localServices` for local instances when only part of one coprocessor instance should be built from the workspace
 
 Examples:
 
@@ -349,6 +350,24 @@ Examples:
 ./fhevm-cli up --target latest-release --scenario ./scenarios/one-registry-outlier.yaml
 ./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml
 ```
+
+Selective local instance example:
+
+```yaml
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: local
+    localServices:
+      - host-listener
+```
+
+That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
 `--scenario` cannot be combined with `--override coprocessor`. Keep `--override coprocessor` for the fast local e2e loop; use scenarios when you need an explicit consensus matrix.
 

@@ -187,8 +187,10 @@ export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
 export const composePath = (name: string) => path.join(COMPOSE_OUT_DIR, `${name}.yml`);
 export const composeTemplatePath = (name: string) =>
   path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`);
-export const effectiveComposePath = (name: string) =>
-  existsSync(composePath(name)) ? composePath(name) : composeTemplatePath(name);
+export const composeFiles = (name: string) =>
+  existsSync(composePath(name))
+    ? [composeTemplatePath(name), composePath(name)]
+    : [composeTemplatePath(name)];
 export const versionsEnvPath = path.join(ENV_DIR, "versions.env");
 export const relayerConfigPath = path.join(GENERATED_CONFIG_DIR, "relayer.yaml");
 export const gatewayAddressesPath = path.join(ADDRESS_DIR, "gateway", ".env.gateway");
@@ -214,6 +216,5 @@ export const dockerArgs = (component: string) => [
   "compose",
   "-p",
   PROJECT,
-  "-f",
-  effectiveComposePath(component),
+  ...composeFiles(component).flatMap((file) => ["-f", file]),
 ];

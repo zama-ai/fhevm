@@ -87,5 +87,6 @@ the SHA-tagged images for every component built from the PR.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`, not "rerun the bash ritual and hope".
 - Tracked compose files are the default runtime truth. `.fhevm/compose` only contains generated overrides for coprocessor topology and active local-override components.
+- CI follows the same contract: multicopro runs use checked-in scenarios, and selective local coprocessor builds are expressed as generated scenario files instead of reviving removed multicopro flags.
 - `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.

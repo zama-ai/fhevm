@@ -42,6 +42,33 @@ instances:
     ]);
   });
 
+  test("parses localServices for local instances", () => {
+    const scenario = parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: local
+    localServices:
+      - host-listener
+`);
+    const resolved = resolveScenarioFile("/tmp/matrix.yml", scenario);
+    expect(resolved.instances[1]).toEqual({
+      index: 1,
+      source: { mode: "local" },
+      env: {},
+      args: {},
+      localServices: [
+        "coprocessor-host-listener",
+        "coprocessor-host-listener-poller",
+      ],
+    });
+  });
+
   test("rejects duplicate indices and invalid arg targets", () => {
     expect(() =>
       parseCoprocessorScenario(`
@@ -111,6 +138,20 @@ topology:
   threshold: 1
 `),
     ).toThrow("topology.count must be <= 5");
+
+    expect(() =>
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 1
+  threshold: 1
+instances:
+  - index: 0
+    localServices:
+      - host-listener
+`),
+    ).toThrow("instances[0].localServices requires source.mode=local");
   });
 });
 

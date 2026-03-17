@@ -60,7 +60,7 @@ export const runtimePlanFromResolved = (input: {
 export const runtimePlanForState = (
   state: Pick<
     State,
-    "requiresGitHub" | "target" | "versions" | "overrides" | "topology" | "scenario"
+    "requiresGitHub" | "target" | "versions" | "overrides" | "scenario"
   >,
 ): RuntimePlan =>
   runtimePlanFromResolved({

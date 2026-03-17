@@ -39,6 +39,7 @@ export type CoprocessorScenarioInstance = {
   source?: CoprocessorInstanceSource;
   env?: Record<string, string>;
   args?: Record<string, string[]>;
+  localServices?: string[];
 };
 
 export type CoprocessorScenario = {
@@ -134,7 +135,6 @@ export type UpOptions = {
   requestedTarget?: VersionTarget;
   sha?: string;
   overrides: LocalOverride[];
-  topology: Topology;
   scenarioPath?: string;
   fromStep?: StepName;
   lockFile?: string;
