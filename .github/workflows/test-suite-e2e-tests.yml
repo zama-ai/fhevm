@@ -269,7 +269,7 @@ jobs:
               esac
             done
           fi
-          FORCE_MODERN_RELAYER=$workspace_all ./scripts/resolve-workflow-compat-env.sh \
+          FORCE_MODERN_RELAYER=$workspace_all bash ./scripts/resolve-workflow-compat-env.sh \
             "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
             "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
             "${COPROCESSOR_GW_LISTENER_VERSION:-}" \
