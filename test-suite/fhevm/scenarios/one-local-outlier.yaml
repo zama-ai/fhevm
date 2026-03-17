@@ -1,0 +1,14 @@
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 3
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: local
+    env:
+      OTEL_SERVICE_NAME: coprocessor-1-local
+    args:
+      tfhe-worker:
+        - --coprocessor-fhe-threads=4

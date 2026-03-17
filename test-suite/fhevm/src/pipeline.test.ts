@@ -5,11 +5,14 @@ import {
   coprocessorHealthContainers,
   coprocessorServicesForOverrides,
   overrideWarnings,
+  preflight,
   resolveUpgradePlan,
   shellEscape,
   stateStepIndex,
   validateDiscovery,
 } from "./pipeline";
+import { depsToLayer, fakeRunner, portCheckResponses } from "./test-helpers";
+import { defaultCoprocessorScenario } from "./scenario";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import type { Discovery, LocalOverride, State } from "./types";
 import { STEP_NAMES } from "./types";
@@ -62,7 +65,8 @@ const stubState = (
     sources: [],
   },
   overrides: [],
-  topology: { count: 1, threshold: 1, instances: {} },
+  topology: { count: 1, threshold: 1 },
+  scenario: defaultCoprocessorScenario(),
   completedSteps: [],
   updatedAt: "2024-01-01T00:00:00.000Z",
   ...overrides,
@@ -143,6 +147,50 @@ describe("overrideWarnings", () => {
   });
 });
 
+describe("preflight", () => {
+  test("fails early when cast is unavailable", async () => {
+    const error = await Effect.runPromise(
+      preflight(stubState(), true, false).pipe(
+        Effect.provide(
+          depsToLayer({
+            runner: fakeRunner({
+              "which bun": "",
+              "which docker": "",
+              "which cast": { stdout: "", stderr: "", code: 1 },
+            }),
+          }),
+        ),
+        Effect.flip,
+      ),
+    );
+    expect(error.message).toContain('Required command "cast" not found');
+  });
+
+  test("fails early when docker is unavailable", async () => {
+    const error = await Effect.runPromise(
+      preflight(stubState(), true, false).pipe(
+        Effect.provide(
+          depsToLayer({
+            runner: fakeRunner({
+              "which bun": "",
+              "which docker": "",
+              "which cast": "",
+              "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": {
+                stdout: "",
+                stderr: "docker daemon unavailable",
+                code: 1,
+              },
+              ...portCheckResponses,
+            }),
+          }),
+        ),
+        Effect.flip,
+      ),
+    );
+    expect(error.message).toContain("docker daemon unavailable");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // resolveUpgradePlan
 // ---------------------------------------------------------------------------
@@ -163,11 +211,25 @@ describe("resolveUpgradePlan", () => {
   test("rejects when no matching override", () => {
     expect(() =>
       resolveUpgradePlan(stubState(), "coprocessor"),
-    ).toThrow("upgrade requires an active local override");
+    ).toThrow("upgrade requires an active local coprocessor instance");
   });
 
   test("resolves coprocessor plan", () => {
     const state = stubState({
+      scenario: {
+        version: 1,
+        kind: "coprocessor-consensus",
+        origin: "override-shorthand",
+        topology: { count: 1, threshold: 1 },
+        instances: [
+          {
+            index: 0,
+            source: { mode: "local" },
+            env: {},
+            args: {},
+          },
+        ],
+      },
       overrides: [{ group: "coprocessor" }],
     });
     const plan = resolveUpgradePlan(state, "coprocessor");
@@ -208,6 +270,24 @@ describe("resolveUpgradePlan", () => {
 
   test("resolves coprocessor plan with per-service overrides", () => {
     const state = stubState({
+      scenario: {
+        version: 1,
+        kind: "coprocessor-consensus",
+        origin: "override-shorthand",
+        topology: { count: 1, threshold: 1 },
+        instances: [
+          {
+            index: 0,
+            source: { mode: "local" },
+            env: {},
+            args: {},
+            localServices: [
+              "coprocessor-host-listener",
+              "coprocessor-host-listener-poller",
+            ],
+          },
+        ],
+      },
       overrides: [
         {
           group: "coprocessor",
@@ -224,7 +304,29 @@ describe("resolveUpgradePlan", () => {
 
   test("multi-coprocessor expands per-service overrides", () => {
     const state = stubState({
-      topology: { count: 2, threshold: 2, instances: {} },
+      scenario: {
+        version: 1,
+        kind: "coprocessor-consensus",
+        origin: "file",
+        topology: { count: 2, threshold: 2 },
+        instances: [
+          {
+            index: 0,
+            source: { mode: "local" },
+            env: {},
+            args: {},
+            localServices: ["coprocessor-host-listener"],
+          },
+          {
+            index: 1,
+            source: { mode: "local" },
+            env: {},
+            args: {},
+            localServices: ["coprocessor-host-listener"],
+          },
+        ],
+      },
+      topology: { count: 2, threshold: 2 },
       overrides: [
         {
           group: "coprocessor",
@@ -333,7 +435,7 @@ describe("coprocessorServicesForOverrides", () => {
 
   test("expands to multiple instances", () => {
     const state = stubState({
-      topology: { count: 3, threshold: 3, instances: {} },
+      topology: { count: 3, threshold: 3 },
     });
     const services = coprocessorServicesForOverrides(state, [
       "coprocessor-host-listener",
@@ -353,7 +455,7 @@ describe("coprocessorServicesForOverrides", () => {
 describe("coprocessorHealthContainers", () => {
   test("returns containers for single coprocessor", () => {
     const names = coprocessorHealthContainers({
-      topology: { count: 1, threshold: 1, instances: {} },
+      topology: { count: 1, threshold: 1 },
     });
     expect(names.length).toBeGreaterThan(0);
     // Should not include migration
@@ -362,7 +464,7 @@ describe("coprocessorHealthContainers", () => {
 
   test("returns containers for multiple coprocessors", () => {
     const names = coprocessorHealthContainers({
-      topology: { count: 2, threshold: 2, instances: {} },
+      topology: { count: 2, threshold: 2 },
     });
     const hasInstance1 = names.some((n) => n.startsWith("coprocessor1-"));
     expect(hasInstance1).toBe(true);

@@ -5,13 +5,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { State, StepName } from "../types";
+import { defaultCoprocessorScenario } from "../scenario";
 
 const makeTestState = (overrides: Partial<State> = {}): State => ({
   target: "latest-release",
   lockPath: "/tmp/test.json",
   versions: { target: "latest-release", lockName: "test.json", env: {}, sources: [] },
   overrides: [],
-  topology: { count: 1, threshold: 1, instances: {} },
+  topology: { count: 1, threshold: 1 },
+  scenario: defaultCoprocessorScenario(),
   completedSteps: [] as StepName[],
   updatedAt: "2026-03-16T00:00:00.000Z",
   ...overrides,
@@ -76,6 +78,16 @@ describe("StateManager", () => {
     const reloaded = await Effect.runPromise(mgr.load);
     expect(reloaded).toBeDefined();
     expect(reloaded!.completedSteps).toContain("resolve");
+    await fs.rm(dir, { recursive: true });
+  });
+
+  test("clear removes persisted state", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sm-test-"));
+    const file = path.join(dir, "state.json");
+    const mgr = StateManager.makeForPath(file);
+    await Effect.runPromise(mgr.save(makeTestState()));
+    await Effect.runPromise(mgr.clear);
+    expect(await Effect.runPromise(mgr.load)).toBeUndefined();
     await fs.rm(dir, { recursive: true });
   });
 });

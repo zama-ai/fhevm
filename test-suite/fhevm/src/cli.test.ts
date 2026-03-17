@@ -8,7 +8,18 @@ import { Effect, Layer } from "effect";
 
 import { resolvedComposeEnv, rewriteCoprocessorDependsOn } from "./codegen";
 import { resolveEnvMap } from "./services/EnvWriter";
-import { REPO_ROOT, STATE_DIR, TEST_GREP, composePath, resolveServiceOverrides } from "./layout";
+import {
+  COMPONENTS,
+  REPO_ROOT,
+  STATE_DIR,
+  TEST_GREP,
+  composePath,
+  envPath,
+  gatewayAddressesSolidityPath,
+  relayerConfigPath,
+  resolveServiceOverrides,
+  versionsEnvPath,
+} from "./layout";
 import { STEP_NAMES } from "./types";
 import { main } from "./cli";
 import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
@@ -167,10 +178,13 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
-    // unparsable SHAs are always treated as modern (no compat rules applied)
-    // presets, CI orchestration, and stack-era all treat SHA targets as modern
+    // SHA targets keep only the destructive gw-listener drop until we can compare exact feature cutovers.
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorDropFlags["gw-listener"]).toEqual([
+      "--ciphertext-commits-address",
+      "--gateway-config-address",
+    ]);
   });
 
   test("coprocessor depends_on rewrite only renames cloned services", () => {
@@ -196,16 +210,46 @@ describe("runtime invariants", () => {
   test("resolveUpgradePlan rejects inactive overrides and expands multicopro services", () => {
     const inactive = {
       overrides: [{ group: "test-suite" as const }],
-      topology: { count: 2, threshold: 2, instances: {} },
+      topology: { count: 2, threshold: 2 },
+      scenario: {
+        version: 1 as const,
+        kind: "coprocessor-consensus" as const,
+        origin: "default" as const,
+        topology: { count: 2, threshold: 2 },
+        instances: [
+          { index: 0, source: { mode: "inherit" as const }, env: {}, args: {} },
+          { index: 1, source: { mode: "inherit" as const }, env: {}, args: {} },
+        ],
+      },
     };
     expect(() => resolveUpgradePlan(inactive, "coprocessor")).toThrow(
-      "upgrade requires an active local override for coprocessor",
+      "upgrade requires an active local coprocessor instance",
     );
 
     const plan = resolveUpgradePlan(
       {
+        scenario: {
+          version: 1,
+          kind: "coprocessor-consensus",
+          origin: "override-shorthand",
+          topology: { count: 2, threshold: 2 },
+          instances: [
+            {
+              index: 0,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+            },
+            {
+              index: 1,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+            },
+          ],
+        },
         overrides: [{ group: "coprocessor" }],
-        topology: { count: 2, threshold: 2, instances: {} },
+        topology: { count: 2, threshold: 2 },
       },
       "coprocessor",
     );
@@ -219,8 +263,36 @@ describe("runtime invariants", () => {
 
     const filteredPlan = resolveUpgradePlan(
       {
+        scenario: {
+          version: 1,
+          kind: "coprocessor-consensus",
+          origin: "override-shorthand",
+          topology: { count: 2, threshold: 2 },
+          instances: [
+            {
+              index: 0,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+              localServices: [
+                "coprocessor-host-listener",
+                "coprocessor-host-listener-poller",
+              ],
+            },
+            {
+              index: 1,
+              source: { mode: "local" },
+              env: {},
+              args: {},
+              localServices: [
+                "coprocessor-host-listener",
+                "coprocessor-host-listener-poller",
+              ],
+            },
+          ],
+        },
         overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener", "coprocessor-host-listener-poller"] }],
-        topology: { count: 2, threshold: 2, instances: {} },
+        topology: { count: 2, threshold: 2 },
       },
       "coprocessor",
     );
@@ -234,7 +306,14 @@ describe("runtime invariants", () => {
     const connectorPlan = resolveUpgradePlan(
       {
         overrides: [{ group: "kms-connector" }],
-        topology: { count: 1, threshold: 1, instances: {} },
+        topology: { count: 1, threshold: 1 },
+        scenario: {
+          version: 1 as const,
+          kind: "coprocessor-consensus" as const,
+          origin: "default" as const,
+          topology: { count: 1, threshold: 1 },
+          instances: [{ index: 0, source: { mode: "inherit" as const }, env: {}, args: {} }],
+        },
       },
       "kms-connector",
     );
@@ -681,6 +760,12 @@ describe("runtime invariants", () => {
         }),
       ),
     );
+    await fs.mkdir(path.dirname(versionsEnvPath), { recursive: true });
+    await fs.writeFile(versionsEnvPath, "GATEWAY_VERSION=v0.11.0\n");
+    await fs.mkdir(path.join(STATE_DIR, "compose"), { recursive: true });
+    await Promise.all(
+      COMPONENTS.map((component) => fs.writeFile(composePath(component), "services:\n")),
+    );
     const runner = fakeRunner({
       "docker inspect fhevm-relayer-db": JSON.stringify([
         { State: { Status: "running", ExitCode: 0, Health: { Status: "healthy" } }, NetworkSettings: { Networks: { default: { IPAddress: "127.0.0.1" } } } },
@@ -698,8 +783,9 @@ describe("runtime invariants", () => {
         ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--from-step", "relayer"],
         depsToLayer({ runner, liveRunner: async () => 0 }),
       );
-      expect(await maybeRead(composePath("relayer"))).toContain("services:");
-      expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+      expect(await maybeRead(envPath("gateway-sc"))).toBeDefined();
+      expect(await maybeRead(relayerConfigPath)).toContain("gateway:");
+      expect(await maybeRead(gatewayAddressesSolidityPath)).toContain("gatewayConfigAddress");
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
@@ -727,8 +813,6 @@ describe("runtime invariants", () => {
           "--resume",
           "--override",
           "coprocessor",
-          "--coprocessors",
-          "2",
         ],
         noopLayer,
       );
@@ -743,16 +827,16 @@ describe("runtime invariants", () => {
     expect(logs.some((l) => l.includes("--resume uses the persisted stack configuration"))).toBe(true);
   });
 
-  test("resume logs when there is nothing left to do", async () => {
+  test("resume rejects --reset", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
     await fs.mkdir(STATE_DIR, { recursive: true });
-    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
-    const { logs, restore } = captureConsole("log");
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
+    const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--reset"],
         noopLayer,
       );
     } finally {
@@ -763,7 +847,99 @@ describe("runtime invariants", () => {
         await fs.writeFile(STATE_FILE, before);
       }
     }
+    expect(logs.some((l) => l.includes("--reset"))).toBe(true);
+  });
+
+  test("resume logs when there is nothing left to do", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "gateway-node\n",
+          }),
+        }),
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
     expect(logs.some((l) => l.includes("[resume] nothing to do"))).toBe(true);
+  });
+
+  test("resume rejects stale persisted state when no containers are running", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "",
+          }),
+        }),
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((l) => l.includes("Persisted state exists but no fhevm containers are running"))).toBe(true);
+  });
+
+  test("resume dry-run previews the persisted stack", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify({
+        ...stubState({ count: 2, threshold: 2, completedSteps: ["preflight", "resolve", "generate", "base"] }),
+        requiresGitHub: false,
+      }),
+    );
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--dry-run"],
+        depsToLayer({
+          runner: fakeRunner({
+            "which bun": "",
+            "which docker": "",
+            "which cast": "",
+            "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
+            ...portCheckResponses,
+          }),
+        }),
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((line) => line.includes("[plan] topology=n2/t2"))).toBe(true);
+    expect(logs.some((line) => line.includes("resume preview uses persisted state only"))).toBe(true);
   });
 
   test("down restores generated runtime artifacts from state before teardown", async () => {
@@ -777,8 +953,9 @@ describe("runtime invariants", () => {
     );
     try {
       await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
-      expect(await maybeRead(composePath("database"))).toContain("services:");
+      expect(await maybeRead(composePath("coprocessor"))).toContain("services:");
       expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+      expect(await maybeRead(STATE_FILE)).toBeUndefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
@@ -907,21 +1084,39 @@ describe("CLI argument validation", () => {
     expect(logs.some((l) => l.includes("Unsupported target"))).toBe(true);
   });
 
-  test("rejects coprocessors outside 1-5 range", async () => {
+  test("rejects removed --coprocessors flag", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "0"], noopLayer);
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "6"], noopLayer);
+      await main(["bun", "src/cli.ts", "up", "--coprocessors", "2"], noopLayer);
     } finally { restore(); }
-    expect(logs.filter((l) => l.includes("--coprocessors must be between 1 and 5")).length).toBe(2);
+    expect(logs.some((l) => l.includes("Received unknown argument: '--coprocessors'"))).toBe(true);
   });
 
-  test("rejects threshold > coprocessors", async () => {
+  test("rejects removed --threshold flag", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--coprocessors", "2", "--threshold", "3"], noopLayer);
+      await main(["bun", "src/cli.ts", "up", "--threshold", "2"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("--threshold must be between 1 and --coprocessors"))).toBe(true);
+    expect(logs.some((l) => l.includes("Received unknown argument: '--threshold'"))).toBe(true);
+  });
+
+  test("rejects --scenario with coprocessor overrides", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "up",
+          "--scenario",
+          "test.yml",
+          "--override",
+          "coprocessor",
+        ],
+        noopLayer,
+      );
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--scenario cannot be combined with --override coprocessor"))).toBe(true);
   });
 
   test("rejects --target sha without --sha", async () => {
@@ -1011,7 +1206,7 @@ describe("command error paths", () => {
     try {
       await main(["bun", "src/cli.ts", "pause"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("pause expects `host` or `gateway`"))).toBe(true);
+    expect(logs.some((l) => l.includes("Missing argument <scope>"))).toBe(true);
   });
 
   test("unpause rejects missing scope", async () => {
@@ -1019,7 +1214,7 @@ describe("command error paths", () => {
     try {
       await main(["bun", "src/cli.ts", "unpause"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((l) => l.includes("unpause expects `host` or `gateway`"))).toBe(true);
+    expect(logs.some((l) => l.includes("Missing argument <scope>"))).toBe(true);
   });
 
   test("test requires completed bootstrap", async () => {
@@ -1123,6 +1318,29 @@ describe("command error paths", () => {
       await main(["bun", "src/cli.ts", "status"], depsToLayer({ runner }));
     } finally { restore(); }
     expect(logs.some((l) => l.includes("No fhevm containers"))).toBe(true);
+  });
+
+  test("status warns when persisted state is stale", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
+    const runner = fakeRunner({
+      "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}\t{{.Status}}": "",
+    });
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "status"], depsToLayer({ runner }));
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((l) => l.includes("persisted state exists but no fhevm containers are running"))).toBe(true);
   });
 });
 
@@ -1248,4 +1466,3 @@ describe("COMPAT_MATRIX", () => {
     expect(output.anchors.SIMPLE_ACL_MIN_SHA).toBe("803f1048727eabf6d8b3df618203e3c7dda77890");
   });
 });
-

@@ -392,6 +392,36 @@ describe("applyInstanceAdjustments", () => {
     expect(result.command).toContain("my-key");
   });
 
+  test("drops unsupported compat flags for old remote images", () => {
+    const service = {
+      container_name: "coprocessor-gw-listener",
+      command: [
+        "run",
+        "--ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}",
+        "--gateway-config-address=${GATEWAY_CONFIG_ADDRESS}",
+        "--kms-generation-address=${KMS_GENERATION_ADDRESS}",
+      ],
+    };
+    const result = applyInstanceAdjustments(
+      service,
+      "/env",
+      {
+        CIPHERTEXT_COMMITS_ADDRESS: "0x1",
+        GATEWAY_CONFIG_ADDRESS: "0x2",
+        KMS_GENERATION_ADDRESS: "0x3",
+      },
+      undefined,
+      {},
+      {
+        "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
+      },
+    );
+    expect(result.command).toEqual([
+      "run",
+      "--kms-generation-address=0x3",
+    ]);
+  });
+
   test("injects literal compat args", () => {
     const service = {
       container_name: "coprocessor-transaction-sender",
@@ -517,22 +547,18 @@ describe("overriddenServicesForComponent", () => {
     expect(result.size).toBe(0);
   });
 
-  test("returns all group services when override has no service filter", () => {
+  test("ignores coprocessor overrides because coprocessor builds are scenario-driven", () => {
     const state = stubState({ overrides: [{ group: "coprocessor" }] });
     const result = overriddenServicesForComponent(state, "coprocessor");
-    expect(result.has("coprocessor-db-migration")).toBe(true);
-    expect(result.has("coprocessor-host-listener")).toBe(true);
-    expect(result.has("coprocessor-tfhe-worker")).toBe(true);
+    expect(result.size).toBe(0);
   });
 
-  test("returns only specified services when override has service filter", () => {
+  test("ignores per-service coprocessor overrides for the same reason", () => {
     const state = stubState({
       overrides: [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }],
     });
     const result = overriddenServicesForComponent(state, "coprocessor");
-    expect(result.has("coprocessor-tfhe-worker")).toBe(true);
-    expect(result.has("coprocessor-host-listener")).toBe(false);
-    expect(result.size).toBe(1);
+    expect(result.size).toBe(0);
   });
 
   test("returns empty set for unrelated component", () => {

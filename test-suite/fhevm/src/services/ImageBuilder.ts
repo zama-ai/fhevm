@@ -5,7 +5,7 @@ import { CommandRunner } from "./CommandRunner";
 import { ContainerRunner } from "./ContainerRunner";
 import { BuildError, ContainerStartError } from "../errors";
 import type { BuiltImage, State } from "../types";
-import { GROUP_BUILD_COMPONENTS, GROUP_BUILD_SERVICES, composePath, dockerArgs } from "../layout";
+import { GROUP_BUILD_COMPONENTS, GROUP_BUILD_SERVICES, effectiveComposePath } from "../layout";
 
 type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
@@ -42,6 +42,41 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
         ];
       };
 
+      const coprocessorInstanceIndex = (service: string) => {
+        const match = /^coprocessor(?:(\d+))?-/.exec(service);
+        if (!match) {
+          return undefined;
+        }
+        return match[1] ? Number(match[1]) : 0;
+      };
+
+      const saveBuiltImages = (
+        state: State,
+        saveState: (state: State) => Effect.Effect<void>,
+        refs: Array<{ ref: string; group: BuiltImage["group"]; instanceIndex?: number }>,
+      ) =>
+        Effect.gen(function* () {
+          const current = new Map(
+            (state.builtImages ?? []).map((item) => [item.ref, item] as const),
+          );
+          for (const entry of refs) {
+            const id = yield* inspectId(entry.ref);
+            if (!id) {
+              continue;
+            }
+            current.set(entry.ref, {
+              ref: entry.ref,
+              id,
+              group: entry.group,
+              instanceIndex: entry.instanceIndex,
+            } satisfies BuiltImage);
+          }
+          state.builtImages = [...current.values()].sort((a, b) =>
+            a.ref.localeCompare(b.ref),
+          );
+          yield* saveState(state);
+        });
+
       const inspectId = (ref: string) =>
         cmd
           .run(["docker", "image", "inspect", ref, "--format", "{{.Id}}"], {
@@ -55,12 +90,45 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
       return {
         maybeBuild: (component, state, saveState) =>
           Effect.gen(function* () {
+            if (component === "coprocessor") {
+              const doc = YAML.parse(
+                yield* Effect.promise(() => fs.readFile(effectiveComposePath(component), "utf8")),
+              ) as ComposeDoc;
+              const services = Object.entries(doc.services)
+                .filter(([, service]) => !!service.build)
+                .map(([name]) => name);
+              if (!services.length) {
+                return;
+              }
+              yield* Effect.log("[build] coprocessor");
+              const refs = imageRefsFromDoc(doc, services);
+              for (const ref of refs) {
+                yield* cmd.run(["docker", "image", "rm", "-f", ref], {
+                  allowFailure: true,
+                });
+              }
+              for (const service of services) {
+                yield* containers.composeBuild(component, [service]);
+              }
+              yield* saveBuiltImages(
+                state,
+                saveState,
+                refs.map((ref) => ({
+                  ref,
+                  group: "coprocessor" as const,
+                  instanceIndex: coprocessorInstanceIndex(
+                    services.find((service) => doc.services[service]?.image === ref) ?? "",
+                  ),
+                })),
+              );
+              return;
+            }
             for (const override of state.overrides) {
               if (!GROUP_BUILD_COMPONENTS[override.group].includes(component)) continue;
 
               // Parse compose file once for the entire override
               const doc = YAML.parse(
-                yield* Effect.promise(() => fs.readFile(composePath(component), "utf8")),
+                yield* Effect.promise(() => fs.readFile(effectiveComposePath(component), "utf8")),
               ) as ComposeDoc;
               const available = new Set(Object.keys(doc.services));
               const candidates = override.services?.length
@@ -97,25 +165,14 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
                 yield* containers.composeBuild(component, batch);
               }
 
-              // Remember built images in state
-              const current = new Map(
-                (state.builtImages ?? []).map((item) => [item.ref, item] as const),
+              yield* saveBuiltImages(
+                state,
+                saveState,
+                imageRefsFromDoc(doc, services).map((ref) => ({
+                  ref,
+                  group: override.group,
+                })),
               );
-              const allRefs = imageRefsFromDoc(doc, services);
-              for (const ref of allRefs) {
-                const id = yield* inspectId(ref);
-                if (id) {
-                  current.set(ref, {
-                    ref,
-                    id,
-                    group: override.group,
-                  } satisfies BuiltImage);
-                }
-              }
-              state.builtImages = [...current.values()].sort((a, b) =>
-                a.ref.localeCompare(b.ref),
-              );
-              yield* saveState(state);
             }
           }).pipe(
             Effect.mapError((e) => {

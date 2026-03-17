@@ -9,6 +9,7 @@ import { regen } from "../codegen";
 import { PreflightError } from "../errors";
 import {
   ensureRuntimeArtifacts,
+  projectContainers,
   resolveUpgradePlan,
   waitForCoprocessor,
   waitForKmsConnector,
@@ -27,7 +28,18 @@ export const upgrade = (groupValue: string | undefined) =>
     const state = yield* stateManager.load;
     if (!state) {
       return yield* Effect.fail(
-        new PreflightError({ message: "Stack is not running; run `fhevm-cli up --override ...` first" }),
+        new PreflightError({
+          message:
+            "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+        }),
+      );
+    }
+    if (!(yield* projectContainers).length) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message:
+            "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+        }),
       );
     }
     yield* ensureRuntimeArtifacts(state, "upgrade");
@@ -36,6 +48,13 @@ export const upgrade = (groupValue: string | undefined) =>
       catch: (error) =>
         new PreflightError({ message: (error as Error).message }),
     });
+    if (!state.completedSteps.includes(step)) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message: `upgrade requires a stack that has completed the ${step} step`,
+        }),
+      );
+    }
     yield* Effect.log(`[upgrade] ${group}`);
     yield* regen(state);
     yield* imageBuilder.maybeBuild(component, state, (s) => stateManager.save(s));

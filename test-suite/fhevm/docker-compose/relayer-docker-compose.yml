@@ -22,7 +22,7 @@ services:
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}
     env_file:
-      - ../env/staging/.env.relayer.local
+      - ../../../.fhevm/env/relayer.env
     command:
     - /bin/server
     ports:
@@ -36,12 +36,12 @@ services:
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
     env_file:
-      - ../env/staging/.env.relayer.local
+      - ../../../.fhevm/env/relayer.env
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
     volumes:
-      - ../config/relayer/local.yaml:/app/config/local.yaml
+      - ../../../.fhevm/config/relayer.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
     depends_on:

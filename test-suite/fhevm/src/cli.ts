@@ -10,6 +10,7 @@ import { Effect, Layer } from "effect";
 
 import { LiveLayer } from "./services/layers";
 import { StateManager } from "./services/StateManager";
+import { formatCliError } from "./errors";
 
 import { upCommand, deployCommand } from "./commands/up.cmd";
 import { downCommand } from "./commands/down.cmd";
@@ -27,10 +28,6 @@ import { doctorCommand } from "./commands/doctor.cmd";
 export {
   parseLocalOverride,
   parseKeyValue,
-  parseInstanceKey,
-  parseInstanceEnv,
-  parseInstanceArgs,
-  mergeInstanceOverrides,
 } from "./options";
 
 // ---------------------------------------------------------------------------
@@ -77,11 +74,9 @@ export const main = async (
     Effect.provide(layer),
     Effect.provide(BunContext.layer),
     Effect.catchAll((error) => {
-      // Handler errors (PreflightError, etc.) have .message — print it.
-      // @effect/cli framework errors (CommandMismatch, etc.) already printed
-      // their user-friendly message; they have no .message property.
-      if (error && typeof error === "object" && "message" in error) {
-        console.error((error as { message: string }).message);
+      const message = formatCliError(error);
+      if (message) {
+        console.error(message);
       }
       process.exitCode = 1;
       return Effect.void;
@@ -95,13 +90,13 @@ export const main = async (
     const command = argv[2];
     if (command === "up" || command === "deploy") {
       try {
-        const hasState = await Effect.runPromise(
+        const state = await Effect.runPromise(
           Effect.gen(function* () {
             const stateManager = yield* StateManager;
             return yield* stateManager.load;
           }).pipe(Effect.provide(layer)),
         );
-        if (hasState) {
+        if (state?.completedSteps.length) {
           console.error(
             "Hint: run with --resume to continue, or without to start fresh.",
           );

@@ -7,7 +7,6 @@
 import { Options, Args } from "@effect/cli";
 import { OVERRIDE_GROUPS } from "./types";
 import type {
-  InstanceOverride,
   LocalOverride,
   OverrideGroup,
 } from "./types";
@@ -63,62 +62,6 @@ export const parseKeyValue = (value: string) => {
   return [value.slice(0, idx), value.slice(idx + 1)] as const;
 };
 
-export const parseInstanceKey = (value: string) => {
-  const idx = value.indexOf(":");
-  if (idx < 0) {
-    throw new Error(`Expected INDEX:VALUE, got ${value}`);
-  }
-  const index = Number(value.slice(0, idx));
-  if (!Number.isInteger(index) || index < 0) {
-    throw new Error(`Invalid instance index in ${value}`);
-  }
-  return [index, value.slice(idx + 1)] as const;
-};
-
-export const parseInstanceEnv = (values: string[]) => {
-  const out: Record<string, InstanceOverride> = {};
-  for (const value of values) {
-    const [index, payload] = parseInstanceKey(value);
-    const [key, envValue] = parseKeyValue(payload);
-    const name = `coprocessor-${index}`;
-    out[name] ??= { env: {}, args: {} };
-    out[name].env[key] = envValue;
-  }
-  return out;
-};
-
-export const parseInstanceArgs = (values: string[]) => {
-  const out: Record<string, InstanceOverride> = {};
-  for (const value of values) {
-    const [index, payload] = parseInstanceKey(value);
-    const [service, arg] = parseKeyValue(payload);
-    const name = `coprocessor-${index}`;
-    out[name] ??= { env: {}, args: {} };
-    out[name].args[service] ??= [];
-    out[name].args[service].push(arg);
-  }
-  return out;
-};
-
-export const mergeInstanceOverrides = (
-  ...items: Record<string, InstanceOverride>[]
-) => {
-  const out: Record<string, InstanceOverride> = {};
-  for (const item of items) {
-    for (const [name, override] of Object.entries(item)) {
-      out[name] ??= { env: {}, args: {} };
-      Object.assign(out[name].env, override.env);
-      for (const [service, args] of Object.entries(override.args)) {
-        out[name].args[service] = [
-          ...(out[name].args[service] ?? []),
-          ...args,
-        ];
-      }
-    }
-  }
-  return out;
-};
-
 // ---------------------------------------------------------------------------
 // Shared @effect/cli Options
 // ---------------------------------------------------------------------------
@@ -137,19 +80,15 @@ export const overrideOption = Options.text("override").pipe(
   Options.repeated,
 );
 
-export const coprocessorsOption = Options.text("coprocessors").pipe(
-  Options.withDefault("1"),
-);
-
-export const thresholdOption = Options.text("threshold").pipe(
-  Options.optional,
-);
-
 export const fromStepOption = Options.text("from-step").pipe(
   Options.optional,
 );
 
 export const lockFileOption = Options.text("lock-file").pipe(
+  Options.optional,
+);
+
+export const scenarioOption = Options.text("scenario").pipe(
   Options.optional,
 );
 
@@ -167,14 +106,6 @@ export const resetOption = Options.boolean("reset").pipe(
 
 export const allowSchemaMismatchOption = Options.boolean("allow-schema-mismatch").pipe(
   Options.withDefault(false),
-);
-
-export const instanceEnvOption = Options.text("instance-env").pipe(
-  Options.repeated,
-);
-
-export const instanceArgOption = Options.text("instance-arg").pipe(
-  Options.repeated,
 );
 
 export const imagesOption = Options.boolean("images").pipe(
@@ -205,8 +136,8 @@ export const parallelOption = Options.boolean("parallel").pipe(
 
 export const serviceArg = Args.text({ name: "service" }).pipe(Args.optional);
 
-export const scopeArg = Args.text({ name: "scope" }).pipe(Args.optional);
+export const scopeArg = Args.text({ name: "scope" });
 
-export const groupArg = Args.text({ name: "group" }).pipe(Args.optional);
+export const groupArg = Args.text({ name: "group" });
 
 export const testNameArg = Args.text({ name: "test-name" }).pipe(Args.optional);

@@ -13,6 +13,7 @@ import { GitHubClient } from "./services/GitHubClient";
 import { EnvWriter } from "./services/EnvWriter";
 import { StateManager } from "./services/StateManager";
 import { CommandError } from "./errors";
+import { defaultCoprocessorScenario } from "./scenario";
 
 export const STUB_VERSION_ENV: Record<string, string> = {
   GATEWAY_VERSION: "v0.11.0",
@@ -60,7 +61,19 @@ export const stubState = (overrides?: {
   topology: {
     count: overrides?.count ?? 1,
     threshold: overrides?.threshold ?? overrides?.count ?? 1,
-    instances: {},
+  },
+  scenario: {
+    ...defaultCoprocessorScenario(),
+    topology: {
+      count: overrides?.count ?? 1,
+      threshold: overrides?.threshold ?? overrides?.count ?? 1,
+    },
+    instances: Array.from({ length: overrides?.count ?? 1 }, (_, index) => ({
+      index,
+      source: { mode: "inherit" as const },
+      env: {},
+      args: {},
+    })),
   },
   discovery: overrides?.discovery,
   completedSteps: overrides?.completedSteps ?? [],

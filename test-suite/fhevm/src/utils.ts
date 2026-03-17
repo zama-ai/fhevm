@@ -88,6 +88,9 @@ export const parseEnv = (text: string) => {
 
 export const readEnvFile = async (file: string) => parseEnv(await fs.readFile(file, "utf8"));
 
+export const readEnvFileIfExists = async (file: string) =>
+  (await exists(file)) ? readEnvFile(file) : {};
+
 const quoteEnvValue = (value: string) => {
   if (!needsQuotes(value)) {
     return value;

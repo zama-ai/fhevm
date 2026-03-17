@@ -5,17 +5,28 @@
  * that composes the relevant services (ContainerRunner, ContainerProbe,
  * MinioClient, RpcClient, StateManager, EnvWriter, ImageBuilder, CommandRunner).
  */
-import { Effect, Schedule } from "effect";
+import { Effect } from "effect";
 
 import { validateBundleCompatibility, requiresMultichainAclAddress } from "./compat";
-import { regen, serviceNameList, resolvedComposeEnv } from "./codegen";
+import { ensureLockSnapshot } from "./cache";
+import {
+  generatedComposeComponents,
+  regen,
+  resolvedComposeEnv,
+  serviceNameList,
+} from "./codegen";
+import { runtimePlanForState } from "./runtime-plan";
 import { describeBundle } from "./resolve";
 import {
   BootstrapTimeout,
   IncompatibleVersions,
+  MinioError,
   PreflightError,
   SchemaGuardError,
 } from "./errors";
+import {
+  hasLocalCoprocessorInstance,
+} from "./scenario";
 import {
   COMPONENT_BY_STEP,
   COMPONENTS,
@@ -29,8 +40,12 @@ import {
   composePath,
   dockerArgs,
   envPath,
+  gatewayAddressesSolidityPath,
   gatewayAddressesPath,
+  hostAddressesSolidityPath,
   hostAddressesPath,
+  paymentBridgingAddressesSolidityPath,
+  relayerConfigPath,
   versionsEnvPath,
 } from "./layout";
 import { CommandRunner } from "./services/CommandRunner";
@@ -89,7 +104,6 @@ export const UPGRADEABLE_GROUPS = [
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
 
 export const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
-
 export const KMS_CONNECTOR_HEALTH_CONTAINERS = [
   "kms-connector-gw-listener",
   "kms-connector-kms-worker",
@@ -107,6 +121,32 @@ const NETWORK_TARGETS: ReadonlySet<string> = new Set([
 // ---------------------------------------------------------------------------
 
 export const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
+
+export const projectContainers = Effect.gen(function* () {
+  const cmd = yield* CommandRunner;
+  const ps = yield* cmd.run(
+    [
+      "docker",
+      "ps",
+      "--filter",
+      `label=com.docker.compose.project=${PROJECT}`,
+      "--format",
+      "{{.Names}}",
+    ],
+    { allowFailure: true },
+  );
+  if (ps.code !== 0) {
+    return yield* Effect.fail(
+      new PreflightError({
+        message: ps.stderr.trim() || "docker ps failed",
+      }),
+    );
+  }
+  return ps.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+});
 
 export const coprocessorHealthContainers = (
   state: Pick<State, "topology">,
@@ -325,8 +365,8 @@ export const preflight = (
     const requiredCommands = [
       "bun",
       "docker",
+      "cast",
       ...(needsGitHub ? ["gh"] : []),
-      ...(state.topology.count > 1 ? ["cast"] : []),
     ];
     const whichResults = yield* Effect.all(
       requiredCommands.map((command) =>
@@ -346,23 +386,24 @@ export const preflight = (
         );
       }
     }
-    const projectPorts = yield* cmd
-      .run(
-        [
-          "docker",
-          "ps",
-          "--filter",
-          `label=com.docker.compose.project=${PROJECT}`,
-          "--format",
-          "{{.Ports}}",
-        ],
-        { allowFailure: true },
-      )
-      .pipe(
-        Effect.catchAll(() =>
-          Effect.succeed({ stdout: "", stderr: "", code: 1 }),
-        ),
+    const projectPorts = yield* cmd.run(
+      [
+        "docker",
+        "ps",
+        "--filter",
+        `label=com.docker.compose.project=${PROJECT}`,
+        "--format",
+        "{{.Ports}}",
+      ],
+      { allowFailure: true },
+    );
+    if (projectPorts.code !== 0) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message: projectPorts.stderr.trim() || "docker ps failed",
+        }),
       );
+    }
     const portResults = yield* Effect.all(
       PORTS.map((port) =>
         cmd
@@ -484,13 +525,30 @@ export const assertSchemaCompatibility = (
 
 export const ensureRuntimeArtifacts = (state: State, reason: string) =>
   Effect.gen(function* () {
-    const versionsExists = yield* Effect.promise(() =>
-      exists(versionsEnvPath),
-    );
-    const composeExist = yield* Effect.promise(() =>
-      Promise.all(COMPONENTS.map((component) => exists(composePath(component)))),
-    );
-    const missing = !versionsExists || !composeExist.every(Boolean);
+    yield* ensureLockSnapshot(state.lockPath, state.versions);
+    const generatedCompose = [...generatedComposeComponents(runtimePlanForState(state))].map(composePath);
+    const requiredPaths = [
+      versionsEnvPath,
+      relayerConfigPath,
+      ...COMPONENTS.map(envPath),
+      ...generatedCompose,
+      ...Array.from(
+        { length: Math.max(0, state.topology.count - 1) },
+        (_, index) => envPath(`coprocessor.${index + 1}`),
+      ),
+      ...(state.discovery
+        ? [
+            gatewayAddressesPath,
+            gatewayAddressesSolidityPath,
+            paymentBridgingAddressesSolidityPath,
+            hostAddressesPath,
+            hostAddressesSolidityPath,
+          ]
+        : []),
+    ];
+    const missing = !(yield* Effect.promise(() =>
+      Promise.all(requiredPaths.map((file) => exists(file))).then((items) => items.every(Boolean)),
+    ));
     if (!missing) {
       return;
     }
@@ -521,7 +579,7 @@ export const resetAfterStep = (step: StepName) =>
   });
 
 export const resolveUpgradePlan = (
-  state: Pick<State, "overrides" | "topology">,
+  state: Pick<State, "overrides" | "topology" | "scenario">,
   groupValue: string | undefined,
 ) => {
   if (
@@ -533,7 +591,15 @@ export const resolveUpgradePlan = (
     );
   }
   const group = groupValue as UpgradeGroup;
-  if (!state.overrides.some((item) => item.group === group)) {
+  if (group === "coprocessor" && !hasLocalCoprocessorInstance(state)) {
+    throw new Error(
+      "upgrade requires an active local coprocessor instance",
+    );
+  }
+  if (
+    group !== "coprocessor" &&
+    !state.overrides.some((item) => item.group === group)
+  ) {
     throw new Error(
       `upgrade requires an active local override for ${group}`,
     );
@@ -548,15 +614,26 @@ export const resolveUpgradePlan = (
   const selectedServices = groupOverrides.flatMap(
     (item) => item.services ?? [],
   );
+  const scenario = state.scenario;
   const restartableServices = (services: string[]) =>
     services.filter((service) => !service.endsWith("-db-migration"));
   const plannedServices =
     group === "coprocessor"
-      ? coprocessorServicesForOverrides(state, selectedServices)
+      ? scenario.instances.flatMap((instance) => {
+          if (instance.source.mode !== "local") {
+            return [];
+          }
+          const selected = instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor;
+          return selected.map((service) =>
+            instance.index === 0
+              ? service
+              : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),
+          );
+        })
       : selectedServices.length
         ? [...new Set(selectedServices)]
         : GROUP_BUILD_SERVICES[group];
-  const services = restartableServices(plannedServices);
+  const services = restartableServices([...new Set(plannedServices)]);
   if (!services.length) {
     throw new Error(
       `upgrade requires restartable runtime services for ${group}`,
@@ -575,10 +652,18 @@ export const resolveUpgradePlan = (
 // ---------------------------------------------------------------------------
 
 export const waitForCoprocessor = (state: State) =>
+  waitForCoprocessorServices(state, false);
+
+const waitForCoprocessorServices = (
+  state: State,
+  skipMigration: boolean,
+) =>
   Effect.gen(function* () {
     const probe = yield* ContainerProbe;
     for (let index = 0; index < state.topology.count; index += 1) {
-      yield* probe.waitForComplete(toServiceName("db-migration", index));
+      if (!skipMigration) {
+        yield* probe.waitForComplete(toServiceName("db-migration", index));
+      }
       yield* probe.waitForRunning(toServiceName("host-listener", index));
       yield* probe.waitForRunning(toServiceName("gw-listener", index));
       yield* probe.waitForRunning(toServiceName("tfhe-worker", index));
@@ -589,6 +674,36 @@ export const waitForCoprocessor = (state: State) =>
       );
     }
   });
+
+const coprocessorDbSeeded = (database: string) =>
+  Effect.gen(function* () {
+    const cmd = yield* CommandRunner;
+    const result = yield* cmd.run(
+      [
+        "docker",
+        "exec",
+        "coprocessor-and-kms-db",
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        database,
+        "-tAc",
+        "select 1 from host_chains limit 1",
+      ],
+      { allowFailure: true },
+    );
+    return result.code === 0 && result.stdout.trim() === "1";
+  });
+
+const coprocessorDbsSeeded = (state: Pick<State, "topology">) =>
+  Effect.forEach(
+    Array.from({ length: state.topology.count }, (_, index) =>
+      index === 0 ? "coprocessor" : `coprocessor_${index}`,
+    ),
+    coprocessorDbSeeded,
+    { concurrency: "unbounded" },
+  ).pipe(Effect.map((results) => results.every(Boolean)));
 
 export const waitForKmsConnector = Effect.gen(function* () {
   const probe = yield* ContainerProbe;
@@ -654,25 +769,20 @@ export const probeBootstrap = (state: State) =>
 
 // waitForBootstrap: retry probeBootstrap up to `attempts` times
 const waitForBootstrap = (state: State, attempts = 120) =>
-  probeBootstrap(state).pipe(
-    Effect.filterOrFail(
-      (ok) => ok,
-      () => "not-ready" as const,
-    ),
-    Effect.retry({
-      while: (e): e is "not-ready" => e === "not-ready",
-      schedule: Schedule.spaced("2 seconds").pipe(
-        Schedule.compose(Schedule.recurs(attempts - 1)),
-      ),
-    }),
-    Effect.tapError(() => Effect.log("[wait] bootstrap materials")),
-    Effect.catchAll((error) =>
-      typeof error === "string"
-        ? Effect.fail(new BootstrapTimeout({ elapsed: attempts * 2 }))
-        : Effect.fail(error),
-    ),
-    Effect.asVoid,
-  );
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (yield* probeBootstrap(state)) {
+        return;
+      }
+      if (attempt < attempts - 1) {
+        yield* Effect.log("[wait] bootstrap materials");
+        yield* Effect.sleep("2 seconds");
+      }
+    }
+    return yield* Effect.fail(
+      new BootstrapTimeout({ elapsed: attempts * 2 }),
+    );
+  });
 
 // maybeBuild + composeUp shorthand
 const stepComposeUp = (
@@ -702,7 +812,7 @@ export const runStep = (state: State, step: StepName) =>
 
     switch (step) {
       case "preflight":
-        yield* preflight(state);
+        yield* preflight(state, true, state.requiresGitHub ?? true);
         break;
 
       case "resolve":
@@ -759,10 +869,7 @@ export const runStep = (state: State, step: StepName) =>
         ]);
         yield* probe.waitForComplete("gateway-deploy-mocked-zama-oft");
         yield* stepComposeUp("gateway-sc", state, ["gateway-sc-deploy"]);
-        yield* probe.waitForComplete(
-          "gateway-sc-deploy",
-          "Contract deployment done!",
-        );
+        yield* probe.waitForComplete("gateway-sc-deploy");
         state.discovery = {
           gateway: yield* Effect.promise(() =>
             readEnvFile(gatewayAddressesPath),
@@ -791,10 +898,7 @@ export const runStep = (state: State, step: StepName) =>
 
       case "host-deploy":
         yield* stepComposeUp("host-sc", state, ["host-sc-deploy"]);
-        yield* probe.waitForComplete(
-          "host-sc-deploy",
-          "Contract deployment done!",
-        );
+        yield* probe.waitForComplete("host-sc-deploy");
         break;
 
       case "discover": {
@@ -832,12 +936,16 @@ export const runStep = (state: State, step: StepName) =>
       }
 
       case "coprocessor":
-        yield* stepComposeUp(
-          "coprocessor",
-          state,
-          serviceNameList(state, "coprocessor"),
-        );
-        yield* waitForCoprocessor(state);
+        {
+          const skipMigration = yield* coprocessorDbsSeeded(state);
+          const services = skipMigration
+            ? coprocessorHealthContainers(state)
+            : serviceNameList(state, "coprocessor");
+          yield* stepComposeUp("coprocessor", state, services, {
+            noDeps: skipMigration,
+          });
+          yield* waitForCoprocessorServices(state, skipMigration);
+        }
         yield* probe.postBootHealthGate(
           coprocessorHealthContainers(state),
         );
@@ -850,14 +958,6 @@ export const runStep = (state: State, step: StepName) =>
         break;
 
       case "bootstrap": {
-        yield* stepComposeUp(
-          "gateway-sc",
-          state,
-          ["gateway-sc-add-network"],
-          { noDeps: true },
-        );
-        yield* probe.waitForComplete("gateway-sc-add-network");
-
         const bootstrapDone = yield* probeBootstrap(state).pipe(
           Effect.catchTag("MinioError", () => Effect.succeed(false)),
         );
@@ -874,6 +974,40 @@ export const runStep = (state: State, step: StepName) =>
           { concurrency: 2 },
         );
         const rpc = yield* RpcClient;
+        const hostChainsRegistered = yield* Effect.forEach(
+          Array.from(
+            { length: Number(gatewayEnv.NUM_HOST_CHAINS ?? "0") },
+            (_, index) => gatewayEnv[`HOST_CHAIN_CHAIN_ID_${index}`],
+          ).filter(Boolean),
+          (chainId) =>
+            rpc.castBool(
+              state.discovery!.endpoints.gatewayHttp,
+              withHexPrefix(state.discovery!.gateway.GATEWAY_CONFIG_ADDRESS),
+              "isHostChainRegistered(uint256)(bool)",
+              chainId,
+            ).pipe(Effect.catchAll(() => Effect.succeed(false))),
+          { concurrency: "unbounded" },
+        ).pipe(
+          Effect.map((results) => results.every(Boolean)),
+        );
+
+        if (!hostChainsRegistered) {
+          yield* stepComposeUp(
+            "gateway-sc",
+            state,
+            ["gateway-sc-add-network"],
+            { noDeps: true },
+          );
+          yield* probe.waitForComplete("gateway-sc-add-network");
+        }
+
+        const bootstrapReady = yield* probeBootstrap(state).pipe(
+          Effect.catchTag("MinioError", () => Effect.succeed(false)),
+        );
+        if (bootstrapReady) {
+          yield* regen(state);
+          break;
+        }
 
         // Check host pauser
         const hostPauserRegistered = yield* rpc.castBool(

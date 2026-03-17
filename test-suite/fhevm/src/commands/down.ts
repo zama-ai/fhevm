@@ -31,4 +31,7 @@ export const down = Effect.gen(function* () {
       new PreflightError({ message: `Failed to stop components: ${failed.join(", ")}` }),
     );
   }
+  if (state) {
+    yield* stateManager.clear;
+  }
 });

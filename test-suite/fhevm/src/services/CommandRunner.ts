@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { CommandError } from "../errors";
+import type { RunOptions, RunResult } from "../utils";
 export type { RunOptions, RunResult } from "../utils";
 
 export class CommandRunner extends Context.Tag("CommandRunner")<
@@ -13,16 +14,31 @@ export class CommandRunner extends Context.Tag("CommandRunner")<
     run: (argv, options = {}) =>
       Effect.tryPromise({
         try: async () => {
-          const proc = Bun.spawn(argv, {
-            cwd: options.cwd,
-            env: { ...process.env, ...options.env },
-            stdin: options.input ? new Blob([options.input]) : undefined,
-            stdout: "pipe",
-            stderr: "pipe",
-          });
+          const readPipe = async (
+            stream: ReadableStream<Uint8Array> | number | null | undefined,
+          ) => (stream && typeof stream !== "number" ? new Response(stream).text() : "");
+          let proc: ReturnType<typeof Bun.spawn>;
+          try {
+            proc = Bun.spawn(argv, {
+              cwd: options.cwd,
+              env: { ...process.env, ...options.env },
+              stdin: options.input ? new Blob([options.input]) : undefined,
+              stdout: "pipe",
+              stderr: "pipe",
+            });
+          } catch (error) {
+            if (options.allowFailure) {
+              return {
+                stdout: "",
+                stderr: error instanceof Error ? error.message : String(error),
+                code: 1,
+              };
+            }
+            throw error;
+          }
           const [stdout, stderr, code] = await Promise.all([
-            new Response(proc.stdout).text(),
-            new Response(proc.stderr).text(),
+            readPipe(proc.stdout),
+            readPipe(proc.stderr),
             proc.exited,
           ]);
           if (code !== 0 && !options.allowFailure) {
@@ -46,13 +62,21 @@ export class CommandRunner extends Context.Tag("CommandRunner")<
     runLive: (argv, options = {}) =>
       Effect.tryPromise({
         try: async () => {
-          const proc = Bun.spawn(argv, {
-            cwd: options.cwd,
-            env: { ...process.env, ...options.env },
-            stdout: "inherit",
-            stderr: "inherit",
-            stdin: "inherit",
-          });
+          let proc: ReturnType<typeof Bun.spawn>;
+          try {
+            proc = Bun.spawn(argv, {
+              cwd: options.cwd,
+              env: { ...process.env, ...options.env },
+              stdout: "inherit",
+              stderr: "inherit",
+              stdin: "inherit",
+            });
+          } catch (error) {
+            if (options.allowFailure) {
+              return 1;
+            }
+            throw error;
+          }
           const code = await proc.exited;
           if (code !== 0 && !options.allowFailure) {
             throw { argv, code };

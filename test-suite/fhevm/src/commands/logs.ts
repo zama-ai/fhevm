@@ -9,39 +9,61 @@ import { PreflightError } from "../errors";
 import { LOG_TARGETS, PROJECT } from "../layout";
 import { CommandRunner } from "../services/CommandRunner";
 
+const dockerPsNames = (includeExited: boolean) => [
+  "docker",
+  "ps",
+  ...(includeExited ? ["-a"] : []),
+  "--filter",
+  `label=com.docker.compose.project=${PROJECT}`,
+  "--format",
+  "{{.Names}}",
+];
+
 export const logs = (service: string | undefined, options: { follow: boolean } = { follow: true }) =>
   Effect.gen(function* () {
     const cmd = yield* CommandRunner;
-    const ps = yield* cmd
-      .run(
-        [
-          "docker",
-          "ps",
-          "--filter",
-          `label=com.docker.compose.project=${PROJECT}`,
-          "--format",
-          "{{.Names}}",
-        ],
-        { allowFailure: true },
-      )
-      .pipe(
-        Effect.catchAll(() =>
-          Effect.succeed({ stdout: "", stderr: "", code: 1 }),
-        ),
+    const requested = service
+      ? LOG_TARGETS[service] ?? service
+      : undefined;
+    const list = (includeExited: boolean) =>
+      cmd
+        .run(dockerPsNames(includeExited), { allowFailure: true })
+        .pipe(Effect.mapError((error) => new PreflightError({ message: error.stderr })));
+    const running = yield* list(false);
+    if (running.code !== 0) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message: running.stderr.trim() || "docker ps failed",
+        }),
       );
-    const containers = ps.stdout
-      .split("\n")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .filter((item) => !service || item.includes(service));
+    }
+    const pickContainers = (stdout: string) =>
+      stdout
+        .split("\n")
+        .map((item: string) => item.trim())
+        .filter(Boolean)
+        .filter((item: string) => !service || item.includes(service));
+    let containers = pickContainers(running.stdout);
+    const hasRequestedMatch = () =>
+      requested
+        ? containers.some((item) => item === requested || item.endsWith(`-${requested}`))
+        : containers.length > 0;
+    if (requested && !hasRequestedMatch()) {
+      const all = yield* list(true);
+      if (all.code !== 0) {
+        return yield* Effect.fail(
+          new PreflightError({
+            message: all.stderr.trim() || "docker ps -a failed",
+          }),
+        );
+      }
+      containers = pickContainers(all.stdout);
+    }
     if (!containers.length) {
       return yield* Effect.fail(
         new PreflightError({ message: `No containers match ${service ?? "fhevm"}` }),
       );
     }
-    const requested = service
-      ? LOG_TARGETS[service] ?? service
-      : undefined;
     const exactMatch = requested
       ? containers.find((item) => item === requested) ??
         containers.find((item) => item.endsWith(`-${requested}`))

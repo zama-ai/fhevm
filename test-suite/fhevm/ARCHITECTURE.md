@@ -10,12 +10,15 @@ flowchart TD
   B --> B2["latest-release: latest stable release"]
   B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104"]
   B --> B4["devnet/testnet/mainnet: GitOps bundles"]
-  B1 --> C["Lock resolved bundle"]
+  B1 --> C["apply *_VERSION env overrides"]
   B2 --> C
   B3 --> C
   B4 --> C
 
-  C --> E["3. generate runtime files under .fhevm"]
+  C --> C1["Lock resolved bundle"]
+  C1 --> C2["apply coprocessor scenario or --override coprocessor shorthand"]
+
+  C2 --> E["3. generate runtime files under .fhevm"]
   E --> E1["env/"]
   E --> E2["compose/"]
   E --> E3["locks/"]
@@ -36,8 +39,8 @@ flowchart TD
   F10 --> F11["14. relayer"]
   F11 --> F12["15. test-suite"]
 
-  G["Local overrides (group or runtime service)"] --> E
-  H["Multicopro topology + per-instance overrides"] --> E
+  G["Local overrides (group or runtime service)"] --> C2
+  H["Scenario-driven coprocessor topology"] --> C2
   I["Compatibility policy"] --> E
   I --> F8
 
@@ -71,8 +74,18 @@ the SHA-tagged images for every component built from the PR.
 - Version selection is explicit. The CLI does not silently use a vague "latest".
 - `latest-main` is modern-only by construction. If no complete bundle exists after the floor SHA, resolution fails.
 - The resolved bundle is printed and locked before the real boot continues.
+- Runtime precedence is fixed: bundle -> `*_VERSION` env overrides -> coprocessor scenario/shorthand -> generated runtime files.
 - `.fhevm` is the only mutable runtime area owned by the CLI.
+- Tracked inputs are split by role:
+  - compose templates: `docker-compose/*.yml`
+  - env templates: `templates/env/.env.*`
+  - relayer template config: `templates/config/relayer.yaml`
+  - static config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
+  - scenario inputs: `scenarios/*.yaml`
+- `src/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
+- `src/render-env.ts`, `src/render-config.ts`, and `src/render-compose.ts` are the only rendering layers.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`, not "rerun the bash ritual and hope".
-- `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups.
+- Tracked compose files are the default runtime truth. `.fhevm/compose` only contains generated overrides for coprocessor topology and active local-override components.
+- `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.

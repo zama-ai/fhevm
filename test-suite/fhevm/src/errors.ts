@@ -76,3 +76,41 @@ export type CliError =
   | ResumeError
   | PreflightError
   | SchemaGuardError;
+
+export const formatCliError = (error: unknown): string | undefined => {
+  if (!error || typeof error !== "object") {
+    return error === undefined ? undefined : String(error);
+  }
+  if ("message" in error && typeof error.message === "string" && error.message) {
+    return error.message;
+  }
+  if ("_tag" in error && typeof error._tag === "string") {
+    switch (error._tag) {
+      case "BootstrapTimeout":
+        return `Bootstrap timed out after ${String((error as BootstrapTimeout).elapsed)}s`;
+      case "IncompatibleVersions":
+        return (error as IncompatibleVersions).issues.join("\n");
+      case "ContainerCrashed": {
+        const crashed = error as ContainerCrashed;
+        return `${crashed.container} exited with code ${crashed.exitCode}\n${crashed.logs}`.trim();
+      }
+      case "CommandError": {
+        const command = error as CommandError;
+        return `${command.argv.join(" ")} failed (${command.code})\n${command.stderr}`.trim();
+      }
+      case "ContainerStartError": {
+        const start = error as ContainerStartError;
+        return `${start.component} failed to start\n${start.stderr}`.trim();
+      }
+      case "BuildError": {
+        const build = error as BuildError;
+        return `${build.component} build failed\n${build.stderr}`.trim();
+      }
+      case "ProbeTimeout": {
+        const timeout = error as ProbeTimeout;
+        return `${timeout.container} was not ready after ${timeout.elapsed}ms`;
+      }
+    }
+  }
+  return typeof error === "string" ? error : undefined;
+};

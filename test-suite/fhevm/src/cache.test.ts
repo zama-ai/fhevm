@@ -4,7 +4,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { bundleFromFile, cachedResolve, previewBundle, resolveBundle, resolveCachePath } from "./cache";
+import {
+  bundleFromFile,
+  cachedResolve,
+  ensureLockSnapshot,
+  previewBundle,
+  resolveBundle,
+  resolveCachePath,
+} from "./cache";
 import { COMPAT_MATRIX } from "./compat";
 import { GitHubApiError } from "./errors";
 import { LOCK_DIR } from "./layout";
@@ -56,9 +63,15 @@ const TestGitHubClient = Layer.succeed(GitHubClient, {
 // ---------------------------------------------------------------------------
 
 describe("resolveCachePath", () => {
-  test("returns path with truncated sha suffix", () => {
+  test("returns path with truncated short sha suffix", () => {
     const result = resolveCachePath("sha", "ABCDEF1234567890");
     expect(result).toBe(path.join(LOCK_DIR, ".cache-sha-abcdef1.json"));
+  });
+
+  test("keeps the full 40-char sha in the cache key", () => {
+    const sha = "ABCDEF1234567890ABCDEF1234567890ABCDEF12";
+    const result = resolveCachePath("sha", sha);
+    expect(result).toBe(path.join(LOCK_DIR, `.cache-sha-${sha.toLowerCase()}.json`));
   });
 });
 
@@ -246,6 +259,18 @@ describe("resolveBundle", () => {
     // Clean up
     await fs.rm(result.lockPath, { force: true }).catch(() => {});
     await fs.rm(cachePath, { force: true }).catch(() => {});
+  });
+
+  test("restores a missing lock snapshot from persisted bundle state", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "lock-restore-test-"));
+    const lockPath = path.join(dir, "restored-lock.json");
+    const bundle = makeBundle({ target: "latest-release", lockName: "restored-lock.json" });
+
+    await Effect.runPromise(ensureLockSnapshot(lockPath, bundle));
+
+    expect(await fs.readFile(lockPath, "utf8")).toContain('"lockName": "restored-lock.json"');
+
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 });
 

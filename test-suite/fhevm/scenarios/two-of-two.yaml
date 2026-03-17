@@ -1,0 +1,5 @@
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2

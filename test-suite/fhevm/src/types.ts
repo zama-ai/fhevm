@@ -29,9 +29,46 @@ export type StepName = (typeof STEP_NAMES)[number];
 export type VersionTarget = (typeof TARGETS)[number];
 export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 
-export type InstanceOverride = {
+export type CoprocessorInstanceSource =
+  | { mode: "inherit" }
+  | { mode: "local" }
+  | { mode: "registry"; tag: string };
+
+export type CoprocessorScenarioInstance = {
+  index: number;
+  source?: CoprocessorInstanceSource;
+  env?: Record<string, string>;
+  args?: Record<string, string[]>;
+};
+
+export type CoprocessorScenario = {
+  version: 1;
+  kind: "coprocessor-consensus";
+  topology: {
+    count: number;
+    threshold: number;
+  };
+  instances?: CoprocessorScenarioInstance[];
+};
+
+export type ResolvedCoprocessorScenarioInstance = {
+  index: number;
+  source: CoprocessorInstanceSource;
   env: Record<string, string>;
   args: Record<string, string[]>;
+  localServices?: string[];
+};
+
+export type ResolvedCoprocessorScenario = {
+  version: 1;
+  kind: "coprocessor-consensus";
+  origin: "default" | "file" | "override-shorthand";
+  sourcePath?: string;
+  topology: {
+    count: number;
+    threshold: number;
+  };
+  instances: ResolvedCoprocessorScenarioInstance[];
 };
 
 export type LocalOverride = {
@@ -42,7 +79,6 @@ export type LocalOverride = {
 export type Topology = {
   count: number;
   threshold: number;
-  instances: Record<string, InstanceOverride>;
 };
 
 export type Discovery = {
@@ -75,14 +111,18 @@ export type BuiltImage = {
   ref: string;
   id: string;
   group: OverrideGroup;
+  instanceIndex?: number;
 };
 
 export type State = {
   target: VersionTarget;
   lockPath: string;
+  requiresGitHub?: boolean;
   versions: VersionBundle;
   overrides: LocalOverride[];
   topology: Topology;
+  scenario: ResolvedCoprocessorScenario;
+  scenarioSourcePath?: string;
   discovery?: Discovery;
   builtImages?: BuiltImage[];
   completedSteps: StepName[];
@@ -91,9 +131,11 @@ export type State = {
 
 export type UpOptions = {
   target: VersionTarget;
+  requestedTarget?: VersionTarget;
   sha?: string;
   overrides: LocalOverride[];
   topology: Topology;
+  scenarioPath?: string;
   fromStep?: StepName;
   lockFile?: string;
   allowSchemaMismatch: boolean;

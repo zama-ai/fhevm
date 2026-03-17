@@ -6,7 +6,7 @@ It exists for three workflows:
 
 - run a known stack target locally
 - swap in local changes for one repo-owned group
-- run multicopro topologies with deterministic generated state
+- run consensus/matrix coprocessor scenarios with deterministic generated state
 
 The CLI owns all mutable runtime state under `.fhevm/`. Tracked compose and env files stay as templates.
 
@@ -30,12 +30,52 @@ bun test
 
 - `up` resolves a target bundle, runs preflight, generates `.fhevm`, and boots the stack
 - `up --dry-run` runs the same resolve and preflight path without mutating runtime state
+- `up --scenario <file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
+- `up --override coprocessor` is the fast local-dev shorthand for a one-instance local coprocessor scenario
 - `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`)
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
 - `down` stops the stack
 - `clean` removes CLI-owned runtime state
 - `clean --images` also removes CLI-owned local override images
+
+## Ownership Model
+
+There are four kinds of inputs/runtime artifacts:
+
+- tracked compose templates: `docker-compose/*.yml`
+- tracked env templates: `templates/env/.env.*`
+- tracked config:
+  - relayer template input: `templates/config/relayer.yaml`
+  - static mounted config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
+- tracked scenario inputs: `scenarios/*.yaml`
+
+Generated runtime artifacts always live under `.fhevm/`:
+
+- `.fhevm/env/*.env`
+- `.fhevm/compose/*.yml` for generated runtime overrides only
+- `.fhevm/config/relayer.yaml`
+- `.fhevm/addresses/*`
+- `.fhevm/locks/*`
+- `.fhevm/state.json`
+
+Tracked compose files are the default runtime truth. `.fhevm/compose` only holds generated overrides when runtime structure or local-image policy actually changes, with coprocessor topology as the only structural expansion.
+
+The code follows the same split:
+
+- `src/runtime-plan.ts`: resolve one runtime plan from bundle + env overrides + scenario/shorthand
+- `src/render-env.ts`: render runtime env maps
+- `src/render-config.ts`: render generated config files
+- `src/render-compose.ts`: render compose overlays, with coprocessor topology as the only structural exception
+
+## Resolution Order
+
+Runtime resolution is intentionally fixed:
+
+1. Resolve the base bundle from `--target`, `--sha`, or `--lock-file`
+2. Apply matching `*_VERSION` environment overrides
+3. Apply either `--scenario <file>` or the `--override coprocessor` shorthand
+4. Materialize generated env/config/compose state under `.fhevm/`
 
 ## Targets
 
@@ -160,7 +200,7 @@ The matrix has four sections:
 | `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-CI workflows read these values via `./fhevm-cli compat-defaults` instead of hardcoding them.
+CI workflows read `externalDefaults` and `anchors` via `./fhevm-cli compat-defaults` instead of hardcoding them.
 
 ### How to update
 
@@ -187,7 +227,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ./fhevm-cli up --target latest-release --resume --from-step relayer
 ./fhevm-cli up --target latest-release --override coprocessor
 ./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
-./fhevm-cli up --target latest-release --coprocessors 2 --threshold 2
+./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml
 ./fhevm-cli upgrade coprocessor
 
 ./fhevm-cli status
@@ -221,6 +261,8 @@ Supported groups:
 ```sh
 ./fhevm-cli up --target latest-release --override coprocessor
 ```
+
+For `coprocessor`, this is also the shorthand local-dev scenario: one coprocessor instance, threshold `1`, source mode `local`.
 
 ### Override specific runtime services
 
@@ -284,27 +326,31 @@ If a runtime override is already active and you only want to rebuild and restart
 ./fhevm-cli upgrade coprocessor
 ```
 
-`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. It rebuilds and restarts runtime services only; one-shot DB migration containers are not rerun.
+`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. For `coprocessor`, it rebuilds only the local coprocessor instances from the active shorthand/scenario state. One-shot DB migration containers are not rerun.
 
 ## Dropped Convenience Commands
 
 - `smoke`: use explicit `up ...` plus `test ...`
 - `test debug`: use `docker exec -it fhevm-test-suite-e2e-debug sh`
 
-## Multicopro
+## Coprocessor Scenarios
 
-Example:
+Use `--scenario <file>` for consensus and rollout matrices. The file is the source of truth for:
+
+- coprocessor count and threshold
+- per-instance source mode: `inherit`, `registry`, or `local`
+- per-instance env overrides
+- per-instance runtime args
+
+Examples:
 
 ```sh
-./fhevm-cli up \
-  --target latest-release \
-  --coprocessors 2 \
-  --threshold 2 \
-  --instance-env 1:OTEL_SERVICE_NAME=coprocessor-1-local \
-  --instance-arg '1:tfhe-worker=--coprocessor-fhe-threads=4'
+./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli up --target latest-release --scenario ./scenarios/one-registry-outlier.yaml
+./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml
 ```
 
-Generated env, compose overlays, addresses, locks, and state all live under `.fhevm/`.
+`--scenario` cannot be combined with `--override coprocessor`. Keep `--override coprocessor` for the fast local e2e loop; use scenarios when you need an explicit consensus matrix.
 
 ## Runtime State
 
@@ -316,4 +362,4 @@ The CLI owns:
 - `.fhevm/compose/`
 - `.fhevm/addresses/`
 
-`status` shows the active stack state and any CLI-owned local build images.
+`status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.

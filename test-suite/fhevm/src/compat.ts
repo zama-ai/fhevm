@@ -1,11 +1,18 @@
+import type { RuntimePlan } from "./runtime-plan";
 import type { State } from "./types";
 
 type CompatSemver = readonly [number, number, number];
-type CompatService = "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
+type CompatService =
+  | "gw-listener"
+  | "host-listener"
+  | "host-listener-poller"
+  | "sns-worker"
+  | "transaction-sender";
 type CompatArgValue = { env: string } | { value: string };
 
 export type CompatPolicy = {
   coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, CompatArgValue]>>>;
+  coprocessorDropFlags: Partial<Record<CompatService, string[]>>;
   connectorEnv: Record<string, string>;
 };
 
@@ -43,10 +50,11 @@ export const COMPAT_MATRIX = {
    *   3. Run `bun test` — compatPolicyForState tests will cover it
    */
   legacyShims: [
-    { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys" },
-    { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags" },
-    { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url" },
-    { key: "CONNECTOR_GW_LISTENER_VERSION",     below: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id" },
+    { key: "COPROCESSOR_GW_LISTENER_VERSION",  below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "legacy" as const },
+    { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys", unparsed: "modern" as const },
+    { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags", unparsed: "modern" as const },
+    { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url", unparsed: "modern" as const },
+    { key: "CONNECTOR_GW_LISTENER_VERSION",     below: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id", unparsed: "modern" as const },
   ],
 
   /**
@@ -73,16 +81,25 @@ export const COMPAT_MATRIX = {
 } as const;
 
 const SHIM_PROFILES = {
+  "legacy-gw-listener-no-drift-addresses": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
+    },
+    connectorEnv: {},
+  },
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {
       "host-listener": [["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }]],
       "host-listener-poller": [["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }]],
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
+    coprocessorDropFlags: {},
     connectorEnv: {},
   },
   "legacy-connector-chain-id": {
     coprocessorArgs: {},
+    coprocessorDropFlags: {},
     connectorEnv: {
       KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
     },
@@ -91,6 +108,7 @@ const SHIM_PROFILES = {
     coprocessorArgs: {
       "transaction-sender": [["--host-chain-url", { env: "RPC_WS_URL" }]],
     },
+    coprocessorDropFlags: {},
     connectorEnv: {},
   },
   "legacy-tx-sender-gateway-flags": {
@@ -102,6 +120,7 @@ const SHIM_PROFILES = {
         ["--retry-immediately-on-nonce-error", { value: "2" }],
       ],
     },
+    coprocessorDropFlags: {},
     connectorEnv: {},
   },
 } as const satisfies Record<string, CompatPolicy>;
@@ -117,31 +136,37 @@ const parseCompatVersion = (version: string) => {
 
 /**
  * Return true when `version` is older than `target`.
- * Unparsable versions (e.g. SHA tags) are treated as modern (returns false).
- * The preset and CI systems already treat SHA targets as modern — compat agrees.
+ * Unparsable versions (e.g. SHA tags) may be treated as modern or legacy,
+ * depending on whether the caller is applying destructive or additive compat.
  */
-const versionLt = (version: string, target: CompatSemver) => {
+const versionLt = (
+  version: string,
+  target: CompatSemver,
+  options?: { unparsed?: "modern" | "legacy" },
+) => {
   const parsed = parseCompatVersion(version);
-  if (!parsed) return false;
+  if (!parsed) return options?.unparsed === "legacy";
   for (let index = 0; index < parsed.length; index += 1) {
     if (parsed[index] !== target[index]) return parsed[index] < target[index];
   }
   return false;
 };
 
-const usesModernWorkspaceProtocol = (state: Pick<State, "overrides">) =>
+type CompatState = Pick<State, "versions" | "overrides"> | Pick<RuntimePlan, "versions" | "overrides">;
+
+const usesModernWorkspaceProtocol = (state: Pick<CompatState, "overrides">) =>
   ["coprocessor", "gateway-contracts", "host-contracts"].every((group) =>
     state.overrides.some((override) => override.group === group),
   );
 
-export const requiresMultichainAclAddress = (state: Pick<State, "versions" | "overrides">) =>
+export const requiresMultichainAclAddress = (state: CompatState) =>
   !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
-export const requiresLegacyRelayerReadinessConfig = (state: Pick<State, "versions">) =>
+export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
 /** Test-suite SDK < v0.11.0 appends /v1/ to RELAYER_URL; >= v0.11.0 expects the URL to include the version path. */
-export const requiresLegacyRelayerUrl = (state: Pick<State, "versions">) =>
+export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
 export type BundleIncompatibility = { severity: "error"; code: string; message: string };
@@ -151,7 +176,7 @@ export type BundleIncompatibility = { severity: "error"; code: string; message: 
  * Returns an empty array when the bundle is consistent.
  */
 export const validateBundleCompatibility = (
-  state: Pick<State, "versions">,
+  state: Pick<CompatState, "versions">,
 ): BundleIncompatibility[] => {
   const issues: BundleIncompatibility[] = [];
   for (const rule of COMPAT_MATRIX.incompatibilities) {
@@ -168,10 +193,14 @@ export const validateBundleCompatibility = (
   return issues;
 };
 
-export const compatPolicyForState = (state: State): CompatPolicy => {
-  const policy: CompatPolicy = { coprocessorArgs: {}, connectorEnv: {} };
+export const compatPolicyForState = (state: CompatState): CompatPolicy => {
+  const policy: CompatPolicy = {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {},
+    connectorEnv: {},
+  };
   for (const shim of COMPAT_MATRIX.legacyShims) {
-    if (!versionLt(state.versions.env[shim.key] ?? "", shim.below)) {
+    if (!versionLt(state.versions.env[shim.key] ?? "", shim.below, { unparsed: shim.unparsed })) {
       continue;
     }
     const profile = SHIM_PROFILES[shim.profile];
@@ -179,6 +208,12 @@ export const compatPolicyForState = (state: State): CompatPolicy => {
       policy.coprocessorArgs[service as CompatService] = [
         ...(policy.coprocessorArgs[service as CompatService] ?? []),
         ...args,
+      ];
+    }
+    for (const [service, flags] of Object.entries(profile.coprocessorDropFlags)) {
+      policy.coprocessorDropFlags[service as CompatService] = [
+        ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
+        ...flags,
       ];
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);

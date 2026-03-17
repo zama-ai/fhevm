@@ -29,7 +29,6 @@ export class ContainerProbe extends Context.Tag("ContainerProbe")<
     ) => Effect.Effect<void, ProbeTimeout | ContainerCrashed>;
     readonly waitForComplete: (
       container: string,
-      marker?: string,
     ) => Effect.Effect<void, ProbeTimeout | ContainerCrashed>;
     readonly waitForLog: (
       container: string,
@@ -50,7 +49,6 @@ export class ContainerProbe extends Context.Tag("ContainerProbe")<
       const checkContainer = (
         container: string,
         want: "running" | "healthy" | "complete",
-        marker?: string,
       ): Effect.Effect<void, "not-ready" | ContainerCrashed> =>
         Effect.gen(function* () {
           const [inspect] = yield* dockerInspect(cmd, container);
@@ -66,16 +64,6 @@ export class ContainerProbe extends Context.Tag("ContainerProbe")<
             inspect.State.ExitCode === 0
           )
             return;
-
-          if (want === "complete" && inspect.State.Status === "running" && marker) {
-            const logs = yield* cmd.run(["docker", "logs", container], {
-              allowFailure: true,
-            });
-            if (logs.stdout.includes(marker) || logs.stderr.includes(marker)) {
-              yield* cmd.run(["docker", "stop", container], { allowFailure: true });
-              return;
-            }
-          }
 
           if (inspect.State.Status === "exited" && inspect.State.ExitCode !== 0) {
             const logs = yield* cmd.run(["docker", "logs", container], {
@@ -111,9 +99,8 @@ export class ContainerProbe extends Context.Tag("ContainerProbe")<
       const withContainerRetry = (
         container: string,
         want: "running" | "healthy" | "complete",
-        marker?: string,
       ): Effect.Effect<void, ProbeTimeout | ContainerCrashed> =>
-        checkContainer(container, want, marker).pipe(
+        checkContainer(container, want).pipe(
           Effect.retry({
             while: isNotReady,
             schedule: containerRetryPolicy,
@@ -131,8 +118,7 @@ export class ContainerProbe extends Context.Tag("ContainerProbe")<
 
         waitForRunning: (container) => withContainerRetry(container, "running"),
 
-        waitForComplete: (container, marker) =>
-          withContainerRetry(container, "complete", marker),
+        waitForComplete: (container) => withContainerRetry(container, "complete"),
 
         waitForLog: (container, pattern) =>
           Effect.gen(function* () {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import type { OverrideGroup, StepName } from "./types";
@@ -9,11 +10,23 @@ export const ENV_DIR = path.join(STATE_DIR, "env");
 export const COMPOSE_OUT_DIR = path.join(STATE_DIR, "compose");
 export const ADDRESS_DIR = path.join(STATE_DIR, "addresses");
 export const LOCK_DIR = path.join(STATE_DIR, "locks");
-export const CONFIG_DIR = path.join(STATE_DIR, "config");
+export const GENERATED_CONFIG_DIR = path.join(STATE_DIR, "config");
 export const STATE_FILE = path.join(STATE_DIR, "state.json");
-export const TEMPLATE_ENV_DIR = path.join(CLI_DIR, "env", "staging");
+export const TEMPLATE_DIR = path.join(CLI_DIR, "templates");
+export const TEMPLATE_ENV_DIR = path.join(TEMPLATE_DIR, "env");
+export const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
-export const TEMPLATE_RELAYER_CONFIG = path.join(CLI_DIR, "config", "relayer", "local.yaml");
+export const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
+export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+export const STATIC_KMS_CORE_CONFIG = path.join(
+  STATIC_CONFIG_DIR,
+  "kms-core",
+  "config.toml",
+);
+export const STATIC_PROMETHEUS_CONFIG_DIR = path.join(
+  STATIC_CONFIG_DIR,
+  "prometheus",
+);
 export const PROJECT = "fhevm";
 export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 9000, 9001];
 
@@ -144,7 +157,7 @@ export const resolveServiceOverrides = (group: OverrideGroup, suffixes: string[]
 export const TEST_GREP: Record<string, string> = {
   "paused-host-contracts": "test paused host user input|test paused host HTTP public decrypt|test paused host operators",
   "paused-gateway-contracts":
-    "test paused gateway user input|test paused gateway user decrypt|test paused gateway HTTP public decrypt",
+    "test paused gateway user input|test paused gateway HTTP public decrypt",
   "input-proof": "test user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
   "user-decryption": "test user decrypt",
@@ -167,21 +180,40 @@ export const TEST_PARALLEL: Record<string, boolean> = {
 };
 
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
+export const COPROCESSOR_WALLET_INDICES = [5, 8, 9, 10, 11] as const;
+export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;
 
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
 export const composePath = (name: string) => path.join(COMPOSE_OUT_DIR, `${name}.yml`);
+export const composeTemplatePath = (name: string) =>
+  path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`);
+export const effectiveComposePath = (name: string) =>
+  existsSync(composePath(name)) ? composePath(name) : composeTemplatePath(name);
 export const versionsEnvPath = path.join(ENV_DIR, "versions.env");
-export const relayerConfigPath = path.join(CONFIG_DIR, "relayer.local.yaml");
+export const relayerConfigPath = path.join(GENERATED_CONFIG_DIR, "relayer.yaml");
 export const gatewayAddressesPath = path.join(ADDRESS_DIR, "gateway", ".env.gateway");
+export const gatewayAddressesSolidityPath = path.join(
+  ADDRESS_DIR,
+  "gateway",
+  "GatewayAddresses.sol",
+);
+export const paymentBridgingAddressesSolidityPath = path.join(
+  ADDRESS_DIR,
+  "gateway",
+  "PaymentBridgingAddresses.sol",
+);
 export const hostAddressesPath = path.join(ADDRESS_DIR, "host", ".env.host");
+export const hostAddressesSolidityPath = path.join(
+  ADDRESS_DIR,
+  "host",
+  "FHEVMHostAddresses.sol",
+);
 
 export const dockerArgs = (component: string) => [
   "docker",
   "compose",
   "-p",
   PROJECT,
-  "--env-file",
-  versionsEnvPath,
   "-f",
-  composePath(component),
+  effectiveComposePath(component),
 ];

@@ -6,20 +6,27 @@ import { LOCK_DIR } from "./layout";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
 import { GitHubClient } from "./services/GitHubClient";
 import type { UpOptions, VersionBundle, VersionTarget } from "./types";
-import { readJson, writeJson } from "./utils";
+import { exists, readJson, writeJson } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-export const resolveCachePath = (target: string, sha?: string) =>
-  path.join(LOCK_DIR, `.cache-${target}${sha ? `-${sha.toLowerCase().slice(0, 7)}` : ""}.json`);
+export const resolveCachePath = (target: string, sha?: string) => {
+  const normalizedSha = sha?.toLowerCase();
+  const suffix = normalizedSha
+    ? normalizedSha.length === 40
+      ? normalizedSha
+      : normalizedSha.slice(0, 7)
+    : undefined;
+  return path.join(LOCK_DIR, `.cache-${target}${suffix ? `-${suffix}` : ""}.json`);
+};
 
 // ---------------------------------------------------------------------------
 // Effect-based functions
 // ---------------------------------------------------------------------------
 
-const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError> =>
+export const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError> =>
   Effect.gen(function* () {
     const file = path.join(LOCK_DIR, bundle.lockName);
     yield* Effect.tryPromise({
@@ -27,6 +34,20 @@ const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError>
       catch: (error) => new GitHubApiError({ message: `Failed to write lock file: ${error}` }),
     });
     return file;
+  });
+
+export const ensureLockSnapshot = (
+  lockPath: string,
+  bundle: VersionBundle,
+): Effect.Effect<void, GitHubApiError> =>
+  Effect.gen(function* () {
+    if (yield* Effect.promise(() => exists(lockPath))) {
+      return;
+    }
+    yield* Effect.tryPromise({
+      try: () => writeJson(lockPath, bundle),
+      catch: (error) => new GitHubApiError({ message: `Failed to restore lock file: ${error}` }),
+    });
   });
 
 /**

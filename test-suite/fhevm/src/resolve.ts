@@ -344,11 +344,15 @@ export const resolveTarget = (
           new GitHubApiError({ message: error instanceof Error ? error.message : String(error) }),
         );
       }
-      const index = commits.findIndex((sha) => sha.startsWith(tag));
+      const index = commits.findIndex((sha) =>
+        requested.length === 40
+          ? sha.toLowerCase() === requested.toLowerCase()
+          : sha.startsWith(tag),
+      );
       if (index < 0) {
         return yield* Effect.fail(
           new GitHubApiError({
-            message: `sha target ${tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
+            message: `sha target ${requested.length === 40 ? requested.toLowerCase() : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
           }),
         );
       }

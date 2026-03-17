@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect";
 import { CommandRunner } from "./CommandRunner";
 import { ContainerStartError } from "../errors";
-import { dockerArgs, composePath, versionsEnvPath } from "../layout";
-import { readEnvFile, exists } from "../utils";
+import { dockerArgs, envPath, versionsEnvPath } from "../layout";
+import { readEnvFileIfExists, exists } from "../utils";
 
 export class ContainerRunner extends Context.Tag("ContainerRunner")<
   ContainerRunner,
@@ -25,13 +25,13 @@ export class ContainerRunner extends Context.Tag("ContainerRunner")<
     Effect.gen(function* () {
       const cmd = yield* CommandRunner;
 
-      const composeEnv = (extra?: Record<string, string>) =>
+      const composeEnv = (component: string, extra?: Record<string, string>) =>
         Effect.tryPromise({
           try: async () => {
             const env = (await exists(versionsEnvPath))
-              ? { ...(await readEnvFile(versionsEnvPath)), COMPOSE_IGNORE_ORPHANS: "true" }
+              ? { ...(await readEnvFileIfExists(versionsEnvPath)), COMPOSE_IGNORE_ORPHANS: "true" }
               : { COMPOSE_IGNORE_ORPHANS: "true" };
-            return { ...env, ...extra };
+            return { ...env, ...(await readEnvFileIfExists(envPath(component))), ...extra };
           },
           catch: () => new ContainerStartError({ component: "env", stderr: "Failed to read env" }),
         });
@@ -39,7 +39,7 @@ export class ContainerRunner extends Context.Tag("ContainerRunner")<
       return {
         composeUp: (component, services = [], options = {}) =>
           Effect.gen(function* () {
-            const env = yield* composeEnv(options.env);
+            const env = yield* composeEnv(component, options.env);
             yield* cmd.runLive(
               [
                 ...dockerArgs(component),
@@ -56,9 +56,7 @@ export class ContainerRunner extends Context.Tag("ContainerRunner")<
 
         composeDown: (component) =>
           Effect.gen(function* () {
-            const hasFile = yield* Effect.promise(() => exists(composePath(component)));
-            if (!hasFile) return true;
-            const env = yield* composeEnv().pipe(
+            const env = yield* composeEnv(component).pipe(
               Effect.catchAll(() => Effect.succeed({ COMPOSE_IGNORE_ORPHANS: "true" } as Record<string, string>)),
             );
             const code = yield* cmd
@@ -73,7 +71,7 @@ export class ContainerRunner extends Context.Tag("ContainerRunner")<
 
         composeBuild: (component, services, env) =>
           Effect.gen(function* () {
-            const compEnv = yield* composeEnv(env);
+            const compEnv = yield* composeEnv(component, env);
             yield* cmd.runLive([...dockerArgs(component), "build", ...services], { env: compEnv }).pipe(
               Effect.mapError((e) => new ContainerStartError({ component, stderr: e.stderr })),
             );

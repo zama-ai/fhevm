@@ -33,4 +33,14 @@ describe("CommandRunner", () => {
     );
     expect(result._tag).toBe("Left");
   });
+
+  test("run returns code 1 for missing commands when allowFailure is set", async () => {
+    const program = Effect.gen(function* () {
+      const cmd = yield* CommandRunner;
+      return yield* cmd.run(["definitely-not-a-real-command"], { allowFailure: true });
+    });
+    const result = await Effect.runPromise(program.pipe(Effect.provide(CommandRunner.Live)));
+    expect(result.code).toBe(1);
+    expect(result.stderr.length).toBeGreaterThan(0);
+  });
 });

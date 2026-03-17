@@ -6,9 +6,10 @@ import { Effect } from "effect";
 import { ensureRuntimeArtifacts } from "../pipeline";
 import { resolvedComposeEnv } from "../codegen";
 import { PreflightError } from "../errors";
-import { dockerArgs } from "../layout";
+import { dockerArgs, envPath } from "../layout";
 import { CommandRunner } from "../services/CommandRunner";
 import { StateManager } from "../services/StateManager";
+import { readEnvFileIfExists } from "../utils";
 
 export const runContractTask = (
   component: "host-sc" | "gateway-sc",
@@ -38,7 +39,10 @@ export const runContractTask = (
         command,
       ],
       {
-        env: resolvedComposeEnv(state),
+        env: {
+          ...resolvedComposeEnv(state),
+          ...(yield* Effect.promise(() => readEnvFileIfExists(envPath(component)))),
+        },
       },
     );
   });

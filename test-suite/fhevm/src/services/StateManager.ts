@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect";
+import fs from "node:fs/promises";
 import type { State, StepName } from "../types";
 import { readJson, writeJson, exists } from "../utils";
 import { STATE_FILE } from "../layout";
@@ -9,6 +10,7 @@ export class StateManager extends Context.Tag("StateManager")<
     readonly load: Effect.Effect<State | undefined>;
     readonly save: (state: State) => Effect.Effect<void>;
     readonly markStep: (state: State, step: StepName) => Effect.Effect<void>;
+    readonly clear: Effect.Effect<void>;
   }
 >() {
   static makeForPath(stateFile: string) {
@@ -25,6 +27,7 @@ export class StateManager extends Context.Tag("StateManager")<
           state.updatedAt = new Date().toISOString();
           await writeJson(stateFile, state);
         }),
+      clear: Effect.promise(() => fs.rm(stateFile, { force: true })),
     } satisfies Context.Tag.Service<StateManager>;
   }
 

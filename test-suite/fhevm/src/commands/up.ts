@@ -5,13 +5,14 @@
  */
 import { Effect } from "effect";
 
-import { resolveBundle, previewBundle } from "../cache";
+import { ensureLockSnapshot, resolveBundle, previewBundle } from "../cache";
 import {
   assertSchemaCompatibility,
   describeOverride,
   ensureRuntimeArtifacts,
   overrideWarnings,
   preflight,
+  projectContainers,
   printBundle,
   printPlan,
   resetAfterStep,
@@ -19,16 +20,30 @@ import {
   stateStepIndex,
 } from "../pipeline";
 import { ResumeError } from "../errors";
+import {
+  resolveScenarioForOptions,
+  topologyFromScenario,
+} from "../runtime-plan";
 import { StateManager } from "../services/StateManager";
-import type { State, StepName, UpOptions } from "../types";
+import type {
+  State,
+  StepName,
+  UpOptions,
+} from "../types";
 import { STEP_NAMES } from "../types";
-import { regen } from "../codegen";
 import { down } from "./down";
 
 const describeResumeState = (state: State) =>
   [
     `target=${state.target}`,
     `topology=${state.topology.count}/${state.topology.threshold}`,
+    ...(state.scenario.origin !== "default"
+      ? [
+          `scenario=${state.scenario.origin}${
+            state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""
+          }`,
+        ]
+      : []),
     ...(state.overrides.length
       ? [
           `overrides=${state.overrides.map(describeOverride).join(", ")}`,
@@ -36,10 +51,22 @@ const describeResumeState = (state: State) =>
       : []),
   ].join(" ");
 
-const ensureResumeOptions = (state: State, options: UpOptions) => {
+const ensureResumeOptions = (
+  state: State,
+  options: Pick<
+    UpOptions,
+    | "requestedTarget"
+    | "sha"
+    | "lockFile"
+    | "scenarioPath"
+    | "overrides"
+    | "allowSchemaMismatch"
+    | "reset"
+  >,
+) => {
   const mismatches: string[] = [];
-  if (state.target !== options.target) {
-    mismatches.push(`target=${options.target}`);
+  if (options.requestedTarget && state.target !== options.requestedTarget) {
+    mismatches.push(`target=${options.requestedTarget}`);
   }
   if (options.sha) {
     mismatches.push(`sha=${options.sha}`);
@@ -47,22 +74,19 @@ const ensureResumeOptions = (state: State, options: UpOptions) => {
   if (options.lockFile) {
     mismatches.push(`lock-file=${options.lockFile}`);
   }
+  if (options.scenarioPath) {
+    mismatches.push(`scenario=${options.scenarioPath}`);
+  }
   if (options.overrides.length) {
     mismatches.push(
       `overrides=${options.overrides.map(describeOverride).join(", ")}`,
     );
   }
-  if (
-    options.topology.count !== state.topology.count ||
-    options.topology.threshold !== state.topology.threshold ||
-    Object.keys(options.topology.instances).length
-  ) {
-    mismatches.push(
-      `topology=${options.topology.count}/${options.topology.threshold}`,
-    );
-  }
   if (options.allowSchemaMismatch) {
     mismatches.push("--allow-schema-mismatch");
+  }
+  if (options.reset) {
+    mismatches.push("--reset");
   }
   if (mismatches.length) {
     return Effect.fail(
@@ -105,12 +129,17 @@ const bootstrapState = (options: UpOptions) =>
       options.overrides,
       options.allowSchemaMismatch,
     );
+    yield* ensureLockSnapshot(resolved.lockPath, resolved.bundle);
+    const scenario = yield* resolveScenarioForOptions(options);
     const state: State = {
       target: options.target,
       lockPath: resolved.lockPath,
+      requiresGitHub: !options.lockFile,
       versions: resolved.bundle,
       overrides: options.overrides,
-      topology: options.topology,
+      topology: topologyFromScenario(scenario),
+      scenario,
+      scenarioSourcePath: scenario?.sourcePath,
       completedSteps: [],
       updatedAt: new Date().toISOString(),
     };
@@ -144,12 +173,23 @@ export const up = (options: UpOptions) =>
       state = yield* bootstrapState(options);
     }
     if (options.resume) {
+      state.requiresGitHub ??= true;
+      state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
       yield* ensureRuntimeArtifacts(state, "resume");
       if (
         !options.fromStep &&
         STEP_NAMES.every((step) => state!.completedSteps.includes(step))
       ) {
+        const running = yield* projectContainers;
+        if (!running.length) {
+          return yield* Effect.fail(
+            new ResumeError({
+              message:
+                "Persisted state exists but no fhevm containers are running; use `fhevm-cli up` for a fresh boot or `fhevm-cli down` to clear stale state",
+            }),
+          );
+        }
         yield* Effect.log("[resume] nothing to do");
         return;
       }
@@ -183,28 +223,54 @@ export const up = (options: UpOptions) =>
 // ---------------------------------------------------------------------------
 
 export const upDryRun = (
-  options: Omit<UpOptions, "resume" | "dryRun">,
+  options: Omit<UpOptions, "dryRun">,
 ) =>
   Effect.gen(function* () {
+    if (options.resume) {
+      const stateManager = yield* StateManager;
+      const state = yield* stateManager.load;
+      if (!state) {
+        return yield* Effect.fail(
+          new ResumeError({
+            message: "No .fhevm/state.json to resume from",
+          }),
+        );
+      }
+      state.requiresGitHub ??= true;
+      state.scenarioSourcePath ??= state.scenario?.sourcePath;
+      yield* ensureResumeOptions(state, options);
+      yield* preflight(state, true, state.requiresGitHub);
+      yield* printBundle(state.versions);
+      yield* printPlan(state, options.fromStep ?? startStep(state, options));
+      yield* Effect.log(
+        "[dry-run] resume preview uses persisted state only; no state or containers were changed",
+      );
+      return;
+    }
     const bundle = yield* previewBundle(options, process.env);
     yield* assertSchemaCompatibility(
       bundle,
       options.overrides,
       options.allowSchemaMismatch,
     );
+    const scenario = yield* resolveScenarioForOptions(options);
     const state = {
       target: options.target,
       versions: bundle,
       overrides: options.overrides,
-      topology: options.topology,
+      topology: topologyFromScenario(scenario),
+      scenario,
     };
     yield* preflight(
       {
         target: state.target,
         lockPath: "",
+        requiresGitHub: !options.lockFile,
         versions: state.versions,
         overrides: state.overrides,
         topology: state.topology,
+        scenario: state.scenario,
+        scenarioSourcePath: state.scenario?.sourcePath,
         completedSteps: [],
         updatedAt: new Date().toISOString(),
       },

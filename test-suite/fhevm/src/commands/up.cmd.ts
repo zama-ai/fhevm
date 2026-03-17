@@ -1,23 +1,16 @@
-import { Command } from "@effect/cli";
+import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import {
-  targetOption,
   shaOption,
   overrideOption,
-  coprocessorsOption,
-  thresholdOption,
   fromStepOption,
   lockFileOption,
+  scenarioOption,
   resumeOption,
   dryRunOption,
   resetOption,
   allowSchemaMismatchOption,
-  instanceEnvOption,
-  instanceArgOption,
   parseLocalOverride,
-  parseInstanceEnv,
-  parseInstanceArgs,
-  mergeInstanceOverrides,
 } from "../options";
 import { PreflightError } from "../errors";
 import { TARGETS, STEP_NAMES } from "../types";
@@ -25,50 +18,44 @@ import type { StepName, VersionTarget } from "../types";
 import { up, upDryRun } from "./up";
 
 const upOptions = {
-  target: targetOption,
+  target: Options.text("target").pipe(Options.optional),
   sha: shaOption,
   override: overrideOption,
-  coprocessors: coprocessorsOption,
-  threshold: thresholdOption,
   fromStep: fromStepOption,
   lockFile: lockFileOption,
+  scenario: scenarioOption,
   resume: resumeOption,
   dryRun: dryRunOption,
   reset: resetOption,
   allowSchemaMismatch: allowSchemaMismatchOption,
-  instanceEnv: instanceEnvOption,
-  instanceArg: instanceArgOption,
 };
 
 const upHandler = (parsed: {
-  target: string;
+  target: Option.Option<string>;
   sha: Option.Option<string>;
   override: Array<string>;
-  coprocessors: string;
-  threshold: Option.Option<string>;
   fromStep: Option.Option<string>;
   lockFile: Option.Option<string>;
+  scenario: Option.Option<string>;
   resume: boolean;
   dryRun: boolean;
   reset: boolean;
   allowSchemaMismatch: boolean;
-  instanceEnv: Array<string>;
-  instanceArg: Array<string>;
 }) =>
   Effect.gen(function* () {
-    const target = parsed.target;
+    const target = Option.getOrUndefined(parsed.target);
     const sha = Option.getOrUndefined(parsed.sha);
     const fromStepRaw = Option.getOrUndefined(parsed.fromStep);
     const lockFile = Option.getOrUndefined(parsed.lockFile);
-    const thresholdRaw = Option.getOrUndefined(parsed.threshold);
+    const scenarioPath = Option.getOrUndefined(parsed.scenario);
 
     // Validate target (preserves exact error message for tests)
-    if (!TARGETS.includes(target as VersionTarget)) {
+    if (target && !TARGETS.includes(target as VersionTarget)) {
       return yield* Effect.fail(
         new PreflightError({ message: `Unsupported target ${target}` }),
       );
     }
-    const validTarget = target as VersionTarget;
+    const validTarget = (target ?? "latest-main") as VersionTarget;
 
     // Validate from-step (preserves exact error message for tests)
     let fromStep: StepName | undefined;
@@ -98,25 +85,6 @@ const upHandler = (parsed: {
       );
     }
 
-    const count = Number(parsed.coprocessors);
-    if (!Number.isInteger(count) || count < 1 || count > 5) {
-      return yield* Effect.fail(
-        new PreflightError({ message: "--coprocessors must be between 1 and 5" }),
-      );
-    }
-
-    const thresholdVal = thresholdRaw ? Number(thresholdRaw) : undefined;
-    if (
-      thresholdVal !== undefined &&
-      (!Number.isInteger(thresholdVal) || thresholdVal < 1 || thresholdVal > count)
-    ) {
-      return yield* Effect.fail(
-        new PreflightError({
-          message: "--threshold must be between 1 and --coprocessors",
-        }),
-      );
-    }
-
     if (fromStep && !parsed.resume && !parsed.dryRun) {
       return yield* Effect.fail(
         new PreflightError({
@@ -131,37 +99,38 @@ const upHandler = (parsed: {
       catch: (error) =>
         new PreflightError({ message: (error as Error).message }),
     });
-
-    const topology = yield* Effect.try({
-      try: () => ({
-        count,
-        threshold: thresholdVal ?? count,
-        instances: mergeInstanceOverrides(
-          parseInstanceEnv(parsed.instanceEnv as string[]),
-          parseInstanceArgs(parsed.instanceArg as string[]),
-        ),
-      }),
-      catch: (error) =>
-        new PreflightError({ message: (error as Error).message }),
-    });
+    const hasCoprocessorOverride = overrides.some((item) => item.group === "coprocessor");
+    if (scenarioPath && hasCoprocessorOverride) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message: "--scenario cannot be combined with --override coprocessor",
+        }),
+      );
+    }
+    const topology = { count: 1, threshold: 1 };
 
     if (parsed.dryRun) {
       yield* upDryRun({
         target: validTarget,
+        requestedTarget: target as VersionTarget | undefined,
         sha,
         overrides,
         topology,
+        scenarioPath,
         fromStep,
         lockFile,
         allowSchemaMismatch: parsed.allowSchemaMismatch,
+        resume: parsed.resume,
         reset: parsed.reset,
       });
     } else {
       yield* up({
         target: validTarget,
+        requestedTarget: target as VersionTarget | undefined,
         sha,
         overrides,
         topology,
+        scenarioPath,
         fromStep,
         lockFile,
         allowSchemaMismatch: parsed.allowSchemaMismatch,

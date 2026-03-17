@@ -171,10 +171,10 @@ describe("writeJson", () => {
     tempDirs.push(dir);
     const file = path.join(dir, "state.json");
     await writeJson(file, { version: 1 });
-    expect(await readJson(file)).toEqual({ version: 1 });
+    expect(await readJson<{ version: number }>(file)).toEqual({ version: 1 });
     // Overwrite — the .tmp must not linger
     await writeJson(file, { version: 2 });
-    expect(await readJson(file)).toEqual({ version: 2 });
+    expect(await readJson<{ version: number }>(file)).toEqual({ version: 2 });
     const tmpExists = await fs.access(`${file}.tmp`).then(() => true, () => false);
     expect(tmpExists).toBe(false);
   });

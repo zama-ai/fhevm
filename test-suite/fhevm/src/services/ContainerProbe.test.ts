@@ -115,8 +115,7 @@ describe("ContainerProbe", () => {
     }
   });
 
-  test("waitForComplete stops container when marker found", async () => {
-    let stopped = false;
+  test("waitForComplete succeeds when container exits 0", async () => {
     const TestCmd = Layer.succeed(CommandRunner, {
       run: (argv) => {
         if (argv[0] === "docker" && argv[1] === "inspect") {
@@ -124,7 +123,37 @@ describe("ContainerProbe", () => {
             stdout: JSON.stringify([
               {
                 Name: "test",
-                State: { Status: "running", ExitCode: 0 },
+                State: { Status: "exited", ExitCode: 0 },
+                NetworkSettings: { Networks: {} },
+              },
+            ]),
+            stderr: "",
+            code: 0,
+          } as RunResult);
+        }
+        return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
+      },
+      runLive: () => Effect.succeed(0),
+    });
+
+    const program = Effect.gen(function* () {
+      const probe = yield* ContainerProbe;
+      yield* probe.waitForComplete("test");
+    });
+    await Effect.runPromise(
+      program.pipe(Effect.provide(ContainerProbe.Live), Effect.provide(TestCmd)),
+    );
+  });
+
+  test("waitForComplete fails when container exits non-zero", async () => {
+    const TestCmd = Layer.succeed(CommandRunner, {
+      run: (argv) => {
+        if (argv[0] === "docker" && argv[1] === "inspect") {
+          return Effect.succeed({
+            stdout: JSON.stringify([
+              {
+                Name: "test",
+                State: { Status: "exited", ExitCode: 1 },
                 NetworkSettings: { Networks: {} },
               },
             ]),
@@ -134,14 +163,10 @@ describe("ContainerProbe", () => {
         }
         if (argv[0] === "docker" && argv[1] === "logs") {
           return Effect.succeed({
-            stdout: "setup complete marker-string done",
+            stdout: "boom",
             stderr: "",
             code: 0,
           } as RunResult);
-        }
-        if (argv[0] === "docker" && argv[1] === "stop") {
-          stopped = true;
-          return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
         }
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
@@ -150,12 +175,20 @@ describe("ContainerProbe", () => {
 
     const program = Effect.gen(function* () {
       const probe = yield* ContainerProbe;
-      yield* probe.waitForComplete("test", "marker-string");
+      yield* probe.waitForComplete("test");
     });
-    await Effect.runPromise(
-      program.pipe(Effect.provide(ContainerProbe.Live), Effect.provide(TestCmd)),
+    const result = await Effect.runPromise(
+      program.pipe(
+        Effect.provide(ContainerProbe.Live),
+        Effect.provide(TestCmd),
+        Effect.either,
+      ),
     );
-    expect(stopped).toBe(true);
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left).toBeInstanceOf(ContainerCrashed);
+      expect((result.left as ContainerCrashed).exitCode).toBe(1);
+    }
   });
 
   test("waitForLog returns matched text", async () => {
