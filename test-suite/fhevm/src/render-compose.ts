@@ -4,7 +4,7 @@ import path from "node:path";
 import YAML from "yaml";
 
 import { compatPolicyForState, type CompatPolicy } from "./compat";
-import type { RuntimePlan } from "./runtime-plan";
+import { topologyForState, type RuntimePlan } from "./runtime-plan";
 import {
   COMPOSE_OUT_DIR,
   TEMPLATE_COMPOSE_DIR,
@@ -201,13 +201,14 @@ export const applyInstanceAdjustments = (
   return next;
 };
 
-export const serviceNameList = (state: Pick<State, "topology">, component: string) => {
+export const serviceNameList = (state: Pick<State, "scenario">, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }
+  const topology = topologyForState(state);
   const suffixes = GROUP_SERVICE_SUFFIXES["coprocessor"];
   const names: string[] = [];
-  for (let index = 0; index < state.topology.count; index += 1) {
+  for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
       names.push(toServiceName(suffix, index));
     }

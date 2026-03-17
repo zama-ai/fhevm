@@ -22,7 +22,7 @@ import {
 import { ResumeError } from "../errors";
 import {
   resolveScenarioForOptions,
-  topologyFromScenario,
+  topologyForState,
 } from "../runtime-plan";
 import { StateManager } from "../services/StateManager";
 import type {
@@ -34,22 +34,25 @@ import { STEP_NAMES } from "../types";
 import { down } from "./down";
 
 const describeResumeState = (state: State) =>
-  [
-    `target=${state.target}`,
-    `topology=${state.topology.count}/${state.topology.threshold}`,
-    ...(state.scenario.origin !== "default"
-      ? [
-          `scenario=${state.scenario.origin}${
-            state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""
-          }`,
-        ]
-      : []),
-    ...(state.overrides.length
-      ? [
-          `overrides=${state.overrides.map(describeOverride).join(", ")}`,
-        ]
-      : []),
-  ].join(" ");
+  (() => {
+    const topology = topologyForState(state);
+    return [
+      `target=${state.target}`,
+      `topology=${topology.count}/${topology.threshold}`,
+      ...(state.scenario.origin !== "default"
+        ? [
+            `scenario=${state.scenario.origin}${
+              state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""
+            }`,
+          ]
+        : []),
+      ...(state.overrides.length
+        ? [
+            `overrides=${state.overrides.map(describeOverride).join(", ")}`,
+          ]
+        : []),
+    ].join(" ");
+  })();
 
 const ensureResumeOptions = (
   state: State,
@@ -138,7 +141,6 @@ const bootstrapState = (options: UpOptions) =>
       requiresGitHub: !options.lockFile,
       versions: resolved.bundle,
       overrides: options.overrides,
-      topology: topologyFromScenario(scenario),
       scenario,
       scenarioSourcePath: scenario?.sourcePath,
       completedSteps: [],
@@ -260,7 +262,6 @@ export const upDryRun = (
       target: options.target,
       versions: bundle,
       overrides: options.overrides,
-      topology: topologyFromScenario(scenario),
       scenario,
     };
     yield* preflight(
@@ -270,7 +271,6 @@ export const upDryRun = (
         requiresGitHub: !options.lockFile,
         versions: state.versions,
         overrides: state.overrides,
-        topology: state.topology,
         scenario: state.scenario,
         scenarioSourcePath: state.scenario?.sourcePath,
         completedSteps: [],

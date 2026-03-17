@@ -211,7 +211,6 @@ describe("runtime invariants", () => {
   test("resolveUpgradePlan rejects inactive overrides and expands multicopro services", () => {
     const inactive = {
       overrides: [{ group: "test-suite" as const }],
-      topology: { count: 2, threshold: 2 },
       scenario: {
         version: 1 as const,
         kind: "coprocessor-consensus" as const,
@@ -250,7 +249,6 @@ describe("runtime invariants", () => {
           ],
         },
         overrides: [{ group: "coprocessor" }],
-        topology: { count: 2, threshold: 2 },
       },
       "coprocessor",
     );
@@ -293,7 +291,6 @@ describe("runtime invariants", () => {
           ],
         },
         overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener", "coprocessor-host-listener-poller"] }],
-        topology: { count: 2, threshold: 2 },
       },
       "coprocessor",
     );
@@ -307,7 +304,6 @@ describe("runtime invariants", () => {
     const connectorPlan = resolveUpgradePlan(
       {
         overrides: [{ group: "kms-connector" }],
-        topology: { count: 1, threshold: 1 },
         scenario: {
           version: 1 as const,
           kind: "coprocessor-consensus" as const,

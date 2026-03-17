@@ -121,7 +121,6 @@ export type State = {
   requiresGitHub?: boolean;
   versions: VersionBundle;
   overrides: LocalOverride[];
-  topology: Topology;
   scenario: ResolvedCoprocessorScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;

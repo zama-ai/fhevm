@@ -58,10 +58,6 @@ export const stubState = (overrides?: {
   lockPath: "/tmp/test.json",
   versions: stubBundle({ env: overrides?.envOverrides }),
   overrides: overrides?.overrides ?? [],
-  topology: {
-    count: overrides?.count ?? 1,
-    threshold: overrides?.threshold ?? overrides?.count ?? 1,
-  },
   scenario: {
     ...defaultCoprocessorScenario(),
     topology: {

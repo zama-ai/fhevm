@@ -159,48 +159,20 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          defaults=$(./fhevm-cli compat-defaults)
-          modern_relayer_version=$(echo "$defaults" | jq -r .externalDefaults.RELAYER_VERSION)
-          modern_relayer_migrate_version=$(echo "$defaults" | jq -r .externalDefaults.RELAYER_MIGRATE_VERSION)
-          simple_acl_cutover=$(echo "$defaults" | jq -r .anchors.SIMPLE_ACL_MIN_SHA)
-          stack_era="${STACK_ERA:-}"
-          if [ -z "$stack_era" ]; then
-            selected_versions=(
-              "${COPROCESSOR_DB_MIGRATION_VERSION:-}"
-              "${COPROCESSOR_HOST_LISTENER_VERSION:-}"
-              "${COPROCESSOR_GW_LISTENER_VERSION:-}"
-              "${COPROCESSOR_TX_SENDER_VERSION:-}"
-              "${COPROCESSOR_TFHE_WORKER_VERSION:-}"
-              "${COPROCESSOR_SNS_WORKER_VERSION:-}"
-              "${COPROCESSOR_ZKPROOF_WORKER_VERSION:-}"
-              "${CONNECTOR_DB_MIGRATION_VERSION:-}"
-              "${CONNECTOR_GW_LISTENER_VERSION:-}"
-              "${CONNECTOR_KMS_WORKER_VERSION:-}"
-              "${CONNECTOR_TX_SENDER_VERSION:-}"
-              "${GATEWAY_VERSION:-}"
-              "${HOST_VERSION:-}"
-            )
-            for version in "${selected_versions[@]}"; do
-              [ -n "$version" ] || continue
-              if git rev-parse -q --verify "${version}^{commit}" >/dev/null 2>&1 \
-                && git merge-base --is-ancestor "$simple_acl_cutover" "$version" >/dev/null 2>&1; then
-                stack_era="modern"
-                break
-              fi
-            done
-          fi
-          if [ -n "$stack_era" ]; then
-            echo "STACK_ERA=$stack_era" >> "$GITHUB_ENV"
-          fi
-          if [ "${stack_era:-}" = "modern" ] && [ -z "${RELAYER_VERSION:-}" ]; then
-            echo "RELAYER_VERSION=$modern_relayer_version" >> "$GITHUB_ENV"
-          fi
-          if [ "${stack_era:-}" = "modern" ] && [ -z "${RELAYER_MIGRATE_VERSION:-}" ]; then
-            echo "RELAYER_MIGRATE_VERSION=$modern_relayer_migrate_version" >> "$GITHUB_ENV"
-          fi
-          if [ "${RELAYER_VERSION:-}" = "$modern_relayer_version" ] && [ -z "${RELAYER_MIGRATE_VERSION:-}" ]; then
-            echo "RELAYER_MIGRATE_VERSION=$modern_relayer_migrate_version" >> "$GITHUB_ENV"
-          fi
+          ./scripts/resolve-workflow-compat-env.sh \
+            "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
+            "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
+            "${COPROCESSOR_GW_LISTENER_VERSION:-}" \
+            "${COPROCESSOR_TX_SENDER_VERSION:-}" \
+            "${COPROCESSOR_TFHE_WORKER_VERSION:-}" \
+            "${COPROCESSOR_SNS_WORKER_VERSION:-}" \
+            "${COPROCESSOR_ZKPROOF_WORKER_VERSION:-}" \
+            "${CONNECTOR_DB_MIGRATION_VERSION:-}" \
+            "${CONNECTOR_GW_LISTENER_VERSION:-}" \
+            "${CONNECTOR_KMS_WORKER_VERSION:-}" \
+            "${CONNECTOR_TX_SENDER_VERSION:-}" \
+            "${GATEWAY_VERSION:-}" \
+            "${HOST_VERSION:-}"
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm

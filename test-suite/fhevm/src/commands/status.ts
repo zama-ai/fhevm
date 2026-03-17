@@ -10,12 +10,14 @@ import { describeOverride, overrideWarnings } from "../pipeline";
 import { PROJECT } from "../layout";
 import { CommandRunner } from "../services/CommandRunner";
 import { StateManager } from "../services/StateManager";
+import { topologyForState } from "../runtime-plan";
 
 export const status = Effect.gen(function* () {
   const stateManager = yield* StateManager;
   const cmd = yield* CommandRunner;
   const state = yield* stateManager.load;
   if (state) {
+    const topology = topologyForState(state);
     yield* Effect.log(`[target] ${state.target}`);
     if (state.overrides.length) {
       yield* Effect.log(
@@ -29,7 +31,7 @@ export const status = Effect.gen(function* () {
       }
     }
     yield* Effect.log(
-      `[topology] n=${state.topology.count} t=${state.topology.threshold}`,
+      `[topology] n=${topology.count} t=${topology.threshold}`,
     );
     if (state.scenario.origin !== "default") {
       yield* Effect.log(

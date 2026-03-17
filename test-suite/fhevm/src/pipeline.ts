@@ -19,7 +19,7 @@ import {
   resolvedComposeEnv,
   serviceNameList,
 } from "./codegen";
-import { runtimePlanForState } from "./runtime-plan";
+import { runtimePlanForState, topologyForState } from "./runtime-plan";
 import { effectiveOverrides } from "./scenario";
 import { describeBundle } from "./resolve";
 import {
@@ -154,13 +154,14 @@ export const projectContainers = Effect.gen(function* () {
 });
 
 export const coprocessorHealthContainers = (
-  state: Pick<State, "topology">,
+  state: Pick<State, "scenario">,
 ): string[] => {
+  const topology = topologyForState(state);
   const suffixes = GROUP_SERVICE_SUFFIXES["coprocessor"].filter(
     (s) => !s.includes("migration"),
   );
   const names: string[] = [];
-  for (let index = 0; index < state.topology.count; index += 1) {
+  for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
       names.push(toServiceName(suffix, index));
     }
@@ -169,17 +170,18 @@ export const coprocessorHealthContainers = (
 };
 
 export const coprocessorServicesForOverrides = (
-  state: Pick<State, "topology">,
+  state: Pick<State, "scenario">,
   services?: string[],
 ) => {
   if (!services?.length) {
     return serviceNameList(state, "coprocessor");
   }
+  const topology = topologyForState(state);
   const suffixes = [
     ...new Set(services.map((service) => service.replace(/^coprocessor-/, ""))),
   ];
   const names: string[] = [];
-  for (let index = 0; index < state.topology.count; index += 1) {
+  for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
       names.push(toServiceName(suffix, index));
     }
@@ -272,10 +274,11 @@ export const printBundle = (bundle: VersionBundle) =>
   });
 
 export const printPlan = (
-  state: Pick<State, "target" | "overrides" | "topology">,
+  state: Pick<State, "target" | "overrides" | "scenario">,
   fromStep?: StepName,
 ) =>
   Effect.gen(function* () {
+    const topology = topologyForState(state);
     yield* Effect.log(`[plan] target=${state.target}`);
     if (state.overrides.length) {
       yield* Effect.log(
@@ -286,7 +289,7 @@ export const printPlan = (
       }
     }
     yield* Effect.log(
-      `[plan] topology=n${state.topology.count}/t${state.topology.threshold}`,
+      `[plan] topology=n${topology.count}/t${topology.threshold}`,
     );
     yield* Effect.log(
       `[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`,
@@ -531,6 +534,7 @@ export const assertSchemaCompatibility = (
 
 export const ensureRuntimeArtifacts = (state: State, reason: string) =>
   Effect.gen(function* () {
+    const topology = topologyForState(state);
     yield* ensureLockSnapshot(state.lockPath, state.versions);
     const generatedCompose = [...generatedComposeComponents(runtimePlanForState(state))].map(composePath);
     const requiredPaths = [
@@ -539,7 +543,7 @@ export const ensureRuntimeArtifacts = (state: State, reason: string) =>
       ...COMPONENTS.map(envPath),
       ...generatedCompose,
       ...Array.from(
-        { length: Math.max(0, state.topology.count - 1) },
+        { length: Math.max(0, topology.count - 1) },
         (_, index) => envPath(`coprocessor.${index + 1}`),
       ),
       ...(state.discovery
@@ -585,7 +589,7 @@ export const resetAfterStep = (step: StepName) =>
   });
 
 export const resolveUpgradePlan = (
-  state: Pick<State, "overrides" | "topology" | "scenario">,
+  state: Pick<State, "overrides" | "scenario">,
   groupValue: string | undefined,
 ) => {
   if (
@@ -665,11 +669,12 @@ const waitForCoprocessorServices = (
   skipMigration: boolean,
 ) =>
   Effect.gen(function* () {
+    const topology = topologyForState(state);
     const probe = yield* ContainerProbe;
     const compat = compatPolicyForState(runtimePlanForState(state));
     const legacyGwListener =
       compat.coprocessorDisableHealthcheck["gw-listener"] === true;
-    for (let index = 0; index < state.topology.count; index += 1) {
+    for (let index = 0; index < topology.count; index += 1) {
       if (!skipMigration) {
         yield* probe.waitForComplete(toServiceName("db-migration", index));
       }
@@ -707,9 +712,9 @@ const coprocessorDbSeeded = (database: string) =>
     return result.code === 0 && result.stdout.trim() === "1";
   });
 
-const coprocessorDbsSeeded = (state: Pick<State, "topology">) =>
+const coprocessorDbsSeeded = (state: Pick<State, "scenario">) =>
   Effect.forEach(
-    Array.from({ length: state.topology.count }, (_, index) =>
+    Array.from({ length: topologyForState(state).count }, (_, index) =>
       index === 0 ? "coprocessor" : `coprocessor_${index}`,
     ),
     coprocessorDbSeeded,

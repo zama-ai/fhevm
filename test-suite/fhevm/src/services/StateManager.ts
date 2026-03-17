@@ -3,21 +3,7 @@ import fs from "node:fs/promises";
 import type { State, StepName } from "../types";
 import { readJson, writeJson, exists } from "../utils";
 import { STATE_FILE } from "../layout";
-import { topologyFromScenario } from "../runtime-plan";
-
-type PersistedState = Omit<State, "topology"> & {
-  topology?: State["topology"];
-};
-
-const hydrateState = (state: PersistedState): State => ({
-  ...state,
-  topology: topologyFromScenario(state.scenario),
-});
-
-const persistState = (state: State): PersistedState => {
-  const { topology: _topology, ...persisted } = state;
-  return persisted;
-};
+type PersistedState = State;
 
 export class StateManager extends Context.Tag("StateManager")<
   StateManager,
@@ -32,18 +18,18 @@ export class StateManager extends Context.Tag("StateManager")<
     return {
       load: Effect.promise(async () =>
         (await exists(stateFile))
-          ? hydrateState(await readJson<PersistedState>(stateFile))
+          ? readJson<PersistedState>(stateFile)
           : undefined,
       ),
       save: (state: State) =>
-        Effect.promise(() => writeJson(stateFile, persistState(state))),
+        Effect.promise(() => writeJson(stateFile, state)),
       markStep: (state: State, step: StepName) =>
         Effect.promise(async () => {
           if (!state.completedSteps.includes(step)) {
             state.completedSteps.push(step);
           }
           state.updatedAt = new Date().toISOString();
-          await writeJson(stateFile, persistState(state));
+          await writeJson(stateFile, state);
         }),
       clear: Effect.promise(() => fs.rm(stateFile, { force: true })),
     } satisfies Context.Tag.Service<StateManager>;

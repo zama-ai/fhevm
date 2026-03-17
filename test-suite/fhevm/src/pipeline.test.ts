@@ -52,27 +52,45 @@ const readyDiscovery = (): Discovery => ({
 });
 
 const stubState = (
-  overrides: Partial<State> = {},
-): Pick<State, "overrides" | "topology"> & State => ({
-  target: "latest-main",
-  lockPath: "/tmp/fake.json",
-  versions: {
+  overrides: Partial<State> & { count?: number; threshold?: number } = {},
+): State => {
+  const {
+    count,
+    threshold,
+    scenario: overrideScenario,
+    ...stateOverrides
+  } = overrides;
+  const scenario = overrideScenario ?? defaultCoprocessorScenario();
+  return {
     target: "latest-main",
-    lockName: "latest-main.json",
-    env: {
-      COPROCESSOR_TX_SENDER_VERSION: "v0.12.0",
-      COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.0",
-      CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
+    lockPath: "/tmp/fake.json",
+    versions: {
+      target: "latest-main",
+      lockName: "latest-main.json",
+      env: {
+        COPROCESSOR_TX_SENDER_VERSION: "v0.12.0",
+        COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.0",
+        CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
+      },
+      sources: [],
     },
-    sources: [],
-  },
-  overrides: [],
-  topology: { count: 1, threshold: 1 },
-  scenario: defaultCoprocessorScenario(),
-  completedSteps: [],
-  updatedAt: "2024-01-01T00:00:00.000Z",
-  ...overrides,
-});
+    overrides: [],
+    scenario: {
+      ...scenario,
+      topology: {
+        count: count ?? scenario.topology.count,
+        threshold:
+          threshold ??
+          scenario.topology.threshold ??
+          count ??
+          1,
+      },
+    },
+    completedSteps: [],
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    ...stateOverrides,
+  };
+};
 
 // ---------------------------------------------------------------------------
 // stateStepIndex
@@ -372,7 +390,6 @@ describe("resolveUpgradePlan", () => {
           },
         ],
       },
-      topology: { count: 2, threshold: 2 },
       overrides: [
         {
           group: "coprocessor",
@@ -481,7 +498,8 @@ describe("coprocessorServicesForOverrides", () => {
 
   test("expands to multiple instances", () => {
     const state = stubState({
-      topology: { count: 3, threshold: 3 },
+      count: 3,
+      threshold: 3,
     });
     const services = coprocessorServicesForOverrides(state, [
       "coprocessor-host-listener",
@@ -501,7 +519,7 @@ describe("coprocessorServicesForOverrides", () => {
 describe("coprocessorHealthContainers", () => {
   test("returns containers for single coprocessor", () => {
     const names = coprocessorHealthContainers({
-      topology: { count: 1, threshold: 1 },
+      scenario: defaultCoprocessorScenario(),
     });
     expect(names.length).toBeGreaterThan(0);
     // Should not include migration
@@ -510,7 +528,16 @@ describe("coprocessorHealthContainers", () => {
 
   test("returns containers for multiple coprocessors", () => {
     const names = coprocessorHealthContainers({
-      topology: { count: 2, threshold: 2 },
+      scenario: {
+        version: 1,
+        kind: "coprocessor-consensus",
+        origin: "file",
+        topology: { count: 2, threshold: 2 },
+        instances: [
+          { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
+          { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+        ],
+      },
     });
     const hasInstance1 = names.some((n) => n.startsWith("coprocessor1-"));
     expect(hasInstance1).toBe(true);

@@ -39,6 +39,9 @@ export const topologyFromScenario = (scenario: ResolvedCoprocessorScenario): Top
   threshold: scenario.topology.threshold,
 });
 
+export const topologyForState = (state: Pick<State, "scenario">): Topology =>
+  topologyFromScenario(state.scenario);
+
 export const runtimePlanFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;

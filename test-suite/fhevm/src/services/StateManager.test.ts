@@ -12,7 +12,6 @@ const makeTestState = (overrides: Partial<State> = {}): State => ({
   lockPath: "/tmp/test.json",
   versions: { target: "latest-release", lockName: "test.json", env: {}, sources: [] },
   overrides: [],
-  topology: { count: 1, threshold: 1 },
   scenario: defaultCoprocessorScenario(),
   completedSteps: [] as StepName[],
   updatedAt: "2026-03-16T00:00:00.000Z",
@@ -33,20 +32,20 @@ describe("StateManager", () => {
     expect(result).toBeDefined();
     expect(result!.target).toBe("latest-release");
     expect(result!.completedSteps).toEqual([]);
-    expect(result!.topology).toEqual({ count: 1, threshold: 1 });
+    expect(result!.scenario.topology).toEqual({ count: 1, threshold: 1 });
     await fs.rm(dir, { recursive: true });
   });
 
-  test("save omits persisted topology and load rehydrates it from scenario", async () => {
+  test("save persists scenario only", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sm-test-"));
     const file = path.join(dir, "state.json");
-    const state = makeTestState({ topology: { count: 9, threshold: 9 } });
+    const state = makeTestState();
     const mgr = StateManager.makeForPath(file);
     await Effect.runPromise(mgr.save(state));
     const raw = JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>;
     expect(raw.topology).toBeUndefined();
     const loaded = await Effect.runPromise(mgr.load);
-    expect(loaded?.topology).toEqual({ count: 1, threshold: 1 });
+    expect(loaded?.scenario.topology).toEqual({ count: 1, threshold: 1 });
     await fs.rm(dir, { recursive: true });
   });
 
