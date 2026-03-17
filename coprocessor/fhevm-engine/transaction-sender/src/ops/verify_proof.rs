@@ -118,18 +118,21 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(
-        name = "call_verify_proof_resp",
-        skip_all,
-        fields(transaction_hash = src_transaction_id.as_deref().map(to_hex).unwrap_or_default())
-    )]
+    #[tracing::instrument(name = "call_verify_proof_resp", skip_all)]
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        info!(zk_proof_id = txn_request.0, "Processing transaction");
+        info!(
+            transaction_hash = src_transaction_id
+                .as_deref()
+                .map(to_hex)
+                .unwrap_or_default(),
+            zk_proof_id = txn_request.0,
+            "Processing transaction"
+        );
 
         let receipt = match self
             .provider
