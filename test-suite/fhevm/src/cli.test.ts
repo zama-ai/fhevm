@@ -1514,6 +1514,37 @@ describe("command error paths", () => {
     }
   });
 
+  test("test logs a fail marker when execution fails", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const { logs, restore } = captureConsole("log");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      const state = stubState({
+        discovery: {
+          gateway: {}, host: {}, kmsSigner: "", fheKeyId: "", crsKeyId: "",
+          actualFheKeyId: "abc",
+          endpoints: { gatewayHttp: "", gatewayWs: "", hostHttp: "", hostWs: "", minioInternal: "", minioExternal: "" },
+        },
+        completedSteps: ["bootstrap"],
+      });
+      await fs.writeFile(stateFile, JSON.stringify(state));
+      await main(
+        ["bun", "src/cli.ts", "test", "input-proof"],
+        depsToLayer({ liveRunner: async () => 1 }),
+      );
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("[fail] input-proof"))).toBe(true);
+  });
+
   test("ciphertext-drift requires a multi-coprocessor topology", async () => {
     const stateDir = path.join(REPO_ROOT, ".fhevm");
     const stateFile = path.join(stateDir, "state.json");

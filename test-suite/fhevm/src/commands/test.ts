@@ -3,7 +3,7 @@
  *
  * Runs e2e tests inside the fhevm-test-suite-e2e-debug container.
  */
-import { Effect, Fiber } from "effect";
+import { Effect, Either, Fiber } from "effect";
 
 import { compatPolicyForState } from "../compat";
 import { PreflightError } from "../errors";
@@ -32,6 +32,23 @@ export const test = (
   options: TestOptions,
 ) =>
   Effect.gen(function* () {
+    const timedLabel = (label: string, started: number) =>
+      `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
+    const runLogged = <A, E, R>(
+      label: string,
+      started: number,
+      effect: Effect.Effect<A, E, R>,
+    ) =>
+      Effect.gen(function* () {
+        const result = yield* Effect.either(effect);
+        if (Either.isLeft(result)) {
+          yield* Effect.log(`[fail] ${timedLabel(label, started)}`);
+          return yield* Effect.fail(result.left);
+        }
+        yield* Effect.log(`[pass] ${timedLabel(label, started)}`);
+        return result.right;
+      });
+
     const cmd = yield* CommandRunner;
     const stateManager = yield* StateManager;
     const state = yield* stateManager.load;
@@ -83,8 +100,10 @@ export const test = (
       const grepPattern =
         process.env.GREP_PATTERN ??
         "test user input uint64 \\(non-trivial\\)";
-      try {
-        const detected = yield* withDriftInjector(
+      const detected = yield* runLogged(
+        "ciphertext-drift",
+        started,
+        withDriftInjector(
           {
             instanceIndex: faultyInstanceIndex,
             timeoutSeconds: driftInjectTimeoutSeconds,
@@ -120,18 +139,14 @@ export const test = (
                 since: logSince,
                 timeoutSeconds: driftAlertTimeoutSeconds,
                 pollIntervalSeconds: driftAlertPollIntervalSeconds,
-                });
+              });
               return { injectedHandleHex, warning };
             }),
-        );
-        yield* Effect.log(
-          `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`,
-        );
-        yield* Effect.log(`[pass] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);
-      } catch (error) {
-        yield* Effect.log(`[fail] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);
-        return yield* Effect.fail(error instanceof Error ? error : new Error(String(error)));
-      }
+        ),
+      );
+      yield* Effect.log(
+        `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`,
+      );
       return;
     }
 
@@ -162,8 +177,10 @@ export const test = (
     ]
       .filter(Boolean)
       .join(" ");
-    try {
-      yield* cmd.runWithHeartbeat(
+    yield* runLogged(
+      label,
+      started,
+      cmd.runWithHeartbeat(
         [
           "docker",
           "exec",
@@ -177,14 +194,6 @@ export const test = (
           command,
         ],
         `test ${label}`,
-      );
-      yield* Effect.log(
-        `[pass] ${label} (${Math.round((Date.now() - started) / 1000)}s)`,
-      );
-    } catch (error) {
-      yield* Effect.log(
-        `[fail] ${label} (${Math.round((Date.now() - started) / 1000)}s)`,
-      );
-      return yield* Effect.fail(error instanceof Error ? error : new Error(String(error)));
-    }
+      ),
+    );
   });
