@@ -175,6 +175,7 @@ This is how CI works. The merge queue workflow:
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
 For non-workspace companions, `latest-main` uses the maintained compat defaults from `COMPAT_MATRIX.externalDefaults`.
+Manual `workflow_dispatch` defaults `build=true`; reusable `workflow_call` keeps `build=false` unless the caller opts in.
 
 Supported override keys (any subset):
 
