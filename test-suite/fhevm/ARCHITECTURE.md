@@ -66,10 +66,9 @@ resolve target (e.g. latest-supported or latest-main)
 
 The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds Docker images tagged
 with the PR's HEAD SHA, resolves repo-owned image overrides through
-`./fhevm-cli workflow-e2e-inputs`, resolves workflow argv through
-`./fhevm-cli workflow-up-args`, then calls `./fhevm-cli up`.
-The target provides the current mainline bundle; the env vars and resolved workflow args provide
-the merge-candidate SHA-tagged images and scenario/build shape for every component built from the PR.
+`./fhevm-cli workflow-e2e-inputs`, then calls `./fhevm-cli up`.
+The target provides the current mainline bundle; the env vars provide
+the merge-candidate SHA-tagged images for every component built from the PR, and CI keeps the launch shape fixed at `latest-main` plus the `two-of-two` scenario, optionally adding `--build`.
 If a repo-owned image build was skipped or failed, merge queue falls back to the base commit tag for that component.
 Non-workspace companions still come from `COMPAT_MATRIX.externalDefaults`.
 

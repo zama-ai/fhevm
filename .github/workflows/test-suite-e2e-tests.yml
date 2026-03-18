@@ -3,14 +3,10 @@ name: test-suite-e2e-tests
 on:
   workflow_dispatch:
     inputs: &workflow_inputs
-      image_mode:
-        description: "Use registry images or build workspace overrides on the runner"
-        default: "registry"
-        type: string
-      override:
-        description: "Comma-separated workspace selections for workspace mode (for example: build, coprocessor, or coprocessor:host-listener)"
-        default: ""
-        type: string
+      build:
+        description: "Build repo-owned images from the checked out branch on the runner"
+        default: false
+        type: boolean
       coprocessor-db-migration-version:
         description: "Coprocessor DB Migration Image Version"
         default: ""
@@ -92,8 +88,7 @@ jobs:
       packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
-      IMAGE_MODE: ${{ inputs.image_mode || 'registry' }}
-      WORKSPACE_OVERRIDE: ${{ inputs.override || '' }}
+      BUILD: ${{ inputs.build && 'true' || 'false' }}
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
       COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}
       COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor-gw-listener-version }}
@@ -143,31 +138,23 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
 
-      - name: Resolve CLI up args
-        working-directory: test-suite/fhevm
-        run: |
-          set -euo pipefail
-          args_file="$RUNNER_TEMP/fhevm-up-args"
-          scenario_file="$RUNNER_TEMP/fhevm-scenario.yaml"
-          cmd=(./fhevm-cli workflow-up-args --image-mode "$IMAGE_MODE" --scenario-out "$scenario_file")
-          if [ -n "$WORKSPACE_OVERRIDE" ]; then
-            cmd+=(--override "$WORKSPACE_OVERRIDE")
-          fi
-          plan_json="$("${cmd[@]}")"
-          jq -r '.args[]' <<< "$plan_json" > "$args_file"
-          echo "UP_ARGS_FILE=$args_file" >> "$GITHUB_ENV"
-
       - name: Dry run
         working-directory: test-suite/fhevm
         run: |
-          mapfile -t up_args < "$UP_ARGS_FILE"
-          ./fhevm-cli up "${up_args[@]}" --dry-run
+          args=(--target latest-main --scenario ./scenarios/two-of-two.yaml)
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          ./fhevm-cli up "${args[@]}" --dry-run
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          mapfile -t up_args < "$UP_ARGS_FILE"
-          ./fhevm-cli up "${up_args[@]}"
+          args=(--target latest-main --scenario ./scenarios/two-of-two.yaml)
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          ./fhevm-cli up "${args[@]}"
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts

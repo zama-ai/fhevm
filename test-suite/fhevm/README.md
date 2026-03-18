@@ -166,10 +166,10 @@ After resolving a target bundle, the CLI applies **environment variable override
 This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
-2. Verifies every required repo-owned image build succeeded for the merge candidate
-3. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
-4. Resolves the final `up` argv through `./fhevm-cli workflow-up-args`
-5. Runs `./fhevm-cli up ...` with the resolved args
+2. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234` for repo-owned components whose build succeeded
+3. Falls back to the base commit tag for repo-owned components whose build was skipped or failed
+4. Runs `./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml`
+5. Optionally adds `--build` when CI wants to validate the checked out branch from source on the runner
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
@@ -229,7 +229,7 @@ The matrix has four sections:
 | `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-CI workflows read repo-owned image selection through `./fhevm-cli workflow-e2e-inputs` and final launch args through `./fhevm-cli workflow-up-args` instead of reimplementing that logic in workflow glue. For merge-queue e2e, repo-owned images use the PR head tag when that component build succeeded and fall back to the base commit tag when it was skipped or failed.
+CI workflows read repo-owned image selection through `./fhevm-cli workflow-e2e-inputs` instead of reimplementing that logic in workflow glue. Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario, uses the PR head tag for repo-owned images whose build succeeded, falls back to the base commit tag otherwise, and can optionally add `--build`.
 
 ### How to update
 
