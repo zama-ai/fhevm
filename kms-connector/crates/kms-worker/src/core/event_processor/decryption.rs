@@ -304,7 +304,11 @@ where
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
-        let extra_data = extra_data.to_vec();
+        let extra_data = if extra_data.as_ref() == [0x00] {
+            vec![]
+        } else {
+            extra_data.to_vec()
+        };
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
