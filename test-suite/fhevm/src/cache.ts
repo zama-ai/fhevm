@@ -26,7 +26,7 @@ export const resolveCachePath = (target: string, sha?: string) => {
 // Effect-based functions
 // ---------------------------------------------------------------------------
 
-export const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError> =>
+const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError> =>
   Effect.gen(function* () {
     const file = path.join(LOCK_DIR, bundle.lockName);
     yield* Effect.tryPromise({

@@ -20,9 +20,9 @@ import type {
   ResolvedCoprocessorScenarioInstance,
 } from "./types";
 
-export const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
-export const COPROCESSOR_SCENARIO_VERSION = 1;
-export const COPROCESSOR_SCENARIO_DIR = path.join(
+const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
+const COPROCESSOR_SCENARIO_VERSION = 1;
+const COPROCESSOR_SCENARIO_DIR = path.join(
   REPO_ROOT,
   "test-suite",
   "fhevm",
@@ -270,7 +270,7 @@ const mergeOverrideServices = (overrides: LocalOverride[]) => {
   return [...new Set(coprocessorOverrides.flatMap((item) => item.services ?? []))];
 };
 
-export const localCoprocessorOverride = (
+const localCoprocessorOverride = (
   scenario: Pick<ResolvedCoprocessorScenario, "instances">,
 ): LocalOverride | undefined => {
   const localInstances = scenario.instances.filter(

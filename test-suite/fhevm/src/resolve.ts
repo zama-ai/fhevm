@@ -13,7 +13,7 @@ import { normalizeRepository, readJson } from "./utils";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const DEVNET_FILES = {
+const DEVNET_FILES = {
   gateway: "values/gw-blockchain/gw-sc-deploy-1-init/values-zws-dev.yaml",
   host: "values/eth-blockchain/eth-sc-deploy/values-zws-dev.yaml",
   coprocessorDb: "values/coproc/coproc-infra-db-mig/values-zws-dev.yaml",
@@ -26,7 +26,7 @@ export const DEVNET_FILES = {
   testSuite: "values/relayer/fhevm-test-suite/values-relayer-dev.yaml",
 } as const;
 
-export const TESTNET_FILES = {
+const TESTNET_FILES = {
   gateway: "values/gw-blockchain/gw-sc-deploy-1-init/values-zws-testnet.yaml",
   host: "values/eth-blockchain/eth-sc-deploy/values-zws-testnet.yaml",
   coprocessorDb: "values/coproc/coproc-infra-db-mig/values-zws-testnet.yaml",
@@ -39,7 +39,7 @@ export const TESTNET_FILES = {
   testSuite: "values/relayer/fhevm-test-suite/values-relayer-testnet.yaml",
 } as const;
 
-export const MAINNET_FILES = {
+const MAINNET_FILES = {
   gateway: "values/gw-blockchain/gw-sc-deploy-1-init/values-zama-mainnet.yaml",
   host: "values/eth-blockchain/eth-sc-deploy/values-zama-mainnet.yaml",
   coprocessorDb: "values/coproc/coproc-infra-db-mig/values-coproc-mainnet.yaml",
@@ -142,7 +142,7 @@ export const extractTag = (text: string, repository: string) => {
 };
 
 /** Parse a YAML document once and return all image references. */
-export const extractTagsFromYaml = (text: string) => {
+const extractTagsFromYaml = (text: string) => {
   const images: Array<{ repository: string; tag: string }> = [];
   walkImages(YAML.parse(text), images);
   return images;
@@ -278,7 +278,7 @@ export const bundleFromFiles = (
  * Fetch GHCR package tags for all repo-owned packages in parallel.
  * Equivalent to the old `repoPackageTags(client)`.
  */
-export const repoPackageTags = Effect.gen(function* () {
+const repoPackageTags = Effect.gen(function* () {
   const gh = yield* GitHubClient;
   const entries = Object.entries(REPO_PACKAGES);
   const tagSets = yield* Effect.all(

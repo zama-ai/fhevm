@@ -89,7 +89,7 @@ import type { Discovery } from "./types";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_GUARDS = {
+const SCHEMA_GUARDS = {
   coprocessor: {
     versionKey: "COPROCESSOR_DB_MIGRATION_VERSION",
     repoPath: "coprocessor/fhevm-engine/db-migration/migrations",
@@ -102,21 +102,21 @@ export const SCHEMA_GUARDS = {
   Record<OverrideGroup, { versionKey: string; repoPath: string }>
 >;
 
-export const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>([
+const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>([
   "latest-supported",
   "latest-main",
   "sha",
 ]);
 
-export const UPGRADEABLE_GROUPS = [
+const UPGRADEABLE_GROUPS = [
   "coprocessor",
   "kms-connector",
   "test-suite",
 ] as const;
-export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
 
-export const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
-export const KMS_CONNECTOR_HEALTH_CONTAINERS = [
+const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
+const KMS_CONNECTOR_HEALTH_CONTAINERS = [
   "kms-connector-gw-listener",
   "kms-connector-kms-worker",
   "kms-connector-tx-sender",
@@ -326,7 +326,7 @@ const partialSchemaOverrides = (overrides: LocalOverride[]) =>
 // Effect helpers that use services
 // ---------------------------------------------------------------------------
 
-export const minioIp = Effect.gen(function* () {
+const minioIp = Effect.gen(function* () {
   const cmd = yield* CommandRunner;
   const result = yield* cmd.run(["docker", "inspect", "fhevm-minio"], {
     allowFailure: true,
@@ -350,7 +350,7 @@ export const minioIp = Effect.gen(function* () {
   return ip;
 });
 
-export const defaultEndpoints = Effect.gen(function* () {
+const defaultEndpoints = Effect.gen(function* () {
   const ip = yield* minioIp;
   return {
     gatewayHttp: "http://gateway-node:8546",
@@ -383,7 +383,7 @@ const ensureDiscovery = (state: State) =>
     return discovery;
   });
 
-export const discoverContracts = Effect.gen(function* () {
+const discoverContracts = Effect.gen(function* () {
   const gwExists = yield* Effect.promise(() => exists(gatewayAddressesPath));
   const hostExists = yield* Effect.promise(() => exists(hostAddressesPath));
   if (!gwExists || !hostExists) {

@@ -30,7 +30,7 @@ export type ComposeDoc = Record<string, unknown> & {
 };
 
 export const LOCAL_BUILD_TAG = "fhevm-local";
-export const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
+const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 
 export const resolvedComposeEnv = (state: Pick<State, "versions">): Record<string, string> => ({
   ...state.versions.env,
@@ -50,7 +50,7 @@ export const overriddenServicesForComponent = (
     }),
   );
 
-export const rewriteImageTag = (image: unknown, tag: string) =>
+const rewriteImageTag = (image: unknown, tag: string) =>
   typeof image === "string" ? image.replace(/:([^:]+)$/, `:${tag}`) : image;
 
 export const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) =>
@@ -212,7 +212,7 @@ export const serviceNameList = (state: Pick<State, "scenario">, component: strin
   return names;
 };
 
-export const loadComposeDoc = (component: string) =>
+const loadComposeDoc = (component: string) =>
   Effect.tryPromise({
     try: () =>
       fs
@@ -222,7 +222,7 @@ export const loadComposeDoc = (component: string) =>
       new Error(`Failed to load compose template for ${component}: ${cause}`),
   });
 
-export const loadGeneratedComposeDoc = (component: string) =>
+const loadGeneratedComposeDoc = (component: string) =>
   Effect.tryPromise({
     try: () =>
       fs
@@ -232,7 +232,7 @@ export const loadGeneratedComposeDoc = (component: string) =>
       new Error(`Failed to load generated compose override for ${component}: ${cause}`),
   });
 
-export const mergeComposeDocs = (base: ComposeDoc, override: ComposeDoc): ComposeDoc => ({
+const mergeComposeDocs = (base: ComposeDoc, override: ComposeDoc): ComposeDoc => ({
   ...base,
   ...override,
   services: {
@@ -316,7 +316,7 @@ const buildCoprocessorOverride = (plan: RuntimePlan) =>
     return next;
   });
 
-export const buildComposeOverride = (
+const buildComposeOverride = (
   component: string,
   plan: RuntimePlan,
 ) =>

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { OverrideGroup, StepName } from "./types";
 
-export const CLI_DIR = path.resolve(import.meta.dir, "..");
+const CLI_DIR = path.resolve(import.meta.dir, "..");
 export const REPO_ROOT = path.resolve(CLI_DIR, "../..");
 export const STATE_DIR = path.join(REPO_ROOT, ".fhevm");
 export const ENV_DIR = path.join(STATE_DIR, "env");
@@ -12,23 +12,14 @@ export const ADDRESS_DIR = path.join(STATE_DIR, "addresses");
 export const LOCK_DIR = path.join(STATE_DIR, "locks");
 export const GENERATED_CONFIG_DIR = path.join(STATE_DIR, "config");
 export const STATE_FILE = path.join(STATE_DIR, "state.json");
-export const TEMPLATE_DIR = path.join(CLI_DIR, "templates");
-export const PROFILE_DIR = path.join(CLI_DIR, "profiles");
+const TEMPLATE_DIR = path.join(CLI_DIR, "templates");
+const PROFILE_DIR = path.join(CLI_DIR, "profiles");
 export const TEMPLATE_ENV_DIR = path.join(TEMPLATE_DIR, "env");
-export const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
+const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
-export const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
+const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
-export const STATIC_KMS_CORE_CONFIG = path.join(
-  STATIC_CONFIG_DIR,
-  "kms-core",
-  "config.toml",
-);
-export const STATIC_PROMETHEUS_CONFIG_DIR = path.join(
-  STATIC_CONFIG_DIR,
-  "prometheus",
-);
 export const PROJECT = "fhevm";
 export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 9000, 9001];
 export const MINIO_INTERNAL_URL = "http://minio:9000";
@@ -119,7 +110,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "test-suite": ["test-suite-e2e-debug"],
 };
 
-export const SERVICE_OVERRIDE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] as const;
+const SERVICE_OVERRIDE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] as const;
 const GROUP_PREFIX: Record<OverrideGroup, string> = {
   "coprocessor": "coprocessor-",
   "kms-connector": "kms-connector-",
@@ -195,9 +186,9 @@ export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;
 
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
 export const composePath = (name: string) => path.join(COMPOSE_OUT_DIR, `${name}.yml`);
-export const composeTemplatePath = (name: string) =>
+const composeTemplatePath = (name: string) =>
   path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`);
-export const composeFiles = (name: string) =>
+const composeFiles = (name: string) =>
   existsSync(composePath(name))
     ? [composeTemplatePath(name), composePath(name)]
     : [composeTemplatePath(name)];

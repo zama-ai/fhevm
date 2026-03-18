@@ -176,7 +176,7 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "v
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
-export type BundleIncompatibility = { severity: "error"; code: string; message: string };
+type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
 /**
  * Detect cross-component version incompatibilities that would cause runtime failures.

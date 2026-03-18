@@ -27,7 +27,7 @@ type DriftLogOptions = {
   pollIntervalSeconds: number;
 };
 
-export type DriftWarningMatch = {
+type DriftWarningMatch = {
   container: string;
   handleHex?: string;
   exact: boolean;
@@ -92,7 +92,7 @@ const psql = (
     ),
   );
 
-export const injectCiphertextDrift = (options: DriftInjectorOptions) => {
+const injectCiphertextDrift = (options: DriftInjectorOptions) => {
   const dbName = driftDatabaseName(options.instanceIndex);
   const cleanup = psql(dbName, [], options, DRIFT_CLEANUP_SQL).pipe(
     Effect.catchAll(() => Effect.void),

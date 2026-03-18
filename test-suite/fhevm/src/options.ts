@@ -59,14 +59,6 @@ export const parseLocalOverride = (value: string): LocalOverride[] => {
   ];
 };
 
-export const parseKeyValue = (value: string) => {
-  const idx = value.indexOf("=");
-  if (idx < 0) {
-    throw new Error(`Expected KEY=VALUE, got ${value}`);
-  }
-  return [value.slice(0, idx), value.slice(idx + 1)] as const;
-};
-
 // ---------------------------------------------------------------------------
 // Shared @effect/cli Options
 // ---------------------------------------------------------------------------

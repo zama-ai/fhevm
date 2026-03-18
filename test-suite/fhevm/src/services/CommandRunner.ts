@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { CommandError } from "../errors";
 import type { RunOptions, RunResult } from "../utils";
-export type { RunOptions, RunResult } from "../utils";
+export type { RunResult } from "../utils";
 
 export class CommandRunner extends Context.Tag("CommandRunner")<
   CommandRunner,

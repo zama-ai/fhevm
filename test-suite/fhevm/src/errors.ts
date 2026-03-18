@@ -61,22 +61,6 @@ export class SchemaGuardError extends Data.TaggedError("SchemaGuardError")<{
   message: string;
 }> {}
 
-/** Union of all CLI errors for top-level catch. */
-export type CliError =
-  | ContainerStartError
-  | ContainerCrashed
-  | ProbeTimeout
-  | BootstrapTimeout
-  | IncompatibleVersions
-  | RpcError
-  | GitHubApiError
-  | BuildError
-  | MinioError
-  | CommandError
-  | ResumeError
-  | PreflightError
-  | SchemaGuardError;
-
 const buildKitDnsHint = (stderr: string) =>
   /(no such host|temporary failure in name resolution|failed to resolve|dns|lookup .* on .*:53)/i.test(
     stderr,
