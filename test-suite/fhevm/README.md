@@ -317,7 +317,7 @@ For `coprocessor`, this is also the shorthand local-dev scenario: one coprocesso
 
 ```sh
 ./fhevm-cli up --target latest-main --build
-./fhevm-cli up --target latest-main --scenario ./scenarios/one-local-outlier.yaml --build
+./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml --build
 ```
 
 ### Override specific runtime services
@@ -403,8 +403,6 @@ Examples:
 
 ```sh
 ./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
-./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml
-./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml
 ```
 
 Selective local instance example:
