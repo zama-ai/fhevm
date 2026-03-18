@@ -24,12 +24,6 @@ import { unpauseCommand } from "./commands/unpause.cmd";
 import { workflowE2eInputsCommand } from "./commands/workflow-e2e-inputs.cmd";
 import { workflowUpArgsCommand } from "./commands/workflow-up-args.cmd";
 
-// Re-export parse helpers for backward compatibility
-export {
-  parseLocalOverride,
-  parseKeyValue,
-} from "./options";
-
 // ---------------------------------------------------------------------------
 // Root command with subcommands
 // ---------------------------------------------------------------------------
@@ -116,8 +110,6 @@ export const main = async (
     }
   }
 };
-
-export { main as default };
 
 if (import.meta.main) {
   await main();
