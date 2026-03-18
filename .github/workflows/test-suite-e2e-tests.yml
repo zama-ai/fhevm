@@ -7,59 +7,59 @@ on:
         description: "Build repo-owned images from the checked out branch on the runner"
         default: true
         type: boolean
-      coprocessor-db-migration-version: &coprocessor-db-migration-version
+      coprocessor-db-migration-version:
         description: "Coprocessor DB Migration Image Version"
         default: ""
         type: string
-      coprocessor-host-listener-version: &coprocessor-host-listener-version
+      coprocessor-host-listener-version:
         description: "Coprocessor Host Listener Image Version"
         default: ""
         type: string
-      coprocessor-gw-listener-version: &coprocessor-gw-listener-version
+      coprocessor-gw-listener-version:
         description: "Coprocessor Gateway Listener Image Version"
         default: ""
         type: string
-      coprocessor-tx-sender-version: &coprocessor-tx-sender-version
+      coprocessor-tx-sender-version:
         description: "Coprocessor Transaction Sender Image Version"
         default: ""
         type: string
-      coprocessor-tfhe-worker-version: &coprocessor-tfhe-worker-version
+      coprocessor-tfhe-worker-version:
         description: "Coprocessor TFHE Worker Image Version"
         default: ""
         type: string
-      coprocessor-sns-worker-version: &coprocessor-sns-worker-version
+      coprocessor-sns-worker-version:
         description: "Coprocessor SNS Worker Image Version"
         default: ""
         type: string
-      coprocessor-zkproof-worker-version: &coprocessor-zkproof-worker-version
+      coprocessor-zkproof-worker-version:
         description: "Coprocessor ZKProof Worker Image Version"
         default: ""
         type: string
-      gateway-version: &gateway-version
+      gateway-version:
         description: "Gateway version"
         default: ""
         type: string
-      host-version: &host-version
+      host-version:
         description: "Host version"
         default: ""
         type: string
-      connector-db-migration-version: &connector-db-migration-version
+      connector-db-migration-version:
         description: "KMS Connector DB Migration Image Version"
         default: ""
         type: string
-      connector-gw-listener-version: &connector-gw-listener-version
+      connector-gw-listener-version:
         description: "KMS Connector Gateway Listener Image Version"
         default: ""
         type: string
-      connector-kms-worker-version: &connector-kms-worker-version
+      connector-kms-worker-version:
         description: "KMS Connector KMS Worker Image Version"
         default: ""
         type: string
-      connector-tx-sender-version: &connector-tx-sender-version
+      connector-tx-sender-version:
         description: "KMS Connector Transaction Sender Image Version"
         default: ""
         type: string
-      test-suite-version: &test-suite-version
+      test-suite-version:
         description: "Test suite version"
         default: ""
         type: string
@@ -77,33 +77,61 @@ on:
         default: false
         type: boolean
       coprocessor-db-migration-version:
-        <<: *coprocessor-db-migration-version
+        description: "Coprocessor DB Migration Image Version"
+        default: ""
+        type: string
       coprocessor-host-listener-version:
-        <<: *coprocessor-host-listener-version
+        description: "Coprocessor Host Listener Image Version"
+        default: ""
+        type: string
       coprocessor-gw-listener-version:
-        <<: *coprocessor-gw-listener-version
+        description: "Coprocessor Gateway Listener Image Version"
+        default: ""
+        type: string
       coprocessor-tx-sender-version:
-        <<: *coprocessor-tx-sender-version
+        description: "Coprocessor Transaction Sender Image Version"
+        default: ""
+        type: string
       coprocessor-tfhe-worker-version:
-        <<: *coprocessor-tfhe-worker-version
+        description: "Coprocessor TFHE Worker Image Version"
+        default: ""
+        type: string
       coprocessor-sns-worker-version:
-        <<: *coprocessor-sns-worker-version
+        description: "Coprocessor SNS Worker Image Version"
+        default: ""
+        type: string
       coprocessor-zkproof-worker-version:
-        <<: *coprocessor-zkproof-worker-version
+        description: "Coprocessor ZKProof Worker Image Version"
+        default: ""
+        type: string
       gateway-version:
-        <<: *gateway-version
+        description: "Gateway version"
+        default: ""
+        type: string
       host-version:
-        <<: *host-version
+        description: "Host version"
+        default: ""
+        type: string
       connector-db-migration-version:
-        <<: *connector-db-migration-version
+        description: "KMS Connector DB Migration Image Version"
+        default: ""
+        type: string
       connector-gw-listener-version:
-        <<: *connector-gw-listener-version
+        description: "KMS Connector Gateway Listener Image Version"
+        default: ""
+        type: string
       connector-kms-worker-version:
-        <<: *connector-kms-worker-version
+        description: "KMS Connector KMS Worker Image Version"
+        default: ""
+        type: string
       connector-tx-sender-version:
-        <<: *connector-tx-sender-version
+        description: "KMS Connector Transaction Sender Image Version"
+        default: ""
+        type: string
       test-suite-version:
-        <<: *test-suite-version
+        description: "Test suite version"
+        default: ""
+        type: string
 
 permissions: {}
 
