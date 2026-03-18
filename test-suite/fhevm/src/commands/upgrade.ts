@@ -35,7 +35,7 @@ export const upgrade = (groupValue: string | undefined) =>
         }),
       );
     }
-    if (!(yield* projectContainers).length) {
+    if (!(yield* projectContainers()).length) {
       return yield* Effect.fail(
         new PreflightError({
           message:

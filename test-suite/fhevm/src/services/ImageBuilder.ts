@@ -82,6 +82,21 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
             Effect.catchAll(() => Effect.succeed("")),
           );
 
+      const refsAlreadyBuilt = (
+        state: State,
+        refs: string[],
+      ) =>
+        Effect.forEach(
+          refs,
+          (ref) =>
+            inspectId(ref).pipe(
+              Effect.map((id) =>
+                !!id && (state.builtImages ?? []).some((image) => image.ref === ref && image.id === id),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        ).pipe(Effect.map((results) => results.every(Boolean)));
+
       return {
         maybeBuild: (component, state, saveState) =>
           Effect.gen(function* () {
@@ -93,8 +108,11 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
               if (!services.length) {
                 return;
               }
-              yield* Effect.log("[build] coprocessor");
               const refs = imageRefsFromDoc(doc, services);
+              if (yield* refsAlreadyBuilt(state, refs)) {
+                return;
+              }
+              yield* Effect.log("[build] coprocessor");
               for (const ref of refs) {
                 yield* cmd.run(["docker", "image", "rm", "-f", ref], {
                   allowFailure: true,
@@ -137,16 +155,17 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
               });
 
               yield* Effect.log(`[build] ${override.group} (${component})`);
-
-              // Remove existing images to force rebuild
               const refs = imageRefsFromDoc(doc, deduped);
+              if (yield* refsAlreadyBuilt(state, refs)) {
+                continue;
+              }
+
               for (const ref of refs) {
                 yield* cmd.run(["docker", "image", "rm", "-f", ref], {
                   allowFailure: true,
                 });
               }
 
-              // Build in batches (coprocessor builds one service at a time)
               const buildBatches =
                 override.group === "coprocessor"
                   ? deduped.map((s) => [s])

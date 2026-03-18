@@ -141,9 +141,12 @@ const bootstrapState = (options: UpOptions) =>
     );
     yield* ensureLockSnapshot(resolved.lockPath, resolved.bundle);
     const state: State = {
-      target: options.target,
+      target: resolved.bundle.target,
       lockPath: resolved.lockPath,
-      requiresGitHub: targetNeedsGitHub(options),
+      requiresGitHub: targetNeedsGitHub({
+        target: resolved.bundle.target,
+        lockFile: options.lockFile,
+      }),
       versions: resolved.bundle,
       overrides: options.overrides,
       scenario,
@@ -161,6 +164,7 @@ const bootstrapState = (options: UpOptions) =>
 
 export const up = (options: UpOptions) =>
   Effect.gen(function* () {
+    const started = Date.now();
     const stateManager = yield* StateManager;
     let state = options.resume
       ? yield* stateManager.load
@@ -173,7 +177,7 @@ export const up = (options: UpOptions) =>
         }),
       );
     }
-    if (!options.resume && (yield* stateManager.load)) {
+    if (!options.resume && ((yield* stateManager.load) || (yield* projectContainers(true)).length)) {
       yield* Effect.log("[up] cleaning previous run");
       yield* down;
     }
@@ -185,19 +189,15 @@ export const up = (options: UpOptions) =>
       state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
       yield* ensureRuntimeArtifacts(state, "resume");
-      if (
+      const running = yield* projectContainers();
+      if (!running.length && !options.fromStep) {
+        yield* Effect.log("[resume] stack is stopped; restarting from base");
+        state.completedSteps = [];
+        yield* stateManager.save(state);
+      } else if (
         !options.fromStep &&
         STEP_NAMES.every((step) => state!.completedSteps.includes(step))
       ) {
-        const running = yield* projectContainers;
-        if (!running.length) {
-          return yield* Effect.fail(
-            new ResumeError({
-              message:
-                "Persisted state exists but no fhevm containers are running; use `fhevm-cli up` for a fresh boot or `fhevm-cli down` to clear stale state",
-            }),
-          );
-        }
         yield* Effect.log("[resume] nothing to do");
         return;
       }
@@ -224,6 +224,9 @@ export const up = (options: UpOptions) =>
       }
       yield* runStep(state, step);
     }
+    yield* Effect.log(
+      `[done] stack ready in ${Math.round((Date.now() - started) / 1000)}s`,
+    );
   });
 
 // ---------------------------------------------------------------------------

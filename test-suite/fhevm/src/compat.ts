@@ -64,7 +64,7 @@ export const COMPAT_MATRIX = {
    *   3. Run `bun test` — compatPolicyForState tests will cover it
    */
   legacyShims: [
-    { key: "COPROCESSOR_GW_LISTENER_VERSION",  below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "legacy" as const },
+    { key: "COPROCESSOR_GW_LISTENER_VERSION",  below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "modern" as const },
     { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys", unparsed: "modern" as const },
     { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags", unparsed: "modern" as const },
     { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url", unparsed: "modern" as const },

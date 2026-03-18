@@ -55,7 +55,7 @@ export const ensureLockSnapshot = (
  * Fails with GitHubApiError if the file cannot be read or the target mismatches.
  */
 export const bundleFromFile = (
-  target: VersionTarget,
+  target: VersionTarget | undefined,
   lockFile: string,
 ): Effect.Effect<VersionBundle, GitHubApiError> =>
   Effect.gen(function* () {
@@ -63,17 +63,31 @@ export const bundleFromFile = (
       try: () => readJson<VersionBundle>(path.resolve(lockFile)),
       catch: (error) => new GitHubApiError({ message: `Failed to read lock file: ${error}` }),
     });
-    if (bundle.target && bundle.target !== target) {
+    if (target && bundle.target && bundle.target !== target) {
       return yield* Effect.fail(
         new GitHubApiError({
           message: `Lock file target mismatch: bundle=${bundle.target}, requested=${target}`,
         }),
       );
     }
-    return { ...bundle, target };
+    return { ...bundle, target: bundle.target ?? target ?? "latest-main" };
   });
 
-type CachedResolveOptions = Pick<UpOptions, "target" | "sha" | "lockFile" | "reset">;
+type CachedResolveOptions = Pick<UpOptions, "target" | "requestedTarget" | "sha" | "lockFile" | "reset">;
+
+const withProgressLogs = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  label: string,
+) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      setInterval(() => {
+        console.log(`[resolve] ${label}`);
+      }, 10_000),
+    ),
+    () => task,
+    (timer) => Effect.sync(() => clearInterval(timer)),
+  );
 
 /**
  * Resolve a VersionBundle, using a lock file or cache when available.
@@ -86,7 +100,7 @@ export const cachedResolve = (
   Effect.gen(function* () {
     if (options.lockFile) {
       yield* Effect.log(`[resolve] reading lock file ${options.lockFile}`);
-      return yield* bundleFromFile(options.target, options.lockFile);
+      return yield* bundleFromFile(options.requestedTarget, options.lockFile);
     }
 
     const cachePath = resolveCachePath(options.target, options.sha);
@@ -106,7 +120,10 @@ export const cachedResolve = (
     if (options.target === "latest-main" || options.target === "sha") {
       yield* Effect.log("[resolve] fetching main commits and published image tags");
     }
-    const bundle = yield* resolveTarget(options.target, { sha: options.sha });
+    const bundle = yield* withProgressLogs(
+      resolveTarget(options.target, { sha: options.sha }),
+      `still fetching ${options.target} metadata`,
+    );
 
     yield* Effect.tryPromise({
       try: () => writeJson(cachePath, bundle),

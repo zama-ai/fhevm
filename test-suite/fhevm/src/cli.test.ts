@@ -192,13 +192,10 @@ describe("runtime invariants", () => {
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["sns-worker"]).toBeUndefined();
     expect(compatPolicyForState(makeState("v0.12.0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
 
-    // SHA targets keep only the destructive gw-listener drop until we can compare exact feature cutovers.
+    // SHA targets inherit current mainline behavior and keep drift flags enabled.
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["host-listener"]).toBeUndefined();
     expect(compatPolicyForState(makeState("58aebb0")).coprocessorArgs["transaction-sender"]).toBeUndefined();
-    expect(compatPolicyForState(makeState("58aebb0")).coprocessorDropFlags["gw-listener"]).toEqual([
-      "--ciphertext-commits-address",
-      "--gateway-config-address",
-    ]);
+    expect(compatPolicyForState(makeState("58aebb0")).coprocessorDropFlags["gw-listener"]).toBeUndefined();
   });
 
   test("coprocessor depends_on rewrite only renames cloned services", () => {
@@ -881,6 +878,25 @@ describe("runtime invariants", () => {
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
 
+  test("up --dry-run infers the target from a lock file when --target is omitted", async () => {
+    const dir = await fixtureDir();
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    const lockFile = path.join(dir, "ci-bundle.json");
+    await fs.writeFile(lockFile, JSON.stringify(stubBundle({ lockName: "ci-workflow.json" })));
+    const runner = fakeRunner({
+      "which bun": "",
+      "which docker": "",
+      "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
+      ...portCheckResponses,
+    });
+    await main(
+      ["bun", "src/cli.ts", "up", "--lock-file", lockFile, "--dry-run"],
+      depsToLayer({ runner }),
+    );
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
   test("up --dry-run can use latest-supported without GitHub resolution", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
@@ -1042,33 +1058,6 @@ describe("runtime invariants", () => {
     expect(logs.some((l) => l.includes("[resume] nothing to do"))).toBe(true);
   });
 
-  test("resume rejects stale persisted state when no containers are running", async () => {
-    process.chdir(REPO_ROOT);
-    const before = await maybeRead(STATE_FILE);
-    await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
-    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
-    const { logs, restore } = captureConsole("error");
-    try {
-      await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume"],
-        depsToLayer({
-          runner: fakeRunner({
-            "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "",
-          }),
-        }),
-      );
-    } finally {
-      restore();
-      await fs.rm(STATE_DIR, { recursive: true, force: true });
-      if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
-        await fs.writeFile(STATE_FILE, before);
-      }
-    }
-    expect(logs.some((l) => l.includes("Persisted state exists but no fhevm containers are running"))).toBe(true);
-  });
-
   test("resume dry-run previews the persisted stack", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
@@ -1120,7 +1109,7 @@ describe("runtime invariants", () => {
       await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
       expect(await maybeRead(composePath("coprocessor"))).toContain("services:");
       expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
-      expect(await maybeRead(STATE_FILE)).toBeUndefined();
+      expect(await maybeRead(STATE_FILE)).toBeDefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
@@ -1148,7 +1137,7 @@ describe("runtime invariants", () => {
       await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
       expect(await maybeRead(hostAddressesPath)).toBeDefined();
       expect(await maybeRead(envPath("test-suite"))).toContain("RELAYER_URL=");
-      expect(await maybeRead(STATE_FILE)).toBeUndefined();
+      expect(await maybeRead(STATE_FILE)).toBeDefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
@@ -1167,7 +1156,15 @@ describe("runtime invariants", () => {
     await fs.writeFile(STATE_FILE, JSON.stringify(state));
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "clean"], depsToLayer({ liveRunner: async () => 1 }));
+      await main(
+        ["bun", "src/cli.ts", "clean"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps -a --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "gateway-node\n",
+          }),
+          liveRunner: async () => 1,
+        }),
+      );
     } finally {
       restore();
     }
@@ -1460,6 +1457,62 @@ describe("command error paths", () => {
     }
   });
 
+  test("ciphertext-drift requires a multi-coprocessor topology", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(stubState({ discovery: readyDiscovery(), completedSteps: [...STEP_NAMES] })),
+      );
+      await main(["bun", "src/cli.ts", "test", "ciphertext-drift"], noopLayer);
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("requires a multi-coprocessor topology"))).toBe(true);
+  });
+
+  test("ciphertext-drift fails early when gw-listener drift addresses are disabled by compat", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(
+          stubState({
+            count: 2,
+            threshold: 2,
+            discovery: readyDiscovery(),
+            completedSteps: [...STEP_NAMES],
+            envOverrides: {
+              COPROCESSOR_GW_LISTENER_VERSION: "v0.11.0",
+            },
+          }),
+        ),
+      );
+      await main(["bun", "src/cli.ts", "test", "ciphertext-drift"], noopLayer);
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("requires a gw-listener build with drift addresses enabled"))).toBe(true);
+  });
+
   test("help prints usage without error", async () => {
     const { logs, restore } = captureConsole("log");
     try {
@@ -1544,7 +1597,7 @@ describe("command error paths", () => {
         await fs.writeFile(STATE_FILE, before);
       }
     }
-    expect(logs.some((l) => l.includes("persisted state exists but no fhevm containers are running"))).toBe(true);
+    expect(logs.some((l) => l.includes("persisted state exists but the stack is stopped"))).toBe(true);
   });
 });
 

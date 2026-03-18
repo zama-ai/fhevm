@@ -75,7 +75,7 @@ bun test
 - `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`)
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
-- `down` stops the stack
+- `down` stops the stack but keeps resumable `.fhevm` state
 - `clean` removes CLI-owned runtime state
 - `clean --images` also removes CLI-owned local override images
 
@@ -136,7 +136,7 @@ If you need to run a specific set of versions (e.g., `v0.10.7` across the board)
 to skip all target resolution and supply the full bundle yourself:
 
 ```sh
-./fhevm-cli up --target latest-supported --lock-file ./my-bundle.json
+./fhevm-cli up --lock-file ./my-bundle.json
 ```
 
 The lock file must contain every version key. Example:
@@ -168,8 +168,8 @@ The lock file must contain every version key. Example:
 }
 ```
 
-The `--target` flag still determines which compat policy applies. The lock file replaces only
-the version resolution step — preflight, boot pipeline, and everything else run normally.
+If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
+The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
 ## Version Override via Environment Variables
 

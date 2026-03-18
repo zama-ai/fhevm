@@ -104,44 +104,37 @@ export const scenarioOption = Options.text("scenario").pipe(
 
 export const resumeOption = Options.boolean("resume").pipe(
   Options.withDescription("Resume from persisted .fhevm state instead of starting fresh."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const dryRunOption = Options.boolean("dry-run").pipe(
   Options.withDescription("Print the resolved plan and stop before mutating state or containers."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const resetOption = Options.boolean("reset").pipe(
   Options.withDescription("Discard persisted state and regenerate the runtime from scratch."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const allowSchemaMismatchOption = Options.boolean("allow-schema-mismatch").pipe(
   Options.withDescription("Bypass schema-coupled local override safety checks."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const buildOption = Options.boolean("build").pipe(
   Options.withDescription("Build every workspace-owned group locally. On scenario runs, coprocessor remains scenario-driven."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const imagesOption = Options.boolean("images").pipe(
   Options.withDescription("Also remove locally built images when cleaning the stack."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const noFollowOption = Options.boolean("no-follow").pipe(
   Options.withDescription("Print the recent logs and exit instead of following."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const grepOption = Options.text("grep").pipe(
@@ -156,8 +149,7 @@ export const networkOption = Options.text("network").pipe(
 
 export const verboseOption = Options.boolean("verbose").pipe(
   Options.withDescription("Enable verbose output from the underlying test command."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
+  Options.withDefault(false),
 );
 
 export const parallelOption = Options.boolean("parallel").pipe(

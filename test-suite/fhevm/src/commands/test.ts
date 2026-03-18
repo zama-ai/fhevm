@@ -5,6 +5,7 @@
  */
 import { Effect, Fiber } from "effect";
 
+import { compatPolicyForState } from "../compat";
 import { PreflightError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -21,6 +22,7 @@ import {
   withDriftInjector,
 } from "../ciphertext-drift-runner";
 import { shellEscape } from "../pipeline";
+import { topologyForState } from "../runtime-plan";
 import { CommandRunner } from "../services/CommandRunner";
 import { StateManager } from "../services/StateManager";
 import type { TestOptions } from "../types";
@@ -42,6 +44,22 @@ export const test = (
     if (testName === "ciphertext-drift") {
       yield* Effect.log("[test] ciphertext-drift");
       const started = Date.now();
+      const topology = topologyForState(state);
+      if (topology.count < 2) {
+        return yield* Effect.fail(
+          new PreflightError({
+            message: "ciphertext-drift requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario ./scenarios/two-of-two.yaml` first",
+          }),
+        );
+      }
+      const compat = compatPolicyForState(state);
+      if ((compat.coprocessorDropFlags["gw-listener"] ?? []).includes("--ciphertext-commits-address")) {
+        return yield* Effect.fail(
+          new PreflightError({
+            message: "ciphertext-drift requires a gw-listener build with drift addresses enabled; use latest-main or a newer supported bundle",
+          }),
+        );
+      }
       const logSince = new Date().toISOString();
       const faultyInstanceIndex = parseDriftInstanceIndex(
         process.env.FAULTY_INSTANCE_INDEX ?? "1",
@@ -82,6 +100,10 @@ export const test = (
                 [
                   "docker",
                   "exec",
+                  "-e",
+                  "npm_config_update_notifier=false",
+                  "-e",
+                  "NPM_CONFIG_UPDATE_NOTIFIER=false",
                   "-e",
                   "GATEWAY_RPC_URL=",
                   process.env.TEST_CONTAINER ?? TEST_SUITE_CONTAINER,
@@ -147,6 +169,10 @@ export const test = (
         [
           "docker",
           "exec",
+          "-e",
+          "npm_config_update_notifier=false",
+          "-e",
+          "NPM_CONFIG_UPDATE_NOTIFIER=false",
           TEST_SUITE_CONTAINER,
           "sh",
           "-lc",

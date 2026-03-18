@@ -134,12 +134,13 @@ const NETWORK_TARGETS: ReadonlySet<string> = new Set([
 
 export const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
 
-export const projectContainers = Effect.gen(function* () {
+export const projectContainers = (all = false) => Effect.gen(function* () {
   const cmd = yield* CommandRunner;
   const ps = yield* cmd.run(
     [
       "docker",
       "ps",
+      ...(all ? ["-a"] : []),
       "--filter",
       `label=com.docker.compose.project=${PROJECT}`,
       "--format",
@@ -825,7 +826,11 @@ const waitForBootstrap = (state: State, attempts = 120) =>
         return result;
       }
       if (attempt < attempts - 1) {
-        yield* Effect.log("[wait] bootstrap materials");
+        if (attempt === 0 || (attempt + 1) % 5 === 0) {
+          yield* Effect.log(
+            `[wait] bootstrap materials (${(attempt + 1) * 2}s elapsed)`,
+          );
+        }
         yield* Effect.sleep("2 seconds");
       }
     }
@@ -860,6 +865,8 @@ export const runStep = (state: State, step: StepName) =>
     const stepIndex = stateStepIndex(step) + 1;
 
     yield* Effect.log(`[step ${stepIndex}/${STEP_NAMES.length}] ${step}`);
+
+    const stepStarted = Date.now();
 
     switch (step) {
       case "preflight":
@@ -1104,4 +1111,7 @@ export const runStep = (state: State, step: StepName) =>
     }
 
     yield* stateManager.markStep(state, step);
+    yield* Effect.log(
+      `[step ${stepIndex}/${STEP_NAMES.length}] ${step} done (${Math.round((Date.now() - stepStarted) / 1000)}s)`,
+    );
   });

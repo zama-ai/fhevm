@@ -91,7 +91,7 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
 - `src/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
 - `src/render-env.ts`, `src/render-config.ts`, and `src/render-compose.ts` are the only rendering layers.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
-- Resume is step-based via `state.json`, not "rerun the bash ritual and hope".
+- Resume is step-based via `state.json`; `down` stops containers but keeps resumable state, and `clean` removes it.
 - Tracked compose files are the default runtime truth. `.fhevm/compose` only contains generated overrides for coprocessor topology and active local-override components.
 - CI follows the same contract: e2e flows boot `latest-main`, overlay PR-built image refs through `*_VERSION` env vars, use checked-in scenarios for multicopro runs, and use `--build` for full local-workspace coverage.
 - `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.

@@ -48,6 +48,7 @@ export const status = Effect.gen(function* () {
     yield* Effect.log(
       `[steps] ${state.completedSteps.join(", ") || "none"}`,
     );
+    yield* Effect.log(`[updated] ${state.updatedAt}`);
     if (state.builtImages?.length) {
       yield* Effect.log(`[owned-images] ${state.builtImages.length}`);
       for (const image of state.builtImages) {
@@ -78,7 +79,7 @@ export const status = Effect.gen(function* () {
   if (!ps.stdout.trim()) {
     if (state) {
       yield* Effect.log(
-        "[warn] persisted state exists but no fhevm containers are running",
+        "[warn] persisted state exists but the stack is stopped; run `fhevm-cli up --resume` to restart it",
       );
     }
     yield* Effect.log("No fhevm containers");

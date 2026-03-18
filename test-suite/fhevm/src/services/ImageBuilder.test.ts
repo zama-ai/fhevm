@@ -7,7 +7,7 @@ import { loadMergedComposeDoc } from "../render-compose";
 import { stubState } from "../test-helpers";
 
 describe("ImageBuilder", () => {
-  test("maybeBuild records coprocessor images after per-service builds", async () => {
+  test("maybeBuild records coprocessor images after per-service builds and skips repeat builds", async () => {
     const doc = await Effect.runPromise(loadMergedComposeDoc("coprocessor"));
     const services = Object.entries(doc.services)
       .filter(([, service]) => !!service.build)
@@ -47,6 +47,7 @@ describe("ImageBuilder", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const builder = yield* ImageBuilder;
+        yield* builder.maybeBuild("coprocessor", state, () => Effect.void);
         yield* builder.maybeBuild("coprocessor", state, () => Effect.void);
       }).pipe(
         Effect.provide(ImageBuilder.Live),

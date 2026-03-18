@@ -50,6 +50,12 @@ const cli = Command.run(rootCommand, {
   version: "0.1.0",
 });
 
+const normalizeHelpText = (value: string) =>
+  value.replace(
+    /(\n\s*This setting is optional\.\n)\n(\s*This setting is optional\.)/g,
+    "$1",
+  );
+
 // ---------------------------------------------------------------------------
 // main — preserved signature for test compatibility
 // ---------------------------------------------------------------------------
@@ -60,6 +66,16 @@ export const main = async (
 ) => {
   const layer = layerOverride ?? LiveLayer;
   let failure: unknown;
+  const helpRequested =
+    argv.includes("--help") || argv.includes("-h") || argv.length <= 2;
+  const originalLog = console.log;
+  if (helpRequested) {
+    console.log = ((message: unknown, ...rest: unknown[]) =>
+      originalLog(
+        typeof message === "string" ? normalizeHelpText(message) : message,
+        ...rest,
+      )) as typeof console.log;
+  }
 
   const program = cli(argv).pipe(
     Effect.provide(layer),
@@ -75,7 +91,11 @@ export const main = async (
     }),
   );
 
-  await Effect.runPromise(program as Effect.Effect<void, never, never>);
+  try {
+    await Effect.runPromise(program as Effect.Effect<void, never, never>);
+  } finally {
+    console.log = originalLog;
+  }
 
   // Show resume hint if 'up' failed
   if (
