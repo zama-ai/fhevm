@@ -29,26 +29,23 @@ type DriftLogOptions = {
 
 type DriftWarningMatch = {
   container: string;
-  handleHex?: string;
-  exact: boolean;
+  handleHex: string;
 };
 
 export const findDriftWarning = (
   output: string,
   expectedHandleHex: string,
 ): Omit<DriftWarningMatch, "container"> | undefined => {
-  let fallback: Omit<DriftWarningMatch, "container"> | undefined;
   for (const line of output.split(/\r?\n/)) {
     if (!line.includes(DRIFT_WARNING)) {
       continue;
     }
     const matchedHandle = line.match(DRIFT_HANDLE)?.[1];
     if (matchedHandle?.toLowerCase() === expectedHandleHex.toLowerCase()) {
-      return { handleHex: matchedHandle, exact: true };
+      return { handleHex: matchedHandle };
     }
-    fallback ??= { handleHex: matchedHandle, exact: false };
   }
-  return fallback;
+  return undefined;
 };
 
 const psql = (
@@ -168,7 +165,6 @@ export const waitForDriftWarning = (
   Effect.gen(function* () {
     const cmd = yield* CommandRunner;
     const containers = yield* coprocessorGwListeners;
-    let detected: DriftWarningMatch | undefined;
     for (const container of containers) {
       const logs = yield* cmd.run(
         ["docker", "logs", "--since", options.since, container],
@@ -176,13 +172,9 @@ export const waitForDriftWarning = (
       );
       const output = logs.stdout + logs.stderr;
       const match = findDriftWarning(output, handleHex);
-      if (match?.exact) {
+      if (match) {
         return { container, ...match };
       }
-      detected ??= match ? { container, ...match } : undefined;
-    }
-    if (detected) {
-      return detected;
     }
     return yield* Effect.fail("not-ready" as const);
   }).pipe(

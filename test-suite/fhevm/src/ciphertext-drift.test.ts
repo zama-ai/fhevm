@@ -36,16 +36,12 @@ describe("ciphertext-drift", () => {
     expect(DRIFT_CLEANUP_SQL).toContain("DROP TABLE IF EXISTS drift_injection_state");
   });
 
-  test("findDriftWarning prefers the injected handle but falls back to any drift warning", () => {
+  test("findDriftWarning requires the injected handle", () => {
     const other = '{"message":"Drift detected: observed multiple digest variants for handle","handle":"0xaaaa"}';
     const exact = '{"message":"Drift detected: observed multiple digest variants for handle","handle":"0xbbbb"}';
     expect(findDriftWarning(`${other}\n${exact}`, "bbbb")).toEqual({
       handleHex: "bbbb",
-      exact: true,
     });
-    expect(findDriftWarning(other, "bbbb")).toEqual({
-      handleHex: "aaaa",
-      exact: false,
-    });
+    expect(findDriftWarning(other, "bbbb")).toBeUndefined();
   });
 });

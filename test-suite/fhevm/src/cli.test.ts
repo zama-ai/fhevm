@@ -886,6 +886,42 @@ describe("runtime invariants", () => {
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
 
+  test("up validates a fresh latest-main stack before tearing down an existing one", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["bootstrap"] })));
+    const liveCalls: string[][] = [];
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "up", "--target", "latest-main"],
+        depsToLayer({
+          runner: async (argv) => {
+            if (argv[0] === "gh") {
+              throw new Error("spawn gh ENOENT");
+            }
+            return { stdout: "", stderr: "", code: 0 };
+          },
+          liveRunner: async (argv) => {
+            liveCalls.push(argv);
+            return 0;
+          },
+        }),
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((line) => line.includes("Install GitHub CLI") || line.includes("gh auth login"))).toBe(true);
+    expect(liveCalls).toEqual([]);
+  });
+
   test("resume from relayer restores generated runtime artifacts from state", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
@@ -1143,6 +1179,54 @@ describe("runtime invariants", () => {
     }
     expect(await maybeRead(STATE_FILE)).toBeDefined();
     expect(logs.some((l) => l.includes("Failed to stop components"))).toBe(true);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    if (before !== undefined) {
+      await fs.mkdir(STATE_DIR, { recursive: true });
+      await fs.writeFile(STATE_FILE, before);
+    }
+  });
+
+  test("clean --images fails loudly when image removal still fails after teardown", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify({
+        ...stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] }),
+        builtImages: [
+          {
+            ref: "ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:local",
+            id: "sha256:owned",
+            group: "coprocessor",
+          },
+        ],
+      }),
+    );
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "clean", "--images"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps -a --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "gateway-node\n",
+            "docker ps -a --filter label=com.docker.compose.project=fhevm --format {{.ID}}": "",
+            "docker image inspect ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:local --format {{.Id}}": "sha256:owned",
+            "docker image rm ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:local": {
+              stdout: "",
+              stderr: "conflict: image is being used",
+              code: 1,
+            },
+          }),
+          liveRunner: async () => 0,
+        }),
+      );
+    } finally {
+      restore();
+    }
+    expect(await maybeRead(STATE_FILE)).toBeDefined();
+    expect(logs.some((line) => line.includes("Failed to remove owned images"))).toBe(true);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
     if (before !== undefined) {
       await fs.mkdir(STATE_DIR, { recursive: true });

@@ -125,9 +125,7 @@ export const test = (
             }),
         );
         yield* Effect.log(
-          detected.warning.exact
-            ? `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`
-            : `[drift] detected in ${detected.warning.container} for handle 0x${detected.warning.handleHex ?? "unknown"} after injecting 0x${detected.injectedHandleHex}`,
+          `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`,
         );
         yield* Effect.log(`[pass] ciphertext-drift (${Math.round((Date.now() - started) / 1000)}s)`);
       } catch (error) {

@@ -94,6 +94,8 @@ export const PACKAGE_TO_REPOSITORY = {
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
+export const SHA_RUNTIME_COMPAT_MIN_SHA =
+  "1272b10b308b064e7477ca3272712b90b50280d9";
 
 // ---------------------------------------------------------------------------
 // Pure helper functions
@@ -155,6 +157,16 @@ export const simpleAclFloor = (commits: string[]) => {
   if (floor < 0) {
     throw new Error(
       `simple-acl floor ${SIMPLE_ACL_MIN_SHA} was not found in fetched main history; increase the main history fetch window`,
+    );
+  }
+  return floor;
+};
+
+export const shaRuntimeCompatFloor = (commits: string[]) => {
+  const floor = commits.indexOf(SHA_RUNTIME_COMPAT_MIN_SHA);
+  if (floor < 0) {
+    throw new Error(
+      `sha runtime compat floor ${SHA_RUNTIME_COMPAT_MIN_SHA} was not found in fetched main history; increase the main history fetch window`,
     );
   }
   return floor;
@@ -346,8 +358,10 @@ export const resolveTarget = (
         );
       }
       let floor: number;
+      let compatFloor: number;
       try {
         floor = simpleAclFloor(commits);
+        compatFloor = shaRuntimeCompatFloor(commits);
       } catch (error) {
         return yield* Effect.fail(
           new GitHubApiError({ message: error instanceof Error ? error.message : String(error) }),
@@ -368,6 +382,13 @@ export const resolveTarget = (
       if (index > floor) {
         return yield* Effect.fail(
           new GitHubApiError({ message: `sha target ${tag} predates the simple-ACL cutover and is unsupported` }),
+        );
+      }
+      if (index > compatFloor) {
+        return yield* Effect.fail(
+          new GitHubApiError({
+            message: `sha target ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; use latest-supported or a newer sha`,
+          }),
         );
       }
       return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);

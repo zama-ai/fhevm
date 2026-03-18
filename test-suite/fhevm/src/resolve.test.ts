@@ -15,6 +15,8 @@ import {
   REPO_TAG,
   resolveTarget,
   SHA_REF,
+  SHA_RUNTIME_COMPAT_MIN_SHA,
+  shaRuntimeCompatFloor,
   shortSha,
   simpleAclFloor,
   SIMPLE_ACL_MIN_SHA,
@@ -116,6 +118,7 @@ const KNOWN_SHA_FULL = "abc1234000000000000000000000000000000dead";
 // Build a fake commit list where the known SHA is before the simple-ACL floor
 const fakeCommits = [
   KNOWN_SHA_FULL,
+  SHA_RUNTIME_COMPAT_MIN_SHA,
   "1111111000000000000000000000000000000000",
   SIMPLE_ACL_MIN_SHA,
   "0000000000000000000000000000000000000000",
@@ -220,6 +223,17 @@ describe("simpleAclFloor", () => {
 
   test("throws when floor SHA not found", () => {
     expect(() => simpleAclFloor(["aaaa", "bbbb"])).toThrow("simple-acl floor");
+  });
+});
+
+describe("shaRuntimeCompatFloor", () => {
+  test("returns index of SHA_RUNTIME_COMPAT_MIN_SHA", () => {
+    const commits = ["aaaa", SHA_RUNTIME_COMPAT_MIN_SHA, "bbbb"];
+    expect(shaRuntimeCompatFloor(commits)).toBe(1);
+  });
+
+  test("throws when compat floor SHA not found", () => {
+    expect(() => shaRuntimeCompatFloor(["aaaa", "bbbb"])).toThrow("sha runtime compat floor");
   });
 });
 
@@ -430,7 +444,7 @@ describe("resolveTarget", () => {
   test("sha target rejects when commit not found in main history", async () => {
     const NotOnMainClient = Layer.succeed(GitHubClient, {
       latestStableRelease: () => Effect.succeed("v0.11.0"),
-      mainCommits: () => Effect.succeed([SIMPLE_ACL_MIN_SHA]), // known SHA not present
+      mainCommits: () => Effect.succeed([SHA_RUNTIME_COMPAT_MIN_SHA, SIMPLE_ACL_MIN_SHA]), // known SHA not present
       packageTags: () => Effect.succeed(makeAllPackageTags("dead000")),
       gitopsFile: gitopsFileStub,
     });
@@ -447,6 +461,7 @@ describe("resolveTarget", () => {
   test("sha target rejects commits older than simple-ACL floor", async () => {
     // Put our commit AFTER the floor SHA
     const commitsWithOldSha = [
+      SHA_RUNTIME_COMPAT_MIN_SHA,
       SIMPLE_ACL_MIN_SHA,
       "dead000000000000000000000000000000000000",
     ];
@@ -463,6 +478,29 @@ describe("resolveTarget", () => {
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") {
       expect(result.left.message).toContain("predates the simple-ACL cutover");
+    }
+  });
+
+  test("sha target rejects commits older than the runtime compat floor", async () => {
+    const CompatFloorClient = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () =>
+        Effect.succeed([
+          KNOWN_SHA_FULL,
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          SIMPLE_ACL_MIN_SHA,
+          "0000000000000000000000000000000000000000",
+        ]),
+      packageTags: () => Effect.succeed(makeAllPackageTags(SIMPLE_ACL_MIN_SHA.slice(0, 7))),
+      gitopsFile: gitopsFileStub,
+    });
+    const program = resolveTarget("sha", { sha: SIMPLE_ACL_MIN_SHA.slice(0, 7) });
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(CompatFloorClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("predates the modern gw-listener drift-address cutover");
     }
   });
 

@@ -129,7 +129,6 @@ const targetNeedsGitHub = (
 
 const bootstrapState = (options: UpOptions) =>
   Effect.gen(function* () {
-    const stateManager = yield* StateManager;
     yield* Effect.log(`[up] target=${options.target}`);
     const resolved = yield* resolveBundle(options, process.env);
     const scenario = yield* resolveScenarioForOptions(options);
@@ -154,7 +153,6 @@ const bootstrapState = (options: UpOptions) =>
       completedSteps: [],
       updatedAt: new Date().toISOString(),
     };
-    yield* stateManager.save(state);
     return state;
   });
 
@@ -166,8 +164,9 @@ export const up = (options: UpOptions) =>
   Effect.gen(function* () {
     const started = Date.now();
     const stateManager = yield* StateManager;
+    const persistedState = yield* stateManager.load;
     let state = options.resume
-      ? yield* stateManager.load
+      ? persistedState
       : undefined;
 
     if (options.resume && !state) {
@@ -177,12 +176,14 @@ export const up = (options: UpOptions) =>
         }),
       );
     }
-    if (!options.resume && ((yield* stateManager.load) || (yield* projectContainers(true)).length)) {
-      yield* Effect.log("[up] cleaning previous run");
-      yield* down;
-    }
     if (!state) {
-      state = yield* bootstrapState(options);
+      const nextState = yield* bootstrapState(options);
+      if (persistedState || (yield* projectContainers(true)).length) {
+        yield* Effect.log("[up] cleaning previous run");
+        yield* down;
+      }
+      state = nextState;
+      yield* stateManager.save(state);
     }
     if (options.resume) {
       state.requiresGitHub ??= state.target !== "latest-supported";
