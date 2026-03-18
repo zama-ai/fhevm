@@ -7,6 +7,7 @@ import { Effect } from "effect";
 
 import { regen } from "../codegen";
 import { PreflightError } from "../errors";
+import { TEST_SUITE_CONTAINER } from "../layout";
 import {
   ensureRuntimeArtifacts,
   projectContainers,
@@ -66,7 +67,7 @@ export const upgrade = (groupValue: string | undefined) =>
     } else if (group === "kms-connector") {
       yield* waitForKmsConnector;
     } else {
-      yield* probe.waitForRunning("fhevm-test-suite-e2e-debug");
+      yield* probe.waitForRunning(TEST_SUITE_CONTAINER);
     }
     yield* stateManager.markStep(state, step);
   });

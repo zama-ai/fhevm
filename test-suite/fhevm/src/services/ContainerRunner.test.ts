@@ -13,6 +13,7 @@ const TestCommandRunner = Layer.succeed(CommandRunner, {
     calls.push(argv);
     return Effect.succeed(0);
   },
+  runWithHeartbeat: () => Effect.void,
 });
 
 describe("ContainerRunner", () => {

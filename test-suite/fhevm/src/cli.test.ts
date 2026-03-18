@@ -455,7 +455,7 @@ describe("runtime invariants", () => {
         Effect.provide(TestMinioClient),
       ),
     );
-    expect(result).toBe(false);
+    expect(result).toBeNull();
     expect(state.discovery?.actualFheKeyId).toBeUndefined();
   });
 
@@ -490,6 +490,44 @@ describe("runtime invariants", () => {
     ).rejects.toThrow("Material not ready");
   }, 45_000);
 
+  test("probeBootstrap returns ids without mutating discovery", async () => {
+    const state = stubState({
+      discovery: {
+        gateway: { KMS_GENERATION_ADDRESS: "0x1234" },
+        host: {},
+        kmsSigner: "",
+        fheKeyId: predictedKeyId(),
+        crsKeyId: predictedCrsId(),
+        endpoints: {
+          gatewayHttp: "http://localhost:8546",
+          gatewayWs: "",
+          hostHttp: "http://localhost:8545",
+          hostWs: "",
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+    });
+    const TestMinioClient = Layer.succeed(MinioClient, {
+      discoverSigner: () => Effect.fail(new MinioError({ message: "not used" })),
+      ensureMaterial: () => Effect.void,
+      probeBootstrap: () =>
+        Effect.succeed({
+          actualFheKeyId: predictedKeyId(),
+          actualCrsKeyId: predictedCrsId(),
+        }),
+    });
+    const result = await Effect.runPromise(
+      probeBootstrap(state).pipe(Effect.provide(TestMinioClient)),
+    );
+    expect(result).toEqual({
+      actualFheKeyId: predictedKeyId(),
+      actualCrsKeyId: predictedCrsId(),
+    });
+    expect(state.discovery?.actualFheKeyId).toBeUndefined();
+    expect(state.discovery?.actualCrsKeyId).toBeUndefined();
+  });
+
   test("composeDown returns false on non-zero exit", async () => {
     const file = composePath("database");
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -498,6 +536,7 @@ describe("runtime invariants", () => {
       const TestCmd = Layer.succeed(CommandRunner, {
         run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
         runLive: () => Effect.succeed(1), // non-zero exit
+        runWithHeartbeat: () => Effect.void,
       });
       const TestRunner = ContainerRunner.Live.pipe(Layer.provide(TestCmd));
       const result = await Effect.runPromise(

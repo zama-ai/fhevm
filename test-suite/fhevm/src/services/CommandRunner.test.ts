@@ -43,4 +43,23 @@ describe("CommandRunner", () => {
     expect(result.code).toBe(1);
     expect(result.stderr.length).toBeGreaterThan(0);
   });
+
+  test("runWithHeartbeat streams successful commands", async () => {
+    const program = Effect.gen(function* () {
+      const cmd = yield* CommandRunner;
+      yield* cmd.runWithHeartbeat(["sh", "-c", "exit 0"], "heartbeat");
+    });
+    await Effect.runPromise(program.pipe(Effect.provide(CommandRunner.Live)));
+  });
+
+  test("runWithHeartbeat fails on non-zero exit", async () => {
+    const program = Effect.gen(function* () {
+      const cmd = yield* CommandRunner;
+      yield* cmd.runWithHeartbeat(["sh", "-c", "exit 1"], "heartbeat");
+    });
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(CommandRunner.Live), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+  });
 });

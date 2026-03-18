@@ -15,7 +15,7 @@ import { StateManager } from "./services/StateManager";
 import { CommandError } from "./errors";
 import { defaultCoprocessorScenario } from "./scenario";
 
-export const STUB_VERSION_ENV: Record<string, string> = {
+const STUB_VERSION_ENV: Record<string, string> = {
   GATEWAY_VERSION: "v0.11.0",
   HOST_VERSION: "v0.11.0",
   COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
@@ -133,6 +133,21 @@ export const depsToLayer = (deps: {
     runLive: (argv: string[], options?: any) =>
       Effect.tryPromise({
         try: () => (deps.liveRunner ?? noopDeps.liveRunner)(argv, options as any),
+        catch: (e) =>
+          new CommandError({
+            argv,
+            code: 1,
+            stderr: e instanceof Error ? e.message : String(e),
+          }),
+      }),
+    runWithHeartbeat: (argv: string[], _label: string, options?: any) =>
+      Effect.tryPromise({
+        try: async () => {
+          const code = await (deps.liveRunner ?? noopDeps.liveRunner)(argv, options as any);
+          if (code !== 0 && !options?.allowFailure) {
+            throw new Error(`${argv.join(" ")} failed (${code})`);
+          }
+        },
         catch: (e) =>
           new CommandError({
             argv,

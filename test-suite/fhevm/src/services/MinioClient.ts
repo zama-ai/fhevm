@@ -1,6 +1,12 @@
 import { Context, Effect, Layer, Schedule } from "effect";
 import { CommandRunner } from "./CommandRunner";
 import { MinioError } from "../errors";
+import {
+  CRSGEN_ID_SELECTOR,
+  KEYGEN_ID_SELECTOR,
+  KMS_CORE_CONTAINER,
+  MINIO_EXTERNAL_URL,
+} from "../layout";
 import { hostReachableMaterialUrl, hostReachableRpcUrl, withHexPrefix, uint256ToId } from "../utils";
 
 const MINIO_KEY_PREFIXES = ["PUB/PUB", "PUB"] as const;
@@ -33,7 +39,7 @@ export class MinioClient extends Context.Tag("MinioClient")<
         discoverSigner: () =>
           Effect.gen(function* () {
             const logs = yield* cmd
-              .run(["docker", "logs", "kms-core"], { allowFailure: true })
+              .run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true })
               .pipe(
                 Effect.catchAll(() =>
                   Effect.succeed({ stdout: "", stderr: "", code: 1 }),
@@ -49,7 +55,7 @@ export class MinioClient extends Context.Tag("MinioClient")<
               const result = yield* Effect.tryPromise({
                 try: async () => {
                   const response = await fetch(
-                    `http://localhost:9000/kms-public/${prefix}/VerfAddress/${handle}`,
+                    `${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`,
                   );
                   if (!response.ok) {
                     await response.text();
@@ -135,8 +141,8 @@ export class MinioClient extends Context.Tag("MinioClient")<
                 return payload.result ? BigInt(payload.result) : 0n;
               };
 
-              const actualKey = await ethCallRaw("0xd52f10eb");
-              const actualCrs = await ethCallRaw("0xbaff211e");
+              const actualKey = await ethCallRaw(KEYGEN_ID_SELECTOR);
+              const actualCrs = await ethCallRaw(CRSGEN_ID_SELECTOR);
               if (actualKey === 0n || actualCrs === 0n) return null;
               return {
                 actualFheKeyId: uint256ToId(actualKey),

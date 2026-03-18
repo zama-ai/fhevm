@@ -4,6 +4,8 @@ import { ContainerProbe } from "./ContainerProbe";
 import { CommandRunner, type RunResult } from "./CommandRunner";
 import { ContainerCrashed, ProbeTimeout } from "../errors";
 
+const noopHeartbeat = () => Effect.void;
+
 describe("ContainerProbe", () => {
   test("waitForHealthy retries until healthy", async () => {
     let attempt = 0;
@@ -27,6 +29,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -58,6 +61,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -95,6 +99,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -134,6 +139,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -171,6 +177,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -204,6 +211,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -235,6 +243,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {
@@ -272,6 +281,7 @@ describe("ContainerProbe", () => {
         return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
       },
       runLive: () => Effect.succeed(0),
+      runWithHeartbeat: noopHeartbeat,
     });
 
     const program = Effect.gen(function* () {

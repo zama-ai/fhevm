@@ -35,15 +35,19 @@ import {
   hasLocalCoprocessorInstance,
 } from "./scenario";
 import {
+  COPROCESSOR_DB_CONTAINER,
   COMPONENT_BY_STEP,
   COMPONENTS,
+  KMS_CORE_CONTAINER,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  MINIO_INTERNAL_URL,
   PORTS,
   PROJECT,
   REPO_ROOT,
   SCHEMA_COUPLED_GROUPS,
+  TEST_SUITE_CONTAINER,
   composePath,
   dockerArgs,
   envPath,
@@ -79,6 +83,7 @@ import {
   toServiceName,
   withHexPrefix,
 } from "./utils";
+import type { Discovery } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -346,10 +351,31 @@ export const defaultEndpoints = Effect.gen(function* () {
     gatewayWs: "ws://gateway-node:8546",
     hostHttp: "http://host-node:8545",
     hostWs: "ws://host-node:8545",
-    minioInternal: "http://minio:9000",
+    minioInternal: MINIO_INTERNAL_URL,
     minioExternal: `http://${ip}:9000`,
   };
 });
+
+const createDiscovery = (
+  endpoints: Discovery["endpoints"],
+): Discovery => ({
+  gateway: {},
+  host: {},
+  kmsSigner: "",
+  fheKeyId: predictedKeyId(),
+  crsKeyId: predictedCrsId(),
+  endpoints,
+});
+
+const ensureDiscovery = (state: State) =>
+  Effect.gen(function* () {
+    if (state.discovery) {
+      return state.discovery;
+    }
+    const discovery = createDiscovery(yield* defaultEndpoints);
+    state.discovery = discovery;
+    return discovery;
+  });
 
 export const discoverContracts = Effect.gen(function* () {
   const gwExists = yield* Effect.promise(() => exists(gatewayAddressesPath));
@@ -700,7 +726,7 @@ const coprocessorDbSeeded = (database: string) =>
       [
         "docker",
         "exec",
-        "coprocessor-and-kms-db",
+        COPROCESSOR_DB_CONTAINER,
         "psql",
         "-U",
         "postgres",
@@ -733,7 +759,7 @@ export const waitForKmsConnector = Effect.gen(function* () {
 
 const waitForTestSuite = Effect.gen(function* () {
   const probe = yield* ContainerProbe;
-  yield* probe.waitForRunning("fhevm-test-suite-e2e-debug");
+  yield* probe.waitForRunning(TEST_SUITE_CONTAINER);
 });
 
 // ---------------------------------------------------------------------------
@@ -752,7 +778,7 @@ export const probeBootstrap = (state: State) =>
       kp,
     );
     if (!result) {
-      return false;
+      return null;
     }
     // Ensure material is available (parallel)
     yield* Effect.all(
@@ -780,17 +806,18 @@ export const probeBootstrap = (state: State) =>
         }),
       );
     }
-    state.discovery!.actualFheKeyId = result.actualFheKeyId;
-    state.discovery!.actualCrsKeyId = result.actualCrsKeyId;
-    return true;
+    return result;
   });
 
 // waitForBootstrap: retry probeBootstrap up to `attempts` times
 const waitForBootstrap = (state: State, attempts = 120) =>
   Effect.gen(function* () {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (yield* probeBootstrap(state)) {
-        return;
+      const result = yield* probeBootstrap(state);
+      if (result) {
+        state.discovery!.actualFheKeyId = result.actualFheKeyId;
+        state.discovery!.actualCrsKeyId = result.actualCrsKeyId;
+        return result;
       }
       if (attempt < attempts - 1) {
         yield* Effect.log("[wait] bootstrap materials");
@@ -846,37 +873,23 @@ export const runStep = (state: State, step: StepName) =>
         yield* probe.waitForHealthy("fhevm-minio");
         yield* probe.waitForComplete("fhevm-minio-setup");
         yield* stepComposeUp("core", state);
-        yield* probe.waitForLog("kms-core", /KMS Server service socket address/);
+        yield* probe.waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
         yield* stepComposeUp("database", state);
-        yield* probe.waitForHealthy("coprocessor-and-kms-db");
+        yield* probe.waitForHealthy(COPROCESSOR_DB_CONTAINER);
         yield* stepComposeUp("host-node", state);
         yield* probe.waitForRpc("http://localhost:8545");
         yield* stepComposeUp("gateway-node", state);
         yield* probe.waitForRpc("http://localhost:8546");
-        state.discovery = {
-          gateway: {},
-          host: {},
-          kmsSigner: "",
-          fheKeyId: predictedKeyId(),
-          crsKeyId: predictedCrsId(),
-          endpoints: yield* defaultEndpoints,
-        };
+        state.discovery = createDiscovery(yield* defaultEndpoints);
         yield* regen(state);
         break;
 
       case "kms-signer": {
-        state.discovery ??= {
-          gateway: {},
-          host: {},
-          kmsSigner: "",
-          fheKeyId: predictedKeyId(),
-          crsKeyId: predictedCrsId(),
-          endpoints: yield* defaultEndpoints,
-        };
+        const discovery = yield* ensureDiscovery(state);
         const minio = yield* MinioClient;
         const signer = yield* minio.discoverSigner();
-        state.discovery.kmsSigner = signer.address;
-        state.discovery.minioKeyPrefix = signer.minioKeyPrefix;
+        discovery.kmsSigner = signer.address;
+        discovery.minioKeyPrefix = signer.minioKeyPrefix;
         yield* regen(state);
         break;
       }
@@ -888,20 +901,9 @@ export const runStep = (state: State, step: StepName) =>
         yield* probe.waitForComplete("gateway-deploy-mocked-zama-oft");
         yield* stepComposeUp("gateway-sc", state, ["gateway-sc-deploy"]);
         yield* probe.waitForComplete("gateway-sc-deploy");
-        state.discovery = {
-          gateway: yield* Effect.promise(() =>
-            readEnvFile(gatewayAddressesPath),
-          ),
-          host: state.discovery?.host ?? {},
-          kmsSigner: state.discovery?.kmsSigner ?? "",
-          fheKeyId: state.discovery?.fheKeyId ?? predictedKeyId(),
-          crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
-          actualFheKeyId: state.discovery?.actualFheKeyId,
-          actualCrsKeyId: state.discovery?.actualCrsKeyId,
-          minioKeyPrefix: state.discovery?.minioKeyPrefix,
-          endpoints:
-            state.discovery?.endpoints ?? (yield* defaultEndpoints),
-        };
+        (yield* ensureDiscovery(state)).gateway = yield* Effect.promise(() =>
+          readEnvFile(gatewayAddressesPath),
+        );
         yield* regen(state);
         yield* stepComposeUp(
           "gateway-mocked-payment",
@@ -921,18 +923,9 @@ export const runStep = (state: State, step: StepName) =>
 
       case "discover": {
         const contracts = yield* discoverContracts;
-        state.discovery = {
-          gateway: contracts.gateway,
-          host: contracts.host,
-          kmsSigner: state.discovery?.kmsSigner ?? "",
-          fheKeyId: state.discovery?.fheKeyId ?? predictedKeyId(),
-          crsKeyId: state.discovery?.crsKeyId ?? predictedCrsId(),
-          actualFheKeyId: state.discovery?.actualFheKeyId,
-          actualCrsKeyId: state.discovery?.actualCrsKeyId,
-          minioKeyPrefix: state.discovery?.minioKeyPrefix,
-          endpoints:
-            state.discovery?.endpoints ?? (yield* defaultEndpoints),
-        };
+        const discovery = yield* ensureDiscovery(state);
+        discovery.gateway = contracts.gateway;
+        discovery.host = contracts.host;
         break;
       }
 
@@ -977,9 +970,11 @@ export const runStep = (state: State, step: StepName) =>
 
       case "bootstrap": {
         const bootstrapDone = yield* probeBootstrap(state).pipe(
-          Effect.catchTag("MinioError", () => Effect.succeed(false)),
+          Effect.catchTag("MinioError", () => Effect.succeed(null)),
         );
         if (bootstrapDone) {
+          state.discovery!.actualFheKeyId = bootstrapDone.actualFheKeyId;
+          state.discovery!.actualCrsKeyId = bootstrapDone.actualCrsKeyId;
           yield* regen(state);
           break;
         }
@@ -1020,9 +1015,11 @@ export const runStep = (state: State, step: StepName) =>
         }
 
         const bootstrapReady = yield* probeBootstrap(state).pipe(
-          Effect.catchTag("MinioError", () => Effect.succeed(false)),
+          Effect.catchTag("MinioError", () => Effect.succeed(null)),
         );
         if (bootstrapReady) {
+          state.discovery!.actualFheKeyId = bootstrapReady.actualFheKeyId;
+          state.discovery!.actualCrsKeyId = bootstrapReady.actualCrsKeyId;
           yield* regen(state);
           break;
         }
@@ -1101,78 +1098,4 @@ export const runStep = (state: State, step: StepName) =>
     }
 
     yield* stateManager.markStep(state, step);
-  });
-
-// ---------------------------------------------------------------------------
-// runWithHeartbeat — run a long process with idle-time heartbeat logging
-// ---------------------------------------------------------------------------
-
-export const runWithHeartbeat = (
-  argv: string[],
-  label: string,
-) =>
-  Effect.gen(function* () {
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          const proc = Bun.spawn(argv, {
-            stdin: "inherit",
-            stdout: "pipe",
-            stderr: "pipe",
-            env: process.env as Record<string, string>,
-          });
-
-          let lastOutput = Date.now();
-          let announced = 0;
-
-          const pump = async (
-            stream: ReadableStream<Uint8Array> | null,
-            writer: NodeJS.WriteStream,
-          ) => {
-            if (!stream) return;
-            const reader = stream.getReader();
-            try {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) return;
-                if (value?.length) {
-                  lastOutput = Date.now();
-                  writer.write(Buffer.from(value));
-                }
-              }
-            } finally {
-              reader.releaseLock();
-            }
-          };
-
-          const timer = setInterval(() => {
-            const silent = Date.now() - lastOutput;
-            if (silent >= 15_000 && silent - announced >= 15_000) {
-              announced = silent;
-              console.log(
-                `[wait] ${label} still running (${Math.floor(silent / 1000)}s)`,
-              );
-            }
-          }, 5_000);
-
-          Promise.all([
-            proc.exited,
-            pump(proc.stdout, process.stdout),
-            pump(proc.stderr, process.stderr),
-          ])
-            .then(([code]) => {
-              clearInterval(timer);
-              if (code !== 0) {
-                reject(new Error(`${argv.join(" ")} failed (${code})`));
-              } else {
-                resolve();
-              }
-            })
-            .catch((error) => {
-              clearInterval(timer);
-              proc.kill();
-              reject(error);
-            });
-        }),
-    );
   });

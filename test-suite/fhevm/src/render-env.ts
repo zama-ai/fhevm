@@ -5,7 +5,12 @@ import {
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
 } from "./compat";
-import { COPROCESSOR_WALLET_INDICES, DEFAULT_TENANT_API_KEY } from "./layout";
+import {
+  COPROCESSOR_WALLET_INDICES,
+  DEFAULT_TENANT_API_KEY,
+  MINIO_INTERNAL_URL,
+  POSTGRES_HOST,
+} from "./layout";
 import type { RuntimePlan } from "./runtime-plan";
 import type { State } from "./types";
 import { predictedCrsId, predictedKeyId } from "./utils";
@@ -71,13 +76,13 @@ export const renderEnvMaps = (
     envs["gateway-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
     envs["host-sc"].NUM_COPROCESSORS = String(plan.topology.count);
     envs["host-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
-    envs["coprocessor"].DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@db:5432/coprocessor`;
+    envs["coprocessor"].DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor`;
     envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
     envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
     envs["coprocessor"].AWS_ENDPOINT_URL =
-      state.discovery?.endpoints.minioExternal ?? "http://minio:9000";
+      state.discovery?.endpoints.minioExternal ?? MINIO_INTERNAL_URL;
     const kp = state.discovery?.minioKeyPrefix ?? "PUB";
-    const minioInt = state.discovery?.endpoints.minioInternal ?? "http://minio:9000";
+    const minioInt = state.discovery?.endpoints.minioInternal ?? MINIO_INTERNAL_URL;
     envs["coprocessor"].FHE_KEY_ID =
       state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
     envs["coprocessor"].KMS_PUBLIC_KEY = `${minioInt}/kms-public/${kp}/PublicKey/${envs["coprocessor"].FHE_KEY_ID}`;
@@ -187,7 +192,7 @@ export const renderEnvMaps = (
         envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
         envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
         envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] =
-          "http://minio:9000/ct128";
+          `${MINIO_INTERNAL_URL}/ct128`;
         envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
         if (index === 0) {
           envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
@@ -195,7 +200,7 @@ export const renderEnvMaps = (
           continue;
         }
         const next = { ...envs["coprocessor"] };
-        next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@db:5432/coprocessor_${index}`;
+        next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor_${index}`;
         next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
         const instance = scenario.instances.find((item) => item.index === index);
         Object.assign(next, instance?.env ?? {});

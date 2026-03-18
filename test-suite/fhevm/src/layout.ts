@@ -31,6 +31,14 @@ export const STATIC_PROMETHEUS_CONFIG_DIR = path.join(
 );
 export const PROJECT = "fhevm";
 export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 9000, 9001];
+export const MINIO_INTERNAL_URL = "http://minio:9000";
+export const MINIO_EXTERNAL_URL = "http://localhost:9000";
+export const POSTGRES_HOST = "db:5432";
+export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
+export const KMS_CORE_CONTAINER = "kms-core";
+export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
+export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
+export const CRSGEN_ID_SELECTOR = "0xbaff211e";
 
 export const COMPONENTS = [
   "minio",

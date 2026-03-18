@@ -6,7 +6,12 @@
 import { Effect, Fiber } from "effect";
 
 import { PreflightError } from "../errors";
-import { TEST_GREP, TEST_PARALLEL } from "../layout";
+import {
+  COPROCESSOR_DB_CONTAINER,
+  TEST_GREP,
+  TEST_PARALLEL,
+  TEST_SUITE_CONTAINER,
+} from "../layout";
 import {
   parseDriftInstanceIndex,
   parsePositiveInteger,
@@ -15,7 +20,8 @@ import {
   waitForDriftWarning,
   withDriftInjector,
 } from "../ciphertext-drift-runner";
-import { shellEscape, runWithHeartbeat } from "../pipeline";
+import { shellEscape } from "../pipeline";
+import { CommandRunner } from "../services/CommandRunner";
 import { StateManager } from "../services/StateManager";
 import type { TestOptions } from "../types";
 
@@ -24,6 +30,7 @@ export const test = (
   options: TestOptions,
 ) =>
   Effect.gen(function* () {
+    const cmd = yield* CommandRunner;
     const stateManager = yield* StateManager;
     const state = yield* stateManager.load;
     if (!state?.discovery?.actualFheKeyId) {
@@ -65,19 +72,19 @@ export const test = (
             timeoutSeconds: driftInjectTimeoutSeconds,
             pollIntervalSeconds: driftInjectPollIntervalSeconds,
             postgresContainer:
-              process.env.POSTGRES_CONTAINER ?? "coprocessor-and-kms-db",
+              process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
             postgresUser: process.env.POSTGRES_USER ?? "postgres",
             postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
           },
           (injector) =>
             Effect.gen(function* () {
-              yield* runWithHeartbeat(
+              yield* cmd.runWithHeartbeat(
                 [
                   "docker",
                   "exec",
                   "-e",
                   "GATEWAY_RPC_URL=",
-                  process.env.TEST_CONTAINER ?? "fhevm-test-suite-e2e-debug",
+                  process.env.TEST_CONTAINER ?? TEST_SUITE_CONTAINER,
                   "./run-tests.sh",
                   "-n",
                   "staging",
@@ -136,11 +143,11 @@ export const test = (
       .filter(Boolean)
       .join(" ");
     try {
-      yield* runWithHeartbeat(
+      yield* cmd.runWithHeartbeat(
         [
           "docker",
           "exec",
-          "fhevm-test-suite-e2e-debug",
+          TEST_SUITE_CONTAINER,
           "sh",
           "-lc",
           command,

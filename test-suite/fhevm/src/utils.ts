@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { MINIO_EXTERNAL_URL, MINIO_INTERNAL_URL } from "./layout";
 
 export type RunOptions = {
   cwd?: string;
@@ -128,5 +129,5 @@ export const hostReachableRpcUrl = (url: string) =>
 
 export const hostReachableMaterialUrl = (url: string) =>
   url
-    .replace(/http:\/\/[^/]+:9000/, "http://localhost:9000")
-    .replace("http://minio:9000", "http://localhost:9000");
+    .replace(/http:\/\/[^/]+:9000/, MINIO_EXTERNAL_URL)
+    .replace(MINIO_INTERNAL_URL, MINIO_EXTERNAL_URL);
