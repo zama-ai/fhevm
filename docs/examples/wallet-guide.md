@@ -46,16 +46,87 @@ At a high-level, to integrate Zama Protocol into a wallet or exchange, you do **
 
 Wrapped confidential tokens allow users to convert standard ERC-20 tokens into an ERC-7984 confidential form. Once wrapped, the token behaves as a confidential token: balances and transfer amounts are encrypted on-chain. The underlying ERC-20 remains unchanged and can be recovered by unwrapping.
 
+For the full confidential wrapper contract reference, see the [Zama Protocol documentation](https://docs.zama.org/protocol/protocol-apps/confidential-wrapper).
+
+### Fungibility between ERC-20 and confidential tokens
+
+For exchanges, a wrapped confidential token should be treated as **fungible with its underlying ERC-20** from the user's perspective. A user who deposits USDT and a user who deposits cUSDT are depositing the same underlying asset. The exchange handles wrapping and unwrapping internally as an implementation detail.
+
+This means exchanges should consider supporting the following flows:
+
+- **User deposits ERC-20** (e.g., USDT): the exchange wraps it into the confidential form (cUSDT) if needed for on-chain operations.
+- **User deposits confidential token** (e.g., cUSDT): no wrapping needed; the exchange credits the same underlying balance.
+- **User withdraws as ERC-20** (e.g., USDT): the exchange unwraps the confidential token and sends standard ERC-20.
+- **User withdraws as confidential token** (e.g., cUSDT): no unwrapping needed; the exchange sends the confidential token directly.
+
+In all cases, the user sees a single unified balance for the underlying asset.
+
 ### How wrapping works
 
-1. A user holds a standard ERC-20 token (e.g., USDT).
-2. The user calls the wrapper contract to **wrap** their ERC-20 tokens, depositing them into the wrapper and receiving an equivalent amount of the confidential token (e.g., cUSDT) with an encrypted balance.
-3. The confidential token can be transferred, held, or used in confidential DeFi operations.
+When a user holds a standard ERC-20 token (e.g., USDT), **wrapping** converts standard ERC-20 tokens into their confidential ERC-7984 form. Wrapping deposits them into the wrapper contract for the token, with the user receiving an equivalent amount of the confidential token (e.g., cUSDT) with an encrypted balance. (In a custodial scenario, these actions can be carried out on behalf of the user.)
+
+Prior to wrapping, the wrapper contract must be approved by the caller on the underlying ERC-20 token (a standard ERC-20 `approve` call).
+
+```solidity
+wrapper.wrap(to, amount);
+```
+
+- `amount` uses the same decimal precision as the underlying ERC-20 token.
+- The wrapper mints the corresponding confidential tokens to the `to` address.
+- Due to decimal conversion (see below), any excess tokens below the conversion rate are refunded to the caller.
+
+Once the wrapping is complete, the confidential token can be transferred, held, or used in as assets within an exchange. Any recipient would then need to decrypt the balances or transaction amounts to utilise the tokens in a transaction.
 
 ### How unwrapping works
 
-1. A user holds a wrapped confidential token (e.g., cUSDT).
-2. The user calls the wrapper contract to **unwrap**, burning the confidential tokens and receiving the equivalent amount of the underlying ERC-20 token back.
+When a user holds a wrapped confidential token (e.g., cUSDT), to get the ERC-20 equivalent back they (or someone on their behalf) needs to **unwrap** the confidential token.
+
+Unwrapping is a **two-step asynchronous process**: first an unwrap request is made, then it is finalised once the encrypted amount has been publicly decrypted. During this process once the unwrapping is complete, the confidential tokens are and the user or their proxy receives the equivalent amount of the underlying ERC-20 token back.
+
+**Step 1: Unwrap request**
+
+```solidity
+wrapper.unwrap(from, to, encryptedAmount, inputProof);
+```
+
+- The caller must be `from` or an approved operator for `from`.
+- The `encryptedAmount` of confidential tokens is burned.
+- No transfer of underlying ERC-20 tokens happens in this step.
+
+**Step 2: Finalise unwrap**
+
+The encrypted burned amount from the `UnwrapRequested` event must be [publicly decrypted](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/decryption/public-decryption) to obtain the cleartext amount and a decryption proof.
+
+```solidity
+wrapper.finalizeUnwrap(burntAmount, cleartextAmount, decryptionProof);
+```
+
+This sends the corresponding amount of underlying ERC-20 tokens to the `to` address specified in the unwrap request.
+
+### Decimal conversion
+
+The wrapper enforces a maximum of **6 decimals** for the confidential token. When wrapping tokens with higher precision (e.g., 18-decimal tokens), amounts are rounded down and excess tokens are refunded.
+
+| Underlying decimals | Wrapper decimals | Conversion rate | Effect |
+| --- | --- | --- | --- |
+| 18 | 6 | 10^12 | 1 wrapped unit = 10^12 underlying units |
+| 6 | 6 | 1 | 1:1 mapping |
+| 2 | 2 | 1 | 1:1 mapping |
+
+The conversion rate and wrapper decimals can be checked on-chain:
+
+```solidity
+uint256 conversionRate = wrapper.rate();
+uint8 wrapperDecimals = wrapper.decimals();
+```
+
+### Finding the underlying token
+
+The underlying ERC-20 address for any wrapped confidential token can be looked up via the [Confidential Token Wrappers Registry](#confidential-token-wrappers-registry):
+
+```solidity
+(bool isValid, address token) = registry.getTokenAddress(confidentialWrapperAddress);
+```
 
 Wallets and exchanges should provide clear UX for both wrapping and unwrapping flows, making it obvious to the user which token they are converting between.
 
@@ -197,4 +268,5 @@ pnpm run start
 
 - Detailed [**confidential contracts guide from OpenZeppelin**](https://docs.openzeppelin.com/confidential-contracts) (besides ERC-7984)
 - [**ERC-7984 tutorial and examples**](./openzeppelin/README.md)
+- [**Confidential wrapper documentation**](https://docs.zama.org/protocol/protocol-apps/confidential-wrapper)
 - [**Confidential Token Wrappers Registry documentation**](https://docs.zama.org/protocol/protocol-apps/registry-contract)
