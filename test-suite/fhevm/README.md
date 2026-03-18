@@ -38,6 +38,18 @@ The CLI owns all mutable runtime state under `.fhevm/`. Tracked compose and env 
 
 For the boot flow diagram and invariants, see `ARCHITECTURE.md`.
 
+## Default Paths
+
+Most users should start with `latest-main`.
+
+- local branch validation: `./fhevm-cli up --target latest-main --build`
+- reusable CI e2e: `latest-main` + the checked-in `two-of-two` scenario
+- merge queue: `latest-main` baseline + repo-owned image overrides for components that were actually rebuilt
+
+Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
+
+Compat is mainly there to protect those reproduction and cross-era paths. For the common `latest-main` path, the mental model should stay simple: mainline baseline, optional local or CI repo-owned overrides, explicit topology when needed.
+
 ## Quick Start
 
 Run from `test-suite/fhevm`:
