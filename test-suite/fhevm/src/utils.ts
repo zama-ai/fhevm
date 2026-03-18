@@ -16,42 +16,6 @@ export type RunResult = {
 
 export type Runner = (argv: string[], options?: RunOptions) => Promise<RunResult>;
 
-export const run: Runner = async (argv, options = {}) => {
-  const proc = Bun.spawn(argv, {
-    cwd: options.cwd,
-    env: { ...process.env, ...options.env },
-    stdin: options.input ? new Blob([options.input]) : undefined,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0 && !options.allowFailure) {
-    throw new Error(`${argv.join(" ")} failed (${code})\n${stderr || stdout}`.trim());
-  }
-  return { stdout, stderr, code };
-};
-
-export const runLive = async (argv: string[], options: Omit<RunOptions, "input"> = {}) => {
-  const proc = Bun.spawn(argv, {
-    cwd: options.cwd,
-    env: { ...process.env, ...options.env },
-    stdout: "inherit",
-    stderr: "inherit",
-    stdin: "inherit",
-  });
-  const code = await proc.exited;
-  if (code !== 0 && !options.allowFailure) {
-    throw new Error(`${argv.join(" ")} failed (${code})`);
-  }
-  return code;
-};
-
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 export const ensureDir = (dir: string) => fs.mkdir(dir, { recursive: true });
 
 export const readJson = async <T>(file: string) => JSON.parse(await fs.readFile(file, "utf8")) as T;

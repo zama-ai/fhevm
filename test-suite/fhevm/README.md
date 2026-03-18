@@ -141,7 +141,8 @@ This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
 2. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
-3. Runs `./fhevm-cli up --target latest-main`
+3. Resolves workflow env and `up` argv through `./fhevm-cli compat-resolve-env` and `./fhevm-cli workflow-up-args`
+4. Runs `./fhevm-cli up ...` with the resolved args
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 SHA-tagged env vars for every component that was built from the PR.

@@ -18,7 +18,7 @@ import {
   rewriteVolume,
   serviceNameList,
   type ComposeDoc,
-} from "./codegen";
+} from "./render-compose";
 import { TEMPLATE_COMPOSE_DIR } from "./layout";
 import { stubState } from "./test-helpers";
 

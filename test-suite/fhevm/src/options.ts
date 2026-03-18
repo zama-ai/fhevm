@@ -71,14 +71,9 @@ export const parseKeyValue = (value: string) => {
 // Shared @effect/cli Options
 // ---------------------------------------------------------------------------
 
-// NOTE: target and from-step use Options.text (NOT Options.choice) so that
-// invalid values reach the handler and produce our custom error messages.
+// NOTE: from-step uses Options.text (NOT Options.choice) so that invalid values
+// reach the handler and produce our custom error messages.
 // Tests assert exact strings like "Unsupported target bogus".
-
-export const targetOption = Options.text("target").pipe(
-  Options.withDescription("Bundle source to boot: latest-main, latest-supported, sha, or a network target."),
-  Options.withDefault("latest-main"),
-);
 
 export const shaOption = Options.text("sha").pipe(
   Options.withDescription("Commit SHA to resolve when --target sha is used."),

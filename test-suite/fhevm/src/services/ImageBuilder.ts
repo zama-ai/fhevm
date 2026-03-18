@@ -4,7 +4,7 @@ import { ContainerRunner } from "./ContainerRunner";
 import { BuildError, ContainerStartError } from "../errors";
 import type { BuiltImage, State } from "../types";
 import { GROUP_BUILD_COMPONENTS, GROUP_BUILD_SERVICES } from "../layout";
-import { loadMergedComposeDoc, type ComposeDoc } from "../codegen";
+import { loadMergedComposeDoc, type ComposeDoc } from "../render-compose";
 
 export class ImageBuilder extends Context.Tag("ImageBuilder")<
   ImageBuilder,

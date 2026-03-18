@@ -262,9 +262,9 @@ const applyCoprocessorSource = (
   service: Record<string, unknown>,
   serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
+  localServices: ReadonlySet<string>,
 ) => {
   if (instance.source.mode === "local") {
-    const localServices = localServicesForInstance(instance);
     if (localServices.has(serviceName)) {
       service.image = retagLocal(service.image, localInstanceTag(instance.index));
       return;
@@ -276,7 +276,7 @@ const applyCoprocessorSource = (
   delete service.build;
 };
 
-const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
+const buildCoprocessorOverride = (plan: RuntimePlan) =>
   Effect.gen(function* () {
     const doc = rewriteComposePaths(yield* loadComposeDoc("coprocessor"));
     const next = structuredClone(doc);
@@ -284,6 +284,7 @@ const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
     const services: Record<string, Record<string, unknown>> = {};
     const compat = compatPolicyForState(plan);
     for (const instance of plan.coprocessor.instances) {
+      const localServices = localServicesForInstance(instance);
       const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
       const envFileValue = envPath(envName);
       const instanceEnv = yield* Effect.promise(() => readEnvFile(envFileValue));
@@ -291,8 +292,7 @@ const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
       for (const [name, service] of Object.entries(doc.services)) {
         const suffix = name.replace(/^coprocessor-/, "");
         const serviceName = `${prefix}${suffix}`;
-        const locallyBuilt =
-          instance.source.mode === "local" && localServicesForInstance(instance).has(name);
+        const locallyBuilt = instance.source.mode === "local" && localServices.has(name);
         const compatArgs = locallyBuilt ? {} : compat.coprocessorArgs;
         const compatDropFlags = locallyBuilt ? {} : compat.coprocessorDropFlags;
         const compatDisableHealthcheck = locallyBuilt ? {} : compat.coprocessorDisableHealthcheck;
@@ -307,7 +307,7 @@ const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
           compatDisableHealthcheck,
         );
         adjusted.container_name = serviceName;
-        applyCoprocessorSource(adjusted, name, instance);
+        applyCoprocessorSource(adjusted, name, instance, localServices);
         if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
           adjusted.depends_on = rewriteCoprocessorDependsOn(
             adjusted.depends_on as Record<string, unknown>,
@@ -324,12 +324,11 @@ const buildCoprocessorOverride = (state: State, plan: RuntimePlan) =>
 
 export const buildComposeOverride = (
   component: string,
-  state: State,
   plan: RuntimePlan,
 ) =>
   Effect.gen(function* () {
     if (component === "coprocessor") {
-      return yield* buildCoprocessorOverride(state, plan);
+      return yield* buildCoprocessorOverride(plan);
     }
     const template = rewriteComposePaths(structuredClone(yield* loadComposeDoc(component)));
     const overridden = overriddenServicesForComponent(plan, component);
@@ -352,7 +351,7 @@ export const generatedComposeComponents = (plan: Pick<RuntimePlan, "overrides">)
   ]);
 
 export const generateComposeOverrides = (
-  state: State,
+  _state: State,
   plan: RuntimePlan,
 ) =>
   Effect.gen(function* () {
@@ -364,7 +363,7 @@ export const generateComposeOverrides = (
         yield* Effect.promise(() => remove(target));
         continue;
       }
-      const doc = yield* buildComposeOverride(component, state, plan);
+      const doc = yield* buildComposeOverride(component, plan);
       yield* Effect.promise(() => fs.writeFile(target, YAML.stringify(doc)));
     }
   });

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { Effect, Layer } from "effect";
 
-import { resolvedComposeEnv, rewriteCoprocessorDependsOn } from "./codegen";
+import { resolvedComposeEnv, rewriteCoprocessorDependsOn } from "./render-compose";
 import { resolveEnvMap } from "./services/EnvWriter";
 import {
   COMPONENTS,
@@ -1298,13 +1298,6 @@ describe("CLI argument validation", () => {
     expect(logs.some((l) => l.includes("Invalid subcommand"))).toBe(true);
   });
 
-  test("doctor shows removal message", async () => {
-    const { logs, restore } = captureConsole("error");
-    try {
-      await main(["bun", "src/cli.ts", "doctor"], noopLayer);
-    } finally { restore(); }
-    expect(logs.some((l) => l.includes("doctor") && l.includes("removed"))).toBe(true);
-  });
 });
 
 describe("command error paths", () => {
@@ -1638,5 +1631,86 @@ describe("compat-resolve-env command", () => {
       restore();
     }
     expect(logs).toContain("STACK_ERA=modern\nRELAYER_VERSION=sha-29b0750\nRELAYER_MIGRATE_VERSION=sha-29b0750");
+  });
+});
+
+describe("workflow-up-args command", () => {
+  test("emits the default latest-main scenario args for registry mode", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "workflow-up-args"], noopLayer);
+    } finally {
+      restore();
+    }
+    expect(JSON.parse(logs.join("\n"))).toEqual({
+      args: ["--target", "latest-main", "--scenario", "./scenarios/two-of-two.yaml"],
+      forceModernRelayer: false,
+    });
+  });
+
+  test("writes a synthesized two-of-two scenario for coprocessor workspace overrides", async () => {
+    const dir = await fixtureDir();
+    const scenarioPath = path.join(dir, "workflow-scenario.yaml");
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "workflow-up-args",
+          "--image-mode",
+          "workspace",
+          "--override",
+          "coprocessor:host-listener,tfhe-worker,kms-connector:gw-listener",
+          "--scenario-out",
+          scenarioPath,
+        ],
+        noopLayer,
+      );
+    } finally {
+      restore();
+    }
+    expect(JSON.parse(logs.join("\n"))).toEqual({
+      args: [
+        "--target",
+        "latest-main",
+        "--override",
+        "kms-connector:gw-listener",
+        "--scenario",
+        scenarioPath,
+      ],
+      forceModernRelayer: false,
+    });
+    expect(await fs.readFile(scenarioPath, "utf8")).toContain("localServices:");
+    expect(await fs.readFile(scenarioPath, "utf8")).toContain("- host-listener");
+    expect(await fs.readFile(scenarioPath, "utf8")).toContain("- tfhe-worker");
+  });
+
+  test("maps build/all workspace mode to --build and forced modern relayer", async () => {
+    const dir = await fixtureDir();
+    const scenarioPath = path.join(dir, "workflow-scenario.yaml");
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "workflow-up-args",
+          "--image-mode",
+          "workspace",
+          "--override",
+          "build",
+          "--scenario-out",
+          scenarioPath,
+        ],
+        noopLayer,
+      );
+    } finally {
+      restore();
+    }
+    expect(JSON.parse(logs.join("\n"))).toEqual({
+      args: ["--target", "latest-main", "--build", "--scenario", scenarioPath],
+      forceModernRelayer: true,
+    });
   });
 });

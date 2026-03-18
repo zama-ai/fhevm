@@ -169,104 +169,14 @@ jobs:
           set -euo pipefail
           args_file="$RUNNER_TEMP/fhevm-up-args"
           scenario_file="$RUNNER_TEMP/fhevm-scenario.yaml"
-          workspace_all=false
-          coprocessor_local=false
-          coprocessor_local_services=()
-          scenario_path="./scenarios/two-of-two.yaml"
-          case "$IMAGE_MODE" in
-            registry)
-              if [ -n "$WORKSPACE_OVERRIDE" ]; then
-                echo "::error::override requires image_mode=workspace"
-                exit 1
-              fi
-              ;;
-            workspace)
-              if [ -z "$WORKSPACE_OVERRIDE" ]; then
-                echo "::error::image_mode=workspace requires override"
-                exit 1
-              fi
-              IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
-              for raw in "${overrides[@]}"; do
-                override="${raw#"${raw%%[![:space:]]*}"}"
-                override="${override%"${override##*[![:space:]]}"}"
-                [ -n "$override" ] || continue
-                if [ "$override" = "all" ] || [ "$override" = "build" ]; then
-                  workspace_all=true
-                  coprocessor_local=true
-                  continue
-                fi
-                if [ "$override" = "coprocessor" ]; then
-                  coprocessor_local=true
-                  continue
-                fi
-                if [[ "$override" == coprocessor:* ]]; then
-                  coprocessor_local=true
-                  suffixes="${override#coprocessor:}"
-                  IFS=',' read -r -a services <<< "$suffixes"
-                  for service in "${services[@]}"; do
-                    service="${service#"${service%%[![:space:]]*}"}"
-                    service="${service%"${service##*[![:space:]]}"}"
-                    [ -n "$service" ] || continue
-                    coprocessor_local_services+=("$service")
-                  done
-                  continue
-                fi
-              done
-              if [ "$coprocessor_local" = false ] && [ "${#overrides[@]}" -eq 0 ]; then
-                echo "::error::override did not contain any usable values"
-                exit 1
-              fi
-              if [ "$coprocessor_local" = true ]; then
-                {
-                  echo "version: 1"
-                  echo "kind: coprocessor-consensus"
-                  echo "topology:"
-                  echo "  count: 2"
-                  echo "  threshold: 2"
-                  echo "instances:"
-                  echo "  - index: 1"
-                  echo "    source:"
-                  echo "      mode: local"
-                  if [ "${#coprocessor_local_services[@]}" -gt 0 ]; then
-                    echo "    localServices:"
-                    for service in "${coprocessor_local_services[@]}"; do
-                      echo "      - ${service}"
-                    done
-                  fi
-                } > "$scenario_file"
-                scenario_path="$scenario_file"
-              fi
-              if [ -z "$WORKSPACE_OVERRIDE" ]; then
-                echo "::error::override did not contain any usable values"
-                exit 1
-              fi
-              ;;
-            *)
-              echo "::error::image_mode must be registry or workspace"
-              exit 1
-              ;;
-          esac
-          printf '%s\n%s\n%s\n%s\n' --target latest-main --scenario "$scenario_path" > "$args_file"
-          if [ "$IMAGE_MODE" = "workspace" ]; then
-            IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
-            for raw in "${overrides[@]}"; do
-              override="${raw#"${raw%%[![:space:]]*}"}"
-              override="${override%"${override##*[![:space:]]}"}"
-              [ -n "$override" ] || continue
-              case "$override" in
-                all|build)
-                  printf '%s\n' --build >> "$args_file"
-                  ;;
-                coprocessor|coprocessor:*)
-                  ;;
-                *)
-                  printf '%s\n%s\n' --override "$override" >> "$args_file"
-                  ;;
-              esac
-            done
+          cmd=(./fhevm-cli workflow-up-args --image-mode "$IMAGE_MODE" --scenario-out "$scenario_file")
+          if [ -n "$WORKSPACE_OVERRIDE" ]; then
+            cmd+=(--override "$WORKSPACE_OVERRIDE")
           fi
+          plan_json="$("${cmd[@]}")"
+          jq -r '.args[]' <<< "$plan_json" > "$args_file"
           compat_args=()
-          if [ "$workspace_all" = "true" ]; then
+          if [ "$(jq -r '.forceModernRelayer' <<< "$plan_json")" = "true" ]; then
             compat_args+=(--force-modern-relayer)
           fi
           ./fhevm-cli compat-resolve-env \

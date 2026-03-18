@@ -4,7 +4,7 @@
 import { Effect } from "effect";
 
 import { ensureRuntimeArtifacts } from "../pipeline";
-import { resolvedComposeEnv } from "../codegen";
+import { resolvedComposeEnv } from "../render-compose";
 import { PreflightError } from "../errors";
 import { dockerArgs, envPath } from "../layout";
 import { CommandRunner } from "../services/CommandRunner";

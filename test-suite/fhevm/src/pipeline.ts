@@ -14,11 +14,13 @@ import {
 } from "./compat";
 import { ensureLockSnapshot } from "./cache";
 import {
-  generatedComposeComponents,
   regen,
+} from "./codegen";
+import {
+  generatedComposeComponents,
   resolvedComposeEnv,
   serviceNameList,
-} from "./codegen";
+} from "./render-compose";
 import { runtimePlanForState, topologyForState } from "./runtime-plan";
 import { effectiveOverrides } from "./scenario";
 import { describeBundle } from "./resolve";

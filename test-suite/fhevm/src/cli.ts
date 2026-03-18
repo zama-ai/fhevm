@@ -23,6 +23,7 @@ import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
 import { compatDefaultsCommand } from "./commands/compat-defaults.cmd";
 import { compatResolveEnvCommand } from "./commands/compat-resolve-env.cmd";
+import { workflowUpArgsCommand } from "./commands/workflow-up-args.cmd";
 
 // Re-export parse helpers for backward compatibility
 export {
@@ -48,6 +49,7 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     unpauseCommand,
     compatDefaultsCommand,
     compatResolveEnvCommand,
+    workflowUpArgsCommand,
   ]),
 );
 
@@ -68,11 +70,6 @@ export const main = async (
   argv = process.argv,
   layerOverride?: Layer.Layer<any, never, never>,
 ) => {
-  if (argv[2] === "doctor") {
-    console.error("`doctor` was removed; use `fhevm-cli up --dry-run ...`");
-    process.exitCode = 1;
-    return;
-  }
   const layer = layerOverride ?? LiveLayer;
   let failure: unknown;
 

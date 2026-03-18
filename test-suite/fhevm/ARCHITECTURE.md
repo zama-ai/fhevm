@@ -65,9 +65,10 @@ resolve target (e.g. latest-supported or latest-main)
 ```
 
 The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds Docker images tagged
-with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-main`.
-The target provides the current mainline bundle; the env vars provide
-the SHA-tagged images for every component built from the PR.
+with the PR's HEAD SHA, exports them as env vars, resolves workflow env/argv through
+`./fhevm-cli compat-resolve-env` and `./fhevm-cli workflow-up-args`, then calls `./fhevm-cli up`.
+The target provides the current mainline bundle; the env vars and resolved workflow args provide
+the SHA-tagged images and scenario/build shape for every component built from the PR.
 Non-workspace companions still come from `COMPAT_MATRIX.externalDefaults`.
 
 ## Notes
