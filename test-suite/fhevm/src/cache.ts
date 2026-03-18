@@ -66,20 +66,12 @@ const validateLockBundleShape = (
   return Effect.succeed(candidate as VersionBundle);
 };
 
-const lockedRepoSha = (bundle: VersionBundle) => {
-  const repoOwnedVersions = [...REPO_KEYS].map((key) => bundle.env[key]);
-  const first = repoOwnedVersions[0];
-  return first && repoOwnedVersions.every((value) => value === first) && REPO_TAG.test(first)
-    ? first
-    : undefined;
-};
-
 const validateLockedRuntimeCompat = (
   bundle: VersionBundle,
 ): Effect.Effect<VersionBundle, GitHubApiError, GitHubClient> =>
   Effect.gen(function* () {
-    const tag = lockedRepoSha(bundle);
-    if (!tag) {
+    const taggedKeys = [...REPO_KEYS].filter((key) => REPO_TAG.test(bundle.env[key] ?? ""));
+    if (!taggedKeys.length) {
       return bundle;
     }
     const gh = yield* GitHubClient;
@@ -92,22 +84,29 @@ const validateLockedRuntimeCompat = (
         new GitHubApiError({ message: error instanceof Error ? error.message : String(error) }),
       );
     }
-    const index = commits.findIndex((sha) => sha.startsWith(tag));
-    if (index < 0) {
+    const unsupported = taggedKeys
+      .map((key) => {
+        const tag = bundle.env[key];
+        const index = commits.findIndex((sha) => sha.startsWith(tag));
+        return { key, tag, index };
+      })
+      .filter(({ index }) => index < 0 || index > compatFloor);
+    if (!unsupported.length) {
+      return bundle;
+    }
+    const missing = unsupported.filter(({ index }) => index < 0);
+    if (missing.length) {
       return yield* Effect.fail(
         new GitHubApiError({
-          message: `Lock file repo-owned sha ${tag} is unsupported; only main commits at or after ${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)} are supported`,
+          message: `Lock file contains unsupported repo-owned shas: ${missing.map(({ key, tag }) => `${key}=${tag}`).join(", ")}; only main commits at or after ${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)} are supported`,
         }),
       );
     }
-    if (index > compatFloor) {
-      return yield* Effect.fail(
-        new GitHubApiError({
-          message: `Lock file repo-owned sha ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; regenerate the lock file from latest-main or a newer sha`,
-        }),
-      );
-    }
-    return bundle;
+    return yield* Effect.fail(
+      new GitHubApiError({
+        message: `Lock file contains repo-owned shas that predate the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}): ${unsupported.map(({ key, tag }) => `${key}=${tag}`).join(", ")}; regenerate the lock file from latest-main or a newer sha`,
+      }),
+    );
   });
 
 const writeLock = (bundle: VersionBundle): Effect.Effect<string, GitHubApiError> =>
@@ -200,7 +199,8 @@ export const cachedResolve = (
       }).pipe(Effect.option);
       if (cached._tag === "Some" && cached.value.target === options.target) {
         yield* Effect.log(`[resolve] using cached ${options.target} bundle`);
-        return cached.value;
+        const validated = yield* validateLockBundleShape(cached.value);
+        return yield* validateLockedRuntimeCompat(validated);
       }
     }
 

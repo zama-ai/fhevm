@@ -178,7 +178,38 @@ describe("bundleFromFile", () => {
     );
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") {
-      expect(result.left.message).toContain("predates the modern gw-listener drift-address cutover");
+      expect(result.left.message).toContain("predate the modern gw-listener drift-address cutover");
+    }
+    await fs.rm(dir, { recursive: true });
+  });
+
+  test("fails for mixed lock bundles when any repo-owned sha predates the runtime compat floor", async () => {
+    const TestCompatGitHubClient = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () =>
+        Effect.succeed([
+          "abc1234000000000000000000000000000000dead",
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          "0badc0de00000000000000000000000000000000",
+          COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA,
+        ]),
+      packageTags: () => Effect.succeed(new Set(["abc1234", "v0.11.0"])),
+      gitopsFile: () => Effect.succeed(""),
+    });
+    const bundle = makeBundle({
+      env: {
+        ...makeBundle().env,
+        COPROCESSOR_GW_LISTENER_VERSION: "0badc0d",
+      },
+    });
+    const { dir, file } = await writeTempBundle(bundle);
+    const result = await Effect.runPromise(
+      bundleFromFile("latest-main", file).pipe(Effect.provide(TestCompatGitHubClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("COPROCESSOR_GW_LISTENER_VERSION=0badc0d");
+      expect(result.left.message).toContain("predate the modern gw-listener drift-address cutover");
     }
     await fs.rm(dir, { recursive: true });
   });
@@ -258,6 +289,40 @@ describe("cachedResolve", () => {
     expect(result.target).toBe("latest-supported");
 
     // Clean up
+    await fs.rm(cachePath, { force: true });
+  });
+
+  test("rejects cached bundles whose repo-owned shas predate the runtime compat floor", async () => {
+    const TestCompatGitHubClient = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () =>
+        Effect.succeed([
+          "abc1234000000000000000000000000000000dead",
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          "0badc0de00000000000000000000000000000000",
+          COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA,
+        ]),
+      packageTags: () => Effect.succeed(new Set(["abc1234", "v0.11.0"])),
+      gitopsFile: () => Effect.succeed(""),
+    });
+    const cachePath = resolveCachePath("latest-main");
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    await writeJson(
+      cachePath,
+      makeBundle({
+        env: {
+          ...makeBundle().env,
+          COPROCESSOR_GW_LISTENER_VERSION: "0badc0d",
+        },
+      }),
+    );
+    const result = await Effect.runPromise(
+      cachedResolve({ target: "latest-main", reset: false }).pipe(Effect.provide(TestCompatGitHubClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("COPROCESSOR_GW_LISTENER_VERSION=0badc0d");
+    }
     await fs.rm(cachePath, { force: true });
   });
 });

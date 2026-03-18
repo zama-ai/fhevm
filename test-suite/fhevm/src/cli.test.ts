@@ -648,7 +648,7 @@ describe("runtime invariants", () => {
     await fs.writeFile(
       lockFile,
       JSON.stringify({
-        ...stubBundle({ lockName: "latest-main.json", env: { COPROCESSOR_DB_MIGRATION_VERSION: "803f104" }, sources: ["test"] }),
+        ...stubBundle({ lockName: "latest-main.json", env: { COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0" }, sources: ["test"] }),
         target: "latest-main",
       }),
     );
@@ -670,9 +670,9 @@ describe("runtime invariants", () => {
         ],
         depsToLayer({
           runner: fakeRunner({
-            "git rev-parse -q --verify 803f104^{commit}": "",
+            "git rev-parse -q --verify v0.11.0^{commit}": "",
             "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": "",
-            "git diff --quiet --exit-code 803f104 -- coprocessor/fhevm-engine/db-migration/migrations": {
+            "git diff --quiet --exit-code v0.11.0 -- coprocessor/fhevm-engine/db-migration/migrations": {
               stdout: "",
               stderr: "",
               code: 1,
@@ -683,7 +683,7 @@ describe("runtime invariants", () => {
     } finally {
       restore();
     }
-    expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from 803f104"))).toBe(true);
+    expect(logs.some((l) => l.includes("coprocessor: local DB migrations diverge from v0.11.0"))).toBe(true);
   });
 
   test("up --dry-run rejects kms-connector partial overrides when local migrations diverge", async () => {
