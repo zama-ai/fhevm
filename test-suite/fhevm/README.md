@@ -174,7 +174,7 @@ This is how CI works. The merge queue workflow:
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
-For non-workspace companions, `latest-main` uses the maintained compat defaults from `COMPAT_MATRIX.externalDefaults`.
+For non-workspace companions, `latest-main` uses the maintained mainline baseline from `src/presets.ts`.
 The reusable workflow defaults `build=true`; orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
 
 Supported override keys (any subset):
@@ -222,21 +222,20 @@ This resolves every repo-owned image to `9587546` and keeps companion services (
 
 All version compatibility rules live in a single source of truth: `src/compat.ts` → `COMPAT_MATRIX`.
 
-The matrix has four sections:
+The matrix has three sections:
 
 | Section | Purpose | Example |
 |---------|---------|---------|
 | `incompatibilities` | Version pairs that break at runtime | relayer v1 + test-suite v2 |
 | `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
 Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and can optionally add `--build`.
 
 ### How to update
 
-**Bump the relayer pin:**
-Edit `COMPAT_MATRIX.externalDefaults` in `src/compat.ts`. `latest-main` and `sha` pick it up automatically.
+**Bump the mainline relayer pin:**
+Edit `MAINLINE_COMPANIONS` in `src/presets.ts`. `latest-main` and `sha` pick it up automatically.
 
 **Add a new incompatibility:**
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.

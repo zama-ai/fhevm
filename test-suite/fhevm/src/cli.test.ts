@@ -28,6 +28,7 @@ import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
 import { expandBuildOverrides } from "./options";
 import { applyInstanceAdjustments } from "./render-compose";
+import { MAINLINE_COMPANIONS } from "./presets";
 import { CommandRunner } from "./services/CommandRunner";
 import { MinioError } from "./errors";
 import { GitHubClient } from "./services/GitHubClient";
@@ -1598,12 +1599,15 @@ describe("validateBundleCompatibility", () => {
   });
 });
 
-describe("COMPAT_MATRIX", () => {
-  test("externalDefaults has expected keys", () => {
-    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_VERSION");
-    expect(COMPAT_MATRIX.externalDefaults).toHaveProperty("RELAYER_MIGRATE_VERSION");
+describe("mainline defaults", () => {
+  test("mainline companions have expected keys", () => {
+    expect(MAINLINE_COMPANIONS).toHaveProperty("CORE_VERSION");
+    expect(MAINLINE_COMPANIONS).toHaveProperty("RELAYER_VERSION");
+    expect(MAINLINE_COMPANIONS).toHaveProperty("RELAYER_MIGRATE_VERSION");
   });
+});
 
+describe("COMPAT_MATRIX", () => {
   test("anchors has valid SIMPLE_ACL_MIN_SHA", () => {
     expect(COMPAT_MATRIX.anchors).toHaveProperty("SIMPLE_ACL_MIN_SHA");
     expect(COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA).toMatch(/^[0-9a-f]{40}$/);

@@ -27,8 +27,11 @@ export type CompatPolicy = {
  * - some cross-version pairs are known-invalid and should fail fast at boot
  * - some older supported images still need runtime shims to boot under the
  *   current CLI
- * - modern non-network targets (`latest-main`, `sha`) still need maintained
- *   defaults for non-repo companions such as relayer
+ *
+ * In practice this is mostly about non-mainline and cross-era protection:
+ * - exact `sha` runs
+ * - network targets
+ * - older supported bundles
  *
  * This file should stay narrow. It is for durable policy-level rules, not for
  * encoding every transient cross-repo break manually.
@@ -67,19 +70,6 @@ export const COMPAT_MATRIX = {
     { key: "COPROCESSOR_TX_SENDER_VERSION",     below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url", unparsed: "modern" as const },
     { key: "CONNECTOR_GW_LISTENER_VERSION",     below: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id", unparsed: "modern" as const },
   ],
-
-  /**
-   * Pinned versions for components NOT built from this workspace.
-   *
-   * To bump the relayer pin:
-   *   1. Update the SHA here
-   *   2. Run `bun test` — done. CI picks it up automatically.
-   */
-  externalDefaults: {
-    RELAYER_VERSION: "sha-29b0750",
-    RELAYER_MIGRATE_VERSION: "sha-29b0750",
-  },
-
   /**
    * Git history anchors used for target resolution.
    * The simple-ACL cutover is the oldest commit the CLI will accept for
