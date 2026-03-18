@@ -22,6 +22,7 @@ bun run check
 bun test
 ./fhevm-cli up --target latest-supported --dry-run
 ./fhevm-cli up --target latest-supported
+./fhevm-cli up --target latest-main --build --dry-run
 ./fhevm-cli test erc20
 ./fhevm-cli clean --images
 ```
@@ -86,7 +87,7 @@ Runtime resolution is intentionally fixed:
 - `testnet`
 - `mainnet`
 
-Only `devnet`, `testnet`, and `mainnet` resolve from GitOps. Non-network targets do not.
+Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network targets do not.
 `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
 `sha` requires `--sha <git-sha>` and fails fast unless every repo-owned package is available at that 7-character SHA tag, the SHA is on `main`, and it is at or after the simple-ACL floor.
 
@@ -144,6 +145,7 @@ This is how CI works. The merge queue workflow:
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 SHA-tagged env vars for every component that was built from the PR.
+For non-workspace companions, `latest-main` uses the maintained compat defaults from `COMPAT_MATRIX.externalDefaults`.
 
 Supported override keys (any subset):
 
@@ -225,6 +227,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ./fhevm-cli up --target sha --sha 9587546
 ./fhevm-cli up --target latest-supported --resume --from-step relayer
 ./fhevm-cli up --target latest-main --build
+./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml --build
 ./fhevm-cli up --target latest-supported --override coprocessor
 ./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 ./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
@@ -249,6 +252,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
 Use `--build` when you want the whole local workspace on the active baseline. On scenario runs, `--build` still leaves coprocessor locality to the scenario itself.
+`--build` cannot be combined with `--override`.
 
 Supported groups:
 

@@ -57,8 +57,8 @@ After resolving a target bundle, `applyVersionEnvOverrides` overlays any matchin
 environment variables onto the bundle. This is the mechanism CI uses:
 
 ```
-resolve target (e.g. latest-supported)
-  → baseline bundle from profiles/latest-supported.json
+resolve target (e.g. latest-supported or latest-main)
+  → tracked baseline profile or current mainline bundle
   → applyVersionEnvOverrides(bundle, process.env)
   → env vars like COPROCESSOR_HOST_LISTENER_VERSION=<sha> replace baseline versions
   → lock file records overrides in its "sources" field
@@ -68,6 +68,7 @@ The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds Docker 
 with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-main`.
 The target provides the current mainline bundle; the env vars provide
 the SHA-tagged images for every component built from the PR.
+Non-workspace companions still come from `COMPAT_MATRIX.externalDefaults`.
 
 ## Notes
 
@@ -88,6 +89,6 @@ the SHA-tagged images for every component built from the PR.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`, not "rerun the bash ritual and hope".
 - Tracked compose files are the default runtime truth. `.fhevm/compose` only contains generated overrides for coprocessor topology and active local-override components.
-- CI follows the same contract: multicopro runs use checked-in scenarios, and selective local coprocessor builds are expressed as generated scenario files instead of reviving removed multicopro flags.
+- CI follows the same contract: e2e flows boot `latest-main`, overlay PR-built image refs through `*_VERSION` env vars, use checked-in scenarios for multicopro runs, and use `--build` for full local-workspace coverage.
 - `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.
