@@ -15,6 +15,7 @@ import {
 import { COMPAT_MATRIX } from "./compat";
 import { GitHubApiError } from "./errors";
 import { LOCK_DIR } from "./layout";
+import { PACKAGE_TO_REPOSITORY, SHA_RUNTIME_COMPAT_MIN_SHA } from "./resolve";
 import { GitHubClient } from "./services/GitHubClient";
 import type { VersionBundle } from "./types";
 import { writeJson } from "./utils";
@@ -26,10 +27,16 @@ import { writeJson } from "./utils";
 const makeBundle = (overrides: Partial<VersionBundle> = {}): VersionBundle => ({
   target: "latest-main",
   lockName: "latest-main-abc1234.json",
-  env: {
-    GATEWAY_VERSION: "abc1234",
-    HOST_VERSION: "abc1234",
-  },
+  env: Object.fromEntries(
+    Object.keys(PACKAGE_TO_REPOSITORY).map((key) => [
+      key,
+      key === "CORE_VERSION"
+        ? "v0.13.0"
+        : key.startsWith("RELAYER_")
+          ? "v0.9.0"
+          : "abc1234",
+    ]),
+  ),
   sources: ["preset=latest-main"],
   ...overrides,
 });
@@ -52,6 +59,7 @@ const TestGitHubClient = Layer.succeed(GitHubClient, {
   mainCommits: () =>
     Effect.succeed([
       "abc1234000000000000000000000000000000dead",
+      SHA_RUNTIME_COMPAT_MIN_SHA,
       COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA,
     ]),
   packageTags: () => Effect.succeed(new Set(["abc1234", "v0.11.0"])),
@@ -83,7 +91,7 @@ describe("bundleFromFile", () => {
   test("reads and returns bundle from disk", async () => {
     const bundle = makeBundle();
     const { dir, file } = await writeTempBundle(bundle);
-    const result = await Effect.runPromise(bundleFromFile("latest-main", file));
+    const result = await Effect.runPromise(bundleFromFile("latest-main", file).pipe(Effect.provide(TestGitHubClient)));
     expect(result.target).toBe("latest-main");
     expect(result.env.GATEWAY_VERSION).toBe("abc1234");
     await fs.rm(dir, { recursive: true });
@@ -92,7 +100,7 @@ describe("bundleFromFile", () => {
   test("sets target from argument when bundle target matches", async () => {
     const bundle = makeBundle({ target: "latest-main" });
     const { dir, file } = await writeTempBundle(bundle);
-    const result = await Effect.runPromise(bundleFromFile("latest-main", file));
+    const result = await Effect.runPromise(bundleFromFile("latest-main", file).pipe(Effect.provide(TestGitHubClient)));
     expect(result.target).toBe("latest-main");
     await fs.rm(dir, { recursive: true });
   });
@@ -101,7 +109,7 @@ describe("bundleFromFile", () => {
     const bundle = makeBundle({ target: "devnet" });
     const { dir, file } = await writeTempBundle(bundle);
     const result = await Effect.runPromise(
-      bundleFromFile("latest-main", file).pipe(Effect.either),
+      bundleFromFile("latest-main", file).pipe(Effect.provide(TestGitHubClient), Effect.either),
     );
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") {
@@ -113,13 +121,66 @@ describe("bundleFromFile", () => {
 
   test("fails with GitHubApiError when file does not exist", async () => {
     const result = await Effect.runPromise(
-      bundleFromFile("latest-main", "/tmp/nonexistent-cache-test-file.json").pipe(Effect.either),
+      bundleFromFile("latest-main", "/tmp/nonexistent-cache-test-file.json").pipe(Effect.provide(TestGitHubClient), Effect.either),
     );
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") {
       expect(result.left).toBeInstanceOf(GitHubApiError);
       expect(result.left.message).toContain("Failed to read lock file");
     }
+  });
+
+  test("fails when required version keys are missing from the lock file", async () => {
+    const bundle = makeBundle({ env: { GATEWAY_VERSION: "abc1234" } });
+    const { dir, file } = await writeTempBundle(bundle);
+    const result = await Effect.runPromise(
+      bundleFromFile("latest-main", file).pipe(Effect.provide(TestGitHubClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("missing required version keys");
+      expect(result.left.message).toContain("HOST_VERSION");
+    }
+    await fs.rm(dir, { recursive: true });
+  });
+
+  test("fails for lock files pinned to repo-owned shas before the runtime compat floor", async () => {
+    const TestCompatGitHubClient = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () =>
+        Effect.succeed([
+          "abc1234000000000000000000000000000000dead",
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          "0badc0de00000000000000000000000000000000",
+          COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA,
+        ]),
+      packageTags: () => Effect.succeed(new Set(["abc1234", "v0.11.0"])),
+      gitopsFile: () => Effect.succeed(""),
+    });
+    const bundle = makeBundle({
+      target: "sha",
+      lockName: "sha-0badc0d.json",
+      env: Object.fromEntries(
+        Object.keys(PACKAGE_TO_REPOSITORY).map((key) => [
+          key,
+          key === "CORE_VERSION"
+            ? "v0.13.0"
+            : key.startsWith("RELAYER_")
+              ? "v0.9.0"
+              : "0badc0d",
+        ]),
+      ),
+      sources: ["preset=sha", "repo-owned=0badc0d", "requested-sha=0badc0de00000000000000000000000000000000"],
+    });
+    const { dir, file } = await writeTempBundle(bundle);
+    const result = await Effect.runPromise(
+      bundleFromFile("sha", file).pipe(Effect.provide(TestCompatGitHubClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("predates the modern gw-listener drift-address cutover");
+    }
+    await fs.rm(dir, { recursive: true });
   });
 });
 
