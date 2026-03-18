@@ -58,7 +58,7 @@ export const upgrade = (groupValue: string | undefined) =>
     }
     yield* Effect.log(`[upgrade] ${group}`);
     yield* regen(state);
-    yield* imageBuilder.maybeBuild(component, state, (s) => stateManager.save(s));
+    yield* imageBuilder.maybeBuild(component, state, (s) => stateManager.save(s), { force: true });
     yield* containerRunner.composeUp(component, services, {
       noDeps: true,
     });

@@ -60,4 +60,54 @@ describe("ImageBuilder", () => {
     expect(state.builtImages?.map((image) => image.ref).sort()).toEqual([...refs].sort());
     expect(state.builtImages?.every((image) => image.group === "coprocessor")).toBe(true);
   });
+
+  test("maybeBuild force rebuilds even when refs were already built", async () => {
+    const doc = await Effect.runPromise(loadMergedComposeDoc("coprocessor"));
+    const services = Object.entries(doc.services)
+      .filter(([, service]) => !!service.build)
+      .map(([name]) => name);
+    const buildCalls: string[][] = [];
+    const commandLayer = Layer.succeed(CommandRunner, {
+      run: (argv: string[]) => {
+        if (argv[0] === "docker" && argv[1] === "image" && argv[2] === "inspect") {
+          return Effect.succeed({
+            stdout: `sha256:${argv[3]}`,
+            stderr: "",
+            code: 0,
+          } as RunResult);
+        }
+        return Effect.succeed({ stdout: "", stderr: "", code: 0 } as RunResult);
+      },
+      runLive: () => Effect.succeed(0),
+      runWithHeartbeat: () => Effect.void,
+    });
+    const containerLayer = Layer.succeed(ContainerRunner, {
+      composeUp: () => Effect.void,
+      composeDown: () => Effect.succeed(true),
+      composeBuild: (_component: string, batch: string[]) => {
+        buildCalls.push(batch);
+        return Effect.void;
+      },
+    });
+    const state = stubState();
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const builder = yield* ImageBuilder;
+        yield* builder.maybeBuild("coprocessor", state, () => Effect.void);
+        yield* builder.maybeBuild("coprocessor", state, () => Effect.void, {
+          force: true,
+        });
+      }).pipe(
+        Effect.provide(ImageBuilder.Live),
+        Effect.provide(commandLayer),
+        Effect.provide(containerLayer),
+      ),
+    );
+
+    expect(buildCalls).toEqual([
+      ...services.map((service) => [service]),
+      ...services.map((service) => [service]),
+    ]);
+  });
 });

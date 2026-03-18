@@ -13,6 +13,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
       component: string,
       state: State,
       saveState: (s: State) => Effect.Effect<void>,
+      options?: { force?: boolean },
     ) => Effect.Effect<void, BuildError>;
     readonly inspectImageId: (ref: string) => Effect.Effect<string>;
     readonly removeImage: (ref: string) => Effect.Effect<void>;
@@ -98,7 +99,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
         ).pipe(Effect.map((results) => results.every(Boolean)));
 
       return {
-        maybeBuild: (component, state, saveState) =>
+        maybeBuild: (component, state, saveState, options = {}) =>
           Effect.gen(function* () {
             if (component === "coprocessor") {
               const doc = yield* loadMergedComposeDoc(component);
@@ -109,7 +110,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
                 return;
               }
               const refs = imageRefsFromDoc(doc, services);
-              if (yield* refsAlreadyBuilt(state, refs)) {
+              if (!options.force && (yield* refsAlreadyBuilt(state, refs))) {
                 return;
               }
               yield* Effect.log("[build] coprocessor");
@@ -156,7 +157,7 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
 
               yield* Effect.log(`[build] ${override.group} (${component})`);
               const refs = imageRefsFromDoc(doc, deduped);
-              if (yield* refsAlreadyBuilt(state, refs)) {
+              if (!options.force && (yield* refsAlreadyBuilt(state, refs))) {
                 continue;
               }
 
