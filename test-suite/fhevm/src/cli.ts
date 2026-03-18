@@ -21,7 +21,6 @@ import { upgradeCommand } from "./commands/upgrade.cmd";
 import { testCommand } from "./commands/test.cmd";
 import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
-import { workflowE2eInputsCommand } from "./commands/workflow-e2e-inputs.cmd";
 
 // ---------------------------------------------------------------------------
 // Root command with subcommands
@@ -39,7 +38,6 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     testCommand,
     pauseCommand,
     unpauseCommand,
-    workflowE2eInputsCommand,
   ]),
 );
 

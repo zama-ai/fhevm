@@ -59,7 +59,10 @@ Phase 1a: scenario dry-run coverage
 1. `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml --reset --dry-run`
 2. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml --dry-run`
 3. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
-4. `./fhevm-cli workflow-e2e-inputs --commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --previous-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --needs-file <fixture-json>` — should output repo-owned image version selections only, using the head tag for successful component builds and the base tag otherwise
+4. inspect `.github/workflows/test-suite-orchestrate-e2e-tests.yml` and confirm the repo-owned image override mapping is mechanical:
+   - successful build output -> inject head short SHA
+   - skipped build output -> inject nothing
+   - failed build output -> fail before dispatching e2e
 
 Phase 1b: validation guards and edge failures
 1. EXPECT_FAIL: `./fhevm-cli up --target sha --dry-run`
