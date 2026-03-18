@@ -124,7 +124,6 @@ export const workflowUpArgs = (options: {
       );
     }
 
-    let forceModernRelayer = false;
     let scenarioPath = WORKFLOW_DEFAULT_SCENARIO;
     const args: string[] = ["--target", "latest-main"];
     if (imageMode === "workspace") {
@@ -137,7 +136,7 @@ export const workflowUpArgs = (options: {
           new PreflightError({ message: "override did not contain any usable values" }),
         );
       }
-      forceModernRelayer = selections.includes("all") || selections.includes("build");
+      const buildEverything = selections.includes("all") || selections.includes("build");
       const overrides = yield* Effect.try({
         try: () =>
           selections
@@ -146,7 +145,7 @@ export const workflowUpArgs = (options: {
         catch: (error) => new PreflightError({ message: (error as Error).message }),
       });
       const localServices = coprocessorLocalServices(overrides);
-      const coprocessorLocal = forceModernRelayer || localServices !== undefined;
+      const coprocessorLocal = buildEverything || localServices !== undefined;
       if (coprocessorLocal && !options.scenarioOut) {
         return yield* Effect.fail(
           new PreflightError({ message: "coprocessor workspace overrides require --scenario-out" }),
@@ -168,10 +167,10 @@ export const workflowUpArgs = (options: {
         }
         args.push("--override", overrideArg(resolved));
       }
-      if (forceModernRelayer) {
+      if (buildEverything) {
         args.push("--build");
       }
     }
     args.push("--scenario", scenarioPath);
-    console.log(JSON.stringify({ args, forceModernRelayer }, null, 2));
+    console.log(JSON.stringify({ args }, null, 2));
   });

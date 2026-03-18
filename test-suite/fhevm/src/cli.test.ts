@@ -23,7 +23,7 @@ import {
 import { STEP_NAMES } from "./types";
 import { main } from "./cli";
 import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
-import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, resolveWorkflowCompatEnv, validateBundleCompatibility } from "./compat";
+import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
 import { expandBuildOverrides } from "./options";
@@ -1608,69 +1608,6 @@ describe("COMPAT_MATRIX", () => {
     expect(COMPAT_MATRIX.anchors).toHaveProperty("SIMPLE_ACL_MIN_SHA");
     expect(COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA).toMatch(/^[0-9a-f]{40}$/);
   });
-
-  test("compat-defaults output shape matches expected structure", () => {
-    const output = {
-      externalDefaults: COMPAT_MATRIX.externalDefaults,
-      anchors: COMPAT_MATRIX.anchors,
-    };
-    expect(output.externalDefaults.RELAYER_VERSION).toBe("sha-29b0750");
-    expect(output.externalDefaults.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
-    expect(output.anchors.SIMPLE_ACL_MIN_SHA).toBe("803f1048727eabf6d8b3df618203e3c7dda77890");
-  });
-});
-
-describe("resolveWorkflowCompatEnv", () => {
-  test("promotes the stack to modern when any selected ref crosses the cutover", async () => {
-    const resolved = await Effect.runPromise(
-      resolveWorkflowCompatEnv({
-        versions: ["v0.11.0", "sha-29b0750"],
-        forceModernRelayer: false,
-        isModernRef: (ref) => Effect.succeed(ref === "sha-29b0750"),
-      }),
-    );
-    expect(resolved).toEqual({
-      STACK_ERA: "modern",
-      RELAYER_VERSION: "sha-29b0750",
-      RELAYER_MIGRATE_VERSION: "sha-29b0750",
-    });
-  });
-
-  test("preserves explicit relayer pins while still backfilling migrate when needed", async () => {
-    const resolved = await Effect.runPromise(
-      resolveWorkflowCompatEnv({
-        versions: [],
-        forceModernRelayer: true,
-        relayerVersion: "sha-29b0750",
-        isModernRef: () => Effect.succeed(false),
-      }),
-    );
-    expect(resolved).toEqual({
-      STACK_ERA: "modern",
-      RELAYER_MIGRATE_VERSION: "sha-29b0750",
-    });
-  });
-});
-
-describe("compat-resolve-env command", () => {
-  test("emits workflow env assignments from git ancestry", async () => {
-    const { logs, restore } = captureConsole("log");
-    try {
-      await main(
-        ["bun", "src/cli.ts", "compat-resolve-env", "803f104", "v0.11.0"],
-        depsToLayer({
-          runner: fakeRunner({
-            "git rev-parse -q --verify 803f104^{commit}": "",
-            [`git merge-base --is-ancestor ${COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA} 803f104`]: "",
-            "git rev-parse -q --verify v0.11.0^{commit}": { stdout: "", stderr: "", code: 1 },
-          }),
-        }),
-      );
-    } finally {
-      restore();
-    }
-    expect(logs).toContain("STACK_ERA=modern\nRELAYER_VERSION=sha-29b0750\nRELAYER_MIGRATE_VERSION=sha-29b0750");
-  });
 });
 
 describe("workflow-up-args command", () => {
@@ -1683,7 +1620,6 @@ describe("workflow-up-args command", () => {
     }
     expect(JSON.parse(logs.join("\n"))).toEqual({
       args: ["--target", "latest-main", "--scenario", "./scenarios/two-of-two.yaml"],
-      forceModernRelayer: false,
     });
   });
 
@@ -1718,7 +1654,6 @@ describe("workflow-up-args command", () => {
         "--scenario",
         scenarioPath,
       ],
-      forceModernRelayer: false,
     });
     expect(await fs.readFile(scenarioPath, "utf8")).toContain("localServices:");
     expect(await fs.readFile(scenarioPath, "utf8")).toContain("- host-listener");
@@ -1749,7 +1684,80 @@ describe("workflow-up-args command", () => {
     }
     expect(JSON.parse(logs.join("\n"))).toEqual({
       args: ["--target", "latest-main", "--build", "--scenario", scenarioPath],
-      forceModernRelayer: true,
+    });
+  });
+});
+
+describe("workflow-e2e-inputs command", () => {
+  test("selects head tags on successful builds and falls back to base tags otherwise", async () => {
+    const dir = await fixtureDir();
+    const needsFile = path.join(dir, "needs.json");
+    await fs.writeFile(
+      needsFile,
+      JSON.stringify({
+        "coprocessor-docker-build": {
+          outputs: {
+            db_migration_build_result: "success",
+            gw_listener_build_result: "failure",
+            host_listener_build_result: "success",
+            sns_worker_build_result: "success",
+            tfhe_worker_build_result: "success",
+            tx_sender_build_result: "failure",
+            zkproof_worker_build_result: "success",
+          },
+        },
+        "kms-connector-docker-build": {
+          outputs: {
+            db_migration_build_result: "failure",
+            gw_listener_build_result: "success",
+            kms_worker_build_result: "success",
+            tx_sender_build_result: "failure",
+          },
+        },
+        "gateway-contracts-docker-build": { outputs: { build_result: "success" } },
+        "host-contracts-docker-build": { outputs: { build_result: "failure" } },
+        "test-suite-docker-build": { outputs: { build_result: "success" } },
+      }),
+    );
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        [
+          "bun",
+          "src/cli.ts",
+          "workflow-e2e-inputs",
+          "--previous-commit",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "--new-commit",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "--needs-file",
+          needsFile,
+        ],
+        depsToLayer({
+          runner: fakeRunner({
+            "git rev-parse --short=7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "bbbbbbb\n",
+            "git rev-parse --short=7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "aaaaaaa\n",
+          }),
+        }),
+      );
+    } finally {
+      restore();
+    }
+    expect(JSON.parse(logs.join("\n"))).toEqual({
+      "coprocessor-db-migration-version": "bbbbbbb",
+      "coprocessor-gw-listener-version": "aaaaaaa",
+      "coprocessor-host-listener-version": "bbbbbbb",
+      "coprocessor-sns-worker-version": "bbbbbbb",
+      "coprocessor-tfhe-worker-version": "bbbbbbb",
+      "coprocessor-tx-sender-version": "aaaaaaa",
+      "coprocessor-zkproof-worker-version": "bbbbbbb",
+      "connector-db-migration-version": "aaaaaaa",
+      "connector-gw-listener-version": "bbbbbbb",
+      "connector-kms-worker-version": "bbbbbbb",
+      "connector-tx-sender-version": "aaaaaaa",
+      "gateway-version": "bbbbbbb",
+      "host-version": "aaaaaaa",
+      "test-suite-version": "bbbbbbb",
     });
   });
 });

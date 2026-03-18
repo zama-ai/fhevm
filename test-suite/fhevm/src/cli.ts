@@ -21,8 +21,7 @@ import { upgradeCommand } from "./commands/upgrade.cmd";
 import { testCommand } from "./commands/test.cmd";
 import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
-import { compatDefaultsCommand } from "./commands/compat-defaults.cmd";
-import { compatResolveEnvCommand } from "./commands/compat-resolve-env.cmd";
+import { workflowE2eInputsCommand } from "./commands/workflow-e2e-inputs.cmd";
 import { workflowUpArgsCommand } from "./commands/workflow-up-args.cmd";
 
 // Re-export parse helpers for backward compatibility
@@ -47,8 +46,7 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     testCommand,
     pauseCommand,
     unpauseCommand,
-    compatDefaultsCommand,
-    compatResolveEnvCommand,
+    workflowE2eInputsCommand,
     workflowUpArgsCommand,
   ]),
 );

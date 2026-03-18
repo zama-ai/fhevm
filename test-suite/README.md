@@ -37,19 +37,19 @@ The test suite offers a unified CLI for all operations:
 cd test-suite/fhevm
 
 # Preview the resolved bundle and boot plan
-./fhevm-cli up --target latest-release --dry-run
+./fhevm-cli up --target latest-supported --dry-run
 ./fhevm-cli up --target sha --sha 9587546 --dry-run
 
 # Boot the stack
-./fhevm-cli up --target latest-release
-./fhevm-cli deploy --target latest-release
+./fhevm-cli up --target latest-supported
+./fhevm-cli deploy --target latest-supported
 ./fhevm-cli up --target sha --sha 9587546
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
-./fhevm-cli up --target latest-release --coprocessors 2 --threshold 2
+./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
 
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
-./fhevm-cli up --target latest-release --resume --from-step kms-connector
+./fhevm-cli up --target latest-supported --resume --from-step kms-connector
 
 # Run specific tests (works for both 1/1 and n/t topologies)
 ./fhevm-cli test input-proof
@@ -60,10 +60,10 @@ cd test-suite/fhevm
 ./fhevm-cli test hcu-block-cap
 
 # Boot with a local coprocessor override (all services)
-./fhevm-cli up --target latest-release --override coprocessor
+./fhevm-cli up --target latest-supported --override coprocessor
 
 # Boot with only specific runtime services built locally
-./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 
 # View logs
 ./fhevm-cli logs relayer
@@ -80,16 +80,16 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 
 ```sh
 # Override an entire group (builds all services locally)
-./fhevm-cli up --target latest-release --override coprocessor
+./fhevm-cli up --target latest-supported --override coprocessor
 
 # Override specific services within a group (others pull from registry)
-./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 ```
 
 Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
 Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
 Local overrides always build release images.
-On `latest-release`, per-service overrides for `coprocessor` and `kms-connector` are rejected by default when local DB migrations diverge from the pinned release. Use the full-group override, or pass `--allow-schema-mismatch` if you know the mixed stack remains compatible.
+On `latest-supported`, per-service overrides for `coprocessor` and `kms-connector` are rejected by default when local DB migrations diverge from the tracked baseline profile. Use the full-group override, or pass `--allow-schema-mismatch` if you know the mixed stack remains compatible.
 
 When specifying individual services, use the short suffix after the group prefix (e.g., `host-listener` not `coprocessor-host-listener`). Services that share a Docker image are automatically co-selected (e.g., `host-listener` includes `host-listener-poller`).
 
@@ -98,7 +98,7 @@ When specifying individual services, use the short suffix after the group prefix
 If a boot fails mid-way, you can resume from a specific step:
 
 ```sh
-./fhevm-cli up --target latest-release --resume --from-step kms-connector
+./fhevm-cli up --target latest-supported --resume --from-step kms-connector
 ```
 
 Resume steps (in order):

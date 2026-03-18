@@ -11,10 +11,6 @@ on:
         description: "Comma-separated workspace selections for workspace mode (for example: build, coprocessor, or coprocessor:host-listener)"
         default: ""
         type: string
-      stack-era:
-        description: "Stack era hint for workflow_call consumers (leave empty for manual dispatch)"
-        default: ""
-        type: string
       coprocessor-db-migration-version:
         description: "Coprocessor DB Migration Image Version"
         default: ""
@@ -71,18 +67,6 @@ on:
         description: "Test suite version"
         default: ""
         type: string
-      relayer-version:
-        description: "Relayer version"
-        default: ""
-        type: string
-      relayer-migrate-version:
-        description: "Relayer migrate version"
-        default: ""
-        type: string
-      kms-core-version:
-        description: "KMS Core version"
-        default: ""
-        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -124,10 +108,6 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
-      RELAYER_VERSION: ${{ inputs.relayer-version }}
-      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
-      CORE_VERSION: ${{ inputs.kms-core-version }}
-      STACK_ERA: ${{ inputs.stack-era }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -175,26 +155,6 @@ jobs:
           fi
           plan_json="$("${cmd[@]}")"
           jq -r '.args[]' <<< "$plan_json" > "$args_file"
-          compat_args=()
-          if [ "$(jq -r '.forceModernRelayer' <<< "$plan_json")" = "true" ]; then
-            compat_args+=(--force-modern-relayer)
-          fi
-          ./fhevm-cli compat-resolve-env \
-            "${compat_args[@]}" \
-            "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
-            "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
-            "${COPROCESSOR_GW_LISTENER_VERSION:-}" \
-            "${COPROCESSOR_TX_SENDER_VERSION:-}" \
-            "${COPROCESSOR_TFHE_WORKER_VERSION:-}" \
-            "${COPROCESSOR_SNS_WORKER_VERSION:-}" \
-            "${COPROCESSOR_ZKPROOF_WORKER_VERSION:-}" \
-            "${CONNECTOR_DB_MIGRATION_VERSION:-}" \
-            "${CONNECTOR_GW_LISTENER_VERSION:-}" \
-            "${CONNECTOR_KMS_WORKER_VERSION:-}" \
-            "${CONNECTOR_TX_SENDER_VERSION:-}" \
-            "${GATEWAY_VERSION:-}" \
-            "${HOST_VERSION:-}" \
-            "${TEST_SUITE_VERSION:-}"
           echo "UP_ARGS_FILE=$args_file" >> "$GITHUB_ENV"
 
       - name: Dry run

@@ -132,12 +132,6 @@ export const buildOption = Options.boolean("build").pipe(
   Options.map((value) => Option.getOrElse(value, () => false)),
 );
 
-export const forceModernRelayerOption = Options.boolean("force-modern-relayer").pipe(
-  Options.withDescription("Force modern relayer pins regardless of the selected component refs."),
-  Options.optional,
-  Options.map((value) => Option.getOrElse(value, () => false)),
-);
-
 export const imagesOption = Options.boolean("images").pipe(
   Options.withDescription("Also remove locally built images when cleaning the stack."),
   Options.optional,
@@ -191,9 +185,4 @@ export const groupArg = Args.text({ name: "group" }).pipe(
 export const testNameArg = Args.text({ name: "test-name" }).pipe(
   Args.withDescription("Named test profile to run."),
   Args.optional,
-);
-
-export const compatVersionArg = Args.text({ name: "version" }).pipe(
-  Args.withDescription("Component version or git ref to inspect for stack-era compatibility."),
-  Args.repeated,
 );

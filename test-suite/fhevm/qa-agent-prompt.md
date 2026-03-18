@@ -35,54 +35,54 @@ Phase 0: preflight
 
 Phase 1: broad dry-run coverage
 1. `./fhevm-cli --help` — help text, exit 0; should contain "fhevm-cli" and list subcommands
-2. `./fhevm-cli up --target latest-release --dry-run`
-3. `./fhevm-cli deploy --target latest-release --dry-run`
+2. `./fhevm-cli up --target latest-supported --dry-run`
+3. `./fhevm-cli deploy --target latest-supported --dry-run`
 4. `./fhevm-cli up --target latest-main --dry-run`
 5. `./fhevm-cli up --target sha --sha 803f104 --dry-run`
 6. `./fhevm-cli up --target devnet --dry-run`
 7. `./fhevm-cli up --target testnet --dry-run`
 8. `./fhevm-cli up --target mainnet --dry-run`
-9. `./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml --dry-run`
-10. `./fhevm-cli up --target latest-release --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
-11. `./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml --dry-run`
-12. `./fhevm-cli up --target latest-release --override coprocessor --dry-run`
-13. `./fhevm-cli up --target latest-release --override kms-connector --dry-run`
-14. `./fhevm-cli up --target latest-release --override gateway-contracts --dry-run`
-15. `./fhevm-cli up --target latest-release --override host-contracts --dry-run`
-16. `./fhevm-cli up --target latest-release --override test-suite --dry-run`
-17. `./fhevm-cli up --target latest-release --override all --dry-run`
-18. `./fhevm-cli up --target latest-release --override coprocessor --override kms-connector --dry-run`
-19. `./fhevm-cli up --target latest-release --override gateway-contracts --override host-contracts --dry-run`
-20. `./fhevm-cli up --target latest-release --override coprocessor --override gateway-contracts --override host-contracts --override kms-connector --override test-suite --dry-run`
+9. `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml --dry-run`
+10. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
+11. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml --dry-run`
+12. `./fhevm-cli up --target latest-supported --override coprocessor --dry-run`
+13. `./fhevm-cli up --target latest-supported --override kms-connector --dry-run`
+14. `./fhevm-cli up --target latest-supported --override gateway-contracts --dry-run`
+15. `./fhevm-cli up --target latest-supported --override host-contracts --dry-run`
+16. `./fhevm-cli up --target latest-supported --override test-suite --dry-run`
+17. `./fhevm-cli up --target latest-supported --override all --dry-run`
+18. `./fhevm-cli up --target latest-supported --override coprocessor --override kms-connector --dry-run`
+19. `./fhevm-cli up --target latest-supported --override gateway-contracts --override host-contracts --dry-run`
+20. `./fhevm-cli up --target latest-supported --override coprocessor --override gateway-contracts --override host-contracts --override kms-connector --override test-suite --dry-run`
 
 Phase 1a: scenario dry-run coverage
-1. `./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml --reset --dry-run`
-2. `./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml --dry-run`
-3. `./fhevm-cli up --target latest-release --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
-4. `./fhevm-cli compat-defaults` — should output JSON with externalDefaults and anchors
+1. `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml --reset --dry-run`
+2. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml --dry-run`
+3. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
+4. `./fhevm-cli workflow-e2e-inputs --previous-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --new-commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --needs-file <fixture-json>` — should output repo-owned image version selections only
 
 Phase 1b: validation guards and edge failures
 1. EXPECT_FAIL: `./fhevm-cli up --target sha --dry-run`
    Expected substring: `--target sha requires --sha`
-2. EXPECT_FAIL: `./fhevm-cli up --target latest-release --sha 803f104 --dry-run`
+2. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --sha 803f104 --dry-run`
    Expected substring: `--sha requires --target sha`
-3. EXPECT_FAIL: `./fhevm-cli up --target latest-release --override gateway-contracts:sc-deploy --dry-run`
+3. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --override gateway-contracts:sc-deploy --dry-run`
    Expected substring: `Per-service overrides are only supported for coprocessor, kms-connector, test-suite`
-4. EXPECT_FAIL: `./fhevm-cli up --target latest-release --from-step relayer`
+4. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --from-step relayer`
    Expected substring: `--from-step requires --resume or --dry-run`
-5. EXPECT_FAIL: `./fhevm-cli up --target latest-release --override coprocessor:host-listener --dry-run`
+5. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --override coprocessor:host-listener --dry-run`
    Expected substring: `local DB migrations diverge`
-6. `./fhevm-cli up --target latest-release --override kms-connector:gw-listener --dry-run`
+6. `./fhevm-cli up --target latest-supported --override kms-connector:gw-listener --dry-run`
    Expected result: exit 0 is acceptable on current repo state
 7. EXPECT_FAIL: `./fhevm-cli upgrade coprocessor`
    Expected substring: `Stack is not running`
 8. EXPECT_FAIL: `./fhevm-cli up --target bogus --dry-run`
    Expected substring: `Unsupported target bogus`
-9. EXPECT_FAIL: `./fhevm-cli up --target latest-release --coprocessors 6 --dry-run`
+9. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --coprocessors 6 --dry-run`
    Expected substring: `Received unknown argument: '--coprocessors'`
-10. EXPECT_FAIL: `./fhevm-cli up --target latest-release --threshold 3 --dry-run`
+10. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --threshold 3 --dry-run`
     Expected substring: `Received unknown argument: '--threshold'`
-11. EXPECT_FAIL: `./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml --override coprocessor --dry-run`
+11. EXPECT_FAIL: `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml --override coprocessor --dry-run`
     Expected substring: `--scenario cannot be combined with --override coprocessor`
 12. EXPECT_FAIL: `./fhevm-cli up --target sha --sha abc --dry-run`
     Expected substring: `Invalid sha abc; expected 7 or 40 hex characters`
@@ -100,12 +100,12 @@ Phase 1b: validation guards and edge failures
     Expected substring: `Missing argument <scope>`
 
 Phase 1c: explicit guard bypass dry-runs
-1. `./fhevm-cli up --target latest-release --override coprocessor:host-listener --allow-schema-mismatch --dry-run`
-2. `./fhevm-cli up --target latest-release --override kms-connector:gw-listener --allow-schema-mismatch --dry-run`
+1. `./fhevm-cli up --target latest-supported --override coprocessor:host-listener --allow-schema-mismatch --dry-run`
+2. `./fhevm-cli up --target latest-supported --override kms-connector:gw-listener --allow-schema-mismatch --dry-run`
 
 Phase 2: baseline lifecycle on release stack
 1. `./fhevm-cli clean --images`
-2. `./fhevm-cli deploy --target latest-release`
+2. `./fhevm-cli deploy --target latest-supported`
 3. `./fhevm-cli status`
 4. Run `./fhevm-cli logs --no-follow relayer` — should print tail and exit (not hang); verifies the --no-follow flag works
 5. Run `./fhevm-cli logs relayer`, wait until logs appear, then Ctrl-C to stop (verifies default --follow behavior streams live)
@@ -120,9 +120,9 @@ Phase 2: baseline lifecycle on release stack
 12. `./fhevm-cli unpause gateway`
 13. `./fhevm-cli down`
 14. `./fhevm-cli status` — should show no running containers
-15. `./fhevm-cli up --target latest-release --resume --from-step base`
+15. `./fhevm-cli up --target latest-supported --resume --from-step base`
 16. `./fhevm-cli status`
-17. `./fhevm-cli up --target latest-release --resume --from-step relayer`
+17. `./fhevm-cli up --target latest-supported --resume --from-step relayer`
 18. `./fhevm-cli status`
 
 Phase 2a: generated-artifact recovery
@@ -133,7 +133,7 @@ Purpose:
 1. `rm -f /Users/work/code/zama/fhevm/.fhevm/env/gateway-sc.env`
 2. `rm -f /Users/work/code/zama/fhevm/.fhevm/config/relayer.yaml`
 3. `rm -f /Users/work/code/zama/fhevm/.fhevm/addresses/gateway/GatewayAddresses.sol`
-4. `./fhevm-cli up --target latest-release --resume --from-step bootstrap`
+4. `./fhevm-cli up --target latest-supported --resume --from-step bootstrap`
    Expected result: the CLI should restore the missing generated files before restarting from `bootstrap`
 5. `test -f /Users/work/code/zama/fhevm/.fhevm/env/gateway-sc.env`
 6. `test -f /Users/work/code/zama/fhevm/.fhevm/config/relayer.yaml`
@@ -143,7 +143,7 @@ Phase 2b: lock-file round-trip
 1. `./fhevm-cli down`
 2. Find the persisted lock file created under `/Users/work/code/zama/fhevm/.fhevm/locks/` (for example `ls -t /Users/work/code/zama/fhevm/.fhevm/locks/*.json | head -n1`)
 3. Re-run with that exact lock file path:
-   `./fhevm-cli up --target latest-release --lock-file <lock-path-from-step-2> --dry-run`
+   `./fhevm-cli up --target latest-supported --lock-file <lock-path-from-step-2> --dry-run`
    Expected result: should skip GitHub resolution and preflight should not require `gh`
 
 Phase 3: functional suite on release stack
@@ -154,7 +154,7 @@ Phase 3: functional suite on release stack
 5. `./fhevm-cli test hcu-block-cap`
 6. `./fhevm-cli test --parallel input-proof`
    Note: explicit --parallel flag override; verify it runs (the docker exec command should include `--parallel`)
-7. The published `latest-release` relayer/test-suite image pair currently does not provide a stable user-decrypt path. Cover `input-proof-compute-decrypt`, `user-decryption`, `delegated-user-decryption`, and `erc20` in Phase 8 instead, where the branch owns the full workspace runtime.
+7. The published `latest-supported` relayer/test-suite image pair currently does not provide a stable user-decrypt path. Cover `input-proof-compute-decrypt`, `user-decryption`, `delegated-user-decryption`, and `erc20` in Phase 8 instead, where the branch owns the full workspace runtime.
 
 Phase 4: exact modern SHA stack
 1. `./fhevm-cli clean --images`
@@ -176,7 +176,7 @@ Purpose:
 3. `git diff -- coprocessor/fhevm-engine/transaction-sender/src/transaction_sender.rs`
 4. `cd /Users/work/code/zama/fhevm/test-suite/fhevm`
 5. `./fhevm-cli clean --images`
-6. `./fhevm-cli up --target latest-release --override coprocessor`
+6. `./fhevm-cli up --target latest-supported --override coprocessor`
 7. `./fhevm-cli status`
 8. `./fhevm-cli logs --no-follow transaction-sender`
    Expected visible substring: `OVERRIDE_MARKER_V1`
@@ -207,15 +207,15 @@ Purpose:
 3. Show the diff for the edited file
 4. `cd /Users/work/code/zama/fhevm/test-suite/fhevm`
 5. `./fhevm-cli clean --images`
-6. `./fhevm-cli up --target latest-release --override kms-connector`
+6. `./fhevm-cli up --target latest-supported --override kms-connector`
 7. `./fhevm-cli status`
 8. `./fhevm-cli logs --no-follow kms-worker`
    Expected visible substring: `OVERRIDE_MARKER_KMS_V1`
 
 Phase 8: full workspace build
 1. `./fhevm-cli clean --images`
-2. `./fhevm-cli up --target latest-release --override all --dry-run`
-3. Run `./fhevm-cli up --target latest-release --override all`
+2. `./fhevm-cli up --target latest-supported --override all --dry-run`
+3. Run `./fhevm-cli up --target latest-supported --override all`
 4. `./fhevm-cli status`
 5. `./fhevm-cli test input-proof-compute-decrypt`
 6. `./fhevm-cli test user-decryption`
@@ -240,14 +240,14 @@ Purpose:
 9. `./fhevm-cli clean --images`
 
 Phase 10: scenario topology
-1. `./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml`
+1. `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml`
 2. `./fhevm-cli status` — confirm both coprocessor instances listed
 3. `./fhevm-cli test input-proof`
 4. `./fhevm-cli test random-subset`
 5. `./fhevm-cli clean --images`
 
 Phase 10a: scenario topology with divergence
-1. `./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml`
+1. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml`
 2. `./fhevm-cli status` — confirm both coprocessor instances listed
 3. `./fhevm-cli test input-proof`
 4. `./fhevm-cli clean --images`

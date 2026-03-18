@@ -140,9 +140,10 @@ After resolving a target bundle, the CLI applies **environment variable override
 This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
-2. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
-3. Resolves workflow env and `up` argv through `./fhevm-cli compat-resolve-env` and `./fhevm-cli workflow-up-args`
-4. Runs `./fhevm-cli up ...` with the resolved args
+2. Chooses repo-owned image refs from the PR SHA or the base SHA, depending on which build jobs succeeded
+3. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
+4. Resolves the final `up` argv through `./fhevm-cli workflow-up-args`
+5. Runs `./fhevm-cli up ...` with the resolved args
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 SHA-tagged env vars for every component that was built from the PR.
@@ -187,7 +188,7 @@ If you already know the exact repo SHA you want and all fhevm images were publis
 ./fhevm-cli up --target sha --sha 9587546 --dry-run
 ```
 
-This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the current `latest-supported` profile.
+This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the maintained non-network companion set used by `latest-main`.
 
 ## Compatibility Matrix
 
@@ -202,12 +203,12 @@ The matrix has four sections:
 | `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-CI workflows read `externalDefaults` and `anchors` via `./fhevm-cli compat-defaults` instead of hardcoding them.
+CI workflows read repo-owned image selection through `./fhevm-cli workflow-e2e-inputs` and final launch args through `./fhevm-cli workflow-up-args` instead of reimplementing that logic in workflow glue.
 
 ### How to update
 
 **Bump the relayer pin:**
-Edit `COMPAT_MATRIX.externalDefaults` in `src/compat.ts`. CI reads it automatically via `./fhevm-cli compat-defaults`.
+Edit `COMPAT_MATRIX.externalDefaults` in `src/compat.ts`. `latest-main` and `sha` pick it up automatically.
 
 **Add a new incompatibility:**
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.

@@ -47,18 +47,6 @@ on:
         description: "ZKProof Worker Image Version"
         default: ""
         type: string
-      relayer_version:
-        description: "Relayer Image Version"
-        default: ""
-        type: string
-      relayer_migrate_version:
-        description: "Relayer Migrate Image Version"
-        default: ""
-        type: string
-      stack_era:
-        description: "Stack era hint for modern simple-ACL-compatible bundles"
-        default: ""
-        type: string
 
 permissions: {}
 
@@ -109,9 +97,6 @@ jobs:
       COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
       COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
-      RELAYER_VERSION: ${{ inputs.relayer_version }}
-      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer_migrate_version }}
-      STACK_ERA: ${{ inputs.stack_era }}
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
@@ -154,25 +139,6 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           bun install --frozen-lockfile
-
-      - name: Resolve compat defaults
-        working-directory: test-suite/fhevm
-        run: |
-          set -euo pipefail
-          ./fhevm-cli compat-resolve-env \
-            "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
-            "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
-            "${COPROCESSOR_GW_LISTENER_VERSION:-}" \
-            "${COPROCESSOR_TX_SENDER_VERSION:-}" \
-            "${COPROCESSOR_TFHE_WORKER_VERSION:-}" \
-            "${COPROCESSOR_SNS_WORKER_VERSION:-}" \
-            "${COPROCESSOR_ZKPROOF_WORKER_VERSION:-}" \
-            "${CONNECTOR_DB_MIGRATION_VERSION:-}" \
-            "${CONNECTOR_GW_LISTENER_VERSION:-}" \
-            "${CONNECTOR_KMS_WORKER_VERSION:-}" \
-            "${CONNECTOR_TX_SENDER_VERSION:-}" \
-            "${GATEWAY_VERSION:-}" \
-            "${HOST_VERSION:-}"
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm

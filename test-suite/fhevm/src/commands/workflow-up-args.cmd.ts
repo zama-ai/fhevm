@@ -26,5 +26,5 @@ export const workflowUpArgsCommand = Command.make(
       scenarioOut: Option.getOrUndefined(scenarioOut),
     }),
 ).pipe(
-  Command.withDescription("Resolve CI-facing fhevm-cli up args from workflow image-mode and override inputs."),
+  Command.withDescription("Resolve fhevm-cli up args from workflow image-mode and override inputs."),
 );

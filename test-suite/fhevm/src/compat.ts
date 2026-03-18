@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import type { RuntimePlan } from "./runtime-plan";
 import type { State } from "./types";
 import { effectiveOverrides } from "./scenario";
@@ -19,16 +18,8 @@ export type CompatPolicy = {
   connectorEnv: Record<string, string>;
 };
 
-export type WorkflowCompatEnv = Partial<Record<
-  "STACK_ERA" | "RELAYER_VERSION" | "RELAYER_MIGRATE_VERSION",
-  string
->>;
-
 /**
  * Single source of truth for all version compatibility knowledge.
- *
- * CI workflows read externalDefaults and anchors via `./fhevm-cli compat-defaults`
- * instead of hardcoding values, so updating this matrix propagates everywhere.
  */
 export const COMPAT_MATRIX = {
   /**
@@ -67,7 +58,6 @@ export const COMPAT_MATRIX = {
 
   /**
    * Pinned versions for components NOT built from this workspace.
-   * CI reads these via `./fhevm-cli compat-defaults` instead of hardcoding.
    *
    * To bump the relayer pin:
    *   1. Update the SHA here
@@ -249,45 +239,3 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   }
   return policy;
 };
-
-export const resolveWorkflowCompatEnv = (params: {
-  versions: string[];
-  forceModernRelayer: boolean;
-  stackEra?: string;
-  relayerVersion?: string;
-  relayerMigrateVersion?: string;
-  isModernRef: (ref: string) => Effect.Effect<boolean, unknown>;
-}) =>
-  Effect.gen(function* () {
-    let stackEra = params.stackEra;
-    if (params.forceModernRelayer) {
-      stackEra = "modern";
-    }
-    if (!stackEra) {
-      for (const version of params.versions) {
-        if (version && (yield* params.isModernRef(version))) {
-          stackEra = "modern";
-          break;
-        }
-      }
-    }
-    const resolved: WorkflowCompatEnv = {};
-    if (stackEra) {
-      resolved.STACK_ERA = stackEra;
-    }
-    if (stackEra === "modern" && !params.relayerVersion) {
-      resolved.RELAYER_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_VERSION;
-    }
-    if (stackEra === "modern" && !params.relayerMigrateVersion) {
-      resolved.RELAYER_MIGRATE_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_MIGRATE_VERSION;
-    }
-    const effectiveRelayerVersion = params.relayerVersion ?? resolved.RELAYER_VERSION;
-    if (
-      effectiveRelayerVersion === COMPAT_MATRIX.externalDefaults.RELAYER_VERSION &&
-      !params.relayerMigrateVersion &&
-      !resolved.RELAYER_MIGRATE_VERSION
-    ) {
-      resolved.RELAYER_MIGRATE_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_MIGRATE_VERSION;
-    }
-    return resolved;
-  });
