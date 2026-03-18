@@ -1,11 +1,5 @@
 import { COMPAT_MATRIX } from "./compat";
 
-const RELEASE_COMPANIONS = {
-  CORE_VERSION: "v0.13.0",
-  RELAYER_VERSION: "v0.10.0-rc.1",
-  RELAYER_MIGRATE_VERSION: "v0.10.0-rc.1",
-} as const;
-
 const MODERN_COMPANIONS = {
   CORE_VERSION: "v0.13.0",
   RELAYER_VERSION: COMPAT_MATRIX.externalDefaults.RELAYER_VERSION,
@@ -13,7 +7,6 @@ const MODERN_COMPANIONS = {
 } as const;
 
 export const NON_NETWORK_COMPANIONS = {
-  "latest-release": RELEASE_COMPANIONS,
   "latest-main": MODERN_COMPANIONS,
   "sha": MODERN_COMPANIONS,
 } as const;

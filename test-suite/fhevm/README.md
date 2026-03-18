@@ -20,8 +20,8 @@ Run from `test-suite/fhevm`:
 bun install
 bun run check
 bun test
-./fhevm-cli up --target latest-release --dry-run
-./fhevm-cli up --target latest-release
+./fhevm-cli up --target latest-supported --dry-run
+./fhevm-cli up --target latest-supported
 ./fhevm-cli test erc20
 ./fhevm-cli clean --images
 ```
@@ -79,9 +79,9 @@ Runtime resolution is intentionally fixed:
 
 ## Targets
 
-- `latest-release`: latest stable fhevm release plus checked-in companion defaults
+- `latest-supported`: tracked maintained bundle profile (`profiles/latest-supported.json`)
 - `latest-main`: newest complete repo-owned main SHA bundle at or after the simple-ACL floor (`803f104`)
-- `sha`: exact repo-owned SHA bundle plus `latest-release` companions
+- `sha`: exact repo-owned SHA bundle plus `latest-supported` companions
 - `devnet`
 - `testnet`
 - `mainnet`
@@ -96,14 +96,14 @@ If you need to run a specific set of versions (e.g., `v0.10.7` across the board)
 to skip all target resolution and supply the full bundle yourself:
 
 ```sh
-./fhevm-cli up --target latest-release --lock-file ./my-bundle.json
+./fhevm-cli up --target latest-supported --lock-file ./my-bundle.json
 ```
 
 The lock file must contain every version key. Example:
 
 ```json
 {
-  "target": "latest-release",
+  "target": "latest-supported",
   "lockName": "pinned-v0.10.7.json",
   "sources": ["manual"],
   "env": {
@@ -140,10 +140,9 @@ This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
 2. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
-3. Runs `./fhevm-cli up --target latest-release`
+3. Runs `./fhevm-cli up --target latest-supported`
 
-The CLI resolves `latest-release` as the baseline (providing companion versions like
-`CORE_VERSION` and `RELAYER_VERSION` that aren't built from this repo), then overlays the
+The CLI resolves `latest-supported` as the maintained baseline profile, then overlays the
 SHA-tagged env vars for every component that was built from the PR.
 
 Supported override keys (any subset):
@@ -173,7 +172,7 @@ Example — test a local coprocessor image without `--override`:
 ```sh
 COPROCESSOR_HOST_LISTENER_VERSION=abc1234 \
 COPROCESSOR_TFHE_WORKER_VERSION=abc1234 \
-  ./fhevm-cli up --target latest-release
+  ./fhevm-cli up --target latest-supported
 ```
 
 The resolved lock file records which keys were overridden in its `sources` field.
@@ -185,7 +184,7 @@ If you already know the exact repo SHA you want and all fhevm images were publis
 ./fhevm-cli up --target sha --sha 9587546 --dry-run
 ```
 
-This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the current `latest-release` preset.
+This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the current `latest-supported` profile.
 
 ## Compatibility Matrix
 
@@ -221,13 +220,13 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ## Main Commands
 
 ```sh
-./fhevm-cli up --target latest-release
-./fhevm-cli deploy --target latest-release
+./fhevm-cli up --target latest-supported
+./fhevm-cli deploy --target latest-supported
 ./fhevm-cli up --target sha --sha 9587546
-./fhevm-cli up --target latest-release --resume --from-step relayer
-./fhevm-cli up --target latest-release --override coprocessor
-./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
-./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli up --target latest-supported --resume --from-step relayer
+./fhevm-cli up --target latest-supported --override coprocessor
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
+./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
 ./fhevm-cli upgrade coprocessor
 
 ./fhevm-cli status
@@ -259,7 +258,7 @@ Supported groups:
 ### Override an entire group
 
 ```sh
-./fhevm-cli up --target latest-release --override coprocessor
+./fhevm-cli up --target latest-supported --override coprocessor
 ```
 
 For `coprocessor`, this is also the shorthand local-dev scenario: one coprocessor instance, threshold `1`, source mode `local`.
@@ -269,15 +268,15 @@ For `coprocessor`, this is also the shorthand local-dev scenario: one coprocesso
 Runtime override groups also support per-service filtering:
 
 ```sh
-./fhevm-cli up --target latest-release --override coprocessor:host-listener,tfhe-worker
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 ```
 
 Per-service override syntax is supported only for `coprocessor`, `kms-connector`, and `test-suite`.
 Use the short service suffix after the group prefix. Multiple services are comma-separated. Services that share the same image are auto-selected together, so `coprocessor:host-listener` also builds `host-listener-poller` locally.
-Local overrides always build release images.
+Local overrides always build workspace images while non-overridden services stay on the resolved bundle.
 
 `coprocessor` and `kms-connector` still share a database, so the CLI warns when you do a per-service override there. If your change includes schema or migration changes, use the full-group override instead.
-On `latest-release`, the CLI now compares the local migration directory against the pinned release and rejects a per-service override by default when they diverge. If you know your service remains compatible anyway, pass `--allow-schema-mismatch`.
+On `latest-supported`, the CLI now compares the local migration directory against the tracked baseline profile and rejects a per-service override by default when they diverge. If you know your service remains compatible anyway, pass `--allow-schema-mismatch`.
 
 Available runtime suffixes:
 
@@ -293,13 +292,13 @@ Repeat `--override` to override several groups at once:
 
 ```sh
 # Two full groups
-./fhevm-cli up --target latest-release --override coprocessor --override gateway-contracts
+./fhevm-cli up --target latest-supported --override coprocessor --override gateway-contracts
 
 # Per-service across runtime groups
-./fhevm-cli up --target latest-release --override coprocessor:host-listener --override kms-connector:gw-listener
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener --override kms-connector:gw-listener
 
 # Mixed: per-service + full group
-./fhevm-cli up --target latest-release --override coprocessor:host-listener --override gateway-contracts
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener --override gateway-contracts
 ```
 
 ### Combining with env var overrides
@@ -308,16 +307,16 @@ You can mix per-service local builds with registry tag overrides:
 
 ```sh
 COPROCESSOR_GW_LISTENER_VERSION=abc1234 \
-  ./fhevm-cli up --target latest-release --override coprocessor:host-listener
+  ./fhevm-cli up --target latest-supported --override coprocessor:host-listener
 ```
 
 This builds `host-listener` (and `host-listener-poller`) locally, pulls `gw-listener` at tag
 `abc1234`, and pulls all other coprocessor services at the resolved target version.
 
-If you intentionally want to bypass the latest-release migration guard:
+If you intentionally want to bypass the latest-supported migration guard:
 
 ```sh
-./fhevm-cli up --target latest-release --override coprocessor:host-listener --allow-schema-mismatch
+./fhevm-cli up --target latest-supported --override coprocessor:host-listener --allow-schema-mismatch
 ```
 
 If a runtime override is already active and you only want to rebuild and restart that local code path, use:
@@ -346,9 +345,9 @@ Use `--scenario <file>` for consensus and rollout matrices. The file is the sour
 Examples:
 
 ```sh
-./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml
-./fhevm-cli up --target latest-release --scenario ./scenarios/one-registry-outlier.yaml
-./fhevm-cli up --target latest-release --scenario ./scenarios/one-local-outlier.yaml
+./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml
+./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml
 ```
 
 Selective local instance example:

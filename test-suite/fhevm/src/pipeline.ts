@@ -96,7 +96,7 @@ export const SCHEMA_GUARDS = {
 >;
 
 export const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>([
-  "latest-release",
+  "latest-supported",
   "latest-main",
   "sha",
 ]);
@@ -279,7 +279,7 @@ export const printPlan = (
 ) =>
   Effect.gen(function* () {
     const topology = topologyForState(state);
-    yield* Effect.log(`[plan] target=${state.target}`);
+    yield* Effect.log(`[plan] profile=${state.target}`);
     if (state.overrides.length) {
       yield* Effect.log(
         `[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`,

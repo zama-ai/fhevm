@@ -7,7 +7,7 @@ flowchart TD
   A["fhevm-cli up"] --> P["1. preflight"]
   P --> B["2. resolve target"]
   B --> B1["latest-main: walk main SHAs until complete image set, but not before 803f104"]
-  B --> B2["latest-release: latest stable release"]
+  B --> B2["latest-supported: tracked maintained bundle profile"]
   B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104"]
   B --> B4["devnet/testnet/mainnet: GitOps bundles"]
   B1 --> C["apply *_VERSION env overrides"]
@@ -57,16 +57,16 @@ After resolving a target bundle, `applyVersionEnvOverrides` overlays any matchin
 environment variables onto the bundle. This is the mechanism CI uses:
 
 ```
-resolve target (e.g. latest-release)
-  → baseline bundle with release tag for all repo-owned packages
+resolve target (e.g. latest-supported)
+  → baseline bundle from profiles/latest-supported.json
   → applyVersionEnvOverrides(bundle, process.env)
   → env vars like COPROCESSOR_HOST_LISTENER_VERSION=<sha> replace baseline versions
   → lock file records overrides in its "sources" field
 ```
 
 The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds Docker images tagged
-with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-release`.
-The target provides companion defaults (CORE_VERSION, RELAYER_VERSION); the env vars provide
+with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-supported`.
+The target provides the maintained supported bundle; the env vars provide
 the SHA-tagged images for every component built from the PR.
 
 ## Notes

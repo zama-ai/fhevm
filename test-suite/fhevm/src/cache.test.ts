@@ -172,12 +172,12 @@ describe("cachedResolve", () => {
 
   test("fetches from GitHub when no cache exists", async () => {
     // Make sure cache file does not exist
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
-    const program = cachedResolve({ target: "latest-release", reset: false });
+    const program = cachedResolve({ target: "latest-supported", reset: false });
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
-    expect(result.target).toBe("latest-release");
+    expect(result.target).toBe("latest-supported");
     expect(result.env.GATEWAY_VERSION).toBe("v0.11.0");
 
     // Clean up the cache it wrote
@@ -187,14 +187,14 @@ describe("cachedResolve", () => {
   test("skips cache when target does not match cached bundle", async () => {
     // Write a cache file with a different target
     const cachedBundle = makeBundle({ target: "devnet" });
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.mkdir(path.dirname(cachePath), { recursive: true });
     await writeJson(cachePath, cachedBundle);
 
-    const program = cachedResolve({ target: "latest-release", reset: false });
+    const program = cachedResolve({ target: "latest-supported", reset: false });
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
     // Should get fresh-resolved version, not the cached devnet bundle
-    expect(result.target).toBe("latest-release");
+    expect(result.target).toBe("latest-supported");
 
     // Clean up
     await fs.rm(cachePath, { force: true });
@@ -208,16 +208,16 @@ describe("cachedResolve", () => {
 describe("resolveBundle", () => {
   test("returns resolved bundle and lock path", async () => {
     // Ensure no cache interference
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = resolveBundle(
-      { target: "latest-release", reset: false },
+      { target: "latest-supported", reset: false },
       {},
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
-    expect(result.bundle.target).toBe("latest-release");
-    expect(result.lockPath).toContain("latest-release");
+    expect(result.bundle.target).toBe("latest-supported");
+    expect(result.lockPath).toContain("latest-supported");
     expect(result.lockPath).toEndWith(".json");
 
     // Clean up
@@ -226,11 +226,11 @@ describe("resolveBundle", () => {
   });
 
   test("applies env overrides to the resolved bundle", async () => {
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = resolveBundle(
-      { target: "latest-release", reset: false },
+      { target: "latest-supported", reset: false },
       { GATEWAY_VERSION: "custom-v1" },
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
@@ -243,11 +243,11 @@ describe("resolveBundle", () => {
   });
 
   test("writes lock file to disk", async () => {
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = resolveBundle(
-      { target: "latest-release", reset: false },
+      { target: "latest-supported", reset: false },
       {},
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
@@ -264,7 +264,7 @@ describe("resolveBundle", () => {
   test("restores a missing lock snapshot from persisted bundle state", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "lock-restore-test-"));
     const lockPath = path.join(dir, "restored-lock.json");
-    const bundle = makeBundle({ target: "latest-release", lockName: "restored-lock.json" });
+    const bundle = makeBundle({ target: "latest-supported", lockName: "restored-lock.json" });
 
     await Effect.runPromise(ensureLockSnapshot(lockPath, bundle));
 
@@ -280,11 +280,11 @@ describe("resolveBundle", () => {
 
 describe("previewBundle", () => {
   test("returns resolved bundle with env overrides applied", async () => {
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = previewBundle(
-      { target: "latest-release", reset: false },
+      { target: "latest-supported", reset: false },
       { GATEWAY_VERSION: "preview-v1" },
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
@@ -296,11 +296,11 @@ describe("previewBundle", () => {
   });
 
   test("does not write a lock file", async () => {
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = previewBundle(
-      { target: "latest-release", reset: true },
+      { target: "latest-supported", reset: true },
       {},
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));
@@ -311,7 +311,7 @@ describe("previewBundle", () => {
 
     // Run again after cleanup to verify previewBundle does NOT create the lock
     const result2 = await Effect.runPromise(
-      previewBundle({ target: "latest-release", reset: true }, {}).pipe(
+      previewBundle({ target: "latest-supported", reset: true }, {}).pipe(
         Effect.provide(TestGitHubClient),
       ),
     );
@@ -324,11 +324,11 @@ describe("previewBundle", () => {
   });
 
   test("returns unmodified bundle when env has no matching overrides", async () => {
-    const cachePath = resolveCachePath("latest-release");
+    const cachePath = resolveCachePath("latest-supported");
     await fs.rm(cachePath, { force: true }).catch(() => {});
 
     const program = previewBundle(
-      { target: "latest-release", reset: false },
+      { target: "latest-supported", reset: false },
       { UNRELATED_KEY: "value" },
     );
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClient)));

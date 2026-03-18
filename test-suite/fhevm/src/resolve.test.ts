@@ -246,14 +246,14 @@ describe("missingRepoPackages", () => {
 
 describe("presetBundle", () => {
   test("builds a bundle with repo-owned version for REPO_KEYS", () => {
-    const bundle = presetBundle("latest-release", "v0.11.0", "latest-release-v0.11.0.json");
+    const bundle = presetBundle("latest-main", "v0.11.0", "latest-main-v0.11.0.json");
     for (const key of REPO_KEYS) {
       expect(bundle.env[key]).toBe("v0.11.0");
     }
   });
 
   test("uses NON_NETWORK_COMPANIONS for non-repo keys", () => {
-    const bundle = presetBundle("latest-release", "v0.11.0", "test.json");
+    const bundle = presetBundle("latest-main", "v0.11.0", "test.json");
     expect(bundle.env.CORE_VERSION).toBeTruthy();
     expect(bundle.env.RELAYER_VERSION).toBeTruthy();
     expect(bundle.env.RELAYER_MIGRATE_VERSION).toBeTruthy();
@@ -362,13 +362,13 @@ describe("describeBundle", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveTarget", () => {
-  test("latest-release returns preset bundle with release tag", async () => {
-    const program = resolveTarget("latest-release");
+  test("latest-supported returns the tracked baseline profile", async () => {
+    const program = resolveTarget("latest-supported");
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClientForPreset)));
-    expect(result.target).toBe("latest-release");
+    expect(result.target).toBe("latest-supported");
     expect(result.env.GATEWAY_VERSION).toBe("v0.11.0");
-    expect(result.lockName).toBe("latest-release-v0.11.0.json");
-    expect(result.sources).toContain("preset=latest-release");
+    expect(result.lockName).toBe("latest-supported.json");
+    expect(result.sources).toContain("profile=latest-supported");
   });
 
   test("latest-main finds newest commit with full image coverage", async () => {

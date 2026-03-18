@@ -48,7 +48,7 @@ describe("rewriteRelayerConfig", () => {
         },
       },
     };
-    const state = { versions: { target: "latest-release" as const, lockName: "t", env: { RELAYER_VERSION: "v0.10.0" }, sources: [] } };
+    const state = { versions: { target: "latest-supported" as const, lockName: "t", env: { RELAYER_VERSION: "v0.10.0" }, sources: [] } };
     const result = rewriteRelayerConfig(config, state);
     // Modern relayer: no rewrite
     expect((result.gateway as Record<string, unknown>).readiness_checker).toHaveProperty(
@@ -68,7 +68,7 @@ describe("rewriteRelayerConfig", () => {
         },
       },
     };
-    const state = { versions: { target: "latest-release" as const, lockName: "t", env: { RELAYER_VERSION: "v0.9.0" }, sources: [] } };
+    const state = { versions: { target: "latest-supported" as const, lockName: "t", env: { RELAYER_VERSION: "v0.9.0" }, sources: [] } };
     const result = rewriteRelayerConfig(config, state);
     const checker = (result.gateway as Record<string, unknown>).readiness_checker as Record<
       string,
@@ -84,7 +84,7 @@ describe("rewriteRelayerConfig", () => {
 
   test("returns config unchanged when no gateway section", () => {
     const config = { server: { port: 8080 } };
-    const state = { versions: { target: "latest-release" as const, lockName: "t", env: { RELAYER_VERSION: "v0.9.0" }, sources: [] } };
+    const state = { versions: { target: "latest-supported" as const, lockName: "t", env: { RELAYER_VERSION: "v0.9.0" }, sources: [] } };
     const result = rewriteRelayerConfig(config, state);
     expect(result).toEqual(config);
   });

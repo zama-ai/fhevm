@@ -8,9 +8,9 @@ import type { State, StepName } from "../types";
 import { defaultCoprocessorScenario } from "../scenario";
 
 const makeTestState = (overrides: Partial<State> = {}): State => ({
-  target: "latest-release",
+  target: "latest-supported",
   lockPath: "/tmp/test.json",
-  versions: { target: "latest-release", lockName: "test.json", env: {}, sources: [] },
+  versions: { target: "latest-supported", lockName: "test.json", env: {}, sources: [] },
   overrides: [],
   scenario: defaultCoprocessorScenario(),
   completedSteps: [] as StepName[],
@@ -30,7 +30,7 @@ describe("StateManager", () => {
     });
     const result = await Effect.runPromise(program);
     expect(result).toBeDefined();
-    expect(result!.target).toBe("latest-release");
+    expect(result!.target).toBe("latest-supported");
     expect(result!.completedSteps).toEqual([]);
     expect(result!.scenario.topology).toEqual({ count: 1, threshold: 1 });
     await fs.rm(dir, { recursive: true });

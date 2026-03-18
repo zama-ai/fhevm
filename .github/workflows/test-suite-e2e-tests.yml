@@ -246,7 +246,7 @@ jobs:
               exit 1
               ;;
           esac
-          printf '%s\n%s\n%s\n%s\n' --target latest-release --scenario "$scenario_path" > "$args_file"
+          printf '%s\n%s\n%s\n%s\n' --target latest-supported --scenario "$scenario_path" > "$args_file"
           if [ "$IMAGE_MODE" = "workspace" ]; then
             IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
             for raw in "${overrides[@]}"; do

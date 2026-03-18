@@ -4,9 +4,10 @@ import YAML from "yaml";
 import { COMPAT_MATRIX } from "./compat";
 import { GitHubApiError } from "./errors";
 import { NON_NETWORK_COMPANIONS } from "./presets";
+import { LATEST_SUPPORTED_PROFILE } from "./layout";
 import { GitHubClient } from "./services/GitHubClient";
 import type { VersionBundle, VersionTarget } from "./types";
-import { normalizeRepository } from "./utils";
+import { normalizeRepository, readJson } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -165,7 +166,7 @@ export const missingRepoPackages = (packageTags: Record<string, Set<string>>, ta
     .map(([, pkg]) => decodeURIComponent(pkg));
 
 export const presetBundle = (
-  target: "latest-release" | "latest-main" | "sha",
+  target: "latest-main" | "sha",
   repoVersion: string,
   lockName: string,
   sources: string[] = [],
@@ -296,6 +297,19 @@ export const resolveTarget = (
   options: { sha?: string } = {},
 ): Effect.Effect<VersionBundle, GitHubApiError, GitHubClient> =>
   Effect.gen(function* () {
+    if (target === "latest-supported") {
+      return yield* Effect.tryPromise({
+        try: () => readJson<VersionBundle>(LATEST_SUPPORTED_PROFILE),
+        catch: (error) => new GitHubApiError({ message: `Failed to read latest-supported profile: ${error}` }),
+      }).pipe(
+        Effect.map((bundle) => ({
+          ...bundle,
+          target,
+          lockName: "latest-supported.json",
+          sources: ["profile=latest-supported", ...bundle.sources.filter((source) => source !== "profile=latest-supported")],
+        })),
+      );
+    }
     if (target === "devnet") {
       return yield* bundleFromFiles(target, DEVNET_FILES);
     }
@@ -307,11 +321,6 @@ export const resolveTarget = (
     }
 
     const gh = yield* GitHubClient;
-
-    if (target === "latest-release") {
-      const release = yield* gh.latestStableRelease();
-      return presetBundle(target, release, `latest-release-${release}.json`);
-    }
 
     if (target === "sha") {
       const requested = options.sha?.trim();

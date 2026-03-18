@@ -37,7 +37,7 @@ const describeResumeState = (state: State) =>
   (() => {
     const topology = topologyForState(state);
     return [
-      `target=${state.target}`,
+      `profile=${state.target}`,
       `topology=${topology.count}/${topology.threshold}`,
       ...(state.scenario.origin !== "default"
         ? [

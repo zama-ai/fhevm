@@ -40,7 +40,7 @@ export const stubBundle = (overrides?: {
   lockName?: string;
   sources?: string[];
 }): VersionBundle => ({
-  target: "latest-release",
+  target: "latest-supported",
   lockName: overrides?.lockName ?? "test.json",
   sources: overrides?.sources ?? ["test"],
   env: { ...STUB_VERSION_ENV, ...overrides?.env },
@@ -54,7 +54,7 @@ export const stubState = (overrides?: {
   discovery?: State["discovery"];
   completedSteps?: State["completedSteps"];
 }): State => ({
-  target: "latest-release",
+  target: "latest-supported",
   lockPath: "/tmp/test.json",
   versions: stubBundle({ env: overrides?.envOverrides }),
   overrides: overrides?.overrides ?? [],

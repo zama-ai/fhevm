@@ -72,7 +72,7 @@ export const parseKeyValue = (value: string) => {
 // Tests assert exact strings like "Unsupported target bogus".
 
 export const targetOption = Options.text("target").pipe(
-  Options.withDescription("Version source to boot: latest-main, latest-release, sha, or a network target."),
+  Options.withDescription("Bundle source to boot: latest-main, latest-supported, sha, or a network target."),
   Options.withDefault("latest-main"),
 );
 

@@ -52,9 +52,9 @@ describe("runtime-plan", () => {
   test("runtimePlanFromResolved centralizes the final coprocessor plan", () => {
     const plan = runtimePlanFromResolved({
       requiresGitHub: false,
-      target: "latest-release",
+      target: "latest-supported",
       versions: {
-        target: "latest-release",
+        target: "latest-supported",
         lockName: "test.json",
         env: {},
         sources: [],

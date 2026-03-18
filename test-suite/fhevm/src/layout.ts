@@ -13,11 +13,13 @@ export const LOCK_DIR = path.join(STATE_DIR, "locks");
 export const GENERATED_CONFIG_DIR = path.join(STATE_DIR, "config");
 export const STATE_FILE = path.join(STATE_DIR, "state.json");
 export const TEMPLATE_DIR = path.join(CLI_DIR, "templates");
+export const PROFILE_DIR = path.join(CLI_DIR, "profiles");
 export const TEMPLATE_ENV_DIR = path.join(TEMPLATE_DIR, "env");
 export const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 export const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const STATIC_KMS_CORE_CONFIG = path.join(
   STATIC_CONFIG_DIR,
   "kms-core",

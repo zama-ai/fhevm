@@ -177,7 +177,7 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli up --target latest-release --scenario ./scenarios/two-of-two.yaml
+          ./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
 
       - name: All operators tests
         working-directory: test-suite/fhevm

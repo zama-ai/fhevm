@@ -19,7 +19,7 @@ import { up, upDryRun } from "./up";
 
 const upOptions = {
   target: Options.text("target").pipe(
-    Options.withDescription("Version source to boot: latest-main, latest-release, sha, or a network target."),
+    Options.withDescription("Bundle source to boot: latest-main, latest-supported, sha, or a network target."),
     Options.optional,
   ),
   sha: shaOption,

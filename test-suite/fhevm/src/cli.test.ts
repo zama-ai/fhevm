@@ -121,7 +121,7 @@ describe("resolveTarget", () => {
 
   test("version env overrides apply on top of the resolved bundle", async () => {
     const bundle = applyVersionEnvOverrides(
-      stubBundle({ lockName: "latest-release-v0.11.0.json", sources: ["preset=latest-release", "repo-owned=v0.11.0"] }),
+      stubBundle({ lockName: "latest-supported.json", sources: ["profile=latest-supported"] }),
       { GATEWAY_VERSION: "custom-gateway", RELAYER_VERSION: "custom-relayer" },
     );
     expect(bundle.env.GATEWAY_VERSION).toBe("custom-gateway");
@@ -135,8 +135,8 @@ describe("runtime invariants", () => {
   test("resolvedComposeEnv preserves version keys", () => {
     const env = resolvedComposeEnv({
       versions: {
-        target: "latest-release",
-        lockName: "latest-release-v0.11.0.json",
+        target: "latest-supported",
+        lockName: "latest-supported.json",
         sources: [],
         env: {
           GATEWAY_VERSION: "v0.11.0",
@@ -582,9 +582,9 @@ describe("runtime invariants", () => {
     void dir;
   });
 
-  test("up --dry-run rejects latest-release partial overrides when local migrations diverge", async () => {
+  test("up --dry-run rejects latest-supported partial overrides when local migrations diverge", async () => {
     const dir = await fixtureDir();
-    const lockFile = path.join(dir, "latest-release.json");
+    const lockFile = path.join(dir, "latest-supported.json");
     await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
     process.chdir(REPO_ROOT);
     const { logs, restore } = captureConsole("error");
@@ -595,7 +595,7 @@ describe("runtime invariants", () => {
           "src/cli.ts",
           "up",
           "--target",
-          "latest-release",
+          "latest-supported",
           "--lock-file",
           lockFile,
           "--override",
@@ -666,7 +666,7 @@ describe("runtime invariants", () => {
 
   test("up --dry-run rejects kms-connector partial overrides when local migrations diverge", async () => {
     const dir = await fixtureDir();
-    const lockFile = path.join(dir, "latest-release.json");
+    const lockFile = path.join(dir, "latest-supported.json");
     await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
     process.chdir(REPO_ROOT);
     const { logs, restore } = captureConsole("error");
@@ -677,7 +677,7 @@ describe("runtime invariants", () => {
           "src/cli.ts",
           "up",
           "--target",
-          "latest-release",
+          "latest-supported",
           "--lock-file",
           lockFile,
           "--override",
@@ -702,9 +702,9 @@ describe("runtime invariants", () => {
     expect(logs.some((l) => l.includes("kms-connector: local DB migrations diverge from v0.11.0"))).toBe(true);
   });
 
-  test("up --dry-run rejects latest-release partial overrides with untracked local migrations", async () => {
+  test("up --dry-run rejects latest-supported partial overrides with untracked local migrations", async () => {
     const dir = await fixtureDir();
-    const lockFile = path.join(dir, "latest-release.json");
+    const lockFile = path.join(dir, "latest-supported.json");
     await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
     process.chdir(REPO_ROOT);
     const { logs, restore } = captureConsole("error");
@@ -715,7 +715,7 @@ describe("runtime invariants", () => {
           "src/cli.ts",
           "up",
           "--target",
-          "latest-release",
+          "latest-supported",
           "--lock-file",
           lockFile,
           "--override",
@@ -738,7 +738,7 @@ describe("runtime invariants", () => {
 
   test("up --dry-run allows divergent partial overrides with --allow-schema-mismatch", async () => {
     const dir = await fixtureDir();
-    const lockFile = path.join(dir, "latest-release.json");
+    const lockFile = path.join(dir, "latest-supported.json");
     await fs.writeFile(lockFile, JSON.stringify(stubBundle()));
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
@@ -748,7 +748,7 @@ describe("runtime invariants", () => {
         "src/cli.ts",
         "up",
         "--target",
-        "latest-release",
+        "latest-supported",
         "--lock-file",
         lockFile,
         "--override",
@@ -784,7 +784,7 @@ describe("runtime invariants", () => {
       ...portCheckResponses,
     });
     await main(
-      ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run", "--from-step", "relayer"],
+      ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--dry-run", "--from-step", "relayer"],
       depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
@@ -804,7 +804,7 @@ describe("runtime invariants", () => {
       ...portCheckResponses,
     });
     await main(
-      ["bun", "src/cli.ts", "deploy", "--target", "latest-release", "--dry-run"],
+      ["bun", "src/cli.ts", "deploy", "--target", "latest-supported", "--dry-run"],
       depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
@@ -823,7 +823,7 @@ describe("runtime invariants", () => {
       ...portCheckResponses,
     });
     await main(
-      ["bun", "src/cli.ts", "up", "--target", "latest-release", "--lock-file", lockFile, "--dry-run"],
+      ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--lock-file", lockFile, "--dry-run"],
       depsToLayer({ runner }),
     );
     expect(await maybeRead(STATE_FILE)).toBe(before);
@@ -877,7 +877,7 @@ describe("runtime invariants", () => {
     });
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--from-step", "relayer"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume", "--from-step", "relayer"],
         depsToLayer({ runner, liveRunner: async () => 0 }),
       );
       expect(await maybeRead(envPath("gateway-sc"))).toBeDefined();
@@ -906,7 +906,7 @@ describe("runtime invariants", () => {
           "src/cli.ts",
           "up",
           "--target",
-          "latest-release",
+          "latest-supported",
           "--resume",
           "--override",
           "coprocessor",
@@ -933,7 +933,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--reset"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume", "--reset"],
         noopLayer,
       );
     } finally {
@@ -956,7 +956,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("log");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume"],
         depsToLayer({
           runner: fakeRunner({
             "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "gateway-node\n",
@@ -983,7 +983,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume"],
         depsToLayer({
           runner: fakeRunner({
             "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "",
@@ -1016,7 +1016,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("log");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--resume", "--dry-run"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--resume", "--dry-run"],
         depsToLayer({
           runner: fakeRunner({
             "which bun": "",
@@ -1088,11 +1088,11 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-main", "--dry-run"],
         depsToLayer({
           runner: async (argv) => {
             const key = argv.join(" ");
-            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
+            if (key.startsWith("gh api ")) {
               throw new Error("spawn gh ENOENT");
             }
             return { stdout: "", stderr: "", code: 0 };
@@ -1111,7 +1111,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-main", "--dry-run"],
         depsToLayer({
           runner: async (argv, options) => {
             const key = argv.join(" ");
@@ -1124,8 +1124,8 @@ describe("runtime invariants", () => {
             if (key.startsWith("lsof -nP -iTCP:")) {
               return { stdout: "", stderr: "", code: 1 };
             }
-            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
-              throw new Error("gh api repos/zama-ai/fhevm/releases?per_page=100&page=1 failed (1)\nHTTP 401: authentication required");
+            if (key.startsWith("gh api ")) {
+              throw new Error(`${key} failed (1)\nHTTP 401: authentication required`);
             }
             return noopDeps.runner(argv, options);
           },
@@ -1143,7 +1143,7 @@ describe("runtime invariants", () => {
     const { logs, restore } = captureConsole("error");
     try {
       await main(
-        ["bun", "src/cli.ts", "up", "--target", "latest-release", "--dry-run"],
+        ["bun", "src/cli.ts", "up", "--target", "latest-main", "--dry-run"],
         depsToLayer({
           runner: async (argv, options) => {
             const key = argv.join(" ");
@@ -1156,8 +1156,8 @@ describe("runtime invariants", () => {
             if (key.startsWith("lsof -nP -iTCP:")) {
               return { stdout: "", stderr: "", code: 1 };
             }
-            if (key === "gh api repos/zama-ai/fhevm/releases?per_page=100&page=1") {
-              throw new Error("gh api repos/zama-ai/fhevm/releases?per_page=100&page=1 failed (1)\nAPI rate limit exceeded");
+            if (key.startsWith("gh api ")) {
+              throw new Error(`${key} failed (1)\nAPI rate limit exceeded`);
             }
             return noopDeps.runner(argv, options);
           },
@@ -1227,7 +1227,7 @@ describe("CLI argument validation", () => {
   test("rejects --sha without --target sha", async () => {
     const { logs, restore } = captureConsole("error");
     try {
-      await main(["bun", "src/cli.ts", "up", "--target", "latest-release", "--sha", "1234abc", "--dry-run"], noopLayer);
+      await main(["bun", "src/cli.ts", "up", "--target", "latest-supported", "--sha", "1234abc", "--dry-run"], noopLayer);
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--sha requires --target sha"))).toBe(true);
   });
