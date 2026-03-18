@@ -44,7 +44,7 @@ Most users should start with `latest-main`.
 
 - fastest local iteration: `./fhevm-cli up --target latest-main --override <group>`
 - full branch validation: `./fhevm-cli up --target latest-main --build`
-- reusable CI e2e: `latest-main` + the checked-in `two-of-two` scenario
+- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario
 - merge queue: `latest-main` baseline + repo-owned image overrides for components that were actually rebuilt
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
@@ -183,12 +183,13 @@ This is how CI works. The merge queue workflow:
 3. Leaves skipped components unset so they naturally stay on the `latest-main` baseline
 4. Fails if a required touched-component build reports a non-skipped failure
 5. Runs `./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml`
-6. Optionally adds `--build` when CI wants to validate the checked out branch from source on the runner
+6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
 For non-workspace companions, `latest-main` uses the maintained mainline baseline from `src/presets.ts`.
-The reusable workflow defaults `build=true`; orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
+The reusable workflow now runs on `pull_request` directly and treats PR e2e as source validation with `build=true`.
+Orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
 
 Supported override keys (any subset):
 
