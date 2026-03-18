@@ -152,16 +152,12 @@ export const applyInstanceAdjustments = (
   },
   compatArgs: CompatPolicy["coprocessorArgs"] = {},
   compatDropFlags: CompatPolicy["coprocessorDropFlags"] = {},
-  compatDisableHealthcheck: CompatPolicy["coprocessorDisableHealthcheck"] = {},
 ) => {
   const next = interpolateComposeValue(structuredClone(service), envVars) as Record<string, unknown>;
   const serviceKey = baseServiceName.replace(/^coprocessor-/, "");
   const command = Array.isArray(next.command) ? next.command.map((item) => String(item)) : undefined;
   if (command?.some((item) => item.startsWith("--key-cache-size"))) {
     next.command = command.map((item) => item.replace("--key-cache-size", "--tenant-key-cache-size"));
-  }
-  if (compatDisableHealthcheck[serviceKey as keyof CompatPolicy["coprocessorDisableHealthcheck"]]) {
-    next.healthcheck = { disable: true };
   }
   next.env_file = [envFileValue];
   if (Object.keys(override.env).length) {
@@ -295,7 +291,6 @@ const buildCoprocessorOverride = (plan: RuntimePlan) =>
         const locallyBuilt = instance.source.mode === "local" && localServices.has(name);
         const compatArgs = locallyBuilt ? {} : compat.coprocessorArgs;
         const compatDropFlags = locallyBuilt ? {} : compat.coprocessorDropFlags;
-        const compatDisableHealthcheck = locallyBuilt ? {} : compat.coprocessorDisableHealthcheck;
         const adjusted = applyInstanceAdjustments(
           name,
           service,
@@ -304,7 +299,6 @@ const buildCoprocessorOverride = (plan: RuntimePlan) =>
           instance,
           compatArgs,
           compatDropFlags,
-          compatDisableHealthcheck,
         );
         adjusted.container_name = serviceName;
         applyCoprocessorSource(adjusted, name, instance, localServices);

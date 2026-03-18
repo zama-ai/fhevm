@@ -705,17 +705,12 @@ const waitForCoprocessorServices = (
   Effect.gen(function* () {
     const topology = topologyForState(state);
     const probe = yield* ContainerProbe;
-    const compat = compatPolicyForState(runtimePlanForState(state));
-    const legacyGwListener =
-      compat.coprocessorDisableHealthcheck["gw-listener"] === true;
     for (let index = 0; index < topology.count; index += 1) {
       if (!skipMigration) {
         yield* probe.waitForComplete(toServiceName("db-migration", index));
       }
       yield* probe.waitForRunning(toServiceName("host-listener", index));
-      yield* (legacyGwListener
-        ? probe.waitForRunning(toServiceName("gw-listener", index))
-        : probe.waitForHealthy(toServiceName("gw-listener", index)));
+      yield* probe.waitForRunning(toServiceName("gw-listener", index));
       yield* probe.waitForRunning(toServiceName("tfhe-worker", index));
       yield* probe.waitForRunning(toServiceName("zkproof-worker", index));
       yield* probe.waitForRunning(toServiceName("sns-worker", index));

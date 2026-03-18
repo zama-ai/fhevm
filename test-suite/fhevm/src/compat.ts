@@ -14,7 +14,6 @@ type CompatArgValue = { env: string } | { value: string };
 export type CompatPolicy = {
   coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, CompatArgValue]>>>;
   coprocessorDropFlags: Partial<Record<CompatService, string[]>>;
-  coprocessorDisableHealthcheck: Partial<Record<CompatService, true>>;
   connectorEnv: Record<string, string>;
 };
 
@@ -86,9 +85,6 @@ const SHIM_PROFILES = {
     coprocessorDropFlags: {
       "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
     },
-    coprocessorDisableHealthcheck: {
-      "gw-listener": true,
-    },
     connectorEnv: {},
   },
   "legacy-coprocessor-api-keys": {
@@ -98,13 +94,11 @@ const SHIM_PROFILES = {
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     coprocessorDropFlags: {},
-    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
   "legacy-connector-chain-id": {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
-    coprocessorDisableHealthcheck: {},
     connectorEnv: {
       KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
     },
@@ -114,7 +108,6 @@ const SHIM_PROFILES = {
       "transaction-sender": [["--host-chain-url", { env: "RPC_WS_URL" }]],
     },
     coprocessorDropFlags: {},
-    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
   "legacy-tx-sender-gateway-flags": {
@@ -127,7 +120,6 @@ const SHIM_PROFILES = {
       ],
     },
     coprocessorDropFlags: {},
-    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   },
 } as const satisfies Record<string, CompatPolicy>;
@@ -212,7 +204,6 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   const policy: CompatPolicy = {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
-    coprocessorDisableHealthcheck: {},
     connectorEnv: {},
   };
   for (const shim of COMPAT_MATRIX.legacyShims) {
@@ -231,11 +222,6 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
         ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
         ...flags,
       ];
-    }
-    for (const [service, disabled] of Object.entries(profile.coprocessorDisableHealthcheck)) {
-      if (disabled) {
-        policy.coprocessorDisableHealthcheck[service as CompatService] = true;
-      }
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }

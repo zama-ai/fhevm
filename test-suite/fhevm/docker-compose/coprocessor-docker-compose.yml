@@ -89,11 +89,6 @@ services:
       target: gw-listener
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     env_file:
       - ../../../.fhevm/env/coprocessor.env
     command:

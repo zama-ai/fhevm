@@ -347,27 +347,6 @@ describe("applyInstanceAdjustments", () => {
     expect(result.command).not.toContain("--key-cache-size");
   });
 
-  test("disables healthcheck for gw-listener only when compat requests it", () => {
-    const service = { container_name: "coprocessor-gw-listener" };
-    const result = applyInstanceAdjustments(
-      "coprocessor-gw-listener",
-      service,
-      "/env",
-      {},
-      undefined,
-      {},
-      {},
-      { "gw-listener": true },
-    );
-    expect(result.healthcheck).toEqual({ disable: true });
-  });
-
-  test("does not disable healthcheck for non-gw-listener", () => {
-    const service = { container_name: "coprocessor-tfhe-worker" };
-    const result = applyInstanceAdjustments("coprocessor-tfhe-worker", service, "/env", {});
-    expect(result.healthcheck).toBeUndefined();
-  });
-
   test("merges override env into environment", () => {
     const service = {
       container_name: "coprocessor-tfhe-worker",

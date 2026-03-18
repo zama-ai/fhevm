@@ -402,33 +402,6 @@ describe("runtime invariants", () => {
     ).toBeDefined();
   });
 
-  test("gw-listener healthcheck is only disabled by compat policy", () => {
-    const baseService = {
-      container_name: "coprocessor-gw-listener",
-      healthcheck: { test: ["CMD", "curl"] },
-      command: ["gw_listener"],
-    };
-    const modern = applyInstanceAdjustments(
-      "coprocessor-gw-listener",
-      baseService,
-      "/tmp/coprocessor.env",
-      {},
-    );
-    expect(modern.healthcheck).toEqual({ test: ["CMD", "curl"] });
-
-    const legacy = applyInstanceAdjustments(
-      "coprocessor-gw-listener",
-      baseService,
-      "/tmp/coprocessor.env",
-      {},
-      { env: {}, args: {} },
-      {},
-      {},
-      { "gw-listener": true },
-    );
-    expect(legacy.healthcheck).toEqual({ disable: true });
-  });
-
   test("probeBootstrap treats ethCallId failures as retryable", async () => {
     const state = stubState({
       discovery: {
