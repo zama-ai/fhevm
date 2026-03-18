@@ -857,8 +857,9 @@ export const runStep = (state: State, step: StepName) =>
   Effect.gen(function* () {
     const probe = yield* ContainerProbe;
     const stateManager = yield* StateManager;
+    const stepIndex = stateStepIndex(step) + 1;
 
-    yield* Effect.log(`[step] ${step}`);
+    yield* Effect.log(`[step ${stepIndex}/${STEP_NAMES.length}] ${step}`);
 
     switch (step) {
       case "preflight":
