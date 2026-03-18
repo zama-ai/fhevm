@@ -274,10 +274,15 @@ export const overrideWarnings = (
   return warnings;
 };
 
-export const printBundle = (bundle: VersionBundle) =>
+export const printBundle = (
+  bundle: VersionBundle,
+  options?: { detailed?: boolean },
+) =>
   Effect.gen(function* () {
     yield* Effect.log(`[resolve] ${bundle.lockName}`);
-    yield* Effect.log(describeBundle(bundle));
+    if (options?.detailed) {
+      yield* Effect.log(describeBundle(bundle));
+    }
   });
 
 export const printPlan = (

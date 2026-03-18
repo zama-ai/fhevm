@@ -85,6 +85,7 @@ export const cachedResolve = (
 ): Effect.Effect<VersionBundle, GitHubApiError, GitHubClient> =>
   Effect.gen(function* () {
     if (options.lockFile) {
+      yield* Effect.log(`[resolve] reading lock file ${options.lockFile}`);
       return yield* bundleFromFile(options.target, options.lockFile);
     }
 
@@ -96,10 +97,15 @@ export const cachedResolve = (
         catch: () => new GitHubApiError({ message: "cache-miss" }),
       }).pipe(Effect.option);
       if (cached._tag === "Some" && cached.value.target === options.target) {
+        yield* Effect.log(`[resolve] using cached ${options.target} bundle`);
         return cached.value;
       }
     }
 
+    yield* Effect.log(`[resolve] resolving ${options.target} bundle`);
+    if (options.target === "latest-main" || options.target === "sha") {
+      yield* Effect.log("[resolve] fetching main commits and published image tags");
+    }
     const bundle = yield* resolveTarget(options.target, { sha: options.sha });
 
     yield* Effect.tryPromise({

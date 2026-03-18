@@ -126,6 +126,7 @@ const startStep = (
 const bootstrapState = (options: UpOptions) =>
   Effect.gen(function* () {
     const stateManager = yield* StateManager;
+    yield* Effect.log(`[up] target=${options.target}`);
     const resolved = yield* resolveBundle(options, process.env);
     const scenario = yield* resolveScenarioForOptions(options);
     yield* assertSchemaCompatibility(
@@ -243,13 +244,14 @@ export const upDryRun = (
       state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
       yield* preflight(state, false, state.requiresGitHub);
-      yield* printBundle(state.versions);
+      yield* printBundle(state.versions, { detailed: true });
       yield* printPlan(state, options.fromStep ?? startStep(state, options));
       yield* Effect.log(
         "[dry-run] resume preview uses persisted state only; no state or containers were changed",
       );
       return;
     }
+    yield* Effect.log(`[up] target=${options.target}`);
     const bundle = yield* previewBundle(options, process.env);
     const scenario = yield* resolveScenarioForOptions(options);
     yield* assertSchemaCompatibility(
@@ -279,7 +281,7 @@ export const upDryRun = (
       true,
       !options.lockFile,
     );
-    yield* printBundle(state.versions);
+    yield* printBundle(state.versions, { detailed: true });
     yield* printPlan(state, options.fromStep);
     yield* Effect.log(
       "[dry-run] preflight passed; no state or containers were changed",
