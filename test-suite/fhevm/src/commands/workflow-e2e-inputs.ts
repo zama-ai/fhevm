@@ -38,6 +38,7 @@ type WorkflowNeeds = Partial<
 
 export const workflowE2eInputs = (options: {
   commit: string;
+  previousCommit: string;
   needsFile: string;
 }) =>
   Effect.gen(function* () {
@@ -50,32 +51,31 @@ export const workflowE2eInputs = (options: {
         }),
     });
 
-    const failures: string[] = [];
     const output: Record<string, string> = {};
+    const tagCache = new Map<string, string>();
+
+    const shortTagFor = (commit: string) =>
+      Effect.gen(function* () {
+        const cached = tagCache.get(commit);
+        if (cached) {
+          return cached;
+        }
+        const result = yield* runner.run(
+          ["git", "rev-parse", "--short=7", commit],
+          { allowFailure: true },
+        );
+        const tag = result.code === 0 ? result.stdout.trim() : commit.slice(0, 7);
+        tagCache.set(commit, tag);
+        return tag;
+      });
+
     for (const [job, mapping] of Object.entries(WORKFLOW_BUILD_OUTPUTS)) {
       const needsEntry = needs[job as keyof typeof WORKFLOW_BUILD_OUTPUTS];
       for (const [buildResultKey, outputKey] of Object.entries(mapping)) {
-        if (needsEntry?.outputs?.[buildResultKey] !== "success") {
-          failures.push(`${job}.${buildResultKey}`);
-          continue;
-        }
-        output[outputKey] = "";
+        const selectedCommit =
+          needsEntry?.outputs?.[buildResultKey] === "success" ? options.commit : options.previousCommit;
+        output[outputKey] = yield* shortTagFor(selectedCommit);
       }
-    }
-    if (failures.length) {
-      return yield* Effect.fail(
-        new PreflightError({
-          message: `Merge-queue image selection requires successful repo-owned builds; missing: ${failures.join(", ")}`,
-        }),
-      );
-    }
-    const result = yield* runner.run(
-      ["git", "rev-parse", "--short=7", options.commit],
-      { allowFailure: true },
-    );
-    const tag = result.code === 0 ? result.stdout.trim() : options.commit.slice(0, 7);
-    for (const key of Object.keys(output)) {
-      output[key] = tag;
     }
 
     console.log(JSON.stringify(output, null, 2));

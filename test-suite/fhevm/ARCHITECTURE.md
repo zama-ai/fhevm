@@ -70,7 +70,7 @@ with the PR's HEAD SHA, resolves repo-owned image overrides through
 `./fhevm-cli workflow-up-args`, then calls `./fhevm-cli up`.
 The target provides the current mainline bundle; the env vars and resolved workflow args provide
 the merge-candidate SHA-tagged images and scenario/build shape for every component built from the PR.
-If any required repo-owned image build failed, merge queue fails before dispatching e2e.
+If a repo-owned image build was skipped or failed, merge queue falls back to the base commit tag for that component.
 Non-workspace companions still come from `COMPAT_MATRIX.externalDefaults`.
 
 ## Notes

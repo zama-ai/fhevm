@@ -1728,6 +1728,8 @@ describe("workflow-e2e-inputs command", () => {
           "workflow-e2e-inputs",
           "--commit",
           "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "--previous-commit",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "--needs-file",
           needsFile,
         ],
@@ -1758,7 +1760,7 @@ describe("workflow-e2e-inputs command", () => {
     });
   });
 
-  test("fails when a required repo-owned image build did not succeed", async () => {
+  test("falls back to the base tag when a repo-owned image build was skipped or failed", async () => {
     const dir = await fixtureDir();
     const needsFile = path.join(dir, "needs.json");
     await fs.writeFile(
@@ -1771,7 +1773,7 @@ describe("workflow-e2e-inputs command", () => {
             host_listener_build_result: "success",
             sns_worker_build_result: "success",
             tfhe_worker_build_result: "success",
-            tx_sender_build_result: "success",
+            tx_sender_build_result: "skipped",
             zkproof_worker_build_result: "success",
           },
         },
@@ -1785,10 +1787,10 @@ describe("workflow-e2e-inputs command", () => {
         },
         "gateway-contracts-docker-build": { outputs: { build_result: "success" } },
         "host-contracts-docker-build": { outputs: { build_result: "success" } },
-        "test-suite-docker-build": { outputs: { build_result: "success" } },
+        "test-suite-docker-build": { outputs: { build_result: "skipped" } },
       }),
     );
-    const { logs, restore } = captureConsole("error");
+    const { logs, restore } = captureConsole("log");
     try {
       await main(
         [
@@ -1797,17 +1799,36 @@ describe("workflow-e2e-inputs command", () => {
           "workflow-e2e-inputs",
           "--commit",
           "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "--previous-commit",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "--needs-file",
           needsFile,
         ],
-        noopLayer,
+        depsToLayer({
+          runner: fakeRunner({
+            "git rev-parse --short=7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "bbbbbbb\n",
+            "git rev-parse --short=7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "aaaaaaa\n",
+          }),
+        }),
       );
     } finally {
       restore();
     }
-    expect(process.exitCode).toBe(1);
-    expect(logs.join("\n")).toContain(
-      "Merge-queue image selection requires successful repo-owned builds; missing: coprocessor-docker-build.gw_listener_build_result",
-    );
+    expect(JSON.parse(logs.join("\n"))).toEqual({
+      "coprocessor-db-migration-version": "bbbbbbb",
+      "coprocessor-gw-listener-version": "aaaaaaa",
+      "coprocessor-host-listener-version": "bbbbbbb",
+      "coprocessor-sns-worker-version": "bbbbbbb",
+      "coprocessor-tfhe-worker-version": "bbbbbbb",
+      "coprocessor-tx-sender-version": "aaaaaaa",
+      "coprocessor-zkproof-worker-version": "bbbbbbb",
+      "connector-db-migration-version": "bbbbbbb",
+      "connector-gw-listener-version": "bbbbbbb",
+      "connector-kms-worker-version": "bbbbbbb",
+      "connector-tx-sender-version": "bbbbbbb",
+      "gateway-version": "bbbbbbb",
+      "host-version": "bbbbbbb",
+      "test-suite-version": "aaaaaaa",
+    });
   });
 });

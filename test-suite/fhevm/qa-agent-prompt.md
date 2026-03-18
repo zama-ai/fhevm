@@ -59,7 +59,7 @@ Phase 1a: scenario dry-run coverage
 1. `./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml --reset --dry-run`
 2. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-local-outlier.yaml --dry-run`
 3. `./fhevm-cli up --target latest-supported --scenario ./scenarios/one-registry-outlier.yaml --dry-run`
-4. `./fhevm-cli workflow-e2e-inputs --commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --needs-file <fixture-json>` — should output repo-owned image version selections only, and fail if any required repo-owned build result is not `success`
+4. `./fhevm-cli workflow-e2e-inputs --commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --previous-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --needs-file <fixture-json>` — should output repo-owned image version selections only, using the head tag for successful component builds and the base tag otherwise
 
 Phase 1b: validation guards and edge failures
 1. EXPECT_FAIL: `./fhevm-cli up --target sha --dry-run`

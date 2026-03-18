@@ -8,6 +8,32 @@ It exists for three workflows:
 - swap in local changes for one repo-owned group
 - run consensus/matrix coprocessor scenarios with deterministic generated state
 
+## Why This CLI Exists
+
+Launching this stack is harder than "run docker compose up".
+
+The CLI has to assemble one runnable stack from components that move at different speeds:
+
+- repo-owned services can be built from `main`, from a specific SHA, from local workspace code, or from a tracked supported profile
+- non-repo companions such as relayer and kms-core do not automatically track repo-owned `main`
+- some targets are meant to reproduce a known baseline (`latest-supported`, network targets, lock files)
+- some targets are meant for active integration work (`latest-main`, `--build`, local overrides)
+- coprocessor topology can also change independently through explicit scenarios
+
+That means the hard part is not just booting containers. It is deciding:
+
+1. what base stack you want
+2. where repo-owned components should come from
+3. what coprocessor topology should run
+
+Examples:
+
+- "I changed host-listener, does my branch still work?" -> `latest-main` + local repo-owned code
+- "Does the merge candidate artifact bundle work?" -> `latest-main` + merge-candidate image overrides
+- "Do 2 local coprocessors reach consensus?" -> baseline target + explicit scenario
+
+The CLI exists to make those decisions explicit, reproducible, and testable.
+
 The CLI owns all mutable runtime state under `.fhevm/`. Tracked compose and env files stay as templates.
 
 For the boot flow diagram and invariants, see `ARCHITECTURE.md`.
@@ -203,7 +229,7 @@ The matrix has four sections:
 | `externalDefaults` | Pinned versions for non-workspace components | modern relayer SHA |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-CI workflows read repo-owned image selection through `./fhevm-cli workflow-e2e-inputs` and final launch args through `./fhevm-cli workflow-up-args` instead of reimplementing that logic in workflow glue.
+CI workflows read repo-owned image selection through `./fhevm-cli workflow-e2e-inputs` and final launch args through `./fhevm-cli workflow-up-args` instead of reimplementing that logic in workflow glue. For merge-queue e2e, repo-owned images use the PR head tag when that component build succeeded and fall back to the base commit tag when it was skipped or failed.
 
 ### How to update
 

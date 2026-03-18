@@ -62,6 +62,7 @@ jobs:
       - test-suite-docker-build
     if: ${{ success() || failure() }}
     env:
+      PREVIOUS_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
@@ -102,6 +103,7 @@ jobs:
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
           ./fhevm-cli workflow-e2e-inputs \
             --commit "$NEW_COMMIT_HASH" \
+            --previous-commit "$PREVIOUS_COMMIT_HASH" \
             --needs-file "$needs_file" > "$output_file"
           jq -r 'to_entries[] | "\(.key)=\(.value)"' "$output_file" >> "$GITHUB_OUTPUT"
 

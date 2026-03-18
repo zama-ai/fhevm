@@ -19,7 +19,19 @@ export type CompatPolicy = {
 };
 
 /**
- * Single source of truth for all version compatibility knowledge.
+ * Single source of truth for the small amount of compatibility knowledge
+ * the CLI must own explicitly.
+ *
+ * Why this file exists:
+ * - the stack is assembled from components that do not all evolve in lockstep
+ * - some cross-version pairs are known-invalid and should fail fast at boot
+ * - some older supported images still need runtime shims to boot under the
+ *   current CLI
+ * - modern non-network targets (`latest-main`, `sha`) still need maintained
+ *   defaults for non-repo companions such as relayer
+ *
+ * This file should stay narrow. It is for durable policy-level rules, not for
+ * encoding every transient cross-repo break manually.
  */
 export const COMPAT_MATRIX = {
   /**
