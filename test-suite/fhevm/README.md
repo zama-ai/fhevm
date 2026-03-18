@@ -140,9 +140,9 @@ This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
 2. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
-3. Runs `./fhevm-cli up --target latest-supported`
+3. Runs `./fhevm-cli up --target latest-main`
 
-The CLI resolves `latest-supported` as the maintained baseline profile, then overlays the
+The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 SHA-tagged env vars for every component that was built from the PR.
 
 Supported override keys (any subset):
@@ -172,7 +172,7 @@ Example — test a local coprocessor image without `--override`:
 ```sh
 COPROCESSOR_HOST_LISTENER_VERSION=abc1234 \
 COPROCESSOR_TFHE_WORKER_VERSION=abc1234 \
-  ./fhevm-cli up --target latest-supported
+  ./fhevm-cli up --target latest-main
 ```
 
 The resolved lock file records which keys were overridden in its `sources` field.
@@ -224,6 +224,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ./fhevm-cli deploy --target latest-supported
 ./fhevm-cli up --target sha --sha 9587546
 ./fhevm-cli up --target latest-supported --resume --from-step relayer
+./fhevm-cli up --target latest-main --build
 ./fhevm-cli up --target latest-supported --override coprocessor
 ./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 ./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
@@ -247,6 +248,8 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
+Use `--build` when you want the whole local workspace on the active baseline. On scenario runs, `--build` still leaves coprocessor locality to the scenario itself.
+
 Supported groups:
 
 - `coprocessor`
@@ -262,6 +265,13 @@ Supported groups:
 ```
 
 For `coprocessor`, this is also the shorthand local-dev scenario: one coprocessor instance, threshold `1`, source mode `local`.
+
+### Build the local workspace
+
+```sh
+./fhevm-cli up --target latest-main --build
+./fhevm-cli up --target latest-main --scenario ./scenarios/one-local-outlier.yaml --build
+```
 
 ### Override specific runtime services
 

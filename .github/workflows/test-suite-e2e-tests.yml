@@ -8,7 +8,7 @@ on:
         default: "registry"
         type: string
       override:
-        description: "Comma-separated override values for workspace mode (for example: all, coprocessor, or coprocessor:host-listener)"
+        description: "Comma-separated workspace selections for workspace mode (for example: build, coprocessor, or coprocessor:host-listener)"
         default: ""
         type: string
       stack-era:
@@ -190,7 +190,7 @@ jobs:
                 override="${raw#"${raw%%[![:space:]]*}"}"
                 override="${override%"${override##*[![:space:]]}"}"
                 [ -n "$override" ] || continue
-                if [ "$override" = "all" ]; then
+                if [ "$override" = "all" ] || [ "$override" = "build" ]; then
                   workspace_all=true
                   coprocessor_local=true
                   continue
@@ -246,7 +246,7 @@ jobs:
               exit 1
               ;;
           esac
-          printf '%s\n%s\n%s\n%s\n' --target latest-supported --scenario "$scenario_path" > "$args_file"
+          printf '%s\n%s\n%s\n%s\n' --target latest-main --scenario "$scenario_path" > "$args_file"
           if [ "$IMAGE_MODE" = "workspace" ]; then
             IFS=',' read -r -a overrides <<< "$WORKSPACE_OVERRIDE"
             for raw in "${overrides[@]}"; do
@@ -254,12 +254,8 @@ jobs:
               override="${override%"${override##*[![:space:]]}"}"
               [ -n "$override" ] || continue
               case "$override" in
-                all)
-                  printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-                    --override gateway-contracts \
-                    --override host-contracts \
-                    --override kms-connector \
-                    --override test-suite >> "$args_file"
+                all|build)
+                  printf '%s\n' --build >> "$args_file"
                   ;;
                 coprocessor|coprocessor:*)
                   ;;

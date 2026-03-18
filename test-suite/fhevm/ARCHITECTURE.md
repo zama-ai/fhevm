@@ -65,8 +65,8 @@ resolve target (e.g. latest-supported)
 ```
 
 The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds Docker images tagged
-with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-supported`.
-The target provides the maintained supported bundle; the env vars provide
+with the PR's HEAD SHA, exports them as env vars, then calls `./fhevm-cli up --target latest-main`.
+The target provides the current mainline bundle; the env vars provide
 the SHA-tagged images for every component built from the PR.
 
 ## Notes
@@ -75,6 +75,7 @@ the SHA-tagged images for every component built from the PR.
 - `latest-main` is modern-only by construction. If no complete bundle exists after the floor SHA, resolution fails.
 - The resolved bundle is printed and locked before the real boot continues.
 - Runtime precedence is fixed: bundle -> `*_VERSION` env overrides -> coprocessor scenario/shorthand -> generated runtime files.
+- `--build` expands to the full local workspace on normal stacks and to the non-coprocessor workspace groups when a scenario already owns coprocessor locality.
 - `.fhevm` is the only mutable runtime area owned by the CLI.
 - Tracked inputs are split by role:
   - compose templates: `docker-compose/*.yml`

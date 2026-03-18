@@ -2,7 +2,7 @@ name: test-suite-e2e-operators-tests
 
 # Github does not support more than 10 inputs for workflow_dispatch:
 # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
-# Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
+# Core, relayer and test-suite follow the latest-main defaults unless explicitly pinned
 on:
   workflow_dispatch:
     inputs:
@@ -177,7 +177,7 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
+          ./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml
 
       - name: All operators tests
         working-directory: test-suite/fhevm

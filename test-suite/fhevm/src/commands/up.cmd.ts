@@ -10,6 +10,8 @@ import {
   dryRunOption,
   resetOption,
   allowSchemaMismatchOption,
+  buildOption,
+  expandBuildOverrides,
   parseLocalOverride,
 } from "../options";
 import { PreflightError } from "../errors";
@@ -31,6 +33,7 @@ const upOptions = {
   dryRun: dryRunOption,
   reset: resetOption,
   allowSchemaMismatch: allowSchemaMismatchOption,
+  build: buildOption,
 };
 
 const upHandler = (parsed: {
@@ -44,6 +47,7 @@ const upHandler = (parsed: {
   dryRun: boolean;
   reset: boolean;
   allowSchemaMismatch: boolean;
+  build: boolean;
 }) =>
   Effect.gen(function* () {
     const target = Option.getOrUndefined(parsed.target);
@@ -95,10 +99,18 @@ const upHandler = (parsed: {
         }),
       );
     }
+    if (parsed.build && parsed.override.length) {
+      return yield* Effect.fail(
+        new PreflightError({ message: "--build cannot be combined with --override" }),
+      );
+    }
 
     // Transform complex options
     const overrides = yield* Effect.try({
-      try: () => parsed.override.flatMap(parseLocalOverride),
+      try: () => [
+        ...(parsed.build ? expandBuildOverrides(scenarioPath) : []),
+        ...parsed.override.flatMap(parseLocalOverride),
+      ],
       catch: (error) =>
         new PreflightError({ message: (error as Error).message }),
     });

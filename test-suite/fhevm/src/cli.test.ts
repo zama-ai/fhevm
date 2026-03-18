@@ -26,6 +26,7 @@ import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
 import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, resolveWorkflowCompatEnv, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
+import { expandBuildOverrides } from "./options";
 import { applyInstanceAdjustments } from "./render-compose";
 import { CommandRunner } from "./services/CommandRunner";
 import { MinioError } from "./errors";
@@ -132,6 +133,11 @@ describe("resolveTarget", () => {
 });
 
 describe("runtime invariants", () => {
+  test("expandBuildOverrides leaves coprocessor to scenarios when a scenario file is present", () => {
+    expect(expandBuildOverrides().some((item) => item.group === "coprocessor")).toBe(true);
+    expect(expandBuildOverrides("./scenarios/two-of-two.yaml").some((item) => item.group === "coprocessor")).toBe(false);
+  });
+
   test("resolvedComposeEnv preserves version keys", () => {
     const env = resolvedComposeEnv({
       versions: {
@@ -1214,6 +1220,14 @@ describe("CLI argument validation", () => {
       );
     } finally { restore(); }
     expect(logs.some((l) => l.includes("--scenario cannot be combined with --override coprocessor"))).toBe(true);
+  });
+
+  test("rejects --build with --override", async () => {
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(["bun", "src/cli.ts", "up", "--build", "--override", "gateway-contracts"], noopLayer);
+    } finally { restore(); }
+    expect(logs.some((l) => l.includes("--build cannot be combined with --override"))).toBe(true);
   });
 
   test("rejects --target sha without --sha", async () => {

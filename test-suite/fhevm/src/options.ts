@@ -20,6 +20,10 @@ import { resolveServiceOverrides } from "./layout";
 const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({
   group,
 }));
+const BUILD_OVERRIDES: LocalOverride[] = ALL_OVERRIDES.filter(({ group }) => group !== "coprocessor");
+
+export const expandBuildOverrides = (scenarioPath?: string) =>
+  scenarioPath ? BUILD_OVERRIDES : ALL_OVERRIDES;
 
 export const parseLocalOverride = (value: string): LocalOverride[] => {
   if (value === "all") {
@@ -82,7 +86,7 @@ export const shaOption = Options.text("sha").pipe(
 );
 
 export const overrideOption = Options.text("override").pipe(
-  Options.withDescription("Build selected workspace groups locally. Repeatable; supports all, <group>, or group:service."),
+  Options.withDescription("Build selected workspace groups locally. Repeatable; supports <group> or group:service."),
   Options.repeated,
   Options.optional,
   Options.map((value) => Option.getOrElse(value, () => [])),
@@ -123,6 +127,12 @@ export const resetOption = Options.boolean("reset").pipe(
 
 export const allowSchemaMismatchOption = Options.boolean("allow-schema-mismatch").pipe(
   Options.withDescription("Bypass schema-coupled local override safety checks."),
+  Options.optional,
+  Options.map((value) => Option.getOrElse(value, () => false)),
+);
+
+export const buildOption = Options.boolean("build").pipe(
+  Options.withDescription("Build every workspace-owned group locally. On scenario runs, coprocessor remains scenario-driven."),
   Options.optional,
   Options.map((value) => Option.getOrElse(value, () => false)),
 );
