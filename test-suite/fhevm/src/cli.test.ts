@@ -23,7 +23,7 @@ import {
 import { STEP_NAMES } from "./types";
 import { main } from "./cli";
 import { probeBootstrap, resolveUpgradePlan } from "./pipeline";
-import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
+import { COMPAT_MATRIX, compatPolicyForState, requiresMultichainAclAddress, resolveWorkflowCompatEnv, validateBundleCompatibility } from "./compat";
 import { predictedCrsId, predictedKeyId } from "./utils";
 import { applyVersionEnvOverrides, resolveTarget } from "./resolve";
 import { applyInstanceAdjustments } from "./render-compose";
@@ -1571,5 +1571,58 @@ describe("COMPAT_MATRIX", () => {
     expect(output.externalDefaults.RELAYER_VERSION).toBe("sha-29b0750");
     expect(output.externalDefaults.RELAYER_MIGRATE_VERSION).toBe("sha-29b0750");
     expect(output.anchors.SIMPLE_ACL_MIN_SHA).toBe("803f1048727eabf6d8b3df618203e3c7dda77890");
+  });
+});
+
+describe("resolveWorkflowCompatEnv", () => {
+  test("promotes the stack to modern when any selected ref crosses the cutover", async () => {
+    const resolved = await Effect.runPromise(
+      resolveWorkflowCompatEnv({
+        versions: ["v0.11.0", "sha-29b0750"],
+        forceModernRelayer: false,
+        isModernRef: (ref) => Effect.succeed(ref === "sha-29b0750"),
+      }),
+    );
+    expect(resolved).toEqual({
+      STACK_ERA: "modern",
+      RELAYER_VERSION: "sha-29b0750",
+      RELAYER_MIGRATE_VERSION: "sha-29b0750",
+    });
+  });
+
+  test("preserves explicit relayer pins while still backfilling migrate when needed", async () => {
+    const resolved = await Effect.runPromise(
+      resolveWorkflowCompatEnv({
+        versions: [],
+        forceModernRelayer: true,
+        relayerVersion: "sha-29b0750",
+        isModernRef: () => Effect.succeed(false),
+      }),
+    );
+    expect(resolved).toEqual({
+      STACK_ERA: "modern",
+      RELAYER_MIGRATE_VERSION: "sha-29b0750",
+    });
+  });
+});
+
+describe("compat-resolve-env command", () => {
+  test("emits workflow env assignments from git ancestry", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "compat-resolve-env", "803f104", "v0.11.0"],
+        depsToLayer({
+          runner: fakeRunner({
+            "git rev-parse -q --verify 803f104^{commit}": "",
+            [`git merge-base --is-ancestor ${COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA} 803f104`]: "",
+            "git rev-parse -q --verify v0.11.0^{commit}": { stdout: "", stderr: "", code: 1 },
+          }),
+        }),
+      );
+    } finally {
+      restore();
+    }
+    expect(logs).toContain("STACK_ERA=modern\nRELAYER_VERSION=sha-29b0750\nRELAYER_MIGRATE_VERSION=sha-29b0750");
   });
 });

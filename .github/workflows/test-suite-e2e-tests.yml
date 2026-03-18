@@ -269,7 +269,12 @@ jobs:
               esac
             done
           fi
-          FORCE_MODERN_RELAYER=$workspace_all bash ./scripts/resolve-workflow-compat-env.sh \
+          compat_args=()
+          if [ "$workspace_all" = "true" ]; then
+            compat_args+=(--force-modern-relayer)
+          fi
+          ./fhevm-cli compat-resolve-env \
+            "${compat_args[@]}" \
             "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
             "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
             "${COPROCESSOR_GW_LISTENER_VERSION:-}" \

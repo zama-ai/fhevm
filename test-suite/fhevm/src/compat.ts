@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { RuntimePlan } from "./runtime-plan";
 import type { State } from "./types";
 import { effectiveOverrides } from "./scenario";
@@ -17,6 +18,11 @@ export type CompatPolicy = {
   coprocessorDisableHealthcheck: Partial<Record<CompatService, true>>;
   connectorEnv: Record<string, string>;
 };
+
+export type WorkflowCompatEnv = Partial<Record<
+  "STACK_ERA" | "RELAYER_VERSION" | "RELAYER_MIGRATE_VERSION",
+  string
+>>;
 
 /**
  * Single source of truth for all version compatibility knowledge.
@@ -243,3 +249,45 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   }
   return policy;
 };
+
+export const resolveWorkflowCompatEnv = (params: {
+  versions: string[];
+  forceModernRelayer: boolean;
+  stackEra?: string;
+  relayerVersion?: string;
+  relayerMigrateVersion?: string;
+  isModernRef: (ref: string) => Effect.Effect<boolean, unknown>;
+}) =>
+  Effect.gen(function* () {
+    let stackEra = params.stackEra;
+    if (params.forceModernRelayer) {
+      stackEra = "modern";
+    }
+    if (!stackEra) {
+      for (const version of params.versions) {
+        if (version && (yield* params.isModernRef(version))) {
+          stackEra = "modern";
+          break;
+        }
+      }
+    }
+    const resolved: WorkflowCompatEnv = {};
+    if (stackEra) {
+      resolved.STACK_ERA = stackEra;
+    }
+    if (stackEra === "modern" && !params.relayerVersion) {
+      resolved.RELAYER_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_VERSION;
+    }
+    if (stackEra === "modern" && !params.relayerMigrateVersion) {
+      resolved.RELAYER_MIGRATE_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_MIGRATE_VERSION;
+    }
+    const effectiveRelayerVersion = params.relayerVersion ?? resolved.RELAYER_VERSION;
+    if (
+      effectiveRelayerVersion === COMPAT_MATRIX.externalDefaults.RELAYER_VERSION &&
+      !params.relayerMigrateVersion &&
+      !resolved.RELAYER_MIGRATE_VERSION
+    ) {
+      resolved.RELAYER_MIGRATE_VERSION = COMPAT_MATRIX.externalDefaults.RELAYER_MIGRATE_VERSION;
+    }
+    return resolved;
+  });

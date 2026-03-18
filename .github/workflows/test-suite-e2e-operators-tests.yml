@@ -159,7 +159,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          bash ./scripts/resolve-workflow-compat-env.sh \
+          ./fhevm-cli compat-resolve-env \
             "${COPROCESSOR_DB_MIGRATION_VERSION:-}" \
             "${COPROCESSOR_HOST_LISTENER_VERSION:-}" \
             "${COPROCESSOR_GW_LISTENER_VERSION:-}" \

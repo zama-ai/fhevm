@@ -22,6 +22,7 @@ import { testCommand } from "./commands/test.cmd";
 import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
 import { compatDefaultsCommand } from "./commands/compat-defaults.cmd";
+import { compatResolveEnvCommand } from "./commands/compat-resolve-env.cmd";
 
 // Re-export parse helpers for backward compatibility
 export {
@@ -46,6 +47,7 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     pauseCommand,
     unpauseCommand,
     compatDefaultsCommand,
+    compatResolveEnvCommand,
   ]),
 );
 
