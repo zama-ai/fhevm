@@ -37,8 +37,7 @@ type WorkflowNeeds = Partial<
 >;
 
 export const workflowE2eInputs = (options: {
-  previousCommit: string;
-  newCommit: string;
+  commit: string;
   needsFile: string;
 }) =>
   Effect.gen(function* () {
@@ -51,21 +50,32 @@ export const workflowE2eInputs = (options: {
         }),
     });
 
+    const failures: string[] = [];
     const output: Record<string, string> = {};
     for (const [job, mapping] of Object.entries(WORKFLOW_BUILD_OUTPUTS)) {
       const needsEntry = needs[job as keyof typeof WORKFLOW_BUILD_OUTPUTS];
       for (const [buildResultKey, outputKey] of Object.entries(mapping)) {
-        const selectedCommit =
-          needsEntry?.outputs?.[buildResultKey] === "success"
-            ? options.newCommit
-            : options.previousCommit;
-        const result = yield* runner.run(
-          ["git", "rev-parse", "--short=7", selectedCommit],
-          { allowFailure: true },
-        );
-        output[outputKey] =
-          result.code === 0 ? result.stdout.trim() : selectedCommit.slice(0, 7);
+        if (needsEntry?.outputs?.[buildResultKey] !== "success") {
+          failures.push(`${job}.${buildResultKey}`);
+          continue;
+        }
+        output[outputKey] = "";
       }
+    }
+    if (failures.length) {
+      return yield* Effect.fail(
+        new PreflightError({
+          message: `Merge-queue image selection requires successful repo-owned builds; missing: ${failures.join(", ")}`,
+        }),
+      );
+    }
+    const result = yield* runner.run(
+      ["git", "rev-parse", "--short=7", options.commit],
+      { allowFailure: true },
+    );
+    const tag = result.code === 0 ? result.stdout.trim() : options.commit.slice(0, 7);
+    for (const key of Object.keys(output)) {
+      output[key] = tag;
     }
 
     console.log(JSON.stringify(output, null, 2));

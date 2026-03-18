@@ -140,13 +140,13 @@ After resolving a target bundle, the CLI applies **environment variable override
 This is how CI works. The merge queue workflow:
 
 1. Builds Docker images tagged with the PR's HEAD SHA (e.g., `abc1234`)
-2. Chooses repo-owned image refs from the PR SHA or the base SHA, depending on which build jobs succeeded
+2. Verifies every required repo-owned image build succeeded for the merge candidate
 3. Sets env vars like `COPROCESSOR_HOST_LISTENER_VERSION=abc1234`
 4. Resolves the final `up` argv through `./fhevm-cli workflow-up-args`
 5. Runs `./fhevm-cli up ...` with the resolved args
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
-SHA-tagged env vars for every component that was built from the PR.
+merge-candidate SHA-tagged env vars for every repo-owned component.
 For non-workspace companions, `latest-main` uses the maintained compat defaults from `COMPAT_MATRIX.externalDefaults`.
 
 Supported override keys (any subset):
