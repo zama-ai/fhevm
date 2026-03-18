@@ -15,6 +15,7 @@ import {
   TEST_GREP,
   composePath,
   envPath,
+  hostAddressesPath,
   gatewayAddressesSolidityPath,
   relayerConfigPath,
   resolveServiceOverrides,
@@ -93,6 +94,11 @@ const readyDiscovery = () => ({
     minioInternal: "http://minio:9000",
     minioExternal: "http://minio:9000",
   },
+});
+
+const gatewayOnlyDiscovery = () => ({
+  ...readyDiscovery(),
+  host: {},
 });
 
 describe("resolveTarget", () => {
@@ -1114,6 +1120,34 @@ describe("runtime invariants", () => {
       await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
       expect(await maybeRead(composePath("coprocessor"))).toContain("services:");
       expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+      expect(await maybeRead(STATE_FILE)).toBeUndefined();
+    } finally {
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await fs.mkdir(STATE_DIR, { recursive: true });
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+  });
+
+  test("down restores placeholder host addresses and test-suite env from partial discovery", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify(
+        stubState({
+          discovery: gatewayOnlyDiscovery(),
+          completedSteps: ["preflight", "resolve", "generate", "base", "kms-signer", "gateway-deploy"],
+        }),
+      ),
+    );
+    try {
+      await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
+      expect(await maybeRead(hostAddressesPath)).toBeDefined();
+      expect(await maybeRead(envPath("test-suite"))).toContain("RELAYER_URL=");
       expect(await maybeRead(STATE_FILE)).toBeUndefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });

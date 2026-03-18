@@ -141,30 +141,28 @@ export class EnvWriter extends Context.Tag("EnvWriter")<
                   await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"),
                 ),
               );
-              if (state.discovery) {
-                await writeWritableFile(
-                  gatewayAddressesPath,
-                  renderGatewayAddressesEnv(state),
-                );
-                await writeWritableFile(
-                  gatewayAddressesSolidityPath,
-                  renderGatewayAddressesSolidity(state),
-                );
-                await writeWritableFile(
-                  paymentBridgingAddressesSolidityPath,
-                  renderPaymentBridgingAddressesSolidity(
-                    rendered.componentEnvs["gateway-sc"],
-                  ),
-                );
-                await writeWritableFile(
-                  hostAddressesPath,
-                  renderHostAddressesEnv(state),
-                );
-                await writeWritableFile(
-                  hostAddressesSolidityPath,
-                  renderHostAddressesSolidity(state),
-                );
-              }
+              await writeWritableFile(
+                gatewayAddressesPath,
+                renderGatewayAddressesEnv(state),
+              );
+              await writeWritableFile(
+                gatewayAddressesSolidityPath,
+                renderGatewayAddressesSolidity(state),
+              );
+              await writeWritableFile(
+                paymentBridgingAddressesSolidityPath,
+                renderPaymentBridgingAddressesSolidity(
+                  rendered.componentEnvs["gateway-sc"],
+                ),
+              );
+              await writeWritableFile(
+                hostAddressesPath,
+                renderHostAddressesEnv(state),
+              );
+              await writeWritableFile(
+                hostAddressesSolidityPath,
+                renderHostAddressesSolidity(state),
+              );
             });
           }),
 
