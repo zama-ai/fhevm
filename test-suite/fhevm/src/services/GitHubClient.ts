@@ -9,13 +9,13 @@ const GH_OWNER = "zama-ai";
 const explainGitHubCliError = (message: string): string => {
   const lower = message.toLowerCase();
   if (lower.includes("enoent") || lower.includes("not found")) {
-    return "GitHub CLI `gh` is required. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use --lock-file.";
+    return "GitHub CLI `gh` is required. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
   }
   if (lower.includes("401") || lower.includes("authentication")) {
-    return "GitHub API not authenticated. Run `gh auth login`, export GH_TOKEN, or use --lock-file.";
+    return "GitHub API not authenticated. Run `gh auth login`, export GH_TOKEN, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
   }
   if (lower.includes("rate limit") || lower.includes("429")) {
-    return "GitHub API rate limit hit. Retry with authenticated GH_TOKEN or use --lock-file.";
+    return "GitHub API rate limit hit. Retry with authenticated GH_TOKEN or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
   }
   return message;
 };

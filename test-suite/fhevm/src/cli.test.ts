@@ -875,6 +875,22 @@ describe("runtime invariants", () => {
     expect(await maybeRead(STATE_FILE)).toBe(before);
   });
 
+  test("up --dry-run can use latest-supported without GitHub resolution", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    const runner = fakeRunner({
+      "which bun": "",
+      "which docker": "",
+      "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Ports}}": "",
+      ...portCheckResponses,
+    });
+    await main(
+      ["bun", "src/cli.ts", "up", "--target", "latest-supported", "--dry-run"],
+      depsToLayer({ runner }),
+    );
+    expect(await maybeRead(STATE_FILE)).toBe(before);
+  });
+
   test("resume from relayer restores generated runtime artifacts from state", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);

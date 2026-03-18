@@ -119,6 +119,10 @@ const startStep = (
   return remaining ?? STEP_NAMES[STEP_NAMES.length - 1];
 };
 
+const targetNeedsGitHub = (
+  options: Pick<UpOptions, "target" | "lockFile">,
+) => !options.lockFile && options.target !== "latest-supported";
+
 // ---------------------------------------------------------------------------
 // bootstrapState — resolve bundle + create initial state
 // ---------------------------------------------------------------------------
@@ -139,7 +143,7 @@ const bootstrapState = (options: UpOptions) =>
     const state: State = {
       target: options.target,
       lockPath: resolved.lockPath,
-      requiresGitHub: !options.lockFile,
+      requiresGitHub: targetNeedsGitHub(options),
       versions: resolved.bundle,
       overrides: options.overrides,
       scenario,
@@ -177,7 +181,7 @@ export const up = (options: UpOptions) =>
       state = yield* bootstrapState(options);
     }
     if (options.resume) {
-      state.requiresGitHub ??= true;
+      state.requiresGitHub ??= state.target !== "latest-supported";
       state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
       yield* ensureRuntimeArtifacts(state, "resume");
@@ -240,7 +244,7 @@ export const upDryRun = (
           }),
         );
       }
-      state.requiresGitHub ??= true;
+      state.requiresGitHub ??= state.target !== "latest-supported";
       state.scenarioSourcePath ??= state.scenario?.sourcePath;
       yield* ensureResumeOptions(state, options);
       yield* preflight(state, false, state.requiresGitHub);
@@ -270,7 +274,7 @@ export const upDryRun = (
       {
         target: state.target,
         lockPath: "",
-        requiresGitHub: !options.lockFile,
+        requiresGitHub: targetNeedsGitHub(options),
         versions: state.versions,
         overrides: state.overrides,
         scenario: state.scenario,
@@ -279,7 +283,7 @@ export const upDryRun = (
         updatedAt: new Date().toISOString(),
       },
       true,
-      !options.lockFile,
+      targetNeedsGitHub(options),
     );
     yield* printBundle(state.versions, { detailed: true });
     yield* printPlan(state, options.fromStep);
