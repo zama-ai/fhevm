@@ -175,7 +175,7 @@ This is how CI works. The merge queue workflow:
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
 For non-workspace companions, `latest-main` uses the maintained compat defaults from `COMPAT_MATRIX.externalDefaults`.
-Manual `workflow_dispatch` defaults `build=true`; reusable `workflow_call` keeps `build=false` unless the caller opts in.
+The reusable workflow defaults `build=true`; orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
 
 Supported override keys (any subset):
 

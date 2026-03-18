@@ -155,6 +155,7 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     with:
+      build: false
       coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
       coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
       coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}

@@ -74,7 +74,7 @@ on:
     inputs:
       build:
         description: "Build repo-owned images from the checked out branch on the runner"
-        default: false
+        default: true
         type: boolean
       coprocessor-db-migration-version:
         description: "Coprocessor DB Migration Image Version"
