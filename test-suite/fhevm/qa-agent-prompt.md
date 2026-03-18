@@ -94,7 +94,7 @@ Phase 1b: validation guards and edge failures
 14. EXPECT_FAIL: `./fhevm-cli up --target sha --sha 803f104 --lock-file foo.json --dry-run`
     Expected substring: `--sha cannot be used with --lock-file`
 15. EXPECT_FAIL: `./fhevm-cli doctor`
-    Expected substring: `doctor` and `removed`
+    Expected substring: `Invalid subcommand`
 16. EXPECT_FAIL: `./fhevm-cli whatever`
     Expected substring: `Invalid subcommand`
 17. EXPECT_FAIL: `./fhevm-cli pause`
