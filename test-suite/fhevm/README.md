@@ -88,7 +88,7 @@ There are four kinds of inputs/runtime artifacts:
 - tracked config:
   - relayer template input: `templates/config/relayer.yaml`
   - static mounted config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
-- tracked scenario inputs: `scenarios/*.yaml`
+- checked-in scenario inputs under `scenarios/` (currently `two-of-two.yaml`)
 
 Generated runtime artifacts always live under `.fhevm/`:
 

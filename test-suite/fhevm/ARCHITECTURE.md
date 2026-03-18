@@ -87,7 +87,7 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
   - env templates: `templates/env/.env.*`
   - relayer template config: `templates/config/relayer.yaml`
   - static config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
-  - scenario inputs: `scenarios/*.yaml`
+  - checked-in scenario inputs under `scenarios/`
 - `src/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
 - `src/render-env.ts`, `src/render-config.ts`, and `src/render-compose.ts` are the only rendering layers.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
