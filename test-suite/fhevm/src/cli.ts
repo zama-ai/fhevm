@@ -1,4 +1,4 @@
-import { defineCommand, runCommand } from "citty";
+import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
 import { listScenarios, logs, pause, showResumeHint, status, unpause, up, upDryRun, clean, down, upgrade } from "./stack";
@@ -8,6 +8,7 @@ import { OVERRIDE_GROUPS, STEP_NAMES, TARGETS, type LocalOverride, type Override
 
 const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
 const BUILD_OVERRIDES: LocalOverride[] = ALL_OVERRIDES.filter(({ group }) => group !== "coprocessor");
+const HELP_FLAGS = new Set(["--help", "-h"]);
 
 const expandBuildOverrides = (scenarioPath?: string) => (scenarioPath ? BUILD_OVERRIDES : ALL_OVERRIDES);
 
@@ -112,7 +113,7 @@ const root = defineCommand({
   },
   subCommands: {
     up: defineCommand({
-      meta: { description: "Boot the fhevm stack from a target, lock file, or persisted state." },
+      meta: { name: "up", description: "Boot the fhevm stack from a target, lock file, or persisted state." },
       args: {
         target: { type: "string", description: "Bundle source to boot." },
         sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
@@ -137,7 +138,7 @@ const root = defineCommand({
       },
     }),
     deploy: defineCommand({
-      meta: { description: "Alias of `up` kept for deployment-oriented workflows." },
+      meta: { name: "deploy", description: "Alias of `up` kept for deployment-oriented workflows." },
       args: {
         target: { type: "string" },
         sha: { type: "string" },
@@ -162,13 +163,13 @@ const root = defineCommand({
       },
     }),
     down: defineCommand({
-      meta: { description: "Stop all stack containers in reverse order." },
+      meta: { name: "down", description: "Stop all stack containers in reverse order." },
       async run() {
         await down();
       },
     }),
     clean: defineCommand({
-      meta: { description: "Stop containers, optionally remove CLI-owned images, and delete .fhevm." },
+      meta: { name: "clean", description: "Stop containers, optionally remove CLI-owned images, and delete .fhevm." },
       args: {
         images: { type: "boolean", description: "Also remove locally built images." },
       },
@@ -177,15 +178,15 @@ const root = defineCommand({
       },
     }),
     status: defineCommand({
-      meta: { description: "Print persisted state and running containers." },
+      meta: { name: "status", description: "Print persisted state and running containers." },
       async run() {
         await status();
       },
     }),
     logs: defineCommand({
-      meta: { description: "Follow container logs for a specified or first container." },
+      meta: { name: "logs", description: "Follow container logs for a specified or first container." },
       args: {
-        service: { type: "positional", description: "Container alias or service name to target." },
+        service: { type: "positional", description: "Container alias or service name to target.", required: false },
         noFollow: { type: "boolean", description: "Print recent logs and exit instead of following." },
       },
       async run({ args }) {
@@ -193,7 +194,7 @@ const root = defineCommand({
       },
     }),
     upgrade: defineCommand({
-      meta: { description: "Rebuild and restart an active local runtime override group." },
+      meta: { name: "upgrade", description: "Rebuild and restart an active local runtime override group." },
       args: {
         group: { type: "positional", description: "Local override group to rebuild in-place." },
       },
@@ -202,9 +203,9 @@ const root = defineCommand({
       },
     }),
     test: defineCommand({
-      meta: { description: "Run e2e tests inside the fhevm test-suite container." },
+      meta: { name: "test", description: "Run e2e tests inside the fhevm test-suite container." },
       args: {
-        testName: { type: "positional", description: "Named test profile to run." },
+        testName: { type: "positional", description: "Named test profile to run.", required: false },
         grep: { type: "string", description: "Custom grep pattern passed through to the e2e runner." },
         network: { type: "string", description: "Hardhat network passed to the test suite.", default: "staging" },
         verbose: { type: "boolean", description: "Enable verbose output from the test command." },
@@ -220,7 +221,7 @@ const root = defineCommand({
       },
     }),
     pause: defineCommand({
-      meta: { description: "Pause host or gateway contracts." },
+      meta: { name: "pause", description: "Pause host or gateway contracts." },
       args: {
         scope: { type: "positional", description: "Pause target: host or gateway." },
       },
@@ -229,7 +230,7 @@ const root = defineCommand({
       },
     }),
     unpause: defineCommand({
-      meta: { description: "Unpause host or gateway contracts." },
+      meta: { name: "unpause", description: "Unpause host or gateway contracts." },
       args: {
         scope: { type: "positional", description: "Pause target: host or gateway." },
       },
@@ -238,10 +239,10 @@ const root = defineCommand({
       },
     }),
     scenario: defineCommand({
-      meta: { description: "Scenario utilities." },
+      meta: { name: "scenario", description: "Scenario utilities." },
       subCommands: {
         list: defineCommand({
-          meta: { description: "List bundled scenario presets." },
+          meta: { name: "list", description: "List bundled scenario presets." },
           async run() {
             await listScenarios();
           },
@@ -251,13 +252,37 @@ const root = defineCommand({
   },
 });
 
+const firstNonFlagIndex = (rawArgs: string[]) => rawArgs.findIndex((arg) => !arg.startsWith("-"));
+
+const resolveUsageTarget = async (
+  cmd: any,
+  rawArgs: string[],
+  parent?: any,
+): Promise<[any, any?]> => {
+  const subCommands = typeof cmd.subCommands === "function" ? await cmd.subCommands() : cmd.subCommands;
+  if (!subCommands || !Object.keys(subCommands).length) {
+    return [cmd, parent];
+  }
+  const index = firstNonFlagIndex(rawArgs);
+  if (index < 0) {
+    return [cmd, parent];
+  }
+  const subCommand = subCommands[rawArgs[index] as keyof typeof subCommands];
+  if (!subCommand) {
+    return [cmd, parent];
+  }
+  return resolveUsageTarget(subCommand, rawArgs.slice(index + 1), cmd);
+};
+
 export const main = async (argv = process.argv) => {
+  const rawArgs = argv.slice(2);
+  if (rawArgs.length === 0 || rawArgs.some((arg) => HELP_FLAGS.has(arg))) {
+    const [cmd, parent] = await resolveUsageTarget(root, rawArgs);
+    console.log(`${await renderUsage(cmd, parent)}\n`);
+    return;
+  }
   try {
-    const rawArgs = argv.slice(2);
-    await runCommand(root, {
-      rawArgs,
-      showUsage: rawArgs.length === 0 || rawArgs.includes("--help") || rawArgs.includes("-h"),
-    });
+    await runCommand(root, { rawArgs });
   } catch (error) {
     const message = formatCliError(error);
     if (message) {
