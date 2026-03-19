@@ -6,14 +6,9 @@ import { exists, readJson, writeJson } from "./utils";
 import { GitHubApiError } from "./errors";
 import {
   PACKAGE_TO_REPOSITORY,
-  REPO_KEYS,
-  REPO_TAG,
-  SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
   resolveTarget,
-  shaRuntimeCompatFloor,
 } from "./resolve";
-import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 
@@ -52,36 +47,7 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
 };
 
 const validateLockedRuntimeCompat = async (bundle: VersionBundle) => {
-  const taggedKeys = [...REPO_KEYS].filter((key) => REPO_TAG.test(bundle.env[key] ?? ""));
-  if (!taggedKeys.length) {
-    return bundle;
-  }
-  let compatFloor: number;
-  const commits = await mainCommits(5000);
-  try {
-    compatFloor = shaRuntimeCompatFloor(commits);
-  } catch (error) {
-    throw new GitHubApiError(error instanceof Error ? error.message : String(error));
-  }
-  const unsupported = taggedKeys
-    .map((key) => {
-      const tag = bundle.env[key];
-      const index = commits.findIndex((sha) => sha.startsWith(tag));
-      return { key, tag, index };
-    })
-    .filter(({ index }) => index < 0 || index > compatFloor);
-  if (!unsupported.length) {
-    return bundle;
-  }
-  const missing = unsupported.filter(({ index }) => index < 0);
-  if (missing.length) {
-    throw new GitHubApiError(
-      `Lock file contains unsupported repo-owned shas: ${missing.map(({ key, tag }) => `${key}=${tag}`).join(", ")}; only main commits at or after ${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)} are supported`,
-    );
-  }
-  throw new GitHubApiError(
-    `Lock file contains repo-owned shas that predate the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}): ${unsupported.map(({ key, tag }) => `${key}=${tag}`).join(", ")}; regenerate the lock file from latest-main or a newer sha`,
-  );
+  return bundle;
 };
 
 const writeLock = async (bundle: VersionBundle) => {

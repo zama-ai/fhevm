@@ -7,10 +7,7 @@ import { resolveServiceOverrides } from "./layout";
 import { OVERRIDE_GROUPS, STEP_NAMES, TARGETS, type LocalOverride, type OverrideGroup, type StepName, type VersionTarget } from "./types";
 
 const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
-const BUILD_OVERRIDES: LocalOverride[] = ALL_OVERRIDES.filter(({ group }) => group !== "coprocessor");
 const HELP_FLAGS = new Set(["--help", "-h"]);
-
-const expandBuildOverrides = (scenarioPath?: string) => (scenarioPath ? BUILD_OVERRIDES : ALL_OVERRIDES);
 
 const parseLocalOverride = (value: string): LocalOverride[] => {
   if (value === "all") {
@@ -82,13 +79,14 @@ const parseUpInput = (args: Record<string, unknown>) => {
   if (build && overrideValues.length) {
     throw new PreflightError("--build cannot be combined with --override");
   }
-  const overrides = [
-    ...(build ? expandBuildOverrides(scenarioPath) : []),
-    ...overrideValues.flatMap(parseLocalOverride),
-  ];
-  if (scenarioPath && overrides.some((item) => item.group === "coprocessor")) {
+  const explicitOverrides = overrideValues.flatMap(parseLocalOverride);
+  if (scenarioPath && explicitOverrides.some((item) => item.group === "coprocessor")) {
     throw new PreflightError("--scenario cannot be combined with --override coprocessor");
   }
+  const overrides = [
+    ...(build ? ALL_OVERRIDES : []),
+    ...explicitOverrides,
+  ];
 
   return {
     target: validTarget,

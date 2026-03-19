@@ -134,7 +134,7 @@ Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network t
 ## Pinning an Exact Version Bundle
 
 If you need to run a specific set of versions (e.g., `v0.10.7` across the board), use `--lock-file`
-to skip all target resolution and supply the full bundle yourself:
+to skip all target resolution, avoid GitHub lookups, and supply the full bundle yourself:
 
 ```sh
 ./fhevm-cli up --lock-file ./my-bundle.json
@@ -385,7 +385,7 @@ If a runtime override is already active and you only want to rebuild and restart
 ./fhevm-cli upgrade coprocessor
 ```
 
-`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. For `coprocessor`, it rebuilds only the local coprocessor instances from the active shorthand/scenario state. One-shot DB migration containers are not rerun.
+`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. For `coprocessor`, it rebuilds only the active local coprocessor runtime path from the current shorthand/scenario state. For full schema-coupled group upgrades, the matching DB migration containers are rerun before runtime services restart.
 
 ## Dropped Convenience Commands
 
