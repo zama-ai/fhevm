@@ -368,7 +368,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.1.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.1.1")));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -491,10 +491,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes1 scalarByte = bytes1(0x01);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = bytes32(uint256(2));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheDiv,
@@ -520,10 +519,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes1 scalarByte = bytes1(0x01);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = bytes32(uint256(2));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheRem,
