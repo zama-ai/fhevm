@@ -972,10 +972,16 @@ fi
 # Only starts the two host-listener services with --no-deps (db-migration already done).
 if [[ "$MULTI_CHAIN" == "true" ]] && ! should_skip_step "coprocessor"; then
     # Register Chain B in the coprocessor database so workers (zkproof, etc.) can resolve its ACL address.
+    # This must happen before any Chain B traffic arrives, and the zkproof-worker must be restarted
+    # because HostChainsCache is loaded once at startup.
     log_info "Registering Chain B (67890) in coprocessor host_chains table..."
     chain_b_acl=$(get_env_value "$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local" "ACL_CONTRACT_ADDRESS")
     docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c \
         "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (67890, 'test chain b', '${chain_b_acl}') ON CONFLICT (chain_id) DO NOTHING;"
+
+    log_info "Restarting zkproof-worker to pick up Chain B host_chains entry..."
+    docker restart coprocessor-zkproof-worker
+    wait_for_service "$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml" "coprocessor-zkproof-worker" "true"
 
     log_info "Starting coprocessor listeners for Chain B..."
     temp_coproc_b=$(mktemp "$SCRIPT_DIR/../docker-compose/coprocessor-host-b.XXXXXX")
