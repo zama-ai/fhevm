@@ -1,0 +1,47 @@
+# CI & config files
+ci/
+.github/
+
+# Node.js
+node_modules/
+package.json
+package-lock.json
+
+# Config & tooling
+.env*
+.eslintignore
+.eslintrc.yml
+.gitpod.yml
+.lintstagedrc.json
+.npmignore
+.prettierignore
+.prettierrc.json
+.solcover.js
+.solhintignore
+hardhat.config.ts
+tsconfig.json
+commitlint.config.ts
+codegen.config.json
+mlc_config.json
+foundry.toml
+remappings.txt
+soldeer.lock
+CustomProvider.ts
+
+# Source directories not needed by consumers
+codegen/
+test/
+tasks/
+examples/
+lib-js/
+dependencies/
+
+# Build artifacts
+artifacts/
+cache/
+cache_forge/
+out/
+types/
+typechain/
+typechain-types/
+coverage/
