@@ -3,7 +3,7 @@ services:
     container_name: host-node
     image: ghcr.io/foundry-rs/foundry:v1.3.5
     env_file:
-      - ../env/staging/.env.host-node.local
+      - ../../../.fhevm/runtime/env/host-node.env
     entrypoint:
       - anvil
       - --block-time
