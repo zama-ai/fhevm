@@ -46,6 +46,73 @@ describe('Multi-Chain State Isolation', function () {
     }
   });
 
+  describe('User Input Across Chains', function () {
+    it('encrypted input and FHE computation work independently on both chains', async function () {
+      const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
+      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
+
+      // Chain A: encrypted transfer to carol (unused by other tests)
+      const instanceA = await createInstance(CHAIN_A);
+      const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      inputA.add64(200);
+      const encryptedA = await inputA.encrypt();
+
+      const txA = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
+        this.signersA.carol.address,
+        encryptedA.handles[0],
+        encryptedA.inputProof,
+        { gasLimit: 10_000_000 },
+      );
+      const receiptA = await txA.wait();
+      expect(receiptA?.status).to.eq(1);
+
+      const balanceHandleCarolA = await erc20A.balanceOf(this.signersA.carol.address);
+      expect(balanceHandleCarolA).to.not.eq(ethers.ZeroHash);
+      expect(balanceHandleCarolA.slice(46, 62)).to.eq(CHAIN_A.chainId.toString(16).padStart(16, '0'));
+
+      const { publicKey: pubKeyA, privateKey: privKeyA } = instanceA.generateKeypair();
+      const decryptedA = await userDecryptSingleHandle(
+        balanceHandleCarolA,
+        this.chainA.erc20Address,
+        instanceA,
+        this.signersA.carol,
+        privKeyA,
+        pubKeyA,
+      );
+      expect(decryptedA).to.equal(200n);
+
+      // Chain B: encrypted transfer to carol
+      const instanceB = await createInstance(CHAIN_B);
+      const inputB = instanceB.createEncryptedInput(this.chainB.erc20Address, this.deployerB.address);
+      inputB.add64(300);
+      const encryptedB = await inputB.encrypt();
+
+      const txB = await (erc20B.connect(this.deployerB) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
+        this.signersB.carol.address,
+        encryptedB.handles[0],
+        encryptedB.inputProof,
+        { gasLimit: 10_000_000 },
+      );
+      const receiptB = await txB.wait();
+      expect(receiptB?.status).to.eq(1);
+
+      const balanceHandleCarolB = await erc20B.balanceOf(this.signersB.carol.address);
+      expect(balanceHandleCarolB).to.not.eq(ethers.ZeroHash);
+      expect(balanceHandleCarolB.slice(46, 62)).to.eq(CHAIN_B.chainId.toString(16).padStart(16, '0'));
+
+      const { publicKey: pubKeyB, privateKey: privKeyB } = instanceB.generateKeypair();
+      const decryptedB = await userDecryptSingleHandle(
+        balanceHandleCarolB,
+        this.chainB.erc20Address,
+        instanceB,
+        this.signersB.carol,
+        privKeyB,
+        pubKeyB,
+      );
+      expect(decryptedB).to.equal(300n);
+    });
+  });
+
   describe('Ciphertext Handle Isolation', function () {
     it('ciphertext handle from Chain A cannot be used on Chain B', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
