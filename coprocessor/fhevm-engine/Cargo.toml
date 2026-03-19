@@ -56,7 +56,9 @@ prometheus = "0.14.0"
 prost = "0.13.5"
 rand = "0.9.1"
 rayon = "1.11.0"
-reqwest = { version = "0.12.20", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12.20", default-features = false, features = [
+    "rustls-tls",
+] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 semver = "1.0.26"
 serde = "1.0.225"
@@ -71,11 +73,11 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "time",
     "postgres",
     "uuid",
-    "chrono"
+    "chrono",
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.5.1", features = [
+tfhe = { version = "=1.5.4", features = [
     "boolean",
     "shortint",
     "integer",
@@ -110,4 +112,11 @@ lto = "fat"
 inherits = "release"
 opt-level = 1
 lto = false
+codegen-units = 16
+
+[profile.coverage]
+inherits = "release"
+opt-level = 1
+lto = false
+debug = 1
 codegen-units = 16

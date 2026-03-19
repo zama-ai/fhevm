@@ -252,6 +252,18 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         adapter.delegateUserDecryption(contractContext, contractContext, expirationDate);
     }
 
+    function testFuzz_DelegateUserDecryption_RevertsWhenExpiryInThePast(
+        uint256 expirationDate,
+        address delegate,
+        address contractContext
+    ) public {
+        _assumeDelegateAndContext(delegate, contractContext);
+        uint64 boundedExpiry = uint64(bound(expirationDate, 0, block.timestamp));
+
+        vm.expectRevert(ACL.ExpirationDateInThePast.selector);
+        adapter.delegateUserDecryption(delegate, contractContext, boundedExpiry);
+    }
+
     function testFuzz_DelegateUserDecryption_RevertsOnSameBlockReplay(
         uint256 expirationDate,
         address delegate,

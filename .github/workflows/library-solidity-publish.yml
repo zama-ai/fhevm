@@ -63,3 +63,31 @@ jobs:
           package: ./library-solidity/package.json
           provenance: true
           access: public
+
+  publish-soldeer:
+    name: library-solidity-publish/publish-soldeer
+    if: ${{ inputs.release == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./library-solidity
+    permissions:
+      contents: "read"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1
+
+      - name: Read version from package.json
+        id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to Soldeer
+        env:
+          SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings

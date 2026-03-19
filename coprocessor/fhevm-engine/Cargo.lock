@@ -7234,9 +7234,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.5.1"
+version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fea64405f4e7bce2cea50c3638a32086bc0e22e039bb7bc054389e6633754b3"
+checksum = "3c8dd9c738c359a36c23c5816240bdd1ec4d0029030019fbb832c06c5dfd3e2c"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7261,9 +7261,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14e944e0db763d6957e5c2214f06d46da73b8a29b2d1ef087f534f6a3d239777"
+checksum = "c7a55bd4a1063a4792d50028efec52e5002beb142ab69ddcf7828a14af9698e3"
 dependencies = [
  "aes",
  "getrandom 0.2.16",
@@ -7275,9 +7275,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-cuda-backend"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0d3c47abe0f26b7b1d021b15bf0ca5d7a3512dda830cfa2df8eb11ba6128527"
+checksum = "07408b8faff3ca4f9a486aaebd5f4cb5445bb8fc5aaf8e12c4f947b4474a01e3"
 dependencies = [
  "bindgen 0.71.1",
  "cmake",

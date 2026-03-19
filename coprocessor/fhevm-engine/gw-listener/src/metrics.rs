@@ -1,4 +1,4 @@
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use std::sync::LazyLock;
 
 pub(crate) static VERIFY_PROOF_SUCCESS_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -96,3 +96,53 @@ pub(crate) static KEY_DIGEST_MISMATCH_COUNTER: LazyLock<IntCounter> = LazyLock::
     )
     .unwrap()
 });
+
+pub(crate) static DRIFT_DETECTED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_drift_detected_counter",
+        "Number of handles where coprocessor digests diverged; does not discriminate whether divergence comes from the local coprocessor or another coprocessor in the network"
+    )
+    .unwrap()
+});
+
+pub(crate) static CONSENSUS_TIMEOUT_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_consensus_timeout_counter",
+        "Number of handles that timed out without a consensus event"
+    )
+    .unwrap()
+});
+
+pub(crate) static MISSING_SUBMISSION_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_missing_submission_counter",
+        "Number of handles where consensus was reached but some coprocessors never submitted"
+    )
+    .unwrap()
+});
+
+pub(crate) static CONSENSUS_LATENCY_BLOCKS_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    // Diagnostic: block distance between first observed submission and consensus.
+    // Useful for understanding on-chain latency; timeouts are wall-clock based
+    // and configured via --drift-no-consensus-timeout.
+    register_histogram!(
+        "coprocessor_gw_listener_consensus_latency_blocks",
+        "Block distance between first observed submission and consensus",
+        vec![1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0, 144.0]
+    )
+    .unwrap()
+});
+
+pub(crate) static POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM: LazyLock<Histogram> =
+    LazyLock::new(|| {
+        // Diagnostic: block distance between consensus and seeing all expected
+        // submissions. Useful for understanding on-chain completion latency;
+        // the grace window is wall-clock based and configured via
+        // --drift-post-consensus-grace.
+        register_histogram!(
+            "coprocessor_gw_listener_post_consensus_completion_blocks",
+            "Block distance between consensus and seeing all expected submissions",
+            vec![0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0]
+        )
+        .unwrap()
+    });
