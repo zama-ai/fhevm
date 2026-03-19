@@ -35,6 +35,16 @@ export const test = (
   options: TestOptions,
 ) =>
   Effect.gen(function* () {
+    const testContainerArgs = (...tail: string[]) => [
+      "docker",
+      "exec",
+      "-e",
+      "npm_config_update_notifier=false",
+      "-e",
+      "NPM_CONFIG_UPDATE_NOTIFIER=false",
+      TEST_SUITE_CONTAINER,
+      ...tail,
+    ];
     const timedLabel = (label: string, started: number) =>
       `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
     const runLogged = <A, E, R>(
@@ -131,22 +141,15 @@ export const test = (
               (injector) =>
                 Effect.gen(function* () {
                   yield* cmd.runWithHeartbeat(
-                    [
-                      "docker",
-                      "exec",
-                      "-e",
-                      "npm_config_update_notifier=false",
-                      "-e",
-                      "NPM_CONFIG_UPDATE_NOTIFIER=false",
+                    testContainerArgs(
                       "-e",
                       "GATEWAY_RPC_URL=",
-                      process.env.TEST_CONTAINER ?? TEST_SUITE_CONTAINER,
                       "./run-tests.sh",
                       "-n",
                       "staging",
                       "-g",
                       grepPattern,
-                    ],
+                    ),
                     "test ciphertext-drift",
                   );
                   const injectedHandleHex = yield* Fiber.join(injector);
@@ -176,16 +179,14 @@ export const test = (
         yield* Effect.log(`[test] ${name} (${options.network})`);
         const started = Date.now();
         const command = [
-          "cd /app/test-suite/e2e",
-          "&&",
-          "npx hardhat test",
-          "--no-compile",
-          options.verbose ? "--verbose" : "",
+          "./run-tests.sh",
+          options.noRelayer ? "-r" : "",
+          options.verbose ? "-v" : "",
           shouldParallel ? "--parallel" : "",
-          "--grep",
-          shellEscape(filter),
-          "--network",
+          "-n",
           shellEscape(options.network),
+          "-g",
+          shellEscape(filter),
         ]
           .filter(Boolean)
           .join(" ");
@@ -193,18 +194,7 @@ export const test = (
           name,
           started,
           cmd.runWithHeartbeat(
-            [
-              "docker",
-              "exec",
-              "-e",
-              "npm_config_update_notifier=false",
-              "-e",
-              "NPM_CONFIG_UPDATE_NOTIFIER=false",
-              TEST_SUITE_CONTAINER,
-              "sh",
-              "-lc",
-              command,
-            ],
+            testContainerArgs("sh", "-lc", command),
             `test ${name}`,
           ),
         );
@@ -274,16 +264,14 @@ export const test = (
       yield* Effect.log(`[test] custom (${options.network})`);
       const started = Date.now();
       const command = [
-        "cd /app/test-suite/e2e",
-        "&&",
-        "npx hardhat test",
-        "--no-compile",
-        options.verbose ? "--verbose" : "",
+        "./run-tests.sh",
+        options.noRelayer ? "-r" : "",
+        options.verbose ? "-v" : "",
         options.parallel ? "--parallel" : "",
-        "--grep",
-        shellEscape(options.grep),
-        "--network",
+        "-n",
         shellEscape(options.network),
+        "-g",
+        shellEscape(options.grep),
       ]
         .filter(Boolean)
         .join(" ");
@@ -291,18 +279,7 @@ export const test = (
         "custom",
         started,
         cmd.runWithHeartbeat(
-          [
-            "docker",
-            "exec",
-            "-e",
-            "npm_config_update_notifier=false",
-            "-e",
-            "NPM_CONFIG_UPDATE_NOTIFIER=false",
-            TEST_SUITE_CONTAINER,
-            "sh",
-            "-lc",
-            command,
-          ],
+          testContainerArgs("sh", "-lc", command),
           "test custom",
         ),
       );

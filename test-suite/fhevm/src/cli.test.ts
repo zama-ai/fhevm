@@ -1573,6 +1573,41 @@ describe("command error paths", () => {
     expect(logs.some((l) => l.includes("[fail] input-proof"))).toBe(true);
   });
 
+  test("test passes through --no-relayer to the legacy runner", async () => {
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
+    const hadState = await maybeRead(stateFile);
+    const calls: string[] = [];
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      const state = stubState({
+        discovery: {
+          gateway: {}, host: {}, kmsSigner: "", fheKeyId: "", crsKeyId: "",
+          actualFheKeyId: "abc",
+          endpoints: { gatewayHttp: "", gatewayWs: "", hostHttp: "", hostWs: "", minioInternal: "", minioExternal: "" },
+        },
+        completedSteps: ["bootstrap"],
+      });
+      await fs.writeFile(stateFile, JSON.stringify(state));
+      await main(
+        ["bun", "src/cli.ts", "test", "input-proof", "--no-relayer"],
+        depsToLayer({
+          liveRunner: async (argv) => {
+            calls.push(argv.join(" "));
+            return 0;
+          },
+        }),
+      );
+    } finally {
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(calls.some((call) => call.includes("./run-tests.sh -r"))).toBe(true);
+  });
+
   test("test light runs the lightweight suite sequence", async () => {
     const stateDir = path.dirname(STATE_FILE);
     const stateFile = STATE_FILE;
@@ -1900,6 +1935,63 @@ describe("command error paths", () => {
       }
     }
     expect(logs.some((l) => l.includes("persisted state exists but the stack is stopped"))).toBe(true);
+  });
+
+  test("upgrade re-runs schema compatibility checks", async () => {
+    process.chdir(REPO_ROOT);
+    const before = await maybeRead(STATE_FILE);
+    await fs.rm(STATE_DIR, { recursive: true, force: true });
+    await ensureStateFileDir();
+    await fs.writeFile(
+      STATE_FILE,
+      JSON.stringify(
+        {
+          ...stubState({
+            overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener", "coprocessor-host-listener-poller"] }],
+            discovery: readyDiscovery(),
+            completedSteps: ["coprocessor"],
+          }),
+          scenario: {
+            version: 1,
+            kind: "coprocessor-consensus",
+            origin: "override-shorthand",
+            topology: { count: 1, threshold: 1 },
+            instances: [
+              {
+                index: 0,
+                source: { mode: "local" },
+                env: {},
+                args: {},
+                localServices: ["coprocessor-host-listener", "coprocessor-host-listener-poller"],
+              },
+            ],
+          },
+        },
+      ),
+    );
+    const { logs, restore } = captureConsole("error");
+    try {
+      await main(
+        ["bun", "src/cli.ts", "upgrade", "coprocessor"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "coprocessor-host-listener\n",
+            "git rev-parse -q --verify v0.11.0^{commit}": { stdout: "deadbeef\n", stderr: "", code: 0 },
+            "git ls-files --others --exclude-standard -- coprocessor/fhevm-engine/db-migration/migrations": { stdout: "", stderr: "", code: 0 },
+            "git diff --quiet --exit-code v0.11.0 -- coprocessor/fhevm-engine/db-migration/migrations": { stdout: "", stderr: "", code: 1 },
+          }),
+          liveRunner: async () => 0,
+        }),
+      );
+    } finally {
+      restore();
+      await fs.rm(STATE_DIR, { recursive: true, force: true });
+      if (before !== undefined) {
+        await ensureStateFileDir();
+        await fs.writeFile(STATE_FILE, before);
+      }
+    }
+    expect(logs.some((line) => line.includes("local DB migrations diverge"))).toBe(true);
   });
 });
 

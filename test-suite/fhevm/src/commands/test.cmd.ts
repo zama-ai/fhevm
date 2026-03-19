@@ -3,6 +3,7 @@ import { Option } from "effect";
 import {
   grepOption,
   networkOption,
+  noRelayerOption,
   parallelOption,
   testNameArg,
   verboseOption,
@@ -14,14 +15,16 @@ export const testCommand = Command.make(
   {
     grep: grepOption,
     network: networkOption,
+    noRelayer: noRelayerOption,
     verbose: verboseOption,
     parallel: parallelOption,
     testName: testNameArg,
   },
-  ({ grep, network, verbose, parallel, testName }) =>
+  ({ grep, network, noRelayer, verbose, parallel, testName }) =>
     test(Option.getOrUndefined(testName), {
       grep: Option.getOrUndefined(grep),
       network,
+      noRelayer,
       verbose,
       parallel: Option.getOrUndefined(parallel),
     }),

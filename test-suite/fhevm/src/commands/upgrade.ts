@@ -9,6 +9,7 @@ import { regen } from "../codegen";
 import { PreflightError } from "../errors";
 import { TEST_SUITE_CONTAINER } from "../layout";
 import {
+  assertSchemaCompatibility,
   ensureRuntimeArtifacts,
   projectContainers,
   resolveUpgradePlan,
@@ -56,6 +57,12 @@ export const upgrade = (groupValue: string | undefined) =>
         }),
       );
     }
+    yield* assertSchemaCompatibility(
+      state.versions,
+      state.overrides,
+      state.scenario,
+      false,
+    );
     yield* Effect.log(`[upgrade] ${group}`);
     yield* regen(state);
     yield* imageBuilder.maybeBuild(component, state, (s) => stateManager.save(s), { force: true });

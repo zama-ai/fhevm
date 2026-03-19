@@ -400,15 +400,17 @@ export const resolveTarget = (
       { concurrency: 2 },
     );
     let floor: number;
+    let compatFloor: number;
     try {
       floor = simpleAclFloor(commits);
+      compatFloor = shaRuntimeCompatFloor(commits);
     } catch (error) {
       return yield* Effect.fail(
         new GitHubApiError({ message: error instanceof Error ? error.message : String(error) }),
       );
     }
     const short = commits
-      .slice(0, floor + 1)
+      .slice(0, Math.min(floor, compatFloor) + 1)
       .map((sha) => sha.slice(0, 7))
       .find((sha) => Object.values(packageTagsMap).every((set) => set.has(sha) && REPO_TAG.test(sha)));
     if (!short) {

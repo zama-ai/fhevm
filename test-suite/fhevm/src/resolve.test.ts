@@ -504,6 +504,29 @@ describe("resolveTarget", () => {
     }
   });
 
+  test("latest-main rejects image sets older than the runtime compat floor", async () => {
+    const CompatFloorClient = Layer.succeed(GitHubClient, {
+      latestStableRelease: () => Effect.succeed("v0.11.0"),
+      mainCommits: () =>
+        Effect.succeed([
+          KNOWN_SHA_FULL,
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          SIMPLE_ACL_MIN_SHA,
+          "0000000000000000000000000000000000000000",
+        ]),
+      packageTags: () => Effect.succeed(makeAllPackageTags(SIMPLE_ACL_MIN_SHA.slice(0, 7))),
+      gitopsFile: gitopsFileStub,
+    });
+    const program = resolveTarget("latest-main");
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(CompatFloorClient), Effect.either),
+    );
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("Could not find a supported modern latest-main image set");
+    }
+  });
+
   test("devnet resolves from GitOps files", async () => {
     const program = resolveTarget("devnet");
     const result = await Effect.runPromise(program.pipe(Effect.provide(TestGitHubClientForGitOps)));
@@ -532,7 +555,7 @@ describe("resolveTarget", () => {
   test("latest-main fails when no matching commit found", async () => {
     const NoMatchClient = Layer.succeed(GitHubClient, {
       latestStableRelease: () => Effect.succeed("v0.11.0"),
-      mainCommits: () => Effect.succeed([SIMPLE_ACL_MIN_SHA]),
+      mainCommits: () => Effect.succeed([SHA_RUNTIME_COMPAT_MIN_SHA, SIMPLE_ACL_MIN_SHA]),
       packageTags: () => Effect.succeed(new Set<string>()), // no tags match anything
       gitopsFile: gitopsFileStub,
     });
