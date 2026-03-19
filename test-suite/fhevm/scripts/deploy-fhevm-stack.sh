@@ -95,6 +95,7 @@ should_skip_step() {
 # Argument Parsing
 FORCE_BUILD=false
 LOCAL_BUILD=false
+MULTI_CHAIN=false
 RESUME_STEP=""
 ONLY_STEP=""
 RESUME_FLAG_DETECTED=false
@@ -116,6 +117,9 @@ for arg in "$@"; do
     RESUME_FLAG_DETECTED=true
   elif [[ "$arg" == "--only" ]]; then
     ONLY_FLAG_DETECTED=true
+  elif [[ "$arg" == "--multi-chain" ]]; then
+    MULTI_CHAIN=true
+    log_info "Multi-chain mode enabled. A second host chain (Chain B) will be deployed."
   elif [[ "$arg" == "--coprocessors" ]]; then
     COPROCESSOR_COUNT_FLAG_DETECTED=true
   elif [[ "$arg" == "--coprocessor-threshold" ]]; then
@@ -405,6 +409,10 @@ prepare_all_env_files() {
 
     local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
 
+    if [[ "$MULTI_CHAIN" == "true" ]]; then
+        components+=("host-node-b" "host-sc-b" "coprocessor-b")
+    fi
+
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
     done
@@ -503,6 +511,79 @@ configure_multicoprocessor_envs() {
         set_env_value "$coprocessor_instance_env" "TX_SENDER_PRIVATE_KEY" "$cp_private_key"
     done
 }
+
+# Configure multi-chain environment files when --multi-chain is enabled.
+configure_multichain_envs() {
+    if [[ "$MULTI_CHAIN" != "true" ]]; then return 0; fi
+
+    log_info "Configuring multi-chain environment..."
+
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    host_sc_b_env="$SCRIPT_DIR/../env/staging/.env.host-sc-b.local"
+    coprocessor_b_env="$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local"
+    local test_suite_env="$SCRIPT_DIR/../env/staging/.env.test-suite.local"
+    local relayer_config="$SCRIPT_DIR/../config/relayer/local.yaml"
+
+    # Gateway: register Chain B as second host chain
+    set_env_value "$gateway_env" "NUM_HOST_CHAINS" "2"
+    local executor_addr_0
+    executor_addr_0=$(get_env_value "$gateway_env" "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0")
+    local acl_addr_0
+    acl_addr_0=$(get_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_0")
+    set_env_value "$gateway_env" "HOST_CHAIN_CHAIN_ID_1" "67890"
+    set_env_value "$gateway_env" "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_1" "$executor_addr_0"
+    set_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_1" "$acl_addr_0"
+    set_env_value "$gateway_env" "HOST_CHAIN_NAME_1" ""
+    set_env_value "$gateway_env" "HOST_CHAIN_WEBSITE_1" ""
+
+    # Host-node-b compose parameterization
+    host_node_b_env="$SCRIPT_DIR/../env/staging/.env.host-node-b.local"
+    set_env_value "$host_node_b_env" "HOST_NODE_CONTAINER_NAME" "host-node-b"
+    set_env_value "$host_node_b_env" "HOST_NODE_PORT" "8547"
+    set_env_value "$host_node_b_env" "HOST_NODE_CHAIN_ID" "67890"
+
+    # Host-sc-b
+    set_env_value "$host_sc_b_env" "RPC_URL" "http://host-node-b:8547"
+    set_env_value "$host_sc_b_env" "HOST_SC_DEPLOY_CONTAINER_NAME" "host-sc-b-deploy"
+    set_env_value "$host_sc_b_env" "HOST_SC_PAUSERS_CONTAINER_NAME" "host-sc-b-add-pausers"
+
+    # Coprocessor-b
+    set_env_value "$coprocessor_b_env" "RPC_HTTP_URL" "http://host-node-b:8547"
+    set_env_value "$coprocessor_b_env" "RPC_WS_URL" "ws://host-node-b:8547"
+    set_env_value "$coprocessor_b_env" "CHAIN_ID" "67890"
+
+    # Test suite
+    set_env_value "$test_suite_env" "RPC_URL_CHAIN_B" "http://host-node-b:8547"
+    set_env_value "$test_suite_env" "CHAIN_ID_HOST_B" "67890"
+
+    # Relayer: append Chain B to host_chains YAML
+    local acl_address
+    acl_address=$(get_env_value "$host_sc_b_env" "ACL_CONTRACT_ADDRESS")
+    if [[ -z "$acl_address" ]]; then
+        acl_address="$acl_addr_0"
+    fi
+    if ! grep -q "chain_id: 67890" "$relayer_config" 2>/dev/null; then
+        sed -i.bak "/acl_address:.*${acl_addr_0}/a\\
+  - chain_id: 67890\\
+    url: \"http://host-node-b:8547\"\\
+    acl_address: \"${acl_address}\"" "$relayer_config"
+    fi
+
+    # KMS Connector: replace host_chains with both chains
+    local kms_connector_env="$SCRIPT_DIR/../env/staging/.env.kms-connector.local"
+    if ! grep -q "chain_id.*67890" "$kms_connector_env" 2>/dev/null; then
+        sed -i.bak "/^KMS_CONNECTOR_HOST_CHAINS=/,/^\]'/d" "$kms_connector_env"
+        cat >> "$kms_connector_env" << KMSHC
+KMS_CONNECTOR_HOST_CHAINS='[
+    {"url": "http://host-node:8545", "chain_id": 12345, "acl_address": "${acl_addr_0}"},
+    {"url": "http://host-node-b:8547", "chain_id": 67890, "acl_address": "${acl_address}"}
+]'
+KMSHC
+    fi
+
+    log_info "Multi-chain environment configured (Chain B: chain_id=67890, port=8547)"
+}
+
 
 # Start one extra coprocessor instance (db-migration first, then runtime services).
 run_additional_coprocessor_instance() {
@@ -756,9 +837,13 @@ fi
 prepare_all_env_files
 prepare_local_config_relayer
 configure_multicoprocessor_envs
+configure_multichain_envs
 
 log_info "Deploying FHEVM Stack..."
 log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
+if [[ "$MULTI_CHAIN" == "true" ]]; then
+    log_info "Multi-chain mode: Chain A (12345) + Chain B (67890)"
+fi
 
 BUILD_TAG=""
 if [ "$FORCE_BUILD" = true ]; then
@@ -838,6 +923,25 @@ else
     log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
 fi
 
+# Step 5b: host-node-b (multi-chain only)
+# Reuses host-node compose with sed for service key + env_file path;
+# container name, port, and chain-id are parameterized and come from env vars.
+if [[ "$MULTI_CHAIN" == "true" ]] && ! should_skip_step "host-node"; then
+    log_info "Starting Host node B service (Chain B)..."
+    temp_host_b=$(mktemp "$SCRIPT_DIR/../docker-compose/host-node-b.XXXXXX")
+    sed -e 's/^  host-node:$/  host-node-b:/' \
+        -e 's/\.env\.host-node\.local/.env.host-node-b.local/g' \
+        "$SCRIPT_DIR/../docker-compose/host-node-docker-compose.yml" > "$temp_host_b"
+    host_node_b_env="$SCRIPT_DIR/../env/staging/.env.host-node-b.local"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$host_node_b_env" -f "$temp_host_b" up --build -d
+    else
+        docker compose -p "${PROJECT}" --env-file "$host_node_b_env" -f "$temp_host_b" up -d
+    fi
+    wait_for_service "$temp_host_b" "host-node-b" "true"
+    rm -f "$temp_host_b"
+fi
+
 # Step 6: gateway-node
 if ! should_skip_step "gateway-node"; then
     ${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
@@ -861,6 +965,36 @@ if ! should_skip_step "coprocessor"; then
     done
 else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
+fi
+
+# Step 7b: coprocessor Chain B listeners (multi-chain only)
+# Reuses coprocessor compose with sed to rename host-listener services + env_file path.
+# Only starts the two host-listener services with --no-deps (db-migration already done).
+if [[ "$MULTI_CHAIN" == "true" ]] && ! should_skip_step "coprocessor"; then
+    # Register Chain B in the coprocessor database so workers (zkproof, etc.) can resolve its ACL address.
+    log_info "Registering Chain B (67890) in coprocessor host_chains table..."
+    chain_b_acl=$(get_env_value "$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local" "ACL_CONTRACT_ADDRESS")
+    docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c \
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (67890, 'test chain b', '${chain_b_acl}') ON CONFLICT (chain_id) DO NOTHING;"
+
+    log_info "Starting coprocessor listeners for Chain B..."
+    temp_coproc_b=$(mktemp "$SCRIPT_DIR/../docker-compose/coprocessor-host-b.XXXXXX")
+    # Process poller pattern first (more specific) to avoid partial matches
+    sed -e 's/^  coprocessor-host-listener-poller:$/  coprocessor-host-listener-poller-b:/' \
+        -e 's/^  coprocessor-host-listener:$/  coprocessor-host-listener-b:/' \
+        -e 's/container_name: coprocessor-host-listener-poller$/container_name: coprocessor-host-listener-poller-b/' \
+        -e 's/container_name: coprocessor-host-listener$/container_name: coprocessor-host-listener-b/' \
+        -e 's/\.env\.coprocessor\.local/.env.coprocessor-b.local/g' \
+        "$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml" > "$temp_coproc_b"
+    coprocessor_b_env="$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$coprocessor_b_env" -f "$temp_coproc_b" up --build --no-deps -d coprocessor-host-listener-b coprocessor-host-listener-poller-b
+    else
+        docker compose -p "${PROJECT}" --env-file "$coprocessor_b_env" -f "$temp_coproc_b" up --no-deps -d coprocessor-host-listener-b coprocessor-host-listener-poller-b
+    fi
+    wait_for_service "$temp_coproc_b" "coprocessor-host-listener-b" "true"
+    wait_for_service "$temp_coproc_b" "coprocessor-host-listener-poller-b" "true"
+    rm -f "$temp_coproc_b"
 fi
 
 # Step 8: kms-connector
@@ -905,6 +1039,28 @@ if ! should_skip_step "host-sc"; then
     ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
 else
     log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
+fi
+
+# Step 11b: host-sc-b (multi-chain only)
+# Reuses host-sc compose with sed for service keys, depends_on, env_file path, and volume name;
+# container names are parameterized and come from env vars.
+if [[ "$MULTI_CHAIN" == "true" ]] && ! should_skip_step "host-sc"; then
+    log_info "Starting Host contracts Chain B..."
+    temp_sc_b=$(mktemp "$SCRIPT_DIR/../docker-compose/host-sc-b.XXXXXX")
+    sed -e 's/host-sc-deploy/host-sc-b-deploy/g' \
+        -e 's/host-sc-add-pausers/host-sc-b-add-pausers/g' \
+        -e 's/\.env\.host-sc\.local/.env.host-sc-b.local/g' \
+        -e 's/addresses-volume/addresses-volume-b/g' \
+        "$SCRIPT_DIR/../docker-compose/host-sc-docker-compose.yml" > "$temp_sc_b"
+    host_sc_b_env="$SCRIPT_DIR/../env/staging/.env.host-sc-b.local"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$host_sc_b_env" -f "$temp_sc_b" up --build -d
+    else
+        docker compose -p "${PROJECT}" --env-file "$host_sc_b_env" -f "$temp_sc_b" up -d
+    fi
+    wait_for_service "$temp_sc_b" "host-sc-b-deploy" "false"
+    wait_for_service "$temp_sc_b" "host-sc-b-add-pausers" "false"
+    rm -f "$temp_sc_b"
 fi
 
 # Step 12: relayer

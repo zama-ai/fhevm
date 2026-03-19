@@ -1,6 +1,6 @@
 services:
   host-node:
-    container_name: host-node
+    container_name: ${HOST_NODE_CONTAINER_NAME:-host-node}
     image: ghcr.io/foundry-rs/foundry:v1.3.5
     env_file:
       - ../env/staging/.env.host-node.local
@@ -11,12 +11,12 @@ services:
       - --host
       - 0.0.0.0
       - --port
-      - "8545"
+      - "${HOST_NODE_PORT:-8545}"
       - --chain-id
-      - "12345"
+      - "${HOST_NODE_CHAIN_ID:-12345}"
       - --accounts
       - "120"
       - --mnemonic
       - "${MNEMONIC}"
     ports:
-      - "8545:8545"
+      - "${HOST_NODE_PORT:-8545}:${HOST_NODE_PORT:-8545}"
