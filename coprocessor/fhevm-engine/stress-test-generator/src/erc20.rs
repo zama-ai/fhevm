@@ -1,4 +1,5 @@
-use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::protocol::messages::{BlockContext, Dependence, FheLog};
+use fhevm_engine_common::types::{AllowEvents, SupportedFheOperations};
 use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
@@ -12,6 +13,25 @@ use crate::utils::{
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
+fn add_input(batch: &mut Vec<FheLog>, output_handle: Handle) -> FheLog {
+    let log = FheLog {
+        output_handle: output_handle.to_vec(),
+        dependencies: vec![],
+        fhe_operation: SupportedFheOperations::FheGetInputCiphertext,
+        is_scalar: true,
+        is_allowed: false,
+        created_at: std::time::SystemTime::now(),
+        block_info: BlockContext {
+            txn_hash: [1u8; 32],
+            block_number: 1,
+            block_hash: [1u8; 32],
+        },
+    };
+
+    batch.push(log.clone());
+    log
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn erc20_transaction(
     ctx: &Context,
@@ -24,6 +44,7 @@ pub async fn erc20_transaction(
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or(new_transaction_id());
@@ -44,6 +65,11 @@ pub async fn erc20_transaction(
     let amount =
         generate_random_handle_amount_if_none(ctx, amount, contract_address, user_address).await?;
 
+    add_input(batch, source);
+    add_input(batch, amount);
+
+    // Add Input batch
+
     info!(target: "tool", "ERC20 Transfer: {} -> {}: {}", source, destination, amount);
 
     let has_enough_funds = next_random_handle(FheType::FheBool);
@@ -54,7 +80,15 @@ pub async fn erc20_transaction(
         result: has_enough_funds,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_id,
+        event,
+        false,
+        batch,
+    )
+    .await?;
     let new_source = next_random_handle(DEF_TYPE);
     let new_destination = next_random_handle(DEF_TYPE);
     match variant {
@@ -67,7 +101,15 @@ pub async fn erc20_transaction(
                 result: new_destination_target,
                 scalarByte: ScalarByte::from(false as u8),
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+            insert_tfhe_event(
+                tx,
+                listener_event_to_db,
+                transaction_id,
+                event,
+                false,
+                batch,
+            )
+            .await?;
             let event = tfhe_event(TfheContractEvents::FheIfThenElse(
                 TfheContract::FheIfThenElse {
                     caller,
@@ -77,7 +119,7 @@ pub async fn erc20_transaction(
                     result: new_destination,
                 },
             ));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
             allow_handle(
                 tx,
                 &new_destination.to_vec(),
@@ -94,7 +136,15 @@ pub async fn erc20_transaction(
                 result: new_source_target,
                 scalarByte: ScalarByte::from(false as u8),
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+            insert_tfhe_event(
+                tx,
+                listener_event_to_db,
+                transaction_id,
+                event,
+                false,
+                batch,
+            )
+            .await?;
             let event = tfhe_event(TfheContractEvents::FheIfThenElse(
                 TfheContract::FheIfThenElse {
                     caller,
@@ -104,7 +154,7 @@ pub async fn erc20_transaction(
                     result: new_source,
                 },
             ));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
             allow_handle(
                 tx,
                 &new_source.to_vec(),
@@ -122,7 +172,15 @@ pub async fn erc20_transaction(
                 toType: 5u8,
                 result: cast_has_enough_funds,
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+            insert_tfhe_event(
+                tx,
+                listener_event_to_db,
+                transaction_id,
+                event,
+                false,
+                batch,
+            )
+            .await?;
             let select_amount = next_random_handle(DEF_TYPE);
             let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
                 caller,
@@ -131,7 +189,15 @@ pub async fn erc20_transaction(
                 result: select_amount,
                 scalarByte: ScalarByte::from(false as u8),
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+            insert_tfhe_event(
+                tx,
+                listener_event_to_db,
+                transaction_id,
+                event,
+                false,
+                batch,
+            )
+            .await?;
             let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
                 lhs: destination,
@@ -139,7 +205,7 @@ pub async fn erc20_transaction(
                 result: new_destination,
                 scalarByte: ScalarByte::from(false as u8),
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
             allow_handle(
                 tx,
                 &new_destination.to_vec(),
@@ -155,7 +221,7 @@ pub async fn erc20_transaction(
                 result: new_source,
                 scalarByte: ScalarByte::from(false as u8),
             }));
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
             allow_handle(
                 tx,
                 &new_source.to_vec(),

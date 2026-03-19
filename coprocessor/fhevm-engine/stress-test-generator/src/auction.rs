@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
+use fhevm_engine_common::protocol::messages::FheLog;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
@@ -38,6 +39,7 @@ pub async fn batch_submit_encrypted_bids(
     user_address: &str,
     payment_token_address: &str,
     bids: &[Option<Handle>],
+    batch: &mut Vec<FheLog>,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or(new_transaction_id());
@@ -60,6 +62,7 @@ pub async fn batch_submit_encrypted_bids(
         Some(DEF_TYPE),
         Some(0),
         false,
+        batch,
     )
     .await?;
 
@@ -76,6 +79,7 @@ pub async fn batch_submit_encrypted_bids(
             transaction_id,
             listener_event_to_db,
             user_address,
+            batch,
         )
         .await?;
 
@@ -93,7 +97,15 @@ pub async fn batch_submit_encrypted_bids(
             result: result_handle,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(
+            tx,
+            listener_event_to_db,
+            transaction_id,
+            event,
+            false,
+            batch,
+        )
+        .await?;
         e_total_payment_value = result_handle;
 
         user_submitted_bids.push(BidEntry {
@@ -111,6 +123,7 @@ pub async fn batch_submit_encrypted_bids(
         user_address,
         payment_token_address,
         e_total_payment_value,
+        batch,
     )
     .await?;
 
@@ -124,6 +137,7 @@ pub async fn batch_submit_encrypted_bids(
             user_address,
             e_is_payment_confirmed,
             payment_token_address,
+            batch,
         )
         .await?;
     }
@@ -147,6 +161,7 @@ pub async fn process_bid_entry(
     transaction_id: Handle,
     listener_event_to_db: &ListenerDatabase,
     user_address: &str,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle, u64), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     info!(target: "tool", "Process Bid Entry: tx_id: {:?}", transaction_id);
@@ -160,6 +175,7 @@ pub async fn process_bid_entry(
         Some(DEF_TYPE),
         Some(1_000_000),
         false,
+        batch,
     )
     .await?;
 
@@ -171,7 +187,15 @@ pub async fn process_bid_entry(
         result: less_than_total_supply,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_id,
+        event,
+        false,
+        batch,
+    )
+    .await?;
 
     let zero = generate_trivial_encrypt(
         tx,
@@ -182,6 +206,7 @@ pub async fn process_bid_entry(
         Some(DEF_TYPE),
         Some(0),
         false,
+        batch,
     )
     .await?;
 
@@ -196,7 +221,15 @@ pub async fn process_bid_entry(
         },
     ));
 
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_id,
+        event,
+        false,
+        batch,
+    )
+    .await?;
     e_amount = result_handle;
 
     let e_price = generate_trivial_encrypt(
@@ -208,6 +241,7 @@ pub async fn process_bid_entry(
         Some(DEF_TYPE),
         Some(price as u128),
         false,
+        batch,
     )
     .await?;
 
@@ -220,7 +254,15 @@ pub async fn process_bid_entry(
         result: e_paid,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_id,
+        event,
+        false,
+        batch,
+    )
+    .await?;
 
     Ok((e_paid, e_amount, price))
 }
@@ -240,6 +282,7 @@ pub async fn process_batch_payment(
     user_address: &str,
     payment_token_address: &str,
     e_total_value: Handle,
+    batch: &mut Vec<FheLog>,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     info!(target: "tool", "Process Batch Payment: tx_id: {:?}", transaction_id);
@@ -251,6 +294,7 @@ pub async fn process_batch_payment(
         listener_event_to_db,
         e_total_value,
         user_address,
+        batch,
     )
     .await?;
 
@@ -271,7 +315,15 @@ pub async fn process_batch_payment(
         result: e_is_payment_confirmed,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_id,
+        event,
+        false,
+        batch,
+    )
+    .await?;
 
     Ok(e_is_payment_confirmed)
 }
@@ -284,6 +336,7 @@ pub async fn confirm_and_finalize_bid(
     user_address: &str,
     e_is_payment_confirmed: Handle,
     _payment_token_address: &str,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut bid_entry = *bid_entry;
     let caller = user_address.parse().unwrap();
@@ -298,6 +351,7 @@ pub async fn confirm_and_finalize_bid(
         Some(DEF_TYPE),
         Some(0),
         false,
+        batch,
     )
     .await?;
 
@@ -317,7 +371,7 @@ pub async fn confirm_and_finalize_bid(
             result: result_handle,
         },
     ));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
     bid_entry.e_amount = result_handle;
 
     let result_handle = next_random_handle(DEF_TYPE);
@@ -330,7 +384,7 @@ pub async fn confirm_and_finalize_bid(
             result: result_handle,
         },
     ));
-    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch).await?;
     bid_entry.e_paid = result_handle;
 
     // Update contract state
@@ -368,7 +422,7 @@ pub async fn confirm_and_finalize_bid(
             .or_insert_with(|| bid_entry.e_amount);
 
         if let Some(event) = event {
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true)
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch)
                 .await
                 .unwrap();
         }
@@ -419,7 +473,7 @@ pub async fn confirm_and_finalize_bid(
             .or_insert_with(|| bid_entry.e_amount);
 
         if let Some(event) = event {
-            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true)
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true, batch)
                 .await
                 .unwrap();
         }

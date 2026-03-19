@@ -3,6 +3,7 @@ use crate::utils::{
     Context, EnvConfig, FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
+use fhevm_engine_common::protocol::messages::FheLog;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
@@ -22,6 +23,7 @@ pub async fn add_chain_transaction(
     listener_event_to_db: &ListenerDatabase,
     contract_address: &String,
     user_address: &String,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
@@ -40,6 +42,7 @@ pub async fn add_chain_transaction(
                 Some(DEF_TYPE),
                 None,
                 false,
+                batch,
             )
             .await?
         }
@@ -60,6 +63,7 @@ pub async fn add_chain_transaction(
             transaction_id,
             event,
             i == length - 1,
+            batch,
         )
         .await?;
         counter = new_counter;
@@ -86,6 +90,7 @@ pub async fn mul_chain_transaction(
     listener_event_to_db: &ListenerDatabase,
     contract_address: &String,
     user_address: &String,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
@@ -104,6 +109,7 @@ pub async fn mul_chain_transaction(
                 Some(DEF_TYPE),
                 None,
                 false,
+                batch,
             )
             .await?
         }
@@ -124,6 +130,7 @@ pub async fn mul_chain_transaction(
             transaction_id,
             event,
             i == length - 1,
+            batch,
         )
         .await?;
         counter = new_counter;
@@ -148,6 +155,7 @@ pub async fn generate_pub_decrypt_handles_types(
     listener_event_to_db: &ListenerDatabase,
     contract_address: &str,
     user_address: &String,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let mut out_file = std::fs::OpenOptions::new()
@@ -167,6 +175,7 @@ pub async fn generate_pub_decrypt_handles_types(
             Some(type_num.into()),
             Some(type_num.into()),
             true,
+            batch,
         )
         .await?;
         allow_handle(
@@ -191,6 +200,7 @@ pub async fn generate_user_decrypt_handles_types(
     listener_event_to_db: &ListenerDatabase,
     contract_address: &str,
     user_address: &String,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let mut out_file = std::fs::OpenOptions::new()
@@ -210,6 +220,7 @@ pub async fn generate_user_decrypt_handles_types(
             Some(type_num.into()),
             Some(type_num.into()),
             true,
+            batch,
         )
         .await?;
         allow_handle(

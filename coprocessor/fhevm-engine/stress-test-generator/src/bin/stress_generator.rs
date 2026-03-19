@@ -5,9 +5,11 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
-use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::{protocol::messages::FheLog, utils::DatabaseURL};
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 
+use lapin::options::BasicPublishOptions;
+use message_broker::rabbitmq::create_send_channel;
 use sqlx::Postgres;
 use std::{cmp::min, io::Write};
 use std::{collections::HashMap, fmt, sync::atomic::AtomicU64};
@@ -588,7 +590,18 @@ async fn generate_transaction(
     new_ctx.inputs_pool = inputs.clone();
     let ctx = &new_ctx;
 
+    let queue_name = "queue_fhe_events";
+    let sender_channel = create_send_channel("amqp://admin:admin@localhost:5672/%2f", queue_name)
+        .await
+        .unwrap();
+
+    sender_channel
+        .confirm_select(Default::default())
+        .await
+        .unwrap();
+
     let mut tx: sqlx::Transaction<'_, Postgres> = listener_event_to_db.new_transaction().await?;
+    let batch = &mut Vec::new();
 
     match scenario.transaction {
         Transaction::BatchInputProofs => {
@@ -626,6 +639,7 @@ async fn generate_transaction(
                 &scenario.contract_address,
                 &scenario.user_address,
                 &bids,
+                batch,
             )
             .await?;
 
@@ -666,8 +680,12 @@ async fn generate_transaction(
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
+
+            publish_batch(&sender_channel, queue_name, batch).await;
+
             tx.commit().await?;
             Ok((output_dependence, output_dependence))
         }
@@ -689,6 +707,7 @@ async fn generate_transaction(
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             tx.commit().await?;
@@ -712,6 +731,7 @@ async fn generate_transaction(
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             tx.commit().await?;
@@ -728,6 +748,7 @@ async fn generate_transaction(
                 listener_event_to_db,
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             tx.commit().await?;
@@ -744,6 +765,7 @@ async fn generate_transaction(
                 listener_event_to_db,
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             tx.commit().await?;
@@ -769,6 +791,7 @@ async fn generate_transaction(
                 listener_event_to_db,
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             Ok((output_dependence1, output_dependence2))
@@ -782,6 +805,7 @@ async fn generate_transaction(
                 listener_event_to_db,
                 &scenario.contract_address,
                 &scenario.user_address,
+                batch,
             )
             .await?;
             tx.commit().await?;
@@ -802,6 +826,7 @@ async fn generate_transaction(
                 listener_event_to_db,
                 e_amount,
                 scenario.user_address.as_str(),
+                batch,
             )
             .await?;
 
@@ -810,4 +835,24 @@ async fn generate_transaction(
             Ok((e_total_paid, e_total_paid))
         }
     }
+}
+
+async fn publish_batch(sender_channel: &lapin::Channel, queue: &str, batch: &Vec<FheLog>) {
+    info!(target: "tool", batch_size = batch.len(), "Publishing batch of FHE log messages to the queue");
+
+    let payload: Vec<u8> = postcard::to_allocvec(&batch).unwrap();
+
+    let confirm = sender_channel
+        .basic_publish(
+            "",
+            queue,
+            BasicPublishOptions::default(),
+            &payload,
+            lapin::BasicProperties::default(),
+        )
+        .await
+        .unwrap();
+
+    let confirm = confirm.await.unwrap();
+    info!(confirm = ?confirm, "Sent FHE log message to the queue");
 }

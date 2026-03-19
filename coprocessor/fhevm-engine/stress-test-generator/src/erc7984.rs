@@ -3,7 +3,7 @@ use crate::utils::{
     Context, FheType, DEF_TYPE,
 };
 use alloy_primitives::Address;
-use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::{protocol::messages::FheLog, types::AllowEvents};
 use host_listener::{
     contracts::TfheContract::{self, TfheContractEvents},
     database::tfhe_event_propagate::{Database as ListenerDatabase, Handle, ScalarByte},
@@ -18,6 +18,7 @@ pub async fn confidential_transfer_from(
     db: &ListenerDatabase,
     e_amount: Handle,
     user_address: &str,
+    batch: &mut Vec<FheLog>,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller: Address = user_address.parse().unwrap();
 
@@ -42,8 +43,16 @@ pub async fn confidential_transfer_from(
        _balances[from] = ptr;
     */
 
-    let (success, ptr) =
-        try_decrease(tx, db, caller, transaction_id, balance_from, e_amount).await?;
+    let (success, ptr) = try_decrease(
+        tx,
+        db,
+        caller,
+        transaction_id,
+        balance_from,
+        e_amount,
+        batch,
+    )
+    .await?;
 
     allow_handle(
         tx,
@@ -63,6 +72,7 @@ pub async fn confidential_transfer_from(
         Some(DEF_TYPE),
         Some(0),
         false,
+        batch,
     )
     .await?;
 
@@ -78,7 +88,7 @@ pub async fn confidential_transfer_from(
             result: transferred,
         },
     ));
-    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true, batch).await?;
 
     /*
 
@@ -96,7 +106,7 @@ pub async fn confidential_transfer_from(
         result: ptr,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true, batch).await?;
 
     allow_handle(
         tx,
@@ -145,6 +155,7 @@ pub async fn try_decrease(
     transaction_id: Handle,
     old_value: Handle,
     delta: Handle,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let success = next_random_handle(FheType::FheBool);
     let event = tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
@@ -154,7 +165,7 @@ pub async fn try_decrease(
         result: success,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, false, batch).await?;
 
     let result_handle = next_random_handle(DEF_TYPE);
 
@@ -165,7 +176,7 @@ pub async fn try_decrease(
         result: result_handle,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(tx, db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, false, batch).await?;
 
     let updated = next_random_handle(DEF_TYPE);
     let event = tfhe_event(TfheContractEvents::FheIfThenElse(
@@ -177,7 +188,7 @@ pub async fn try_decrease(
             result: updated,
         },
     ));
-    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true, batch).await?;
 
     Ok((success, updated))
 }

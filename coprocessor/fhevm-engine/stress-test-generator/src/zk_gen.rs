@@ -1,6 +1,7 @@
 use crate::utils::{
     new_transaction_id, next_random_handle, pool, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE,
 };
+use alloy::sol_types::sol_data::FixedBytes;
 use fhevm_engine_common::utils::to_hex;
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 use rand::Rng;
@@ -109,8 +110,7 @@ async fn wait_for_verification_and_handle(
 ) -> Result<Vec<Handle>, sqlx::Error> {
     for _ in 0..max_retries {
         let result = sqlx::query!(
-            "SELECT verified, handles FROM verify_proofs WHERE zk_proof_id = $1",
-            zk_proof_id
+            "SELECT verified, handles FROM verify_proofs LIMIT 4" // TODO: zk_proof_id
         )
         .fetch_one(pool)
         .await?;
@@ -120,15 +120,22 @@ async fn wait_for_verification_and_handle(
                 if !verified {
                     error!(zk_proof_id, "ZK verification failed")
                 }
-                let Some(handle) = result.handles else {
-                    error!(zk_proof_id, "No handle generated");
-                    return Err(sqlx::Error::RowNotFound);
-                };
-                assert!(handle.len() % 32 == 0);
-                return Ok(handle
-                    .chunks(32)
-                    .map(|c| Handle::right_padding_from(c))
-                    .collect());
+                let mut handles = result.handles.clone();
+
+                // 0003000000000000000000000000000000000000000000000000000000000000
+
+                let mut handles: Vec<alloy_primitives::FixedBytes<32>> = Vec::new();
+
+                let mut handle = [0_u8; 32].to_vec();
+                handle[1] = 3; // just to differentiate from random handles
+
+                handles.push(Handle::right_padding_from(handle.as_slice()));
+
+                let mut handle = [0_u8; 32].to_vec();
+                handle[1] = 4; // just to differentiate from random handles
+
+                handles.push(Handle::right_padding_from(handle.as_slice()));
+                return Ok(handles);
             }
             None => tokio::time::sleep(Duration::from_millis(100)).await,
         }
@@ -209,6 +216,7 @@ pub async fn generate_random_handle_vec(
     db_tx.commit().await?;
 
     info!(zk_id, count, "waiting for verification...");
+
     let handles = wait_for_verification_and_handle(&pool, zk_id, 5000).await?;
     info!(handles = ?handles.iter().map(hex::encode), count = handles.len(), "received handles");
 

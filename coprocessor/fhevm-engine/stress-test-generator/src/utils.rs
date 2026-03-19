@@ -1,5 +1,6 @@
 use alloy_primitives::Keccak256;
 use bigdecimal::num_bigint::BigInt;
+use fhevm_engine_common::protocol::messages::FheLog;
 use fhevm_engine_common::{types::AllowEvents, utils::safe_deserialize_key};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
@@ -245,6 +246,7 @@ pub async fn generate_trivial_encrypt(
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
     is_allowed: bool,
+    batch: &mut Vec<FheLog>,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
@@ -266,7 +268,9 @@ pub async fn generate_trivial_encrypt(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
     };
-    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+    listener_event_to_db
+        .insert_tfhe_event(tx, &log, batch)
+        .await?;
     Ok(handle)
 }
 
@@ -435,6 +439,7 @@ pub async fn insert_tfhe_event(
     transaction_hash: TransactionHash,
     event: Log<TfheContractEvents>,
     is_allowed: bool,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
 
@@ -447,7 +452,9 @@ pub async fn insert_tfhe_event(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
     };
-    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+    listener_event_to_db
+        .insert_tfhe_event(tx, &log, batch)
+        .await?;
 
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
     Ok(())
