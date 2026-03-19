@@ -122,10 +122,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
-    uint256 private constant PATCH_VERSION = 1;
+    uint256 private constant PATCH_VERSION = 0;
 
     /// @notice ACL.
     ACL private constant acl = ACL(aclAdd);
