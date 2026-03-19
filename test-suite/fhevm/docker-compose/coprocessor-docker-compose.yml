@@ -111,6 +111,8 @@ services:
       - --verify-proof-req-database-channel=event_zkpok_new_work
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10

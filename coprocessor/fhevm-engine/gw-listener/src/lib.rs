@@ -1,4 +1,4 @@
-use alloy::primitives::Uint;
+use alloy::primitives::{Address, Uint};
 use alloy::transports::http::reqwest::Url;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
@@ -9,6 +9,7 @@ use tracing::error;
 pub mod aws_s3;
 pub(crate) mod database;
 pub(crate) mod digest;
+pub(crate) mod drift_detector;
 pub mod gw_listener;
 pub mod http_server;
 pub(crate) mod metrics;
@@ -55,6 +56,11 @@ pub struct ConfigSettings {
     pub replay_skip_verify_proof: bool,
 
     pub log_last_processed_every_number_of_updates: u64,
+
+    pub ciphertext_commits_address: Option<Address>,
+    pub gateway_config_address: Option<Address>,
+    pub drift_no_consensus_timeout: Duration,
+    pub drift_post_consensus_grace: Duration,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -72,6 +78,8 @@ pub fn chain_id_from_env() -> Option<ChainId> {
     }
 }
 
+/// Default is used by unit tests only. Production defaults come from
+/// the CLI arg definitions in `bin/gw_listener.rs` (e.g. `--drift-no-consensus-timeout 5m`).
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
@@ -89,6 +97,10 @@ impl Default for ConfigSettings {
             replay_from_block: None,
             replay_skip_verify_proof: false,
             log_last_processed_every_number_of_updates: 50,
+            ciphertext_commits_address: None,
+            gateway_config_address: None,
+            drift_no_consensus_timeout: Duration::from_secs(5),
+            drift_post_consensus_grace: Duration::from_secs(2),
         }
     }
 }

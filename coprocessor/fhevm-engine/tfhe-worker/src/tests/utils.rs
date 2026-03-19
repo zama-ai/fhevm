@@ -16,6 +16,7 @@ pub struct TestInstance {
     // send message to this on destruction to stop the app
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
     db_url: String,
+    health_check_port: u16,
 }
 
 impl Drop for TestInstance {
@@ -35,6 +36,10 @@ impl TestInstance {
     pub fn db_docker_id(&self) -> Option<String> {
         self._container.as_ref().map(|c| c.id().to_string())
     }
+
+    pub fn health_check_url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.health_check_port)
+    }
 }
 
 pub fn default_dependence_cache_size() -> u16 {
@@ -53,15 +58,17 @@ const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coproc
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, LOCAL_DB_URL).await;
+    let health_check_port = start_coprocessor(rx, LOCAL_DB_URL).await;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
         db_url: LOCAL_DB_URL.to_string(),
+        health_check_port,
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
+async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
+    let health_check_port = test_harness::localstack::pick_free_port();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
@@ -76,7 +83,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         database_url: Some(db_url.into()),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
-        health_check_port: 8081,
+        health_check_port,
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
         worker_id: None,
@@ -95,6 +102,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
 
     // wait until worker starts
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    health_check_port
 }
 
 async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
@@ -133,11 +141,12 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     println!("DB prepared");
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, &db_url).await;
+    let health_check_port = start_coprocessor(rx, &db_url).await;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
         db_url,
+        health_check_port,
     })
 }
 
