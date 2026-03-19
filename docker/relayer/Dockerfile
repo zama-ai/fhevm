@@ -15,7 +15,7 @@ WORKDIR /app
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
 USER root
-RUN apk add --no-cache openssl-dev
+RUN apk add --no-cache openssl-dev=3.6.1-r4
 
 RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=apps/relayer/Cargo.lock,target=Cargo.lock \
@@ -41,7 +41,7 @@ RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
 # stage.
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS runtime
 USER root
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates=20241010-r0
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user
@@ -53,7 +53,6 @@ RUN adduser \
     appuser
 
 USER appuser
-# TODO: embed build information like git hash in env-var
 
 WORKDIR /app/config
 
