@@ -391,7 +391,7 @@ cargo test decryption::
 
 ## License
 
-This software is distributed under the **BSD-3-Clause-Clear** license. Read [this](LICENSE) for more details.
+This software is distributed under the **BSD-3-Clause-Clear** license. Read [this](../../LICENSE) for more details.
 
 ## FAQ
 
