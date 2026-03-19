@@ -6,7 +6,7 @@
  */
 import { Command } from "@effect/cli";
 import { BunContext } from "@effect/platform-bun";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Logger } from "effect";
 
 import { LiveLayer } from "./services/layers";
 import { StateManager } from "./services/StateManager";
@@ -58,6 +58,29 @@ const normalizeHelpText = (value: string) =>
     "$1",
   );
 
+const renderLogMessage = (message: unknown): string => {
+  if (Array.isArray(message)) {
+    return message.map(renderLogMessage).join(" ");
+  }
+  if (typeof message === "string") {
+    return message;
+  }
+  try {
+    return JSON.stringify(message);
+  } catch {
+    return String(message);
+  }
+};
+
+const HumanLogger = Logger.make(({ message, logLevel }) => {
+  const line = renderLogMessage(message);
+  if (logLevel.label === "ERROR" || logLevel.label === "FATAL") {
+    console.error(line);
+    return;
+  }
+  console.log(line);
+});
+
 // ---------------------------------------------------------------------------
 // main — preserved signature for test compatibility
 // ---------------------------------------------------------------------------
@@ -82,6 +105,7 @@ export const main = async (
   const program = cli(argv).pipe(
     Effect.provide(layer),
     Effect.provide(BunContext.layer),
+    Effect.provide(Logger.replace(Logger.defaultLogger, HumanLogger)),
     Effect.catchAll((error) => {
       failure = error;
       const message = formatCliError(error);

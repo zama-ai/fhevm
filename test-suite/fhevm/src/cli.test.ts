@@ -12,6 +12,7 @@ import {
   COMPONENTS,
   REPO_ROOT,
   STATE_DIR,
+  STATE_FILE,
   TEST_GREP,
   composePath,
   envPath,
@@ -46,7 +47,7 @@ import {
   stubState,
 } from "./test-helpers";
 
-const STATE_FILE = path.join(STATE_DIR, "state.json");
+const ensureStateFileDir = () => fs.mkdir(path.dirname(STATE_FILE), { recursive: true });
 
 const tempDirs: string[] = [];
 
@@ -890,7 +891,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["bootstrap"] })));
     const liveCalls: string[][] = [];
     const { logs, restore } = captureConsole("error");
@@ -914,7 +915,7 @@ describe("runtime invariants", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -926,7 +927,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(
       STATE_FILE,
       JSON.stringify(
@@ -952,7 +953,7 @@ describe("runtime invariants", () => {
     );
     await fs.mkdir(path.dirname(versionsEnvPath), { recursive: true });
     await fs.writeFile(versionsEnvPath, "GATEWAY_VERSION=v0.11.0\n");
-    await fs.mkdir(path.join(STATE_DIR, "compose"), { recursive: true });
+    await fs.mkdir(path.dirname(composePath("minio")), { recursive: true });
     await Promise.all(
       COMPONENTS.map((component) => fs.writeFile(composePath(component), "services:\n")),
     );
@@ -979,7 +980,7 @@ describe("runtime invariants", () => {
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -989,7 +990,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
     const { logs, restore } = captureConsole("error");
     try {
@@ -1010,7 +1011,7 @@ describe("runtime invariants", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1021,7 +1022,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
     const { logs, restore } = captureConsole("error");
     try {
@@ -1033,7 +1034,7 @@ describe("runtime invariants", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1044,7 +1045,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: [...STEP_NAMES] })));
     const { logs, restore } = captureConsole("log");
     try {
@@ -1060,7 +1061,7 @@ describe("runtime invariants", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1071,7 +1072,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(
       STATE_FILE,
       JSON.stringify({
@@ -1097,7 +1098,7 @@ describe("runtime invariants", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1109,7 +1110,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(
       STATE_FILE,
       JSON.stringify(stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] })),
@@ -1132,7 +1133,7 @@ describe("runtime invariants", () => {
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1142,7 +1143,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(
       STATE_FILE,
       JSON.stringify(
@@ -1164,7 +1165,7 @@ describe("runtime invariants", () => {
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }
@@ -1174,7 +1175,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     const state = stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] });
     await fs.writeFile(STATE_FILE, JSON.stringify(state));
     const { logs, restore } = captureConsole("error");
@@ -1195,7 +1196,7 @@ describe("runtime invariants", () => {
     expect(logs.some((l) => l.includes("Failed to stop components"))).toBe(true);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
     if (before !== undefined) {
-      await fs.mkdir(STATE_DIR, { recursive: true });
+      await ensureStateFileDir();
       await fs.writeFile(STATE_FILE, before);
     }
   });
@@ -1204,7 +1205,7 @@ describe("runtime invariants", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(
       STATE_FILE,
       JSON.stringify({
@@ -1243,7 +1244,7 @@ describe("runtime invariants", () => {
     expect(logs.some((line) => line.includes("Failed to remove owned images"))).toBe(true);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
     if (before !== undefined) {
-      await fs.mkdir(STATE_DIR, { recursive: true });
+      await ensureStateFileDir();
       await fs.writeFile(STATE_FILE, before);
     }
   });
@@ -1493,8 +1494,8 @@ describe("command error paths", () => {
   });
 
   test("test requires completed bootstrap", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("error");
     try {
@@ -1513,8 +1514,8 @@ describe("command error paths", () => {
   });
 
   test("test rejects unknown profile", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     try {
       await fs.mkdir(stateDir, { recursive: true });
@@ -1542,8 +1543,8 @@ describe("command error paths", () => {
   });
 
   test("test logs a fail marker when execution fails", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("log");
     try {
@@ -1573,8 +1574,8 @@ describe("command error paths", () => {
   });
 
   test("test light runs the lightweight suite sequence", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const calls: string[] = [];
     const { logs, restore } = captureConsole("log");
@@ -1650,8 +1651,8 @@ describe("command error paths", () => {
   }, 30000);
 
   test("test light rejects grep overrides", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("error");
     try {
@@ -1675,8 +1676,8 @@ describe("command error paths", () => {
   });
 
   test("test light skips ciphertext-drift on single-coprocessor stacks", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("log");
     try {
@@ -1715,8 +1716,8 @@ describe("command error paths", () => {
   });
 
   test("ciphertext-drift requires a multi-coprocessor topology", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("error");
     try {
@@ -1738,8 +1739,8 @@ describe("command error paths", () => {
   });
 
   test("ciphertext-drift rejects a faulty instance index outside the topology", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const priorFaulty = process.env.FAULTY_INSTANCE_INDEX;
     const { logs, restore } = captureConsole("error");
@@ -1778,8 +1779,8 @@ describe("command error paths", () => {
   });
 
   test("ciphertext-drift fails early when gw-listener drift addresses are disabled by compat", async () => {
-    const stateDir = path.join(REPO_ROOT, ".fhevm");
-    const stateFile = path.join(stateDir, "state.json");
+    const stateDir = path.dirname(STATE_FILE);
+    const stateFile = STATE_FILE;
     const hadState = await maybeRead(stateFile);
     const { logs, restore } = captureConsole("error");
     try {
@@ -1882,7 +1883,7 @@ describe("command error paths", () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
-    await fs.mkdir(STATE_DIR, { recursive: true });
+    await ensureStateFileDir();
     await fs.writeFile(STATE_FILE, JSON.stringify(stubState({ completedSteps: ["base"] })));
     const runner = fakeRunner({
       "docker ps --filter label=com.docker.compose.project=fhevm --format {{.Names}}\t{{.Status}}": "",
@@ -1894,7 +1895,7 @@ describe("command error paths", () => {
       restore();
       await fs.rm(STATE_DIR, { recursive: true, force: true });
       if (before !== undefined) {
-        await fs.mkdir(STATE_DIR, { recursive: true });
+        await ensureStateFileDir();
         await fs.writeFile(STATE_FILE, before);
       }
     }

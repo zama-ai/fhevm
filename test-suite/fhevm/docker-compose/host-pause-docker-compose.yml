@@ -10,8 +10,8 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_HOST_SC_PAUSE:-type=gha,mode=max}
     env_file:
-      - ../../../.fhevm/env/host-sc.env
+      - ../../../.fhevm/runtime/env/host-sc.env
     command:
       - npx hardhat compile && npx hardhat task:pauseACL
     volumes:
-      - ../../../.fhevm/addresses/host:/app/addresses  # workdir in host's Dockerfile is /app
+      - ../../../.fhevm/runtime/addresses/host:/app/addresses  # workdir in host's Dockerfile is /app

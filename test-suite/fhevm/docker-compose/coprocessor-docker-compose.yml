@@ -26,7 +26,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
@@ -45,7 +45,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -68,7 +68,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
@@ -90,7 +90,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -119,7 +119,7 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -144,7 +144,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -167,7 +167,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -202,7 +202,7 @@ services:
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../../../.fhevm/env/coprocessor.env
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}

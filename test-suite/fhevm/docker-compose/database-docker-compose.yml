@@ -8,7 +8,7 @@ services:
       - -c
       - max_connections=500
     env_file:
-      - ../../../.fhevm/env/database.env
+      - ../../../.fhevm/runtime/env/database.env
     ports:
       - '5432:5432'
     healthcheck:

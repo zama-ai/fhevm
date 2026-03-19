@@ -130,7 +130,11 @@ const targetNeedsGitHub = (
 const bootstrapState = (options: UpOptions) =>
   Effect.gen(function* () {
     yield* Effect.log(`[up] target=${options.target}`);
+    const resolveStarted = Date.now();
     const resolved = yield* resolveBundle(options, process.env);
+    yield* Effect.log(
+      `[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`,
+    );
     const scenario = yield* resolveScenarioForOptions(options);
     yield* assertSchemaCompatibility(
       resolved.bundle,
@@ -172,7 +176,7 @@ export const up = (options: UpOptions) =>
     if (options.resume && !state) {
       return yield* Effect.fail(
         new ResumeError({
-          message: "No .fhevm/state.json to resume from",
+          message: "No .fhevm/state/state.json to resume from",
         }),
       );
     }
@@ -244,7 +248,7 @@ export const upDryRun = (
       if (!state) {
         return yield* Effect.fail(
           new ResumeError({
-            message: "No .fhevm/state.json to resume from",
+            message: "No .fhevm/state/state.json to resume from",
           }),
         );
       }

@@ -10,8 +10,8 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_GATEWAY_SC_UNPAUSE:-type=gha,mode=max}
     env_file:
-      - ../../../.fhevm/env/gateway-sc.env
+      - ../../../.fhevm/runtime/env/gateway-sc.env
     command:
       - npx hardhat compile && npx hardhat task:unpauseAllGatewayContracts
     volumes:
-      - ../../../.fhevm/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
+      - ../../../.fhevm/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app

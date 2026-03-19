@@ -76,7 +76,7 @@ bun test
 - `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test light` runs the non-heavy PR e2e suite in one command and skips `ciphertext-drift` unless the current topology supports it
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
-- `down` stops the stack but keeps resumable `.fhevm` state
+- `down` stops the stack, prunes `.fhevm/runtime`, and keeps resumable `.fhevm/state`
 - `clean` removes CLI-owned runtime state
 - `clean --images` also removes CLI-owned local override images
 
@@ -93,14 +93,14 @@ There are four kinds of inputs/runtime artifacts:
 
 Generated runtime artifacts always live under `.fhevm/`:
 
-- `.fhevm/env/*.env`
-- `.fhevm/compose/*.yml` for generated runtime overrides only
-- `.fhevm/config/relayer.yaml`
-- `.fhevm/addresses/*`
-- `.fhevm/locks/*`
-- `.fhevm/state.json`
+- `.fhevm/runtime/env/*.env`
+- `.fhevm/runtime/compose/*.yml` for generated runtime overrides only
+- `.fhevm/runtime/config/relayer.yaml`
+- `.fhevm/runtime/addresses/*`
+- `.fhevm/state/locks/*`
+- `.fhevm/state/state.json`
 
-Tracked compose files are the default runtime truth. `.fhevm/compose` only holds generated overrides when runtime structure or local-image policy actually changes, with coprocessor topology as the only structural expansion.
+Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` only holds generated overrides when runtime structure or local-image policy actually changes, with coprocessor topology as the only structural expansion.
 
 The code follows the same split:
 
@@ -433,10 +433,10 @@ That keeps the scenario explicit while limiting the local build to `host-listene
 
 The CLI owns:
 
-- `.fhevm/state.json`
-- `.fhevm/locks/`
-- `.fhevm/env/`
-- `.fhevm/compose/`
-- `.fhevm/addresses/`
+- `.fhevm/state/state.json`
+- `.fhevm/state/locks/`
+- `.fhevm/runtime/env/`
+- `.fhevm/runtime/compose/`
+- `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.

@@ -98,6 +98,14 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
           { concurrency: "unbounded" },
         ).pipe(Effect.map((results) => results.every(Boolean)));
 
+      const timed = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
+        Effect.gen(function* () {
+          const started = Date.now();
+          const result = yield* effect;
+          yield* Effect.log(`${label} done (${Math.round((Date.now() - started) / 1000)}s)`);
+          return result;
+        });
+
       return {
         maybeBuild: (component, state, saveState, options = {}) =>
           Effect.gen(function* () {
@@ -120,7 +128,10 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
                 });
               }
               for (const service of services) {
-                yield* containers.composeBuild(component, [service]);
+                yield* timed(
+                  `[build] ${service}`,
+                  containers.composeBuild(component, [service]),
+                );
               }
               yield* saveBuiltImages(
                 state,
@@ -172,7 +183,10 @@ export class ImageBuilder extends Context.Tag("ImageBuilder")<
                   ? deduped.map((s) => [s])
                   : [deduped];
               for (const batch of buildBatches) {
-                yield* containers.composeBuild(component, batch);
+                yield* timed(
+                  `[build] ${batch.join(",")}`,
+                  containers.composeBuild(component, batch),
+                );
               }
 
               yield* saveBuiltImages(

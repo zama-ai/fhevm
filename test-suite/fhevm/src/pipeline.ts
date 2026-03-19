@@ -128,6 +128,14 @@ const NETWORK_TARGETS: ReadonlySet<string> = new Set([
   "mainnet",
 ]);
 
+const timed = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const started = Date.now();
+    const result = yield* effect;
+    yield* Effect.log(`${label} done (${Math.round((Date.now() - started) / 1000)}s)`);
+    return result;
+  });
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -388,7 +396,7 @@ const discoverContracts = Effect.gen(function* () {
   const hostExists = yield* Effect.promise(() => exists(hostAddressesPath));
   if (!gwExists || !hostExists) {
     return yield* Effect.fail(
-      new PreflightError({ message: "Missing generated address files under .fhevm/addresses" }),
+      new PreflightError({ message: "Missing generated address files under .fhevm/runtime/addresses" }),
     );
   }
   return {
@@ -1013,11 +1021,14 @@ export const runStep = (state: State, step: StepName) =>
         );
 
         if (!hostChainsRegistered) {
-          yield* stepComposeUp(
-            "gateway-sc",
-            state,
-            ["gateway-sc-add-network"],
-            { noDeps: true },
+          yield* timed(
+            "[bootstrap] add-network",
+            stepComposeUp(
+              "gateway-sc",
+              state,
+              ["gateway-sc-add-network"],
+              { noDeps: true },
+            ),
           );
           yield* probe.waitForComplete("gateway-sc-add-network");
         }
@@ -1041,11 +1052,14 @@ export const runStep = (state: State, step: StepName) =>
         ).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
         if (!hostPauserRegistered) {
-          yield* stepComposeUp(
-            "host-sc",
-            state,
-            ["host-sc-add-pausers"],
-            { noDeps: true },
+          yield* timed(
+            "[bootstrap] add-host-pausers",
+            stepComposeUp(
+              "host-sc",
+              state,
+              ["host-sc-add-pausers"],
+              { noDeps: true },
+            ),
           );
           yield* probe.waitForComplete("host-sc-add-pausers");
         }
@@ -1059,32 +1073,41 @@ export const runStep = (state: State, step: StepName) =>
         ).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
         if (!gatewayPauserRegistered) {
-          yield* stepComposeUp(
-            "gateway-sc",
-            state,
-            ["gateway-sc-add-pausers"],
-            { noDeps: true },
+          yield* timed(
+            "[bootstrap] add-gateway-pausers",
+            stepComposeUp(
+              "gateway-sc",
+              state,
+              ["gateway-sc-add-pausers"],
+              { noDeps: true },
+            ),
           );
           yield* probe.waitForComplete("gateway-sc-add-pausers");
         }
 
-        yield* stepComposeUp(
-          "gateway-sc",
-          state,
-          ["gateway-sc-trigger-keygen"],
-          { noDeps: true },
+        yield* timed(
+          "[bootstrap] trigger-keygen",
+          stepComposeUp(
+            "gateway-sc",
+            state,
+            ["gateway-sc-trigger-keygen"],
+            { noDeps: true },
+          ),
         );
         yield* probe.waitForComplete("gateway-sc-trigger-keygen");
 
-        yield* stepComposeUp(
-          "gateway-sc",
-          state,
-          ["gateway-sc-trigger-crsgen"],
-          { noDeps: true },
+        yield* timed(
+          "[bootstrap] trigger-crsgen",
+          stepComposeUp(
+            "gateway-sc",
+            state,
+            ["gateway-sc-trigger-crsgen"],
+            { noDeps: true },
+          ),
         );
         yield* probe.waitForComplete("gateway-sc-trigger-crsgen");
 
-        yield* waitForBootstrap(state);
+        yield* timed("[bootstrap] wait-for-materials", waitForBootstrap(state));
         yield* regen(state);
         break;
       }
