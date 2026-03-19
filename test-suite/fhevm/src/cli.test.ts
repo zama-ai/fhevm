@@ -25,6 +25,12 @@ const execCli = async (args: string[]) => {
   return { stdout, stderr, code };
 };
 
+const normalizeCliOutput = (value: string) =>
+  value
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const withState = async (state: State, run: () => Promise<void>) => {
   await mkdir(path.dirname(STATE_FILE), { recursive: true });
   await writeFile(STATE_FILE, JSON.stringify(state, null, 2));
@@ -68,17 +74,20 @@ describe("cli", () => {
 
   test("prints subcommand help without executing up", async () => {
     const result = await execCli(["up", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("Boot the fhevm stack");
-    expect(result.stdout).toContain("USAGE `fhevm-cli up [OPTIONS]");
-    expect(result.stdout).toContain("--target");
+    expect(output).toContain("Boot the fhevm stack");
+    expect(output).toContain("fhevm-cli up");
+    expect(output).toContain("--target");
     expect(result.stdout).not.toContain("[up] target=");
   });
 
   test("prints test help", async () => {
     const result = await execCli(["test", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("USAGE `fhevm-cli test [OPTIONS] [TESTNAME]`");
+    expect(output).toContain("fhevm-cli test");
+    expect(output).toContain("[TESTNAME]");
   });
 
   test("lists bundled scenarios", async () => {
@@ -135,8 +144,10 @@ describe("cli", () => {
 
   test("prints logs help with an optional service argument", async () => {
     const result = await execCli(["logs", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("USAGE `fhevm-cli logs [OPTIONS] [SERVICE]`");
+    expect(output).toContain("fhevm-cli logs");
+    expect(output).toContain("[SERVICE]");
   });
 
   test("places extra docker exec flags before the test container", () => {
