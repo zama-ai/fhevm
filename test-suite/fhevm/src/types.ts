@@ -163,5 +163,4 @@ export type TestOptions = {
   network: string;
   verbose: boolean;
   parallel?: boolean;
-  noRelayer: boolean;
 };

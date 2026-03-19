@@ -144,11 +144,6 @@ export const verboseOption = Options.boolean("verbose").pipe(
   Options.withDefault(false),
 );
 
-export const noRelayerOption = Options.boolean("no-relayer").pipe(
-  Options.withDescription("Pass through the legacy flag that disables the Rust relayer in the e2e runner."),
-  Options.withDefault(false),
-);
-
 export const parallelOption = Options.boolean("parallel").pipe(
   Options.withDescription("Run supported test suites in parallel."),
   Options.optional,

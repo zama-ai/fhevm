@@ -180,7 +180,6 @@ export const test = (
         const started = Date.now();
         const command = [
           "./run-tests.sh",
-          options.noRelayer ? "-r" : "",
           options.verbose ? "-v" : "",
           shouldParallel ? "--parallel" : "",
           "-n",
@@ -265,7 +264,6 @@ export const test = (
       const started = Date.now();
       const command = [
         "./run-tests.sh",
-        options.noRelayer ? "-r" : "",
         options.verbose ? "-v" : "",
         options.parallel ? "--parallel" : "",
         "-n",

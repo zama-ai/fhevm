@@ -10,7 +10,6 @@ DEFAULT_GREP="test user input uint64"
 DEFAULT_NETWORK="staging"
 VERBOSE=false
 NO_COMPILE=false
-NO_RELAYER=false
 
 show_help() {
   echo -e "${BLUE}============================================================${RESET}"
@@ -24,7 +23,6 @@ show_help() {
   echo -e "  -n, --network NAME  Specify network (default: ${DEFAULT_NETWORK})"
   echo -e "  -v, --verbose       Enable verbose output"
   echo -e "  --no-hardhat-compile        Skip Hardhat compilation step"
-  echo -e "  -r, --no-relayer    Disable Rust relayer"
   echo -e ""
   echo -e "${YELLOW}Examples:${RESET}"
   echo -e "  ./run-tests.sh                         (uses default grep: \"${DEFAULT_GREP}\")"
@@ -70,10 +68,6 @@ while (( "$#" )); do
       VERBOSE=true
       shift
       ;;
-    -r|--no-relayer)
-      NO_RELAYER=true
-      shift
-      ;;
     --no-hardhat-compile)
       NO_COMPILE=true
       shift
@@ -105,9 +99,6 @@ if [ "$VERBOSE" = true ]; then
 fi
 if [ "$NO_COMPILE" = true ]; then
   echo -e "  Compile:     ${YELLOW}Disabled${RESET}"
-fi
-if [ "$NO_RELAYER" = true ]; then
-  echo -e "  Rust relayer:${YELLOW} Disabled (legacy flag accepted; behavior is runner-defined)${RESET}"
 fi
 echo -e "${BLUE}============================================================${RESET}"
 

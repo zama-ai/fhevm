@@ -1573,41 +1573,6 @@ describe("command error paths", () => {
     expect(logs.some((l) => l.includes("[fail] input-proof"))).toBe(true);
   });
 
-  test("test passes through --no-relayer to the legacy runner", async () => {
-    const stateDir = path.dirname(STATE_FILE);
-    const stateFile = STATE_FILE;
-    const hadState = await maybeRead(stateFile);
-    const calls: string[] = [];
-    try {
-      await fs.mkdir(stateDir, { recursive: true });
-      const state = stubState({
-        discovery: {
-          gateway: {}, host: {}, kmsSigner: "", fheKeyId: "", crsKeyId: "",
-          actualFheKeyId: "abc",
-          endpoints: { gatewayHttp: "", gatewayWs: "", hostHttp: "", hostWs: "", minioInternal: "", minioExternal: "" },
-        },
-        completedSteps: ["bootstrap"],
-      });
-      await fs.writeFile(stateFile, JSON.stringify(state));
-      await main(
-        ["bun", "src/cli.ts", "test", "input-proof", "--no-relayer"],
-        depsToLayer({
-          liveRunner: async (argv) => {
-            calls.push(argv.join(" "));
-            return 0;
-          },
-        }),
-      );
-    } finally {
-      if (hadState) {
-        await fs.writeFile(stateFile, hadState);
-      } else {
-        await fs.rm(stateFile, { force: true });
-      }
-    }
-    expect(calls.some((call) => call.includes("./run-tests.sh -r"))).toBe(true);
-  });
-
   test("test light runs the lightweight suite sequence", async () => {
     const stateDir = path.dirname(STATE_FILE);
     const stateFile = STATE_FILE;
