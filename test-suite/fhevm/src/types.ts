@@ -45,6 +45,8 @@ export type CoprocessorScenarioInstance = {
 export type CoprocessorScenario = {
   version: 1;
   kind: "coprocessor-consensus";
+  name?: string;
+  description?: string;
   topology: {
     count: number;
     threshold: number;
@@ -64,12 +66,21 @@ export type ResolvedCoprocessorScenario = {
   version: 1;
   kind: "coprocessor-consensus";
   origin: "default" | "file" | "override-shorthand";
+  name?: string;
+  description?: string;
   sourcePath?: string;
   topology: {
     count: number;
     threshold: number;
   };
   instances: ResolvedCoprocessorScenarioInstance[];
+};
+
+export type ScenarioSummary = {
+  key: string;
+  filePath: string;
+  name?: string;
+  description?: string;
 };
 
 export type LocalOverride = {

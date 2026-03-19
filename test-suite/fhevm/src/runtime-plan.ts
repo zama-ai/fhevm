@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import {
   defaultCoprocessorScenario,
   loadCoprocessorScenario,
+  resolveScenarioReference,
   resolveScenarioFile,
   synthesizeOverrideScenario,
 } from "./scenario";
@@ -28,8 +29,9 @@ export const resolveScenarioForOptions = (
 ) =>
   Effect.gen(function* () {
     if (options.scenarioPath) {
-      const input = yield* loadCoprocessorScenario(options.scenarioPath);
-      return resolveScenarioFile(options.scenarioPath, input);
+      const sourcePath = yield* resolveScenarioReference(options.scenarioPath);
+      const input = yield* loadCoprocessorScenario(sourcePath);
+      return resolveScenarioFile(sourcePath, input);
     }
     return synthesizeOverrideScenario(options.overrides) ?? defaultCoprocessorScenario();
   });

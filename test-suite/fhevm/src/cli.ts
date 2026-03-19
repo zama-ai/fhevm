@@ -21,6 +21,7 @@ import { upgradeCommand } from "./commands/upgrade.cmd";
 import { testCommand } from "./commands/test.cmd";
 import { pauseCommand } from "./commands/pause.cmd";
 import { unpauseCommand } from "./commands/unpause.cmd";
+import { scenarioCommand } from "./commands/scenario.cmd";
 
 // ---------------------------------------------------------------------------
 // Root command with subcommands
@@ -38,6 +39,7 @@ const rootCommand = Command.make("fhevm-cli").pipe(
     testCommand,
     pauseCommand,
     unpauseCommand,
+    scenarioCommand,
   ]),
 );
 

@@ -9,6 +9,7 @@ import { compatPolicyForState } from "../compat";
 import { PreflightError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
+  LIGHT_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
@@ -26,6 +27,8 @@ import { topologyForState } from "../runtime-plan";
 import { CommandRunner } from "../services/CommandRunner";
 import { StateManager } from "../services/StateManager";
 import type { TestOptions } from "../types";
+import { pause } from "./pause";
+import { unpause } from "./unpause";
 
 export const test = (
   testName: string | undefined,
@@ -58,142 +61,253 @@ export const test = (
       );
     }
 
-    if (testName === "ciphertext-drift") {
-      yield* Effect.log("[test] ciphertext-drift");
-      const started = Date.now();
+    const ciphertextDriftRequirement = () => {
       const topology = topologyForState(state);
       if (topology.count < 2) {
-        return yield* Effect.fail(
-          new PreflightError({
-            message: "ciphertext-drift requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario ./scenarios/two-of-two.yaml` first",
-          }),
-        );
+        return "ciphertext-drift requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-two` first";
       }
-      const compat = compatPolicyForState(state);
-      if ((compat.coprocessorDropFlags["gw-listener"] ?? []).includes("--ciphertext-commits-address")) {
-        return yield* Effect.fail(
-          new PreflightError({
-            message: "ciphertext-drift requires a gw-listener build with drift addresses enabled; use latest-main or a newer supported bundle",
-          }),
-        );
-      }
-      const logSince = new Date().toISOString();
       const faultyInstanceIndex = parseDriftInstanceIndex(
         process.env.FAULTY_INSTANCE_INDEX ?? "1",
       );
-      const driftInjectTimeoutSeconds = parsePositiveInteger(
-        process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180",
-        "DRIFT_INJECT_TIMEOUT_SECONDS",
-      );
-      const driftInjectPollIntervalSeconds = parsePositiveInteger(
-        process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2",
-        "DRIFT_INJECT_POLL_INTERVAL_SECONDS",
-      );
-      const driftAlertTimeoutSeconds = parsePositiveInteger(
-        process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180",
-        "DRIFT_ALERT_TIMEOUT_SECONDS",
-      );
-      const driftAlertPollIntervalSeconds = parsePositiveInteger(
-        process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2",
-        "DRIFT_ALERT_POLL_INTERVAL_SECONDS",
-      );
-      const grepPattern =
-        process.env.GREP_PATTERN ??
-        "test user input uint64 \\(non-trivial\\)";
-      const detected = yield* runLogged(
-        "ciphertext-drift",
+      if (faultyInstanceIndex >= topology.count) {
+        return `ciphertext-drift targets coprocessor instance ${faultyInstanceIndex}, but the current topology only has ${topology.count} instance${topology.count === 1 ? "" : "s"}`;
+      }
+      const compat = compatPolicyForState(state);
+      if ((compat.coprocessorDropFlags["gw-listener"] ?? []).includes("--ciphertext-commits-address")) {
+        return "ciphertext-drift requires a gw-listener build with drift addresses enabled; use latest-main or a newer supported bundle";
+      }
+      return undefined;
+    };
+
+    const runProfile = (name: string) => {
+      if (name === "ciphertext-drift") {
+        return Effect.gen(function* () {
+          yield* Effect.log("[test] ciphertext-drift");
+          const started = Date.now();
+          const precondition = ciphertextDriftRequirement();
+          if (precondition) {
+            return yield* Effect.fail(
+              new PreflightError({
+                message: precondition,
+              }),
+            );
+          }
+          const logSince = new Date().toISOString();
+          const faultyInstanceIndex = parseDriftInstanceIndex(
+            process.env.FAULTY_INSTANCE_INDEX ?? "1",
+          );
+          const driftInjectTimeoutSeconds = parsePositiveInteger(
+            process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180",
+            "DRIFT_INJECT_TIMEOUT_SECONDS",
+          );
+          const driftInjectPollIntervalSeconds = parsePositiveInteger(
+            process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2",
+            "DRIFT_INJECT_POLL_INTERVAL_SECONDS",
+          );
+          const driftAlertTimeoutSeconds = parsePositiveInteger(
+            process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180",
+            "DRIFT_ALERT_TIMEOUT_SECONDS",
+          );
+          const driftAlertPollIntervalSeconds = parsePositiveInteger(
+            process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2",
+            "DRIFT_ALERT_POLL_INTERVAL_SECONDS",
+          );
+          const grepPattern =
+            process.env.GREP_PATTERN ??
+            "test user input uint64 \\(non-trivial\\)";
+          const detected = yield* runLogged(
+            "ciphertext-drift",
+            started,
+            withDriftInjector(
+              {
+                instanceIndex: faultyInstanceIndex,
+                timeoutSeconds: driftInjectTimeoutSeconds,
+                pollIntervalSeconds: driftInjectPollIntervalSeconds,
+                postgresContainer:
+                  process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
+                postgresUser: process.env.POSTGRES_USER ?? "postgres",
+                postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
+              },
+              (injector) =>
+                Effect.gen(function* () {
+                  yield* cmd.runWithHeartbeat(
+                    [
+                      "docker",
+                      "exec",
+                      "-e",
+                      "npm_config_update_notifier=false",
+                      "-e",
+                      "NPM_CONFIG_UPDATE_NOTIFIER=false",
+                      "-e",
+                      "GATEWAY_RPC_URL=",
+                      process.env.TEST_CONTAINER ?? TEST_SUITE_CONTAINER,
+                      "./run-tests.sh",
+                      "-n",
+                      "staging",
+                      "-g",
+                      grepPattern,
+                    ],
+                    "test ciphertext-drift",
+                  );
+                  const injectedHandleHex = yield* Fiber.join(injector);
+                  const warning = yield* waitForDriftWarning(injectedHandleHex, {
+                    since: logSince,
+                    timeoutSeconds: driftAlertTimeoutSeconds,
+                    pollIntervalSeconds: driftAlertPollIntervalSeconds,
+                  });
+                  return { injectedHandleHex, warning };
+                }),
+            ),
+          );
+          yield* Effect.log(
+            `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`,
+          );
+        });
+      }
+
+      return Effect.gen(function* () {
+        const filter = TEST_GREP[name];
+        if (!filter) {
+          return yield* Effect.fail(
+            new PreflightError({ message: `Unknown test profile ${name}` }),
+          );
+        }
+        const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
+        yield* Effect.log(`[test] ${name} (${options.network})`);
+        const started = Date.now();
+        const command = [
+          "cd /app/test-suite/e2e",
+          "&&",
+          "npx hardhat test",
+          "--no-compile",
+          options.verbose ? "--verbose" : "",
+          shouldParallel ? "--parallel" : "",
+          "--grep",
+          shellEscape(filter),
+          "--network",
+          shellEscape(options.network),
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return yield* runLogged(
+          name,
+          started,
+          cmd.runWithHeartbeat(
+            [
+              "docker",
+              "exec",
+              "-e",
+              "npm_config_update_notifier=false",
+              "-e",
+              "NPM_CONFIG_UPDATE_NOTIFIER=false",
+              TEST_SUITE_CONTAINER,
+              "sh",
+              "-lc",
+              command,
+            ],
+            `test ${name}`,
+          ),
+        );
+      });
+    };
+
+    if (testName === "light") {
+      if (options.grep) {
+        return yield* Effect.fail(
+          new PreflightError({
+            message: "`fhevm-cli test light` does not accept `--grep`; run a named profile instead",
+          }),
+        );
+      }
+      if (options.parallel === true) {
+        return yield* Effect.fail(
+          new PreflightError({
+            message: "`fhevm-cli test light` does not accept `--parallel`; suite members choose their own mode",
+          }),
+        );
+      }
+      yield* Effect.log(`[test] light (${options.network})`);
+      const started = Date.now();
+      yield* runLogged(
+        "light",
         started,
-        withDriftInjector(
-          {
-            instanceIndex: faultyInstanceIndex,
-            timeoutSeconds: driftInjectTimeoutSeconds,
-            pollIntervalSeconds: driftInjectPollIntervalSeconds,
-            postgresContainer:
-              process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
-            postgresUser: process.env.POSTGRES_USER ?? "postgres",
-            postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
-          },
-          (injector) =>
-            Effect.gen(function* () {
-              yield* cmd.runWithHeartbeat(
-                [
-                  "docker",
-                  "exec",
-                  "-e",
-                  "npm_config_update_notifier=false",
-                  "-e",
-                  "NPM_CONFIG_UPDATE_NOTIFIER=false",
-                  "-e",
-                  "GATEWAY_RPC_URL=",
-                  process.env.TEST_CONTAINER ?? TEST_SUITE_CONTAINER,
-                  "./run-tests.sh",
-                  "-n",
-                  "staging",
-                  "-g",
-                  grepPattern,
-                ],
-                "test ciphertext-drift",
-              );
-              const injectedHandleHex = yield* Fiber.join(injector);
-              const warning = yield* waitForDriftWarning(injectedHandleHex, {
-                since: logSince,
-                timeoutSeconds: driftAlertTimeoutSeconds,
-                pollIntervalSeconds: driftAlertPollIntervalSeconds,
-              });
-              return { injectedHandleHex, warning };
-            }),
-        ),
-      );
-      yield* Effect.log(
-        `[drift] detected in ${detected.warning.container} for injected handle 0x${detected.injectedHandleHex}`,
+        Effect.gen(function* () {
+          yield* pause("host");
+          yield* Effect.ensuring(
+            runProfile("paused-host-contracts"),
+            unpause("host").pipe(Effect.orDie),
+          );
+
+          yield* pause("gateway");
+          yield* Effect.ensuring(
+            runProfile("paused-gateway-contracts"),
+            unpause("gateway").pipe(Effect.orDie),
+          );
+
+          const driftPrecondition = ciphertextDriftRequirement();
+          const profiles = driftPrecondition
+            ? LIGHT_TEST_PROFILES.filter((profile) => profile !== "ciphertext-drift")
+            : LIGHT_TEST_PROFILES;
+          if (driftPrecondition) {
+            yield* Effect.log(`[skip] ciphertext-drift: ${driftPrecondition}`);
+          }
+
+          for (const profile of profiles.slice(2)) {
+            yield* runProfile(profile);
+          }
+
+          yield* cmd.runWithHeartbeat(["docker", "stop", "coprocessor-host-listener"], "stop host listener");
+          yield* Effect.ensuring(
+            runProfile("erc20"),
+            cmd.runWithHeartbeat(
+              ["docker", "start", "coprocessor-host-listener"],
+              "start host listener",
+              { allowFailure: true },
+            ).pipe(Effect.orDie),
+          );
+        }),
       );
       return;
     }
 
-    const filter =
-      options.grep ??
-      (testName ? TEST_GREP[testName] : TEST_GREP["input-proof"]);
-    if (!filter) {
-      return yield* Effect.fail(
-        new PreflightError({ message: `Unknown test profile ${testName}` }),
+    if (options.grep) {
+      yield* Effect.log(`[test] custom (${options.network})`);
+      const started = Date.now();
+      const command = [
+        "cd /app/test-suite/e2e",
+        "&&",
+        "npx hardhat test",
+        "--no-compile",
+        options.verbose ? "--verbose" : "",
+        options.parallel ? "--parallel" : "",
+        "--grep",
+        shellEscape(options.grep),
+        "--network",
+        shellEscape(options.network),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      yield* runLogged(
+        "custom",
+        started,
+        cmd.runWithHeartbeat(
+          [
+            "docker",
+            "exec",
+            "-e",
+            "npm_config_update_notifier=false",
+            "-e",
+            "NPM_CONFIG_UPDATE_NOTIFIER=false",
+            TEST_SUITE_CONTAINER,
+            "sh",
+            "-lc",
+            command,
+          ],
+          "test custom",
+        ),
       );
+      return;
     }
-    const shouldParallel =
-      options.parallel ?? (testName ? TEST_PARALLEL[testName] : false);
-    const label = testName ?? "custom";
-    yield* Effect.log(`[test] ${label} (${options.network})`);
-    const started = Date.now();
-    const command = [
-      "cd /app/test-suite/e2e",
-      "&&",
-      "npx hardhat test",
-      "--no-compile",
-      options.verbose ? "--verbose" : "",
-      shouldParallel ? "--parallel" : "",
-      "--grep",
-      shellEscape(filter),
-      "--network",
-      shellEscape(options.network),
-    ]
-      .filter(Boolean)
-      .join(" ");
-    yield* runLogged(
-      label,
-      started,
-      cmd.runWithHeartbeat(
-        [
-          "docker",
-          "exec",
-          "-e",
-          "npm_config_update_notifier=false",
-          "-e",
-          "NPM_CONFIG_UPDATE_NOTIFIER=false",
-          TEST_SUITE_CONTAINER,
-          "sh",
-          "-lc",
-          command,
-        ],
-        `test ${label}`,
-      ),
-    );
+
+    yield* runProfile(testName ?? "input-proof");
   });

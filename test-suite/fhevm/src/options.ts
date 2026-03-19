@@ -90,7 +90,7 @@ export const lockFileOption = Options.text("lock-file").pipe(
 );
 
 export const scenarioOption = Options.text("scenario").pipe(
-  Options.withDescription("Path to a coprocessor consensus scenario file."),
+  Options.withDescription("Scenario preset name or path to a coprocessor consensus scenario file."),
   Options.optional,
 );
 

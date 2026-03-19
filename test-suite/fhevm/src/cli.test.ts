@@ -142,7 +142,7 @@ describe("resolveTarget", () => {
 describe("runtime invariants", () => {
   test("expandBuildOverrides leaves coprocessor to scenarios when a scenario file is present", () => {
     expect(expandBuildOverrides().some((item) => item.group === "coprocessor")).toBe(true);
-    expect(expandBuildOverrides("./scenarios/two-of-two.yaml").some((item) => item.group === "coprocessor")).toBe(false);
+    expect(expandBuildOverrides("two-of-two").some((item) => item.group === "coprocessor")).toBe(false);
   });
 
   test("resolvedComposeEnv preserves version keys", () => {
@@ -1105,7 +1105,7 @@ describe("runtime invariants", () => {
     expect(logs.some((line) => line.includes("resume preview uses persisted state only"))).toBe(true);
   });
 
-  test("down restores generated runtime artifacts from state before teardown", async () => {
+  test("down prunes generated runtime artifacts after successful teardown", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
@@ -1115,9 +1115,19 @@ describe("runtime invariants", () => {
       JSON.stringify(stubState({ discovery: readyDiscovery(), completedSteps: ["bootstrap"] })),
     );
     try {
-      await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
-      expect(await maybeRead(composePath("coprocessor"))).toContain("services:");
-      expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toContain("GATEWAY_VERSION=");
+      await main(
+        ["bun", "src/cli.ts", "down"],
+        depsToLayer({
+          runner: fakeRunner({
+            "docker ps -a --filter label=com.docker.compose.project=fhevm --format {{.Names}}": "gateway-node\n",
+            "docker ps -a --filter label=com.docker.compose.project=fhevm --format {{.ID}}": "",
+          }),
+          liveRunner: async () => 0,
+        }),
+      );
+      expect(await maybeRead(composePath("coprocessor"))).toBeUndefined();
+      expect(await maybeRead(path.join(STATE_DIR, "env", "versions.env"))).toBeUndefined();
+      expect(await maybeRead(hostAddressesPath)).toBeUndefined();
       expect(await maybeRead(STATE_FILE)).toBeDefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
@@ -1128,7 +1138,7 @@ describe("runtime invariants", () => {
     }
   });
 
-  test("down restores placeholder host addresses and test-suite env from partial discovery", async () => {
+  test("down with no running containers still prunes stale generated runtime artifacts", async () => {
     process.chdir(REPO_ROOT);
     const before = await maybeRead(STATE_FILE);
     await fs.rm(STATE_DIR, { recursive: true, force: true });
@@ -1142,10 +1152,14 @@ describe("runtime invariants", () => {
         }),
       ),
     );
+    await fs.mkdir(path.dirname(hostAddressesPath), { recursive: true });
+    await fs.writeFile(hostAddressesPath, "ACL_CONTRACT_ADDRESS=0x1\n");
+    await fs.mkdir(path.dirname(envPath("test-suite")), { recursive: true });
+    await fs.writeFile(envPath("test-suite"), "RELAYER_URL=http://localhost:3000\n");
     try {
       await main(["bun", "src/cli.ts", "down"], depsToLayer({ liveRunner: async () => 0 }));
-      expect(await maybeRead(hostAddressesPath)).toBeDefined();
-      expect(await maybeRead(envPath("test-suite"))).toContain("RELAYER_URL=");
+      expect(await maybeRead(hostAddressesPath)).toBeUndefined();
+      expect(await maybeRead(envPath("test-suite"))).toBeUndefined();
       expect(await maybeRead(STATE_FILE)).toBeDefined();
     } finally {
       await fs.rm(STATE_DIR, { recursive: true, force: true });
@@ -1449,6 +1463,19 @@ describe("command error paths", () => {
     expect(TEST_GREP["hcu-block-cap"]).toBe("block cap scenarios");
   });
 
+  test("scenario list prints bundled scenario metadata", async () => {
+    const { logs, restore } = captureConsole("log");
+    try {
+      await main(["bun", "src/cli.ts", "scenario", "list"], noopLayer);
+    } finally { restore(); }
+    expect(logs.some((line) => line.includes("two-of-two - Two Of Two"))).toBe(true);
+    expect(
+      logs.some((line) =>
+        line.includes("Smallest multi-coprocessor consensus setup for drift and quorum testing."),
+      ),
+    ).toBe(true);
+  });
+
   test("pause rejects missing scope", async () => {
     const { logs, restore } = captureConsole("error");
     try {
@@ -1545,6 +1572,148 @@ describe("command error paths", () => {
     expect(logs.some((l) => l.includes("[fail] input-proof"))).toBe(true);
   });
 
+  test("test light runs the lightweight suite sequence", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const calls: string[] = [];
+    const { logs, restore } = captureConsole("log");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(
+          stubState({
+            count: 2,
+            threshold: 2,
+            discovery: readyDiscovery(),
+            completedSteps: [...STEP_NAMES],
+            envOverrides: {
+              COPROCESSOR_GW_LISTENER_VERSION: "v0.12.0",
+            },
+          }),
+        ),
+      );
+      await main(
+        ["bun", "src/cli.ts", "test", "light"],
+        depsToLayer({
+          runner: async (argv) => {
+            if (argv[0] === "cast" && argv[1] === "wallet" && argv[2] === "address") {
+              return { stdout: "0x1111111111111111111111111111111111111111\n", stderr: "", code: 0 };
+            }
+            if (argv[0] === "cast" && argv[1] === "wallet" && argv[2] === "private-key") {
+              return { stdout: "0x1111111111111111111111111111111111111111111111111111111111111111\n", stderr: "", code: 0 };
+            }
+            if (argv[0] === "docker" && argv[1] === "exec" && argv.includes("psql")) {
+              const command = argv.join(" ");
+              if (command.includes("SELECT consumed::int")) {
+                return { stdout: "1\n", stderr: "", code: 0 };
+              }
+              if (command.includes("SELECT encode(injected_handle, 'hex')")) {
+                return { stdout: "abcd\n", stderr: "", code: 0 };
+              }
+              return { stdout: "", stderr: "", code: 0 };
+            }
+            if (argv.join(" ") === "docker ps --format {{.Names}}") {
+              return { stdout: "coprocessor-gw-listener\ncoprocessor1-gw-listener\n", stderr: "", code: 0 };
+            }
+            if (argv[0] === "docker" && argv[1] === "logs") {
+              return {
+                stdout:
+                  '{"message":"Drift detected: observed multiple digest variants for handle","handle":"0xabcd"}\n',
+                stderr: "",
+                code: 0,
+              };
+            }
+            return { stdout: "", stderr: "", code: 0 };
+          },
+          liveRunner: async (argv) => {
+            calls.push(argv.join(" "));
+            return 0;
+          },
+        }),
+      );
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("[pass] light"))).toBe(true);
+    expect(calls.some((call) => call.includes("task:pauseACL"))).toBe(true);
+    expect(calls.some((call) => call.includes("task:pauseAllGatewayContracts"))).toBe(true);
+    expect(calls.some((call) => call.includes(TEST_GREP["input-proof"]))).toBe(true);
+    expect(calls.some((call) => call === "docker stop coprocessor-host-listener")).toBe(true);
+    expect(calls.some((call) => call === "docker start coprocessor-host-listener")).toBe(true);
+  }, 30000);
+
+  test("test light rejects grep overrides", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const { logs, restore } = captureConsole("error");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(
+          stubState({ count: 2, threshold: 2, discovery: readyDiscovery(), completedSteps: [...STEP_NAMES] }),
+        ),
+      );
+      await main(["bun", "src/cli.ts", "test", "light", "--grep", "foo"], noopLayer);
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("does not accept `--grep`"))).toBe(true);
+  });
+
+  test("test light skips ciphertext-drift on single-coprocessor stacks", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const { logs, restore } = captureConsole("log");
+    try {
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(
+          stubState({ discovery: readyDiscovery(), completedSteps: [...STEP_NAMES] }),
+        ),
+      );
+      await main(
+        ["bun", "src/cli.ts", "test", "light"],
+        depsToLayer({
+          runner: async (argv) => {
+            if (argv[0] === "cast" && argv[1] === "wallet" && argv[2] === "address") {
+              return { stdout: "0x1111111111111111111111111111111111111111\n", stderr: "", code: 0 };
+            }
+            if (argv[0] === "cast" && argv[1] === "wallet" && argv[2] === "private-key") {
+              return { stdout: "0x1111111111111111111111111111111111111111111111111111111111111111\n", stderr: "", code: 0 };
+            }
+            return { stdout: "", stderr: "", code: 0 };
+          },
+          liveRunner: async () => 0,
+        }),
+      );
+    } finally {
+      restore();
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("[pass] light"))).toBe(true);
+    expect(logs.some((l) => l.includes("[skip] ciphertext-drift"))).toBe(true);
+  });
+
   test("ciphertext-drift requires a multi-coprocessor topology", async () => {
     const stateDir = path.join(REPO_ROOT, ".fhevm");
     const stateFile = path.join(stateDir, "state.json");
@@ -1566,6 +1735,46 @@ describe("command error paths", () => {
       }
     }
     expect(logs.some((l) => l.includes("requires a multi-coprocessor topology"))).toBe(true);
+  });
+
+  test("ciphertext-drift rejects a faulty instance index outside the topology", async () => {
+    const stateDir = path.join(REPO_ROOT, ".fhevm");
+    const stateFile = path.join(stateDir, "state.json");
+    const hadState = await maybeRead(stateFile);
+    const priorFaulty = process.env.FAULTY_INSTANCE_INDEX;
+    const { logs, restore } = captureConsole("error");
+    try {
+      process.env.FAULTY_INSTANCE_INDEX = "2";
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify(
+          stubState({
+            count: 2,
+            threshold: 2,
+            discovery: readyDiscovery(),
+            completedSteps: [...STEP_NAMES],
+            envOverrides: {
+              COPROCESSOR_GW_LISTENER_VERSION: "v0.12.0",
+            },
+          }),
+        ),
+      );
+      await main(["bun", "src/cli.ts", "test", "ciphertext-drift"], noopLayer);
+    } finally {
+      restore();
+      if (priorFaulty === undefined) {
+        delete process.env.FAULTY_INSTANCE_INDEX;
+      } else {
+        process.env.FAULTY_INSTANCE_INDEX = priorFaulty;
+      }
+      if (hadState) {
+        await fs.writeFile(stateFile, hadState);
+      } else {
+        await fs.rm(stateFile, { force: true });
+      }
+    }
+    expect(logs.some((l) => l.includes("targets coprocessor instance 2"))).toBe(true);
   });
 
   test("ciphertext-drift fails early when gw-listener drift addresses are disabled by compat", async () => {
@@ -1616,7 +1825,11 @@ describe("command error paths", () => {
     try {
       await main(["bun", "src/cli.ts", "up", "--help"], noopLayer);
     } finally { restore(); }
-    expect(logs.some((line) => line.includes("Path to a coprocessor consensus scenario file"))).toBe(true);
+    expect(
+      logs.some((line) =>
+        line.includes("Scenario preset name or path to a coprocessor consensus scenario file"),
+      ),
+    ).toBe(true);
     expect(logs.some((line) => line.includes("Boot the fhevm stack from a target, lock file, or persisted state"))).toBe(true);
   });
 

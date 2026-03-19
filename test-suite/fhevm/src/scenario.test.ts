@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
+import { Effect } from "effect";
 
 import {
+  listScenarioSummaries,
   parseCoprocessorScenario,
+  resolveScenarioReference,
   resolveScenarioFile,
   synthesizeOverrideScenario,
 } from "./scenario";
@@ -11,6 +15,8 @@ describe("parseCoprocessorScenario", () => {
     const scenario = parseCoprocessorScenario(`
 version: 1
 kind: coprocessor-consensus
+name: Two Of Two
+description: Smallest multi-coprocessor consensus setup.
 topology:
   count: 2
   threshold: 2
@@ -40,6 +46,8 @@ instances:
         args: { "tfhe-worker": ["--coprocessor-fhe-threads=4"] },
       },
     ]);
+    expect(resolved.name).toBe("Two Of Two");
+    expect(resolved.description).toBe("Smallest multi-coprocessor consensus setup.");
   });
 
   test("parses localServices for local instances", () => {
@@ -161,6 +169,8 @@ describe("synthesizeOverrideScenario", () => {
       version: 1,
       kind: "coprocessor-consensus",
       origin: "override-shorthand",
+      name: "Override Shorthand",
+      description: "Single local coprocessor instance synthesized from --override coprocessor.",
       topology: { count: 1, threshold: 1 },
       instances: [
         {
@@ -171,6 +181,31 @@ describe("synthesizeOverrideScenario", () => {
           localServices: undefined,
         },
       ],
+    });
+  });
+});
+
+describe("scenario references", () => {
+  test("resolves bundled scenario names by filename stem", async () => {
+    const resolved = await Effect.runPromise(resolveScenarioReference("two-of-two"));
+    expect(resolved).toBe(path.join(process.cwd(), "scenarios", "two-of-two.yaml"));
+  });
+
+  test("rejects --scenario list with a helpful message", async () => {
+    const result = await Effect.runPromise(resolveScenarioReference("list").pipe(Effect.either));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("fhevm-cli scenario list");
+    }
+  });
+
+  test("lists bundled scenarios with metadata", async () => {
+    const scenarios = await Effect.runPromise(listScenarioSummaries());
+    expect(scenarios).toContainEqual({
+      key: "two-of-two",
+      filePath: path.join(process.cwd(), "scenarios", "two-of-two.yaml"),
+      name: "Two Of Two",
+      description: "Smallest multi-coprocessor consensus setup for drift and quorum testing.",
     });
   });
 });

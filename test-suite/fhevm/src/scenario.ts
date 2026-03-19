@@ -18,6 +18,7 @@ import type {
   LocalOverride,
   ResolvedCoprocessorScenario,
   ResolvedCoprocessorScenarioInstance,
+  ScenarioSummary,
 } from "./types";
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
@@ -33,6 +34,19 @@ const COPROCESSOR_ARG_TARGETS = new Set([
   "*",
   ...GROUP_SERVICE_SUFFIXES["coprocessor"].filter((value) => !value.includes("migration")),
 ]);
+
+const SCENARIO_FILE = /\.ya?ml$/i;
+
+const normalizeOptionalText = (
+  value: unknown,
+  label: string,
+) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = normalizeScalar(value, label).trim();
+  return normalized.length ? normalized : undefined;
+};
 
 const normalizeScalar = (value: unknown, label: string) => {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -75,6 +89,8 @@ export const defaultCoprocessorScenario = (): ResolvedCoprocessorScenario => ({
   version: COPROCESSOR_SCENARIO_VERSION,
   kind: COPROCESSOR_SCENARIO_KIND,
   origin: "default",
+  name: "Default",
+  description: "Single inherited coprocessor instance.",
   topology: { count: 1, threshold: 1 },
   instances: [
     {
@@ -213,24 +229,68 @@ export const parseCoprocessorScenario = (
   return {
     version: COPROCESSOR_SCENARIO_VERSION,
     kind: COPROCESSOR_SCENARIO_KIND,
+    name: normalizeOptionalText(parsed.name, `${sourceLabel}: name`),
+    description: normalizeOptionalText(parsed.description, `${sourceLabel}: description`),
     topology: { count, threshold },
     instances,
   };
 };
 
-export const loadCoprocessorScenario = (
-  filePath: string,
-): Effect.Effect<CoprocessorScenario, PreflightError> =>
+const scenarioCandidatePaths = (value: string) => {
+  const absolute = path.resolve(value);
+  const explicit = value.includes("/") || value.includes("\\") || SCENARIO_FILE.test(value);
+  return explicit
+    ? [absolute]
+    : [
+        path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yaml`),
+        path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yml`),
+      ];
+};
+
+export const resolveScenarioReference = (
+  value: string,
+): Effect.Effect<string, PreflightError> =>
   Effect.tryPromise({
     try: async () => {
-      const absolute = path.resolve(filePath);
-      const text = await fs.readFile(absolute, "utf8");
-      return parseCoprocessorScenario(text, absolute);
+      if (value === "list") {
+        throw new Error("`--scenario list` is not supported; run `fhevm-cli scenario list`");
+      }
+      for (const candidate of scenarioCandidatePaths(value)) {
+        try {
+          await fs.access(candidate);
+          return candidate;
+        } catch {
+          // try next
+        }
+      }
+      const named = !value.includes("/") && !value.includes("\\") && !SCENARIO_FILE.test(value);
+      throw new Error(
+        named
+          ? `Unknown scenario ${value}; run \`fhevm-cli scenario list\``
+          : `Scenario file not found: ${path.resolve(value)}`,
+      );
     },
     catch: (error) =>
       new PreflightError({
         message: error instanceof Error ? error.message : String(error),
       }),
+  });
+
+export const loadCoprocessorScenario = (
+  scenarioRef: string,
+): Effect.Effect<CoprocessorScenario, PreflightError> =>
+  Effect.gen(function* () {
+    const absolute = yield* resolveScenarioReference(scenarioRef);
+    return yield* Effect.tryPromise({
+      try: async () => {
+        const text = await fs.readFile(absolute, "utf8");
+        return parseCoprocessorScenario(text, absolute);
+      },
+      catch: (error) =>
+        new PreflightError({
+          message: error instanceof Error ? error.message : String(error),
+        }),
+    });
   });
 
 export const resolveScenarioFile = (
@@ -244,6 +304,8 @@ export const resolveScenarioFile = (
     version: COPROCESSOR_SCENARIO_VERSION,
     kind: COPROCESSOR_SCENARIO_KIND,
     origin: "file",
+    name: input.name,
+    description: input.description,
     sourcePath: path.resolve(filePath),
     topology: { ...input.topology },
     instances: Array.from({ length: input.topology.count }, (_, index) => {
@@ -328,6 +390,8 @@ export const synthesizeOverrideScenario = (
     version: COPROCESSOR_SCENARIO_VERSION,
     kind: COPROCESSOR_SCENARIO_KIND,
     origin: "override-shorthand",
+    name: "Override Shorthand",
+    description: "Single local coprocessor instance synthesized from --override coprocessor.",
     topology: { count: 1, threshold: 1 },
     instances: [
       {
@@ -347,3 +411,37 @@ export const hasLocalCoprocessorInstance = (
   ("scenario" in state ? state.scenario.instances : state.instances).some(
     (instance) => instance.source.mode === "local",
   );
+
+export const listScenarioSummaries = (): Effect.Effect<
+  ScenarioSummary[],
+  PreflightError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      const entries = await fs.readdir(COPROCESSOR_SCENARIO_DIR, { withFileTypes: true });
+      const files = entries
+        .filter((entry) => entry.isFile() && SCENARIO_FILE.test(entry.name))
+        .map((entry) => entry.name)
+        .sort();
+      const scenarios = await Promise.all(
+        files.map(async (fileName) => {
+          const filePath = path.join(COPROCESSOR_SCENARIO_DIR, fileName);
+          const parsed = parseCoprocessorScenario(
+            await fs.readFile(filePath, "utf8"),
+            filePath,
+          );
+          return {
+            key: fileName.replace(SCENARIO_FILE, ""),
+            filePath,
+            name: parsed.name,
+            description: parsed.description,
+          } satisfies ScenarioSummary;
+        }),
+      );
+      return scenarios;
+    },
+    catch: (error) =>
+      new PreflightError({
+        message: error instanceof Error ? error.message : String(error),
+      }),
+  });

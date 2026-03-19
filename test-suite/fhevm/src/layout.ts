@@ -180,6 +180,22 @@ export const TEST_PARALLEL: Record<string, boolean> = {
   operators: true,
 };
 
+export const LIGHT_TEST_PROFILES = [
+  "paused-host-contracts",
+  "paused-gateway-contracts",
+  "input-proof",
+  "input-proof-compute-decrypt",
+  "user-decryption",
+  "delegated-user-decryption",
+  "erc20",
+  "public-decrypt-http-ebool",
+  "public-decrypt-http-mixed",
+  "negative-acl",
+  "random-subset",
+  "hcu-block-cap",
+  "ciphertext-drift",
+] as const;
+
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 export const COPROCESSOR_WALLET_INDICES = [5, 8, 9, 10, 11] as const;
 export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;

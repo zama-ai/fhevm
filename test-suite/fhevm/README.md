@@ -70,9 +70,10 @@ bun test
 
 - `up` resolves a target bundle, runs preflight, generates `.fhevm`, and boots the stack
 - `up --dry-run` runs the same resolve and preflight path without mutating runtime state
-- `up --scenario <file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
+- `up --scenario <name-or-file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
 - `up --override coprocessor` is the fast local-dev shorthand for a one-instance local coprocessor scenario
-- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`)
+- `scenario list` prints the bundled scenario presets with their intent
+- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test light` runs the non-heavy PR e2e suite in one command and skips `ciphertext-drift` unless the current topology supports it
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
 - `down` stops the stack but keeps resumable `.fhevm` state
@@ -114,7 +115,7 @@ Runtime resolution is intentionally fixed:
 
 1. Resolve the base bundle from `--target`, `--sha`, or `--lock-file`
 2. Apply matching `*_VERSION` environment overrides
-3. Apply either `--scenario <file>` or the `--override coprocessor` shorthand
+3. Apply either `--scenario <name-or-file>` or the `--override coprocessor` shorthand
 4. Materialize generated env/config/compose state under `.fhevm/`
 
 ## Targets
@@ -182,7 +183,7 @@ This is how CI works. The merge queue workflow:
 2. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
 3. Leaves skipped components unset so they naturally stay on the `latest-main` baseline
 4. Fails if a required touched-component build reports a non-skipped failure
-5. Runs `./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml`
+5. Runs `./fhevm-cli up --target latest-main --scenario two-of-two`
 6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
@@ -270,10 +271,11 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ./fhevm-cli up --target sha --sha 9587546
 ./fhevm-cli up --target latest-supported --resume --from-step relayer
 ./fhevm-cli up --target latest-main --build
-./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml --build
+./fhevm-cli up --target latest-main --scenario two-of-two --build
 ./fhevm-cli up --target latest-supported --override coprocessor
 ./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
-./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli up --target latest-supported --scenario two-of-two
+./fhevm-cli scenario list
 ./fhevm-cli upgrade coprocessor
 
 ./fhevm-cli status
@@ -281,6 +283,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 ./fhevm-cli logs --no-follow relayer
 ./fhevm-cli test input-proof
 ./fhevm-cli test erc20
+./fhevm-cli test light
 ./fhevm-cli test operators
 ./fhevm-cli test --parallel --grep "test operator" --verbose
 ./fhevm-cli pause host
@@ -317,7 +320,7 @@ For `coprocessor`, this is also the shorthand local-dev scenario: one coprocesso
 
 ```sh
 ./fhevm-cli up --target latest-main --build
-./fhevm-cli up --target latest-main --scenario ./scenarios/two-of-two.yaml --build
+./fhevm-cli up --target latest-main --scenario two-of-two --build
 ```
 
 ### Override specific runtime services
@@ -391,7 +394,7 @@ If a runtime override is already active and you only want to rebuild and restart
 
 ## Coprocessor Scenarios
 
-Use `--scenario <file>` for consensus and rollout matrices. The file is the source of truth for:
+Use `--scenario <name-or-file>` for consensus and rollout matrices. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
 
 - coprocessor count and threshold
 - per-instance source mode: `inherit`, `registry`, or `local`
@@ -402,7 +405,8 @@ Use `--scenario <file>` for consensus and rollout matrices. The file is the sour
 Examples:
 
 ```sh
-./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli scenario list
+./fhevm-cli up --target latest-supported --scenario two-of-two
 ```
 
 Selective local instance example:

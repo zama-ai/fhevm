@@ -26,5 +26,5 @@ export const testCommand = Command.make(
       parallel: Option.getOrUndefined(parallel),
     }),
 ).pipe(
-  Command.withDescription("Run a named e2e test profile inside the test-suite container."),
+  Command.withDescription("Run a named e2e test profile or suite inside the test-suite container."),
 );
