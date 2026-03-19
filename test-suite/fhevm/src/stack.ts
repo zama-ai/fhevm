@@ -426,26 +426,31 @@ export const resolveUpgradePlan = (
     throw new Error(`upgrade expects one of ${UPGRADEABLE_GROUPS.join(", ")}`);
   }
   const group = groupValue as UpgradeGroup;
-  if (group === "coprocessor" && !hasLocalCoprocessorInstance(state)) {
+  const groupOverrides = state.overrides.filter((item) => item.group === group);
+  if (group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {
     throw new Error("upgrade requires an active local coprocessor instance");
   }
-  if (group !== "coprocessor" && !state.overrides.some((item) => item.group === group)) {
+  if (group !== "coprocessor" && !groupOverrides.length) {
     throw new Error(`upgrade requires an active local override for ${group}`);
   }
   const [component] = GROUP_BUILD_COMPONENTS[group];
   if (!component) {
     throw new Error(`No runtime component registered for ${group}`);
   }
-  const groupOverrides = state.overrides.filter((item) => item.group === group);
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
+  const fullGroupServices = groupOverrides.length && !selectedServices.length ? GROUP_BUILD_SERVICES[group] : [];
+  const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
   const scenario = state.scenario;
   const plannedServices =
     group === "coprocessor"
       ? scenario.instances.flatMap((instance) => {
-          if (instance.source.mode !== "local") {
+          if (instance.source.mode === "registry") {
             return [];
           }
-          const selected = instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor;
+          const selected =
+            instance.source.mode === "local"
+              ? instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor
+              : overrideServices;
           return selected.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),
           );
@@ -472,22 +477,28 @@ export const resolveUpgradePlan = (
 };
 
 const dockerInspect = async (name: string) => {
-  try {
-    const result = await run(["docker", "inspect", name], { allowFailure: true });
-    if (result.code !== 0) {
+  const result = await run(["docker", "inspect", name], { allowFailure: true });
+  if (result.code !== 0) {
+    const message = (result.stderr || result.stdout).trim();
+    if (/no such object|no such container/i.test(message)) {
       return [] as Array<{
         Name: string;
         State: { Status: string; ExitCode: number; Health?: { Status: string } };
         NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
       }>;
     }
+    throw new PreflightError(message || `docker inspect ${name} failed`);
+  }
+  try {
     return JSON.parse(result.stdout) as Array<{
       Name: string;
       State: { Status: string; ExitCode: number; Health?: { Status: string } };
       NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
     }>;
-  } catch {
-    return [];
+  } catch (error) {
+    throw new PreflightError(
+      `docker inspect ${name} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 };
 

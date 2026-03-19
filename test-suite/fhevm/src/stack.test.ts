@@ -45,4 +45,24 @@ describe("stack", () => {
       ),
     ).toThrow("upgrade for kms-connector requires a full-group local override so DB migrations can run");
   });
+
+  test("upgrade treats inherited multi-instance coprocessor build overrides as an active local runtime path", () => {
+    const plan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "coprocessor" }],
+        scenario: {
+          ...defaultScenario,
+          topology: { count: 2, threshold: 2 },
+          instances: [
+            { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
+            { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+          ],
+        },
+      },
+      "coprocessor",
+    );
+    expect(plan.migrationServices).toEqual(["coprocessor-db-migration", "coprocessor1-db-migration"]);
+    expect(plan.runtimeServices).toContain("coprocessor-host-listener");
+    expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
+  });
 });

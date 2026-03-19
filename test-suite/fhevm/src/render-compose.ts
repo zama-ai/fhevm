@@ -207,13 +207,23 @@ export const loadMergedComposeDoc = async (component: string) => {
 const localServicesForInstance = (instance: ResolvedCoprocessorScenarioInstance) =>
   new Set(instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor);
 
+const coprocessorBuildServices = (plan: Pick<RuntimePlan, "overrides">) => {
+  const overrides = plan.overrides.filter((override) => override.group === "coprocessor");
+  if (!overrides.length) {
+    return new Set<string>();
+  }
+  if (overrides.some((override) => !override.services?.length)) {
+    return new Set(GROUP_BUILD_SERVICES.coprocessor);
+  }
+  return new Set(overrides.flatMap((override) => override.services ?? []));
+};
+
 const applyCoprocessorSource = (
   service: Record<string, unknown>,
-  serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
-  localServices: ReadonlySet<string>,
+  locallyBuilt: boolean,
 ) => {
-  if (instance.source.mode === "local" && localServices.has(serviceName)) {
+  if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
     return;
   }
@@ -229,8 +239,14 @@ const buildCoprocessorOverride = async (plan: RuntimePlan) => {
   const clonedServices = new Set(Object.keys(doc.services));
   const services: Record<string, Record<string, unknown>> = {};
   const compat = compatPolicyForState(plan);
+  const inheritedBuildServices = coprocessorBuildServices(plan);
   for (const instance of plan.coprocessor.instances) {
-    const localServices = localServicesForInstance(instance);
+    const localServices =
+      instance.source.mode === "local"
+        ? localServicesForInstance(instance)
+        : instance.source.mode === "inherit"
+          ? inheritedBuildServices
+          : new Set<string>();
     const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
@@ -238,7 +254,7 @@ const buildCoprocessorOverride = async (plan: RuntimePlan) => {
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^coprocessor-/, "");
       const serviceName = `${prefix}${suffix}`;
-      const locallyBuilt = instance.source.mode === "local" && localServices.has(name);
+      const locallyBuilt = localServices.has(name);
       const adjusted = applyInstanceAdjustments(
         name,
         service,
@@ -249,7 +265,7 @@ const buildCoprocessorOverride = async (plan: RuntimePlan) => {
         locallyBuilt ? {} : compat.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, instance, localServices);
+      applyCoprocessorSource(adjusted, instance, locallyBuilt);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
