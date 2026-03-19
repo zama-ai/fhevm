@@ -117,7 +117,7 @@ This document outlines security best practices for the FHEVM project, particular
 
 #### Environment files
 
-Our repository contains example environment files `env/staging` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
+Our repository contains example environment files under `test-suite/fhevm/templates/env/.env.*` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
 
 For production deployments:
 

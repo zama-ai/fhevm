@@ -44,7 +44,7 @@ Most users should start with `latest-main`.
 
 - fastest local iteration: `./fhevm-cli up --target latest-main --override <group>`
 - full branch validation: `./fhevm-cli up --target latest-main --build`
-- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario
+- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario + `test light`
 - merge queue: `latest-main` baseline + repo-owned image overrides for components that were actually rebuilt
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
@@ -245,7 +245,7 @@ The matrix has three sections:
 | `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and can optionally add `--build`.
+Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and explicitly keeps `build=false`.
 
 ### How to update
 

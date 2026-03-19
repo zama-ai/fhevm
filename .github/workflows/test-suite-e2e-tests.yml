@@ -146,6 +146,14 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
 
+      - name: Typecheck CLI
+        working-directory: test-suite/fhevm
+        run: bun run check
+
+      - name: Unit test CLI
+        working-directory: test-suite/fhevm
+        run: bun test src
+
       - name: Dry run
         working-directory: test-suite/fhevm
         run: |
@@ -164,100 +172,10 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
-      # E2E tests on pausing the Host contracts
-      - name: Pause Host Contracts
+      - name: PR light suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli pause host
-
-      - name: Paused Host contracts test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-host-contracts
-
-      - name: Unpause Host Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause host
-
-      # E2E tests on pausing the Gateway contracts
-      - name: Pause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli pause gateway
-
-      - name: Paused Gateway contracts test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-gateway-contracts
-
-      - name: Unpause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause gateway
-
-      # E2E tests after unpausing the Host and Gateway contracts
-      - name: Input proof test (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof
-
-      - name: Input proof test with compute and decrypt (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof-compute-decrypt
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: Delegated User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test delegated-user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
-      - name: Negative ACL tests
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test negative-acl
-
-      - name: Random operators test (subset)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test random-subset
-
-      - name: HCU block cap test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test hcu-block-cap
-
-      - name: Ciphertext drift test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test ciphertext-drift
-
-      - name: Host listener poller test
-        working-directory: test-suite/fhevm
-        run: |
-          docker stop coprocessor-host-listener
-          ./fhevm-cli test erc20
-          docker start coprocessor-host-listener
+          ./fhevm-cli test light
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm

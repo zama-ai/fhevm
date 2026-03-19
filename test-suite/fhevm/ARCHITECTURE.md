@@ -93,6 +93,6 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`; `down` stops containers, prunes `.fhevm/runtime`, keeps `.fhevm/state`, and `clean` removes both.
 - Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` only contains generated overrides for coprocessor topology and active local-override components.
-- CI follows the same contract: e2e flows boot `latest-main`, overlay PR-built image refs through `*_VERSION` env vars, use checked-in scenarios for multicopro runs, and use `--build` for full local-workspace coverage.
+- CI follows the same contract: direct PR e2e boots `latest-main --build` with the checked-in `two-of-two` scenario and runs `test light`, while orchestrated e2e boots the same scenario with `build=false` and overlays selected `*_VERSION` image refs.
 - `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.

@@ -118,6 +118,9 @@ const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
 const describeOverride = (item: { group: string; services?: string[] }) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
+const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) =>
+  effectiveOverrides(state.overrides, state.scenario);
+
 const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
   const warnings = overrides.flatMap((item) =>
     item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group)
@@ -143,10 +146,11 @@ const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) =>
 
 const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
   const topology = topologyForState(state);
+  const overrides = visibleOverrides(state);
   console.log(`[plan] profile=${state.target}`);
-  if (state.overrides.length) {
-    console.log(`[plan] overrides=${state.overrides.map(describeOverride).join(", ")}`);
-    for (const warning of overrideWarnings(state.overrides, state.target)) {
+  if (overrides.length) {
+    console.log(`[plan] overrides=${overrides.map(describeOverride).join(", ")}`);
+    for (const warning of overrideWarnings(overrides, state.target)) {
       console.log(`[warn] ${warning}`);
     }
   }
@@ -414,7 +418,7 @@ const resetAfterStep = async (step: StepName) => {
   }
 };
 
-const resolveUpgradePlan = (
+export const resolveUpgradePlan = (
   state: Pick<State, "overrides" | "scenario">,
   groupValue: string | undefined,
 ) => {
@@ -435,7 +439,6 @@ const resolveUpgradePlan = (
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
   const scenario = state.scenario;
-  const restartableServices = (services: string[]) => services.filter((service) => !service.endsWith("-db-migration"));
   const plannedServices =
     group === "coprocessor"
       ? scenario.instances.flatMap((instance) => {
@@ -450,14 +453,20 @@ const resolveUpgradePlan = (
       : selectedServices.length
         ? [...new Set(selectedServices)]
         : GROUP_BUILD_SERVICES[group];
-  const services = restartableServices([...new Set(plannedServices)]);
-  if (!services.length) {
+  const services = [...new Set(plannedServices)];
+  const migrationServices = services.filter((service) => service.endsWith("-db-migration"));
+  const runtimeServices = services.filter((service) => !service.endsWith("-db-migration"));
+  if (SCHEMA_COUPLED_GROUPS.includes(group) && !migrationServices.length) {
+    throw new PreflightError(`upgrade for ${group} requires a full-group local override so DB migrations can run`);
+  }
+  if (!runtimeServices.length) {
     throw new Error(`upgrade requires restartable runtime services for ${group}`);
   }
   return {
     component,
     group,
-    services,
+    migrationServices,
+    runtimeServices,
     step: group === "coprocessor" ? "coprocessor" : group,
   } as const;
 };
@@ -890,6 +899,7 @@ const waitForCoprocessorServices = async (state: State, skipMigration: boolean) 
       await waitForContainer(toServiceName("db-migration", index), "complete");
     }
     await waitForContainer(toServiceName("host-listener", index), "running");
+    await waitForContainer(toServiceName("host-listener-poller", index), "running");
     await waitForContainer(toServiceName("gw-listener", index), "running");
     await waitForContainer(toServiceName("tfhe-worker", index), "running");
     await waitForContainer(toServiceName("zkproof-worker", index), "running");
@@ -1135,13 +1145,14 @@ const runStep = async (state: State, step: StepName) => {
 
 const describeResumeState = (state: State) => {
   const topology = topologyForState(state);
+  const overrides = visibleOverrides(state);
   return [
     `profile=${state.target}`,
     `topology=${topology.count}/${topology.threshold}`,
     ...(state.scenario.origin !== "default"
       ? [`scenario=${state.scenario.origin}${state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""}`]
       : []),
-    ...(state.overrides.length ? [`overrides=${state.overrides.map(describeOverride).join(", ")}`] : []),
+    ...(overrides.length ? [`overrides=${overrides.map(describeOverride).join(", ")}`] : []),
   ].join(" ");
 };
 
@@ -1190,6 +1201,22 @@ const startStep = (state: State, options: Pick<UpOptions, "resume" | "fromStep">
 
 const targetNeedsGitHub = (options: Pick<UpOptions, "target" | "lockFile">) =>
   !options.lockFile && options.target !== "latest-supported";
+
+export const previewStateFromBundle = (
+  options: Pick<UpOptions, "overrides" | "lockFile">,
+  bundle: VersionBundle,
+  scenario: State["scenario"],
+): State => ({
+  target: bundle.target,
+  lockPath: "",
+  requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
+  versions: bundle,
+  overrides: options.overrides,
+  scenario,
+  scenarioSourcePath: scenario.sourcePath,
+  completedSteps: [],
+  updatedAt: new Date().toISOString(),
+});
 
 const bootstrapState = async (options: UpOptions) => {
   console.log(`[up] target=${options.target}`);
@@ -1243,7 +1270,7 @@ export const up = async (options: UpOptions) => {
       return;
     }
   }
-  for (const warning of overrideWarnings(state.overrides, state.target)) {
+  for (const warning of overrideWarnings(visibleOverrides(state), state.target)) {
     console.log(`[warn] ${warning}`);
   }
   if (options.resume && options.fromStep) {
@@ -1280,18 +1307,8 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   const scenario = await resolveScenarioForOptions(options);
   const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
-  const state = {
-    target: options.target,
-    lockPath: "",
-    requiresGitHub: targetNeedsGitHub(options),
-    versions: bundle,
-    overrides: options.overrides,
-    scenario,
-    scenarioSourcePath: scenario.sourcePath,
-    completedSteps: [],
-    updatedAt: new Date().toISOString(),
-  } satisfies State;
-  await preflight(state, true, targetNeedsGitHub(options));
+  const state = previewStateFromBundle(options, bundle, scenario);
+  await preflight(state, true, state.requiresGitHub);
   printBundle(state.versions, { detailed: true });
   printPlan(state, options.fromStep);
   console.log("[dry-run] preflight passed; no state or containers were changed");
@@ -1377,10 +1394,11 @@ export const status = async () => {
   const state = await loadState();
   if (state) {
     const topology = topologyForState(state);
+    const overrides = visibleOverrides(state);
     console.log(`[target] ${state.target}`);
-    if (state.overrides.length) {
-      console.log(`[overrides] ${state.overrides.map(describeOverride).join(", ")}`);
-      for (const warning of overrideWarnings(state.overrides, state.target)) {
+    if (overrides.length) {
+      console.log(`[overrides] ${overrides.map(describeOverride).join(", ")}`);
+      for (const warning of overrideWarnings(overrides, state.target)) {
         console.log(`[warn] ${warning}`);
       }
     }
@@ -1482,7 +1500,7 @@ export const upgrade = async (groupValue: string | undefined) => {
     );
   }
   await ensureRuntimeArtifacts(state, "upgrade");
-  const { component, group, services, step } = resolveUpgradePlan(state, groupValue);
+  const { component, group, migrationServices, runtimeServices, step } = resolveUpgradePlan(state, groupValue);
   if (!state.completedSteps.includes(step)) {
     throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
   }
@@ -1490,7 +1508,13 @@ export const upgrade = async (groupValue: string | undefined) => {
   console.log(`[upgrade] ${group}`);
   await renderRuntime(state, runtimePlanForState(state));
   await maybeBuild(component, state, { force: true });
-  await composeUp(component, services, { noDeps: true });
+  if (migrationServices.length) {
+    await composeUp(component, migrationServices, { noDeps: true });
+    for (const service of migrationServices) {
+      await waitForContainer(service, "complete");
+    }
+  }
+  await composeUp(component, runtimeServices, { noDeps: true });
   if (group === "coprocessor") {
     await waitForCoprocessor(state);
   } else if (group === "kms-connector") {
