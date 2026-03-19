@@ -67,6 +67,7 @@ export const runWithHeartbeat = async (
   label: string,
   options: Omit<RunOptions, "input"> = {},
 ) => {
+  let sawOutput = false;
   const readLive = async (
     stream: ReadableStream<Uint8Array> | number | null | undefined,
     writer: NodeJS.WriteStream,
@@ -83,6 +84,7 @@ export const runWithHeartbeat = async (
           return;
         }
         if (value?.length) {
+          sawOutput = true;
           onOutput();
           writer.write(Buffer.from(value));
         }
@@ -126,7 +128,7 @@ export const runWithHeartbeat = async (
       }),
     ]);
     if (code !== 0 && !options.allowFailure) {
-      throw new CommandError(argv, code, `${argv.join(" ")} failed (${code})`);
+      throw new CommandError(argv, code, sawOutput ? "" : `${argv.join(" ")} failed (${code})`);
     }
   } finally {
     clearInterval(timer);

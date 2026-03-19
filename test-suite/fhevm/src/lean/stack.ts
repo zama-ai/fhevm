@@ -1145,7 +1145,7 @@ const describeResumeState = (state: State) => {
   ].join(" ");
 };
 
-const ensureResumeOptions = (
+export const resumeOptionConflicts = (
   state: State,
   options: Pick<
     UpOptions,
@@ -1153,13 +1153,24 @@ const ensureResumeOptions = (
   >,
 ) => {
   const mismatches: string[] = [];
-  if (options.requestedTarget && state.target !== options.requestedTarget) mismatches.push(`target=${options.requestedTarget}`);
+  if (options.requestedTarget) mismatches.push(`target=${options.requestedTarget}`);
   if (options.sha) mismatches.push(`sha=${options.sha}`);
   if (options.lockFile) mismatches.push(`lock-file=${options.lockFile}`);
   if (options.scenarioPath) mismatches.push(`scenario=${options.scenarioPath}`);
   if (options.overrides.length) mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
   if (options.allowSchemaMismatch) mismatches.push("--allow-schema-mismatch");
   if (options.reset) mismatches.push("--reset");
+  return mismatches;
+};
+
+const ensureResumeOptions = (
+  state: State,
+  options: Pick<
+    UpOptions,
+    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "reset"
+  >,
+) => {
+  const mismatches = resumeOptionConflicts(state, options);
   if (mismatches.length) {
     throw new ResumeError(
       `--resume uses the persisted stack configuration; remove ${mismatches.join(", ")} or start a fresh stack. Persisted state: ${describeResumeState(state)}`,
@@ -1182,10 +1193,10 @@ const targetNeedsGitHub = (options: Pick<UpOptions, "target" | "lockFile">) =>
 
 const bootstrapState = async (options: UpOptions) => {
   console.log(`[up] target=${options.target}`);
+  const scenario = await resolveScenarioForOptions(options);
   const resolveStarted = Date.now();
   const resolved = await resolveBundle(options, process.env);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
-  const scenario = await resolveScenarioForOptions(options);
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
   return {
@@ -1266,8 +1277,8 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
     return;
   }
   console.log(`[up] target=${options.target}`);
-  const bundle = await previewBundle(options, process.env);
   const scenario = await resolveScenarioForOptions(options);
+  const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = {
     target: options.target,
@@ -1490,11 +1501,26 @@ export const upgrade = async (groupValue: string | undefined) => {
   await markStep(state, step);
 };
 
-export const showResumeHint = async (argv: string[]) => {
-  if (argv.includes("--dry-run")) {
+const RESUME_HINT_BLOCKERS = new Set([
+  "--target",
+  "--sha",
+  "--lock-file",
+  "--scenario",
+  "--override",
+  "--build",
+  "--reset",
+  "--from-step",
+  "--allow-schema-mismatch",
+]);
+
+export const shouldShowResumeHint = (rawArgs: string[]) =>
+  !rawArgs.includes("--dry-run") && !rawArgs.some((arg) => RESUME_HINT_BLOCKERS.has(arg));
+
+export const showResumeHint = async (rawArgs: string[]) => {
+  if (!shouldShowResumeHint(rawArgs)) {
     return;
   }
-  const command = argv[2];
+  const command = rawArgs[0];
   if (command !== "up" && command !== "deploy") {
     return;
   }

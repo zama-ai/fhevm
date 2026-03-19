@@ -18,14 +18,14 @@ const parseLocalOverride = (value: string): LocalOverride[] => {
   const colonIdx = value.indexOf(":");
   if (colonIdx < 0) {
     if (!OVERRIDE_GROUPS.includes(value as OverrideGroup)) {
-      throw new Error(`Unsupported override ${value}`);
+      throw new Error(`Unsupported override ${value}. Valid: all, ${OVERRIDE_GROUPS.join(", ")}`);
     }
     return [{ group: value as OverrideGroup }];
   }
   const group = value.slice(0, colonIdx);
   const rest = value.slice(colonIdx + 1);
   if (!OVERRIDE_GROUPS.includes(group as OverrideGroup)) {
-    throw new Error(`Unsupported override group "${group}"`);
+    throw new Error(`Unsupported override group "${group}". Valid: ${OVERRIDE_GROUPS.join(", ")}`);
   }
   const parts = rest.split(",").map((part) => part.trim()).filter(Boolean);
   if (!parts.length) {
@@ -52,14 +52,14 @@ const parseUpInput = (args: Record<string, unknown>) => {
   const build = asBool(args.build);
 
   if (target && !TARGETS.includes(target as VersionTarget)) {
-    throw new PreflightError(`Unsupported target ${target}`);
+    throw new PreflightError(`Unsupported target ${target}. Valid: ${TARGETS.join(", ")}`);
   }
   const validTarget = (target ?? "latest-main") as VersionTarget;
 
   let fromStep: StepName | undefined;
   if (fromStepRaw) {
     if (!STEP_NAMES.includes(fromStepRaw as StepName)) {
-      throw new PreflightError(`Unknown step ${fromStepRaw}`);
+      throw new PreflightError(`Unknown step ${fromStepRaw}. Valid: ${STEP_NAMES.join(", ")}`);
     }
     fromStep = fromStepRaw as StepName;
   }
@@ -264,7 +264,7 @@ export const main = async (argv = process.argv) => {
       console.error(message);
     }
     process.exitCode = 1;
-    await showResumeHint(argv).catch(() => undefined);
+    await showResumeHint(argv.slice(2)).catch(() => undefined);
   }
 };
 

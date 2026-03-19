@@ -20,6 +20,8 @@ const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "light"].sort();
+
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
   try {
     const result = await task();
@@ -146,22 +148,23 @@ const waitForDriftWarning = async (
   throw new PreflightError(`drift warning was not observed after injecting handle ${handleHex}`);
 };
 
+export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] = []) => [
+  "docker",
+  "exec",
+  "-e",
+  "npm_config_update_notifier=false",
+  "-e",
+  "NPM_CONFIG_UPDATE_NOTIFIER=false",
+  ...extraExecArgs,
+  TEST_SUITE_CONTAINER,
+  ...tail,
+];
+
 export const test = async (testName: string | undefined, options: TestOptions) => {
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
   }
-
-  const testContainerArgs = (...tail: string[]) => [
-    "docker",
-    "exec",
-    "-e",
-    "npm_config_update_notifier=false",
-    "-e",
-    "NPM_CONFIG_UPDATE_NOTIFIER=false",
-    TEST_SUITE_CONTAINER,
-    ...tail,
-  ];
 
   const ciphertextDriftRequirement = () => {
     const topology = topologyForState(state);
@@ -204,7 +207,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
         });
         await runWithHeartbeat(
-          testContainerArgs("-e", "GATEWAY_RPC_URL=", "./run-tests.sh", "-n", "staging", "-g", grepPattern),
+          buildTestContainerArgs(["./run-tests.sh", "-n", "staging", "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
           "test ciphertext-drift",
         );
         const injectedHandleHex = await injector;
@@ -219,7 +222,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
     const filter = TEST_GREP[name];
     if (!filter) {
-      throw new PreflightError(`Unknown test profile ${name}`);
+      throw new PreflightError(`Unknown test profile ${name}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
     }
     const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
     console.log(`[test] ${name} (${options.network})`);
@@ -236,7 +239,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       .filter(Boolean)
       .join(" ");
     return runLogged(name, started, () =>
-      runWithHeartbeat(testContainerArgs("sh", "-lc", command), `test ${name}`),
+      runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`),
     );
   };
 
@@ -300,7 +303,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       .filter(Boolean)
       .join(" ");
     await runLogged("custom", started, () =>
-      runWithHeartbeat(testContainerArgs("sh", "-lc", command), "test custom"),
+      runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom"),
     );
     return;
   }
