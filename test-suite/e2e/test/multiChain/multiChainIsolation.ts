@@ -35,7 +35,7 @@ describe('Multi-Chain State Isolation', function () {
     this.deployerB = getWallet(CHAIN_B, 50);
 
     this.chainA = await deployChainFixture(this.deployerA);
-    this.chainBContracts = await deployChainFixture(this.deployerB);
+    this.chainB = await deployChainFixture(this.deployerB);
   });
 
   afterEach(async function () {
@@ -49,7 +49,7 @@ describe('Multi-Chain State Isolation', function () {
   describe('Ciphertext Handle Isolation', function () {
     it('ciphertext handle from Chain A cannot be used on Chain B', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
-      const erc20B = this.chainBContracts.erc20 as unknown as EncryptedERC20;
+      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
       const handleA = await erc20A.balanceOf(this.deployerA.address);
       expect(handleA).to.not.eq(ethers.ZeroHash);
@@ -78,7 +78,7 @@ describe('Multi-Chain State Isolation', function () {
   describe('ACL Permission Isolation', function () {
     it('ACL allow on Chain A does not grant access on Chain B', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
-      const erc20B = this.chainBContracts.erc20 as unknown as EncryptedERC20;
+      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
       const instanceDeployerA = await createHardhatInstance();
       const instanceBobA = await createHardhatInstance();
@@ -119,7 +119,7 @@ describe('Multi-Chain State Isolation', function () {
     it('evm_revert on Chain A does not affect Chain B state', async function () {
       const providerB = getProvider(CHAIN_B);
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
-      const erc20B = this.chainBContracts.erc20 as unknown as EncryptedERC20;
+      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
       const supplyABefore = await erc20A.totalSupply();
       const supplyBBefore = await erc20B.totalSupply();
@@ -184,7 +184,7 @@ describe('Multi-Chain State Isolation', function () {
   describe('Simultaneous Decryption Across Chains', function () {
     it('same user can decrypt on both chains independently', async function () {
       const handleA = await this.chainA.userDecrypt.xUint64();
-      const handleB = await this.chainBContracts.userDecrypt.xUint64();
+      const handleB = await this.chainB.userDecrypt.xUint64();
       expect(handleA).to.not.eq(ethers.ZeroHash);
       expect(handleB).to.not.eq(ethers.ZeroHash);
       expect(handleA).to.not.eq(handleB);
@@ -208,7 +208,7 @@ describe('Multi-Chain State Isolation', function () {
       const { publicKey: pubKeyB, privateKey: privKeyB } = instanceB.generateKeypair();
       const decryptedB = await userDecryptSingleHandle(
         handleB,
-        this.chainBContracts.userDecryptAddress,
+        this.chainB.userDecryptAddress,
         instanceB,
         this.deployerB,
         privKeyB,
@@ -231,9 +231,9 @@ describe('Multi-Chain State Isolation', function () {
 
       const handlesB: string[] = [];
       for (let i = 0; i < 3; i++) {
-        const txn = await this.chainBContracts.rand.connect(this.deployerB).generate64({ gasLimit: 10_000_000 });
+        const txn = await this.chainB.rand.connect(this.deployerB).generate64({ gasLimit: 10_000_000 });
         await txn.wait();
-        const valueHandle = await this.chainBContracts.rand.value64();
+        const valueHandle = await this.chainB.rand.value64();
         expect(valueHandle).to.not.eq(ethers.ZeroHash);
         handlesB.push(valueHandle);
       }
