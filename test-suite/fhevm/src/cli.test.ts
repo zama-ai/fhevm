@@ -10,10 +10,8 @@ const CLI_DIR = path.resolve(import.meta.dir, "..");
 const STATE_ROOT = path.resolve(CLI_DIR, "..", "..", ".fhevm");
 const STATE_FILE = path.join(STATE_ROOT, "state", "state.json");
 
-const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-
 const execCli = async (args: string[]) => {
-  const proc = Bun.spawn(["zsh", "-lc", `bun run src/cli.ts ${args.map(shellEscape).join(" ")}`], {
+  const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
     cwd: CLI_DIR,
     stdout: "pipe",
     stderr: "pipe",
