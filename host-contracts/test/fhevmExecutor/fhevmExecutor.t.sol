@@ -1743,9 +1743,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheDivScalarTruncatesToZero() public {
-        bytes32 lhs = _generateMockHandle(FheType.Uint8);
-        bytes32 rhs = bytes32(uint256(1 << 8));
+    function _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType fheType, uint256 rhsValue) internal {
+        bytes32 lhs = _generateMockHandle(fheType);
+        bytes32 rhs = bytes32(rhsValue);
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
@@ -1754,15 +1754,55 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheDiv(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheRemScalarTruncatesToZero() public {
-        bytes32 lhs = _generateMockHandle(FheType.Uint8);
-        bytes32 rhs = bytes32(uint256(1 << 8));
+    function _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType fheType, uint256 rhsValue) internal {
+        bytes32 lhs = _generateMockHandle(fheType);
+        bytes32 rhs = bytes32(rhsValue);
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
         vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
         vm.prank(account);
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
+    }
+
+    function test_RevertsIfFheDivUint8ScalarTruncatesToZero() public {
+        _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType.Uint8, 1 << 8);
+    }
+
+    function test_RevertsIfFheDivUint16ScalarTruncatesToZero() public {
+        _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType.Uint16, 1 << 16);
+    }
+
+    function test_RevertsIfFheDivUint32ScalarTruncatesToZero() public {
+        _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType.Uint32, 1 << 32);
+    }
+
+    function test_RevertsIfFheDivUint64ScalarTruncatesToZero() public {
+        _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType.Uint64, 1 << 64);
+    }
+
+    function test_RevertsIfFheDivUint128ScalarTruncatesToZero() public {
+        _expectScalarDivRevertsWhenScalarTruncatesToZero(FheType.Uint128, 1 << 128);
+    }
+
+    function test_RevertsIfFheRemUint8ScalarTruncatesToZero() public {
+        _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType.Uint8, 1 << 8);
+    }
+
+    function test_RevertsIfFheRemUint16ScalarTruncatesToZero() public {
+        _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType.Uint16, 1 << 16);
+    }
+
+    function test_RevertsIfFheRemUint32ScalarTruncatesToZero() public {
+        _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType.Uint32, 1 << 32);
+    }
+
+    function test_RevertsIfFheRemUint64ScalarTruncatesToZero() public {
+        _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType.Uint64, 1 << 64);
+    }
+
+    function test_RevertsIfFheRemUint128ScalarTruncatesToZero() public {
+        _expectScalarRemRevertsWhenScalarTruncatesToZero(FheType.Uint128, 1 << 128);
     }
 
     function test_RevertsIfFheDivRHSIsNotScalar() public {
