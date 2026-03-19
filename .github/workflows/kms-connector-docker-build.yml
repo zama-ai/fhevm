@@ -101,7 +101,7 @@ jobs:
           - kms-connector/crates/gw-listener/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-kms-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -118,8 +118,8 @@ jobs:
           - kms-connector/crates/kms-worker/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
-          - host-contracts/rust-bindings/**
+          - gateway-contracts/rust_bindings/**
+          - host-contracts/rust_bindings/**
 
   check-changes-tx-sender:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -136,7 +136,7 @@ jobs:
           - kms-connector/crates/tx-sender/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
+          - gateway-contracts/rust_bindings/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #
