@@ -64,5 +64,18 @@ else
     log_info "The value that should be set: $SIGNER_ADDRESS"
 fi
 
+# Update any additional host-sc env files (e.g. host-sc-b for multi-chain)
+for extra_host_env in "${SCRIPT_DIR}/../env/staging/.env.host-sc-"*.local; do
+    [[ -f "$extra_host_env" ]] || continue
+    log_info "Updating KMS_SIGNER_ADDRESS_0 in $extra_host_env..."
+    cat "$extra_host_env" | sed "s|^KMS_SIGNER_ADDRESS_0=.*|KMS_SIGNER_ADDRESS_0=$SIGNER_ADDRESS|g" > /tmp/env.host-sc-extra.new
+    if grep -q "KMS_SIGNER_ADDRESS_0=$SIGNER_ADDRESS" /tmp/env.host-sc-extra.new; then
+        cat /tmp/env.host-sc-extra.new > "$extra_host_env"
+        log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS in $extra_host_env"
+    else
+        log_warn "Failed to update KMS_SIGNER_ADDRESS_0 in $extra_host_env"
+    fi
+done
+
 log_info "KMS signer address configuration files updated successfully!"
 log_info "Signing Key ID: $KEY_SIGNER_ID"
