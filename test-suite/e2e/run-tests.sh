@@ -23,7 +23,6 @@ show_help() {
   echo -e "  -n, --network NAME  Specify network (default: ${DEFAULT_NETWORK})"
   echo -e "  -v, --verbose       Enable verbose output"
   echo -e "  --no-hardhat-compile        Skip Hardhat compilation step"
-  echo -e "  -r, --no-relayer    Disable Rust relayer"
   echo -e ""
   echo -e "${YELLOW}Examples:${RESET}"
   echo -e "  ./run-tests.sh                         (uses default grep: \"${DEFAULT_GREP}\")"
