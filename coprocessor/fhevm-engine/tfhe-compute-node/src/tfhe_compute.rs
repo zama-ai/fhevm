@@ -1,11 +1,11 @@
 use crate::cli::Args;
 use crate::context::Context;
-use crate::{CiphertextInfo, ComputeError, Execution, SenderType, CONSUMER_OVERHEAD};
+use crate::{CiphertextInfo, ComputeError, Execution, CONSUMER_OVERHEAD};
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
-use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::SupportedFheCiphertexts;
+use fhevm_engine_common::tfhe_ops;
+use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
 
 use message_broker::{MessageResult, Receiver};
 use sqlx::types::Uuid;
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tfhe::ReRandomizationContext;
 
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub async fn run_tfhe_compute(
     args: Args,
@@ -183,15 +183,11 @@ async fn execute_partition(
             "Executing node in partition"
         );
 
-        // query inputs (input ciphertexts) from either Redis or local cache,
-        // or wait for them to be available if not present yet
-        //
-        // TODO: For backwards compatibility,
-        // we should also try to fetch from Postgres if not found in Redis/cache
+        // query inputs (input ciphertexts) from either DataLayer or local cache,
         let dependence_inputs = futures_util::future::try_join_all(
             inputs
                 .iter()
-                .map(|handle| ctx.get_or_wait_for_handle(handle)),
+                .map(|handle| ctx.get_or_wait_for_ciphertext(handle)),
         )
         .await?;
 
@@ -226,30 +222,19 @@ async fn execute_partition(
             "Fetched input ciphertexts for node in partition"
         );
 
-        let result = try_execute_fhe_operation(op_node, inputs, false, 0)?;
-
-        info!(
-            pid = partition.id(),
-            handle = ?handle,
-             op = ?op_node.fhe_operation,
-             "Completed execution of node in partition"
-        );
-
-        if let Some(client_key) = ctx.get_current_key().await?.client_key {
-            let plaintext = result.0.decrypt(&client_key);
-
-            // Print plaintext, useful for testing and debugging
-            info!(
-                pid = partition.id(),
-                handle = ?handle,
-                plaintext = ?plaintext,
-                "Decrypted result"
-            );
-        }
-
-        let ct = CiphertextInfo {
-            handle: op_node.output_handle(),
-            ciphertext: result.0,
+        let ct = match op_node.fhe_operation {
+            SupportedFheOperations::FheGetInputCiphertext => {
+                ctx.get_or_wait_for_ciphertext(&op_node.output_handle)
+                    .await?
+            }
+            _ => try_run_computation(
+                partition.id().as_str(),
+                op_node,
+                inputs,
+                false,
+                0,
+                ctx.get_current_key().await?.client_key,
+            )?,
         };
 
         ctx.cache_store(&ct).await;
@@ -264,21 +249,24 @@ async fn execute_partition(
     Ok(computed_cts)
 }
 
-fn try_execute_fhe_operation<'a>(
-    node: &OpNode,
+/// Executes the given FHE operation node with the provided input ciphertexts.
+fn try_run_computation(
+    partition_id: &str,
+    op_node: &OpNode,
     inputs: Vec<SupportedFheCiphertexts>,
     compress_result: bool,
     gpu_index: usize,
-) -> Result<OpResult, ComputeError> {
-    let opcode = node.fhe_operation as i32;
+    client_key: Option<tfhe::ClientKey>,
+) -> Result<CiphertextInfo, ComputeError> {
+    let opcode = op_node.fhe_operation as i32;
+    let handle = hex::encode(&op_node.output_handle[0..4]);
 
-    // TODO: check_fhe_operand_types(opcode, &inputs)?;
-
+    // TODO: check_fhe_operand_types(opcode, &inputs)?
     let result = catch_unwind(AssertUnwindSafe(|| {
         run_computation(opcode, inputs, compress_result, gpu_index)
     }));
 
-    match result {
+    let ciphertext_result = match result {
         Ok(value) => value,
         Err(panic_payload) => {
             // Extract panic message if possible
@@ -295,18 +283,41 @@ fn try_execute_fhe_operation<'a>(
                 message
             )))
         }
+    }?;
+
+    info!(
+        pid  = partition_id,
+        handle = ?handle,
+         op = ?op_node.fhe_operation,
+         "Completed execution of node in partition"
+    );
+
+    if let Some(client_key) = client_key {
+        let plaintext = ciphertext_result.0.decrypt(&client_key);
+
+        // Print plaintext, useful for testing and debugging
+        info!(
+            pid =  partition_id,
+            handle = ?handle,
+            plaintext = ?plaintext,
+            "Decrypted result"
+        );
     }
+
+    Ok(CiphertextInfo {
+        handle: op_node.output_handle(),
+        ciphertext: ciphertext_result.0,
+    })
 }
 
 pub type OpResult = (SupportedFheCiphertexts, Option<(i16, Vec<u8>)>);
-pub fn run_computation(
+fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     compress_result: bool,
     gpu_idx: usize,
 ) -> Result<OpResult, ComputeError> {
     let op = FheOperation::try_from(operation);
-
     let op_name = op
         .as_ref()
         .map(|o| format!("{:?}", o))
@@ -315,11 +326,13 @@ pub fn run_computation(
     info!(op_name, gpu_idx, "Performing FHE operation");
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
-            let (ct_type, ct_bytes) = inputs[0].compress();
-            Ok((inputs[0].clone(), Some((ct_type, ct_bytes))))
+            warn!("FheGetCiphertext operation should be handled separately");
+            return Err(ComputeError::Other(
+                "FheGetCiphertext not supported".to_string(),
+            ));
         }
 
-        Ok(_) => match perform_fhe_operation(operation as i16, &inputs, gpu_idx) {
+        Ok(_) => match tfhe_ops::perform_fhe_operation(operation as i16, &inputs, gpu_idx) {
             Ok(result) => {
                 if compress_result {
                     let (ct_type, ct_bytes) = result.compress();

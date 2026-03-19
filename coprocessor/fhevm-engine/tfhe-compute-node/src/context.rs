@@ -212,7 +212,7 @@ impl Context {
     /// local cache
     /// Redis.
     /// If not, wait for it to be published via Redis keyspace notifications.
-    pub(crate) async fn get_or_wait_for_handle(
+    pub(crate) async fn get_or_wait_for_ciphertext(
         &self,
         handle: &Handle,
     ) -> Result<CiphertextInfo, ComputeError> {
