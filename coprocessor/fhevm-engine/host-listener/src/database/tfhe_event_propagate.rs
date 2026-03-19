@@ -4,6 +4,8 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::protocol::messages::Dependence;
+use fhevm_engine_common::protocol::messages::FheLog;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
@@ -224,6 +226,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        batch: &mut Vec<FheLog>,
     ) -> Result<bool, SqlxError> {
         let dependencies_handles = dependencies_handles
             .iter()
@@ -238,6 +241,7 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
+            batch,
         )
         .await
     }
@@ -252,6 +256,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        batch: &mut Vec<FheLog>,
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
@@ -263,6 +268,7 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
+            batch,
         )
         .await
     }
@@ -277,6 +283,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        fhe_log_batch: &mut Vec<FheLog>,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
@@ -312,6 +319,16 @@ impl Database {
                 )),
             !log.is_allowed,
         );
+
+        let log_msg = create_fhe_log_msg(
+            dependencies,
+            fhe_operation,
+            log,
+            is_scalar,
+            output_handle,
+        );
+        fhe_log_batch.push(log_msg);
+
         query
             .execute(tx.deref_mut())
             .await
@@ -323,6 +340,7 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
+        batch: &mut Vec<FheLog>,
     ) -> Result<bool, SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
@@ -334,11 +352,11 @@ impl Database {
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let tenant_id = self.tenant_id;
         let fhe_operation = event_to_op_int(event);
-        let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
+        let insert_computation = |tx, result, dependencies, scalar_byte, batch| {
+            self.insert_computation(tx, tenant_id, result, dependencies, fhe_operation, scalar_byte, log, batch)
         };
-        let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+        let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte, batch| {
+            self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log, batch)
         };
 
         let _t = telemetry::tracer(
@@ -361,7 +379,7 @@ impl Database {
 
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
-            => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR, batch).await,
 
             E::FheAdd(C::FheAdd {lhs, rhs, scalarByte, result, ..})
             | E::FheBitAnd(C::FheBitAnd {lhs, rhs, scalarByte, result, ..})
@@ -377,10 +395,10 @@ impl Database {
             | E::FheShl(C::FheShl {lhs, rhs, scalarByte, result, ..})
             | E::FheShr(C::FheShr {lhs, rhs, scalarByte, result, ..})
             | E::FheSub(C::FheSub {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
+            => insert_computation(tx, result, &[lhs, rhs], scalarByte, batch).await,
 
             E::FheIfThenElse(C::FheIfThenElse {control, ifTrue, ifFalse, result, ..})
-            => insert_computation(tx, result, &[control, ifTrue, ifFalse], &NO_SCALAR).await,
+            => insert_computation(tx, result, &[control, ifTrue, ifFalse], &NO_SCALAR, batch).await,
 
             | E::FheEq(C::FheEq {lhs, rhs, scalarByte, result, ..})
             | E::FheGe(C::FheGe {lhs, rhs, scalarByte, result, ..})
@@ -388,21 +406,21 @@ impl Database {
             | E::FheLe(C::FheLe {lhs, rhs, scalarByte, result, ..})
             | E::FheLt(C::FheLt {lhs, rhs, scalarByte, result, ..})
             | E::FheNe(C::FheNe {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
+            => insert_computation(tx, result, &[lhs, rhs], scalarByte, batch).await,
 
 
             E::FheNeg(C::FheNeg {ct, result, ..})
             | E::FheNot(C::FheNot {ct, result, ..})
-            => insert_computation(tx, result, &[ct], &NO_SCALAR).await,
+            => insert_computation(tx, result, &[ct], &NO_SCALAR, batch).await,
 
             | E::FheRand(C::FheRand {randType, seed, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR, batch).await,
 
             | E::FheRandBounded(C::FheRandBounded {upperBound, randType, seed, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR, batch).await,
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR, batch).await,
 
             | E::Initialized(_)
             | E::Upgraded(_)
@@ -1093,4 +1111,49 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+fn create_fhe_log_msg(
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i32,
+    log: &LogTfhe,
+    is_scalar: bool,
+    output_handle: Vec<u8>,
+) -> FheLog {
+    let supported_fhe_operation: SupportedFheOperations = fhe_operation
+        .try_into()
+        .expect("Failed to convert fhe_operation");
+
+    let mut deps2: Vec<_> = Vec::new();
+    for (idx, dh) in dependencies.iter().enumerate() {
+        let is_operand_scalar = is_scalar && idx == 1
+            || supported_fhe_operation.does_have_more_than_one_scalar();
+
+        //is_scalar_op_vec.push(is_operand_scalar);
+        // this_comp_inputs.push(dh.clone());
+
+        let dependence = if is_operand_scalar {
+            Dependence::Scalar(dh.clone())
+        } else {
+            Dependence::Reference(dh.clone())
+            //inputs.push(DFGTaskInput::Dependence(dh.clone()));
+        };
+
+        deps2.push(dependence);
+    }
+
+    let log = fhevm_engine_common::protocol::messages::FheLog {
+        output_handle,
+        dependencies: deps2,
+        fhe_operation: supported_fhe_operation,
+        is_scalar,
+        is_allowed: log.is_allowed,
+        created_at: std::time::SystemTime::now(),
+        block_info: fhevm_engine_common::protocol::messages::BlockContext {
+            txn_hash: [1u8; 32],
+            block_number: 1,
+            block_hash: [1u8; 32],
+        },
+    };
+    log
 }

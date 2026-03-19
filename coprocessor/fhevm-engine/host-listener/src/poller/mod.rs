@@ -9,6 +9,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::rpc::types::Log;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{anyhow, Context, Result};
+use fhevm_engine_common::protocol::messages::FheLog;
 use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
@@ -247,6 +248,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let mut db_errors = 0;
         let mut rpc_errors = 0;
 
+        let batch = &mut Vec::new();
+
         for block in (last_caught_up_block + 1)..=target {
             let logs = match client.logs_for_block(block).await {
                 Ok(logs) => {
@@ -298,6 +301,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 config.retry_interval,
                 config.dependence_by_connexity,
                 config.dependence_cross_block,
+                batch,
             )
             .await
             {
@@ -371,6 +375,7 @@ async fn ingest_with_retry(
     retry_interval: Duration,
     dependency_by_connexity: bool,
     dependency_cross_block: bool,
+    batch: &mut Vec<FheLog>,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
@@ -384,6 +389,7 @@ async fn ingest_with_retry(
             &tfhe,
             dependency_by_connexity,
             dependency_cross_block,
+            batch,
         )
         .await
         {

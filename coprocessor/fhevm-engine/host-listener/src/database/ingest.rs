@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
+use fhevm_engine_common::protocol::messages::FheLog;
 use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
@@ -44,6 +45,7 @@ pub async fn ingest_block_logs(
     tfhe_contract_address: &Option<Address>,
     dependence_by_connexity: bool,
     dependence_cross_block: bool,
+    batch: &mut Vec<FheLog>,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
@@ -145,7 +147,7 @@ pub async fn ingest_block_logs(
     .await;
 
     for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log, batch).await?;
         at_least_one_insertion |= inserted;
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");

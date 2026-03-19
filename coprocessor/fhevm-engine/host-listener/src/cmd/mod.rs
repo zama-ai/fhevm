@@ -901,6 +901,7 @@ async fn db_insert_block(
         "Inserting block in coprocessor",
     );
     let mut retries = 10;
+    let batch = &mut Vec::new();
     loop {
         let res = ingest_block_logs(
             chain_id,
@@ -910,6 +911,7 @@ async fn db_insert_block(
             tfhe_contract_address,
             args.dependence_by_connexity,
             args.dependence_cross_block,
+            batch,
         )
         .await;
         let Err(err) = res else {
