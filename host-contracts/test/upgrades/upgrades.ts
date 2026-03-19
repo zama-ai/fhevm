@@ -27,7 +27,7 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
@@ -69,7 +69,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.1.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.2.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');
@@ -83,10 +83,10 @@ describe('Upgrades', function () {
       kind: 'uups',
     });
     const payment = await upgrades.upgradeProxy(emptyUUPS, paymentFactory, {
-      call: { fn: 'initializeFromEmptyProxy' },
+      call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.1.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
@@ -96,7 +96,7 @@ describe('Upgrades', function () {
     const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();

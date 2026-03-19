@@ -14,7 +14,11 @@ test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 /gateway-contracts/ @zama-ai/fhevm-gateway
 /host-contracts/ @zama-ai/fhevm-gateway
 /library-solidity/ @zama-ai/fhevm-gateway
-/kms-connector/ @zama-ai/mpc-devs @zama-ai/fhevm-gateway @dartdart26
+/kms-connector/ @zama-ai/mpc-devs @dartdart26
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
+
+# Enforces changes in Sandboxed AI CI/CD
+.github/squid/sandbox-*.conf @zama-ai/security-team 
+.github/workflows/claude-*.yml @zama-ai/security-team 

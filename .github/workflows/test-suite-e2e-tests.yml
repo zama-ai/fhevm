@@ -67,6 +67,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
+      deploy-build:
+        description: "Build local Docker images from the checked out repository before deploy"
+        default: false
+        type: boolean
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -117,6 +121,9 @@ jobs:
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -139,8 +146,14 @@ jobs:
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          ./fhevm-cli deploy
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
+            ./fhevm-cli deploy --build --coprocessors 2 --coprocessor-threshold 2
+          else
+            ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          fi
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
@@ -210,10 +223,25 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
+      - name: Negative ACL tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test negative-acl
+
       - name: Random operators test (subset)
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random-subset
+
+      - name: HCU block cap test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test hcu-block-cap
+
+      - name: Ciphertext drift test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test ciphertext-drift
 
       - name: Host listener poller test
         working-directory: test-suite/fhevm
@@ -246,6 +274,15 @@ jobs:
           echo "::endgroup::"
           echo "::group::TFHE Worker"
           ./fhevm-cli logs coprocessor-tfhe-worker
+          echo "::endgroup::"
+          echo "::group::Coprocessor 2 - SNS Worker"
+          ./fhevm-cli logs coprocessor-2-sns-worker 2>/dev/null | grep -v "Selected 0 rows to process" || true
+          echo "::endgroup::"
+          echo "::group::Coprocessor 2 - Transaction Sender (filtered)"
+          ./fhevm-cli logs coprocessor-2-transaction-sender 2>/dev/null | grep -v "Selected 0 rows to process" || true
+          echo "::endgroup::"
+          echo "::group::Coprocessor 2 - TFHE Worker"
+          ./fhevm-cli logs coprocessor-2-tfhe-worker 2>/dev/null || true
           echo "::endgroup::"
 
       - name: Cleanup

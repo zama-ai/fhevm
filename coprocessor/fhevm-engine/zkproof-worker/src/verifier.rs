@@ -7,7 +7,7 @@ use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
-use fhevm_engine_common::types::SupportedFheCiphertexts;
+use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
@@ -16,6 +16,7 @@ use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
+use tfhe::ReRandomizationContext;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
@@ -38,6 +39,8 @@ const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
+const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
+const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
@@ -261,7 +264,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, host_chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -273,7 +276,7 @@ async fn execute_verify_proof_routine(
         let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let host_chain_id_raw: i64 = row.get("host_chain_id");
+        let host_chain_id_raw: i64 = row.get("chain_id");
         let host_chain_id = ChainId::try_from(host_chain_id_raw)
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
@@ -415,16 +418,29 @@ pub(crate) fn verify_proof(
     let mut cts = expand_verified_list(request_id, &verified_list)
         .inspect_err(telemetry::set_current_span_error)?;
 
-    // Step 3: Create ciphertext handles
+    // Step 3: Compute blob hash and set re-randomization metadata on all ciphertexts
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
     let blob_hash = h.finalize().to_vec();
 
-    let cts = cts
+    let handles: Vec<Vec<u8>> = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
+        .map(|(idx, ct)| set_ciphertext_metadata(&blob_hash, idx, ct, aux_data))
+        .collect::<Result<Vec<_>, ExecutionError>>()
+        .inspect_err(telemetry::set_current_span_error)?;
+
+    // Step 4: Re-randomize all ciphertexts before compression
+    re_randomise_ciphertexts(&mut cts, &blob_hash, &key.pks)
+        .inspect_err(telemetry::set_current_span_error)?;
+
+    // Step 5: Compress and build final ciphertext records
+    let cts = cts
+        .iter_mut()
+        .zip(handles)
+        .enumerate()
+        .map(|(idx, (ct, handle))| finalize_ciphertext(request_id, handle, idx, ct, aux_data))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()
         .inspect_err(telemetry::set_current_span_error)?;
 
@@ -505,19 +521,14 @@ fn expand_verified_list(
     Ok(cts)
 }
 
-/// Creates a ciphertext
-#[tracing::instrument(skip_all, fields(
-    ct_type = tracing::field::Empty,
-    ct_idx = ct_idx,
-    chain_id = %aux_data.chain_id,
-))]
-fn create_ciphertext(
-    request_id: i64,
+/// Computes the handle hash and sets re-randomization metadata on a ciphertext.
+/// Returns the full 256-bit handle hash (before index/chain/type/version are patched in).
+fn set_ciphertext_metadata(
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-) -> Result<Ciphertext, ExecutionError> {
+) -> Result<Vec<u8>, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
         return Err(ExecutionError::TooManyInputs(ct_idx));
     }
@@ -534,12 +545,54 @@ fn create_ciphertext(
             .into_array(),
     );
     handle_hash.update(chain_id_bytes);
-    let mut handle = handle_hash.finalize().to_vec();
+    let handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);
 
     // Add the full 256bit hash as re-randomization metadata, NOT the
     // truncated hash of the handle
     the_ct.add_re_randomization_metadata(&handle);
+
+    Ok(handle)
+}
+
+/// Re-randomizes all ciphertexts using the compact public key.
+#[tracing::instrument(name = "rerandomise_cts", skip_all)]
+fn re_randomise_ciphertexts(
+    cts: &mut [SupportedFheCiphertexts],
+    blob_hash: &[u8],
+    cpk: &tfhe::CompactPublicKey,
+) -> Result<(), ExecutionError> {
+    let mut re_rand_context = ReRandomizationContext::new(
+        RERANDOMISATION_DOMAIN_SEPARATOR,
+        [blob_hash],
+        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+    );
+    for ct in cts.iter() {
+        ct.add_to_re_randomization_context(&mut re_rand_context);
+    }
+    let mut seed_gen = re_rand_context.finalize();
+    for ct in cts.iter_mut() {
+        let seed = seed_gen
+            .next_seed()
+            .map_err(FhevmError::ReRandomisationError)?;
+        ct.re_randomise(cpk, seed)?;
+    }
+    Ok(())
+}
+
+/// Compresses the ciphertext and builds the final Ciphertext record with patched handle.
+#[tracing::instrument(skip_all, fields(
+    ct_type = tracing::field::Empty,
+    ct_idx = ct_idx,
+    chain_id = %aux_data.chain_id,
+))]
+fn finalize_ciphertext(
+    request_id: i64,
+    mut handle: Vec<u8>,
+    ct_idx: usize,
+    the_ct: &mut SupportedFheCiphertexts,
+    aux_data: &auxiliary::ZkData,
+) -> Result<Ciphertext, ExecutionError> {
     let serialized_type = the_ct.type_num();
     let compressed = the_ct.compress()?;
 

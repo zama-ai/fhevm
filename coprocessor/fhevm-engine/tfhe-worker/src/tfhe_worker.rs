@@ -8,7 +8,7 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
-use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
@@ -109,12 +109,9 @@ async fn tfhe_worker_cycle(
     dcid_mngr.do_cleanup().await?;
 
     #[cfg(feature = "bench")]
-    db_key_cache
-        .populate(
-            vec![fhevm_engine_common::db_keys::DbKeyId::default()],
-            &pool,
-        )
-        .await?;
+    {
+        let _ = db_key_cache.fetch_latest(&pool).await?;
+    }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
     loop {
@@ -476,7 +473,13 @@ async fn build_transaction_graph_and_execute<'a>(
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
-            &DFGTxInput::Compressed(((ct_type, std::mem::take(&mut ct)), true)),
+            &DFGTxInput::Compressed((
+                CompressedCiphertext {
+                    ct_type,
+                    ct_bytes: std::mem::take(&mut ct),
+                },
+                true,
+            )),
         )?;
     }
     // Resolve deferred cross-transaction dependences: edges whose
@@ -538,10 +541,10 @@ async fn upload_transaction_graph_results<'a>(
     let mut cts_to_insert = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
-            Ok((db_type, db_bytes)) => {
+            Ok(cct) => {
                 cts_to_insert.push((
                     result.handle.clone(),
-                    (db_bytes, (current_ciphertext_version(), db_type)),
+                    (cct.ct_bytes, (current_ciphertext_version(), cct.ct_type)),
                 ));
                 handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();

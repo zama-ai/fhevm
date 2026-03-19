@@ -228,19 +228,6 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         _expectActiveDelegation(delegate, contractContext, boundedExpiry);
     }
 
-    function testFuzz_DelegateUserDecryption_RevertsWhenExpiryTooSoon(
-        uint256 expirationDate,
-        address delegate,
-        address contractContext
-    ) public {
-        _assumeDelegateAndContext(delegate, contractContext);
-        uint256 maxExpiry = block.timestamp + 1 hours - 1;
-        uint64 boundedExpiry = uint64(bound(expirationDate, block.timestamp, maxExpiry));
-
-        vm.expectRevert(ACL.ExpirationDateBeforeOneHour.selector);
-        adapter.delegateUserDecryption(delegate, contractContext, boundedExpiry);
-    }
-
     function test_DelegateUserDecryption_RevertsWhenSenderIsContractAddress(address delegate) public {
         vm.assume(delegate != address(adapter));
         uint64 expirationDate = uint64(block.timestamp + 2 hours);
@@ -263,6 +250,18 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, contractContext));
         adapter.delegateUserDecryption(contractContext, contractContext, expirationDate);
+    }
+
+    function testFuzz_DelegateUserDecryption_RevertsWhenExpiryInThePast(
+        uint256 expirationDate,
+        address delegate,
+        address contractContext
+    ) public {
+        _assumeDelegateAndContext(delegate, contractContext);
+        uint64 boundedExpiry = uint64(bound(expirationDate, 0, block.timestamp));
+
+        vm.expectRevert(ACL.ExpirationDateInThePast.selector);
+        adapter.delegateUserDecryption(delegate, contractContext, boundedExpiry);
     }
 
     function testFuzz_DelegateUserDecryption_RevertsOnSameBlockReplay(

@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "host_chain_id",
+        "name": "chain_id",
         "type_info": "Int8"
       },
       {

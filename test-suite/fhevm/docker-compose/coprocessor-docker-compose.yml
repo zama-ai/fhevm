@@ -57,6 +57,7 @@ services:
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_WS_URL}
       - --initial-block-time=1
+      - --catchup-finalization-in-blocks=5
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -80,6 +81,7 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
+      - --finality-lag=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -109,6 +111,8 @@ services:
       - --verify-proof-req-database-channel=event_zkpok_new_work
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
@@ -227,7 +231,6 @@ services:
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
-      - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --database-pool-size=10
       - --database-polling-interval-secs=20
       - --verify-proof-resp-database-channel=event_zkpok_computed
@@ -236,12 +239,6 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
-      - --host-chain-url=${RPC_WS_URL}
-      - --delegation-block-delay=10
-      - --delegation-clear-after-n-blocks=648000
-      - --delegation-fallback-polling=30
-      - --delegation-max-retry=100000
-      - --retry-immediately-on-nonce-error=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

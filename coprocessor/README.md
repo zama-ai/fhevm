@@ -72,38 +72,24 @@ $ tfhe_worker --help
 Usage: tfhe_worker [OPTIONS]
 
 Options:
-      --run-server
-          Run the API server
       --run-bg-worker
           Run the background worker
       --generate-fhe-keys
           Generate fhe keys and exit
-      --server-maximum-ciphertexts-to-schedule <SERVER_MAXIMUM_CIPHERTEXTS_TO_SCHEDULE>
-          Server maximum ciphertexts to schedule per batch [default: 5000]
-      --server-maximum-ciphertexts-to-get <SERVER_MAXIMUM_CIPHERTEXTS_TO_GET>
-          Server maximum ciphertexts to serve on get_cihpertexts endpoint [default: 5000]
       --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
           Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
-      --maximum-compact-inputs-upload <MAXIMUM_COMPACT_INPUTS_UPLOAD>
-          Maximum compact inputs to upload [default: 10]
-      --maximum-handles-per-input <MAXIMUM_HANDLES_PER_INPUT>
-          Maximum compact inputs to upload [default: 255]
       --coprocessor-fhe-threads <COPROCESSOR_FHE_THREADS>
           Coprocessor FHE processing threads [default: 8]
       --tokio-threads <TOKIO_THREADS>
           Tokio Async IO threads [default: 4]
       --pg-pool-max-connections <PG_POOL_MAX_CONNECTIONS>
           Postgres pool max connections [default: 10]
-      --server-addr <SERVER_ADDR>
-          Server socket address [default: 127.0.0.1:50051]
       --metrics-addr <METRICS_ADDR>
           Prometheus metrics server address [default: 0.0.0.0:9100]
       --database-url <DATABASE_URL>
           Postgres database url. If unspecified DATABASE_URL environment variable is used
-      --coprocessor-private-key <COPROCESSOR_PRIVATE_KEY>
-          Coprocessor private key file path. Private key is in plain text 0x1234.. format [default: ./coprocessor.key]
 ```
 
 ```bash
@@ -196,14 +182,12 @@ Options:
 
 ```bash
 $ transaction_sender --help
-Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --multichain-acl-address <MULTICHAIN_ACL_ADDRESS> --gateway-url <GATEWAY_URL>
+Usage: transaction_sender [OPTIONS] --input-verification-address <INPUT_VERIFICATION_ADDRESS> --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS> --gateway-url <GATEWAY_URL>
 
 Options:
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
           
   -c, --ciphertext-commits-address <CIPHERTEXT_COMMITS_ADDRESS>
-          
-  -m, --multichain-acl-address <MULTICHAIN_ACL_ADDRESS>
           
   -g, --gateway-url <GATEWAY_URL>
           

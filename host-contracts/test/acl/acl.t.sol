@@ -85,7 +85,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.2.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.3.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -307,9 +307,9 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Tests that the sender cannot delegate for user decryption with expiration date before one hour.
+     * @dev Tests that the sender cannot delegate for user decryption with expiration date in the past.
      */
-    function test_CannotDelegateForUserDecryptionWithExpirationDateBeforeOneHour(
+    function test_CannotDelegateForUserDecryptionWithExpirationDateInThePast(
         address sender,
         address delegate,
         address contractAddress
@@ -321,7 +321,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         uint64 expirationDate = uint64(block.timestamp);
 
         vm.prank(sender);
-        vm.expectRevert(ACL.ExpirationDateBeforeOneHour.selector);
+        vm.expectRevert(ACL.ExpirationDateInThePast.selector);
         acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
