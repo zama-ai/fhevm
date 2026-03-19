@@ -58,6 +58,29 @@ const persistedState = (target: State["target"] = "latest-main"): State => ({
 });
 
 describe("cli", () => {
+  test("prints root help", async () => {
+    const result = await execCli(["--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("COMMANDS");
+    expect(result.stdout).toContain("up");
+    expect(result.stderr).toBe("");
+  });
+
+  test("prints subcommand help without executing up", async () => {
+    const result = await execCli(["up", "--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Boot the fhevm stack");
+    expect(result.stdout).toContain("USAGE `fhevm-cli up [OPTIONS]");
+    expect(result.stdout).toContain("--target");
+    expect(result.stdout).not.toContain("[up] target=");
+  });
+
+  test("prints test help", async () => {
+    const result = await execCli(["test", "--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("USAGE `fhevm-cli test [OPTIONS] [TESTNAME]`");
+  });
+
   test("lists bundled scenarios", async () => {
     const result = await execCli(["scenario", "list"]);
     expect(result.code).toBe(0);
@@ -108,6 +131,12 @@ describe("cli", () => {
     const result = await execCli(["up", "--override", "bogus"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Valid: all, coprocessor, kms-connector, gateway-contracts, host-contracts, test-suite");
+  });
+
+  test("prints logs help with an optional service argument", async () => {
+    const result = await execCli(["logs", "--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("USAGE `fhevm-cli logs [OPTIONS] [SERVICE]`");
   });
 
   test("places extra docker exec flags before the test container", () => {
