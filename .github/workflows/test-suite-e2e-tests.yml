@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs: &workflow_inputs
+      orchestrated:
+        description: "Run from the orchestrated image-validation path."
+        default: false
+        type: boolean
       build:
         description: "Build repo-owned images from the checked out branch on the runner"
         default: true
@@ -83,7 +87,9 @@ concurrency:
 
 jobs:
   fhevm-e2e-test:
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/')) }}
+    # Run on manual/reusable invocations, and on ordinary in-repo PRs.
+    # Skip only the direct PR path for sacrificial/merge-queue branches.
+    if: ${{ github.event_name != 'pull_request' || inputs.orchestrated || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
