@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - release/*
 
 permissions: {}
 
@@ -14,7 +15,7 @@ concurrency:
 jobs:
   coprocessor-docker-build:
     if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/')
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/')
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
