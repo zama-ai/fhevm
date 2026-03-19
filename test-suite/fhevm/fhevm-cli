@@ -76,7 +76,7 @@ function usage {
 	echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
 	echo
 	echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
+	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--multi-chain] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
 	echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|debug)"
@@ -204,6 +204,10 @@ deploy)
 			;;
 		--local | --dev)
 			DEPLOY_ARGS+=("--local")
+			shift
+			;;
+		--multi-chain)
+			DEPLOY_ARGS+=("--multi-chain")
 			shift
 			;;
 		--coprocessors)
@@ -405,6 +409,10 @@ test)
 		paused-gateway-contracts)
 			log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED GATEWAY CONTRACTS${RESET}"
 			docker_args+=("-g" "test paused gateway.*")
+			;;
+		multi-chain-isolation)
+			log_message="${LIGHT_BLUE}${BOLD}[TEST] MULTI-CHAIN STATE ISOLATION${RESET}"
+			docker_args+=("-g" "Multi-Chain State Isolation")
 			;;
 		debug)
 			echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
