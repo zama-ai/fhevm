@@ -113,12 +113,12 @@ const timed = async <T>(label: string, task: () => Promise<T>) => {
   return result;
 };
 
-export const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
+const stateStepIndex = (step: StepName) => STEP_NAMES.indexOf(step);
 
-export const describeOverride = (item: { group: string; services?: string[] }) =>
+const describeOverride = (item: { group: string; services?: string[] }) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
-export const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
+const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
   const warnings = overrides.flatMap((item) =>
     item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group)
       ? [
@@ -134,14 +134,14 @@ export const overrideWarnings = (overrides: LocalOverride[], target?: string) =>
   return warnings;
 };
 
-export const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
+const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
   console.log(`[resolve] ${bundle.lockName}`);
   if (options?.detailed) {
     console.log(describeBundle(bundle));
   }
 };
 
-export const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
+const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
   const topology = topologyForState(state);
   console.log(`[plan] profile=${state.target}`);
   if (state.overrides.length) {
@@ -156,7 +156,7 @@ export const printPlan = (state: Pick<State, "target" | "overrides" | "scenario"
 
 export const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-export const projectContainers = async (all = false) => {
+const projectContainers = async (all = false) => {
   const ps = await run(
     ["docker", "ps", ...(all ? ["-a"] : []), "--filter", `label=com.docker.compose.project=${PROJECT}`, "--format", "{{.Names}}"],
     { allowFailure: true },
@@ -228,7 +228,7 @@ const discoverContracts = async () => {
   };
 };
 
-export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
+const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
   const whichResults = await Promise.all(
     requiredCommands.map(async (command) => {
@@ -275,7 +275,7 @@ export const preflight = async (state: State, strictPorts = true, needsGitHub = 
   }
 };
 
-export const assertSchemaCompatibility = async (
+const assertSchemaCompatibility = async (
   bundle: VersionBundle,
   overrides: LocalOverride[],
   scenario: State["scenario"],
@@ -332,7 +332,7 @@ export const assertSchemaCompatibility = async (
   }
 };
 
-export const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
+const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
   const discovery = state.discovery;
   if (!discovery) {
     throw new PreflightError("Missing discovery state");
@@ -370,7 +370,7 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
   }
 };
 
-export const ensureRuntimeArtifacts = async (state: State, reason: string) => {
+const ensureRuntimeArtifacts = async (state: State, reason: string) => {
   const topology = topologyForState(state);
   await ensureLockSnapshot(state.lockPath, state.versions);
   const generatedCompose = [...generatedComposeComponents(runtimePlanForState(state))].map(composePath);
@@ -398,7 +398,7 @@ export const ensureRuntimeArtifacts = async (state: State, reason: string) => {
   await renderRuntime(state, runtimePlanForState(state));
 };
 
-export const resetAfterStep = async (step: StepName) => {
+const resetAfterStep = async (step: StepName) => {
   const start = stateStepIndex(step);
   const failed: string[] = [];
   for (let index = STEP_NAMES.length - 1; index >= start; index -= 1) {
@@ -414,7 +414,7 @@ export const resetAfterStep = async (step: StepName) => {
   }
 };
 
-export const resolveUpgradePlan = (
+const resolveUpgradePlan = (
   state: Pick<State, "overrides" | "scenario">,
   groupValue: string | undefined,
 ) => {
@@ -624,7 +624,7 @@ const castBool = async (rpcUrl: string, to: string, signature: string, ...args: 
   }
 };
 
-export const probeBootstrap = async (state: State) => {
+const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const kp = discovery.minioKeyPrefix ?? "PUB";
   try {
@@ -962,7 +962,7 @@ export const unpause = async (scope: string | undefined) => {
   throw new PreflightError("unpause expects `host` or `gateway`");
 };
 
-export const runStep = async (state: State, step: StepName) => {
+const runStep = async (state: State, step: StepName) => {
   const stepIndex = stateStepIndex(step) + 1;
   console.log(`[step ${stepIndex}/${STEP_NAMES.length}] ${step}`);
   const stepStarted = Date.now();

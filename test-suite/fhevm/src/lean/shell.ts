@@ -1,4 +1,4 @@
-import { dockerArgs, envPath, versionsEnvPath } from "../layout";
+import { envPath, versionsEnvPath } from "../layout";
 import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "../utils";
 import { CommandError } from "./errors";
 
@@ -139,9 +139,3 @@ export const composeEnv = async (component: string, extra?: Record<string, strin
     : { COMPOSE_IGNORE_ORPHANS: "true" };
   return { ...env, ...(await readEnvFileIfExists(envPath(component))), ...extra };
 };
-
-export const dockerCompose = async (
-  component: string,
-  subcommand: string[],
-  options: { env?: Record<string, string> } = {},
-) => runStreaming([...dockerArgs(component), ...subcommand], { env: await composeEnv(component, options.env) });

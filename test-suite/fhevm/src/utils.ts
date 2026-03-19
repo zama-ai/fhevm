@@ -15,8 +15,6 @@ export type RunResult = {
   code: number;
 };
 
-export type Runner = (argv: string[], options?: RunOptions) => Promise<RunResult>;
-
 export const ensureDir = (dir: string) => fs.mkdir(dir, { recursive: true });
 
 export const readJson = async <T>(file: string) => JSON.parse(await fs.readFile(file, "utf8")) as T;
@@ -28,7 +26,7 @@ export const writeJson = async (file: string, value: unknown) => {
   await fs.rename(tmp, file);
 };
 
-export const parseEnv = (text: string) => {
+const parseEnv = (text: string) => {
   const out: Record<string, string> = {};
   for (const line of text.split(/\r?\n/)) {
     if (!line || line.trimStart().startsWith("#")) {
@@ -98,7 +96,7 @@ export const normalizeRepository = (value: string) =>
 
 export const withHexPrefix = (value: string) => (value.startsWith("0x") ? value : `0x${value}`);
 
-export const uint256ToId = (value: bigint) => value.toString(16).padStart(64, "0");
+const uint256ToId = (value: bigint) => value.toString(16).padStart(64, "0");
 
 export const predictedKeyId = () => uint256ToId((4n << 248n) + 1n);
 export const predictedCrsId = () => uint256ToId((5n << 248n) + 1n);
@@ -120,7 +118,7 @@ export const mergeArgs = (base: unknown, extras: string[]) => {
 export const toServiceName = (suffix: string, index: number) =>
   index === 0 ? `coprocessor-${suffix}` : `coprocessor${index}-${suffix}`;
 
-export const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
+const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
 
 export const hostReachableRpcUrl = (url: string) =>
   url

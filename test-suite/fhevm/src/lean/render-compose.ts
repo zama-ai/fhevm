@@ -22,7 +22,7 @@ export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
 };
 
-export const LOCAL_BUILD_TAG = "fhevm-local";
+const LOCAL_BUILD_TAG = "fhevm-local";
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 
 export const resolvedComposeEnv = (state: Pick<State, "versions">): Record<string, string> => ({
@@ -30,7 +30,7 @@ export const resolvedComposeEnv = (state: Pick<State, "versions">): Record<strin
   COMPOSE_IGNORE_ORPHANS: "true",
 });
 
-export const overriddenServicesForComponent = (
+const overriddenServicesForComponent = (
   state: Pick<State, "overrides"> | Pick<RuntimePlan, "overrides">,
   component: string,
 ) =>
@@ -46,9 +46,9 @@ export const overriddenServicesForComponent = (
 const rewriteImageTag = (image: unknown, tag: string) =>
   typeof image === "string" ? image.replace(/:([^:]+)$/, `:${tag}`) : image;
 
-export const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) => rewriteImageTag(image, tag);
+const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) => rewriteImageTag(image, tag);
 
-export const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolean) => {
+const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolean) => {
   if (isOverridden) {
     service.image = retagLocal(service.image);
   } else {
@@ -56,7 +56,7 @@ export const applyBuildPolicy = (service: Record<string, unknown>, isOverridden:
   }
 };
 
-export const resolveComposePath = (value: string) =>
+const resolveComposePath = (value: string) =>
   value.startsWith(".") ? path.resolve(TEMPLATE_COMPOSE_DIR, value) : value;
 
 const rewriteVolume = (value: unknown) => {
@@ -71,7 +71,7 @@ const rewriteVolume = (value: unknown) => {
   return parts.join(":");
 };
 
-export const rewriteComposePaths = (doc: ComposeDoc) => {
+const rewriteComposePaths = (doc: ComposeDoc) => {
   for (const service of Object.values(doc.services)) {
     if (Array.isArray(service.volumes)) {
       service.volumes = service.volumes.map(rewriteVolume);

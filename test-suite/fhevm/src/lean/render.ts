@@ -13,7 +13,7 @@ import {
 } from "./render-addresses";
 import { generateComposeOverrides } from "./render-compose";
 import { run } from "./shell";
-import type { State, VersionBundle } from "../types";
+import type { State } from "../types";
 import {
   ADDRESS_DIR,
   COMPONENTS,
@@ -66,10 +66,6 @@ const deriveWallet = async (mnemonic: string, index: number): Promise<WalletMate
     throw new Error(`cast returned invalid private key for wallet ${index}`);
   }
   return { address, privateKey };
-};
-
-export const writeVersionsEnv = async (bundle: VersionBundle) => {
-  await writeEnvFile(versionsEnvPath, bundle.env);
 };
 
 export const renderRuntime = async (state: State, plan: RuntimePlan) => {

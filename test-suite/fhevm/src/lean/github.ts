@@ -48,19 +48,6 @@ const ghPages = async <T>(apiPath: string, limit = 1000): Promise<T[]> => {
   return items.slice(0, limit);
 };
 
-export const latestStableRelease = async () => {
-  const releases = await ghPages<{
-    tag_name: string;
-    prerelease: boolean;
-    draft: boolean;
-  }>(`repos/${FHEVM_REPO}/releases`, 200);
-  const release = releases.find((item) => !item.prerelease && !item.draft);
-  if (!release) {
-    throw new GitHubApiError("No stable fhevm release found");
-  }
-  return release.tag_name;
-};
-
 export const mainCommits = async (limit = 200) => {
   const commits = await ghPages<{ sha: string }>(`repos/${FHEVM_REPO}/commits?sha=main`, limit);
   return commits.map((item) => item.sha);

@@ -3,7 +3,7 @@ import YAML from "yaml";
 import { requiresLegacyRelayerReadinessConfig } from "./compat";
 import type { State } from "../types";
 
-export const rewriteRelayerConfig = (
+const rewriteRelayerConfig = (
   config: Record<string, unknown>,
   state: Pick<State, "versions"> & Partial<Pick<State, "overrides">>,
 ) => {

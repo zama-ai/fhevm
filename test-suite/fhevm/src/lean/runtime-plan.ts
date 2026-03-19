@@ -33,7 +33,7 @@ export const resolveScenarioForOptions = async (
   return synthesizeOverrideScenario(options.overrides) ?? defaultCoprocessorScenario();
 };
 
-export const topologyFromScenario = (scenario: ResolvedCoprocessorScenario): Topology => ({
+const topologyFromScenario = (scenario: ResolvedCoprocessorScenario): Topology => ({
   count: scenario.topology.count,
   threshold: scenario.topology.threshold,
 });
@@ -41,7 +41,7 @@ export const topologyFromScenario = (scenario: ResolvedCoprocessorScenario): Top
 export const topologyForState = (state: Pick<State, "scenario">): Topology =>
   topologyFromScenario(state.scenario);
 
-export const runtimePlanFromResolved = (input: {
+const runtimePlanFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
   overrides: State["overrides"];

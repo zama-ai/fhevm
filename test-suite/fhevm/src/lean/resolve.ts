@@ -47,7 +47,7 @@ const MAINNET_FILES = {
   testSuite: "values/relayer/fhevm-test-suite/values-relayer-mainnet.yaml",
 } as const;
 
-export const REPO_PACKAGES = {
+const REPO_PACKAGES = {
   GATEWAY_VERSION: "fhevm%2Fgateway-contracts",
   HOST_VERSION: "fhevm%2Fhost-contracts",
   COPROCESSOR_DB_MIGRATION_VERSION: "fhevm%2Fcoprocessor%2Fdb-migration",
@@ -87,11 +87,11 @@ export const PACKAGE_TO_REPOSITORY = {
 } as const;
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
-export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
+const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
 
-export const walkImages = (node: unknown, out: Array<{ repository: string; tag: string }>) => {
+const walkImages = (node: unknown, out: Array<{ repository: string; tag: string }>) => {
   if (Array.isArray(node)) {
     for (const item of node) {
       walkImages(item, out);
@@ -126,7 +126,7 @@ const extractTagsFromYaml = (text: string) => {
   return images;
 };
 
-export const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 
 export const simpleAclFloor = (commits: string[]) => {
   const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
@@ -199,7 +199,7 @@ export const describeBundle = (bundle: VersionBundle) =>
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-export const bundleFromFiles = async (
+const bundleFromFiles = async (
   target: VersionTarget,
   files: Record<string, string>,
 ): Promise<VersionBundle> => {

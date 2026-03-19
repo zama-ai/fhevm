@@ -17,7 +17,7 @@ import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 
-export const resolveCachePath = (target: string, sha?: string) => {
+const resolveCachePath = (target: string, sha?: string) => {
   const normalizedSha = sha?.toLowerCase();
   const suffix = normalizedSha
     ? normalizedSha.length === 40
@@ -105,7 +105,7 @@ export const ensureLockSnapshot = async (lockPath: string, bundle: VersionBundle
   }
 };
 
-export const bundleFromFile = async (target: VersionTarget | undefined, lockFile: string) => {
+const bundleFromFile = async (target: VersionTarget | undefined, lockFile: string) => {
   let raw: VersionBundle;
   try {
     raw = await readJson<VersionBundle>(path.resolve(lockFile));
@@ -135,7 +135,7 @@ const withProgressLogs = async <T>(task: Promise<T>, label: string) => {
   }
 };
 
-export const cachedResolve = async (options: CachedResolveOptions) => {
+const cachedResolve = async (options: CachedResolveOptions) => {
   if (options.lockFile) {
     console.log(`[resolve] reading lock file ${options.lockFile}`);
     return bundleFromFile(options.requestedTarget, options.lockFile);
