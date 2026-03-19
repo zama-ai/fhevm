@@ -9,5 +9,13 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "src/cli.ts",
+    "src/layout.ts",
+    "src/presets.ts",
+    "src/types.ts",
+    "src/utils.ts",
+    "src/lean/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }
