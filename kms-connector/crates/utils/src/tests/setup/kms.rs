@@ -53,7 +53,7 @@ impl KmsInstance {
             .with_copy_to(
                 "/app/kms/core/service/config/config.toml".to_string(),
                 PathBuf::from_str(&format!(
-                    "{}/../../../test-suite/fhevm/config/kms-core/config.toml",
+                    "{}/tests/data/core-service-config.toml",
                     env!("CARGO_MANIFEST_DIR"),
                 ))
                 .unwrap(),

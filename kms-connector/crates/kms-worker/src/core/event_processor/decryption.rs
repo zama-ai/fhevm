@@ -304,7 +304,19 @@ where
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
-        let extra_data = extra_data.to_vec();
+
+        // TODO(https://github.com/zama-ai/fhevm-internal/issues/1167):
+        // Workaround for backward compatibility with relayer-sdk <=0.4.2.
+        // The SDK sends extraData=0x00 in the user decryption request, but does not pass extraData
+        // to the TKMS library during response signature verification (reconstruction step),
+        // effectively verifying against empty bytes. We normalize 0x00 → vec![] here so the KMS
+        // signs over empty extraData, matching what the SDK expects during verification.
+        // This is fixed in relayer-sdk v0.5.0.
+        let extra_data = if extra_data.as_ref() == [0x00] {
+            vec![]
+        } else {
+            extra_data.to_vec()
+        };
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
