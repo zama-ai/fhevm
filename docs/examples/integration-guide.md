@@ -75,7 +75,7 @@ wrapper.wrap(to, amount);
 - The wrapper mints the corresponding confidential tokens to the `to` address.
 - Due to decimal conversion (see below), any excess tokens below the conversion rate are refunded to the caller.
 
-Once the wrapping is complete, the confidential token can be transferred, held, or used in as assets within an exchange. Any recipient would then need to decrypt the balances or transaction amounts to utilise the tokens in a transaction.
+Once the wrapping is complete, the confidential token can be transferred, held, or used in as assets within an exchange. Any recipient would then need to decrypt the balances or transaction amounts to utilize the tokens in a transaction.
 
 ### How unwrapping works
 
