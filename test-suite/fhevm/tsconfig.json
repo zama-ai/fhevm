@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "types": ["bun-types"]
+  },
+  "include": [
+    "src/cli.ts",
+    "src/layout.ts",
+    "src/presets.ts",
+    "src/types.ts",
+    "src/utils.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}
