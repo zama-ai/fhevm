@@ -3,10 +3,10 @@ import YAML from "yaml";
 import { COMPAT_MATRIX } from "./compat";
 import { GitHubApiError } from "./errors";
 import { gitopsFile, mainCommits, packageTags } from "./github";
-import { NON_NETWORK_COMPANIONS } from "../presets";
-import { LATEST_SUPPORTED_PROFILE } from "../layout";
-import type { VersionBundle, VersionTarget } from "../types";
-import { normalizeRepository, readJson } from "../utils";
+import { NON_NETWORK_COMPANIONS } from "./presets";
+import { LATEST_SUPPORTED_PROFILE } from "./layout";
+import type { VersionBundle, VersionTarget } from "./types";
+import { normalizeRepository, readJson } from "./utils";
 
 const DEVNET_FILES = {
   gateway: "values/gw-blockchain/gw-sc-deploy-1-init/values-zws-dev.yaml",

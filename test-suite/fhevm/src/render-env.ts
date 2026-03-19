@@ -9,9 +9,9 @@ import {
   DEFAULT_TENANT_API_KEY,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
-} from "../layout";
-import type { State } from "../types";
-import { predictedCrsId, predictedKeyId } from "../utils";
+} from "./layout";
+import type { State } from "./types";
+import { predictedCrsId, predictedKeyId } from "./utils";
 import { interpolateString } from "./render-compose";
 
 export type WalletMaterial = {

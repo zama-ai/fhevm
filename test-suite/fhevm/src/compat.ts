@@ -1,4 +1,4 @@
-import type { State } from "../types";
+import type { State } from "./types";
 import type { RuntimePlan } from "./runtime-plan";
 import { effectiveOverrides } from "./scenario";
 

@@ -88,8 +88,8 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
   - relayer template config: `templates/config/relayer.yaml`
   - static config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
   - checked-in scenario inputs under `scenarios/`
-- `src/lean/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
-- `src/lean/render-env.ts`, `src/lean/render-config.ts`, and `src/lean/render-compose.ts` are the only rendering layers.
+- `src/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
+- `src/render-env.ts`, `src/render-config.ts`, and `src/render-compose.ts` are the only rendering layers.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`; `down` stops containers, prunes `.fhevm/runtime`, keeps `.fhevm/state`, and `clean` removes both.
 - Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` only contains generated overrides for coprocessor topology and active local-override components.

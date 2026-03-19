@@ -104,10 +104,10 @@ Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` on
 
 The code follows the same split:
 
-- `src/lean/runtime-plan.ts`: resolve one runtime plan from bundle + env overrides + scenario/shorthand
-- `src/lean/render-env.ts`: render runtime env maps
-- `src/lean/render-config.ts`: render generated config files
-- `src/lean/render-compose.ts`: render compose overlays, with coprocessor topology as the only structural exception
+- `src/runtime-plan.ts`: resolve one runtime plan from bundle + env overrides + scenario/shorthand
+- `src/render-env.ts`: render runtime env maps
+- `src/render-config.ts`: render generated config files
+- `src/render-compose.ts`: render compose overlays, with coprocessor topology as the only structural exception
 
 ## Resolution Order
 
@@ -235,7 +235,7 @@ This resolves every repo-owned image to `9587546` and keeps companion services (
 
 ## Compatibility Matrix
 
-All version compatibility rules live in a single source of truth: `src/lean/compat.ts` → `COMPAT_MATRIX`.
+All version compatibility rules live in a single source of truth: `src/compat.ts` → `COMPAT_MATRIX`.
 
 The matrix has three sections:
 

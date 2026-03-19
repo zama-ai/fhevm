@@ -1,4 +1,4 @@
-import type { State } from "../types";
+import type { State } from "./types";
 
 const SOLIDITY_HEADER = `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;

@@ -14,9 +14,9 @@ import {
   TEMPLATE_COMPOSE_DIR,
   composePath,
   envPath,
-} from "../layout";
-import type { ResolvedCoprocessorScenarioInstance, State } from "../types";
-import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils";
+} from "./layout";
+import type { ResolvedCoprocessorScenarioInstance, State } from "./types";
+import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "./utils";
 
 export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;

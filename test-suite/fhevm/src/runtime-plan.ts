@@ -4,7 +4,7 @@ import type {
   Topology,
   UpOptions,
   VersionBundle,
-} from "../types";
+} from "./types";
 import {
   defaultCoprocessorScenario,
   loadCoprocessorScenario,

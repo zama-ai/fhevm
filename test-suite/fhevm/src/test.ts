@@ -11,8 +11,8 @@ import {
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
-} from "../layout";
-import type { TestOptions } from "../types";
+} from "./layout";
+import type { TestOptions } from "./types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;

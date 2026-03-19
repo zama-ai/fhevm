@@ -57,7 +57,7 @@ import {
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
-} from "../layout";
+} from "./layout";
 import type {
   BuiltImage,
   CleanOptions,
@@ -68,8 +68,8 @@ import type {
   StepName,
   UpOptions,
   VersionBundle,
-} from "../types";
-import { STEP_NAMES } from "../types";
+} from "./types";
+import { STEP_NAMES } from "./types";
 import {
   exists,
   hostReachableMaterialUrl,
@@ -82,7 +82,7 @@ import {
   toServiceName,
   withHexPrefix,
   writeJson,
-} from "../utils";
+} from "./utils";
 
 const SCHEMA_GUARDS = {
   coprocessor: {

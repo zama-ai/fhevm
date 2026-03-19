@@ -1,8 +1,8 @@
 import path from "node:path";
 
-import { LOCK_DIR } from "../layout";
-import type { UpOptions, VersionBundle, VersionTarget } from "../types";
-import { exists, readJson, writeJson } from "../utils";
+import { LOCK_DIR } from "./layout";
+import type { UpOptions, VersionBundle, VersionTarget } from "./types";
+import { exists, readJson, writeJson } from "./utils";
 import { GitHubApiError } from "./errors";
 import {
   PACKAGE_TO_REPOSITORY,

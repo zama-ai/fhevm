@@ -1,8 +1,8 @@
 import { defineCommand, runCommand } from "citty";
 
-import { formatCliError, PreflightError } from "./lean/errors";
-import { listScenarios, logs, pause, showResumeHint, status, unpause, up, upDryRun, clean, down, upgrade } from "./lean/stack";
-import { test } from "./lean/test";
+import { formatCliError, PreflightError } from "./errors";
+import { listScenarios, logs, pause, showResumeHint, status, unpause, up, upDryRun, clean, down, upgrade } from "./stack";
+import { test } from "./test";
 import { resolveServiceOverrides } from "./layout";
 import { OVERRIDE_GROUPS, STEP_NAMES, TARGETS, type LocalOverride, type OverrideGroup, type StepName, type VersionTarget } from "./types";
 

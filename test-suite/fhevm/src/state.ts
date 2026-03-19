@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 
-import { STATE_FILE } from "../layout";
-import type { State, StepName } from "../types";
-import { exists, readJson, writeJson } from "../utils";
+import { STATE_FILE } from "./layout";
+import type { State, StepName } from "./types";
+import { exists, readJson, writeJson } from "./utils";
 
 export const loadState = async (stateFile = STATE_FILE): Promise<State | undefined> =>
   (await exists(stateFile)) ? readJson<State>(stateFile) : undefined;

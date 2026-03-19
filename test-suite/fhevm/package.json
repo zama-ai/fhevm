@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test src/lean",
+    "test": "bun test src",
     "start": "bun run src/cli.ts"
   },
   "dependencies": {

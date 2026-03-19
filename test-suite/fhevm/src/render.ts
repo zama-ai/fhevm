@@ -13,7 +13,7 @@ import {
 } from "./render-addresses";
 import { generateComposeOverrides } from "./render-compose";
 import { run } from "./shell";
-import type { State } from "../types";
+import type { State } from "./types";
 import {
   ADDRESS_DIR,
   COMPONENTS,
@@ -29,9 +29,9 @@ import {
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
-} from "../layout";
+} from "./layout";
 import { CommandError } from "./errors";
-import { ensureDir, readEnvFile, writeEnvFile } from "../utils";
+import { ensureDir, readEnvFile, writeEnvFile } from "./utils";
 
 const ensureWritableDir = async (dir: string) => {
   await ensureDir(dir);

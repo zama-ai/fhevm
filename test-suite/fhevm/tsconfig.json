@@ -15,7 +15,7 @@
     "src/presets.ts",
     "src/types.ts",
     "src/utils.ts",
-    "src/lean/**/*.ts",
+    "src/**/*.ts",
     "scripts/**/*.ts"
   ]
 }

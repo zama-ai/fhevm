@@ -1,5 +1,5 @@
-import { envPath, versionsEnvPath } from "../layout";
-import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "../utils";
+import { envPath, versionsEnvPath } from "./layout";
+import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "./utils";
 import { CommandError } from "./errors";
 
 const readPipe = async (stream: ReadableStream<Uint8Array> | number | null | undefined) =>

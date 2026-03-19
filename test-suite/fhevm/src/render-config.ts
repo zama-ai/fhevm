@@ -1,7 +1,7 @@
 import YAML from "yaml";
 
 import { requiresLegacyRelayerReadinessConfig } from "./compat";
-import type { State } from "../types";
+import type { State } from "./types";
 
 const rewriteRelayerConfig = (
   config: Record<string, unknown>,

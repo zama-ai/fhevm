@@ -1,12 +1,12 @@
 import path from "node:path";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { TEST_SUITE_CONTAINER } from "../layout";
+import { TEST_SUITE_CONTAINER } from "./layout";
 import { buildTestContainerArgs } from "./test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./stack";
-import type { State } from "../types";
+import type { State } from "./types";
 
-const CLI_DIR = path.resolve(import.meta.dir, "..", "..");
+const CLI_DIR = path.resolve(import.meta.dir, "..");
 const STATE_ROOT = path.resolve(CLI_DIR, "..", "..", ".fhevm");
 const STATE_FILE = path.join(STATE_ROOT, "state", "state.json");
 

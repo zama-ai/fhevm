@@ -9,7 +9,7 @@ import {
   MAX_COPROCESSOR_INSTANCES,
   REPO_ROOT,
   resolveServiceOverrides,
-} from "../layout";
+} from "./layout";
 import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
@@ -17,7 +17,7 @@ import type {
   ResolvedCoprocessorScenario,
   ResolvedCoprocessorScenarioInstance,
   ScenarioSummary,
-} from "../types";
+} from "./types";
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
 const COPROCESSOR_SCENARIO_VERSION = 1;
