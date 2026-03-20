@@ -21,6 +21,7 @@ KMS can be configured to two modes:
   - [Local Developer Optimizations](#local-developer-optimizations)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
+  - [Multi-chain Mode](#multi-chain-mode)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -46,6 +47,12 @@ cd test-suite/fhevm
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
 ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+
+# Deploy multi-chain setup (Chain A + Chain B with separate host nodes)
+./fhevm-cli deploy --multi-chain
+
+# Run multi-chain isolation tests
+./fhevm-cli test multi-chain-isolation
 
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
 ./fhevm-cli deploy --resume kms-connector
@@ -148,6 +155,23 @@ You can combine `--only` or `--resume` with other flags:
 # Redeploy only gateway-sc with a local build
 ./fhevm-cli deploy --only gateway-sc --build --local
 ```
+
+### Multi-chain mode
+
+Deploys a second host chain (Chain B) alongside Chain A, sharing the same coprocessor, gateway, and KMS. Chain B env files are derived automatically from the Chain A base files.
+
+```sh
+# Deploy multi-chain
+./fhevm-cli deploy --multi-chain
+
+# Run isolation tests
+./fhevm-cli test multi-chain-isolation
+
+# Combine with other flags
+./fhevm-cli deploy --multi-chain --build --local
+```
+
+Additional services deployed: `host-node-b` (chain ID `67890`, port `8547`), `host-sc-b`, and `coprocessor-host-listener-b`.
 
 ## Security policy
 
