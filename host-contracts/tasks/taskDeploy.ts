@@ -170,7 +170,7 @@ task('task:deployKMSVerifier')
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+        args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold, [], '', []],
       },
     });
     console.log('KMSVerifier code set successfully at address:', proxyAddress);

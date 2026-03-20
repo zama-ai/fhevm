@@ -7,6 +7,109 @@ import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
+const DEFAULT_MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+
+/**
+ * Derives the private key for a hardhat account at the given index.
+ */
+function getPrivateKeyForAccount(index: number): string {
+  const hdNode = ethers.HDNodeWallet.fromMnemonic(
+    ethers.Mnemonic.fromPhrase(DEFAULT_MNEMONIC),
+    "m/44'/60'/0'/0",
+  );
+  return hdNode.deriveChild(index).privateKey;
+}
+
+/**
+ * Builds MpcNode structs from hardhat account indices.
+ * The verificationKey is the uncompressed secp256k1 public key (64 bytes, no 04 prefix),
+ * so keccak256(verificationKey) produces the correct Ethereum address.
+ */
+function buildMpcNodes(accountIndices: number[]) {
+  return accountIndices.map((acctIdx, i) => {
+    const pk = getPrivateKeyForAccount(acctIdx);
+    const signingKey = new ethers.SigningKey(pk);
+    // signingKey.publicKey is 0x04 + X(32) + Y(32). Strip the 04 prefix.
+    const verificationKey = '0x' + signingKey.publicKey.slice(4);
+    return {
+      mpcIdentity: `node-${i}`,
+      partyId: i,
+      verificationKey,
+      externalUrl: 'https://example.com',
+      caCert: '0xdeadbeef',
+      publicStorageUrl: 'https://storage.example.com',
+      publicStoragePrefix: 'prefix',
+      extraVerificationKeys: [],
+    };
+  });
+}
+
+/**
+ * Defines a new context+epoch via the epoch lifecycle and activates it
+ * by having all signers confirm context creation and epoch result.
+ */
+async function defineAndActivateContext(
+  kmsVerifier: any,
+  deployer: any,
+  signerAccounts: any[],
+  accountIndices: number[],
+  threshold: number,
+) {
+  // Compute next IDs from current active state (counters are sequential)
+  const [currentContextId, currentEpochId] = await kmsVerifier.getCurrentKmsContext();
+  const newContextId = currentContextId + 1n;
+  const newEpochId = currentEpochId + 1n;
+
+  const mpcNodes = buildMpcNodes(accountIndices);
+
+  const tx = await kmsVerifier.connect(deployer).defineNewContextAndEpoch(mpcNodes, threshold, '1.0.0', []);
+  await tx.wait();
+
+  // EIP-712 domain for KMSVerifier native signing
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const kmsVerifierAddress = await kmsVerifier.getAddress();
+  const domain = {
+    name: 'KMSVerifier',
+    version: '1',
+    chainId,
+    verifyingContract: kmsVerifierAddress,
+  };
+
+  // --- Confirm context creation ---
+  const contextCreationTypes = {
+    ContextCreationConfirmation: [{ name: 'contextId', type: 'uint256' }],
+  };
+  for (const signer of signerAccounts) {
+    const sig = await signer.signTypedData(domain, contextCreationTypes, { contextId: newContextId });
+    await kmsVerifier.confirmContextCreation(newContextId, sig);
+  }
+
+  // --- Confirm epoch result ---
+  const extraData = ethers.concat([
+    '0x01',
+    ethers.zeroPadValue(ethers.toBeHex(newContextId), 32),
+    ethers.zeroPadValue(ethers.toBeHex(newEpochId), 32),
+  ]);
+  const keyDigests = [{ keyType: 1, digest: '0xaabbccdd' }];
+  const keygenTypes = {
+    KeygenVerification: [
+      { name: 'prepKeygenId', type: 'uint256' },
+      { name: 'keyId', type: 'uint256' },
+      { name: 'keyDigests', type: 'KeyDigest[]' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+    KeyDigest: [
+      { name: 'keyType', type: 'uint8' },
+      { name: 'digest', type: 'bytes' },
+    ],
+  };
+  const keygenMessage = { prepKeygenId: 1, keyId: 2, keyDigests, extraData };
+  for (const signer of signerAccounts) {
+    const sig = await signer.signTypedData(domain, keygenTypes, keygenMessage);
+    await kmsVerifier.confirmEpochResult(newEpochId, 1, 2, keyDigests, extraData, sig);
+  }
+}
+
 describe('OnchainPublicDecrypt', function () {
   beforeEach(async function () {
     await initSigners(2);
@@ -71,12 +174,14 @@ describe('OnchainPublicDecrypt', function () {
     const kmsAdd = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const accounts = await ethers.getSigners();
-    const signerAddresses = [accounts[7], accounts[8], accounts[9]].map((s) => s.address);
+    const signerAccounts = [accounts[7], accounts[8], accounts[9]];
+    const signerAddresses = signerAccounts.map((s) => s.address);
     const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
-    const txNewConfig = await kmsVerifier.connect(deployer).defineNewContext(signerAddresses, 2);
-    await txNewConfig.wait();
+
+    // Activate a new context with 3 signers, threshold 2 (full epoch lifecycle)
+    await defineAndActivateContext(kmsVerifier, deployer, signerAccounts, [7, 8, 9], 2);
     expect(await kmsVerifier.getThreshold()).to.equal(2);
-    expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
+    expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses);
 
     const tx = await this.contract.requestDecryption();
     const receipt = await tx.wait();
@@ -115,8 +220,8 @@ describe('OnchainPublicDecrypt', function () {
     await this.contract.callbackDecryption(decryptedResult, decryptionProof6);
     expect(await this.contract.yUint64()).to.equal(42);
 
-    const txResetConfig = await kmsVerifier.connect(deployer).defineNewContext([signerAddresses[0]], 1);
-    await txResetConfig.wait();
+    // Reset to 1 signer with threshold 1 (full epoch lifecycle)
+    await defineAndActivateContext(kmsVerifier, deployer, [accounts[7]], [7], 1);
     expect(await kmsVerifier.getThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
