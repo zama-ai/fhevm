@@ -32,7 +32,7 @@ export class ProbeTimeout extends CliError {
     readonly container: string,
     readonly elapsed: number,
   ) {
-    super("ProbeTimeout", `${container} was not ready after ${elapsed}ms`);
+    super("ProbeTimeout", `${container} was not ready after ${elapsed}s`);
   }
 }
 
