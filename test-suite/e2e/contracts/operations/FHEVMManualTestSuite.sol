@@ -234,6 +234,16 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         FHE.makePubliclyDecryptable(resEuint64);
     }
 
+    function test_shl_euint64_uint8(externalEuint64 a, uint8 b, bytes calldata inputProof) external {
+        resEuint64 = FHE.shl(FHE.fromExternal(a, inputProof), b);
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_shl_euint64_euint8(externalEuint64 a, externalEuint8 b, bytes calldata inputProof) external {
+        resEuint64 = FHE.shl(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof));
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
     function test_rotl_euint64_uint8(externalEuint64 a, uint8 b, bytes calldata inputProof) external {
         resEuint64 = FHE.rotl(FHE.fromExternal(a, inputProof), b);
         FHE.makePubliclyDecryptable(resEuint64);
@@ -241,6 +251,16 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
 
     function test_rotl_euint64_euint8(externalEuint64 a, externalEuint8 b, bytes calldata inputProof) external {
         resEuint64 = FHE.rotl(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof));
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_rotr_euint64_uint8(externalEuint64 a, uint8 b, bytes calldata inputProof) external {
+        resEuint64 = FHE.rotr(FHE.fromExternal(a, inputProof), b);
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_rotr_euint64_euint8(externalEuint64 a, externalEuint8 b, bytes calldata inputProof) external {
+        resEuint64 = FHE.rotr(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof));
         FHE.makePubliclyDecryptable(resEuint64);
     }
 }
