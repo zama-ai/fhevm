@@ -62,9 +62,6 @@ cd test-suite/fhevm
 # Boot with a local coprocessor override (all services)
 ./fhevm-cli up --target latest-supported --override coprocessor
 
-# Boot with only specific runtime services built locally
-./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
-
 # View logs
 ./fhevm-cli logs relayer
 
@@ -81,10 +78,6 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 ```sh
 # Override an entire group (builds all services locally)
 ./fhevm-cli up --target latest-supported --override coprocessor
-
-# Override specific services within a group (others pull from registry)
-./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
-```
 
 Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
 Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
@@ -162,7 +155,7 @@ The following values should NEVER be committed to repositories:
 
 ### Reporting security issues
 
-Please report security vulnerabilities to `security@zama.ia` rather than creating public issues.
+Please report security vulnerabilities to `security@zama.ai` rather than creating public issues.
 
 Include:
 
