@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
+    "compat-smoke": "bun run src/compat-smoke.ts",
     "test": "bun test src",
     "start": "bun run src/cli.ts"
   },
