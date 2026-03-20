@@ -108,6 +108,9 @@ async function prepareNewImplementation(
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
+  // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
+  // reusing artifacts compiled against another environment.
+  await hre.run('clean');
   await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
   await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
 

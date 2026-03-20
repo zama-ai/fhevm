@@ -33,7 +33,9 @@ For a backport hotfix, that means the checked-out branch/tag should match the ne
 
 The task still needs the current deployment addresses on disk because
 `contracts/FHEVMExecutor.sol` imports `addresses/FHEVMHostAddresses.sol`.
-Generate them first with the existing setter tasks:
+Generate them first with the existing setter tasks.
+If you are switching environments, restart from `task:setACLAddress` so both generated files
+are rewritten from scratch before the remaining addresses are appended:
 
 ```bash
 npx hardhat task:setACLAddress --address <acl>
@@ -47,6 +49,10 @@ npx hardhat task:setPauserSetAddress --address <pauser-set>
 Those commands generate:
 - `addresses/.env.host`
 - `addresses/FHEVMHostAddresses.sol`
+
+The values to feed into those setter tasks should come from the currently deployed
+environment you are upgrading. A practical source of truth is the verified source bundle of
+the implementation currently behind the proxy, specifically `addresses/FHEVMHostAddresses.sol`.
 
 Then run:
 
@@ -63,3 +69,13 @@ Notes:
 - `--upgrade-from-ref` is only used to load the old implementation source for OZ validation.
 - `--new-implementation` comes from your current checkout.
 - if you want the proxy address from `addresses/.env.host`, add `--use-internal-proxy-address true`
+- the task runs `hardhat clean` before recompiling so the implementation is not built from stale
+  artifacts compiled against another environment
+
+For higher confidence before submitting a DAO proposal, run a fork test that:
+- impersonates the ACL/host owner
+- upgrades the live proxy on a fork with `upgradeToAndCall(newImplementation, 0xc4115874)`
+- checks the proxy still reports the expected ACL address
+- checks `trivialEncrypt()` still works and the transient ACL allowance is granted
+- replays the scalar-truncates-to-zero `fheDiv` / `fheRem` cases and verifies they now revert with
+  `DivisionByZero`
