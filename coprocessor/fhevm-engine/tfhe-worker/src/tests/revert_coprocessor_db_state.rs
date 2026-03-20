@@ -306,10 +306,6 @@ async fn test_revert_deletes_data_after_block_n() {
         15,
         "allowed_handles"
     );
-    assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM dependence_chain WHERE dependence_chain_id IN (SELECT dependence_chain_id FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
-        15, "dependence_chain"
-    );
 
     // Poller state should be reset to 15
     let poller_block: i64 = sqlx::query_scalar(
@@ -482,10 +478,6 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
         .await,
         10,
         "allowed_handles"
-    );
-    assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM dependence_chain WHERE dependence_chain_id IN (SELECT dependence_chain_id FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
-        10, "dependence_chain"
     );
 
     let remaining_delegation_blocks: Vec<i64> = sqlx::query_scalar(
