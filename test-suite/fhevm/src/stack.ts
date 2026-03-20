@@ -182,9 +182,18 @@ const minioIp = async () => {
   if (result.code !== 0) {
     throw new PreflightError("Could not determine MinIO IP");
   }
-  const inspected = JSON.parse(result.stdout) as Array<{
+  let inspected: Array<{
     NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
   }>;
+  try {
+    inspected = JSON.parse(result.stdout) as Array<{
+      NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
+    }>;
+  } catch (error) {
+    throw new PreflightError(
+      `docker inspect fhevm-minio returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const ip = inspected[0] ? Object.values(inspected[0].NetworkSettings.Networks)[0]?.IPAddress : "";
   if (!ip) {
     throw new PreflightError("Could not determine MinIO IP");
@@ -687,7 +696,7 @@ const castBool = async (rpcUrl: string, to: string, signature: string, ...args: 
 
 const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
-  const kp = discovery.minioKeyPrefix ?? "PUB";
+  const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
     const ethCallRaw = async (data: string) => {
       const rpcUrl = hostReachableRpcUrl(discovery.endpoints.gatewayHttp);
@@ -703,7 +712,14 @@ const probeBootstrap = async (state: State) => {
       });
       if (!response.ok) return 0n;
       const payload = (await response.json()) as { result?: string };
-      return payload.result ? BigInt(payload.result) : 0n;
+      if (!payload.result) {
+        return 0n;
+      }
+      try {
+        return BigInt(payload.result);
+      } catch {
+        throw new RpcError(rpcUrl, `eth_call returned malformed bigint result: ${payload.result}`);
+      }
     };
     const actualKey = await ethCallRaw(KEYGEN_ID_SELECTOR);
     const actualCrs = await ethCallRaw(CRSGEN_ID_SELECTOR);
@@ -713,8 +729,8 @@ const probeBootstrap = async (state: State) => {
     const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
     const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
     await Promise.all([
-      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${kp}/PublicKey/${actualFheKeyId}`),
-      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${kp}/CRS/${actualCrsKeyId}`),
+      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
+      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
     ]);
     if (discovery.fheKeyId !== actualFheKeyId || discovery.crsKeyId !== actualCrsKeyId) {
       throw new PreflightError(

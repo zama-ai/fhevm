@@ -80,7 +80,7 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
 - `latest-main` is modern-only by construction. If no complete bundle exists after the floor SHA, resolution fails.
 - The resolved bundle is printed and locked before the real boot continues.
 - Runtime precedence is fixed: bundle -> `*_VERSION` env overrides -> coprocessor scenario/shorthand -> generated runtime files.
-- `--build` expands to the full local workspace on normal stacks and to the non-coprocessor workspace groups when a scenario already owns coprocessor locality.
+- `--build` expands to the full local workspace on normal stacks. With topology-only scenarios, it also applies local coprocessor images to inherited scenario instances. If a scenario explicitly pins coprocessor source, overlapping explicit coprocessor overrides fail fast.
 - `.fhevm` is the only mutable runtime area owned by the CLI.
 - Tracked inputs are split by role:
   - compose templates: `docker-compose/*.yml`
