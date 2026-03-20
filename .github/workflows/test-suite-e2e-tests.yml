@@ -67,6 +67,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
+      multi-chain:
+        description: "Deploy multi-chain setup and run multi-chain tests only"
+        default: false
+        type: boolean
       deploy-build:
         description: "Build local Docker images from the checked out repository before deploy"
         default: false
@@ -90,6 +94,7 @@ concurrency:
 
 jobs:
   fhevm-e2e-test:
+    if: ${{ !inputs.multi-chain }}
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
@@ -283,6 +288,110 @@ jobs:
           echo "::endgroup::"
           echo "::group::Coprocessor 2 - TFHE Worker"
           ./fhevm-cli logs coprocessor-2-tfhe-worker 2>/dev/null || true
+          echo "::endgroup::"
+
+      - name: Cleanup
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean
+
+  fhevm-e2e-multi-chain-test:
+    if: ${{ inputs.multi-chain }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
+    env:
+      COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
+      COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}
+      COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor-gw-listener-version }}
+      COPROCESSOR_TX_SENDER_VERSION: ${{ inputs.coprocessor-tx-sender-version }}
+      COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor-tfhe-worker-version }}
+      COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor-sns-worker-version }}
+      COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
+      GATEWAY_VERSION: ${{ inputs.gateway-version }}
+      HOST_VERSION: ${{ inputs.host-version }}
+      CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector-db-migration-version }}
+      CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector-gw-listener-version }}
+      CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
+      CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
+      TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
+      RELAYER_VERSION: ${{ inputs.relayer-version }}
+      CORE_VERSION: ${{ inputs.kms-core-version }}
+    runs-on: large_ubuntu_32
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Display component versions
+        env:
+          JSON_INPUT: ${{ toJSON(inputs) }}
+        run: |
+          echo "Component versions: $JSON_INPUT"
+
+      - name: Deploy fhevm Stack (multi-chain)
+        working-directory: test-suite/fhevm
+        env:
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
+        run: |
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
+            ./fhevm-cli deploy --build --multi-chain
+          else
+            ./fhevm-cli deploy --multi-chain
+          fi
+
+      - name: Multi-chain isolation test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test multi-chain-isolation
+
+      - name: Show logs on test failure
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          echo "::group::Relayer Logs"
+          ./fhevm-cli logs fhevm-relayer
+          echo "::endgroup::"
+          echo "::group::SNS Worker Logs"
+          ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Transaction Sender Logs (filtered)"
+          ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host Listener"
+          ./fhevm-cli logs coprocessor-host-listener
+          echo "::endgroup::"
+          echo "::group::Gateway Listener"
+          ./fhevm-cli logs coprocessor-gw-listener
+          echo "::endgroup::"
+          echo "::group::ZKProof Worker"
+          ./fhevm-cli logs coprocessor-zkproof-worker
+          echo "::endgroup::"
+          echo "::group::TFHE Worker"
+          ./fhevm-cli logs coprocessor-tfhe-worker
           echo "::endgroup::"
 
       - name: Cleanup
