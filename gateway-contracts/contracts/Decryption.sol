@@ -687,7 +687,7 @@ contract Decryption is
     function isUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
-    ) external view virtual returns (bool) {
+    ) public view virtual returns (bool) {
         // Return false if the list of handles is empty
         if (ctHandleContractPairs.length == 0) {
             return false;
@@ -700,6 +700,18 @@ contract Decryption is
             }
         }
         return true;
+    }
+
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady}.
+     * @custom:deprecated Use isUserDecryptionReady(CtHandleContractPair[], bytes) instead.
+     */
+    function isUserDecryptionReady(
+        address /* userAddress */,
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external view virtual returns (bool) {
+        return isUserDecryptionReady(ctHandleContractPairs, extraData);
     }
 
     /**
