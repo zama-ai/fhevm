@@ -6,6 +6,7 @@ import type {
   VersionBundle,
 } from "./types";
 import {
+  assertScenarioOverrideCompatibility,
   defaultCoprocessorScenario,
   loadCoprocessorScenario,
   resolveScenarioFile,
@@ -28,7 +29,9 @@ export const resolveScenarioForOptions = async (
   if (options.scenarioPath) {
     const sourcePath = await resolveScenarioReference(options.scenarioPath);
     const input = await loadCoprocessorScenario(sourcePath);
-    return resolveScenarioFile(sourcePath, input);
+    const resolved = resolveScenarioFile(sourcePath, input);
+    assertScenarioOverrideCompatibility(resolved, options.overrides);
+    return resolved;
   }
   return synthesizeOverrideScenario(options.overrides) ?? defaultCoprocessorScenario();
 };

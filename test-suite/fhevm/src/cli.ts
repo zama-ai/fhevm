@@ -80,9 +80,6 @@ const parseUpInput = (args: Record<string, unknown>) => {
     throw new PreflightError("--build cannot be combined with --override");
   }
   const explicitOverrides = overrideValues.flatMap(parseLocalOverride);
-  if (scenarioPath && explicitOverrides.some((item) => item.group === "coprocessor")) {
-    throw new PreflightError("--scenario cannot be combined with --override coprocessor");
-  }
   const overrides = [
     ...(build ? ALL_OVERRIDES : []),
     ...explicitOverrides,

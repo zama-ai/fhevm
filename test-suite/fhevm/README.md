@@ -385,7 +385,7 @@ If a runtime override is already active and you only want to rebuild and restart
 ./fhevm-cli upgrade coprocessor
 ```
 
-`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. For `coprocessor`, it rebuilds only the active local coprocessor runtime path from the current shorthand/scenario state. For full schema-coupled group upgrades, the matching DB migration containers are rerun before runtime services restart.
+`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. It is a runtime rebuild/restart command, not a live schema migration command. For schema-coupled groups (`coprocessor`, `kms-connector`), if local DB migrations changed, `upgrade` fails fast and asks you to do a fresh `fhevm-cli up` instead of rerunning the initializer on a live database.
 
 ## Dropped Convenience Commands
 
@@ -427,7 +427,7 @@ instances:
 
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
-`--scenario` cannot be combined with `--override coprocessor`. Keep `--override coprocessor` for the fast local e2e loop; use scenarios when you need an explicit consensus matrix.
+`--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
 ## Runtime State
 

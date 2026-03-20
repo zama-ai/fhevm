@@ -1,7 +1,13 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
-import { parseCoprocessorScenario, resolveScenarioReference, synthesizeOverrideScenario, effectiveOverrides } from "./scenario";
+import {
+  assertScenarioOverrideCompatibility,
+  parseCoprocessorScenario,
+  resolveScenarioReference,
+  synthesizeOverrideScenario,
+  effectiveOverrides,
+} from "./scenario";
 
 describe("scenario", () => {
   test("parses the bundled two-of-two scenario", async () => {
@@ -47,5 +53,33 @@ instances:
       group: "coprocessor",
       services: ["coprocessor-host-listener"],
     });
+  });
+
+  test("allows coprocessor overrides with topology-only scenarios", () => {
+    expect(() =>
+      assertScenarioOverrideCompatibility(
+        {
+          instances: [
+            { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
+            { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+          ],
+        },
+        [{ group: "coprocessor" }],
+      ),
+    ).not.toThrow();
+  });
+
+  test("rejects coprocessor overrides when the scenario explicitly owns coprocessor source", () => {
+    expect(() =>
+      assertScenarioOverrideCompatibility(
+        {
+          sourcePath: "/tmp/explicit-source.yaml",
+          instances: [
+            { index: 0, source: { mode: "registry", tag: "abcdef0" }, env: {}, args: {} },
+          ],
+        },
+        [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+      ),
+    ).toThrow("conflicts with scenario-defined coprocessor source");
   });
 });
