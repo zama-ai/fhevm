@@ -90,6 +90,7 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
   - checked-in scenario inputs under `scenarios/`
 - `src/runtime-plan.ts` resolves the final coprocessor/runtime shape consumed by regeneration.
 - `src/render-env.ts`, `src/render-config.ts`, and `src/render-compose.ts` are the only rendering layers.
+- Compatibility is enforced in two layers: `src/compat.ts` defines shims and incompatibilities, and `bun run compat-smoke` runs legacy images against the CLI's rendered runtime commands.
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`; `down` stops containers, prunes `.fhevm/runtime`, keeps `.fhevm/state`, and `clean` removes both.
 - Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` only contains generated overrides for coprocessor topology and active local-override components.

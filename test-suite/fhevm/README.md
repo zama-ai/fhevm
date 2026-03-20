@@ -263,6 +263,22 @@ Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI 
 **Remove a legacy shim:**
 When the minimum supported version passes the threshold, delete the `legacyShims` entry and its `SHIM_PROFILES` profile. Run `bun test`.
 
+### Maintenance caveats
+
+The CLI is leaner than the old bash path, but a few files still carry most of the maintenance burden:
+
+- `src/presets.ts`: maintained companion pins for `latest-main` and `sha`
+- `src/resolve.ts`: support floors and target-resolution policy
+- `src/compat.ts`: legacy shims and explicit incompatibility rules
+- `src/render-env.ts`: runtime env projection from templates, discovery, topology, and compat
+- `src/render-compose.ts`: service command shaping, local-build rewrites, and scenario instance compose overrides
+
+When changing runtime flags, env contracts, target semantics, or external companion versions, assume you may need to touch more than one of those files. The expected checks are:
+
+1. update the resolution or compat rule
+2. run `bun test`
+3. run `bun run compat-smoke` if the change affects legacy runtime contracts
+
 ## Main Commands
 
 ```sh
