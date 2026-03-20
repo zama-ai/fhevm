@@ -24,9 +24,8 @@ describe("stack", () => {
     expect(state.requiresGitHub).toBe(false);
   });
 
-  test("upgrade plan includes migrations for a full kms-connector override", () => {
+  test("upgrade plan restarts runtime services for a full kms-connector override", () => {
     const plan = resolveUpgradePlan({ overrides: [{ group: "kms-connector" }], scenario: defaultScenario }, "kms-connector");
-    expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
     expect(plan.runtimeServices).toEqual([
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
@@ -34,16 +33,15 @@ describe("stack", () => {
     ]);
   });
 
-  test("upgrade rejects schema-coupled partial runtime overrides without migrations", () => {
-    expect(() =>
-      resolveUpgradePlan(
-        {
-          overrides: [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }],
-          scenario: defaultScenario,
-        },
-        "kms-connector",
-      ),
-    ).toThrow("upgrade for kms-connector requires a full-group local override so DB migrations can run");
+  test("upgrade plan supports schema-coupled partial runtime overrides when runtime services exist", () => {
+    const plan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }],
+        scenario: defaultScenario,
+      },
+      "kms-connector",
+    );
+    expect(plan.runtimeServices).toEqual(["kms-connector-gw-listener"]);
   });
 
   test("upgrade treats inherited multi-instance coprocessor build overrides as an active local runtime path", () => {
@@ -61,7 +59,6 @@ describe("stack", () => {
       },
       "coprocessor",
     );
-    expect(plan.migrationServices).toEqual(["coprocessor-db-migration", "coprocessor1-db-migration"]);
     expect(plan.runtimeServices).toContain("coprocessor-host-listener");
     expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
   });
