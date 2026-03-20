@@ -1,3 +1,6 @@
+/**
+ * Combines resolved versions, overrides, and scenario topology into the runtime plan used for rendering and orchestration.
+ */
 import type {
   ResolvedCoprocessorScenario,
   State,

@@ -1,3 +1,6 @@
+/**
+ * Materializes generated runtime artifacts such as env files, compose overrides, relayer config, and address outputs.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 

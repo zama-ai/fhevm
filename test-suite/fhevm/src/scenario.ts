@@ -1,3 +1,6 @@
+/**
+ * Loads, validates, and resolves coprocessor scenario definitions and their interaction with local overrides.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 

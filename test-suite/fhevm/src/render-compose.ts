@@ -1,3 +1,6 @@
+/**
+ * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 

@@ -1,3 +1,6 @@
+/**
+ * Wraps process execution, streaming output, compose env loading, and heartbeat reporting for external commands.
+ */
 import { envPath, versionsEnvPath } from "./layout";
 import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "./utils";
 import { CommandError } from "./errors";
