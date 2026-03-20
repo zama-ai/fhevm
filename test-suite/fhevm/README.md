@@ -49,7 +49,7 @@ Most users should start with `latest-main`.
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
 
-Compat is mainly there to protect those reproduction and cross-era paths. For the common `latest-main` path, the mental model should stay simple: mainline baseline, optional surgical local or CI repo-owned overrides, explicit topology when needed.
+Compat is mainly there to protect those reproduction and cross-era paths. For the common `latest-main` path, the mental model should stay simple: mainline baseline, optional surgical local or CI repo-owned overrides, explicit topology when needed. For the shim/incompatibility decision tree, see `COMPAT.md`.
 
 ## Quick Start
 
