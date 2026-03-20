@@ -297,7 +297,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
-Use `--build` when you want the whole local workspace on the active baseline. On scenario runs, `--build` still leaves coprocessor locality to the scenario itself.
+Use `--build` when you want the whole local workspace on the active baseline. On topology-only scenario runs, `--build` also applies local coprocessor images to inherited scenario instances. If a scenario explicitly pins coprocessor source, overlapping explicit coprocessor overrides fail fast instead.
 `--build` cannot be combined with `--override`.
 
 Supported groups:
