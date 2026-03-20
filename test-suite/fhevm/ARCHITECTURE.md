@@ -8,7 +8,7 @@ flowchart TD
   P --> B["2. resolve target"]
   B --> B1["latest-main: walk main SHAs until complete image set, but not before 803f104"]
   B --> B2["latest-supported: tracked maintained bundle profile"]
-  B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104"]
+  B --> B3["sha: exact repo-owned SHA on main, fail if any package tag is missing or if it predates 803f104 or 1272b10"]
   B --> B4["devnet/testnet/mainnet: GitOps bundles"]
   B1 --> C["apply *_VERSION env overrides"]
   B2 --> C
@@ -78,6 +78,7 @@ Non-workspace companions still come from the mainline defaults in `src/presets.t
 
 - Version selection is explicit. The CLI does not silently use a vague "latest".
 - `latest-main` is modern-only by construction. If no complete bundle exists after the floor SHA, resolution fails.
+- `sha` currently has two floors: the simple-ACL cutover (`803f104`) and the modern gw-listener drift-address cutover (`1272b10`). Older SHAs fail fast instead of booting into unsupported runtime behavior.
 - The resolved bundle is printed and locked before the real boot continues.
 - Runtime precedence is fixed: bundle -> `*_VERSION` env overrides -> coprocessor scenario/shorthand -> generated runtime files.
 - `--build` expands to the full local workspace on normal stacks. With topology-only scenarios, it also applies local coprocessor images to inherited scenario instances. If a scenario explicitly pins coprocessor source, overlapping explicit coprocessor overrides fail fast.
