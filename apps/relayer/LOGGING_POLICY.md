@@ -246,6 +246,61 @@ When logging requests/responses, redact sensitive cryptographic data. Show only 
 
 ---
 
+## Multiple Relayers Operating
+
+**For developers:** How logging behaves when multiple relayers are operated against the same contracts
+**For LLMs:** Use this to verify log levels for gateway event handling
+
+When multiple relayers are being operated against the same gateway contracts, each relayer routinely sees:
+
+- Gateway events produced by other relayers
+- Duplicate observations from its own redundant listeners
+- Unmatched gateway reference IDs that are normal, not locally actionable
+
+These are **normal operational traffic**, not failures.
+
+### Gateway Event Observation (pre-correlation)
+
+Before a gateway event is matched to a database request, the relayer is merely
+observing chain activity. Pre-correlation logs use:
+
+- **DEBUG** for the initial observation ("Observed gateway ... response")
+- **DEBUG** for retry attempts when no match is found yet
+- **DEBUG** for the final unmatched outcome ("No request matched gateway reference id; event ignored")
+
+Pre-correlation logs should **not** include `int_job_id` when the value is only the
+internal placeholder event ID. Use gateway identifiers instead: `gw_reference_id`,
+`tx_hash`, `instance_id`, and event topic metadata.
+
+### Post-correlation (match found)
+
+After a database lookup resolves the event to a request, logs return to the
+standard **INFO** trail with the real `int_job_id`:
+
+- "Matched gateway response to request"
+- "Response dispatched to HTTP handlers"
+- Threshold reached, proof accepted/rejected
+
+### Listener Traffic
+
+Raw event ingestion and duplicate-event skips are **DEBUG** because they are
+high-volume when multiple relayers share contracts. Listener lifecycle events (started, connected,
+subscription active) remain **INFO**. Reconnects and dropped subscriptions remain **WARN**.
+
+### Key Rules
+
+| Situation | Level | Rationale |
+|-----------|-------|-----------|
+| Gateway event observed (pre-correlation) | DEBUG | May belong to another relayer |
+| Retry looking for match | DEBUG | Normal timing race or foreign event |
+| No match after retries | DEBUG | Expected when multiple relayers share contracts |
+| Match found | INFO | Confirmed request progress |
+| Duplicate listener event skipped | DEBUG | Expected with redundant listeners |
+| Listener lifecycle (start/connect) | INFO | Operational milestone |
+| Subscription dropped / provider retry | WARN | Locally actionable degradation |
+
+---
+
 ## Verification
 
 **For LLMs:** Use these checks to verify code compliance

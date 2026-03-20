@@ -146,10 +146,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
                         == Decryption::PublicDecryptionResponse::SIGNATURE_HASH
                     {
-                        info!(
-                            "Processing gateway response for public decrypt request {:?}",
-                            event.job_id
-                        );
+                        debug!("Observed gateway public-decrypt response");
                         self.process_decrypt_response(&event, log, tx_hash).await
                     } else {
                         return;
@@ -334,12 +331,11 @@ impl GatewayHandler {
             })?;
 
         let public_decryption_id = req.decryptionId;
-        info!(
+        debug!(
             step = %PublicDecryptStep::GwEventReceived,
-            int_job_id = %event.job_id,
             tx_hash = %tx_hash,
             gw_reference_id = %public_decryption_id,
-            "Gateway response received"
+            "Observed gateway public-decrypt response"
         );
 
         let decrypt_response = PublicDecryptResponse {
@@ -362,6 +358,13 @@ impl GatewayHandler {
         match outcome {
             PublicDecryptCompletionOutcome::Completed { int_job_id } => {
                 let job_id = int_job_id;
+
+                info!(
+                    step = %PublicDecryptStep::GwEventReceived,
+                    int_job_id = %job_id,
+                    gw_reference_id = %public_decryption_id,
+                    "Matched gateway response to request"
+                );
 
                 // Dispatch response event to notify waiting HTTP handlers
                 let response_event_data =
@@ -418,12 +421,12 @@ impl GatewayHandler {
                 // TODO: Replace with proper event buffering solution.
                 let retry_config = &self.gw_event_retry_config;
                 for attempt in 1..=retry_config.max_retries {
-                    warn!(
+                    debug!(
                         step = %PublicDecryptStep::GwEventRetrying,
                         gw_reference_id = %public_decryption_id,
                         attempt = attempt,
                         max_retries = retry_config.max_retries,
-                        "Gateway event arrived before gw_reference_id stored, retrying"
+                        "No request matched gateway reference id, retrying"
                     );
 
                     tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
@@ -448,7 +451,7 @@ impl GatewayHandler {
                                 int_job_id = %int_job_id,
                                 gw_reference_id = %public_decryption_id,
                                 attempt = attempt,
-                                "Request found on retry, processing complete"
+                                "Matched gateway response to request on retry"
                             );
 
                             // Dispatch response event to notify waiting HTTP handlers
@@ -497,11 +500,11 @@ impl GatewayHandler {
                         }
                         PublicDecryptCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                warn!(
+                                debug!(
                                     step = %PublicDecryptStep::GwEventRetrying,
                                     gw_reference_id = %public_decryption_id,
                                     max_retries = retry_config.max_retries,
-                                    "Request not found after all retries, dropping event"
+                                    "No request matched gateway reference id; event ignored"
                                 );
                             }
                             // Continue to next attempt

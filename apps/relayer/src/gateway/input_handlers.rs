@@ -111,19 +111,17 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
 
                     match topic0_fixed {
                         InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
-                            info!(
-                                step = %InputProofStep::ProofAccepted,
-                                int_job_id = %event.job_id,
-                                "Processing accepted proof response"
+                            debug!(
+                                step = %InputProofStep::GwEventReceived,
+                                "Observed gateway input-proof accept response"
                             );
                             self.complete_proof_verification(event.clone(), log, *tx_hash)
                                 .await
                         }
                         InputVerification::RejectProofResponse::SIGNATURE_HASH => {
-                            info!(
-                                step = %InputProofStep::ProofRejected,
-                                int_job_id = %event.job_id,
-                                "Processing rejected proof response"
+                            debug!(
+                                step = %InputProofStep::GwEventReceived,
+                                "Observed gateway input-proof reject response"
                             );
                             self.reject_proof_verification(event.clone(), log, *tx_hash)
                                 .await
@@ -253,12 +251,11 @@ impl InputProofGatewayHandler {
                 }
             })?;
 
-        info!(
+        debug!(
             step = %InputProofStep::GwEventReceived,
-            int_job_id = %event.job_id,
             tx_hash = %tx_hash,
             gw_reference_id = ?request_event.zkProofId,
-            "Gateway response received"
+            "Observed gateway input-proof accept response"
         );
 
         let input_proof_response = InputProofResponse {
@@ -282,6 +279,13 @@ impl InputProofGatewayHandler {
 
         match outcome {
             InputProofCompletionOutcome::Completed { int_job_id } => {
+                info!(
+                    step = %InputProofStep::ProofAccepted,
+                    int_job_id = %int_job_id,
+                    gw_reference_id = ?request_event.zkProofId,
+                    "Matched gateway response to request"
+                );
+
                 let next_event_data: RelayerEventData =
                     RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                         accepted: true,
@@ -336,12 +340,12 @@ impl InputProofGatewayHandler {
                 // TODO: Replace with proper event buffering solution.
                 let retry_config = &self.gw_event_retry_config;
                 for attempt in 1..=retry_config.max_retries {
-                    warn!(
+                    debug!(
                         step = %InputProofStep::GwEventRetrying,
                         gw_reference_id = ?request_event.zkProofId,
                         attempt = attempt,
                         max_retries = retry_config.max_retries,
-                        "Gateway event arrived before gw_reference_id stored, retrying"
+                        "No request matched gateway reference id, retrying"
                     );
 
                     tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
@@ -363,11 +367,11 @@ impl InputProofGatewayHandler {
                     match retry_outcome {
                         InputProofCompletionOutcome::Completed { int_job_id } => {
                             info!(
-                                step = %InputProofStep::GwEventReceived,
+                                step = %InputProofStep::ProofAccepted,
                                 int_job_id = %int_job_id,
                                 gw_reference_id = ?request_event.zkProofId,
                                 attempt = attempt,
-                                "Request found on retry, processing complete"
+                                "Matched gateway response to request on retry"
                             );
 
                             let next_event_data: RelayerEventData =
@@ -412,11 +416,11 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                warn!(
+                                debug!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?request_event.zkProofId,
                                     max_retries = retry_config.max_retries,
-                                    "Request not found after all retries, dropping event"
+                                    "No request matched gateway reference id; event ignored"
                                 );
                             }
                             // Continue to next attempt
@@ -465,6 +469,13 @@ impl InputProofGatewayHandler {
 
         match outcome {
             InputProofCompletionOutcome::Completed { int_job_id } => {
+                info!(
+                    step = %InputProofStep::ProofRejected,
+                    int_job_id = %int_job_id,
+                    gw_reference_id = ?reject_proof_response.zkProofId,
+                    "Matched gateway response to request"
+                );
+
                 let next_event_data: RelayerEventData =
                     RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                         accepted: false,
@@ -519,12 +530,12 @@ impl InputProofGatewayHandler {
                 // TODO: Replace with proper event buffering solution.
                 let retry_config = &self.gw_event_retry_config;
                 for attempt in 1..=retry_config.max_retries {
-                    warn!(
+                    debug!(
                         step = %InputProofStep::GwEventRetrying,
                         gw_reference_id = ?reject_proof_response.zkProofId,
                         attempt = attempt,
                         max_retries = retry_config.max_retries,
-                        "Gateway event arrived before gw_reference_id stored, retrying (rejection)"
+                        "No request matched gateway reference id, retrying"
                     );
 
                     tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
@@ -546,11 +557,11 @@ impl InputProofGatewayHandler {
                     match retry_outcome {
                         InputProofCompletionOutcome::Completed { int_job_id } => {
                             info!(
-                                step = %InputProofStep::GwEventReceived,
+                                step = %InputProofStep::ProofRejected,
                                 int_job_id = %int_job_id,
                                 gw_reference_id = ?reject_proof_response.zkProofId,
                                 attempt = attempt,
-                                "Request found on retry, processing rejection"
+                                "Matched gateway response to request on retry"
                             );
 
                             let next_event_data: RelayerEventData =
@@ -595,11 +606,11 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                warn!(
+                                debug!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?reject_proof_response.zkProofId,
                                     max_retries = retry_config.max_retries,
-                                    "Request not found after all retries, dropping rejection event"
+                                    "No request matched gateway reference id; event ignored"
                                 );
                             }
                             // Continue to next attempt

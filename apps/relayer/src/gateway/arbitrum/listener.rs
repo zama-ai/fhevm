@@ -393,7 +393,7 @@ impl ArbitrumListener {
 
                             // Check deduplication - skip if already processed
                             if !self.deduplicator.try_insert(dedup_key).await {
-                                info!(
+                                debug!(
                                     step = %ListenerStep::EventDuplicate,
                                     instance_id = self.instance_id,
                                     block_number = block_number,
@@ -403,7 +403,7 @@ impl ArbitrumListener {
                                 continue;
                             }
 
-                            info!(
+                            debug!(
                                 step = %ListenerStep::EventReceived,
                                 instance_id = self.instance_id,
                                 block_number = block_number,

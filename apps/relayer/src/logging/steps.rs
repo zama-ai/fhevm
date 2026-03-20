@@ -7,6 +7,11 @@
 //! - `PublicDecryptStep`, `UserDecryptStep`, `InputProofStep`
 //! - `KeyUrlStep`, `ListenerStep`
 //!
+//! When multiple relayers are operated against the same contracts, gateway
+//! events may belong to other relayers. Pre-correlation observation logs use
+//! DEBUG; post-correlation milestones
+//! remain INFO. Retry/drop paths for unmatched events also use DEBUG.
+//!
 //! ## L2: Worker Steps (DEBUG/WARN)
 //! Track infrastructure operations. May or may not have `int_job_id`.
 //! - `WorkerStep`, `ThrottlerStep`, `TxEngineStep`
@@ -29,7 +34,7 @@ pub enum PublicDecryptStep {
     GwEventReceived,
     RespSent,
 
-    // Degraded path (WARN)
+    // Degraded path (WARN for local races, DEBUG for foreign events)
     Bounced,
     GwEventRetrying, // Gateway event arrived before gw_reference_id stored
 }
@@ -70,7 +75,7 @@ pub enum UserDecryptStep {
     ThresholdReached,
     RespSent,
 
-    // Degraded path (WARN)
+    // Degraded path (WARN for local races, DEBUG for foreign events)
     Bounced,
     LateShareReceived,
     GwEventRetrying, // Gateway event arrived before gw_reference_id stored
@@ -113,7 +118,7 @@ pub enum InputProofStep {
     ProofRejected,
     RespSent,
 
-    // Degraded path (WARN)
+    // Degraded path (WARN for local races, DEBUG for foreign events)
     Bounced,
     GwEventRetrying, // Gateway event arrived before gw_reference_id stored
 }
@@ -145,9 +150,9 @@ pub enum ListenerStep {
     ProviderConnected,
     SubscriptionActive,
 
-    // Event processing
+    // Event processing (DEBUG — high-volume when multiple relayers share contracts)
     EventReceived,
-    EventDuplicate, // Expected with redundant listeners (INFO, not WARN)
+    EventDuplicate,
     BlockProgressUpdated,
 
     // Degraded path (WARN)

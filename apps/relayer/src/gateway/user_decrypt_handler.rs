@@ -217,14 +217,13 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
 
                     match topic0_fixed {
                         topic if topic == individual_response_topic => {
-                            info!("Processing share response for request {}", event.job_id);
+                            debug!("Observed gateway user-decrypt share response");
                             self.decode_share_from_log(log, event.clone(), *tx_hash)
                                 .await
                         }
                         topic if topic == consensus_topic => {
-                            info!(
-                                "Processing consensus response for request {:?}",
-                                event.job_id
+                            debug!(
+                                "Observed gateway user-decrypt consensus response"
                             );
                             self.update_consensus_hash(log, event.clone(), *tx_hash)
                                 .await;
@@ -473,13 +472,12 @@ impl GatewayHandler {
             })?;
 
         let user_decryption_id = user_decrypt_response.decryptionId;
-        info!(
+        debug!(
             step = %UserDecryptStep::ShareReceived,
-            int_job_id = %event.job_id,
             tx_hash = %tx_hash,
             gw_reference_id = %user_decryption_id,
             share_index = %user_decrypt_response.indexShare,
-            "Gateway share response received"
+            "Observed gateway user-decrypt share response"
         );
 
         self.store_share_and_check_threshold(event, user_decrypt_response, tx_hash)
@@ -529,12 +527,12 @@ impl GatewayHandler {
                     // TODO: Replace with proper event buffering solution.
                     let retry_config = &self.config.gw_event_retry;
                     for attempt in 1..=retry_config.max_retries {
-                        warn!(
+                        debug!(
                             step = %UserDecryptStep::GwEventRetrying,
                             gw_reference_id = %user_decryption_id,
                             attempt = attempt,
                             max_retries = retry_config.max_retries,
-                            "Gateway event arrived before gw_reference_id stored, retrying"
+                            "No request matched gateway reference id, retrying"
                         );
 
                         tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms))
@@ -557,10 +555,9 @@ impl GatewayHandler {
                             Ok(retry_outcome) => {
                                 info!(
                                     step = %UserDecryptStep::ShareReceived,
-                                    int_job_id = %event.job_id,
                                     gw_reference_id = %user_decryption_id,
                                     attempt = attempt,
-                                    "Request found on retry"
+                                    "Matched gateway share to request on retry"
                                 );
                                 return self
                                     .handle_share_completion_outcome(
@@ -577,11 +574,11 @@ impl GatewayHandler {
                                     .contains("Request not found when threshold reached")
                                 {
                                     if attempt == retry_config.max_retries {
-                                        warn!(
+                                        debug!(
                                             step = %UserDecryptStep::GwEventRetrying,
                                             gw_reference_id = %user_decryption_id,
                                             max_retries = retry_config.max_retries,
-                                            "Request not found after all retries, dropping event"
+                                            "No request matched gateway reference id; event ignored"
                                         );
                                         return Ok(());
                                     }
@@ -652,8 +649,7 @@ impl GatewayHandler {
                 metadata,
                 shares,
             } => {
-                info!(
-                    job_id = %event.job_id,
+                debug!(
                     gw_reference_id = %user_decryption_id,
                     share_count = count,
                     threshold = threshold,
@@ -678,9 +674,8 @@ impl GatewayHandler {
                         // Already failed, no need to error again
                     }
                     ReqStatus::TimedOut => {
-                        info!(
+                        debug!(
                             step = %UserDecryptStep::LateShareReceived,
-                            int_job_id = %event.job_id,
                             gw_reference_id = %user_decryption_id,
                             share_count = count,
                             threshold = threshold,
@@ -834,9 +829,10 @@ impl GatewayHandler {
             };
             let user_decryption_id = U256::from_be_bytes(topic_bytes);
 
-            info!(
-                "Consensus event received for decryption ID {}",
-                user_decryption_id
+            debug!(
+                gw_reference_id = %user_decryption_id,
+                tx_hash = %tx_hash,
+                "Observed gateway user-decrypt consensus event"
             );
 
             let tx_hash_str = format!("{:?}", tx_hash);
@@ -848,14 +844,15 @@ impl GatewayHandler {
             {
                 Ok(Some(state)) => {
                     info!(
-                        "Consensus hash updated for decryption ID {}, status: {:?}",
-                        user_decryption_id, state.req_status
+                        gw_reference_id = %user_decryption_id,
+                        status = ?state.req_status,
+                        "Consensus hash updated for request"
                     );
                 }
                 Ok(None) => {
-                    error!(
-                        "Failed to update consensus hash for decryption ID {}",
-                        user_decryption_id
+                    debug!(
+                        gw_reference_id = %user_decryption_id,
+                        "No request matched consensus event; event ignored"
                     );
                 }
                 Err(e) => {
