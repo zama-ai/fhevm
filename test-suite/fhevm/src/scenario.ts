@@ -14,6 +14,7 @@ import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   LocalOverride,
+  OverrideGroup,
   ResolvedCoprocessorScenario,
   ResolvedCoprocessorScenarioInstance,
   ScenarioSummary,
@@ -310,6 +311,27 @@ export const effectiveOverrides = (
     override.group === "coprocessor"
       ? { group: "coprocessor", services: [...new Set([...existingServices, ...localServices])] }
       : override,
+  );
+};
+
+const scenarioOwnsCoprocessorSource = (
+  scenario: Pick<ResolvedCoprocessorScenario, "instances">,
+  group: OverrideGroup,
+) => group === "coprocessor" && scenario.instances.some((instance) => instance.source.mode !== "inherit");
+
+export const assertScenarioOverrideCompatibility = (
+  scenario: Pick<ResolvedCoprocessorScenario, "instances" | "sourcePath">,
+  overrides: LocalOverride[],
+) => {
+  const conflicting = overrides.find((override) => scenarioOwnsCoprocessorSource(scenario, override.group));
+  if (!conflicting) {
+    return;
+  }
+  const target = conflicting.services?.length
+    ? `${conflicting.group}:${conflicting.services.map((service) => service.replace(/^coprocessor-/, "")).join(",")}`
+    : conflicting.group;
+  throw new PreflightError(
+    `--override ${target} conflicts with scenario-defined coprocessor source${scenario.sourcePath ? ` in ${scenario.sourcePath}` : ""}; remove the override or make the scenario inherit coprocessor source`,
   );
 };
 

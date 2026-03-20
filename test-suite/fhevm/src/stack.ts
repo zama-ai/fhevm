@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 
-import { ensureLockSnapshot, previewBundle, resolveBundle } from "./cache";
+import { ensureLockSnapshot, previewBundle, resolveBundle } from "./bundle-store";
 import { compatPolicyForState, requiresMultichainAclAddress, validateBundleCompatibility } from "./compat";
 import { type ComposeDoc, generatedComposeComponents, loadMergedComposeDoc, resolvedComposeEnv, serviceNameList } from "./render-compose";
 import { renderRuntime } from "./render";
@@ -336,6 +336,52 @@ const assertSchemaCompatibility = async (
   }
 };
 
+const assertUpgradeSchemaStable = async (
+  bundle: VersionBundle,
+  group: OverrideGroup,
+) => {
+  const guard = SCHEMA_GUARDS[group as keyof typeof SCHEMA_GUARDS];
+  if (!guard || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
+    return;
+  }
+  const ref = bundle.env[guard.versionKey];
+  if (!ref) {
+    return;
+  }
+  const verified = await run(["git", "rev-parse", "-q", "--verify", `${ref}^{commit}`], {
+    cwd: REPO_ROOT,
+    allowFailure: true,
+  });
+  if (verified.code !== 0) {
+    throw new SchemaGuardError(
+      group,
+      `Cannot compare local ${group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or do a fresh \`fhevm-cli up\`.`,
+    );
+  }
+  const untracked = await run(
+    ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
+    { cwd: REPO_ROOT, allowFailure: true },
+  );
+  if (untracked.code !== 0) {
+    throw new SchemaGuardError(group, `Failed to inspect local ${group} migrations`);
+  }
+  const diffMessage =
+    `${group}: local DB migrations changed. \`fhevm-cli upgrade ${group}\` only supports runtime rebuilds; do a fresh \`fhevm-cli up\` for schema changes.`;
+  if (untracked.stdout.trim()) {
+    throw new SchemaGuardError(group, diffMessage);
+  }
+  const diff = await run(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
+    cwd: REPO_ROOT,
+    allowFailure: true,
+  });
+  if (diff.code === 1) {
+    throw new SchemaGuardError(group, diffMessage);
+  }
+  if (diff.code !== 0 && diff.code !== 1) {
+    throw new SchemaGuardError(group, `Failed to compare local ${group} migrations against ${ref}`);
+  }
+};
+
 const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
   const discovery = state.discovery;
   if (!discovery) {
@@ -459,18 +505,13 @@ export const resolveUpgradePlan = (
         ? [...new Set(selectedServices)]
         : GROUP_BUILD_SERVICES[group];
   const services = [...new Set(plannedServices)];
-  const migrationServices = services.filter((service) => service.endsWith("-db-migration"));
   const runtimeServices = services.filter((service) => !service.endsWith("-db-migration"));
-  if (SCHEMA_COUPLED_GROUPS.includes(group) && !migrationServices.length) {
-    throw new PreflightError(`upgrade for ${group} requires a full-group local override so DB migrations can run`);
-  }
   if (!runtimeServices.length) {
     throw new Error(`upgrade requires restartable runtime services for ${group}`);
   }
   return {
     component,
     group,
-    migrationServices,
     runtimeServices,
     step: group === "coprocessor" ? "coprocessor" : group,
   } as const;
@@ -1511,20 +1552,15 @@ export const upgrade = async (groupValue: string | undefined) => {
     );
   }
   await ensureRuntimeArtifacts(state, "upgrade");
-  const { component, group, migrationServices, runtimeServices, step } = resolveUpgradePlan(state, groupValue);
+  const { component, group, runtimeServices, step } = resolveUpgradePlan(state, groupValue);
   if (!state.completedSteps.includes(step)) {
     throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
   }
   await assertSchemaCompatibility(state.versions, state.overrides, state.scenario, false);
+  await assertUpgradeSchemaStable(state.versions, group);
   console.log(`[upgrade] ${group}`);
   await renderRuntime(state, runtimePlanForState(state));
   await maybeBuild(component, state, { force: true });
-  if (migrationServices.length) {
-    await composeUp(component, migrationServices, { noDeps: true });
-    for (const service of migrationServices) {
-      await waitForContainer(service, "complete");
-    }
-  }
   await composeUp(component, runtimeServices, { noDeps: true });
   if (group === "coprocessor") {
     await waitForCoprocessor(state);

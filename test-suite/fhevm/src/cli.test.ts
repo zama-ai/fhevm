@@ -117,19 +117,6 @@ describe("cli", () => {
     });
   });
 
-  test("rejects scenario with coprocessor override", async () => {
-    const result = await execCli([
-      "up",
-      "--scenario",
-      "two-of-two",
-      "--override",
-      "coprocessor",
-      "--dry-run",
-    ]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("--scenario cannot be combined with --override coprocessor");
-  });
-
   test("validates pause scope", async () => {
     const result = await execCli(["pause", "nope"]);
     expect(result.code).toBe(1);
