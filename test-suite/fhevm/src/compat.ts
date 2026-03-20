@@ -1,3 +1,6 @@
+/**
+ * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
+ */
 import type { State } from "./types";
 import type { RuntimePlan } from "./runtime-plan";
 import { effectiveOverrides } from "./scenario";

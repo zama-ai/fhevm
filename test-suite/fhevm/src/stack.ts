@@ -1,3 +1,6 @@
+/**
+ * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
+ */
 import fs from "node:fs/promises";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "./bundle-store";

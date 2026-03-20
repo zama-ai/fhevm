@@ -1,3 +1,6 @@
+/**
+ * Renders address artifacts consumed by contracts, operators, and local tooling after deployment discovery.
+ */
 import type { State } from "./types";
 
 const SOLIDITY_HEADER = `// SPDX-License-Identifier: BSD-3-Clause-Clear

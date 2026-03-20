@@ -1,3 +1,6 @@
+/**
+ * Defines the fhevm CLI surface and maps user commands onto stack and test operations.
+ */
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";

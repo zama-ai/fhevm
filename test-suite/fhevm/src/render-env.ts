@@ -1,3 +1,6 @@
+/**
+ * Renders runtime env maps from resolved versions, scenario topology, discovery outputs, and compat policy.
+ */
 import {
   compatPolicyForState,
   requiresLegacyRelayerUrl,

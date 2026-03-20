@@ -1,18 +1,22 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+/**
+ * Smoke-tests legacy coprocessor images against the CLI's rendered runtime commands to catch compatibility regressions.
+ */
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import YAML from "yaml";
-
-import { composePath, envPath, STATE_DIR } from "./layout";
-import { generateComposeOverrides, interpolateString, type ComposeDoc } from "./render-compose";
+import { COMPONENTS, STATE_DIR, TEMPLATE_ENV_DIR, versionsEnvPath, dockerArgs, envPath } from "./layout";
+import { generateComposeOverrides, type ComposeDoc } from "./render-compose";
+import { renderEnvMaps, type WalletMaterial } from "./render-env";
 import { runtimePlanForState } from "./runtime-plan";
+import { composeEnv, run } from "./shell";
 import type { State } from "./types";
-import { readJson } from "./utils";
+import { readEnvFile, readJson, writeEnvFile } from "./utils";
 
 const COMPAT_DOC = "test-suite/fhevm/COMPAT.md";
 const LEGACY_START_TIMEOUT_MS = 3_000;
 const PARSE_ERROR = /(unexpected argument|unexpected value|required arguments were not provided|unrecognized option|missing .*argument)/i;
-const STARTUP_ERROR = /(connection refused|timed out|dns|network|database|postgres|tcp|websocket|transport|provider|rpc)/i;
+const STARTUP_ERROR =
+  /(connection refused|timed out|dns|network|database|postgres|tcp|websocket|transport|provider|rpc|lookup address information|name or service not known)/i;
 
 const defaultScenario: State["scenario"] = {
   version: 1,
@@ -40,49 +44,73 @@ const state: State = {
 const compatFailure = (message: string) =>
   `${message}\nRead ${COMPAT_DOC}.\nEither add/update a shim in src/compat.ts or intentionally raise the support floor in src/resolve.ts.`;
 
-const requiredEnv = {
-  DATABASE_URL: "postgresql://127.0.0.1:1/coprocessor",
-  ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000001",
-  FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000002",
-  RPC_WS_URL: "ws://127.0.0.1:1",
-  GATEWAY_WS_URL: "ws://127.0.0.1:1",
-  INPUT_VERIFICATION_ADDRESS: "0x0000000000000000000000000000000000000003",
-  CIPHERTEXT_COMMITS_ADDRESS: "0x0000000000000000000000000000000000000004",
-  GATEWAY_CONFIG_ADDRESS: "0x0000000000000000000000000000000000000005",
-  KMS_GENERATION_ADDRESS: "0x0000000000000000000000000000000000000006",
-  TX_SENDER_PRIVATE_KEY:
-    "0x0000000000000000000000000000000000000000000000000000000000000007",
-  MULTICHAIN_ACL_ADDRESS: "0x0000000000000000000000000000000000000008",
-  COPROCESSOR_API_KEY: "00000000-0000-0000-0000-000000000000",
+const fakeWallet: WalletMaterial = {
+  address: "0x0000000000000000000000000000000000000007",
+  privateKey: "0x0000000000000000000000000000000000000000000000000000000000000007",
 };
 
-const interpolateValue = (value: unknown, vars: Record<string, string>): unknown => {
-  if (typeof value === "string") {
-    return interpolateString(value, vars);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => interpolateValue(item, vars));
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, interpolateValue(item, vars)]),
-  );
+const fakeDiscovery: NonNullable<State["discovery"]> = {
+  gateway: {
+    DECRYPTION_ADDRESS: "0x0000000000000000000000000000000000000001",
+    INPUT_VERIFICATION_ADDRESS: "0x0000000000000000000000000000000000000003",
+    CIPHERTEXT_COMMITS_ADDRESS: "0x0000000000000000000000000000000000000004",
+    GATEWAY_CONFIG_ADDRESS: "0x0000000000000000000000000000000000000005",
+    KMS_GENERATION_ADDRESS: "0x0000000000000000000000000000000000000006",
+    MULTICHAIN_ACL_ADDRESS: "0x0000000000000000000000000000000000000008",
+    PROTOCOL_PAYMENT_ADDRESS: "0x0000000000000000000000000000000000000009",
+  },
+  host: {
+    ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000010",
+    PAUSER_SET_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000011",
+    FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000002",
+    INPUT_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000012",
+    KMS_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000013",
+  },
+  kmsSigner: "0x0000000000000000000000000000000000000014",
+  fheKeyId: "0000000000000000000000000000000000000000000000000000000000000001",
+  crsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
+  actualFheKeyId: "0000000000000000000000000000000000000000000000000000000000000001",
+  actualCrsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
+  minioKeyPrefix: "PUB",
+  endpoints: {
+    gatewayHttp: "http://localhost:8546",
+    gatewayWs: "ws://127.0.0.1:1",
+    hostHttp: "http://localhost:8545",
+    hostWs: "ws://127.0.0.1:1",
+    minioInternal: "http://127.0.0.1:9000",
+    minioExternal: "http://127.0.0.1:9000",
+  },
 };
 
 const loadLegacyCompose = async () => {
   await rm(STATE_DIR, { recursive: true, force: true });
-  await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
-  await writeFile(
-    envPath("coprocessor"),
-    `${Object.entries(requiredEnv)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("\n")}\n`,
+  await mkdir(path.dirname(versionsEnvPath), { recursive: true });
+  const runtimeState = { ...state, discovery: fakeDiscovery };
+  const plan = runtimePlanForState(runtimeState);
+  const templateEnvs = Object.fromEntries(
+    await Promise.all(
+      COMPONENTS.map(async (component) => [
+        component,
+        await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+      ]),
+    ),
+  ) as Record<string, Record<string, string>>;
+  const rendered = await renderEnvMaps(
+    runtimeState,
+    plan,
+    templateEnvs,
+    async () => fakeWallet,
   );
-  await generateComposeOverrides(state, runtimePlanForState(state));
-  const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as ComposeDoc;
-  return interpolateValue(doc, { ...state.versions.env, ...requiredEnv }) as ComposeDoc;
+  await Promise.all([
+    ...COMPONENTS.map((component) => writeEnvFile(envPath(component), rendered.componentEnvs[component])),
+    ...Object.entries(rendered.instanceEnvs).map(([name, env]) => writeEnvFile(envPath(name), env)),
+    writeEnvFile(versionsEnvPath, rendered.versionsEnv),
+  ]);
+  await generateComposeOverrides(runtimeState, plan);
+  const { stdout } = await run([...dockerArgs("coprocessor"), "config", "--format", "json"], {
+    env: await composeEnv("coprocessor"),
+  });
+  return JSON.parse(stdout) as ComposeDoc;
 };
 
 const runLegacyService = async (name: string, image: string, command: string[]) => {

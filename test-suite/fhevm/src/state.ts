@@ -1,3 +1,6 @@
+/**
+ * Persists and mutates local CLI state across stack lifecycle operations.
+ */
 import fs from "node:fs/promises";
 
 import { STATE_FILE } from "./layout";

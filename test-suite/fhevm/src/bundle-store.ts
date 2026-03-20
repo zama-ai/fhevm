@@ -1,3 +1,6 @@
+/**
+ * Caches resolved bundles and persists the lock snapshot used by the current local stack state.
+ */
 import path from "node:path";
 
 import { LOCK_DIR } from "./layout";

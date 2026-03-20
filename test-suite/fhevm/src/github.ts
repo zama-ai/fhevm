@@ -1,3 +1,6 @@
+/**
+ * Fetches live GitHub and GHCR metadata needed to resolve floating fhevm version targets.
+ */
 import { GitHubApiError } from "./errors";
 import { run } from "./shell";
 

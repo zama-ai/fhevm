@@ -1,3 +1,6 @@
+/**
+ * Renders generated config files derived from the resolved stack state.
+ */
 import YAML from "yaml";
 
 import { requiresLegacyRelayerReadinessConfig } from "./compat";
