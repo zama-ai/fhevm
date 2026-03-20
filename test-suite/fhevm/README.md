@@ -289,7 +289,6 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli up --target latest-main --build
 ./fhevm-cli up --target latest-main --scenario two-of-two --build
 ./fhevm-cli up --target latest-supported --override coprocessor
-./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
 ./fhevm-cli up --target latest-supported --scenario two-of-two
 ./fhevm-cli scenario list
 ./fhevm-cli upgrade coprocessor
@@ -343,16 +342,18 @@ For `coprocessor`, this is also the shorthand local-dev scenario: one coprocesso
 
 Runtime override groups also support per-service filtering:
 
-```sh
-./fhevm-cli up --target latest-supported --override coprocessor:host-listener,tfhe-worker
-```
-
 Per-service override syntax is supported only for `coprocessor`, `kms-connector`, and `test-suite`.
 Use the short service suffix after the group prefix. Multiple services are comma-separated. Services that share the same image are auto-selected together, so `coprocessor:host-listener` also builds `host-listener-poller` locally.
 Local overrides always build workspace images while non-overridden services stay on the resolved bundle.
 
 `coprocessor` and `kms-connector` still share a database, so the CLI warns when you do a per-service override there. If your change includes schema or migration changes, use the full-group override instead.
 On `latest-supported`, the CLI now compares the local migration directory against the tracked baseline profile and rejects a per-service override by default when they diverge. If you know your service remains compatible anyway, pass `--allow-schema-mismatch`.
+
+Example on a mainline baseline:
+
+```sh
+./fhevm-cli up --target latest-main --override coprocessor:host-listener,tfhe-worker
+```
 
 Available runtime suffixes:
 

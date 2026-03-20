@@ -4,9 +4,9 @@
 
 The PR workflow runs one behavioral compat smoke:
 
-- it renders the legacy coprocessor commands for `latest-supported`
-- it runs the real legacy images with those exact commands
-- it fails if the old binaries reject the rendered flags
+- it renders the legacy `coprocessor` and `kms-connector` runtime service definitions for `latest-supported`
+- it runs the real legacy images with those exact rendered commands and env
+- it fails if the old binaries reject the rendered flags or required config
 
 If that smoke fails, do one of these:
 
@@ -21,7 +21,7 @@ Use a shim when the old supported bundle can still run with a small CLI-side adj
 
 Use an incompatibility rule when the combination should fail early with a clear message instead of reaching boot.
 
-Raise the support floor when the project no longer intends to support that old bundle at all.
+Raise the support floor when the project no longer intends to support that old bundle at all. Today that includes both the simple-ACL floor and the later gw-listener drift-address runtime floor in `src/resolve.ts`.
 
 If you change a runtime flag, env contract, or startup assumption for:
 
