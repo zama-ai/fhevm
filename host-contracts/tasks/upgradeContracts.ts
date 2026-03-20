@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
+import fs from 'fs';
+import path from 'path';
+import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
@@ -15,6 +18,36 @@ function getImplementationDirectory(input: string): string {
     return input.substring(0, colonIndex);
   }
   return input;
+}
+
+function materializeContractsFromGit(gitRef: string, relativeDir: string) {
+  const repoRoot = path.resolve(__dirname, '../..');
+  const absoluteDir = path.resolve(__dirname, '..', relativeDir);
+  fs.mkdirSync(absoluteDir, { recursive: true });
+
+  execFileSync(
+    'sh',
+    [
+      '-c',
+      'git archive --format=tar "$1" '
+        + 'host-contracts/contracts/FHEVMExecutor.sol '
+        + 'host-contracts/contracts/ACL.sol '
+        + 'host-contracts/contracts/HCULimit.sol '
+        + 'host-contracts/contracts/FHEEvents.sol '
+        + 'host-contracts/contracts/ACLEvents.sol '
+        + 'host-contracts/contracts/interfaces/IPauserSet.sol '
+        + 'host-contracts/contracts/shared '
+        + '| tar -x -C "$2" --strip-components=2',
+      'sh',
+      gitRef,
+      absoluteDir,
+    ],
+    { cwd: repoRoot },
+  );
+
+  return {
+    cleanup: () => fs.rmSync(absoluteDir, { recursive: true, force: true }),
+  };
 }
 
 async function upgradeCurrentToNew(
@@ -59,6 +92,53 @@ async function upgradeCurrentToNew(
     console.log('Waiting 2 minutes before contract verification... Please wait...');
     await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
     const implementationAddress = await hre.upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await hre.run('verify:verify', {
+      address: implementationAddress,
+      contract: newImplementation,
+      constructorArguments: [],
+    });
+  }
+}
+
+async function prepareNewImplementation(
+  proxyAddress: string,
+  expectedArtifactName: string,
+  currentImplementation: string,
+  newImplementation: string,
+  verifyContract: boolean,
+  hre: HardhatRuntimeEnvironment,
+): Promise<void> {
+  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+
+  await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
+
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+  const currentImplementationFactory = await hre.ethers.getContractFactory(currentImplementation, deployer);
+  await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
+
+  const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
+  const reinitializeFunction = newImplementationArtifact.abi.find(
+    (item) => item.type === 'function' && item.name.includes(REINITIALIZE_FUNCTION_PREFIX),
+  );
+  const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+
+  console.log(`Preparing "${newImplementation}" for proxy ${proxyAddress}...`);
+  const implementationAddress = await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
+    kind: 'uups',
+  });
+  console.log('New implementation deployed at:', implementationAddress);
+
+  const reinitializeCalldata = hre.ethers.Interface.from(newImplementationArtifact.abi).encodeFunctionData(
+    reinitializeFunction.name,
+    [],
+  );
+  console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
+
+  if (verifyContract) {
+    console.log('Waiting 2 minutes before contract verification... Please wait...');
+    await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
     await hre.run('verify:verify', {
       address: implementationAddress,
       contract: newImplementation,
@@ -179,6 +259,51 @@ task('task:upgradeFHEVMExecutor')
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
+
+task('task:prepareUpgradeFHEVMExecutor')
+  .addParam(
+    'upgradeFromRef',
+    'Git ref used to materialize the implementation currently deployed behind the proxy, eg: v0.11.0',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/FHEVMExecutor.sol:FHEVMExecutor',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(
+    async function ({ upgradeFromRef, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments, hre) {
+      const generatedCurrentImplementation = materializeContractsFromGit(upgradeFromRef, 'generated-upgrade-from-contracts');
+      const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
+      if (useInternalProxyAddress) {
+        dotenv.config({ path: 'addresses/.env.host', override: true });
+      }
+      const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
+
+      try {
+        await prepareNewImplementation(
+          proxyAddress,
+          'FHEVMExecutor',
+          currentImplementation,
+          newImplementation,
+          verifyContract,
+          hre,
+        );
+      } finally {
+        generatedCurrentImplementation.cleanup();
+      }
+    },
+  );
 
 task('task:upgradeKMSVerifier')
   .addParam(

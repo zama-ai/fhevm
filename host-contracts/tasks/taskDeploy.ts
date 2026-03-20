@@ -8,6 +8,10 @@ import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
 
+function ensureAddressesDirectoryExists() {
+  fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
@@ -275,6 +279,7 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -305,6 +310,7 @@ address constant aclAdd = ${taskArguments.address};\n`;
 task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -332,6 +338,7 @@ address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -359,6 +366,7 @@ address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     // this script also computes the coprocessor address from its private key
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
@@ -387,6 +395,7 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -414,6 +423,7 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
 task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
     const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
