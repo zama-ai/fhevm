@@ -15,15 +15,14 @@
 -- sns-worker hasn't processed them).
 --
 -- Reasoning for this script is that it assumes we would be able to detect a state drift
--- with a ciphertext granularity. Consequently, the first such drift that we observe means
--- that no prior state was affected. To revert, pass the block before the offending one
--- as to_block_number (i.e. offending_block - 1). The script deletes all data for blocks
--- strictly greater than to_block_number.
--- Note that above assumes all ciphertext have been computed up to the offending block,
--- but in reality, due to out-of-order processing, it might not be the case. That means
--- some prior ciphertexts might also drift. Therefore, operators might choose to go a bit
--- further back than the offending block to make it even more likely to capture the root
--- cause of the drift.
+-- with a ciphertext granularity. The operator should identify the earliest host chain
+-- block number (in host chain order) where drift occurred — not the first one observed in time,
+-- since ciphertext commits reach the gateway out of host chain order. All data from that block
+-- onward is reverted. To revert, pass the block before the offending one as
+-- to_block_number (i.e. offending_block - 1).
+-- Note that due to out-of-order processing, some ciphertexts from blocks prior to the
+-- identified one might also have drifted. Therefore, operators should go further back
+-- than the offending block to be safe.
 --
 -- Usage:
 --   psql -v chain_id=<CHAIN_ID> -v to_block_number=<BLOCK_NUMBER> -f revert_coprocessor_db_state.sql
@@ -61,19 +60,6 @@ BEGIN
     RAISE EXCEPTION 'chain_id % does not exist in host_chains', _chain_id;
   END IF;
 END $$;
-
--- ===========================================================================
--- Collect affected dependence_chain IDs (before deleting computations)
--- ===========================================================================
-
-CREATE TEMP TABLE _affected_dc_ids AS
-SELECT DISTINCT dependence_chain_id AS dc_id
-  FROM computations
- WHERE host_chain_id = :'chain_id'
-   AND block_number > :'to_block_number'
-   AND dependence_chain_id IS NOT NULL;
-
-CREATE INDEX ON _affected_dc_ids (dc_id);
 
 -- ===========================================================================
 -- Collect affected output handles (for ciphertext cleanup)
@@ -171,13 +157,6 @@ DELETE FROM computations
    AND block_number > :'to_block_number';
 
 -- ===========================================================================
--- Delete dependence_chain entries
--- ===========================================================================
-
-DELETE FROM dependence_chain
- WHERE dependence_chain_id IN (SELECT dc_id FROM _affected_dc_ids);
-
--- ===========================================================================
 -- Delete block tracking and transactions
 -- ===========================================================================
 
@@ -204,7 +183,6 @@ UPDATE host_listener_poller_state
 -- ===========================================================================
 
 DROP TABLE IF EXISTS _param_check;
-DROP TABLE IF EXISTS _affected_dc_ids;
 DROP TABLE IF EXISTS _affected_output_handles;
 
 COMMIT;
