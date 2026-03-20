@@ -362,6 +362,12 @@ prepare_local_env_file() {
     local local_env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
     local preserved_otlp_endpoint=""
 
+    case "$component" in
+        host-node-b)   base_env_file="$SCRIPT_DIR/../env/staging/.env.host-node" ;;
+        host-sc-b)     base_env_file="$SCRIPT_DIR/../env/staging/.env.host-sc" ;;
+        coprocessor-b) base_env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor" ;;
+    esac
+
     # Keep locally overridden OTLP endpoint across deploy regenerations.
     if [[ "$component" == "coprocessor" && -f "$local_env_file" ]]; then
         preserved_otlp_endpoint=$(awk -F= '$1 == "OTEL_EXPORTER_OTLP_ENDPOINT" {print substr($0, index($0, "=") + 1); exit}' "$local_env_file")
@@ -374,6 +380,19 @@ prepare_local_env_file() {
         echo -e "${GREEN}[INFO]${NC} Creating/updating local environment file for $component..." >&2
         cp "$base_env_file" "$local_env_file"
     fi
+
+    case "$component" in
+        host-node-b|host-sc-b|coprocessor-b)
+            sed -i.bak \
+                -e 's|host-node:8545|host-node-b:8547|g' \
+                -e 's|^CHAIN_ID=.*|CHAIN_ID=67890|' \
+                "$local_env_file"
+            if ! grep -q '^CHAIN_ID=' "$local_env_file"; then
+                printf 'CHAIN_ID=67890\n' >> "$local_env_file"
+            fi
+            rm -f "${local_env_file}.bak"
+            ;;
+    esac
 
     if [[ "$component" == "coprocessor" ]]; then
         local otlp_endpoint="${preserved_otlp_endpoint:-http://jaeger:4317}"
