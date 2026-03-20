@@ -1,3 +1,6 @@
+/**
+ * Defines hardcoded companion version pins layered onto non-network targets during bundle resolution.
+ */
 export const MAINLINE_COMPANIONS = {
   CORE_VERSION: "v0.13.0",
   RELAYER_VERSION: "sha-29b0750",

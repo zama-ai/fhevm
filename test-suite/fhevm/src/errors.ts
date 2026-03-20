@@ -1,3 +1,6 @@
+/**
+ * Defines user-facing error types for CLI preflight, command execution, probe, and resolution failures.
+ */
 export class CliError extends Error {
   readonly tag: string;
 

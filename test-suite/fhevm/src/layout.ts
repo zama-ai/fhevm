@@ -1,3 +1,6 @@
+/**
+ * Defines CLI filesystem layout, compose and template locations, override groups, and named test profile metadata.
+ */
 import { existsSync } from "node:fs";
 import path from "node:path";
 

@@ -1,3 +1,6 @@
+/**
+ * Runs named e2e test profiles, light-suite orchestration, and topology-specific test flows.
+ */
 import { compatPolicyForState } from "./compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "./drift";
 import { PreflightError } from "./errors";

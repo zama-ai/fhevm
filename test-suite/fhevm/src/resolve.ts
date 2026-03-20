@@ -1,3 +1,6 @@
+/**
+ * Resolves version bundles from targets, lock files, GitHub metadata, support floors, and env overrides.
+ */
 import YAML from "yaml";
 
 import { COMPAT_MATRIX } from "./compat";
