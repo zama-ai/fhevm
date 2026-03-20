@@ -43,13 +43,13 @@ const asStringList = (value: unknown) =>
 const parseUpInput = (args: Record<string, unknown>) => {
   const target = asString(args.target);
   const sha = asString(args.sha);
-  const fromStepRaw = asString(args.fromStep);
-  const lockFile = asString(args.lockFile);
+  const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
+  const lockFile = asString(args["lock-file"] ?? args.lockFile);
   const scenarioPath = asString(args.scenario);
   const resume = asBool(args.resume);
-  const dryRun = asBool(args.dryRun);
+  const dryRun = asBool(args["dry-run"] ?? args.dryRun);
   const reset = asBool(args.reset);
-  const allowSchemaMismatch = asBool(args.allowSchemaMismatch);
+  const allowSchemaMismatch = asBool(args["allow-schema-mismatch"] ?? args.allowSchemaMismatch);
   const build = asBool(args.build);
 
   if (target && !TARGETS.includes(target as VersionTarget)) {
@@ -116,13 +116,13 @@ const root = defineCommand({
         target: { type: "string", description: "Bundle source to boot." },
         sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
         override: { type: "string", description: "Build selected workspace groups locally.", alias: "o" },
-        fromStep: { type: "string", description: "Start from a specific pipeline step when resuming or previewing." },
-        lockFile: { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
+        "from-step": { type: "string", description: "Start from a specific pipeline step when resuming or previewing." },
+        "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
         scenario: { type: "string", description: "Scenario preset name or path." },
         resume: { type: "boolean", description: "Resume from persisted state." },
-        dryRun: { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
+        "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
         reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
-        allowSchemaMismatch: { type: "boolean", description: "Bypass schema-coupled local override safety checks." },
+        "allow-schema-mismatch": { type: "boolean", description: "Bypass schema-coupled local override safety checks." },
         build: { type: "boolean", description: "Build every workspace-owned group locally." },
       },
       async run({ args }) {
@@ -141,13 +141,13 @@ const root = defineCommand({
         target: { type: "string" },
         sha: { type: "string" },
         override: { type: "string", alias: "o" },
-        fromStep: { type: "string" },
-        lockFile: { type: "string" },
+        "from-step": { type: "string" },
+        "lock-file": { type: "string" },
         scenario: { type: "string" },
         resume: { type: "boolean" },
-        dryRun: { type: "boolean" },
+        "dry-run": { type: "boolean" },
         reset: { type: "boolean" },
-        allowSchemaMismatch: { type: "boolean" },
+        "allow-schema-mismatch": { type: "boolean" },
         build: { type: "boolean" },
       },
       async run({ args }) {
@@ -185,10 +185,10 @@ const root = defineCommand({
       meta: { name: "logs", description: "Follow container logs for a specified or first container." },
       args: {
         service: { type: "positional", description: "Container alias or service name to target.", required: false },
-        noFollow: { type: "boolean", description: "Print recent logs and exit instead of following." },
+        "no-follow": { type: "boolean", description: "Print recent logs and exit instead of following." },
       },
       async run({ args }) {
-        await logs(asString(args.service), { follow: !asBool(args.noFollow) });
+        await logs(asString(args.service), { follow: !asBool(args["no-follow"] ?? args.noFollow) });
       },
     }),
     upgrade: defineCommand({
