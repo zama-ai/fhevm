@@ -221,14 +221,42 @@ where
     response
 }
 
-fn extract_sdk_info(headers: &HeaderMap) -> (&str, &str) {
+fn extract_sdk_info(headers: &HeaderMap) -> (&'static str, &'static str) {
     let sdk_name = headers
         .get("zama-sdk-name")
         .and_then(|v| v.to_str().ok())
+        .and_then(|name| {
+            if name == "@zama-fhe/relayer-sdk" {
+                Some("@zama-fhe/relayer-sdk")
+            } else {
+                None
+            }
+        })
         .unwrap_or("unknown");
+
     let sdk_version = headers
         .get("zama-sdk-version")
         .and_then(|v| v.to_str().ok())
+        .and_then(|version| {
+            // Extract major.minor only (e.g., "0.4.0-alpha.4" -> "0.4")
+            let parts: Vec<&str> = version.split('.').collect();
+            if parts.len() >= 2 {
+                if parts[0].parse::<u32>().is_ok() && parts[1].parse::<u32>().is_ok() {
+                    // Map to known versions to avoid unbounded cardinality
+                    match (parts[0], parts[1]) {
+                        ("0", "4") => Some("0.4"),
+                        ("0", "5") => Some("0.5"),
+                        // Add more known versions as needed
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
         .unwrap_or("unknown");
+
     (sdk_name, sdk_version)
 }
