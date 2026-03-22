@@ -1,0 +1,12 @@
+- Runtime
+  - Modules
+  - <FunctionName>Parameters
+  - <FunctionName>ReturnType
+    - <functionName>(runtime, parameters: <FunctionName>Parameters): <FunctionName>ReturnType
+    - <functionName>(runtime, parameters: <FunctionName>Parameters): Promise<<FunctionName>ReturnType>
+- Client
+  - <FunctionName>Parameters
+  - <FunctionName>ReturnType
+  - Function signature:
+    - <functionName>(client, parameters: <FunctionName>Parameters): <FunctionName>ReturnType
+    - <functionName>(client, parameters: <FunctionName>Parameters): Promise<<FunctionName>ReturnType>

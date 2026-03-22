@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.build.json",
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/*.bench.ts",
+    "src/**/*.bench-d.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test-d.ts",
+    "src/wasm/wasmBaseUrl.cts"
+  ],
+  "compilerOptions": {
+    "paths": {
+      "~wasm/baseUrl": ["./src/wasm/wasmBaseUrl.ts"]
+    }
+  }
+}

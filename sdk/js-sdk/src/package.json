@@ -1,0 +1,69 @@
+{
+  "name": "@fhevm/sdk",
+  "description": "TypeScript Interface for FHEVM",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./_cjs/index.js",
+  "module": "./_esm/index.js",
+  "types": "./_types/index.d.ts",
+  "typings": "./_types/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "*",
+    "!**/*.bench.ts",
+    "!**/*.bench-d.ts",
+    "!**/*.test.ts",
+    "!**/*.test.ts.snap",
+    "!**/*.test-d.ts",
+    "!**/*.tsbuildinfo",
+    "!tsconfig.build.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./_types/index.d.ts",
+      "import": "./_esm/index.js",
+      "default": "./_cjs/index.js"
+    },
+    "./chains": {
+      "types": "./_types/core/chains/index.d.ts",
+      "import": "./_esm/core/chains/index.js",
+      "default": "./_cjs/core/chains/index.js"
+    },
+    "./ethers": {
+      "types": "./_types/ethers/index.d.ts",
+      "import": "./_esm/ethers/index.js",
+      "default": "./_cjs/ethers/index.js"
+    },
+    "./viem": {
+      "types": "./_types/viem/index.d.ts",
+      "import": "./_esm/viem/index.js",
+      "default": "./_cjs/viem/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.4"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@noble/hashes": "2.0.1",
+    "wasm-feature-detect": "^1.8.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git"
+  },
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "homepage": "https://github.com/zama-ai/fhevm/sdk/#readme",
+  "bugs": {
+    "url": "https://github.com/zama-ai/fhevm/sdk/js/issues"
+  },
+  "engines": {
+    "node": ">=22.0"
+  }
+}

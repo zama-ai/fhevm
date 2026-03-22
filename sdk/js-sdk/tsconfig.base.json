@@ -1,0 +1,150 @@
+{
+  "compilerOptions": {
+    ///////////////////////////////////////////////////////////////////
+    // Type checking
+    ///////////////////////////////////////////////////////////////////
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    //"alwaysStrict": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    //"noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    //"strictBindCallApply": true,
+    //"strictBuiltinIteratorReturn": true,
+    //"strictFunctionTypes": true,
+    //"strictNullChecks": true,
+    //"strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": true,
+
+    ///////////////////////////////////////////////////////////////////
+    // Language and Environment
+    ///////////////////////////////////////////////////////////////////
+    // "emitDecoratorMetadata",
+    // "experimentalDecorators",
+    // "jsx",
+    // "jsxFactory",
+    // "jsxFragmentFactory",
+    // "jsxImportSource",
+    "lib": [
+      "ES2022", // By using ES2022 we get access to the `.cause` property on `Error` instances.
+      "DOM" // We are adding `DOM` here to get the `fetch`, etc. types. This should be removed once these types are available via DefinitelyTyped.
+    ],
+    // "libReplacement",
+    // "moduleDetection",
+    // "noLib",
+    // "reactNamespace",
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+
+    ///////////////////////////////////////////////////////////////////
+    // Modules
+    ///////////////////////////////////////////////////////////////////
+    // "allowArbitraryExtensions",
+    // "allowImportingTsExtensions",
+    // "allowUmdGlobalAccess",
+    // "baseUrl",
+    // "customConditions",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // "moduleSuffixes",
+    // "noResolve",
+    // "noUncheckedSideEffectImports",
+    // "paths",
+    // "resolveJsonModule",
+    // "resolvePackageJsonExports",
+    // "resolvePackageJsonImports",
+    // "rewriteRelativeImportExtensions",
+    "rootDir": "src",
+    //"rootDirs",
+    //"typeRoots",
+    //"types"
+
+    ///////////////////////////////////////////////////////////////////
+    // Emit
+    ///////////////////////////////////////////////////////////////////
+    // "declaration",
+    // "declarationDir",
+    // "declarationMap",
+    // "downlevelIteration",
+    // "emitBOM",
+    // "emitDeclarationOnly",
+    // "importHelpers",
+    // "inlineSourceMap",
+    // "inlineSources",
+    // "mapRoot",
+    // "newLine",
+    // "noEmit",
+    // "noEmitHelpers",
+    "noEmitOnError": true,
+    // "outDir",
+    // "outFile",
+    // "preserveConstEnums",
+    // "removeComments",
+    // "sourceMap",
+    // "sourceRoot",
+    // "stripInternal",
+
+    ///////////////////////////////////////////////////////////////////
+    // JavaScript Support
+    ///////////////////////////////////////////////////////////////////
+    "allowJs": false,
+    "checkJs": false,
+    // "maxNodeModuleJsDepth",
+
+    ///////////////////////////////////////////////////////////////////
+    // Editor
+    ///////////////////////////////////////////////////////////////////
+    // "disableSizeLimit",
+    // "plugins",
+
+    ///////////////////////////////////////////////////////////////////
+    // Interop Constraints
+    ///////////////////////////////////////////////////////////////////
+    "allowSyntheticDefaultImports": false,
+    // "erasableSyntaxOnly",
+    "esModuleInterop": false,
+    "forceConsistentCasingInFileNames": true,
+    // "isolatedDeclarations",
+    // "isolatedModules",
+    // "preserveSymlinks",
+    "verbatimModuleSyntax": true,
+
+    ///////////////////////////////////////////////////////////////////
+    // Interop Constraints
+    ///////////////////////////////////////////////////////////////////
+    // "diagnostics",
+    // "explainFiles",
+    // "extendedDiagnostics",
+    // "generateCpuProfile",
+    // "generateTrace",
+    // "listEmittedFiles",
+    // "listFiles",
+    // "noCheck",
+    // "traceResolution",
+
+    ///////////////////////////////////////////////////////////////////
+    // Completeness
+    ///////////////////////////////////////////////////////////////////
+    // "skipDefaultLibCheck",
+    "skipLibCheck": false
+
+    ///////////////////////////////////////////////////////////////////
+    // Projects
+    ///////////////////////////////////////////////////////////////////
+    // "composite",
+    // "disableReferencedProjectLoad",
+    // "disableSolutionSearching",
+    // "disableSourceOfProjectReferenceRedirect",
+    // "incremental",
+    // "tsBuildInfoFile",
+  },
+  "include": []
+}

@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "include": [".", "../src"],
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "~test/*": ["./src/*"],
+      "fhevm": ["../src/index.ts"],
+      "fhevm/ethers": ["../src/ethers/index.ts"],
+      "fhevm/viem": ["../src/viem/index.ts"]
+    }
+  }
+}

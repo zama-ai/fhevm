@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../_types/viem/index.d.ts",
+  "module": "../_esm/viem/index.js",
+  "main": "../_cjs/viem/index.js"
+}

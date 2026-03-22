@@ -1,0 +1,33 @@
+{
+  "name": "@fhevm/sdk",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "tsc --project ./tsconfig.build.cjs.json --module commonjs --moduleResolution node --outDir ./src/_cjs --removeComments --verbatimModuleSyntax false && printf '{\"type\":\"commonjs\"}' > ./src/_cjs/package.json",
+    "build:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./src/_esm && printf '{\"type\": \"module\",\"sideEffects\":false}' > ./src/_esm/package.json",
+    "build:types": "tsc --project ./tsconfig.build.esm.json --declarationDir ./src/_types --emitDeclarationOnly --declaration --declarationMap",
+    "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo src/_esm src/_cjs src/_types",
+    "lint": "eslint"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ethers": "^6.15.0",
+    "viem": "^2.46.3",
+    "eslint": "^10.0.2",
+    "test": "vitest -c ./test/vitest.config.ts",
+    "typescript-eslint": "^8.56.1",
+    "typescript": "5.9.3",
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.18"
+  },
+  "imports": {
+    "#wasm/baseUrl": {
+      "import": "./src/wasm/wasmBaseUrl.js",
+      "require": "./src/wasm/wasmBaseUrl.cjs"
+    }
+  },
+  "engines": {
+    "node": ">=22.0"
+  }
+}
