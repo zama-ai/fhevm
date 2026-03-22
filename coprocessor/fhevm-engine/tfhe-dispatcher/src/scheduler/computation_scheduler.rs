@@ -16,7 +16,7 @@ use fhevm_engine_common::protocol::messages::{OpNode, Status};
 use fhevm_engine_common::types::Handle;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 /// The ComputationScheduler is responsible for maintaining the Dataflow Graph (DFG) of computations
 /// and the Execution Graph (ExecGraph) that represents executable partitions of the DFG.
 ///
@@ -135,7 +135,7 @@ impl ComputationScheduler {
     fn add_computation_node(&mut self, log: &msg::FheLog) -> NodeIndex {
         self.missing_producers.remove(&log.output_handle);
 
-        let uncomputed_deps = log
+        let uncomputed_deps_count = log
             .dependence_handles()
             .iter()
             .filter(|handle| match self.handle_to_node_idx.get(*handle) {
@@ -147,28 +147,33 @@ impl ComputationScheduler {
             })
             .count();
 
-        let node_idx = self.add_dfg_node(log, uncomputed_deps);
+        let node_idx = self.add_dfg_node(log, uncomputed_deps_count);
 
         if self
             .handle_to_node_idx
             .insert(log.output_handle.clone(), node_idx)
             .is_some()
         {
-            panic!("Handle has multiple producers");
+            error!("Handle has multiple producers");
         }
 
         let dependence_handles = log.dependence_handles();
 
         for dep in dependence_handles.iter() {
-            if let Some(&producer) = self.handle_to_node_idx.get(dep) {
+            if let Some(&producer_idx) = self.handle_to_node_idx.get(dep) {
                 self.dataflow_graph
-                    .add_edge(producer, node_idx, ())
+                    .add_edge(producer_idx, node_idx, ())
                     .expect("Cycle detected");
             } else {
                 self.missing_producers.insert(dep.clone());
                 warn!("Missing producer for dependency {:?}", hex::encode(dep));
             }
         }
+
+        // TODO: serialize the graph after every N nodes or when the missing producers set exceeds a certain threshold,
+        // to allow recovery in case of crashes and to prevent unbounded memory growth.
+        // The serialization should include the mapping from handles to node indices to allow reconstructing the graph state accurately.
+        // Store in Redis
 
         node_idx
     }

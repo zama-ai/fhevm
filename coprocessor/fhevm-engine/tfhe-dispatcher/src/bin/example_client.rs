@@ -32,7 +32,7 @@ async fn main() {
 
     info!(target: "main", args = ?args, "Starting client with args");
 
-    publish_batch(&sender_channel, queue).await;
+    publish_transfer(&sender_channel, queue).await;
 
     // Insert computations
 }
@@ -52,6 +52,7 @@ pub fn handle(id: u16) -> Handle {
 }
 
 /// Publishes a batch of FHE log messages to the queue
+/*
 async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let scalar_type = Vec::from(2u16.to_be_bytes());
     let scalar_pt: Vec<u8> = Vec::from(20u64.to_be_bytes());
@@ -180,6 +181,99 @@ async fn publish_batch(sender_channel: &lapin::Channel, queue: &str) {
     let confirm = confirm.await.unwrap();
     info!(confirm = ?confirm, "Sent FHE log message to the queue");
 }
+*/
+/// Publishes a batch of FHE log messages to the queue
+async fn publish_transfer(sender_channel: &lapin::Channel, queue: &str) {
+    let scalar_type = Vec::from(5u16.to_be_bytes());
+    let scalar_pt: Vec<u8> = Vec::from(100u64.to_be_bytes());
+
+    // Alice balance = 100
+    let mut batch = Vec::new();
+    let alice_balance = add_log_event_other_op(
+        &mut batch,
+        SupportedFheOperations::FheTrivialEncrypt,
+        vec![
+            Dependence::Scalar(scalar_pt),
+            Dependence::Scalar(scalar_type.clone()),
+        ],
+    );
+
+    let scalar_pt: Vec<u8> = Vec::from(11u64.to_be_bytes());
+
+    // Alice wants to transfer 11 tokens to Bob
+    let alice_spent = add_log_event_other_op(
+        &mut batch,
+        SupportedFheOperations::FheTrivialEncrypt,
+        vec![
+            Dependence::Scalar(scalar_pt),
+            Dependence::Scalar(scalar_type.clone()),
+        ],
+    );
+
+    // Bob balance = 22
+
+    let scalar_pt: Vec<u8> = Vec::from(22u64.to_be_bytes());
+    let bob_balance = add_log_event_other_op(
+        &mut batch,
+        SupportedFheOperations::FheTrivialEncrypt,
+        vec![
+            Dependence::Scalar(scalar_pt),
+            Dependence::Scalar(scalar_type.clone()),
+        ],
+    );
+
+    // Bob receives 11 tokens from Alice
+    let bob_updated_balance = add_log_event_binary_op(
+        &mut batch,
+        SupportedFheOperations::FheAdd,
+        Dependence::Reference(bob_balance.output_handle),
+        Dependence::Reference(alice_spent.output_handle.clone()),
+    );
+
+    // Alice balance is reduced by 10 tokens
+    let alice_updated_balance = add_log_event_binary_op(
+        &mut batch,
+        SupportedFheOperations::FheSub,
+        Dependence::Reference(alice_balance.output_handle), // lhs
+        Dependence::Reference(alice_spent.output_handle),   // rhs
+    );
+
+    let scalar_pt: Vec<u8> = Vec::from(3u64.to_be_bytes());
+
+    // Shareholders
+    let shareholders_num = add_log_event_other_op(
+        &mut batch,
+        SupportedFheOperations::FheTrivialEncrypt,
+        vec![
+            Dependence::Scalar(scalar_pt),
+            Dependence::Scalar(scalar_type.clone()),
+        ],
+    );
+
+    // Alice balance is reduced by 10 tokens
+    let divident_by_3 = add_log_event_binary_op(
+        &mut batch,
+        SupportedFheOperations::FheDiv,
+        Dependence::Reference(bob_updated_balance.output_handle), // lhs
+        Dependence::Reference(shareholders_num.output_handle),    // rhs
+    );
+
+    let payload: Vec<u8> = postcard::to_allocvec(&batch).unwrap();
+
+    let confirm = sender_channel
+        .basic_publish(
+            "",
+            queue,
+            BasicPublishOptions::default(),
+            &payload,
+            lapin::BasicProperties::default(),
+        )
+        .await
+        .unwrap();
+
+    let confirm = confirm.await.unwrap();
+    info!(confirm = ?confirm, "Sent FHE log message to the queue");
+}
 
 fn install_signal_handlers(cancel_token: CancellationToken) {
     let mut sigint = unix::signal(SignalKind::interrupt()).unwrap();
@@ -194,12 +288,26 @@ fn install_signal_handlers(cancel_token: CancellationToken) {
     });
 }
 
-fn add_log_event(
+fn add_log_event_binary_op(
     batch: &mut Vec<messages::FheLog>,
     fhe_operation: SupportedFheOperations,
-    output_handle: Handle,
+    lhs: messages::Dependence,
+    rhs: messages::Dependence,
+) -> messages::FheLog {
+    let mut dependencies = Vec::new();
+    dependencies.push(rhs); //TODO: why reverse order?
+    dependencies.push(lhs);
+
+    add_log_event_other_op(batch, fhe_operation, dependencies)
+}
+
+fn add_log_event_other_op(
+    batch: &mut Vec<messages::FheLog>,
+    fhe_operation: SupportedFheOperations,
     dependencies: Vec<messages::Dependence>,
 ) -> messages::FheLog {
+    let output_handle = next_handle();
+
     let log = messages::FheLog {
         output_handle,
         dependencies,
