@@ -154,7 +154,7 @@ jobs:
         if: ${{ inputs.grep != '' }}
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test --parallel --grep "$GREP"
+          ./fhevm-cli test --grep "$GREP"
 
       - name: Random operators tests
         if: ${{ !inputs.grep }}
