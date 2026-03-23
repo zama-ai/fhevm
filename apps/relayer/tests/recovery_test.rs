@@ -152,7 +152,7 @@ impl RecoveryTestSetup {
     ) -> anyhow::Result<()> {
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = temp_config_dir.path().join("test_config.yaml");
-        std::fs::copy("config/local.yaml.example", &temp_config_path)
+        std::fs::copy("tests/relayer-test-config.yaml", &temp_config_path)
             .context("Failed to copy config file")?;
 
         let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))

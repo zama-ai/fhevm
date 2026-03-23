@@ -22,6 +22,7 @@ use block_number_repo::BlockNumberRepository;
 use input_proof_repo::InputProofRepository;
 use public_decrypt_repo::PublicDecryptRepository;
 use std::{sync::Arc, time::Duration};
+use tracing::warn;
 use user_decrypt_repo::UserDecryptRepository;
 
 /// Centralized container for all SQL repositories.
@@ -70,13 +71,13 @@ impl Repositories {
         self.pg_client.close().await;
     }
 
-    /// Register all background workers with the orchestrator for proper lifecycle management
+    /// Register background workers with the orchestrator for proper lifecycle management.
+    /// The timeout worker always starts; the expiry worker only starts when enabled.
     pub async fn register_background_workers(
         &self,
         orchestrator: &Arc<Orchestrator>,
         cron_config: crate::config::settings::CronConfig,
     ) -> anyhow::Result<()> {
-        // Register timeout worker
         orchestrator
             .spawn_task_and_wait_ready(
                 "timeout_worker",
@@ -85,14 +86,22 @@ impl Repositories {
             )
             .await?;
 
-        // Register expiry worker
-        orchestrator
-            .spawn_task_and_wait_ready(
-                "expiry_worker",
-                create_expiry_worker_future((*self.pg_client).clone(), cron_config.clone()),
-                async { Ok(()) }, // Ready immediately
-            )
-            .await?;
+        if cron_config.expiry_enabled {
+            warn!(
+                public_decrypt_expiry = ?cron_config.public_decrypt_expiry,
+                user_decrypt_expiry = ?cron_config.user_decrypt_expiry,
+                input_proof_expiry = ?cron_config.input_proof_expiry,
+                "Expiry worker enabled — will DELETE rows older than configured retention windows"
+            );
+
+            orchestrator
+                .spawn_task_and_wait_ready(
+                    "expiry_worker",
+                    create_expiry_worker_future((*self.pg_client).clone(), cron_config.clone()),
+                    async { Ok(()) }, // Ready immediately
+                )
+                .await?;
+        }
 
         Ok(())
     }

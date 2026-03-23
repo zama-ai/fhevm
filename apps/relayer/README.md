@@ -21,6 +21,7 @@ It exposes the following capabilities:
   - [Local Stack](#local-stack-for-testing-version-releases)
 - [API Endpoints](#api-endpoints)
 - [Observability](#observability)
+- [Request Timeout](#request-timeout)
 - [Data Retention Policy](#data-retention-policy)
 - [Troubleshooting](#troubleshooting)
 
@@ -273,9 +274,30 @@ Controlled by `enable_admin_endpoint` (returns `403 Forbidden` when disabled). S
 - Metrics and dashboard guidance: `src/metrics/docs_and_dashboards/http_metrics.md`
 - Application metrics: `GET /metrics` on port `9898`
 
+## Request Timeout
+
+A background worker marks requests stuck in `receipt_received` status as `timed_out` when the gateway chain has not responded within the configured timeout window.
+This worker is **always enabled** and runs as a background cron job implemented in `src/store/sql/repositories/timeout_repo.rs`.
+
+The timeout durations are configurable per request type in the `cron` section of your configuration:
+
+| Config key               | Default | Description                                    |
+| ------------------------ | ------- | ---------------------------------------------- |
+| `timeout_cron_interval`  | `60s`   | How often the worker checks for stale requests |
+| `public_decrypt_timeout` | `30m`   | Timeout for public decryption requests         |
+| `user_decrypt_timeout`   | `30m`   | Timeout for user decryption requests           |
+| `input_proof_timeout`    | `30m`   | Timeout for input proof requests               |
+
 ## Data Retention Policy
 
-The relayer automatically purges stale request data from the database to manage storage growth. Old records for public decryption, user decryption, and input proof verification are periodically **deleted** based on configurable retention windows. This cleanup process runs as a background cron job and is implemented in `src/store/sql/repositories/expiry_repo.rs`.
+The relayer can purge stale request data from the database to manage storage growth.
+Old records for public decryption, user decryption, and input proof verification are periodically **deleted** based on configurable retention windows.
+This cleanup process runs as a background cron job implemented in `src/store/sql/repositories/expiry_repo.rs`.
+
+The expiry worker is **disabled by default**.
+Stale data can be purged manually by running the equivalent `DELETE` queries against the database directly.
+To enable automatic cleanup instead, set `expiry_enabled: true` in the `cron` section of your configuration,
+and ensure the relayer's database user has `DELETE` permission on the relevant tables.
 
 ## Troubleshooting
 

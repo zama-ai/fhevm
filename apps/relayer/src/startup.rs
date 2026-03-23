@@ -106,21 +106,23 @@ pub async fn run_fhevm_relayer(
         .await
         .context("Failed to recover incomplete requests")?;
 
-    // Start cron workers after configurable delay (skipped in test mode)
-    if !settings.global.test_mock {
-        let delay = settings.storage.cron.cron_startup_delay_after_recovery;
-        info!(
-            "Recovery complete. Waiting {:?} before starting cron workers...",
-            delay
-        );
-        tokio::time::sleep(delay).await;
+    // Start cron workers after configurable delay
+    let cron = &settings.storage.cron;
+    let delay = cron.cron_startup_delay_after_recovery;
+    info!(
+        "Recovery complete. Waiting {:?} before starting cron workers...",
+        delay
+    );
+    tokio::time::sleep(delay).await;
 
-        info!("Starting cron workers: timeout_worker and expiry_worker");
-        repositories
-            .register_background_workers(&orchestrator, settings.storage.cron.clone())
-            .await
-            .context("Failed to register background workers")?;
-    }
+    info!(
+        expiry_enabled = cron.expiry_enabled,
+        "Starting cron workers"
+    );
+    repositories
+        .register_background_workers(&orchestrator, settings.storage.cron.clone())
+        .await
+        .context("Failed to register background workers")?;
 
     // Build host chain validator from config
     let host_chain_id_checker = Arc::new(HostChainIdChecker::new(

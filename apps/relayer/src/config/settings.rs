@@ -410,6 +410,9 @@ where
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CronConfig {
+    /// Whether the expiry (retention) worker is enabled. Defaults to false.
+    #[serde(default)]
+    pub expiry_enabled: bool,
     // We map the YAML key `timeout_cron_interval_secs` to this field,
     // but parse the string value into a Duration.
     #[serde(deserialize_with = "deserialize_human_duration")]
@@ -462,22 +465,24 @@ impl CronConfig {
             ));
         }
 
-        // Find minimum expiry duration (for expiry cron validation)
-        let min_expiry_secs = self
-            .public_decrypt_expiry
-            .as_secs_f64()
-            .min(self.user_decrypt_expiry.as_secs_f64())
-            .min(self.input_proof_expiry.as_secs_f64());
+        if self.expiry_enabled {
+            // Find minimum expiry duration (for expiry cron validation)
+            let min_expiry_secs = self
+                .public_decrypt_expiry
+                .as_secs_f64()
+                .min(self.user_decrypt_expiry.as_secs_f64())
+                .min(self.input_proof_expiry.as_secs_f64());
 
-        // Check: delay < 10% of minimum expiry duration
-        let expiry_max_delay = min_expiry_secs * 0.1;
-        if delay_secs >= expiry_max_delay {
-            return Err(AppConfigError::InvalidCronConfig(
-                format!(
-                    "cron_startup_delay_after_recovery ({}s) must be less than 10% of minimum expiry duration ({}s). Max allowed: {}s",
-                    delay_secs, min_expiry_secs, expiry_max_delay
-                )
-            ));
+            // Check: delay < 10% of minimum expiry duration
+            let expiry_max_delay = min_expiry_secs * 0.1;
+            if delay_secs >= expiry_max_delay {
+                return Err(AppConfigError::InvalidCronConfig(
+                    format!(
+                        "cron_startup_delay_after_recovery ({}s) must be less than 10% of minimum expiry duration ({}s). Max allowed: {}s",
+                        delay_secs, min_expiry_secs, expiry_max_delay
+                    )
+                ));
+            }
         }
 
         Ok(())
@@ -560,25 +565,6 @@ pub struct KeyData {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct GlobalSettings {
-    /// Determine if we are in the test setup directly from the configuration.
-    #[serde(default = "default_test_mock")]
-    pub test_mock: bool,
-}
-
-fn default_test_mock() -> bool {
-    false
-}
-
-impl Default for GlobalSettings {
-    fn default() -> Self {
-        Self {
-            test_mock: default_test_mock(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
     pub chain_id: u64,
     pub url: String,
@@ -590,9 +576,6 @@ pub struct HostChainConfig {
 ///
 /// Contains all configuration settings for the relayer service.
 pub struct Settings {
-    #[serde(default)]
-    /// General settings
-    pub global: GlobalSettings,
     /// Network configurations
     pub gateway: GatewayConfig,
     /// Logging configuration
@@ -1138,6 +1121,7 @@ mod tests {
             },
             sql_health_check_timeout_secs: 5,
             cron: CronConfig {
+                expiry_enabled: false,
                 timeout_cron_interval: Duration::from_secs(60),
                 public_decrypt_timeout: Duration::from_secs(300),
                 user_decrypt_timeout: Duration::from_secs(300),

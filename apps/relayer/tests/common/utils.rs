@@ -125,7 +125,7 @@ impl TestSetup {
         // Create temporary config file from example
         let temp_config_dir = TempDir::new()?;
         let temp_config_path = temp_config_dir.path().join("test_config.yaml");
-        std::fs::copy("config/local.yaml.example", &temp_config_path)
+        std::fs::copy("tests/relayer-test-config.yaml", &temp_config_path)
             .context("Failed to copy config file")?;
 
         // Configuration constants
@@ -184,8 +184,7 @@ impl TestSetup {
         settings.storage.app_pool.max_connections = 2;
         settings.storage.app_pool.min_connections = 0;
 
-        // Cron pool is unused in test_mock mode (default: test_mock=true)
-        // Cron workers (timeout/expiry) are disabled when test_mock is true
+        // Cron pool kept small — expiry worker is disabled by default
         // Minimum allowed value is 1 connection
         settings.storage.cron_pool.max_connections = 1;
         settings.storage.cron_pool.min_connections = 0;
@@ -326,7 +325,7 @@ fn create_default_config(temp_dir: &tempfile::TempDir) -> anyhow::Result<std::pa
     let temp_config_path = temp_dir.path().join("test_config.yaml");
 
     // Simply copy the example config without modifications
-    std::fs::copy("config/local.yaml.example", &temp_config_path)
+    std::fs::copy("tests/relayer-test-config.yaml", &temp_config_path)
         .context("Failed to copy example config")?;
 
     Ok(temp_config_path)
@@ -339,7 +338,7 @@ fn create_default_config(temp_dir: &tempfile::TempDir) -> anyhow::Result<std::pa
 fn create_multi_chain_config(temp_dir: &TempDir) -> anyhow::Result<std::path::PathBuf> {
     let temp_config_path = temp_dir.path().join("multi_chain.yaml");
 
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     let mut config: serde_yaml::Value =
@@ -383,7 +382,7 @@ fn create_readiness_config(
     let temp_config_path = temp_dir.path().join(filename);
 
     // Read the default config
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
@@ -427,7 +426,7 @@ fn create_low_retry_config(temp_dir: &TempDir) -> anyhow::Result<std::path::Path
     let temp_config_path = temp_dir.path().join("low_retry.yaml");
 
     // Read the default config
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
@@ -459,7 +458,7 @@ fn create_admin_endpoint_config(temp_dir: &TempDir) -> anyhow::Result<std::path:
     let temp_config_path = temp_dir.path().join("admin_endpoint.yaml");
 
     // Read the default config
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
@@ -488,7 +487,7 @@ fn create_listener_config(
     let temp_config_path = temp_dir.path().join("listener_config.yaml");
 
     // Read the default config
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
@@ -525,8 +524,7 @@ fn create_listener_config(
     Ok(temp_config_path)
 }
 
-/// Create a config file with fast timeout settings for testing timeout behavior
-/// Sets test_mock to false to enable background workers including timeout worker
+/// Create a config file with fast timeout settings for testing timeout behavior.
 #[allow(dead_code)]
 pub fn create_timeout_test_config(
     temp_dir: &TempDir,
@@ -536,19 +534,14 @@ pub fn create_timeout_test_config(
     let temp_config_path = temp_dir.path().join("timeout_test.yaml");
 
     // Read the default config
-    let config_content = std::fs::read_to_string("config/local.yaml.example")
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
         .context("Failed to read default config")?;
 
     // Parse YAML as a generic value
     let mut config: serde_yaml::Value =
         serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
 
-    // Set test_mock to false to enable background workers
-    if let Some(global) = config.get_mut("global") {
-        global["test_mock"] = serde_yaml::Value::Bool(false);
-    }
-
-    // Modify the timeout settings
+    // Configure fast timeout settings for testing
     if let Some(storage) = config.get_mut("storage") {
         if let Some(cron) = storage.get_mut("cron") {
             cron["timeout_cron_interval"] =

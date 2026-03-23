@@ -1,11 +1,5 @@
-# config/local.yaml.example
-# Example local configuration - Copy this file to local.yaml and adjust values as needed
-
-# Instructions:
-# 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
-# 2. Update the contract addresses after deploying your contracts
-# 3. Adjust the http_url and listener URLs to match your Ethereum node(s)
-# 4. Modify log settings based on your debugging needs
+# tests/relayer-test-config.yaml
+# Relayer configuration dedicated to integration tests.
 
 host_chains:
   - chain_id: 8009
@@ -121,26 +115,26 @@ gateway:
     max_retries: 3
     retry_delay_ms: 1000
 log:
-
-  format: "pretty"          # compact, pretty, or json
+  format: "pretty" # compact, pretty, or json
   show_file_line: false
   show_thread_ids: false
   show_timestamp: true
   show_target: true
 
 keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "http://0.0.0.0:3001/publicKey.bin"
-    crs:
-      data_id: "crs-data-id"
-      url: "http://0.0.0.0:3001/crs2048.bin"
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://0.0.0.0:3001/publicKey.bin"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://0.0.0.0:3001/crs2048.bin"
 
 http:
   endpoint: "0.0.0.0:3000"
   metrics:
-    histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-  api_retry_after_seconds: 4  # Default retry-after seconds for queued API responses
+    histogram_buckets:
+      [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  api_retry_after_seconds: 4 # Default retry-after seconds for queued API responses
   # Enable admin endpoints for runtime configuration updates (default: false)
   # NOTE: Authentication and rate limiting should be handled by Kong in production
   enable_admin_endpoint: false
@@ -182,21 +176,39 @@ http:
     # As time in ReceiptReceived increases, we back off polling frequency.
     # NOTE: Safety margin is NOT applied to backoff intervals
     copro_kms_backoff_intervals:
-      - [0, 4]       # 0-60s: retry every 4s (expect response soon)
-      - [60, 10]     # 60s-2m: retry every 10s
-      - [120, 30]    # 2-5m: retry every 30s
-      - [300, 60]    # 5-15m: retry every 60s
-      - [900, 300]   # 15m+: retry every 5m (likely stuck)
+      - [0, 4] # 0-60s: retry every 4s (expect response soon)
+      - [60, 10] # 60s-2m: retry every 10s
+      - [120, 30] # 2-5m: retry every 30s
+      - [300, 60] # 5-15m: retry every 60s
+      - [900, 300] # 15m+: retry every 5m (likely stuck)
 
 metrics:
   endpoint: "0.0.0.0:9898"
-  query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-  request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
-  transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+  query_duration_histogram_bucket:
+    [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  request_status_duration_histogram_bucket:
+    [
+      0.1,
+      0.25,
+      0.5,
+      1.0,
+      2.5,
+      5.0,
+      10.0,
+      30.0,
+      60.0,
+      300.0,
+      600.0,
+      1800.0,
+      3600.0,
+    ]
+  transaction_duration_secs_histogram_bucket:
+    [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
   # Raw ETA histogram buckets (before safety margin and clamping) for POST requests only.
   # Higher resolution at small values (1-30s) for typical requests with < 100 queue entries.
   # Exponential (60-2400s) for full queue scenarios.
-  retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+  retry_after_raw_eta_histogram_bucket:
+    [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
 
 storage:
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
@@ -237,4 +249,4 @@ storage:
     # Gives recovered requests time to finish processing before automated
     # timeout checks begin, preventing false positives.
     # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
-    cron_startup_delay_after_recovery: "30s"
+    cron_startup_delay_after_recovery: "0s"

@@ -3,9 +3,6 @@
 
 # Modify log settings based on your debugging needs
 
-global:
-  test_mock: true
-
 host_chains:
   - chain_id: 11155111
     url: "https://ethereum-sepolia-rpc.publicnode.com"
@@ -212,16 +209,18 @@ storage:
     max_lifetime_secs: 1800
   sql_health_check_timeout_secs: 5
   cron:
-    # available settings: (d, h, m, s, ms)
-    # 60s for interval check
-    timeout_cron_interval: "60s"
+    # Duration units: d, h, m, s, ms
 
-    # 30 mins timeout logic
+    # --- Timeout worker (always enabled) ---
+    # Marks requests for which responses are not received within this duration as timed out.
+    timeout_cron_interval: "60s"
     public_decrypt_timeout: "30m"
     user_decrypt_timeout: "30m"
     input_proof_timeout: "30m"
 
-    # 5 min interval for cleanup check
+    # --- Expiry worker (opt-in) ---
+    # Deletes resolved requests (completed or failed) once the configured retention duration has passed.
+    expiry_enabled: false
     expiry_cron_interval: "5m"
 
     # Retention Policies
