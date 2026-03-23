@@ -12,9 +12,7 @@
   "include": [
     "src/cli.ts",
     "src/layout.ts",
-    "src/presets.ts",
     "src/types.ts",
-    "src/utils.ts",
     "src/**/*.ts",
     "scripts/**/*.ts"
   ]

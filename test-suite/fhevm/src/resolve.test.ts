@@ -8,7 +8,7 @@ import {
   presetBundle,
   shaRuntimeCompatFloor,
   simpleAclFloor,
-} from "./resolve";
+} from "./resolve/target";
 
 describe("resolve", () => {
   test("locates the ACL and runtime compat floors", () => {

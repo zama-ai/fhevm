@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { compatPolicyForState, requiresLegacyRelayerUrl, validateBundleCompatibility } from "./compat";
+import { compatPolicyForState, requiresLegacyRelayerUrl, validateBundleCompatibility } from "./compat/compat";
 
 describe("compat", () => {
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {

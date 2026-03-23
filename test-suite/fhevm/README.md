@@ -8,6 +8,19 @@ It exists for three workflows:
 - swap in local changes for one repo-owned group
 - run consensus/matrix coprocessor scenarios with deterministic generated state
 
+Main flow:
+
+- read flags and reject invalid combinations
+- decide which versions to use
+- decide which stack shape to use
+- load or create saved local state
+- generate env/config/compose files
+- run startup steps in order
+- wait for each part to be actually ready
+- discover addresses and bootstrap outputs
+- save progress after each completed step
+- let later commands reuse that saved state
+
 ## Why This CLI Exists
 
 Launching this stack is harder than "run docker compose up".
@@ -104,10 +117,10 @@ Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` on
 
 The code follows the same split:
 
-- `src/runtime-plan.ts`: resolve one runtime plan from bundle + env overrides + scenario/shorthand
-- `src/render-env.ts`: render runtime env maps
-- `src/render-config.ts`: render generated config files
-- `src/render-compose.ts`: render compose overlays, with coprocessor topology as the only structural exception
+- `src/stack-spec/stack-spec.ts`: resolve one stack spec from bundle + env overrides + scenario/shorthand
+- `src/generate/env.ts`: generate runtime env maps
+- `src/generate/config.ts`: generate generated config files
+- `src/generate/compose.ts`: generate compose overlays, with coprocessor topology as the only structural exception
 
 ## Resolution Order
 
@@ -235,7 +248,7 @@ This resolves every repo-owned image to `9587546` and keeps companion services (
 
 ## Compatibility Matrix
 
-All version compatibility rules live in a single source of truth: `src/compat.ts` → `COMPAT_MATRIX`.
+All version compatibility rules live in a single source of truth: `src/compat/compat.ts` → `COMPAT_MATRIX`.
 
 The matrix has three sections:
 
@@ -268,10 +281,10 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 The CLI is leaner than the old bash path, but a few files still carry most of the maintenance burden:
 
 - `src/presets.ts`: maintained companion pins for `latest-main` and `sha`
-- `src/resolve.ts`: support floors and target-resolution policy
-- `src/compat.ts`: legacy shims and explicit incompatibility rules
-- `src/render-env.ts`: runtime env projection from templates, discovery, topology, and compat
-- `src/render-compose.ts`: service command shaping, local-build rewrites, and scenario instance compose overrides
+- `src/resolve/target.ts`: support floors and target-resolution policy
+- `src/compat/compat.ts`: legacy shims and explicit incompatibility rules
+- `src/generate/env.ts`: runtime env projection from templates, discovery, topology, and compat
+- `src/generate/compose.ts`: service command shaping, local-build rewrites, and scenario instance compose overrides
 
 When changing runtime flags, env contracts, target semantics, or external companion versions, assume you may need to touch more than one of those files. The expected checks are:
 

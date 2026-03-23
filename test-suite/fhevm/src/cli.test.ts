@@ -2,8 +2,8 @@ import path from "node:path";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { TEST_SUITE_CONTAINER } from "./layout";
-import { buildTestContainerArgs } from "./test";
-import { resumeOptionConflicts, shouldShowResumeHint } from "./stack";
+import { buildTestContainerArgs } from "./commands/test";
+import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/resume";
 import type { State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");

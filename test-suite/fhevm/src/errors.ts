@@ -112,6 +112,7 @@ export class SchemaGuardError extends CliError {
   }
 }
 
+/** Adds a focused hint when a build failure looks like Docker DNS trouble. */
 const buildKitDnsHint = (stderr: string) =>
   /(no such host|temporary failure in name resolution|failed to resolve|dns|lookup .* on .*:53)/i.test(
     stderr,
@@ -119,6 +120,7 @@ const buildKitDnsHint = (stderr: string) =>
     ? "\nHint: Docker BuildKit could not resolve an external host. Check Docker DNS / proxy settings and retry."
     : "";
 
+/** Extracts a printable user-facing message from an arbitrary thrown value. */
 export const formatCliError = (error: unknown): string | undefined => {
   if (error instanceof Error) {
     return error.message;

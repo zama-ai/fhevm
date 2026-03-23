@@ -138,6 +138,7 @@ const IMAGE_SIBLINGS: Record<string, string[]> = {
 
 export const SCHEMA_COUPLED_GROUPS: OverrideGroup[] = ["coprocessor", "kms-connector"];
 
+/** Resolves per-service override suffixes into full service names plus required siblings. */
 export const resolveServiceOverrides = (group: OverrideGroup, suffixes: string[]) => {
   if (!SERVICE_OVERRIDE_GROUPS.includes(group as (typeof SERVICE_OVERRIDE_GROUPS)[number])) {
     throw new Error(
@@ -205,10 +206,14 @@ export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 export const COPROCESSOR_WALLET_INDICES = [5, 8, 9, 10, 11] as const;
 export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;
 
+/** Returns the generated env-file path for a component or instance. */
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
+/** Returns the generated compose override path for a component. */
 export const composePath = (name: string) => path.join(COMPOSE_OUT_DIR, `${name}.yml`);
+/** Returns the template compose path for a component. */
 const composeTemplatePath = (name: string) =>
   path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`);
+/** Returns the compose file list used for a component, including overrides when present. */
 const composeFiles = (name: string) =>
   existsSync(composePath(name))
     ? [composeTemplatePath(name), composePath(name)]
@@ -233,6 +238,7 @@ export const hostAddressesSolidityPath = path.join(
   "FHEVMHostAddresses.sol",
 );
 
+/** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [
   "docker",
   "compose",
