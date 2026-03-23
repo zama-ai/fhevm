@@ -72,7 +72,7 @@ for touched components, injects the PR head short SHA only for successful build 
 The target provides the current mainline bundle; the env vars provide
 the merge-candidate SHA-tagged images for components that were actually rebuilt from the PR, and CI keeps the launch shape fixed at `latest-main` plus the `two-of-two` scenario.
 If a repo-owned image build was skipped, merge queue leaves that component on the `latest-main` baseline. If a required build output failed, merge queue fails before dispatching e2e.
-Non-workspace companions still come from the mainline defaults in `src/presets.ts`.
+Non-workspace companions still come from the mainline defaults in `src/resolve/presets.ts`.
 
 ## Notes
 
