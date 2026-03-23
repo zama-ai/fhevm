@@ -60,5 +60,9 @@ lint-bindings:
 # Update auto-generated files for conformance checks
 update-conformance: update-bindings update-selectors
 
+# Make sure all Solidity contracts use the expected SPDX license identifier (BSD-3-Clause-Clear)
+check-spdx-headers:
+	bash ../ci/check_spdx_licenses.sh contracts
+
 # Conform to pre-commit checks
 conformance: prettier update-conformance
