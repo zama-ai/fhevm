@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { TEST_SUITE_CONTAINER } from "./layout";
 import { buildTestContainerArgs } from "./commands/test";
-import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/resume";
+import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import type { State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");

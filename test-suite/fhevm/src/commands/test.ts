@@ -4,9 +4,9 @@
 import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError } from "../errors";
+import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
-import { pause, shellEscape, unpause } from "./pause";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,

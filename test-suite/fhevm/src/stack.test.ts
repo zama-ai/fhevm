@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveUpgradePlan } from "./flow/upgrade";
-import { previewStateFromBundle } from "./flow/up-flow";
+import { previewStateFromBundle, resolveUpgradePlan } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import type { State } from "./types";
 
