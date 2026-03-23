@@ -31,17 +31,16 @@ MIGRATE_IMAGE   ?= relayer-migrate
 TAG             ?= latest
 
 # Network configuration
-DEVNET_RPC        := https://rpc_addr/
 TESTNET_RPC       := https://rpc.testnet.zama.org/
-DEVNET_CONFIG     := config/local.devnet.yaml
+MAINNET_RPC       := https://rpc.mainnet.zama.org/
 TESTNET_CONFIG    := config/local.testnet.yaml
-ZAMA_TOKEN_DEVNET  := 0xD582Ec82a1758322907DF80dA8A754e12A5acB95
+MAINNET_CONFIG    := config/local.mainnet.yaml
 ZAMA_TOKEN_TESTNET := 0xcE762c7FDaac795D31a266B9247F8958c159c6d4
-MINT_AMOUNT        ?= 10000ether
+ZAMA_TOKEN_MAINNET := 0xcE762c7FDaac795D31a266B9247F8958c159c6d4
 
 # ProtocolPayment contract addresses
-PROTOCOL_PAYMENT_DEVNET  := 0x2a770251C390B3464f98B52304135D10525D1961
 PROTOCOL_PAYMENT_TESTNET := 0xAA1d9D4927A62f842F0DE5AD6b8dFDB074Fa62f2
+PROTOCOL_PAYMENT_MAINNET := 0x7E179E45E5fe0a21015Be25185363B4F2F2F7e89
 MAX_UINT256              := 115792089237316195423570985008687907853269984665640564039457584007913129639935
 
 # Preflight prompt control (YES=1 auto-accepts, NO=1 auto-declines)
@@ -78,7 +77,7 @@ _check-sqlx-cli:
 		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
 
 # Validate that a network config exists and has a non-empty private key.
-# Usage: $(MAKE) _check-network-config NET_CONFIG=config/local.devnet.yaml NET_NAME=Devnet
+# Usage: $(MAKE) _check-network-config NET_CONFIG=config/local.testnet.yaml NET_NAME=Testnet
 _check-network-config:
 	@test -f $(NET_CONFIG) || { \
 		echo "$(RED)Error: $(NET_CONFIG) not found. Run: make init-$(shell echo $(NET_NAME) | tr A-Z a-z)$(RESET)"; exit 1; }
@@ -128,19 +127,6 @@ setup: _check-docker ## One-command first-time setup (Postgres + migrations + co
 ##@ Onboarding
 # ---------------------------------------------------------------------------
 
-init-devnet: ## Initialize Devnet config (copies example, prompts for private key)
-	@if [ -f $(DEVNET_CONFIG) ]; then \
-		printf "$(YELLOW)$(DEVNET_CONFIG) already exists. Overwrite? [y/N] $(RESET)" && read -r ans && \
-		case "$$ans" in [yY]*) ;; *) echo "Skipped."; exit 0;; esac; \
-	fi
-	@test -f $(DEVNET_CONFIG).example || { echo "$(RED)Error: $(DEVNET_CONFIG).example not found$(RESET)"; exit 1; }
-	@cp $(DEVNET_CONFIG).example $(DEVNET_CONFIG)
-	@printf "$(YELLOW)Enter your wallet private key for Devnet: $(RESET)" && read -rs pk && echo "" && \
-		sed 's|private_key: ""|private_key: "'"$$pk"'"|' $(DEVNET_CONFIG) > $(DEVNET_CONFIG).tmp && \
-		mv $(DEVNET_CONFIG).tmp $(DEVNET_CONFIG)
-	@echo "$(GREEN)Created $(DEVNET_CONFIG)$(RESET)"
-	@echo "Next: run '$(YELLOW)make preflight-devnet$(RESET)' to verify your wallet."
-
 init-testnet: ## Initialize Testnet config (copies example, prompts for private key)
 	@if [ -f $(TESTNET_CONFIG) ]; then \
 		printf "$(YELLOW)$(TESTNET_CONFIG) already exists. Overwrite? [y/N] $(RESET)" && read -r ans && \
@@ -154,31 +140,42 @@ init-testnet: ## Initialize Testnet config (copies example, prompts for private 
 	@echo "$(GREEN)Created $(TESTNET_CONFIG)$(RESET)"
 	@echo "Next: run '$(YELLOW)make preflight-testnet$(RESET)' to verify your wallet."
 
-preflight-devnet: NET_NAME=Devnet
-preflight-devnet: NET_CONFIG=$(DEVNET_CONFIG)
-preflight-devnet: NET_RPC=$(DEVNET_RPC)
-preflight-devnet: NET_TOKEN=$(ZAMA_TOKEN_DEVNET)
-preflight-devnet: NET_INIT_TARGET=init-devnet
-preflight-devnet: NO_ETH_MSG=No ETH — you need Devnet ETH to send transactions
-preflight-devnet: ETH_HINT_1=Bridge ETH from Arbitrum Sepolia:
-preflight-devnet: ETH_HINT_2=https://zama-devnet-0-c616b95e3ceb51a9.testnets.rollbridge.app/
-preflight-devnet: ETH_HINT_3=
-preflight-devnet: NO_ZAMA_MSG=run: make mint-zama-devnet
-preflight-devnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_DEVNET)
-preflight-devnet: _preflight ## Verify Devnet config, wallet address, and balances (runs init if needed)
+init-mainnet: ## Initialize Mainnet config (copies example, prompts for private key)
+	@if [ -f $(MAINNET_CONFIG) ]; then \
+		printf "$(YELLOW)$(MAINNET_CONFIG) already exists. Overwrite? [y/N] $(RESET)" && read -r ans && \
+		case "$$ans" in [yY]*) ;; *) echo "Skipped."; exit 0;; esac; \
+	fi
+	@test -f $(MAINNET_CONFIG).example || { echo "$(RED)Error: $(MAINNET_CONFIG).example not found$(RESET)"; exit 1; }
+	@cp $(MAINNET_CONFIG).example $(MAINNET_CONFIG)
+	@printf "$(YELLOW)Enter your wallet private key for Mainnet: $(RESET)" && read -rs pk && echo "" && \
+		sed 's|private_key: ""|private_key: "'"$$pk"'"|' $(MAINNET_CONFIG) > $(MAINNET_CONFIG).tmp && \
+		mv $(MAINNET_CONFIG).tmp $(MAINNET_CONFIG)
+	@echo "$(GREEN)Created $(MAINNET_CONFIG)$(RESET)"
+	@echo "Next: run '$(YELLOW)make preflight-mainnet$(RESET)' to verify your wallet."
 
 preflight-testnet: NET_NAME=Testnet
 preflight-testnet: NET_CONFIG=$(TESTNET_CONFIG)
 preflight-testnet: NET_RPC=$(TESTNET_RPC)
 preflight-testnet: NET_TOKEN=$(ZAMA_TOKEN_TESTNET)
 preflight-testnet: NET_INIT_TARGET=init-testnet
-preflight-testnet: NO_ETH_MSG=No ETH
-preflight-testnet: ETH_HINT_1=Bridge ETH from Arbitrum Sepolia:
-preflight-testnet: ETH_HINT_2=https://zama-testnet-0-7ce31a60424e6a0a.testnets.rollbridge.app/
-preflight-testnet: ETH_HINT_3=Or use the faucet (requires TailScale): https://gw-faucet-zws-testnet.diplodocus-boa.ts.net/
-preflight-testnet: NO_ZAMA_MSG=ask the team for Testnet \$$ZAMA
+preflight-testnet: ETH_HINT_1=Bridge ETH from Arbitrum Sepolia to Gateway Testnet: https://zama-testnet-0-7ce31a60424e6a0a.testnets.rollbridge.app/
+preflight-testnet: ETH_HINT_2=
+preflight-testnet: ZAMA_HINT_1=Ask the team for Testnet \$$ZAMA
+preflight-testnet: ZAMA_HINT_2=
 preflight-testnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_TESTNET)
 preflight-testnet: _preflight ## Verify Testnet config, wallet address, and balances (runs init if needed)
+
+preflight-mainnet: NET_NAME=Mainnet
+preflight-mainnet: NET_CONFIG=$(MAINNET_CONFIG)
+preflight-mainnet: NET_RPC=$(MAINNET_RPC)
+preflight-mainnet: NET_TOKEN=$(ZAMA_TOKEN_MAINNET)
+preflight-mainnet: NET_INIT_TARGET=init-mainnet
+preflight-mainnet: ETH_HINT_1=Bridge ETH from Arbitrum One to Gateway Mainnet: https://bridge.zama.org/?fromChainId=42161&toChainId=261131
+preflight-mainnet: ETH_HINT_2=
+preflight-mainnet: ZAMA_HINT_1=Buy \$$ZAMA at https://www.zama.org/how-to-buy-zama-token
+preflight-mainnet: ZAMA_HINT_2=Bridge \$$ZAMA to Gateway: https://bridge.zama.org/?fromChainId=1&toChainId=261131
+preflight-mainnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_MAINNET)
+preflight-mainnet: _preflight ## Verify Mainnet config, wallet address, and balances (runs init if needed)
 
 _preflight: _check-cast
 	@if [ ! -f $(NET_CONFIG) ]; then $(MAKE) $(NET_INIT_TARGET); fi
@@ -192,26 +189,27 @@ _preflight: _check-cast
 	echo ""; \
 	eth=$$(cast balance "$$addr" --ether --rpc-url $(NET_RPC) 2>/dev/null) || { \
 		echo "$(RED)Error: Could not reach $(NET_NAME) RPC at $(NET_RPC)$(RESET)"; exit 1; }; \
-	echo "  ETH balance:      $$eth ETH"; \
+	echo "  GATEWAY ETH balance:      $$eth ETH"; \
 	zama=$$(cast call $(NET_TOKEN) "balanceOf(address)(uint256)" "$$addr" --rpc-url $(NET_RPC) 2>/dev/null); \
 	zama_fmt=$$(cast from-wei "$$zama" 2>/dev/null || echo "$$zama"); \
-	echo "  \$$ZAMA balance:    $$zama_fmt ZAMA"; \
+	echo "  GATEWAY \$$ZAMA balance:    $$zama_fmt ZAMA"; \
 	allowance=$$(cast call $(NET_TOKEN) "allowance(address,address)(uint256)" "$$addr" "$(NET_PAYMENT)" --rpc-url $(NET_RPC) 2>/dev/null); \
 	allowance_fmt=$$(cast from-wei "$$allowance" 2>/dev/null || echo "$$allowance"); \
-	echo "  Payment approval: $$allowance_fmt ZAMA"; \
+	echo "  GATEWAY Payment approval: $$allowance_fmt ZAMA"; \
 	echo ""; \
 	has_eth=true; has_zama=true; has_approval=true; \
 	if [ "$$eth" = "0.000000000000000000" ]; then \
 		echo "$(RED)  ✗ No ETH — you need $(NET_NAME) ETH to send transactions$(RESET)"; \
-		[ -z "$(ETH_HINT_1)" ] || echo "    $(ETH_HINT_1)"; \
-		[ -z "$(ETH_HINT_2)" ] || echo "    $(ETH_HINT_2)"; \
-		[ -z "$(ETH_HINT_3)" ] || echo "    $(ETH_HINT_3)"; \
+		[ -z "$(ETH_HINT_1)" ] || echo "     $(ETH_HINT_1)"; \
+		[ -z "$(ETH_HINT_2)" ] || echo "     $(ETH_HINT_2)"; \
 		has_eth=false; \
 	else \
 		echo "$(GREEN)  ✓ ETH$(RESET)"; \
 	fi; \
 	if [ "$$zama" = "0" ]; then \
-		echo "$(RED)  ✗ No \$$ZAMA — $(NO_ZAMA_MSG)$(RESET)"; \
+		echo "$(RED)  ✗ No \$$ZAMA — you need $(NET_NAME) \$$ZAMA on the Gateway to operate a relayer$(RESET)"; \
+		[ -z "$(ZAMA_HINT_1)" ] || echo "     $(ZAMA_HINT_1)"; \
+		[ -z "$(ZAMA_HINT_2)" ] || echo "     $(ZAMA_HINT_2)"; \
 		has_zama=false; \
 	else \
 		echo "$(GREEN)  ✓ \$$ZAMA$(RESET)"; \
@@ -245,30 +243,11 @@ _preflight: _check-cast
 		fi; \
 	fi
 
-mint-zama-devnet: _check-cast ## Mint $ZAMA tokens on Devnet (override: MINT_AMOUNT=50000ether)
-	@$(MAKE) _check-network-config NET_CONFIG=$(DEVNET_CONFIG) NET_NAME=Devnet
-	@pk=$$(grep 'private_key:' $(DEVNET_CONFIG) | head -1 | sed 's/.*private_key: *"\(.*\)"/\1/'); \
-	addr=$$(cast wallet address --private-key "$$pk"); \
-	amount_fmt=$$(cast from-wei $$(cast to-wei $(MINT_AMOUNT)) 2>/dev/null || echo "$(MINT_AMOUNT)"); \
-	echo "Minting $$amount_fmt \$$ZAMA to $$addr on Devnet..."; \
-	cast send $(ZAMA_TOKEN_DEVNET) "mint(address,uint256)" "$$addr" $(MINT_AMOUNT) \
-		--private-key "$$pk" --rpc-url $(DEVNET_RPC) && \
-	echo "$(GREEN)Mint successful!$(RESET)" && \
-	new_bal=$$(cast call $(ZAMA_TOKEN_DEVNET) "balanceOf(address)(uint256)" "$$addr" --rpc-url $(DEVNET_RPC)); \
-	echo "New balance: $$(cast from-wei "$$new_bal" 2>/dev/null || echo "$$new_bal") ZAMA"
-
 mint-zama-testnet: ## How to get $ZAMA tokens on Testnet
 	@echo "$(YELLOW)Testnet \$$ZAMA is not self-service mintable.$(RESET)"
 	@echo ""
 	@echo "Ask the relayer team to send \$$ZAMA to your wallet address."
 	@echo "To find your address: make preflight-testnet"
-
-approve-payment-devnet: NET_CONFIG=$(DEVNET_CONFIG)
-approve-payment-devnet: NET_NAME=Devnet
-approve-payment-devnet: NET_RPC=$(DEVNET_RPC)
-approve-payment-devnet: NET_TOKEN=$(ZAMA_TOKEN_DEVNET)
-approve-payment-devnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_DEVNET)
-approve-payment-devnet: _approve-payment ## Approve ProtocolPayment to spend $ZAMA on Devnet (max approval)
 
 approve-payment-testnet: NET_CONFIG=$(TESTNET_CONFIG)
 approve-payment-testnet: NET_NAME=Testnet
@@ -276,6 +255,13 @@ approve-payment-testnet: NET_RPC=$(TESTNET_RPC)
 approve-payment-testnet: NET_TOKEN=$(ZAMA_TOKEN_TESTNET)
 approve-payment-testnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_TESTNET)
 approve-payment-testnet: _approve-payment ## Approve ProtocolPayment to spend $ZAMA on Testnet (max approval)
+
+approve-payment-mainnet: NET_CONFIG=$(MAINNET_CONFIG)
+approve-payment-mainnet: NET_NAME=Mainnet
+approve-payment-mainnet: NET_RPC=$(MAINNET_RPC)
+approve-payment-mainnet: NET_TOKEN=$(ZAMA_TOKEN_MAINNET)
+approve-payment-mainnet: NET_PAYMENT=$(PROTOCOL_PAYMENT_MAINNET)
+approve-payment-mainnet: _approve-payment ## Approve ProtocolPayment to spend $ZAMA on Mainnet (max approval)
 
 _approve-payment: _check-cast
 	@$(MAKE) _check-network-config NET_CONFIG=$(NET_CONFIG) NET_NAME=$(NET_NAME)
@@ -342,19 +328,16 @@ sqlx-prepare: _check-sqlx-cli _check-postgres ## Prepare sqlx offline data for C
 run: _check-postgres ## Run the relayer (default config)
 	@cargo run --bin fhevm-relayer
 
-run-devnet: _check-postgres ## Run the relayer against Devnet
-	@$(MAKE) _check-network-config NET_CONFIG=$(DEVNET_CONFIG) NET_NAME=Devnet
-	@cargo run --bin fhevm-relayer -- --config-file $(DEVNET_CONFIG)
-
 run-testnet: _check-postgres ## Run the relayer against Testnet
 	@$(MAKE) _check-network-config NET_CONFIG=$(TESTNET_CONFIG) NET_NAME=Testnet
 	@cargo run --bin fhevm-relayer -- --config-file $(TESTNET_CONFIG)
 
+run-mainnet: _check-postgres ## Run the relayer against Mainnet
+	@$(MAKE) _check-network-config NET_CONFIG=$(MAINNET_CONFIG) NET_NAME=Mainnet
+	@cargo run --bin fhevm-relayer -- --config-file $(MAINNET_CONFIG)
+
 dev: _check-cargo-watch _check-postgres ## Run with hot-reload (requires cargo-watch)
 	@cargo watch -w src -x 'run --bin fhevm-relayer'
-
-dev-devnet: _check-cargo-watch _check-postgres ## Run against Devnet with hot-reload (requires cargo-watch)
-	@cargo watch -w src -x 'run --bin fhevm-relayer -- --config-file $(DEVNET_CONFIG)'
 
 dev-testnet: _check-cargo-watch _check-postgres ## Run against Testnet with hot-reload (requires cargo-watch)
 	@cargo watch -w src -x 'run --bin fhevm-relayer -- --config-file $(TESTNET_CONFIG)'
@@ -458,22 +441,13 @@ test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy 
 check: ## Quick pre-push check (fmt + clippy, no tests)
 	@$(MAKE) fmt
 	@$(MAKE) clippy
+	@$(MAKE) openapi-check
 
 lint: check ## Alias for 'check'
 
 fix: ## Auto-fix formatting and clippy issues
 	@$(MAKE) fmt-fix
 	@$(MAKE) clippy-fix
-
-ci: ## Reproduce CI locally (lint + test-run)
-	@echo "$(YELLOW)Running full CI pipeline locally...$(RESET)"
-	@$(MAKE) fmt
-	@$(MAKE) clippy
-	@$(MAKE) openapi-check
-	@$(MAKE) db-start
-	@$(MAKE) db-migrate
-	@$(MAKE) test-run
-	@echo "$(GREEN)CI pipeline passed!$(RESET)"
 
 # ---------------------------------------------------------------------------
 ##@ Linting

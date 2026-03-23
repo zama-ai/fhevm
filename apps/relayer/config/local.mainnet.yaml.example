@@ -1,21 +1,25 @@
-# config/local.devnet.yaml
-# Example local configuration targeting Devnet
+# config/local.mainnet.yaml
+# Example local configuration targeting Mainnet
+#
+# Copy this file to config/local.mainnet.yaml and fill in the TODO values.
+# Or run: make preflight-mainnet (handles config creation + private key prompt)
 
-# Instructions:
 # Modify log settings based on your debugging needs
 
 host_chains:
-  - chain_id: 11155111
-    url: "https://ethereum-sepolia-rpc.publicnode.com"
-    acl_address: "0xBCA6F8De823a399Dc431930FD5EE550Bf1C0013e"
+  - chain_id: 1
+    # Public fallback — works for testing but has rate limits.
+    # Replace with your own Ethereum L1 RPC for production use.
+    url: "https://ethereum-rpc.publicnode.com"
+    acl_address: "0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6"
 
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync
-    http_url: "https://rpc_addr/"
+    http_url: "https://rpc.mainnet.zama.org/"
     # Useful to spread the load between two nodes for reading to a full node instead
-    read_http_url: "https://rpc_addr/"
-    chain_id: 10900
+    read_http_url: "https://rpc.mainnet.zama.org/"
+    chain_id: 261131
     ws_health_check_timeout_secs: 5
     http_health_check_timeout_secs: 5
   # Unified listener pool configuration
@@ -55,14 +59,14 @@ gateway:
     # In production, use different URLs for redundancy
     listeners:
       - type: subscription
-        url: "wss://rpc_addr"
+        url: "wss://rpc.mainnet.zama.org/"
       - type: subscription
-        url: "wss://rpc_addr"
+        url: "wss://rpc.mainnet.zama.org/"
   tx_engine:
     signer:
       # Private key signer (local dev / CI)
       type: "private_key"
-      # USE YOUR OWN PRIVATE KEY - Need to approve ProtocolPayment contract as spender
+      # USE YOUR OWN PRIVATE KEY - Need to approve spender
       private_key: ""
       # Alternative: AWS KMS signer (for deployment)
       # type: "aws_kms"
@@ -107,8 +111,8 @@ gateway:
       capacity: 11000
       safety_margin: 1000
   contracts:
-    decryption_address: "0xA4dc265D54D25D41565c60d36097E8955B03decD"
-    input_verification_address: "0xf091D9B4C2da7ecd11858cDD1F4515a8a767D755"
+    decryption_address: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
+    input_verification_address: "0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287"
     user_decrypt_shares_threshold: 9
   # Retry configuration for gateway events arriving before gw_reference_id is stored.
   # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
@@ -127,10 +131,10 @@ log:
 keyurl:
     fhe_public_key:
       data_id: "fhe-public-key-data-id"
-      url: "https://zama-zws-dev-tkms-b6q87.s3.eu-west-1.amazonaws.com/PUB-p1/PublicKey/0400000000000000000000000000000000000000000000000000000000000001"
+      url: "https://zama-mpc-mainnet-public-833bcdac.s3.eu-central-1.amazonaws.com/PUB-p1/PublicKey/0400000000000000000000000000000000000000000000000000000000000001"
     crs:
       data_id: "crs-data-id"
-      url: "https://zama-zws-dev-tkms-b6q87.s3.eu-west-1.amazonaws.com/PUB-p1/CRS/0500000000000000000000000000000000000000000000000000000000000001"
+      url: "https://zama-mpc-mainnet-public-833bcdac.s3.eu-central-1.amazonaws.com/PUB-p1/CRS/0500000000000000000000000000000000000000000000000000000000000001"
 
 http:
   endpoint: "0.0.0.0:3000"

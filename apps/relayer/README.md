@@ -14,11 +14,10 @@ It exposes the following capabilities:
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-  - [First-time setup](#first-time-setup)
-  - [Run the test suite](#run-the-test-suite)
-  - [Testnet & Devnet](#testnet--devnet)
-  - [Local Stack](#local-stack-for-testing-version-releases)
+- [Self-Hosting](#self-hosting)
+  - [Mainnet Quickstart](#mainnet-quickstart)
+  - [Testnet Quickstart](#testnet-quickstart)
+- [Development](#development)
 - [API Endpoints](#api-endpoints)
 - [Observability](#observability)
 - [Request Timeout](#request-timeout)
@@ -98,7 +97,7 @@ Makefile                     # Test, lint, and migration helpers
 
 - Rust toolchain + Cargo
 - Docker + Docker Compose v2
-- [Foundry (`cast`)](https://www.getfoundry.sh/) — only needed for network onboarding (`make preflight-*`, `make mint-zama-*`, `make approve-payment-*`)
+- [Foundry (`cast`)](https://www.getfoundry.sh/) -- only needed for network onboarding (`make preflight-*`, `make mint-zama-*`, `make approve-payment-*`)
 - Node.js + npm (for `make api-lint` only)
 
 Run `make help` to see all available targets.
@@ -112,127 +111,38 @@ Configuration is handled via:
 - Environment variables with `APP_` prefix and `__` for nesting (override file values)
   - Example: `APP_GATEWAY__BLOCKCHAIN_RPC__HTTP_URL=https://rpc.example.org`
 
-## Getting Started
+## Self-Hosting
 
-A local PostgreSQL instance is required for integration tests and running the relayer outside of unit tests; `make setup` handles this automatically.
+For full deployment instructions, security considerations, and production configuration, see the [Self-Hosting Guide](docs/SELF_HOSTING.md).
 
-### First-time setup
+The quickstart sections below cover the minimum steps to get a relayer running against Mainnet or Testnet.
 
-```bash
-make setup    # Start Postgres, run migrations, copy config templates
-```
-
-### Run the test suite
+### Mainnet Quickstart
 
 ```bash
-make test-unit                    # Fast unit tests (no Postgres required)
-make test-all-no-long-running     # Full suite (requires Postgres)
-make ci                           # Reproduce CI locally (lint + db + tests)
+make db-start            # Start local Postgres (Docker Compose, port 5433)
+make db-migrate          # Apply database migrations
+make preflight-mainnet   # Interactive: config, private key, balance checks, approval
+make run-mainnet         # Start the relayer
+make health              # Verify health endpoints
 ```
 
-### Testnet & Devnet
-
-#### 1. Configure and verify wallet readiness
-
-Pre-built config examples are provided in `config/`. The `preflight` target handles everything: it runs `init` (copies the example config + prompts for your private key) if needed, then checks your wallet address, ETH balance, `$ZAMA` balance, and `ProtocolPayment` approval — offering to mint and approve interactively:
+### Testnet Quickstart
 
 ```bash
-make preflight-testnet  # or: make preflight-devnet
+make db-start            # Start local Postgres (Docker Compose, port 5433)
+make db-migrate          # Apply database migrations
+make preflight-testnet   # Interactive: config, private key, balance checks, approval
+make run-testnet         # Start the relayer
+make health              # Verify health endpoints
 ```
 
-Individual targets are also available if needed:
+## Development
 
-```bash
-make init-testnet              # Copy example config, prompt for private key
-make init-devnet
-make mint-zama-testnet         # Instructions for Testnet (not self-service)
-make mint-zama-devnet          # Self-service mint on Devnet
-make approve-payment-testnet   # Approve ProtocolPayment spending on Testnet
-make approve-payment-devnet
-```
+For build, test, lint, local stack, and CI instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+For contribution guidelines, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
-#### 2. Run the relayer
-
-```bash
-make run-testnet    # or: make run-devnet
-make dev-testnet    # Hot-reload with cargo-watch (or: make dev-devnet)
-```
-
-#### 3. Verify service health
-
-```bash
-make health
-```
-
-#### 4. Run E2E tests
-
-End-to-end tests live in the [`fhevm` repository](https://github.com/zama-ai/fhevm) under `fhevm/test-suite/e2e`.
-
-To run them against your local relayer:
-
-1. Follow the [E2E test setup instructions](https://www.notion.so/zamaai/Run-e2e-test-on-Sepolia-testnet-2b05a7358d5e8006999bd0e5433f70d9).
-   - This Notion page primarily targets Testnet. If you target Devnet, follow it using devnet-specific values instead. Check [Blockchain Access](https://www.notion.so/zamaai/Blockchain-Access-1a55a7358d5e807d9711d80f9b19bb99) if needed
-2. Set the `RELAYER_URL` environment variable from `fhevm/test-suite/e2e/.env` to point to your local relayer: `RELAYER_URL=http://localhost:3000/v2`. The route version must be provided in the url.
-3. Run the E2E test suite from `fhevm/test-suite/e2e`.
-
-#### 5. Stop local Postgres
-
-```bash
-make db-stop        # Stop Postgres (preserves data)
-make db-destroy     # Stop Postgres and wipe all data
-```
-
-### Local Stack (for testing version releases)
-
-This mode runs the entire Zama protocol locally using the `fhevm-cli` tool from the [`fhevm` repository](https://github.com/zama-ai/fhevm).
-
-#### Deploy the Zama Protocol
-
-```bash
-git clone git@github.com:zama-ai/fhevm.git
-cd fhevm/test-suite/fhevm
-./fhevm-cli deploy
-```
-
-#### Inject a local relayer build
-
-Build local images with registry-prefixed names (`ghcr.io/zama-ai/console/relayer:TAG` and `ghcr.io/zama-ai/console/relayer-migrate:TAG`), which is what the `fhevm-cli` Docker Compose stack expects:
-
-```bash
-LOCAL_RELAYER_TAG=local-relayer-$(date +%Y%m%d%H%M%S)
-
-make docker-release TAG=${LOCAL_RELAYER_TAG}
-```
-
-Then upgrade the relayer in the fhevm stack:
-
-```bash
-# From fhevm/test-suite/fhevm
-RELAYER_VERSION=${LOCAL_RELAYER_TAG} \
-RELAYER_MIGRATE_VERSION=${LOCAL_RELAYER_TAG} \
-./fhevm-cli upgrade relayer
-```
-
-Validate running image tags:
-
-```bash
-docker inspect fhevm-relayer --format '{{.Config.Image}}'
-docker inspect relayer-db-migration --format '{{.Config.Image}}'
-```
-
-#### Run E2E tests via fhevm-cli
-
-You can use `./fhevm-cli` to trigger the `fhevm` E2E tests against your local stack:
-
-```bash
-./fhevm-cli test input-proof
-```
-
-#### Stop the local stack
-
-```bash
-./fhevm-cli clean
-```
+`make setup` is the dev-oriented shortcut (db-start + db-migrate + copies local mock config).
 
 ## API Endpoints
 
@@ -281,12 +191,12 @@ This worker is **always enabled** and runs as a background cron job implemented 
 
 The timeout durations are configurable per request type in the `cron` section of your configuration:
 
-| Config key               | Default | Description                                    |
-| ------------------------ | ------- | ---------------------------------------------- |
-| `timeout_cron_interval`  | `60s`   | How often the worker checks for stale requests |
-| `public_decrypt_timeout` | `30m`   | Timeout for public decryption requests         |
-| `user_decrypt_timeout`   | `30m`   | Timeout for user decryption requests           |
-| `input_proof_timeout`    | `30m`   | Timeout for input proof requests               |
+| Config key                            | Default | Description                                    |
+| ------------------------------------- | ------- | ---------------------------------------------- |
+| `storage.cron.timeout_cron_interval`  | `60s`   | How often the worker checks for stale requests |
+| `storage.cron.public_decrypt_timeout` | `30m`   | Timeout for public decryption requests         |
+| `storage.cron.user_decrypt_timeout`   | `30m`   | Timeout for user decryption requests           |
+| `storage.cron.input_proof_timeout`    | `30m`   | Timeout for input proof requests               |
 
 ## Data Retention Policy
 
@@ -315,7 +225,7 @@ The relayer Dockerfile mounts `.git/HEAD`, `.git/objects`, and `.git/refs` for b
 
 ### Config template contains localhost/mock URLs
 
-`config/local.yaml.example` ships with `localhost:8757` RPC URLs and `0.0.0.0:3001` key URLs that only work against a local mock stack. When targeting Devnet or Testnet, use `make preflight-testnet` / `make preflight-devnet` which copies the correct example config automatically.
+`config/local.yaml.example` ships with `localhost:8757` RPC URLs and `0.0.0.0:3001` key URLs that only work against a local mock stack. When targeting Testnet or Mainnet, use `make preflight-testnet` / `make preflight-mainnet` which copies the correct example config automatically.
 
 ### Docker memory for full local stack
 

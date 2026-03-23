@@ -27,7 +27,7 @@ cargo build --bin fhevm-relayer
 
 ```bash
 make test-unit                  # Unit tests only (no Postgres needed)
-make test-all-no-long-running   # Full suite (requires Postgres — starts automatically with make ci)
+make test-all-no-long-running   # Full suite (requires Postgres)
 make test-smoke-ok-all-v2       # Smoke tests (v2 happy paths)
 make test-coverage-report-html  # Coverage report
 
@@ -70,7 +70,7 @@ make sqlx-prepare   # Regenerate offline metadata for CI/Docker builds
 ```bash
 make run            # Run with default config
 make run-testnet    # Run against Testnet (validates config + private key)
-make run-devnet     # Run against Devnet (validates config + private key)
+make run-mainnet    # Run against Mainnet (validates config + private key)
 make dev            # Hot-reload with cargo-watch
 make health         # Hit /liveness, /healthz, /version, /metrics
 ```
@@ -78,18 +78,16 @@ make health         # Hit /liveness, /healthz, /version, /metrics
 ### Network Onboarding
 
 ```bash
+make init-mainnet           # Copy Mainnet config example, prompt for private key
 make init-testnet           # Copy Testnet config example, prompt for private key
-make init-devnet            # Copy Devnet config example, prompt for private key
+make preflight-mainnet      # Verify wallet address + ETH/$ZAMA balances on Mainnet
 make preflight-testnet      # Verify wallet address + ETH/$ZAMA balances on Testnet
-make preflight-devnet       # Verify wallet address + ETH/$ZAMA balances on Devnet
 make mint-zama-testnet      # Instructions to get $ZAMA on Testnet (not self-service)
-make mint-zama-devnet       # Mint $ZAMA on Devnet (self-service)
 ```
 
 ### Workflows
 
 ```bash
-make ci             # Reproduce CI locally (lint → db-start → migrate → full test suite)
 make check          # Quick pre-push check (fmt + clippy, no tests)
 make fix            # Auto-fix formatting and clippy issues
 ```
