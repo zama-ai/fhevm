@@ -4,16 +4,20 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
-import { clean } from "./commands/clean";
-import { down } from "./commands/down";
-import { logs } from "./commands/logs";
-import { pause, unpause } from "./commands/pause";
-import { listScenarios } from "./commands/scenario";
-import { status } from "./commands/status";
 import { test } from "./commands/test";
-import { upgrade } from "./commands/upgrade";
-import { up, upDryRun } from "./commands/up";
-import { showResumeHint } from "./flow/resume";
+import {
+  clean,
+  down,
+  listScenarios,
+  logs,
+  pause,
+  showResumeHint,
+  status,
+  unpause,
+  up,
+  upDryRun,
+  upgrade,
+} from "./flow/up-flow";
 import { parseUpInput } from "./input/up";
 import { asBool, asString } from "./input/shared";
 const HELP_FLAGS = new Set(["--help", "-h"]);

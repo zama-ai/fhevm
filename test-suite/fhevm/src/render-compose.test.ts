@@ -6,8 +6,7 @@ import YAML from "yaml";
 import { COMPOSE_OUT_DIR, STATE_DIR, composePath, envPath } from "./layout";
 import { generateComposeOverrides } from "./generate/compose";
 import { presetBundle } from "./resolve/target";
-import { parseCoprocessorScenario } from "./scenario/parse";
-import { resolveScenarioFile } from "./scenario/resolve";
+import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
 import type { State } from "./types";
 
