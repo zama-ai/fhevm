@@ -66,6 +66,11 @@ scDeploy:
     - name: PAUSER_ADDRESS_x
       value: ""
 
+    # Initial KMS Context ID
+    # This initial value must match with the value returned from the host-contract KMSVerifier.getCurrentKmsContextId()
+    - name: KMS_CONTEXT_ID
+      value: "3166189940082864718613269121331309980362851143201109172953918312716374638593"
+
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
@@ -148,6 +153,19 @@ scUpgrade:
   upgradeCommands:
     # Example upgrade command (uncomment and modify as needed)
     # - npx hardhat task:upgradeACL
+
+    # =========================================================================
+    # ==========================  GATEWAY =====================================
+    # =========================================================================
+    - npx hardhat task:upgradeGatewayConfig
+
+    - npx hardhat task:upgradeDecryption
+
+    # =========================================================================
+    # ==========================  HOST    =====================================
+    # =========================================================================
+    - npx hardhat task:upgradeKmsVerifier
+
 
 # -----------------------------------------------------------------------------
 # Node Placement Configuration

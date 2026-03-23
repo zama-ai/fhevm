@@ -1,4 +1,4 @@
-use crate::types::fhe::extract_chain_id_from_handle;
+use crate::types::handle::extract_chain_id_from_handle;
 use alloy::{
     primitives::Address,
     providers::{ProviderBuilder, RootProvider, mock::Asserter},

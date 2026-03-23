@@ -1,7 +1,8 @@
 pub mod db;
-pub mod fhe;
+pub mod extra_data;
 mod grpc;
 pub mod gw_event;
+pub mod handle;
 pub mod kms_response;
 
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
@@ -29,6 +30,17 @@ pub fn u256_to_u32(integer: U256) -> anyhow::Result<u32> {
     Ok(u32::from_le_bytes(integer_lsb.try_into()?))
 }
 
-pub fn decode_request_id(request_id: RequestId) -> Result<U256, FromHexError> {
+/// Converts a U256 request ID to a valid hex format that KMS Core expects.
+///
+/// The KMS Core expects a hex string that decodes to exactly 32 bytes (big-endian).
+pub fn u256_to_request_id(request_id: U256) -> RequestId {
+    let bytes = request_id.to_be_bytes::<32>();
+    RequestId {
+        request_id: hex::encode(bytes),
+    }
+}
+
+/// Converts a RequestId to a U256 (big-endian).
+pub fn request_id_to_u256(request_id: RequestId) -> Result<U256, FromHexError> {
     hex::decode_to_array::<_, 32>(request_id.request_id).map(U256::from_be_bytes)
 }
