@@ -13,16 +13,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-REVERT_DOCKERFILE="$REPO_ROOT/coprocessor/fhevm-engine/db-migration/Dockerfile.db-state-revert"
-REVERT_IMAGE="fhevm/coprocessor/db-state-revert:e2e-test"
+REVERT_IMAGE="ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}"
 
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-coprocessor-and-kms-db}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-coprocessor}"
 TEST_CONTAINER="${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}"
-TESTS_TO_RUN="${TESTS_TO_RUN:-test user input uint64 \\(non-trivial\\)}"
+TESTS_TO_RUN="${TESTS_TO_RUN:-test add 42 to uint64 input and decrypt}"
 CHAIN_ID="${CHAIN_ID:-12345}"
 REVERT_POLL_TIMEOUT_SECONDS="${REVERT_POLL_TIMEOUT_SECONDS:-300}"
 REVERT_POLL_INTERVAL_SECONDS="${REVERT_POLL_INTERVAL_SECONDS:-2}"
@@ -103,20 +101,17 @@ fi
 echo "  Max block: $MAX_BLOCK"
 echo "  Reverting to: $REVERT_TO"
 
-# Build and run the revert Docker image.
-echo "  Building revert image..."
-docker build -f "$REVERT_DOCKERFILE" -t "$REVERT_IMAGE" "$REPO_ROOT"
-
-# Find the Docker network of the postgres container.
+# Run the revert using the db-migration image.
 DB_NETWORK=$(docker inspect "$POSTGRES_CONTAINER" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | head -1)
 
-echo "  Running revert image on network $DB_NETWORK..."
+echo "  Running revert via $REVERT_IMAGE on network $DB_NETWORK..."
 docker run --rm \
   --network "$DB_NETWORK" \
   -e DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_CONTAINER}:5432/${POSTGRES_DB}" \
   -e CHAIN_ID="$CHAIN_ID" \
   -e TO_BLOCK_NUMBER="$REVERT_TO" \
-  "$REVERT_IMAGE"
+  "$REVERT_IMAGE" \
+  "/revert_coprocessor_db_state.sh"
 
 COMP_AFTER=$(psql_query "SELECT COUNT(*) FROM computations WHERE host_chain_id = $CHAIN_ID")
 ACL_AFTER=$(psql_query "SELECT COUNT(*) FROM allowed_handles WHERE host_chain_id = $CHAIN_ID")

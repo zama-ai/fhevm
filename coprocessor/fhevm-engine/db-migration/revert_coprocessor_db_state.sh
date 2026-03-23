@@ -8,14 +8,15 @@
 #   CHAIN_ID        - the host chain ID to revert
 #   TO_BLOCK_NUMBER - revert to this block (data for blocks > TO_BLOCK_NUMBER is deleted)
 #
-# Usage (Docker):
+# Usage (Docker, via the db-migration image):
 #   1. Stop ALL coprocessor services.
 #   2. Run:
 #      docker run --rm --network <db-network> \
 #        -e DATABASE_URL="postgres://user:pass@db-host:5432/coprocessor" \
 #        -e CHAIN_ID=12345 \
 #        -e TO_BLOCK_NUMBER=500 \
-#        ghcr.io/zama-ai/fhevm/coprocessor/db-state-revert:<version>
+#        ghcr.io/zama-ai/fhevm/coprocessor/db-migration:<version> \
+#        "/revert_coprocessor_db_state.sh"
 #   3. Restart coprocessor services.
 
 set -euo pipefail
@@ -37,5 +38,5 @@ echo "Reverting chain_id=$CHAIN_ID to block $TO_BLOCK_NUMBER"
 psql "$DATABASE_URL" \
   -v chain_id="$CHAIN_ID" \
   -v to_block_number="$TO_BLOCK_NUMBER" \
-  -f /revert_coprocessor_db_state.sql
+  -f /db-scripts/revert_coprocessor_db_state.sql
 echo "Revert complete"
