@@ -122,7 +122,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -138,7 +138,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// Domain separator for hashing when building an output handle for a FHE computation
     bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
@@ -160,12 +160,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.
@@ -233,13 +233,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
-        if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
         hcuLimit.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheDiv(msg.sender, lhs, rhs, scalarByte, result);
@@ -254,13 +254,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
-        if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
         hcuLimit.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRem(msg.sender, lhs, rhs, scalarByte, result);
@@ -812,6 +812,18 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ) internal pure virtual returns (FheType typeCt) {
         typeCt = _typeOf(handle);
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
+    }
+
+    function _isScalarZeroForType(bytes32 scalar, FheType scalarType) internal pure virtual returns (bool) {
+        uint256 scalarUint = uint256(scalar);
+
+        if (scalarType == FheType.Uint8) return uint8(scalarUint) == 0;
+        if (scalarType == FheType.Uint16) return uint16(scalarUint) == 0;
+        if (scalarType == FheType.Uint32) return uint32(scalarUint) == 0;
+        if (scalarType == FheType.Uint64) return uint64(scalarUint) == 0;
+        if (scalarType == FheType.Uint128) return uint128(scalarUint) == 0;
+
+        revert UnsupportedType();
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
