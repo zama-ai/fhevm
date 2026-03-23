@@ -315,6 +315,35 @@ jobs:
       new-tag-or-commit: ${{ github.event.after }}
 
   ########################################################################
+  #                      DB STATE REVERT                                 #
+  ########################################################################
+  build-db-state-revert:
+    needs: build-decisions
+    concurrency:
+      group: coprocessor-build-db-state-revert-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.db_migration == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    secrets: *docker_secrets
+    permissions: *docker_permissions
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/db-state-revert"
+      docker-file: "coprocessor/fhevm-engine/db-migration/Dockerfile.db-state-revert"
+      app-cache-dir: "fhevm-coprocessor-db-state-revert"
+
+  re-tag-db-state-revert-image:
+    needs: [build-decisions, check-changes-db-migration]
+    if: always() && needs.build-decisions.outputs.db_migration == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/db-state-revert"
+      previous-tag-or-commit: ${{ needs.check-changes-db-migration.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
   #                           GATEWAY LISTENER                           #
   ########################################################################
   build-gw-listener:
