@@ -28,7 +28,7 @@ pub use grouping::{compute_logical_pattern_ids, compute_transaction_pattern_id};
 pub use types::{PatternDescription, PatternInput, PatternNode};
 
 #[cfg(test)]
-use encoding::{ENCODING_VERSION, HASH_VERSION};
+use encoding::{HASHED_PATTERN_TAG, INLINE_PATTERN_TAG};
 
 #[cfg(test)]
 mod tests;

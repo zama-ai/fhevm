@@ -226,9 +226,10 @@ pub fn compute_logical_pattern_ids(
 
     // Encode each group and assign pattern_ids.
     //
-    // Try compact v1 first. If it succeeds and is above threshold, we hash and
-    // log full encoding once. If v1 fails (group too large), hash wide encoding
-    // without logging the full payload.
+    // Try the compact inline encoding first. If it succeeds and is above the
+    // threshold, we hash and log the full encoding once. If inline encoding
+    // fails (group too large), hash the wide encoding without logging the full
+    // payload.
     let threshold = *PATTERN_HASH_THRESHOLD;
     let mut result: HashMap<usize, Vec<u8>> = HashMap::new();
     for group in groups.values() {

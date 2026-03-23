@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
 use super::{
-    decode_pattern, is_hashed_pattern, pattern_to_base64url, ENCODING_VERSION, HASH_VERSION,
+    decode_pattern, is_hashed_pattern, pattern_to_base64url, HASHED_PATTERN_TAG, INLINE_PATTERN_TAG,
 };
 
 /// Build a pre-partition graph + produced_handles from `Vec<DFGOp>` and call
@@ -56,22 +56,22 @@ fn collect_op_pattern_ids(component: &super::super::ComponentNode) -> Vec<Vec<u8
         .collect()
 }
 
-/// Assert that a pattern_id is a valid pattern — either a v1 encoding
-/// (decodable) or a v2 hash (23 bytes, starts with HASH_VERSION).
+/// Assert that a pattern_id is a valid pattern — either an inline encoding
+/// (decodable) or a hashed encoding (23 bytes, starts with `HASHED_PATTERN_TAG`).
 fn assert_valid_pattern(bytes: &[u8]) {
     assert!(!bytes.is_empty(), "pattern_id should not be empty");
     match bytes[0] {
-        ENCODING_VERSION => {
-            let desc = decode_pattern(bytes).expect("v1 pattern_id should be decodable");
+        INLINE_PATTERN_TAG => {
+            let desc = decode_pattern(bytes).expect("inline pattern_id should be decodable");
             assert!(
                 !desc.nodes.is_empty(),
                 "decoded pattern should have at least one node"
             );
         }
-        HASH_VERSION => {
+        HASHED_PATTERN_TAG => {
             assert_eq!(bytes.len(), 23, "hashed pattern should be exactly 23 bytes");
         }
-        other => panic!("unexpected pattern version byte: 0x{other:02x}"),
+        other => panic!("unexpected pattern tag byte: 0x{other:02x}"),
     }
 }
 
@@ -1110,7 +1110,7 @@ fn oversize_group_hashes_for_transaction_pattern() {
 
     let tx_id = vec![0xFFu8; 32];
     let (components, _) = build_component_nodes(ops2, &tx_id).unwrap();
-    // >255 nodes: v1 encoding fails, wide encoding is hashed.
+    // >255 nodes: inline encoding fails, wide encoding is hashed.
     let tx_pat = &components[0].transaction_pattern_id;
     assert!(
         is_hashed_pattern(tx_pat),
@@ -1167,22 +1167,22 @@ fn build_chain(n: usize, prefix: u8) -> Vec<DFGOp> {
 
 #[test]
 fn pattern_below_threshold_is_encoding() {
-    // A group with ≤ DEFAULT_PATTERN_HASH_THRESHOLD nodes stays v1.
+    // A group with ≤ DEFAULT_PATTERN_HASH_THRESHOLD nodes stays inline.
     let ops = build_chain(10, 0xA0);
     let ids = compute_logical_ids(ops);
     assert!(!ids.is_empty());
     let pattern = ids.values().next().unwrap();
     assert_eq!(
-        pattern[0], ENCODING_VERSION,
-        "small group should produce v1 encoding"
+        pattern[0], INLINE_PATTERN_TAG,
+        "small group should produce inline encoding"
     );
     assert!(
         decode_pattern(pattern).is_some(),
-        "v1 encoding should be decodable"
+        "inline encoding should be decodable"
     );
     assert!(
         !is_hashed_pattern(pattern),
-        "v1 encoding should not be identified as hashed"
+        "inline encoding should not be identified as hashed"
     );
 }
 
@@ -1195,8 +1195,8 @@ fn pattern_above_threshold_is_hashed() {
     assert!(!ids.is_empty());
     let pattern = ids.values().next().unwrap();
     assert_eq!(
-        pattern[0], HASH_VERSION,
-        "large group should produce v2 hashed pattern"
+        pattern[0], HASHED_PATTERN_TAG,
+        "large group should produce hashed pattern"
     );
     assert_eq!(
         pattern.len(),
@@ -1208,7 +1208,7 @@ fn pattern_above_threshold_is_hashed() {
     assert_eq!(node_count, 30, "hashed pattern should encode node_count=30");
     assert!(
         is_hashed_pattern(pattern),
-        "v2 pattern should be identified as hashed"
+        "hashed pattern should be identified as hashed"
     );
     assert!(
         decode_pattern(pattern).is_none(),

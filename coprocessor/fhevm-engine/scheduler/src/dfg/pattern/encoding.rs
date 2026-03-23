@@ -12,11 +12,11 @@ use crate::dfg::types::DFGTaskInput;
 use crate::dfg::{DFGOp, OpEdge};
 use fhevm_engine_common::common::FheOperation;
 
-/// Encoding version byte (self-describing, decodable).
-pub(super) const ENCODING_VERSION: u8 = 0x01;
+/// Tag byte for the inline, self-describing pattern encoding.
+pub(super) const INLINE_PATTERN_TAG: u8 = 0x01;
 
-/// Hash version byte (Keccak-256 truncated, not decodable).
-pub(super) const HASH_VERSION: u8 = 0x02;
+/// Tag byte for the hashed pattern encoding (Keccak-256 truncated, not decodable).
+pub(super) const HASHED_PATTERN_TAG: u8 = 0x02;
 
 /// Number of bytes to keep from the Keccak-256 digest.
 const HASH_DIGEST_LEN: usize = 20;
@@ -48,14 +48,14 @@ pub fn pattern_to_base64url(bytes: &[u8]) -> String {
 
 /// Decode a binary pattern encoding into a [`PatternDescription`].
 ///
-/// Returns `None` if the encoding is malformed (wrong version, truncated, etc.)
-/// or if the pattern is a hashed v2 form (hashes are not decodable).
+/// Returns `None` if the encoding is malformed (wrong tag, truncated, etc.)
+/// or if the pattern is a hashed form (hashes are not decodable).
 pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
     if bytes.len() < 2 {
         return None;
     }
-    // Only v1 encodings are decodable; hashed (v2) and unknown versions are not.
-    if bytes[0] != ENCODING_VERSION {
+    // Only inline encodings are decodable; hashed and unknown tags are not.
+    if bytes[0] != INLINE_PATTERN_TAG {
         return None;
     }
     let node_count = bytes[1] as usize;
@@ -116,9 +116,9 @@ pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
 // Two-tier finalization (encoding vs hash)
 // ---------------------------------------------------------------------------
 
-/// Returns `true` if the pattern bytes represent a hashed (v2) pattern.
+/// Returns `true` if the pattern bytes represent a hashed pattern.
 pub fn is_hashed_pattern(bytes: &[u8]) -> bool {
-    !bytes.is_empty() && bytes[0] == HASH_VERSION
+    !bytes.is_empty() && bytes[0] == HASHED_PATTERN_TAG
 }
 
 /// Hash threshold read once from `FHEVM_PATTERN_HASH_THRESHOLD` env var,
@@ -130,11 +130,11 @@ pub(super) static PATTERN_HASH_THRESHOLD: LazyLock<usize> = LazyLock::new(|| {
         .unwrap_or(DEFAULT_PATTERN_HASH_THRESHOLD)
 });
 
-/// If the v1 encoding has `node_count ≤ threshold`, return it as-is.
-/// Otherwise hash it into a compact 23-byte v2 form and log the full
+/// If the inline encoding has `node_count ≤ threshold`, return it as-is.
+/// Otherwise hash it into a compact 23-byte form and log the full
 /// encoding once (per unique hash) for operator linkability.
 pub(super) fn finalize_pattern(encoding: Vec<u8>, threshold: usize) -> Vec<u8> {
-    debug_assert!(encoding.len() >= 2 && encoding[0] == ENCODING_VERSION);
+    debug_assert!(encoding.len() >= 2 && encoding[0] == INLINE_PATTERN_TAG);
     let node_count = encoding[1] as usize;
 
     if node_count <= threshold {
@@ -144,12 +144,12 @@ pub(super) fn finalize_pattern(encoding: Vec<u8>, threshold: usize) -> Vec<u8> {
     build_hash_pattern(&encoding, node_count, true)
 }
 
-/// Build a 23-byte v2 hashed pattern from arbitrary encoding bytes.
+/// Build a 23-byte hashed pattern from arbitrary encoding bytes.
 ///
 /// ## Hashed pattern binary layout
 ///
 /// ```text
-/// Byte 0:     0x02 (HASH_VERSION)
+/// Byte 0:     0x02 (HASHED_PATTERN_TAG)
 /// Bytes 1-2:  node_count as u16 big-endian
 /// Bytes 3-22: first 20 bytes of Keccak-256(encoding)
 /// Total: 23 bytes
@@ -162,7 +162,7 @@ pub(super) fn build_hash_pattern(
     let digest = Keccak256::digest(encoding);
 
     let mut buf = Vec::with_capacity(1 + 2 + HASH_DIGEST_LEN);
-    buf.push(HASH_VERSION);
+    buf.push(HASHED_PATTERN_TAG);
     let node_count_u16 = u16::try_from(node_count).unwrap_or(u16::MAX);
     buf.extend_from_slice(&node_count_u16.to_be_bytes());
     buf.extend_from_slice(&digest[..HASH_DIGEST_LEN]);
@@ -220,10 +220,10 @@ pub(super) fn compute_subgraph_layout(
     Some((local_topo, topo_pos))
 }
 
-/// Maximum number of nodes that a v1 encoding can represent (node_count is u8).
+/// Maximum number of nodes that an inline encoding can represent (node_count is u8).
 const V1_MAX_NODES: usize = 255;
 
-/// Maximum number of inputs per node that a v1 encoding can represent
+/// Maximum number of inputs per node that an inline encoding can represent
 /// (3-bit field in the flags byte).
 const V1_MAX_INPUTS_PER_NODE: usize = 7;
 
@@ -243,14 +243,14 @@ const V1_MAX_INTERNAL_REF: usize = 127;
 /// nodes, allowed nodes from other groups, DB handles) are treated as external
 /// (byte 0x00).
 ///
-/// Returns `None` if the group exceeds the v1 encoding limits (\>255 nodes,
+/// Returns `None` if the group exceeds the inline encoding limits (\>255 nodes,
 /// \>7 inputs per node, or \>127 internal-ref position). Callers can fall back
 /// to wide-format hashing so oversized groups are still attributable via hash.
 ///
-/// ## Binary layout (version 1)
+/// ## Inline binary layout
 ///
 /// ```text
-/// Byte 0:  0x01 (version)
+/// Byte 0:  0x01 (inline pattern tag)
 /// Byte 1:  node_count (u8, max 255)
 ///
 /// Per node in canonical topological order:
@@ -276,11 +276,11 @@ pub(super) fn encode_subgraph(
         return None;
     }
 
-    // Pre-allocate: version(1) + count(1) + per-node ~4 bytes average
+    // Pre-allocate: tag(1) + count(1) + per-node ~4 bytes average
     let mut buf: Vec<u8> = Vec::with_capacity(2 + node_count * 4);
 
     // Header
-    buf.push(ENCODING_VERSION);
+    buf.push(INLINE_PATTERN_TAG);
     buf.push(node_count as u8);
 
     // Nodes
@@ -326,7 +326,7 @@ pub(super) fn encode_subgraph(
     Some(buf)
 }
 
-/// Wide-format encoding used only as hash input when a group exceeds v1 limits.
+/// Wide-format encoding used only as hash input when a group exceeds inline encoding limits.
 ///
 /// This is intentionally not emitted as a pattern attribute directly: only the
 /// resulting hash is used.
