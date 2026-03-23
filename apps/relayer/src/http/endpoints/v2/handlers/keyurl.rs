@@ -129,16 +129,15 @@ impl EventHandler<RelayerEvent> for KeyUrlHandler {
     }
 }
 
-/// Key URL
-///
-/// Returns the URLs to retrieve the public keys
+/// Retrieve FHE key material URLs.
 #[utoipa::path(
 get,
 path = "/v2/keyurl",
 responses(
-    (status = 200, description = "Key URL", body = KeyUrlResponseJson),
-    (status = 503, description = "Service unavailable - KeyUrl not yet initialized"),
+    (status = 200, description = "FHE public key URLs.", body = KeyUrlResponseJson),
+    (status = 500, description = "Internal server error", body = RelayerV2ResponseFailed),
 ),
+tag = "Key URL"
 )]
 pub async fn keyurl_v2(handler: Arc<KeyUrlHandler>, headers: HeaderMap) -> impl IntoResponse {
     handler.keyurl_v2(headers).await

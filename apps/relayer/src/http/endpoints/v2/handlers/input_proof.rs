@@ -541,18 +541,18 @@ impl InputProofHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions
-/// POST /v2/input-proof - Submit input proof verification request and get reference ID
+/// Submit input proof verification.
 #[utoipa::path(
     post,
     path = "/v2/input-proof",
     request_body = crate::http::endpoints::v2::types::input_proof::InputProofRequestJson,
     responses(
-        (status = 202, description = "Request accepted for processing", body = crate::http::endpoints::v2::types::input_proof::InputProofPostResponseJson),
+        (status = 202, description = "Request accepted for processing.", body = crate::http::endpoints::v2::types::input_proof::InputProofPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
-        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 429, description = "Rate limited", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
-    tag = "Input Proof v2"
+    tag = "Input Proof"
 )]
 pub async fn input_proof_post_v2(
     handler: Arc<InputProofHandler>,
@@ -561,22 +561,24 @@ pub async fn input_proof_post_v2(
     handler.input_proof_post_v2(req).await
 }
 
-/// GET /v2/input-proof/<job_id> - Check status and get result
+/// Check input proof status.
 #[utoipa::path(
     get,
     path = "/v2/input-proof/{job_id}",
     params(
-        ("job_id" = String, Path, description = "Job ID returned from POST request")
+        ("job_id" = String, Path, format = "uuid", description = "Job ID returned from POST request")
     ),
     responses(
-        (status = 200, description = "Request completed successfully", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 202, description = "Request still processing", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 404, description = "Request not found", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 503, description = "Request timed out", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 200, description = "Completed.", body = crate::http::endpoints::v2::types::input_proof::InputProofSucceededStatusResponse),
+        (status = 202, description = "Still processing. Poll again after Retry-After.", body = crate::http::endpoints::v2::types::error::V2StatusQueued,
+            example = json!({"status": "queued", "requestId": "550e8400-e29b-41d4-a716-446655440000"})
+        ),
+        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 404, description = "Not found", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 503, description = "Service unavailable", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
     ),
-    tag = "Input Proof v2"
+    tag = "Input Proof"
 )]
 pub async fn input_proof_get_v2(
     handler: Arc<InputProofHandler>,

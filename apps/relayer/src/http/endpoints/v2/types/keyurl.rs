@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyUrlResponseJson {
+    #[schema(example = "succeeded")]
     pub status: String,
     pub response: Response,
 }
@@ -26,7 +27,9 @@ pub struct FheKeyInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyData {
+    #[schema(example = "fhe_public_key_v1")]
     pub data_id: String,
+    #[schema(example = json!(["https://keys.fhevm.io/v1/fhe_public_key_v1"]))]
     pub urls: Vec<String>,
 }
 

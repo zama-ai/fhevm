@@ -2,8 +2,8 @@ use super::super::types::error::{
     classify_revert_error, ApiResponseStatus, RelayerV2ResponseFailed, V2ErrorResponseBody,
 };
 use super::super::types::user_decrypt::{
-    UserDecryptPostResponseJson, UserDecryptQueuedResult, UserDecryptRequestJson,
-    UserDecryptResponseJson, UserDecryptStatusResponseJson,
+    DelegatedUserDecryptRequestJson, UserDecryptPostResponseJson, UserDecryptQueuedResult,
+    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
 use crate::core::errors::{
     HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
@@ -15,7 +15,6 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
@@ -871,18 +870,18 @@ impl UserDecryptHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions
-/// POST /v2/user-decrypt - Submit request and get reference ID
+/// Submit user decryption.
 #[utoipa::path(
     post,
     path = "/v2/user-decrypt",
     request_body = UserDecryptRequestJson,
     responses(
-        (status = 202, description = "Request accepted for processing", body = UserDecryptPostResponseJson),
+        (status = 202, description = "Request accepted for processing.", body = UserDecryptPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
-        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 429, description = "Rate limited", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
-    tag = "User Decrypt v2"
+    tag = "User Decrypt"
 )]
 pub async fn user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,
@@ -891,24 +890,73 @@ pub async fn user_decrypt_post_v2(
     handler.user_decrypt_post_v2(req).await
 }
 
-/// GET /v2/user-decrypt/<job_id> - Check status and get result
+/// Check user decryption status.
 #[utoipa::path(
     get,
     path = "/v2/user-decrypt/{job_id}",
     params(
-        ("job_id" = String, Path, description = "Job ID returned from POST request")
+        ("job_id" = String, Path, format = "uuid", description = "Job ID returned from POST request")
     ),
     responses(
-        (status = 200, description = "Request completed successfully", body = UserDecryptStatusResponseJson),
-        (status = 202, description = "Request still processing", body = UserDecryptStatusResponseJson),
-        (status = 400, description = "Request failed", body = UserDecryptStatusResponseJson),
-        (status = 404, description = "Request not found", body = UserDecryptStatusResponseJson),
-        (status = 500, description = "Internal server error", body = UserDecryptStatusResponseJson),
-        (status = 503, description = "Request timed out", body = UserDecryptStatusResponseJson),
+        (status = 200, description = "Completed.", body = crate::http::endpoints::v2::types::user_decrypt::UserDecryptSucceededStatusResponse),
+        (status = 202, description = "Still processing. Poll again after Retry-After.", body = crate::http::endpoints::v2::types::error::V2StatusQueued,
+            example = json!({"status": "queued", "requestId": "550e8400-e29b-41d4-a716-446655440000"})
+        ),
+        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 404, description = "Not found", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 503, description = "Service unavailable", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
     ),
-    tag = "User Decrypt v2"
+    tag = "User Decrypt"
 )]
 pub async fn user_decrypt_get_v2(
+    handler: Arc<UserDecryptHandler>,
+    Path(job_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    handler.user_decrypt_get_v2(Path(job_id), headers).await
+}
+
+/// Submit delegated user decryption.
+#[utoipa::path(
+    post,
+    path = "/v2/delegated-user-decrypt",
+    request_body = DelegatedUserDecryptRequestJson,
+    responses(
+        (status = 202, description = "Request accepted for processing.", body = UserDecryptPostResponseJson),
+        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
+        (status = 429, description = "Rate limited", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
+    ),
+    tag = "Delegated User Decrypt"
+)]
+pub async fn delegated_user_decrypt_post_v2(
+    handler: Arc<UserDecryptHandler>,
+    req: Request<axum::body::Body>,
+) -> impl IntoResponse {
+    handler.delegated_user_decrypt_post_v2(req).await
+}
+
+/// Check delegated user decryption status.
+#[utoipa::path(
+    get,
+    path = "/v2/delegated-user-decrypt/{job_id}",
+    params(
+        ("job_id" = String, Path, format = "uuid", description = "Job ID returned from POST request")
+    ),
+    responses(
+        (status = 200, description = "Completed.", body = crate::http::endpoints::v2::types::user_decrypt::UserDecryptSucceededStatusResponse),
+        (status = 202, description = "Still processing. Poll again after Retry-After.", body = crate::http::endpoints::v2::types::error::V2StatusQueued,
+            example = json!({"status": "queued", "requestId": "550e8400-e29b-41d4-a716-446655440000"})
+        ),
+        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 404, description = "Not found", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 503, description = "Service unavailable", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+    ),
+    tag = "Delegated User Decrypt"
+)]
+pub async fn delegated_user_decrypt_get_v2(
     handler: Arc<UserDecryptHandler>,
     Path(job_id): Path<Uuid>,
     headers: HeaderMap,

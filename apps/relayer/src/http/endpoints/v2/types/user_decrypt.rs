@@ -26,19 +26,29 @@ pub struct UserDecryptRequestJson {
     pub contracts_chain_id: String,
     #[validate(length(min = 1, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
+    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
+    /// Ethereum address of the user requesting decryption. `0x` + 40 hex chars.
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
+    /// EIP-712 signature over the decryption request, signed by the user. Raw hex, 130 chars, no `0x` prefix.
     #[validate(
         length(equal = 130, message = "Must be 130 characters long"),
         custom(function = "crate::http::validate_no_0x_hex")
     )]
     #[derivative(Debug(format_with = "redact_len"))]
+    #[schema(
+        example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
+    )]
     pub signature: String,
+    /// User's public key for re-encryption. Raw hex, no `0x` prefix, minimum 2 chars.
     #[validate(length(min = 2, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[derivative(Debug(format_with = "redact_len"))]
+    #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
+    /// Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
@@ -59,23 +69,39 @@ pub struct DelegatedUserDecryptRequestJson {
     pub contracts_chain_id: String,
     #[validate(length(min = 1, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
+    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
+    /// Ethereum address of the delegator (the user who owns the ciphertexts). `0x` + 40 hex chars.
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub delegator_address: String,
+    /// Ethereum address of the delegate (the party authorized to decrypt). `0x` + 40 hex chars.
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub delegate_address: String,
+    /// Unix timestamp (seconds) when the delegation starts. Decimal string.
     #[validate(custom(function = "crate::http::validate_timestamp"))]
+    #[schema(example = "1700000000")]
     pub start_timestamp: String,
+    /// Duration of the delegation in days. Decimal string.
     #[validate(custom(function = "crate::http::validate_u32_string"))]
+    #[schema(example = "1")]
     pub duration_days: String,
+    /// EIP-712 signature over the delegation request, signed by the delegator. Raw hex, 130 chars, no `0x` prefix.
     #[validate(
         length(equal = 130, message = "Must be 130 characters long"),
         custom(function = "crate::http::validate_no_0x_hex")
     )]
+    #[schema(
+        example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
+    )]
     pub signature: String,
+    /// Delegate's public key for re-encryption. Raw hex, no `0x` prefix, minimum 2 chars.
     #[validate(length(min = 2, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
+    #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
+    /// Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
@@ -85,7 +111,9 @@ pub struct DelegatedUserDecryptRequestJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptPostResponseJson {
+    #[schema(value_type = String, example = "queued")]
     pub status: ApiResponseStatus,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub request_id: String,
     pub result: UserDecryptQueuedResult,
 }
@@ -93,6 +121,7 @@ pub struct UserDecryptPostResponseJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptQueuedResult {
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub job_id: String,
 }
 
@@ -107,10 +136,14 @@ pub struct UserDecryptResponseJson {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptResponsePayloadJson {
-    #[schema(value_type = String)]
+    /// Re-encrypted share payload. Raw hex, no `0x` prefix.
+    #[schema(value_type = String, example = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2")]
     pub payload: Bytes,
-    #[schema(value_type = String)]
+    /// KMS signature over the payload. Raw hex, no `0x` prefix.
+    #[schema(value_type = String, example = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")]
     pub signature: Bytes,
+    // Note: extra_data field is not serialized for TKMS library compatibility (used while decrypting to plain text)
+    // serde(skip) - field is completely skipped during serialization AND deserialization
     #[schema(value_type = String)]
     pub extra_data: String,
 }
@@ -133,12 +166,25 @@ impl Serialize for UserDecryptResponsePayloadJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptStatusResponseJson {
+    #[schema(example = "succeeded")]
     pub status: ApiResponseStatus,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub request_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<UserDecryptResponseJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<V2ErrorResponseBody>,
+}
+
+/// GET 200 — user decryption succeeded (has result, no error).
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDecryptSucceededStatusResponse {
+    #[schema(value_type = String, example = "succeeded")]
+    pub status: ApiResponseStatus,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
+    pub request_id: String,
+    pub result: UserDecryptResponseJson,
 }
 
 // Implementation for converting core event to response format

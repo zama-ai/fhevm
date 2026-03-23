@@ -1,7 +1,7 @@
-//! fhevm Relayer Library
+//! Relayer Library
 //!
-//! fhevm relayer service acts as a bridge between fhevm and gateway blockchains,
-//! specifically handling FHE keys related operations. The service:
+//! Relayer service provides an interface to request input proofs and decryptions
+//! for ciphertexts on the Zama Gateway Chain. The service:
 //!
 //! 1. Listens for requests to from fhevm blockchain events to http endpoint.
 //! 2. Forwards requests to the gateway blockchain for processing

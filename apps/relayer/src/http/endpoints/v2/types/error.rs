@@ -23,12 +23,54 @@ pub enum ApiResponseStatus {
 // Two shapes: a simple {label, message} for most errors, and an extended
 // variant that adds a `details` array for validation errors.
 
+/// All machine-readable error labels the API can return.
+#[derive(ToSchema)]
+#[schema(rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum V2ErrorLabel {
+    MalformedJson,
+    MissingFields,
+    ValidationFailed,
+    RequestError,
+    NotAllowedOnHostAcl,
+    HostChainIdNotSupported,
+    NotFound,
+    RateLimited,
+    InternalServerError,
+    HostAclFailed,
+    ProtocolPaused,
+    InsufficientBalance,
+    InsufficientAllowance,
+    GatewayNotReachable,
+    ReadinessCheckTimedOut,
+    ResponseTimedOut,
+}
+
+/// Canonical list of all error labels, kept in sync with `V2ErrorLabel` and
+/// the constructor methods on `V2ErrorResponseBody`.
+///
+/// Used by `openapi-export` to verify its post-processor labels haven't drifted.
+/// Labels defined but not yet wired to any handler endpoint.
+///
+/// These are exempt from the "every label must appear in the catalog" test.
+pub const UNWIRED_LABELS: &[&str] = &["gateway_not_reachable"];
+
+/// Derives the canonical label list from [`ERROR_LABEL_DEFS`].
+pub fn all_error_labels() -> Vec<&'static str> {
+    crate::http::openapi::expected_labels::ERROR_LABEL_DEFS
+        .iter()
+        .map(|d| d.label)
+        .collect()
+}
+
 /// Simple error body — used for 400 (no details), 404, 429, 500, and 503.
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct V2ApiError {
     /// Machine-readable error label for client UX logic.
+    #[schema(value_type = V2ErrorLabel, example = "internal_server_error")]
     pub label: String,
     /// Human-readable error message.
+    #[schema(example = "Internal server error")]
     pub message: String,
 }
 
@@ -36,8 +78,10 @@ pub struct V2ApiError {
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct V2ApiErrorWithDetails {
     /// Machine-readable error label for client UX logic.
+    #[schema(value_type = V2ErrorLabel, example = "validation_failed")]
     pub label: String,
     /// Human-readable error message.
+    #[schema(example = "Request validation failed")]
     pub message: String,
     /// Per-field validation issues.
     pub details: Vec<RelayerV2ErrorDetail>,
@@ -45,7 +89,9 @@ pub struct V2ApiErrorWithDetails {
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ErrorDetail {
+    #[schema(example = "contractAddress")]
     pub field: String,
+    #[schema(example = "Must be a valid 42-character hex address with 0x prefix")]
     pub issue: String,
 }
 
@@ -246,9 +292,39 @@ impl V2ErrorResponseBody {
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayerV2ResponseFailed {
+    #[schema(value_type = String, example = "failed")]
     pub status: ApiResponseStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub request_id: Option<String>,
+    pub error: V2ErrorResponseBody,
+}
+
+// ── Per-status-code GET response schemas (for OpenAPI documentation) ──────────
+//
+// These types exist solely for the utoipa `responses(...)` annotations on GET
+// endpoints so that each HTTP status code has its own schema describing exactly
+// which fields are present. The runtime handler code continues to use the
+// endpoint-specific `*StatusResponseJson` struct.
+
+/// GET 202 — request is still queued/processing (no result, no error).
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct V2StatusQueued {
+    #[schema(value_type = String, example = "queued")]
+    pub status: ApiResponseStatus,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
+    pub request_id: String,
+}
+
+/// GET 4xx/5xx — request failed (no result, has error).
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct V2StatusFailed {
+    #[schema(value_type = String, example = "failed")]
+    pub status: ApiResponseStatus,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
+    pub request_id: String,
     pub error: V2ErrorResponseBody,
 }
 
@@ -686,5 +762,55 @@ mod tests {
         let error = parsed.get("error").unwrap();
         assert!(error.get("label").is_some(), "Error should have label");
         assert!(error.get("message").is_some(), "Error should have message");
+    }
+
+    /// Verify every constructor produces a label that is in `all_error_labels()`.
+    ///
+    /// If this test fails, a new constructor was added without updating
+    /// `ERROR_LABEL_DEFS` (or vice-versa).
+    #[test]
+    fn all_constructor_labels_are_in_canonical_list() {
+        let all_labels = all_error_labels();
+        let detail = vec![RelayerV2ErrorDetail {
+            field: "f".into(),
+            issue: "i".into(),
+        }];
+
+        let constructed: Vec<V2ErrorResponseBody> = vec![
+            V2ErrorResponseBody::malformed_json("m"),
+            V2ErrorResponseBody::missing_fields("m".into(), detail.clone()),
+            V2ErrorResponseBody::validation_failed("m".into(), detail),
+            V2ErrorResponseBody::request_error("m"),
+            V2ErrorResponseBody::not_allowed_on_host_acl("m"),
+            V2ErrorResponseBody::host_chain_id_not_supported(1),
+            V2ErrorResponseBody::not_found("m"),
+            V2ErrorResponseBody::rate_limited("m".into()),
+            V2ErrorResponseBody::internal_server_error("m"),
+            V2ErrorResponseBody::host_acl_failed("m"),
+            V2ErrorResponseBody::protocol_paused("m"),
+            V2ErrorResponseBody::insufficient_balance("m"),
+            V2ErrorResponseBody::insufficient_allowance("m"),
+            V2ErrorResponseBody::gateway_not_reachable("m"),
+            V2ErrorResponseBody::readiness_check_timed_out("m"),
+            V2ErrorResponseBody::response_timed_out("m"),
+        ];
+
+        for err in &constructed {
+            assert!(
+                all_labels.contains(&err.label()),
+                "Label {:?} from constructor is missing from all_error_labels()",
+                err.label()
+            );
+        }
+
+        // Reverse check: every label in the list must be produced by some constructor
+        let produced: Vec<&str> = constructed.iter().map(|e| e.label()).collect();
+        for label in &all_labels {
+            assert!(
+                produced.contains(label),
+                "all_error_labels() contains {:?} but no constructor produces it",
+                label
+            );
+        }
     }
 }

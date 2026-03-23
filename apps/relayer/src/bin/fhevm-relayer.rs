@@ -1,6 +1,6 @@
-//! fhevm Relayer Binary
+//! Relayer Binary
 //!
-//! Binary entry point for the fhevm-relayer that handles CLI parsing and tracing initialization.
+//! Binary entry point for the relayer that handles CLI parsing and tracing initialization.
 
 use anyhow::Context;
 use clap::Parser;
@@ -16,7 +16,7 @@ pub struct Args {
     config_file: Option<String>,
 }
 
-/// Main entry point for the FHE Event Relayer service.
+/// Main entry point for the Relayer service.
 ///
 /// This function performs the following initialization steps:
 /// 1. Parses command line arguments

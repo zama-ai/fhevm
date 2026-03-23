@@ -359,6 +359,9 @@ dev-devnet: _check-cargo-watch _check-postgres ## Run against Devnet with hot-re
 dev-testnet: _check-cargo-watch _check-postgres ## Run against Testnet with hot-reload (requires cargo-watch)
 	@cargo watch -w src -x 'run --bin fhevm-relayer -- --config-file $(TESTNET_CONFIG)'
 
+openapi-generate: ## Regenerate OpenAPI spec from code into openapi.yml
+	@RUSTC_WRAPPER= cargo run --bin openapi-export
+
 health: ## Check relayer health endpoints (requires running relayer)
 	@curl -sf http://localhost:3000/liveness >/dev/null 2>&1 || { \
 		echo "$(RED)Error: Relayer is not reachable at localhost:3000. Is it running? (make run)$(RESET)"; exit 1; }
@@ -466,6 +469,7 @@ ci: ## Reproduce CI locally (lint + test-run)
 	@echo "$(YELLOW)Running full CI pipeline locally...$(RESET)"
 	@$(MAKE) fmt
 	@$(MAKE) clippy
+	@$(MAKE) openapi-check
 	@$(MAKE) db-start
 	@$(MAKE) db-migrate
 	@$(MAKE) test-run
@@ -491,8 +495,25 @@ fmt-fix: ## Fix code formatting
 	@cargo fmt --all
 	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST)
 
-api-lint: ## Validate OpenAPI specification
-	@npx @redocly/cli lint openapi-async-design.yaml
+openapi-view: ## Preview OpenAPI spec in browser (requires npx)
+	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }
+	@npx --yes @redocly/cli preview-docs openapi.yml
+
+openapi-lint: ## Validate OpenAPI specification with Redocly
+	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }
+	@npx --yes @redocly/cli lint --config .redocly.yaml openapi.yml
+
+openapi-check: ## Verify generated OpenAPI spec is up to date
+	@echo "Regenerating OpenAPI spec to check for drift..."
+	@RUSTC_WRAPPER= cargo run --bin openapi-export --quiet
+	@if git diff --quiet openapi.yml 2>/dev/null; then \
+		echo "$(GREEN)OpenAPI spec is up to date$(RESET)"; \
+	else \
+		echo "$(RED)OpenAPI spec is out of date. Run: make openapi-generate$(RESET)"; \
+		git diff --stat openapi.yml; \
+		git checkout -- openapi.yml; \
+		exit 1; \
+	fi
 
 # ---------------------------------------------------------------------------
 ##@ Docker

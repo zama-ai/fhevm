@@ -92,7 +92,7 @@ impl PublicDecryptHandler {
             )
     }
 
-    /// POST /v2/public-decrypt - Submit request and get reference ID
+    /// Submit public decryption.
     pub async fn public_decrypt_post_v2(
         &self,
         req: Request<axum::body::Body>,
@@ -580,18 +580,18 @@ impl PublicDecryptHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions
-/// POST /v2/public-decrypt - Submit request and get reference ID
+/// Submit public decryption.
 #[utoipa::path(
     post,
     path = "/v2/public-decrypt",
     request_body = PublicDecryptRequestJson,
     responses(
-        (status = 202, description = "Request accepted for processing", body = PublicDecryptPostResponseJson),
+        (status = 202, description = "Request accepted for processing.", body = PublicDecryptPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
-        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 429, description = "Rate limited", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
-    tag = "Public Decrypt v2"
+    tag = "Public Decrypt"
 )]
 pub async fn public_decrypt_post_v2(
     handler: Arc<PublicDecryptHandler>,
@@ -600,22 +600,24 @@ pub async fn public_decrypt_post_v2(
     handler.public_decrypt_post_v2(req).await
 }
 
-/// GET /v2/public-decrypt/<job_id> - Check status and get result
+/// Check public decryption status.
 #[utoipa::path(
     get,
     path = "/v2/public-decrypt/{job_id}",
     params(
-        ("job_id" = String, Path, description = "Job ID ed from POST request")
+        ("job_id" = String, Path, format = "uuid", description = "Job ID returned from POST request")
     ),
     responses(
-        (status = 200, description = "Request completed successfully", body = PublicDecryptStatusResponseJson),
-        (status = 202, description = "Request still processing", body = PublicDecryptStatusResponseJson),
-        (status = 400, description = "Request failed", body = PublicDecryptStatusResponseJson),
-        (status = 404, description = "Request not found", body = PublicDecryptStatusResponseJson),
-        (status = 500, description = "Internal server error", body = PublicDecryptStatusResponseJson),
-        (status = 503, description = "Request timed out", body = PublicDecryptStatusResponseJson),
+        (status = 200, description = "Completed.", body = crate::http::endpoints::v2::types::public_decrypt::PublicDecryptSucceededStatusResponse),
+        (status = 202, description = "Still processing. Poll again after Retry-After.", body = crate::http::endpoints::v2::types::error::V2StatusQueued,
+            example = json!({"status": "queued", "requestId": "550e8400-e29b-41d4-a716-446655440000"})
+        ),
+        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 404, description = "Not found", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
+        (status = 503, description = "Service unavailable", body = crate::http::endpoints::v2::types::error::V2StatusFailed),
     ),
-    tag = "Public Decrypt v2"
+    tag = "Public Decrypt"
 )]
 pub async fn public_decrypt_get_v2(
     handler: Arc<PublicDecryptHandler>,

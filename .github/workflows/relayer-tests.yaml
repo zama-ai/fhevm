@@ -151,3 +151,39 @@ jobs:
       - name: Run tests
         working-directory: apps/relayer
         run: RUST_BACKTRACE=full make test-run
+
+  openapi-check:
+    name: rust-ci/openapi-check
+    runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: true
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: apps/relayer
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Check OpenAPI spec is up to date
+        working-directory: apps/relayer
+        run: make openapi-check
+
+      - name: Lint OpenAPI spec
+        working-directory: apps/relayer
+        run: make openapi-lint

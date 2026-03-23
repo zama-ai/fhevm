@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod endpoints;
 pub mod middleware;
+pub mod openapi;
 pub mod retry_after;
 pub mod server;
 pub mod utils;

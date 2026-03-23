@@ -1,6 +1,6 @@
-# FHEVM Relayer Service
+# Relayer Service
 
-The FHEVM (Fully Homomorphic Encryption Virtual Machine) Relayer is the bridge between FHEVM host chains (e.g. Ethereum) and the Gateway.
+The Relayer is the bridge between fhevm host chains (e.g. Ethereum) and the Gateway.
 
 It exposes the following capabilities:
 
@@ -236,7 +236,7 @@ You can use `./fhevm-cli` to trigger the `fhevm` E2E tests against your local st
 
 ## API Endpoints
 
-### Service Endpoints
+### Health Endpoints
 
 | Endpoint        | Description              |
 | --------------- | ------------------------ |
@@ -245,9 +245,9 @@ You can use `./fhevm-cli` to trigger the `fhevm` E2E tests against your local st
 | `GET /version`  | Build version info       |
 | `GET /docs`     | OpenAPI documentation    |
 
-### Production APIs
+### Ciphertext Operation and Key URL Endpoints
 
-V2 endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls for the result.
+Ciphertext endpoints follow async job semantics: `POST` submits a request and returns a `job_id`, then `GET .../{job_id}` polls for the result.
 
 | Operation                 | Endpoint                          |
 | ------------------------- | --------------------------------- |
