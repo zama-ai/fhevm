@@ -24,6 +24,8 @@ FROM cgr.dev/zama.ai/postgres:17 AS prod
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations
+COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/db-scripts /db-scripts
+COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
 COPY  --from=builder /etc/group /etc/group
 COPY  --from=builder /etc/passwd /etc/passwd
 
