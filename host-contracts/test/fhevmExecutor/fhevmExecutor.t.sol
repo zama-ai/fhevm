@@ -491,12 +491,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         /// @dev The scalar byte is used in the division operation at the moment.
         bytes1 scalarByte = bytes1(0x01);
+        bytes32 rhs = bytes32(uint256(1));
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheDiv,
@@ -520,12 +519,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         /// @dev The scalar byte is used in the rem operation at the moment.
         bytes1 scalarByte = bytes1(0x01);
+        bytes32 rhs = bytes32(uint256(1));
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheRem,
