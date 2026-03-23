@@ -1,6 +1,7 @@
+import dotenv from 'dotenv';
 import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
+import { getRequiredEnvVar } from './utils/loadVariables';
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -11,7 +12,7 @@ task('task:verifyACL')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
     const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -34,7 +35,7 @@ task('task:verifyFHEVMExecutor')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
     const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -57,7 +58,7 @@ task('task:verifyKMSVerifier')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -80,7 +81,7 @@ task('task:verifyInputVerifier')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
     const implementationInputVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -103,7 +104,7 @@ task('task:verifyHCULimit')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
     const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -126,7 +127,7 @@ task('task:verifyPauserSet')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
     const implementationPauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
     await run('verify:verify', {

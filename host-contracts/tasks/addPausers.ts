@@ -1,6 +1,8 @@
+import dotenv from 'dotenv';
 import { task, types } from 'hardhat/config';
+import path from 'path';
 
-import { getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
+import { getRequiredEnvVar } from './utils/loadVariables';
 
 // Add pausers to the PauserSet contract
 // Note: Internal PauserSet address is defined in the `addresses/` directory. It should be used
@@ -22,7 +24,7 @@ task('task:addHostPausers')
     }
 
     if (useInternalPauserSetAddress) {
-      loadInternalHostAddressesEnv();
+      dotenv.config({ path: path.join('addresses/', '.env.host'), override: true });
     }
     const pauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
 
