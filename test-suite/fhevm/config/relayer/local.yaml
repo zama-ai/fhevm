@@ -52,7 +52,9 @@ gateway:
       - type: subscription
         url: "ws://gateway-node:8546"
   tx_engine:
-    private_key: 0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257
+    signer:
+      type: "private_key"
+      private_key: "0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257"
     max_concurrency: 100
     retry:
       max_attempts: 100

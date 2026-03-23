@@ -12,6 +12,19 @@ gateway_chain_id = 54321
 # ENV: KMS_CONNECTOR_GATEWAY_URL
 gateway_url = "http://localhost:8545"
 
+# Ethereum RPC node endpoint (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_URL
+ethereum_url = "http://localhost:8545"
+
+# Chain ID for the Ethereum network (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+ethereum_chain_id = 11155111
+
+# Address of the KMS verifier contract (required)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
+kms_verifier_address = "0x0000000000000000000000000000000000000000"
+
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
 # ENV: KMS_CONNECTOR_DATABASE_URL
