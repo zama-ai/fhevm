@@ -134,13 +134,9 @@ describe("KMSGeneration", function () {
   // Define a fake values.
   const fakeOwner = createRandomWallet();
 
-  let kmsGeneration: KMSGeneration;
-  let owner: Wallet;
-  let kmsTxSenders: HardhatEthersSigner[];
-  let kmsSigners: HardhatEthersSigner[];
-  let kmsNodeStorageUrls: string[];
-
   describe("Deployment", function () {
+    let kmsGeneration: KMSGeneration;
+    let owner: Wallet;
     let kmsGenerationFactory: KMSGeneration__factory;
 
     beforeEach(async function () {
@@ -174,6 +170,8 @@ describe("KMSGeneration", function () {
     const keyDigests = [serverKeyDigest, publicKeyDigest];
 
     describe("Before key generation", function () {
+      let kmsGeneration: KMSGeneration;
+
       // Define a fake key ID.
       const fakeKeyId = getKeyId(1);
 
@@ -225,8 +223,12 @@ describe("KMSGeneration", function () {
       // Define the expected prepKeygenId.
       const prepKeygenId = getPrepKeygenId(1);
 
-      let kmsGenerationAddress: string;
+      let kmsGeneration: KMSGeneration;
+      let owner: Wallet;
+      let kmsTxSenders: HardhatEthersSigner[];
       let kmsSigners: HardhatEthersSigner[];
+      let kmsNodeStorageUrls: string[];
+      let kmsGenerationAddress: string;
       let eip712MessagePrepKeygen: EIP712;
       let kmsSignaturesPrepKeygen: string[];
       let eip712MessageKeygen: EIP712;
@@ -426,6 +428,11 @@ describe("KMSGeneration", function () {
     });
 
     describe("After key generation", function () {
+      let kmsGeneration: KMSGeneration;
+      let owner: Wallet;
+      let kmsTxSenders: HardhatEthersSigner[];
+      let kmsSigners: HardhatEthersSigner[];
+      let kmsNodeStorageUrls: string[];
       let keyId: bigint;
 
       beforeEach(async function () {
@@ -474,6 +481,8 @@ describe("KMSGeneration", function () {
     const fakeCrsId = getCrsId(1);
 
     describe("Before CRS generation", function () {
+      let kmsGeneration: KMSGeneration;
+
       beforeEach(async function () {
         const fixtureData = await loadFixture(loadTestVariablesFixture);
         kmsGeneration = fixtureData.kmsGeneration;
@@ -514,6 +523,11 @@ describe("KMSGeneration", function () {
       // Define the expected crsId.
       const crsId = getCrsId(1);
 
+      let kmsGeneration: KMSGeneration;
+      let owner: Wallet;
+      let kmsTxSenders: HardhatEthersSigner[];
+      let kmsSigners: HardhatEthersSigner[];
+      let kmsNodeStorageUrls: string[];
       let kmsGenerationAddress: string;
       let eip712MessageCrsgen: EIP712;
       let kmsSignaturesCrsgen: string[];
@@ -628,6 +642,11 @@ describe("KMSGeneration", function () {
     });
 
     describe("After CRS generation", function () {
+      let kmsGeneration: KMSGeneration;
+      let owner: Wallet;
+      let kmsTxSenders: HardhatEthersSigner[];
+      let kmsSigners: HardhatEthersSigner[];
+      let kmsNodeStorageUrls: string[];
       let crsId: bigint;
 
       beforeEach(async function () {
@@ -697,7 +716,7 @@ describe("KMSGeneration", function () {
     });
 
     it("Should trigger key resharing for the given key ID", async function () {
-      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+      const { owner, kmsGeneration, kmsTxSenders, kmsSigners } = await loadFixture(loadTestVariablesFixture);
 
       // Define the key digests.
       const serverKeyDigest: IKMSGeneration.KeyDigestStruct = {

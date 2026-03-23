@@ -2,7 +2,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
 
-import { GatewayConfig, ProtocolPayment, ZamaOFT } from "../typechain-types";
+import { ProtocolPayment } from "../typechain-types";
 import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("ProtocolPayment", function () {
@@ -12,10 +12,7 @@ describe("ProtocolPayment", function () {
   // Define fake tx sender
   const fakeTxSender = createRandomWallet();
 
-  let gatewayConfig: GatewayConfig;
   let protocolPayment: ProtocolPayment;
-  let mockedZamaOFT: ZamaOFT;
-  let mockedFeesSenderToBurnerAddress: string;
   let owner: Wallet;
   let inputVerificationPrice: bigint;
   let publicDecryptionPrice: bigint;
@@ -27,10 +24,7 @@ describe("ProtocolPayment", function () {
   before(async function () {
     // Initialize globally used variables before each test
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    gatewayConfig = fixtureData.gatewayConfig;
     protocolPayment = fixtureData.protocolPayment;
-    mockedZamaOFT = fixtureData.mockedZamaOFT;
-    mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
     owner = fixtureData.owner;
     inputVerificationPrice = fixtureData.inputVerificationPrice;
     publicDecryptionPrice = fixtureData.publicDecryptionPrice;

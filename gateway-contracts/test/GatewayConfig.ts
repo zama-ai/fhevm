@@ -573,12 +573,22 @@ describe("GatewayConfig", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
+      owner = fixture.owner;
       pauser = fixture.pauser;
+      nKmsNodes = fixture.nKmsNodes;
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
+      nCoprocessors = fixture.nCoprocessors;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
+      coprocessorSigners = fixture.coprocessorSigners;
       custodianTxSenders = fixture.custodianTxSenders;
       custodianSigners = fixture.custodianSigners;
+
+      highMpcThreshold = nKmsNodes;
+      highPublicDecryptionThreshold = nKmsNodes + 1;
+      highUserDecryptionThreshold = nKmsNodes + 1;
+      highKmsGenThreshold = nKmsNodes + 1;
+      highCoprocessorThreshold = nCoprocessors + 1;
     });
 
     describe("Operators updates", function () {
