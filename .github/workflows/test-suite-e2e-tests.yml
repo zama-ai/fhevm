@@ -154,10 +154,10 @@ jobs:
           DEPLOY_BUILD: ${{ inputs.deploy-build }}
           MULTI_CHAIN: ${{ inputs.multi-chain }}
         run: |
-          ARGS="--coprocessors 2 --coprocessor-threshold 2"
-          [[ "$MULTI_CHAIN" == 'true' ]] && ARGS="--multi-chain $ARGS"
-          [[ "$DEPLOY_BUILD" == 'true' ]] && ARGS="--build $ARGS"
-          ./fhevm-cli deploy $ARGS
+          ARGS=(--coprocessors 2 --coprocessor-threshold 2)
+          [[ "$MULTI_CHAIN" == 'true' ]] && ARGS+=(--multi-chain)
+          [[ "$DEPLOY_BUILD" == 'true' ]] && ARGS+=(--build)
+          ./fhevm-cli deploy "${ARGS[@]}"
 
       # E2E tests on pausing the Host contracts
       - name: Pause Host Contracts
