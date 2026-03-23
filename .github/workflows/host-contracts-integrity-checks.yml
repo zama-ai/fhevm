@@ -68,3 +68,7 @@ jobs:
       - name: Check contract selectors are up-to-date
         working-directory: host-contracts
         run: make check-selectors
+
+      - name: Check SPDX license headers
+        working-directory: host-contracts
+        run: make check-spdx-headers

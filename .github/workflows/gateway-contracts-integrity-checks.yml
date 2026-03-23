@@ -72,6 +72,10 @@ jobs:
         working-directory: gateway-contracts
         run: make check-mocks
 
+      - name: Check SPDX license headers
+        working-directory: gateway-contracts
+        run: make check-spdx-headers
+
       - name: Check licenses compliance
         working-directory: gateway-contracts
         run: make check-licenses
