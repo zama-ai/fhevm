@@ -71,11 +71,3 @@ Notes:
 - if you want the proxy address from `addresses/.env.host`, add `--use-internal-proxy-address true`
 - the task runs `hardhat clean` before recompiling so the implementation is not built from stale
   artifacts compiled against another environment
-
-For higher confidence before submitting a DAO proposal, run a fork test that:
-- impersonates the ACL/host owner
-- upgrades the live proxy on a fork with `upgradeToAndCall(newImplementation, 0xc4115874)`
-- checks the proxy still reports the expected ACL address
-- checks `trivialEncrypt()` still works and the transient ACL allowance is granted
-- replays the scalar-truncates-to-zero `fheDiv` / `fheRem` cases and verifies they now revert with
-  `DivisionByZero`

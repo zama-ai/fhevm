@@ -1747,6 +1747,28 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
+    function test_RevertsIfFheDivScalarTruncatesToZero() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint8);
+        bytes32 rhs = bytes32(uint256(1 << 8));
+        address account = address(123);
+        _approveHandleInACL(lhs, account);
+
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.prank(account);
+        fhevmExecutor.fheDiv(lhs, rhs, 0x01);
+    }
+
+    function test_RevertsIfFheRemScalarTruncatesToZero() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint8);
+        bytes32 rhs = bytes32(uint256(1 << 8));
+        address account = address(123);
+        _approveHandleInACL(lhs, account);
+
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.prank(account);
+        fhevmExecutor.fheRem(lhs, rhs, 0x01);
+    }
+
     function test_RevertsIfFheDivRHSIsNotScalar() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
