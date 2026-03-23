@@ -5,17 +5,19 @@ import path from "path";
 import { ADDRESSES_DIR, GATEWAY_ADDRESSES_ENV_FILE_NAME } from "../../hardhat.config";
 import { pascalCaseToAddressEnvVar } from "../utils";
 
-// Get the required environment variable, throw an error if it's not set
-// We only check if the variable is set, not if it's empty
+// Get the required environment variable, throw an error if it's not set or empty
 export function getRequiredEnvVar(name: string): string {
   if (!(name in process.env)) {
     throw new Error(`"${name}" env variable is not set`);
   }
-  return process.env[name]!;
+  const value = process.env[name]!;
+  if (value.trim() === "") {
+    throw new Error(`"${name}" env variable is set but empty`);
+  }
+  return value;
 }
 
-// Get the required address from the environment variable, throw an error if it's not set
-// We only check if the variable is set, not if it's empty
+// Get the required address from the environment variable, throw an error if it's not set or empty
 export function getRequiredAddressEnvVar(name: string): string {
   const addressEnvVarName = pascalCaseToAddressEnvVar(name);
   return getRequiredEnvVar(addressEnvVarName);
