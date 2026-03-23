@@ -120,7 +120,11 @@ jobs:
           cp -r ../../previous-fhevm/host-contracts/contracts ./previous-contracts
           docker cp fhevm-sc-deploy:/app/addresses ./
 
-      - name: Smoke test prepare-only executor upgrade
+      # The regular upgrade loop below only exercises task:upgrade<Contract>, which upgrades the proxy in place.
+      # We also rely on task:prepareUpgradeFHEVMExecutor operationally to deploy a new implementation without
+      # mutating the proxy. This smoke step covers that prepare-only path and guards against regressions where
+      # the task stops deploying correctly or accidentally upgrades the proxy instead of just preparing it.
+      - name: Smoke test prepare-only FHEVMExecutor deployment
         working-directory: current-fhevm/host-contracts
         run: |
           set -euo pipefail
