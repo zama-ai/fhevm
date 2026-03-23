@@ -29,6 +29,16 @@ commonConfig:
     gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
     kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
+  # Ethereum chain RPC node endpoint (HTTP)
+  ethereumUrl: "http://ethereum-node:8545"
+
+  # Ethereum chain identifier
+  ethereumChainId: "11155111"
+
+  # Ethereum smart contract addresses
+  ethereumContractAddresses:
+    kmsVerifier: "0x0000000000000000000000000000000000000000"
+
   # Distributed tracing configuration
   tracing:
     enabled: false
