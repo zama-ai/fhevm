@@ -220,7 +220,7 @@ pub fn expect_v2_error_response(
 
             // Verify request_id field exists and is a non-empty string
             let request_id = body
-                .get("request_id")
+                .get("requestId")
                 .expect("V2 error response must have request_id field");
             assert!(
                 request_id.is_string(),
@@ -267,7 +267,7 @@ pub fn expect_v2_validation_error(
                 "V2 error response must have status='failed'"
             );
             assert!(
-                body.get("request_id")
+                body.get("requestId")
                     .and_then(|v| v.as_str())
                     .map(|s| !s.is_empty())
                     .unwrap_or(false),
@@ -329,7 +329,7 @@ pub fn expect_v2_missing_field(
                 "V2 error response must have status='failed'"
             );
             assert!(
-                body.get("request_id")
+                body.get("requestId")
                     .and_then(|v| v.as_str())
                     .map(|s| !s.is_empty())
                     .unwrap_or(false),

@@ -1,4 +1,4 @@
-use super::error::ApiResponseStatus;
+use super::error::{ApiResponseStatus, V2ErrorResponseBody};
 use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
 use crate::http::utils::redact::{redact_count, redact_len};
 use crate::http::{de_string_or_number, serialize_vec_as_hex};
@@ -138,13 +138,7 @@ pub struct UserDecryptStatusResponseJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<UserDecryptResponseJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<serde_json::Value>, // Structured error object
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UserDecryptErrorResponseJson {
-    pub message: String,
+    pub error: Option<V2ErrorResponseBody>,
 }
 
 // Implementation for converting core event to response format

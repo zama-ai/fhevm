@@ -1,4 +1,4 @@
-use super::error::ApiResponseStatus;
+use super::error::{ApiResponseStatus, V2ErrorResponseBody};
 use crate::http::utils::redact::{redact_count, redact_len};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
@@ -57,13 +57,7 @@ pub struct PublicDecryptStatusResponseJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<PublicDecryptResponseJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<serde_json::Value>, // Structured error object
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicDecryptErrorResponseJson {
-    pub message: String,
+    pub error: Option<V2ErrorResponseBody>,
 }
 
 // Standard serialization implementations for v2 API types

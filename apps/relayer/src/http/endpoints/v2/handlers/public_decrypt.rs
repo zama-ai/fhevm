@@ -1,6 +1,5 @@
 use super::super::types::error::{
-    classify_revert_error, ApiResponseStatus, RelayerV2ApiError400NoDetails, RelayerV2ApiError404,
-    RelayerV2ApiError500, RelayerV2ApiError503, RelayerV2ResponseFailed,
+    classify_revert_error, ApiResponseStatus, RelayerV2ResponseFailed, V2ErrorResponseBody,
 };
 use super::super::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptRequestJson,
@@ -398,7 +397,7 @@ impl PublicDecryptHandler {
                                         status: ApiResponseStatus::Failed,
                                         request_id: request_id.to_string(),
                                         result: None,
-                                        error: Some(RelayerV2ApiError500::internal_server_error(
+                                        error: Some(V2ErrorResponseBody::internal_server_error(
                                             "Failed to deserialize response data",
                                         )),
                                     }),
@@ -413,7 +412,7 @@ impl PublicDecryptHandler {
                                     status: ApiResponseStatus::Failed,
                                     request_id: request_id.to_string(),
                                     result: None,
-                                    error: Some(RelayerV2ApiError500::internal_server_error(
+                                    error: Some(V2ErrorResponseBody::internal_server_error(
                                         "Internal error: completed request missing response data",
                                     )),
                                 }),
@@ -434,9 +433,9 @@ impl PublicDecryptHandler {
                             }
                         };
                         let error_value = if error_msg == READINESS_CHECK_TIMEOUT_MSG {
-                            RelayerV2ApiError503::readiness_check_timed_out(&error_msg)
+                            V2ErrorResponseBody::readiness_check_timed_out(&error_msg)
                         } else {
-                            RelayerV2ApiError503::response_timed_out(&error_msg)
+                            V2ErrorResponseBody::response_timed_out(&error_msg)
                         };
                         (
                             StatusCode::SERVICE_UNAVAILABLE,
@@ -463,21 +462,20 @@ impl PublicDecryptHandler {
                         };
 
                         // Classify host ACL errors before falling through to revert classification
-                        let (status_code, error_value) = if error_msg
-                            .starts_with(NOT_ALLOWED_ON_HOST_ACL_PREFIX)
-                        {
-                            (
-                                StatusCode::BAD_REQUEST,
-                                RelayerV2ApiError400NoDetails::not_allowed_on_host_acl(&error_msg),
-                            )
-                        } else if error_msg.starts_with(HOST_ACL_FAILED_PREFIX) {
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                RelayerV2ApiError500::host_acl_failed(&error_msg),
-                            )
-                        } else {
-                            classify_revert_error(&error_msg)
-                        };
+                        let (status_code, error_value) =
+                            if error_msg.starts_with(NOT_ALLOWED_ON_HOST_ACL_PREFIX) {
+                                (
+                                    StatusCode::BAD_REQUEST,
+                                    V2ErrorResponseBody::not_allowed_on_host_acl(&error_msg),
+                                )
+                            } else if error_msg.starts_with(HOST_ACL_FAILED_PREFIX) {
+                                (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    V2ErrorResponseBody::host_acl_failed(&error_msg),
+                                )
+                            } else {
+                                classify_revert_error(&error_msg)
+                            };
 
                         (
                             status_code,
@@ -560,7 +558,7 @@ impl PublicDecryptHandler {
                     status: ApiResponseStatus::Failed,
                     request_id: request_id.to_string(),
                     result: None,
-                    error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                    error: Some(V2ErrorResponseBody::not_found("Request not found")),
                 }),
             )
                 .into_response(),
@@ -572,9 +570,7 @@ impl PublicDecryptHandler {
                         status: ApiResponseStatus::Failed,
                         request_id: request_id.to_string(),
                         result: None,
-                        error: Some(RelayerV2ApiError500::internal_server_error(
-                            "Database error",
-                        )),
+                        error: Some(V2ErrorResponseBody::internal_server_error("Database error")),
                     }),
                 )
                     .into_response()
@@ -591,9 +587,9 @@ impl PublicDecryptHandler {
     request_body = PublicDecryptRequestJson,
     responses(
         (status = 202, description = "Request accepted for processing", body = PublicDecryptPostResponseJson),
-        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError400NoDetails),
+        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
         (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError500),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "Public Decrypt v2"
 )]

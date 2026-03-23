@@ -9,8 +9,7 @@ pub use handlers::{
 
 // Re-export types explicitly to avoid naming conflicts
 pub use types::{
-    ChainId, HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
-    InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
-    PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
-    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
+    ChainId, HandleContractPairJson, InputProofRequestJson, InputProofResponseJson,
+    KeyUrlResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
+    UserDecryptRequestJson, UserDecryptResponseJson,
 };

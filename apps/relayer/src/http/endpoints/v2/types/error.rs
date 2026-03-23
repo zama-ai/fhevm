@@ -1,6 +1,5 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tracing::info;
 use utoipa::ToSchema;
 
@@ -19,47 +18,29 @@ pub enum ApiResponseStatus {
     Failed,
 }
 
-// Error response structures for the v2 API
+// ── V2 API error body types ──────────────────────────────────────────────────
+//
+// Two shapes: a simple {label, message} for most errors, and an extended
+// variant that adds a `details` array for validation errors.
 
+/// Simple error body — used for 400 (no details), 404, 429, 500, and 503.
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError400NoDetails {
-    pub label: String, // 'malformed_json' | 'request_error' | 'not_ready_for_decryption'
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError400WithDetails {
-    pub label: String, // 'missing_fields' | 'validation_failed'
-    pub message: String,
-    pub details: Vec<RelayerV2ErrorDetail>,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError404 {
-    pub label: String, // 'not_found'
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError429 {
-    pub label: String, // 'rate_limited'
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError500 {
-    pub label: String, // 'internal_server_error'
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError503 {
-    // Gateway chain timeout errors are rendered as 503 instead of 504 because
-    // CloudFlare overrides 504 errors with its own error page which cannot be
-    // disabled in our setup. Labels include: 'protocol_paused', 'gateway_not_reachable',
-    // 'readiness_check_timed_out', 'response_timed_out'
+pub struct V2ApiError {
+    /// Machine-readable error label for client UX logic.
     pub label: String,
+    /// Human-readable error message.
     pub message: String,
+}
+
+/// Extended error body — used for 400 responses with field-level details.
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
+pub struct V2ApiErrorWithDetails {
+    /// Machine-readable error label for client UX logic.
+    pub label: String,
+    /// Human-readable error message.
+    pub message: String,
+    /// Per-field validation issues.
+    pub details: Vec<RelayerV2ErrorDetail>,
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
@@ -68,87 +49,105 @@ pub struct RelayerV2ErrorDetail {
     pub issue: String,
 }
 
-// Failed response wrapper
+/// Union type for all V2 API error bodies.
+///
+/// Used as the concrete type for the `error` field in status and failed
+/// responses. The `#[serde(untagged)]` attribute ensures the JSON output is
+/// a flat `{label, message, ...}` object without a discriminator key.
+///
+/// **Deserialization order matters**: `WithDetails` is tried first so that
+/// the `details` array is not silently dropped.
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ResponseFailed {
-    pub status: ApiResponseStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
-    pub error: serde_json::Value, // One of the RelayerV2ApiError* types above
+#[serde(untagged)]
+pub enum V2ErrorResponseBody {
+    WithDetails(V2ApiErrorWithDetails),
+    Simple(V2ApiError),
 }
 
-// Queued response (202)
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ResponseQueued {
-    pub status: ApiResponseStatus,
-    pub request_id: String,
-    pub result: RelayerV2ResultQueued,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ResultQueued {
-    pub job_id: String,
-}
-
-// Helper functions to create standard v2 error responses
-impl RelayerV2ApiError500 {
-    pub fn internal_server_error(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError500 {
-            label: "internal_server_error".to_string(),
-            message: message.to_string(),
-        })
-        .unwrap()
+impl V2ErrorResponseBody {
+    /// Returns the error label string for assertions and logging.
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Simple(e) => &e.label,
+            Self::WithDetails(e) => &e.label,
+        }
     }
 
-    pub fn host_acl_failed(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError500 {
-            label: "host_acl_failed".to_string(),
-            message: message.to_string(),
-        })
-        .unwrap()
+    /// Returns the error message string.
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Simple(e) => &e.message,
+            Self::WithDetails(e) => &e.message,
+        }
     }
-}
 
-impl RelayerV2ApiError404 {
-    pub fn not_found(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError404 {
-            label: "not_found".to_string(),
-            message: message.to_string(),
-        })
-        .unwrap()
+    /// Returns the details array if this is a with-details variant.
+    pub fn details(&self) -> Option<&[RelayerV2ErrorDetail]> {
+        match self {
+            Self::WithDetails(e) => Some(&e.details),
+            Self::Simple(_) => None,
+        }
     }
 }
 
-impl RelayerV2ApiError400NoDetails {
-    pub fn validation_error(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError400NoDetails {
+// ── Constructor helpers on V2ErrorResponseBody ─────────────────────────────
+//
+// Grouped by HTTP status code for clarity.
+
+impl V2ErrorResponseBody {
+    // ── 400 Bad Request (no details) ──
+
+    pub fn request_error(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "request_error".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
-    pub fn not_allowed_on_host_acl(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError400NoDetails {
+    pub fn not_allowed_on_host_acl(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "not_allowed_on_host_acl".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
-    pub fn host_chain_id_not_supported(chain_id: u64) -> Value {
-        serde_json::to_value(RelayerV2ApiError400NoDetails {
+    pub fn host_chain_id_not_supported(chain_id: u64) -> Self {
+        Self::Simple(V2ApiError {
             label: "host_chain_id_not_supported".to_string(),
             message: format!(
                 "Host chain ID {} is not supported by this relayer",
                 chain_id
             ),
         })
-        .unwrap()
     }
 
-    pub fn invalid_signature() -> Value {
-        serde_json::to_value(RelayerV2ApiError400WithDetails {
+    pub fn malformed_json(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "malformed_json".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    // ── 400 Bad Request (with details) ──
+
+    pub fn validation_failed(message: String, details: Vec<RelayerV2ErrorDetail>) -> Self {
+        Self::WithDetails(V2ApiErrorWithDetails {
+            label: "validation_failed".to_string(),
+            message,
+            details,
+        })
+    }
+
+    pub fn missing_fields(message: String, details: Vec<RelayerV2ErrorDetail>) -> Self {
+        Self::WithDetails(V2ApiErrorWithDetails {
+            label: "missing_fields".to_string(),
+            message,
+            details,
+        })
+    }
+
+    pub fn invalid_signature() -> Self {
+        Self::WithDetails(V2ApiErrorWithDetails {
             label: "validation_failed".to_string(),
             message: "Validation failed for 1 field(s)".to_string(),
             details: vec![RelayerV2ErrorDetail {
@@ -156,65 +155,105 @@ impl RelayerV2ApiError400NoDetails {
                 issue: "Signature is invalid".to_string(),
             }],
         })
-        .unwrap()
     }
-}
 
-impl RelayerV2ApiError503 {
+    // ── 404 Not Found ──
+
+    pub fn not_found(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "not_found".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    // ── 429 Too Many Requests ──
+
+    pub fn rate_limited(message: String) -> Self {
+        Self::Simple(V2ApiError {
+            label: "rate_limited".to_string(),
+            message,
+        })
+    }
+
+    // ── 500 Internal Server Error ──
+
+    pub fn internal_server_error(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "internal_server_error".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    pub fn host_acl_failed(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "host_acl_failed".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    // ── 503 Service Unavailable ──
+
     #[allow(dead_code)]
-    pub fn protocol_paused(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn protocol_paused(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "protocol_paused".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn insufficient_balance(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn insufficient_balance(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "insufficient_balance".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn insufficient_allowance(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn insufficient_allowance(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "insufficient_allowance".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn gateway_not_reachable(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn gateway_not_reachable(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "gateway_not_reachable".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
-    pub fn readiness_check_timed_out(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn readiness_check_timed_out(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "readiness_check_timed_out".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 
-    pub fn response_timed_out(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError503 {
+    pub fn response_timed_out(message: &str) -> Self {
+        Self::Simple(V2ApiError {
             label: "response_timed_out".to_string(),
             message: message.to_string(),
         })
-        .unwrap()
     }
 }
 
-// Helper methods for RelayerV2ResponseFailed to create consistent V2 error responses
+// ── Response wrappers ────────────────────────────────────────────────────────
+
+/// Failed response wrapper (POST error responses).
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayerV2ResponseFailed {
+    pub status: ApiResponseStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    pub error: V2ErrorResponseBody,
+}
+
+// ── Helper methods for RelayerV2ResponseFailed ───────────────────────────────
+
 impl RelayerV2ResponseFailed {
     /// Creates a host chain ID not supported response (400).
     pub fn host_chain_id_not_supported(
@@ -241,7 +280,7 @@ impl RelayerV2ResponseFailed {
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
-                error: RelayerV2ApiError400NoDetails::host_chain_id_not_supported(chain_id),
+                error: V2ErrorResponseBody::host_chain_id_not_supported(chain_id),
             }),
         )
     }
@@ -264,7 +303,7 @@ impl RelayerV2ResponseFailed {
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
-                error: RelayerV2ApiError400NoDetails::validation_error(message),
+                error: V2ErrorResponseBody::request_error(message),
             }),
         )
     }
@@ -293,11 +332,7 @@ impl RelayerV2ResponseFailed {
                     Json(Self {
                         status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
-                        error: serde_json::to_value(RelayerV2ApiError400NoDetails {
-                            label: label.to_string(),
-                            message: message.clone(),
-                        })
-                        .unwrap(),
+                        error: V2ErrorResponseBody::malformed_json(message),
                     }),
                 )
             }
@@ -331,25 +366,27 @@ impl RelayerV2ResponseFailed {
                     "HTTP response"
                 );
 
+                let details = vec![RelayerV2ErrorDetail {
+                    field: field_name.clone(),
+                    issue: detail_issue,
+                }];
+
+                let error = if label == "missing_fields" {
+                    V2ErrorResponseBody::missing_fields(message, details)
+                } else {
+                    V2ErrorResponseBody::validation_failed(message, details)
+                };
+
                 (
                     status_code,
                     Json(Self {
                         status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
-                        error: serde_json::to_value(RelayerV2ApiError400WithDetails {
-                            label: label.to_string(),
-                            message,
-                            details: vec![RelayerV2ErrorDetail {
-                                field: field_name.clone(),
-                                issue: detail_issue,
-                            }],
-                        })
-                        .unwrap(),
+                        error,
                     }),
                 )
             }
             ParseError::ValidationFailed(errors) => {
-                let label = "validation_failed";
                 let details: Vec<RelayerV2ErrorDetail> = errors
                     .field_errors()
                     .iter()
@@ -382,6 +419,7 @@ impl RelayerV2ResponseFailed {
                     )
                 };
 
+                let label = "validation_failed";
                 info!(
                     request_id,
                     http_status = status_code.as_u16(),
@@ -395,12 +433,7 @@ impl RelayerV2ResponseFailed {
                     Json(Self {
                         status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
-                        error: serde_json::to_value(RelayerV2ApiError400WithDetails {
-                            label: label.to_string(),
-                            message,
-                            details,
-                        })
-                        .unwrap(),
+                        error: V2ErrorResponseBody::validation_failed(message, details),
                     }),
                 )
             }
@@ -437,11 +470,7 @@ impl RelayerV2ResponseFailed {
         let response = Self {
             status: ApiResponseStatus::Failed,
             request_id: Some(request_id.to_string()),
-            error: serde_json::to_value(RelayerV2ApiError429 {
-                label: label.to_string(),
-                message,
-            })
-            .unwrap(),
+            error: V2ErrorResponseBody::rate_limited(message),
         };
 
         let mut http_response = (status_code, Json(response)).into_response();
@@ -475,15 +504,17 @@ impl RelayerV2ResponseFailed {
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
-                error: RelayerV2ApiError500::internal_server_error(message),
+                error: V2ErrorResponseBody::internal_server_error(message),
             }),
         )
     }
 
-    /// Creates a service unavailable response (503)
-    pub fn service_unavailable(message: &str) -> (StatusCode, Json<Self>) {
-        let status_code = StatusCode::SERVICE_UNAVAILABLE;
-        let label = "readiness_check_timed_out";
+    /// Creates an internal server error response (500) without a request ID.
+    ///
+    /// Used by endpoints that have no request lifecycle (e.g. keyurl).
+    pub fn internal_server_error_simple(message: &str) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::INTERNAL_SERVER_ERROR;
+        let label = "internal_server_error";
 
         info!(
             http_status = status_code.as_u16(),
@@ -495,7 +526,7 @@ impl RelayerV2ResponseFailed {
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: None,
-                error: RelayerV2ApiError503::readiness_check_timed_out(message),
+                error: V2ErrorResponseBody::internal_server_error(message),
             }),
         )
     }
@@ -506,7 +537,7 @@ impl RelayerV2ResponseFailed {
 /// The contract can revert with many selectors — we validate most conditions before
 /// sending the transaction, so only a subset can appear here. Plain-text messages
 /// (no selector) fall through to Unknown / 500.
-pub fn classify_revert_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
+pub fn classify_revert_error(error_msg: &str) -> (StatusCode, V2ErrorResponseBody) {
     use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
 
     let reason = if let Some(selector) = extract_revert_selector(error_msg) {
@@ -518,23 +549,23 @@ pub fn classify_revert_error(error_msg: &str) -> (StatusCode, serde_json::Value)
     match reason {
         RevertReason::ContractPaused => (
             StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::protocol_paused(error_msg),
+            V2ErrorResponseBody::protocol_paused(error_msg),
         ),
         RevertReason::InsufficientBalance => (
             StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_balance(error_msg),
+            V2ErrorResponseBody::insufficient_balance(error_msg),
         ),
         RevertReason::InsufficientAllowance => (
             StatusCode::SERVICE_UNAVAILABLE,
-            RelayerV2ApiError503::insufficient_allowance(error_msg),
+            V2ErrorResponseBody::insufficient_allowance(error_msg),
         ),
         RevertReason::InvalidSignature => (
             StatusCode::BAD_REQUEST,
-            RelayerV2ApiError400NoDetails::invalid_signature(),
+            V2ErrorResponseBody::invalid_signature(),
         ),
         RevertReason::Unknown => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            RelayerV2ApiError500::internal_server_error(error_msg),
+            V2ErrorResponseBody::internal_server_error(error_msg),
         ),
     }
 }
@@ -553,7 +584,7 @@ mod tests {
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
-        assert_eq!(response.error["label"], "request_error");
+        assert_eq!(response.error.label(), "request_error");
     }
 
     #[test]
@@ -565,20 +596,20 @@ mod tests {
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
-        assert_eq!(response.error["label"], "internal_server_error");
+        assert_eq!(response.error.label(), "internal_server_error");
     }
 
     #[test]
-    fn test_service_unavailable_has_status_no_request_id() {
+    fn test_internal_server_error_simple_has_no_request_id() {
         let (status_code, json) =
-            RelayerV2ResponseFailed::service_unavailable("Key URL not yet initialized");
+            RelayerV2ResponseFailed::internal_server_error_simple("Key URL not yet initialized");
 
-        assert_eq!(status_code, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(status_code, StatusCode::INTERNAL_SERVER_ERROR);
 
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, None);
-        assert_eq!(response.error["label"], "readiness_check_timed_out");
+        assert_eq!(response.error.label(), "internal_server_error");
     }
 
     #[test]
@@ -592,7 +623,7 @@ mod tests {
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
-        assert_eq!(response.error["label"], "malformed_json");
+        assert_eq!(response.error.label(), "malformed_json");
     }
 
     #[test]
@@ -610,13 +641,11 @@ mod tests {
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
-        assert_eq!(response.error["label"], "missing_fields");
-        assert!(response.error["details"].is_array());
+        assert_eq!(response.error.label(), "missing_fields");
 
-        // Verify field name is preserved as camelCase (not corrupted to lowercase)
-        let details = response.error["details"].as_array().unwrap();
-        assert_eq!(details[0]["field"], "contractChainId");
-        assert_eq!(details[0]["issue"], "Required but missing");
+        let details = response.error.details().expect("Should have details");
+        assert_eq!(details[0].field, "contractChainId");
+        assert_eq!(details[0].issue, "Required but missing");
     }
 
     #[test]
@@ -635,7 +664,7 @@ mod tests {
         let response = json.0;
         assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
-        assert_eq!(response.error["label"], "validation_failed");
+        assert_eq!(response.error.label(), "validation_failed");
     }
 
     #[test]
@@ -645,15 +674,15 @@ mod tests {
         let serialized = serde_json::to_string(&json.0).expect("Failed to serialize");
         let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("Failed to parse");
 
-        // Verify the top-level structure has status, request_id, and error fields
+        // Verify the top-level structure has status, requestId, and error fields
         assert!(parsed.get("status").is_some(), "Should have status field");
         assert!(
-            parsed.get("request_id").is_some(),
-            "Should have request_id field"
+            parsed.get("requestId").is_some(),
+            "Should have requestId field"
         );
         assert!(parsed.get("error").is_some(), "Should have error field");
 
-        // Verify the error has the expected structure
+        // Verify the error has the expected structure (untagged serialization = flat object)
         let error = parsed.get("error").unwrap();
         assert!(error.get("label").is_some(), "Error should have label");
         assert!(error.get("message").is_some(), "Error should have message");

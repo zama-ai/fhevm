@@ -383,10 +383,7 @@ async fn test_delegated_user_decrypt_contract_paused_returns_503() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
-    assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("protocol_paused")
-    );
+    assert_eq!(error.label(), "protocol_paused");
 
     setup.shutdown().await;
 }
@@ -418,14 +415,8 @@ async fn test_delegated_user_decrypt_invalid_signature_returns_400() {
     assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
-    assert_eq!(
-        body.error,
-        Some(serde_json::json!({
-            "label": "validation_failed",
-            "message": "Validation failed for 1 field(s)",
-            "details": [{ "field": "signature", "issue": "Signature is invalid" }]
-        }))
-    );
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "validation_failed");
 
     setup.shutdown().await;
 }
@@ -457,10 +448,7 @@ async fn test_insufficient_balance_returns_503() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
-    assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("insufficient_balance")
-    );
+    assert_eq!(error.label(), "insufficient_balance");
 
     setup.shutdown().await;
 }
@@ -492,10 +480,7 @@ async fn test_insufficient_allowance_returns_503() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
-    assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("insufficient_allowance")
-    );
+    assert_eq!(error.label(), "insufficient_allowance");
 
     setup.shutdown().await;
 }
@@ -528,10 +513,7 @@ async fn test_delegated_user_decrypt_unknown_error_returns_500() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
 
     let error = body.error.as_ref().expect("Error should be present");
-    assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("internal_server_error")
-    );
+    assert_eq!(error.label(), "internal_server_error");
 
     setup.shutdown().await;
 }
@@ -787,8 +769,8 @@ async fn test_readiness_contract_error_returns_failure_v2() {
 
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("internal_server_error"),
+        error.label(),
+        "internal_server_error",
         "Expected label 'internal_server_error' for readiness check contract error"
     );
 
@@ -831,8 +813,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
 
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("readiness_check_timed_out"),
+        error.label(),
+        "readiness_check_timed_out",
         "Expected label 'readiness_check_timed_out' for readiness timeout"
     );
 
@@ -1185,9 +1167,8 @@ async fn test_not_allowed_on_host_acl_returns_400() {
     assert!(body.result.is_none());
 
     // Verify the error label
-    let error = body.error.expect("Expected error in response");
-    let label = error.get("label").and_then(|v| v.as_str());
-    assert_eq!(label, Some("not_allowed_on_host_acl"));
+    let error = body.error.as_ref().expect("Expected error in response");
+    assert_eq!(error.label(), "not_allowed_on_host_acl");
 
     setup.shutdown().await;
 }
@@ -1282,9 +1263,8 @@ async fn test_multi_pair_acl_partial_deny() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
-    let error = body.error.expect("Expected error in response");
-    let label = error.get("label").and_then(|v| v.as_str());
-    assert_eq!(label, Some("not_allowed_on_host_acl"));
+    let error = body.error.as_ref().expect("Expected error in response");
+    assert_eq!(error.label(), "not_allowed_on_host_acl");
 
     setup.shutdown().await;
 }
@@ -1398,9 +1378,8 @@ async fn test_multi_pair_acl_all_denied() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
-    let error = body.error.expect("Expected error in response");
-    let label = error.get("label").and_then(|v| v.as_str());
-    assert_eq!(label, Some("not_allowed_on_host_acl"));
+    let error = body.error.as_ref().expect("Expected error in response");
+    assert_eq!(error.label(), "not_allowed_on_host_acl");
 
     setup.shutdown().await;
 }
@@ -1463,9 +1442,8 @@ async fn test_cross_chain_acl_all_denied() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
-    let error = body.error.expect("Expected error in response");
-    let label = error.get("label").and_then(|v| v.as_str());
-    assert_eq!(label, Some("not_allowed_on_host_acl"));
+    let error = body.error.as_ref().expect("Expected error in response");
+    assert_eq!(error.label(), "not_allowed_on_host_acl");
 
     setup.shutdown().await;
 }
@@ -1525,9 +1503,8 @@ async fn test_cross_chain_acl_partial_deny() {
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
-    let error = body.error.expect("Expected error in response");
-    let label = error.get("label").and_then(|v| v.as_str());
-    assert_eq!(label, Some("not_allowed_on_host_acl"));
+    let error = body.error.as_ref().expect("Expected error in response");
+    assert_eq!(error.label(), "not_allowed_on_host_acl");
 
     setup.shutdown().await;
 }

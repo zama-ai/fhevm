@@ -19,7 +19,6 @@ use crate::http::endpoints::v2::types::{
     },
     user_decrypt::{
         DelegatedUserDecryptRequestJson as DelegatedUserDecryptRequestJsonV2,
-        UserDecryptErrorResponseJson as UserDecryptErrorResponseJsonV2,
         UserDecryptPostResponseJson as UserDecryptPostResponseJsonV2,
         UserDecryptQueuedResult as UserDecryptQueuedResultV2,
         UserDecryptRequestJson as UserDecryptRequestJsonV2,
@@ -50,7 +49,7 @@ paths(
 components(
     schemas(InputProofRequestJsonV2, InputProofResponseJsonV2, InputProofPostResponseJsonV2, InputProofStatusResponseJsonV2, InputProofQueuedResultV2),
     schemas(PublicDecryptRequestJsonV2, PublicDecryptResponseJsonV2, PublicDecryptPostResponseJsonV2, PublicDecryptStatusResponseJsonV2, PublicDecryptQueuedResultV2),
-    schemas(UserDecryptRequestJsonV2, UserDecryptResponseJsonV2, UserDecryptPostResponseJsonV2, UserDecryptStatusResponseJsonV2, UserDecryptQueuedResultV2, UserDecryptErrorResponseJsonV2, UserDecryptResponsePayloadJsonV2),
+    schemas(UserDecryptRequestJsonV2, UserDecryptResponseJsonV2, UserDecryptPostResponseJsonV2, UserDecryptStatusResponseJsonV2, UserDecryptQueuedResultV2, UserDecryptResponsePayloadJsonV2),
     schemas(DelegatedUserDecryptRequestJsonV2),
     schemas(KeyUrlResponseJsonV2, KeyUrlResponseV2, FheKeyInfoV2, KeyDataV2),
     schemas(crate::http::ErrorResponse, crate::http::ApiError, crate::http::ErrorDetail, crate::http::ErrorLabel),

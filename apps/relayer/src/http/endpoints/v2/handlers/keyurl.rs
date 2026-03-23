@@ -99,8 +99,10 @@ impl KeyUrlHandler {
                     }
                     None => {
                         error!("key url not configured");
-                        RelayerV2ResponseFailed::service_unavailable("Key URL not yet initialized")
-                            .into_response()
+                        RelayerV2ResponseFailed::internal_server_error_simple(
+                            "Key URL not yet initialized",
+                        )
+                        .into_response()
                     }
                 }
             },

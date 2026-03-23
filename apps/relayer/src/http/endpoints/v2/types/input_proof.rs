@@ -1,4 +1,4 @@
-use super::error::ApiResponseStatus;
+use super::error::{ApiResponseStatus, V2ErrorResponseBody};
 use super::ChainId;
 use crate::http::de_string_or_number;
 use crate::http::utils::redact::{redact_count_opt, redact_len};
@@ -71,13 +71,7 @@ pub struct InputProofStatusResponseJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<InputProofResponseJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<serde_json::Value>, // Structured error object
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct InputProofErrorResponseJson {
-    pub message: String,
+    pub error: Option<V2ErrorResponseBody>,
 }
 
 // Standard serialization implementations for v2 API types

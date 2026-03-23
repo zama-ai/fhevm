@@ -1,6 +1,5 @@
 use super::super::types::error::{
-    classify_revert_error, ApiResponseStatus, RelayerV2ApiError404, RelayerV2ApiError500,
-    RelayerV2ApiError503, RelayerV2ResponseFailed,
+    classify_revert_error, ApiResponseStatus, RelayerV2ResponseFailed, V2ErrorResponseBody,
 };
 use super::super::types::input_proof::{
     InputProofPostResponseJson, InputProofQueuedResult, InputProofRequestJson,
@@ -369,7 +368,7 @@ impl InputProofHandler {
                                             request_id: request_id.to_string(),
                                             result: None,
                                             error: Some(
-                                                RelayerV2ApiError500::internal_server_error(
+                                                V2ErrorResponseBody::internal_server_error(
                                                     "Failed to deserialize response data",
                                                 ),
                                             ),
@@ -383,7 +382,7 @@ impl InputProofHandler {
                                     status: ApiResponseStatus::Failed,
                                     request_id: request_id.to_string(),
                                     result: None,
-                                    error: Some(RelayerV2ApiError500::internal_server_error("Internal error: completed request missing response data")),
+                                    error: Some(V2ErrorResponseBody::internal_server_error("Internal error: completed request missing response data")),
                                 })).into_response()
                             }
                         } else {
@@ -429,7 +428,7 @@ impl InputProofHandler {
                                 status: ApiResponseStatus::Failed,
                                 request_id: request_id.to_string(),
                                 result: None,
-                                error: Some(RelayerV2ApiError503::response_timed_out(&error_msg)),
+                                error: Some(V2ErrorResponseBody::response_timed_out(&error_msg)),
                             }),
                         )
                             .into_response()
@@ -520,7 +519,7 @@ impl InputProofHandler {
                     status: ApiResponseStatus::Failed,
                     request_id: request_id.to_string(),
                     result: None,
-                    error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                    error: Some(V2ErrorResponseBody::not_found("Request not found")),
                 }),
             )
                 .into_response(),
@@ -532,9 +531,7 @@ impl InputProofHandler {
                         status: ApiResponseStatus::Failed,
                         request_id: request_id.to_string(),
                         result: None,
-                        error: Some(RelayerV2ApiError500::internal_server_error(
-                            "Database error",
-                        )),
+                        error: Some(V2ErrorResponseBody::internal_server_error("Database error")),
                     }),
                 )
                     .into_response()
@@ -551,9 +548,9 @@ impl InputProofHandler {
     request_body = crate::http::endpoints::v2::types::input_proof::InputProofRequestJson,
     responses(
         (status = 202, description = "Request accepted for processing", body = crate::http::endpoints::v2::types::input_proof::InputProofPostResponseJson),
-        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError400NoDetails),
+        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
         (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError500),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "Input Proof v2"
 )]
