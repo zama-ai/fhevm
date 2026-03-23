@@ -15,7 +15,7 @@ concurrency:
 # - CHAIN_ID_GATEWAY: The chain ID of the gateway network, used by deployment tasks
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
-  UPGRADE_FROM_TAG: v0.11.0
+  UPGRADE_FROM_TAG: v0.11.1
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
   CHAIN_ID_GATEWAY: 54321
@@ -119,6 +119,28 @@ jobs:
         run: |
           cp -r ../../previous-fhevm/host-contracts/contracts ./previous-contracts
           docker cp fhevm-sc-deploy:/app/addresses ./
+
+      # The regular upgrade loop below only exercises task:upgrade<Contract>, which upgrades the proxy in place.
+      # We also rely on task:prepareUpgradeFHEVMExecutor operationally to deploy a new implementation without
+      # mutating the proxy. This smoke step covers that prepare-only path and guards against regressions where
+      # the task stops deploying correctly or accidentally upgrades the proxy instead of just preparing it.
+      - name: Smoke test prepare-only FHEVMExecutor deployment
+        working-directory: current-fhevm/host-contracts
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "refs/tags/${UPGRADE_FROM_TAG}:refs/tags/${UPGRADE_FROM_TAG}"
+          source addresses/.env.host
+
+          before_impl=$(cast implementation "$FHEVM_EXECUTOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
+
+          npx hardhat task:prepareUpgradeFHEVMExecutor \
+            --upgrade-from-ref "$UPGRADE_FROM_TAG" \
+            --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
+          after_impl=$(cast implementation "$FHEVM_EXECUTOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
+          test "$before_impl" = "$after_impl"
 
       - name: Run contract upgrades
         working-directory: current-fhevm/host-contracts
