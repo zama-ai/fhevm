@@ -1,4 +1,3 @@
-import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
 import fs from 'fs';
 import path from 'path';
@@ -6,7 +5,7 @@ import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -219,7 +218,7 @@ task('task:upgradeACL')
     await checkImplementationArtifacts('ACL', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadInternalHostAddressesEnv();
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
 
@@ -256,7 +255,7 @@ task('task:upgradeFHEVMExecutor')
     await checkImplementationArtifacts('FHEVMExecutor', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadInternalHostAddressesEnv();
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
@@ -289,7 +288,7 @@ task('task:prepareUpgradeFHEVMExecutor')
       const generatedCurrentImplementation = materializeContractsFromGit(upgradeFromRef, 'generated-upgrade-from-contracts');
       const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
       if (useInternalProxyAddress) {
-        dotenv.config({ path: 'addresses/.env.host', override: true });
+        loadInternalHostAddressesEnv();
       }
       const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
@@ -338,7 +337,7 @@ task('task:upgradeKMSVerifier')
     await checkImplementationArtifacts('KMSVerifier', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadInternalHostAddressesEnv();
     }
     const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
 
@@ -375,7 +374,7 @@ task('task:upgradeInputVerifier')
     await checkImplementationArtifacts('InputVerifier', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadInternalHostAddressesEnv();
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
@@ -450,7 +449,7 @@ task('task:upgradeHCULimit')
     await checkImplementationArtifacts('HCULimit', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadInternalHostAddressesEnv();
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
 
