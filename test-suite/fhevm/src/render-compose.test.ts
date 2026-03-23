@@ -4,10 +4,11 @@ import { describe, expect, test } from "bun:test";
 import YAML from "yaml";
 
 import { COMPOSE_OUT_DIR, STATE_DIR, composePath, envPath } from "./layout";
-import { generateComposeOverrides } from "./render-compose";
-import { presetBundle } from "./resolve";
-import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario";
-import { runtimePlanForState } from "./runtime-plan";
+import { generateComposeOverrides } from "./generate/compose";
+import { presetBundle } from "./resolve/target";
+import { parseCoprocessorScenario } from "./scenario/parse";
+import { resolveScenarioFile } from "./scenario/resolve";
+import { stackSpecForState } from "./stack-spec/stack-spec";
 import type { State } from "./types";
 
 const scenario = resolveScenarioFile(
@@ -60,7 +61,7 @@ describe("render-compose", () => {
     await writeFile(envPath("coprocessor"), "\n");
     await writeFile(envPath("coprocessor.1"), "\n");
     try {
-      await generateComposeOverrides(state, runtimePlanForState(state));
+      await generateComposeOverrides(state, stackSpecForState(state));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<string, { image?: string }>;
       };
@@ -80,7 +81,7 @@ describe("render-compose", () => {
     await writeFile(envPath("coprocessor"), "\n");
     await writeFile(envPath("coprocessor.1"), "\n");
     try {
-      await generateComposeOverrides(inheritedScenarioState, runtimePlanForState(inheritedScenarioState));
+      await generateComposeOverrides(inheritedScenarioState, stackSpecForState(inheritedScenarioState));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<string, { image?: string; build?: unknown }>;
       };

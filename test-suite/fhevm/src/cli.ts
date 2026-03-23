@@ -4,104 +4,45 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
-import { listScenarios, logs, pause, showResumeHint, status, unpause, up, upDryRun, clean, down, upgrade } from "./stack";
-import { test } from "./test";
-import { resolveServiceOverrides } from "./layout";
-import { OVERRIDE_GROUPS, STEP_NAMES, TARGETS, type LocalOverride, type OverrideGroup, type StepName, type VersionTarget } from "./types";
-
-const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
+import { clean } from "./commands/clean";
+import { down } from "./commands/down";
+import { logs } from "./commands/logs";
+import { pause, unpause } from "./commands/pause";
+import { listScenarios } from "./commands/scenario";
+import { status } from "./commands/status";
+import { test } from "./commands/test";
+import { upgrade } from "./commands/upgrade";
+import { up, upDryRun } from "./commands/up";
+import { showResumeHint } from "./flow/resume";
+import { parseUpInput } from "./input/up";
+import { asBool, asString } from "./input/shared";
 const HELP_FLAGS = new Set(["--help", "-h"]);
 
-const parseLocalOverride = (value: string): LocalOverride[] => {
-  if (value === "all") {
-    return ALL_OVERRIDES;
-  }
-  const colonIdx = value.indexOf(":");
-  if (colonIdx < 0) {
-    if (!OVERRIDE_GROUPS.includes(value as OverrideGroup)) {
-      throw new Error(`Unsupported override ${value}. Valid: all, ${OVERRIDE_GROUPS.join(", ")}`);
+/** Shares the `up` command argument surface and execution for `deploy`. */
+const upCommandDefinition = {
+  args: {
+    target: { type: "string", description: "Bundle source to boot." },
+    sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
+    override: { type: "string", description: "Build selected workspace groups locally.", alias: "o" },
+    "from-step": { type: "string", description: "Start from a specific pipeline step when resuming or previewing." },
+    "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
+    scenario: { type: "string", description: "Scenario preset name or path." },
+    resume: { type: "boolean", description: "Resume from persisted state." },
+    "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
+    reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
+    "allow-schema-mismatch": { type: "boolean", description: "Bypass schema-coupled local override safety checks." },
+    build: { type: "boolean", description: "Build every workspace-owned group locally." },
+  },
+  async run({ args }: { args: Record<string, unknown> }) {
+    const parsed = parseUpInput(args);
+    if (parsed.dryRun) {
+      const { dryRun: _dryRun, ...rest } = parsed;
+      await upDryRun(rest);
+      return;
     }
-    return [{ group: value as OverrideGroup }];
-  }
-  const group = value.slice(0, colonIdx);
-  const rest = value.slice(colonIdx + 1);
-  if (!OVERRIDE_GROUPS.includes(group as OverrideGroup)) {
-    throw new Error(`Unsupported override group "${group}". Valid: ${OVERRIDE_GROUPS.join(", ")}`);
-  }
-  const parts = rest.split(",").map((part) => part.trim()).filter(Boolean);
-  if (!parts.length) {
-    throw new Error(`Expected at least one service name in override "${value}"`);
-  }
-  return [{ group: group as OverrideGroup, services: resolveServiceOverrides(group as OverrideGroup, parts) }];
-};
-
-const asString = (value: unknown) => (typeof value === "string" && value.length ? value : undefined);
-const asBool = (value: unknown) => value === true;
-const asStringList = (value: unknown) =>
-  Array.isArray(value) ? value.map(String) : typeof value === "string" && value.length ? [value] : [];
-
-const parseUpInput = (args: Record<string, unknown>) => {
-  const target = asString(args.target);
-  const sha = asString(args.sha);
-  const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
-  const lockFile = asString(args["lock-file"] ?? args.lockFile);
-  const scenarioPath = asString(args.scenario);
-  const resume = asBool(args.resume);
-  const dryRun = asBool(args["dry-run"] ?? args.dryRun);
-  const reset = asBool(args.reset);
-  const allowSchemaMismatch = asBool(args["allow-schema-mismatch"] ?? args.allowSchemaMismatch);
-  const build = asBool(args.build);
-
-  if (target && !TARGETS.includes(target as VersionTarget)) {
-    throw new PreflightError(`Unsupported target ${target}. Valid: ${TARGETS.join(", ")}`);
-  }
-  const validTarget = (target ?? "latest-main") as VersionTarget;
-
-  let fromStep: StepName | undefined;
-  if (fromStepRaw) {
-    if (!STEP_NAMES.includes(fromStepRaw as StepName)) {
-      throw new PreflightError(`Unknown step ${fromStepRaw}. Valid: ${STEP_NAMES.join(", ")}`);
-    }
-    fromStep = fromStepRaw as StepName;
-  }
-
-  if (validTarget === "sha" && !sha) {
-    throw new PreflightError("--target sha requires --sha");
-  }
-  if (validTarget !== "sha" && sha) {
-    throw new PreflightError("--sha requires --target sha");
-  }
-  if (sha && lockFile) {
-    throw new PreflightError("--sha cannot be used with --lock-file");
-  }
-  if (fromStep && !resume && !dryRun) {
-    throw new PreflightError("--from-step requires --resume or --dry-run");
-  }
-
-  const overrideValues = asStringList(args.override);
-  if (build && overrideValues.length) {
-    throw new PreflightError("--build cannot be combined with --override");
-  }
-  const explicitOverrides = overrideValues.flatMap(parseLocalOverride);
-  const overrides = [
-    ...(build ? ALL_OVERRIDES : []),
-    ...explicitOverrides,
-  ];
-
-  return {
-    target: validTarget,
-    requestedTarget: target as VersionTarget | undefined,
-    sha,
-    overrides,
-    scenarioPath,
-    fromStep,
-    lockFile,
-    allowSchemaMismatch,
-    resume,
-    dryRun,
-    reset,
-  };
-};
+    await up(parsed);
+  },
+} as const;
 
 const root = defineCommand({
   meta: {
@@ -112,53 +53,11 @@ const root = defineCommand({
   subCommands: {
     up: defineCommand({
       meta: { name: "up", description: "Boot the fhevm stack from a target, lock file, or persisted state." },
-      args: {
-        target: { type: "string", description: "Bundle source to boot." },
-        sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
-        override: { type: "string", description: "Build selected workspace groups locally.", alias: "o" },
-        "from-step": { type: "string", description: "Start from a specific pipeline step when resuming or previewing." },
-        "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
-        scenario: { type: "string", description: "Scenario preset name or path." },
-        resume: { type: "boolean", description: "Resume from persisted state." },
-        "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
-        reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
-        "allow-schema-mismatch": { type: "boolean", description: "Bypass schema-coupled local override safety checks." },
-        build: { type: "boolean", description: "Build every workspace-owned group locally." },
-      },
-      async run({ args }) {
-        const parsed = parseUpInput(args);
-        if (parsed.dryRun) {
-          const { dryRun: _dryRun, ...rest } = parsed;
-          await upDryRun(rest);
-          return;
-        }
-        await up(parsed);
-      },
+      ...upCommandDefinition,
     }),
     deploy: defineCommand({
       meta: { name: "deploy", description: "Alias of `up` kept for deployment-oriented workflows." },
-      args: {
-        target: { type: "string" },
-        sha: { type: "string" },
-        override: { type: "string", alias: "o" },
-        "from-step": { type: "string" },
-        "lock-file": { type: "string" },
-        scenario: { type: "string" },
-        resume: { type: "boolean" },
-        "dry-run": { type: "boolean" },
-        reset: { type: "boolean" },
-        "allow-schema-mismatch": { type: "boolean" },
-        build: { type: "boolean" },
-      },
-      async run({ args }) {
-        const parsed = parseUpInput(args);
-        if (parsed.dryRun) {
-          const { dryRun: _dryRun, ...rest } = parsed;
-          await upDryRun(rest);
-          return;
-        }
-        await up(parsed);
-      },
+      ...upCommandDefinition,
     }),
     down: defineCommand({
       meta: { name: "down", description: "Stop all stack containers in reverse order." },
@@ -250,8 +149,10 @@ const root = defineCommand({
   },
 });
 
+/** Finds the first positional token in a raw argv slice. */
 const firstNonFlagIndex = (rawArgs: string[]) => rawArgs.findIndex((arg) => !arg.startsWith("-"));
 
+/** Walks subcommands to find the command whose usage should be rendered. */
 const resolveUsageTarget = async (
   cmd: any,
   rawArgs: string[],
@@ -272,6 +173,7 @@ const resolveUsageTarget = async (
   return resolveUsageTarget(subCommand, rawArgs.slice(index + 1), cmd);
 };
 
+/** Runs the CLI entrypoint with custom help rendering and error formatting. */
 export const main = async (argv = process.argv) => {
   const rawArgs = argv.slice(2);
   if (rawArgs.length === 0 || rawArgs.some((arg) => HELP_FLAGS.has(arg))) {

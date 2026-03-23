@@ -7,7 +7,7 @@ import {
   resolveScenarioReference,
   synthesizeOverrideScenario,
   effectiveOverrides,
-} from "./scenario";
+} from "./scenario/resolve";
 
 describe("scenario", () => {
   test("parses the bundled two-of-two scenario", async () => {
