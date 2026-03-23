@@ -1,7 +1,5 @@
 name: test-suite-e2e-operators-tests
 
-# Github does not support more than 10 inputs for workflow_dispatch:
-# https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
 # Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
 on:
   workflow_dispatch:
@@ -45,6 +43,14 @@ on:
         type: string
       zkproof_worker_version:
         description: "ZKProof Worker Image Version"
+        default: ""
+        type: string
+      deploy-build:
+        description: "Build local Docker images from the checked out repository before deploy"
+        default: false
+        type: boolean
+      grep:
+        description: "Optional grep pattern to narrow operators tests"
         default: ""
         type: string
 
@@ -127,22 +133,34 @@ jobs:
           TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
           SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
           ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
+            ./fhevm-cli deploy --build --coprocessors 2 --coprocessor-threshold 2
+          else
+            ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          fi
 
       - name: All operators tests
         working-directory: test-suite/fhevm
+        env:
+          GREP: ${{ inputs.grep }}
         run: |
-          ./fhevm-cli test operators
+          if [ -n "$GREP" ]; then
+            ./fhevm-cli test operators -g "$GREP"
+          else
+            ./fhevm-cli test operators
+          fi
 
       - name: Random operators tests
+        if: ${{ inputs.grep == '' }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
-        if: always()
+        if: failure()
         run: |
           echo "::group::Relayer Logs"
           ./fhevm-cli logs relayer
