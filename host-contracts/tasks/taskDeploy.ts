@@ -16,6 +16,18 @@ function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 }
 
+function readHostEnv() {
+  return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
+}
+
+function writeHostEnvLine(content: string, mode: 'w' | 'a') {
+  fs.writeFileSync(HOST_ENV_FILE, content, { flag: mode });
+}
+
+function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
+  fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
@@ -116,7 +128,7 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('ACL', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
+  const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -134,7 +146,7 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('./contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
+  const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
@@ -157,7 +169,7 @@ task('task:deployKMSVerifier')
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
     const newImplem = await ethers.getContractFactory('KMSVerifier', deployer);
-    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
+    const parsedEnv = readHostEnv();
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
     const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
@@ -205,7 +217,7 @@ task('task:deployInputVerifier')
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
     const newImplem = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier', deployer);
-    const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
+    const parsedEnv = readHostEnv();
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
     const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
@@ -248,7 +260,7 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('HCULimit', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
+  const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -286,7 +298,7 @@ task('task:setACLAddress')
     ensureAddressesDirectoryExists();
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.writeFileSync(HOST_ENV_FILE, content, { flag: 'w' });
+      writeHostEnvLine(content, 'w');
       console.log(`ACL address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write ACL address:', err);
@@ -296,10 +308,10 @@ task('task:setACLAddress')
 
 pragma solidity ^0.8.24;
 
-    address constant aclAdd = ${taskArguments.address};\n`;
+address constant aclAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'w' });
+      writeHostAddressesSol(solidityTemplate, 'w');
       console.log(`${HOST_ADDRESSES_FILE} generated successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
@@ -316,7 +328,7 @@ task('task:setFHEVMExecutorAddress')
     ensureAddressesDirectoryExists();
     const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
+      writeHostEnvLine(content, 'a');
       console.log(`FHEVMExecutor address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write FHEVMExecutor address:', err);
@@ -326,7 +338,7 @@ task('task:setFHEVMExecutorAddress')
 address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with fhevmExecutorAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
@@ -343,7 +355,7 @@ task('task:setKMSVerifierAddress')
     ensureAddressesDirectoryExists();
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
+      writeHostEnvLine(content, 'a');
       console.log(`KMSVerifier address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write KMSVerifier address:', err);
@@ -353,7 +365,7 @@ task('task:setKMSVerifierAddress')
 address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with kmsVerifierAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
@@ -371,7 +383,7 @@ task('task:setInputVerifierAddress')
     // this script also computes the coprocessor address from its private key
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
+      writeHostEnvLine(content, 'a');
       console.log(`InputVerifier address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write InputVerifier address:', err);
@@ -381,7 +393,7 @@ task('task:setInputVerifierAddress')
 address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with inputVerifierAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
@@ -398,7 +410,7 @@ task('task:setHCULimitAddress')
     ensureAddressesDirectoryExists();
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
+      writeHostEnvLine(content, 'a');
       console.log(`HCULimit address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write HCULimit address:', err);
@@ -408,7 +420,7 @@ task('task:setHCULimitAddress')
 address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with hcuLimitAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
@@ -425,7 +437,7 @@ task('task:setPauserSetAddress')
     ensureAddressesDirectoryExists();
     const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
+      writeHostEnvLine(content, 'a');
       console.log(`PauserSet address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write PauserSet address:', err);
@@ -435,7 +447,7 @@ task('task:setPauserSetAddress')
 address constant pauserSetAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with pauserSetAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
