@@ -60,7 +60,7 @@ export async function fetchUserDecrypt(
 
   const request = new RelayerAsyncRequest({
     relayerOperation: "USER_DECRYPT",
-    url: `${removeSuffix(relayerClient.relayerUrl, "/")}/user-decrypt`,
+    url: `${removeSuffix(relayerClient.relayerUrl, "/")}/v2/user-decrypt`,
     payload: userDecryptPayload,
     options: relayerOptions,
   });

@@ -36,7 +36,7 @@ export async function fetchCoprocessorSignatures(
 
   const request = new RelayerAsyncRequest({
     relayerOperation: "INPUT_PROOF",
-    url: `${removeSuffix(relayerClient.relayerUrl, "/")}/input-proof`,
+    url: `${removeSuffix(relayerClient.relayerUrl, "/")}/v2/input-proof`,
     payload: inputProofPayload,
     options: relayerOptions,
   });

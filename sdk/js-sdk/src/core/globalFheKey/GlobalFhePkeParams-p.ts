@@ -26,8 +26,8 @@ class GlobalFhePkeParamsImpl implements GlobalFhePkeParams {
       throw new Error("Unauthorized");
     }
     this.#owner = owner;
-    this.#publicKey = Object.freeze({ ...parameters.publicKey });
-    this.#crs = Object.freeze({ ...parameters.crs });
+    this.#publicKey = parameters.publicKey;
+    this.#crs = parameters.crs;
 
     Object.freeze(this);
   }

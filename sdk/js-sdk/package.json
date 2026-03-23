@@ -10,6 +10,10 @@
     "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo src/_esm src/_cjs src/_types",
     "lint": "eslint"
   },
+  "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "wasm-feature-detect": "^1.8.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "ethers": "^6.15.0",
