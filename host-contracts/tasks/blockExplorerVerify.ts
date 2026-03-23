@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config';
 
-import { ensureHostAddressesSolExists, getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
+import { getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -12,7 +12,6 @@ task('task:verifyACL')
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
     const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -36,7 +35,6 @@ task('task:verifyFHEVMExecutor')
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
     const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -60,7 +58,6 @@ task('task:verifyKMSVerifier')
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);

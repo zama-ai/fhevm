@@ -5,7 +5,7 @@ import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { ensureHostAddressesSolExists, getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
+import { getRequiredEnvVar, loadInternalHostAddressesEnv } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -219,7 +219,6 @@ task('task:upgradeACL')
 
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
 
@@ -257,7 +256,6 @@ task('task:upgradeFHEVMExecutor')
 
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
@@ -291,7 +289,6 @@ task('task:prepareUpgradeFHEVMExecutor')
       const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
       if (useInternalProxyAddress) {
         loadInternalHostAddressesEnv();
-        ensureHostAddressesSolExists();
       }
       const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
@@ -453,7 +450,6 @@ task('task:upgradeHCULimit')
 
     if (useInternalProxyAddress) {
       loadInternalHostAddressesEnv();
-      ensureHostAddressesSolExists();
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
 

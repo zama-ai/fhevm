@@ -16,26 +16,15 @@ export function getRequiredEnvVar(name: string): string {
 }
 
 export function loadInternalHostAddressesEnv() {
-  if (!fs.existsSync(HOST_ENV_FILE)) {
+  if (!fs.existsSync(HOST_ENV_FILE) || !fs.existsSync(HOST_ADDRESSES_FILE)) {
     throw new Error(
-      'Missing generated host env at host-contracts/addresses/.env.host. '
-        + 'Generate it by running task:setACLAddress first, then task:setFHEVMExecutorAddress, '
+      'Missing generated host addresses under host-contracts/addresses. '
+        + 'These files are required because host contracts import addresses/FHEVMHostAddresses.sol. '
+        + 'Generate them by running task:setACLAddress first, then task:setFHEVMExecutorAddress, '
         + 'task:setKMSVerifierAddress, task:setInputVerifierAddress, task:setHCULimitAddress, '
-        + 'and task:setPauserSetAddress with the deployed addresses for the environment you are targeting.',
+        + 'and task:setPauserSetAddress.',
     );
   }
 
   dotenv.config({ path: HOST_ENV_FILE, override: true });
-}
-
-export function ensureHostAddressesSolExists() {
-  if (!fs.existsSync(HOST_ADDRESSES_FILE)) {
-    throw new Error(
-      'Missing generated host Solidity addresses file at host-contracts/addresses/FHEVMHostAddresses.sol. '
-        + 'This file is required because some host contracts import addresses/FHEVMHostAddresses.sol at compile time. '
-        + 'Generate it by running task:setACLAddress first, then task:setFHEVMExecutorAddress, '
-        + 'task:setKMSVerifierAddress, task:setInputVerifierAddress, task:setHCULimitAddress, '
-        + 'and task:setPauserSetAddress with the deployed addresses for the environment you are targeting.',
-    );
-  }
 }
