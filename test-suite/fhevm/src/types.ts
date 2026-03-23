@@ -47,6 +47,7 @@ export type CoprocessorScenario = {
   kind: "coprocessor-consensus";
   name?: string;
   description?: string;
+  multiChain?: boolean;
   topology: {
     count: number;
     threshold: number;
@@ -68,6 +69,7 @@ export type ResolvedCoprocessorScenario = {
   origin: "default" | "file" | "override-shorthand";
   name?: string;
   description?: string;
+  multiChain?: boolean;
   sourcePath?: string;
   topology: {
     count: number;
@@ -96,6 +98,7 @@ export type Topology = {
 export type Discovery = {
   gateway: Record<string, string>;
   host: Record<string, string>;
+  hostB?: Record<string, string>;
   kmsSigner: string;
   fheKeyId: string;
   crsKeyId: string;
@@ -107,6 +110,8 @@ export type Discovery = {
     gatewayWs: string;
     hostHttp: string;
     hostWs: string;
+    hostBHttp?: string;
+    hostBWs?: string;
     minioInternal: string;
     minioExternal: string;
   };

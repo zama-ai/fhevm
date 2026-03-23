@@ -8,7 +8,10 @@ import {
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
+  CHAIN_B_ID,
+  CHAIN_B_PORT,
   COPROCESSOR_WALLET_INDICES,
+  DEFAULT_CHAIN_ID,
   DEFAULT_TENANT_API_KEY,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
@@ -159,7 +162,7 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify([
       {
         url: state.discovery.endpoints.hostHttp,
-        chain_id: Number(envs["coprocessor"].CHAIN_ID ?? "12345"),
+        chain_id: Number(envs["coprocessor"].CHAIN_ID ?? DEFAULT_CHAIN_ID),
         acl_address: state.discovery.host.ACL_CONTRACT_ADDRESS,
       },
     ]),
@@ -243,6 +246,81 @@ export const renderEnvMaps = async (
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+
+  if (plan.multiChain) {
+    const hostBHttp = `http://host-node-b:${CHAIN_B_PORT}`;
+    const hostBWs = `ws://host-node-b:${CHAIN_B_PORT}`;
+
+    envs["gateway-sc"].NUM_HOST_CHAINS = "2";
+    envs["gateway-sc"].HOST_CHAIN_CHAIN_ID_1 = CHAIN_B_ID;
+    envs["gateway-sc"].HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_1 =
+      state.discovery?.hostB?.FHEVM_EXECUTOR_CONTRACT_ADDRESS ??
+      envs["gateway-sc"].HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0 ?? "";
+    envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_1 =
+      state.discovery?.hostB?.ACL_CONTRACT_ADDRESS ??
+      envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_0 ?? "";
+    envs["gateway-sc"].HOST_CHAIN_NAME_1 = "";
+    envs["gateway-sc"].HOST_CHAIN_WEBSITE_1 = "";
+
+    instanceEnvs["host-node-b"] = {
+      ...envs["host-node"],
+      HOST_NODE_CONTAINER_NAME: "host-node-b",
+      HOST_NODE_PORT: String(CHAIN_B_PORT),
+      HOST_NODE_CHAIN_ID: CHAIN_B_ID,
+    };
+
+    const hostScB = { ...envs["host-sc"] };
+    hostScB.RPC_URL = hostBHttp;
+    hostScB.CHAIN_ID = CHAIN_B_ID;
+    hostScB.HOST_SC_DEPLOY_CONTAINER_NAME = "host-sc-b-deploy";
+    hostScB.HOST_SC_PAUSERS_CONTAINER_NAME = "host-sc-b-add-pausers";
+    hostScB.NUM_COPROCESSORS = String(plan.topology.count);
+    hostScB.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
+    for (let i = 0; i < plan.topology.count; i += 1) {
+      const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
+      if (signer) {
+        hostScB[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
+      }
+    }
+    instanceEnvs["host-sc-b"] = hostScB;
+
+    for (let index = 0; index < plan.topology.count; index += 1) {
+      const baseKey = index === 0 ? "coprocessor" : `coprocessor.${index}`;
+      const baseEnv = index === 0 ? envs["coprocessor"] : instanceEnvs[baseKey];
+      if (!baseEnv) continue;
+      const coproB = { ...baseEnv };
+      coproB.RPC_HTTP_URL = hostBHttp;
+      coproB.RPC_WS_URL = hostBWs;
+      coproB.CHAIN_ID = CHAIN_B_ID;
+      if (state.discovery?.hostB) {
+        coproB.ACL_CONTRACT_ADDRESS = state.discovery.hostB.ACL_CONTRACT_ADDRESS;
+        coproB.FHEVM_EXECUTOR_CONTRACT_ADDRESS = state.discovery.hostB.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
+        coproB.INPUT_VERIFIER_ADDRESS = state.discovery.hostB.INPUT_VERIFIER_CONTRACT_ADDRESS;
+      }
+      instanceEnvs[`coprocessor-b.${index}`] = coproB;
+    }
+
+    envs["test-suite"].RPC_URL_CHAIN_B = hostBHttp;
+    envs["test-suite"].CHAIN_ID_HOST_B = CHAIN_B_ID;
+
+    if (state.discovery) {
+      const chainAChainId = Number(envs["coprocessor"].CHAIN_ID ?? DEFAULT_CHAIN_ID);
+      const chainBAcl = state.discovery.hostB?.ACL_CONTRACT_ADDRESS ?? state.discovery.host.ACL_CONTRACT_ADDRESS;
+      envs["kms-connector"].KMS_CONNECTOR_HOST_CHAINS = JSON.stringify([
+        {
+          url: state.discovery.endpoints.hostHttp,
+          chain_id: chainAChainId,
+          acl_address: state.discovery.host.ACL_CONTRACT_ADDRESS,
+        },
+        {
+          url: hostBHttp,
+          chain_id: Number(CHAIN_B_ID),
+          acl_address: chainBAcl,
+        },
+      ]);
+    }
+  }
+
   resolveAllEnvMaps(envs, instanceEnvs);
 
   return {

@@ -26,7 +26,7 @@ const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
-export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 9000, 9001];
+export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 8547, 9000, 9001];
 export const MINIO_INTERNAL_URL = "http://minio:9000";
 export const MINIO_EXTERNAL_URL = "http://localhost:9000";
 export const POSTGRES_HOST = "db:5432";
@@ -35,6 +35,9 @@ export const KMS_CORE_CONTAINER = "kms-core";
 export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
+export const DEFAULT_CHAIN_ID = "12345";
+export const CHAIN_B_ID = "67890";
+export const CHAIN_B_PORT = 8547;
 
 export const COMPONENTS = [
   "minio",
@@ -180,6 +183,7 @@ export const TEST_GREP: Record<string, string> = {
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
   "negative-acl": "negative-acl",
+  "multi-chain-isolation": "Multi-Chain State Isolation",
 };
 
 export const TEST_PARALLEL: Record<string, boolean> = {
@@ -248,6 +252,7 @@ export const hostAddressesSolidityPath = path.join(
   "host",
   "FHEVMHostAddresses.sol",
 );
+export const hostBAddressesPath = path.join(ADDRESS_DIR, "host-b", ".env.host");
 
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [

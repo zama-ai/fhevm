@@ -9,8 +9,11 @@ import YAML from "yaml";
 import { compatPolicyForState, type CompatPolicy } from "../compat/compat";
 import { topologyForState, type StackSpec } from "../stack-spec/stack-spec";
 import {
+  CHAIN_B_ID,
+  CHAIN_B_PORT,
   COMPONENTS,
   COMPOSE_OUT_DIR,
+  DEFAULT_CHAIN_ID,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
@@ -324,6 +327,92 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   return { services };
 };
 
+const buildHostNodeBOverride = async (_plan: StackSpec): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("host-node"));
+  const hostNode = doc.services["host-node"];
+  if (!hostNode) return { services: {} };
+  const hostNodeB = structuredClone(hostNode);
+  hostNodeB.container_name = "host-node-b";
+  hostNodeB.env_file = [envPath("host-node-b")];
+  hostNodeB.ports = [`${CHAIN_B_PORT}:${CHAIN_B_PORT}`];
+  if (Array.isArray(hostNodeB.entrypoint)) {
+    hostNodeB.entrypoint = hostNodeB.entrypoint.map((arg: string) => {
+      if (arg === "8545") return String(CHAIN_B_PORT);
+      if (arg === DEFAULT_CHAIN_ID) return CHAIN_B_ID;
+      return arg;
+    });
+  }
+  return { services: { "host-node-b": hostNodeB } };
+};
+
+const buildHostScBOverride = async (_plan: StackSpec): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("host-sc"));
+  const services: Record<string, Record<string, unknown>> = {};
+  for (const [name, service] of Object.entries(doc.services)) {
+    const bName = name.replace("host-sc-", "host-sc-b-");
+    const bService = structuredClone(service);
+    bService.container_name = bName;
+    bService.env_file = [envPath("host-sc-b")];
+    delete bService.build;
+    if (bService.depends_on && typeof bService.depends_on === "object") {
+      bService.depends_on = Object.fromEntries(
+        Object.entries(bService.depends_on as Record<string, unknown>).map(([dep, value]) => [
+          dep.replace("host-sc-", "host-sc-b-"),
+          value,
+        ]),
+      );
+    }
+    if (Array.isArray(bService.volumes)) {
+      bService.volumes = (bService.volumes as string[]).map((vol: string) =>
+        vol.replace("/addresses/host:", "/addresses/host-b:"),
+      );
+    }
+    services[bName] = bService;
+  }
+  return { services };
+};
+
+const buildCoprocessorHostListenerBOverride = async (plan: StackSpec): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
+  const services: Record<string, Record<string, unknown>> = {};
+  const compat = compatPolicyForState(plan);
+  const inheritedBuildServices = coprocessorBuildServices(plan);
+  const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
+  for (const instance of plan.coprocessor.instances) {
+    const localServices =
+      instance.source.mode === "local"
+        ? localServicesForInstance(instance)
+        : instance.source.mode === "inherit"
+          ? inheritedBuildServices
+          : new Set<string>();
+    const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+    const envName = `coprocessor-b.${instance.index}`;
+    const envFileValue = envPath(envName);
+    const instanceEnv = await readEnvFile(envFileValue);
+    for (const baseName of listenerServices) {
+      const suffix = baseName.replace(/^coprocessor-/, "");
+      const bName = `${prefix}${suffix}-b`;
+      const baseService = doc.services[baseName];
+      if (!baseService) continue;
+      const locallyBuilt = localServices.has(baseName);
+      const adjusted = applyInstanceAdjustments(
+        baseName,
+        baseService,
+        envFileValue,
+        instanceEnv,
+        instance,
+        locallyBuilt ? {} : compat.coprocessorArgs,
+        locallyBuilt ? {} : compat.coprocessorDropFlags,
+      );
+      adjusted.container_name = bName;
+      applyCoprocessorSource(adjusted, instance, locallyBuilt);
+      delete adjusted.depends_on;
+      services[bName] = adjusted;
+    }
+  }
+  return { services };
+};
+
 /** Lists which components need generated compose overrides for a runtime plan. */
 export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides">) =>
   new Set(["coprocessor", ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group])]);
@@ -340,5 +429,22 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
     }
     const doc = await buildComposeOverride(component, plan);
     await fs.writeFile(target, YAML.stringify(doc));
+  }
+
+  // Multi-chain compose overrides
+  const multiChainFiles = ["host-node-b", "host-sc-b", "coprocessor-host-b"];
+  if (plan.multiChain) {
+    const [hostNodeB, hostScB, coproHostB] = await Promise.all([
+      buildHostNodeBOverride(plan),
+      buildHostScBOverride(plan),
+      buildCoprocessorHostListenerBOverride(plan),
+    ]);
+    await fs.writeFile(composePath("host-node-b"), YAML.stringify(hostNodeB));
+    await fs.writeFile(composePath("host-sc-b"), YAML.stringify(hostScB));
+    await fs.writeFile(composePath("coprocessor-host-b"), YAML.stringify(coproHostB));
+  } else {
+    for (const name of multiChainFiles) {
+      await remove(composePath(name));
+    }
   }
 };

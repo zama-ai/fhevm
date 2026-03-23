@@ -11,6 +11,7 @@ import {
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
   renderHostAddressesEnv,
+  renderHostBAddressesEnv,
   renderHostAddressesSolidity,
   renderPaymentBridgingAddressesSolidity,
 } from "./addresses";
@@ -29,6 +30,7 @@ import {
   gatewayAddressesSolidityPath,
   hostAddressesPath,
   hostAddressesSolidityPath,
+  hostBAddressesPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -77,6 +79,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     ensureDir(ENV_DIR),
     ensureWritableDir(path.join(ADDRESS_DIR, "gateway")),
     ensureWritableDir(path.join(ADDRESS_DIR, "host")),
+    ...(plan.multiChain ? [ensureWritableDir(path.join(ADDRESS_DIR, "host-b"))] : []),
     ensureDir(GENERATED_CONFIG_DIR),
   ]);
 
@@ -100,7 +103,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
 
   await fs.writeFile(
     relayerConfigPath,
-    renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8")),
+    renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
   );
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));
@@ -110,6 +113,9 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   );
   await writeWritableFile(hostAddressesPath, renderHostAddressesEnv(state));
   await writeWritableFile(hostAddressesSolidityPath, renderHostAddressesSolidity(state));
+  if (plan.multiChain) {
+    await writeWritableFile(hostBAddressesPath, renderHostBAddressesEnv(state));
+  }
 
   await generateComposeOverrides(state, plan);
 };

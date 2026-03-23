@@ -1,0 +1,8 @@
+version: 1
+kind: coprocessor-consensus
+name: Multi Chain
+description: Single coprocessor with two host chains for cross-chain isolation testing.
+multiChain: true
+topology:
+  count: 1
+  threshold: 1

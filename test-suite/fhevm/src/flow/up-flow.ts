@@ -28,6 +28,8 @@ import {
 import { describeBundle } from "../resolve/target";
 import {
   ADDRESS_DIR,
+  CHAIN_B_ID,
+  CHAIN_B_PORT,
   COMPOSE_OUT_DIR,
   COMPONENT_BY_STEP,
   COMPONENTS,
@@ -57,6 +59,7 @@ import {
   gatewayAddressesSolidityPath,
   hostAddressesPath,
   hostAddressesSolidityPath,
+  hostBAddressesPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -157,6 +160,7 @@ const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) =>
 const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
   const topology = topologyForState(state);
   const overrides = visibleOverrides(state);
+  const multiChain = state.scenario.multiChain ?? false;
   console.log(`[plan] profile=${state.target}`);
   if (overrides.length) {
     console.log(`[plan] overrides=${overrides.map(describeOverride).join(", ")}`);
@@ -164,7 +168,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
       console.log(`[warn] ${warning}`);
     }
   }
-  console.log(`[plan] topology=n${topology.count}/t${topology.threshold}`);
+  console.log(`[plan] topology=n${topology.count}/t${topology.threshold}${multiChain ? " multi-chain" : ""}`);
   console.log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
 };
 
@@ -467,6 +471,7 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
           hostAddressesSolidityPath,
         ]
       : []),
+    ...(state.scenario.multiChain ? [hostBAddressesPath] : []),
   ];
   const allExist = (await Promise.all(requiredPaths.map((file) => exists(file)))).every(Boolean);
   if (allExist) {
@@ -476,9 +481,27 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
   await generateRuntime(state, stackSpecForState(state));
 };
 
-const resetAfterStep = async (step: StepName) => {
+/** Maps each multi-chain compose file to the pipeline step that creates it. */
+const MULTI_CHAIN_STEP: Record<string, StepName> = {
+  "host-node-b": "base",
+  "host-sc-b": "host-deploy",
+  "coprocessor-host-b": "coprocessor",
+};
+
+const resetAfterStep = async (step: StepName, state: Pick<State, "scenario">) => {
   const start = stateStepIndex(step);
   const failed: string[] = [];
+  if (state.scenario.multiChain) {
+    const toTearDown = Object.entries(MULTI_CHAIN_STEP)
+      .filter(([, parentStep]) => stateStepIndex(parentStep) >= start)
+      .map(([name]) => name);
+    const multiChainResults = await Promise.all(
+      toTearDown.map(async (name) => ({ name, ok: await multiChainComposeDown(name) })),
+    );
+    for (const { name, ok } of multiChainResults) {
+      if (!ok) failed.push(name);
+    }
+  }
   for (let index = STEP_NAMES.length - 1; index >= start; index -= 1) {
     for (const component of COMPONENT_BY_STEP[STEP_NAMES[index]]) {
       const ok = await composeDown(component);
@@ -988,6 +1011,47 @@ const stepComposeUp = async (
   await composeUp(component, services, options);
 };
 
+const MULTI_CHAIN_ENV_COMPONENT: Record<string, string> = {
+  "coprocessor-host-b": "coprocessor",
+  "host-sc-b": "host-sc-b",
+  "host-node-b": "host-node-b",
+};
+
+const multiChainComposeUp = async (
+  name: string,
+  services?: string[],
+) => {
+  const file = composePath(name);
+  const component = MULTI_CHAIN_ENV_COMPONENT[name] ?? name;
+  try {
+    await runStreaming(
+      ["docker", "compose", "-p", PROJECT, "-f", file, "up", "-d", "--no-deps", ...(services ?? [])],
+      { env: await composeEnv(component) },
+    );
+  } catch (error) {
+    throw new ContainerStartError(name, error instanceof Error ? error.message : String(error));
+  }
+};
+
+const multiChainComposeDown = async (name: string) => {
+  const file = composePath(name);
+  const component = MULTI_CHAIN_ENV_COMPONENT[name] ?? name;
+  try {
+    const code = await runStreaming(
+      ["docker", "compose", "-p", PROJECT, "-f", file, "down", "-v"],
+      { env: await composeEnv(component).catch(() => ({ COMPOSE_IGNORE_ORPHANS: "true" })), allowFailure: true },
+    );
+    if (code !== 0) {
+      console.log(`[warn] compose down failed for ${name} (${code})`);
+      return false;
+    }
+    return true;
+  } catch {
+    console.log(`[warn] compose down failed for ${name}`);
+    return false;
+  }
+};
+
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
 const coprocessorHealthContainers = (state: Pick<State, "scenario">) => {
   const topology = topologyForState(state);
@@ -1034,6 +1098,35 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
     Array.from({ length: topologyForState(state).count }, (_, index) => (index === 0 ? "coprocessor" : `coprocessor_${index}`)).map(coprocessorDbSeeded),
   )).every(Boolean);
+
+const registerChainBInCoprocessor = async (state: State) => {
+  const plan = stackSpecForState(state);
+  const aclAddress =
+    state.discovery?.hostB?.ACL_CONTRACT_ADDRESS ??
+    state.discovery?.host?.ACL_CONTRACT_ADDRESS ??
+    "";
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    const dbName = index === 0 ? "coprocessor" : `coprocessor_${index}`;
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    console.log(`[multi-chain] registering Chain B in ${dbName}`);
+    await run([
+      "docker", "exec", COPROCESSOR_DB_CONTAINER,
+      "psql", "-U", "postgres", "-d", dbName, "-c",
+      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${CHAIN_B_ID}, 'test chain b', '${aclAddress}') ON CONFLICT (chain_id) DO NOTHING;`,
+    ]);
+    console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
+    await run(["docker", "stop", `${prefix}zkproof-worker`]);
+    await run(["docker", "start", `${prefix}zkproof-worker`]);
+    await waitForContainer(`${prefix}zkproof-worker`, "running");
+  }
+};
+
+const discoverChainBContracts = async () => {
+  if (!(await exists(hostBAddressesPath))) {
+    throw new PreflightError("Missing Chain B host address file");
+  }
+  return readEnvFile(hostBAddressesPath);
+};
 
 /** Waits for the kms-connector runtime services to become ready. */
 const waitForKmsConnector = async () => {
@@ -1104,7 +1197,7 @@ export const runStep = async (state: State, step: StepName) => {
     case "generate":
       await generateRuntime(state, stackSpecForState(state));
       break;
-    case "base":
+    case "base": {
       await stepComposeUp("minio", state);
       await waitForContainer("fhevm-minio", "healthy");
       await waitForContainer("fhevm-minio-setup", "complete");
@@ -1116,9 +1209,19 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForRpc("http://localhost:8545");
       await stepComposeUp("gateway-node", state);
       await waitForRpc("http://localhost:8546");
+      const plan = stackSpecForState(state);
       state.discovery = createDiscovery(await defaultEndpoints());
+      if (plan.multiChain) {
+        state.discovery.endpoints.hostBHttp = `http://host-node-b:${CHAIN_B_PORT}`;
+        state.discovery.endpoints.hostBWs = `ws://host-node-b:${CHAIN_B_PORT}`;
+      }
       await generateRuntime(state, stackSpecForState(state));
+      if (plan.multiChain) {
+        await multiChainComposeUp("host-node-b");
+        await waitForRpc(`http://localhost:${CHAIN_B_PORT}`);
+      }
       break;
+    }
     case "kms-signer": {
       const discovery = await ensureDiscovery(state);
       const signer = await discoverSigner();
@@ -1140,12 +1243,25 @@ export const runStep = async (state: State, step: StepName) => {
     case "host-deploy":
       await stepComposeUp("host-sc", state, ["host-sc-deploy"]);
       await waitForContainer("host-sc-deploy", "complete");
+      if (stackSpecForState(state).multiChain) {
+        await timed("[multi-chain] host-sc-b-deploy", async () => {
+          await multiChainComposeUp("host-sc-b", ["host-sc-b-deploy"]);
+          await waitForContainer("host-sc-b-deploy", "complete");
+        });
+        await timed("[multi-chain] host-sc-b-add-pausers", async () => {
+          await multiChainComposeUp("host-sc-b", ["host-sc-b-add-pausers"]);
+          await waitForContainer("host-sc-b-add-pausers", "complete");
+        });
+      }
       break;
     case "discover": {
       const contracts = await discoverContracts();
       const discovery = await ensureDiscovery(state);
       discovery.gateway = contracts.gateway;
       discovery.host = contracts.host;
+      if (stackSpecForState(state).multiChain) {
+        discovery.hostB = await discoverChainBContracts();
+      }
       break;
     }
     case "regenerate":
@@ -1165,6 +1281,20 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
       await waitForCoprocessorServices(state, skipMigration);
       await postBootHealthGate(coprocessorHealthContainers(state));
+      if (stackSpecForState(state).multiChain) {
+        await timed("[multi-chain] register Chain B in coprocessor DBs", () =>
+          registerChainBInCoprocessor(state),
+        );
+        await timed("[multi-chain] start host-listener-b services", async () => {
+          await multiChainComposeUp("coprocessor-host-b");
+          const topology = topologyForState(state);
+          for (let index = 0; index < topology.count; index += 1) {
+            const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+            await waitForContainer(`${prefix}host-listener-b`, "running");
+            await waitForContainer(`${prefix}host-listener-poller-b`, "running");
+          }
+        });
+      }
       break;
     }
     case "kms-connector":
@@ -1268,6 +1398,7 @@ const describeResumeState = (state: State) => {
   return [
     `profile=${state.target}`,
     `topology=${topology.count}/${topology.threshold}`,
+    ...(state.scenario.multiChain ? ["multi-chain"] : []),
     ...(state.scenario.origin !== "default"
       ? [`scenario=${state.scenario.origin}${state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""}`]
       : []),
@@ -1399,7 +1530,7 @@ export const up = async (options: UpOptions) => {
     console.log(`[warn] ${warning}`);
   }
   if (options.resume && options.fromStep) {
-    await resetAfterStep(options.fromStep);
+    await resetAfterStep(options.fromStep, state);
     state.completedSteps = state.completedSteps.filter((step) => stateStepIndex(step) < stateStepIndex(options.fromStep!));
     await saveState(state);
   }
@@ -1465,6 +1596,14 @@ export const down = async () => {
     await ensureRuntimeArtifacts(state, "teardown");
   }
   const failed: string[] = [];
+  if (state?.scenario?.multiChain) {
+    const multiChainResults = await Promise.all(
+      ["coprocessor-host-b", "host-sc-b", "host-node-b"].map(async (name) => ({ name, ok: await multiChainComposeDown(name) })),
+    );
+    for (const { name, ok } of multiChainResults) {
+      if (!ok) failed.push(name);
+    }
+  }
   for (const component of [...COMPONENTS].reverse()) {
     console.log(`[down] ${component}`);
     const ok = await composeDown(component);
@@ -1532,7 +1671,7 @@ export const status = async () => {
         console.log(`[warn] ${warning}`);
       }
     }
-    console.log(`[topology] n=${topology.count} t=${topology.threshold}`);
+    console.log(`[topology] n=${topology.count} t=${topology.threshold}${state.scenario.multiChain ? " multi-chain" : ""}`);
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
       for (const instance of state.scenario.instances) {

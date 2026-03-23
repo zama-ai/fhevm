@@ -23,6 +23,7 @@ export type StackSpec = {
   versions: VersionBundle;
   overrides: State["overrides"];
   topology: Topology;
+  multiChain: boolean;
   coprocessor: ResolvedCoprocessorScenario;
 };
 
@@ -62,6 +63,7 @@ const stackSpecFromResolved = (input: {
   versions: input.versions,
   overrides: input.overrides,
   topology: topologyFromScenario(input.scenario),
+  multiChain: input.scenario.multiChain ?? false,
   coprocessor: input.scenario,
 });
 

@@ -212,11 +212,14 @@ export const parseCoprocessorScenario = (text: string, sourceLabel = "scenario")
     };
   });
 
+  const multiChain = parsed.multiChain === true ? true : undefined;
+
   return {
     version: COPROCESSOR_SCENARIO_VERSION,
     kind: COPROCESSOR_SCENARIO_KIND,
     name: normalizeOptionalText(parsed.name, `${sourceLabel}: name`),
     description: normalizeOptionalText(parsed.description, `${sourceLabel}: description`),
+    multiChain,
     topology: { count, threshold },
     instances,
   };
@@ -264,6 +267,7 @@ export const resolveScenarioFile = (filePath: string, input: CoprocessorScenario
     origin: "file",
     name: input.name,
     description: input.description,
+    multiChain: input.multiChain,
     sourcePath: path.resolve(filePath),
     topology: { ...input.topology },
     instances: Array.from({ length: input.topology.count }, (_, index) => {

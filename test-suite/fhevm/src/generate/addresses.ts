@@ -58,16 +58,24 @@ export const renderPaymentBridgingAddressesSolidity = (gatewayEnv: Record<string
     ["feesSenderToBurnerAddress", gatewayEnv.FEES_SENDER_TO_BURNER_ADDRESS],
   ]);
 
+const HOST_ADDRESS_KEYS = [
+  "ACL_CONTRACT_ADDRESS",
+  "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
+  "KMS_VERIFIER_CONTRACT_ADDRESS",
+  "INPUT_VERIFIER_CONTRACT_ADDRESS",
+  "HCU_LIMIT_CONTRACT_ADDRESS",
+  "PAUSER_SET_CONTRACT_ADDRESS",
+] as const;
+
+const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
+  renderEnvFile(HOST_ADDRESS_KEYS.map((key) => [key, addresses?.[key]]));
+
 /** Renders discovered host addresses into a dotenv artifact. */
 export const renderHostAddressesEnv = (state: Pick<State, "discovery">) =>
-  renderEnvFile([
-    ["ACL_CONTRACT_ADDRESS", state.discovery?.host.ACL_CONTRACT_ADDRESS],
-    ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", state.discovery?.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS],
-    ["KMS_VERIFIER_CONTRACT_ADDRESS", state.discovery?.host.KMS_VERIFIER_CONTRACT_ADDRESS],
-    ["INPUT_VERIFIER_CONTRACT_ADDRESS", state.discovery?.host.INPUT_VERIFIER_CONTRACT_ADDRESS],
-    ["HCU_LIMIT_CONTRACT_ADDRESS", state.discovery?.host.HCU_LIMIT_CONTRACT_ADDRESS],
-    ["PAUSER_SET_CONTRACT_ADDRESS", state.discovery?.host.PAUSER_SET_CONTRACT_ADDRESS],
-  ]);
+  renderHostChainAddressesEnv(state.discovery?.host);
+
+export const renderHostBAddressesEnv = (state: Pick<State, "discovery">) =>
+  renderHostChainAddressesEnv(state.discovery?.hostB);
 
 /** Renders discovered host addresses into Solidity constants. */
 export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) =>

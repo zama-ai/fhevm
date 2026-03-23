@@ -1,0 +1,8 @@
+version: 1
+kind: coprocessor-consensus
+name: Two Of Two Multi Chain
+description: Two-coprocessor consensus with two host chains for multi-chain + multi-coprocessor testing.
+multiChain: true
+topology:
+  count: 2
+  threshold: 2
