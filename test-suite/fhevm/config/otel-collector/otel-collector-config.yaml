@@ -6,13 +6,13 @@
 #                                            --traces--> [otlp/jaeger exporter] --> Jaeger
 #
 # Spanmetrics dimensions (explicit allowlist):
-#   - service.name (default) — 6 known services
-#   - span.name (default) — ~45 distinct span names
+#   - service.name (default) — 5 coprocessor services
+#   - span.name (default) — ~55 distinct span names
 #   - status.code (default) — OK / ERROR
-#   - operation — FHE operation enum name (~30 values)
+#   - operation — FHE operation enum name (~32 values)
 #   - ct_type — ciphertext type (~15 values)
-#   - operation_pattern_id — per-cone DFG hash on fhe_operation spans (bounded by distinct contract patterns)
-#   - transaction_pattern_id — whole-tx DFG hash (bounded by distinct contract patterns)
+#   - operation_pattern_id — per-cone DFG fingerprint on fhe_operation, compress_ciphertext, rerandomise_op_inputs spans
+#   - transaction_pattern_id — whole-tx DFG fingerprint on execute_transaction spans
 #
 # Excluded from defaults:
 #   - span.kind — all spans are INTERNAL (single value = useless)
@@ -54,7 +54,7 @@ connectors:
     dimensions:
       - name: operation       # FHE op name on fhe_operation / compress_ciphertext spans
       - name: ct_type         # Ciphertext type on compress/squash/upload spans
-      - name: operation_pattern_id    # per-cone DFG fingerprint on fhe_operation / compress_ciphertext spans
+      - name: operation_pattern_id    # per-cone DFG fingerprint on fhe_operation / compress_ciphertext / rerandomise_op_inputs spans
       - name: transaction_pattern_id  # whole-tx DFG fingerprint on execute_transaction spans
 
     # Remove unhelpful defaults (all coprocessor spans are INTERNAL — single value)
@@ -141,6 +141,9 @@ service:
 #
 # p95 latency by DFG operation pattern (per FHE op cone):
 #   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="fhe_operation"}[5m])) by (le, operation_pattern_id))
+#
+# p95 compress_ciphertext latency by pattern and ciphertext type:
+#   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="compress_ciphertext"}[5m])) by (le, operation_pattern_id, ct_type))
 #
 # p95 latency by DFG transaction pattern:
 #   histogram_quantile(0.95, sum(rate(coprocessor_span_duration_milliseconds_bucket{span_name="execute_transaction"}[5m])) by (le, transaction_pattern_id))

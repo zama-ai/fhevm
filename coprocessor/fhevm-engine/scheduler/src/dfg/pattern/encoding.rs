@@ -21,8 +21,10 @@ pub(super) const HASH_VERSION: u8 = 0x02;
 /// Number of bytes to keep from the Keccak-256 digest.
 const HASH_DIGEST_LEN: usize = 20;
 
-/// Default node-count threshold: groups with more nodes than this get hashed.
-const DEFAULT_PATTERN_HASH_THRESHOLD: usize = 25;
+/// Default byte-size threshold: decodable encodings larger than this are hashed
+/// into a compact 23-byte form. 64 bytes covers all single-function FHE patterns
+/// (a `transferFrom` is ~36 bytes) and most simple transactions.
+const DEFAULT_PATTERN_BYTE_THRESHOLD: usize = 64;
 
 /// LRU dedup cache so we log the full encoding once per unique hash.
 /// Bounded at [`HASH_LOG_CACHE_SIZE`] entries; when full, the least-recently
@@ -49,12 +51,12 @@ pub fn pattern_to_base64url(bytes: &[u8]) -> String {
 /// Decode a binary pattern encoding into a [`PatternDescription`].
 ///
 /// Returns `None` if the encoding is malformed (wrong version, truncated, etc.)
-/// or if the pattern is a hashed v2 form (hashes are not decodable).
+/// or if the pattern is a hashed form (hashes are not decodable).
 pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
     if bytes.len() < 2 {
         return None;
     }
-    // Only v1 encodings are decodable; hashed (v2) and unknown versions are not.
+    // Only decodable encodings (ENCODING_VERSION) are supported; hashed and unknown versions are not.
     if bytes[0] != ENCODING_VERSION {
         return None;
     }
@@ -116,35 +118,35 @@ pub fn decode_pattern(bytes: &[u8]) -> Option<PatternDescription> {
 // Two-tier finalization (encoding vs hash)
 // ---------------------------------------------------------------------------
 
-/// Returns `true` if the pattern bytes represent a hashed (v2) pattern.
+/// Returns `true` if the pattern bytes represent a hashed pattern.
 pub fn is_hashed_pattern(bytes: &[u8]) -> bool {
     !bytes.is_empty() && bytes[0] == HASH_VERSION
 }
 
-/// Hash threshold read once from `FHEVM_PATTERN_HASH_THRESHOLD` env var,
-/// falling back to [`DEFAULT_PATTERN_HASH_THRESHOLD`].
-pub(super) static PATTERN_HASH_THRESHOLD: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("FHEVM_PATTERN_HASH_THRESHOLD")
+/// Byte-size threshold read once from `FHEVM_PATTERN_BYTE_THRESHOLD` env var,
+/// falling back to [`DEFAULT_PATTERN_BYTE_THRESHOLD`].
+pub(super) static PATTERN_BYTE_THRESHOLD: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("FHEVM_PATTERN_BYTE_THRESHOLD")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_PATTERN_HASH_THRESHOLD)
+        .unwrap_or(DEFAULT_PATTERN_BYTE_THRESHOLD)
 });
 
-/// If the v1 encoding has `node_count ≤ threshold`, return it as-is.
-/// Otherwise hash it into a compact 23-byte v2 form and log the full
+/// If the decodable encoding fits within `byte_threshold` bytes, return it as-is.
+/// Otherwise hash it into a compact 23-byte hashed form and log the full
 /// encoding once (per unique hash) for operator linkability.
-pub(super) fn finalize_pattern(encoding: Vec<u8>, threshold: usize) -> Vec<u8> {
+pub(super) fn finalize_pattern(encoding: Vec<u8>, byte_threshold: usize) -> Vec<u8> {
     debug_assert!(encoding.len() >= 2 && encoding[0] == ENCODING_VERSION);
-    let node_count = encoding[1] as usize;
 
-    if node_count <= threshold {
+    if encoding.len() <= byte_threshold {
         return encoding;
     }
 
+    let node_count = encoding[1] as usize;
     build_hash_pattern(&encoding, node_count, true)
 }
 
-/// Build a 23-byte v2 hashed pattern from arbitrary encoding bytes.
+/// Build a 23-byte hashed pattern from arbitrary encoding bytes.
 ///
 /// ## Hashed pattern binary layout
 ///
@@ -220,10 +222,10 @@ pub(super) fn compute_subgraph_layout(
     Some((local_topo, topo_pos))
 }
 
-/// Maximum number of nodes that a v1 encoding can represent (node_count is u8).
+/// Maximum number of nodes that a decodable encoding can represent (node_count is u8).
 const V1_MAX_NODES: usize = 255;
 
-/// Maximum number of inputs per node that a v1 encoding can represent
+/// Maximum number of inputs per node that a decodable encoding can represent
 /// (3-bit field in the flags byte).
 const V1_MAX_INPUTS_PER_NODE: usize = 7;
 
@@ -243,7 +245,7 @@ const V1_MAX_INTERNAL_REF: usize = 127;
 /// nodes, allowed nodes from other groups, DB handles) are treated as external
 /// (byte 0x00).
 ///
-/// Returns `None` if the group exceeds the v1 encoding limits (\>255 nodes,
+/// Returns `None` if the group exceeds the decodable encoding limits (\>255 nodes,
 /// \>7 inputs per node, or \>127 internal-ref position). Callers can fall back
 /// to wide-format hashing so oversized groups are still attributable via hash.
 ///
@@ -326,7 +328,7 @@ pub(super) fn encode_subgraph(
     Some(buf)
 }
 
-/// Wide-format encoding used only as hash input when a group exceeds v1 limits.
+/// Wide-format encoding used only as hash input when a group exceeds decodable encoding limits.
 ///
 /// This is intentionally not emitted as a pattern attribute directly: only the
 /// resulting hash is used.

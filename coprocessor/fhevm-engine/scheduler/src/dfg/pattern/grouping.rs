@@ -5,7 +5,7 @@ use daggy::Dag;
 
 use super::encoding::{
     build_hash_pattern, encode_subgraph, encode_subgraph_hashable, finalize_pattern,
-    PATTERN_HASH_THRESHOLD,
+    PATTERN_BYTE_THRESHOLD,
 };
 use crate::dfg::types::DFGTaskInput;
 use crate::dfg::{DFGOp, OpEdge};
@@ -226,10 +226,10 @@ pub fn compute_logical_pattern_ids(
 
     // Encode each group and assign pattern_ids.
     //
-    // Try compact v1 first. If it succeeds and is above threshold, we hash and
-    // log full encoding once. If v1 fails (group too large), hash wide encoding
+    // Try decodable encoding first. If it succeeds but exceeds the byte threshold,
+    // we hash and log the full encoding once. If encoding fails (group too large), hash wide encoding
     // without logging the full payload.
-    let threshold = *PATTERN_HASH_THRESHOLD;
+    let threshold = *PATTERN_BYTE_THRESHOLD;
     let mut result: HashMap<usize, Vec<u8>> = HashMap::new();
     for group in groups.values() {
         let pattern_id = match encode_subgraph(operations, group, produced_handles, &topo, graph) {
@@ -299,7 +299,7 @@ pub fn compute_transaction_pattern_id(
         Err(_) => return Vec::new(),
     };
 
-    let threshold = *PATTERN_HASH_THRESHOLD;
+    let threshold = *PATTERN_BYTE_THRESHOLD;
     match encode_subgraph(operations, &all_computation, produced_handles, &topo, graph) {
         Some(encoding) => finalize_pattern(encoding, threshold),
         None => {

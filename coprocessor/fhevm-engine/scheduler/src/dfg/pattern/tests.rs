@@ -56,13 +56,13 @@ fn collect_op_pattern_ids(component: &super::super::ComponentNode) -> Vec<Vec<u8
         .collect()
 }
 
-/// Assert that a pattern_id is a valid pattern — either a v1 encoding
-/// (decodable) or a v2 hash (23 bytes, starts with HASH_VERSION).
+/// Assert that a pattern_id is a valid pattern — either a decodable encoding
+/// or a hashed form (23 bytes, starts with HASH_VERSION).
 fn assert_valid_pattern(bytes: &[u8]) {
     assert!(!bytes.is_empty(), "pattern_id should not be empty");
     match bytes[0] {
         ENCODING_VERSION => {
-            let desc = decode_pattern(bytes).expect("v1 pattern_id should be decodable");
+            let desc = decode_pattern(bytes).expect("decodable pattern_id should decode");
             assert!(
                 !desc.nodes.is_empty(),
                 "decoded pattern should have at least one node"
@@ -1110,7 +1110,7 @@ fn oversize_group_hashes_for_transaction_pattern() {
 
     let tx_id = vec![0xFFu8; 32];
     let (components, _) = build_component_nodes(ops2, &tx_id).unwrap();
-    // >255 nodes: v1 encoding fails, wide encoding is hashed.
+    // >255 nodes: decodable encoding fails, wide encoding is hashed.
     let tx_pat = &components[0].transaction_pattern_id;
     assert!(
         is_hashed_pattern(tx_pat),
@@ -1166,37 +1166,68 @@ fn build_chain(n: usize, prefix: u8) -> Vec<DFGOp> {
 }
 
 #[test]
-fn pattern_below_threshold_is_encoding() {
-    // A group with ≤ DEFAULT_PATTERN_HASH_THRESHOLD nodes stays v1.
+fn pattern_below_byte_threshold_is_encoding() {
+    // 10 FheAdd nodes × 4 bytes/node + 2 header = 42 bytes, well under 64-byte threshold.
     let ops = build_chain(10, 0xA0);
     let ids = compute_logical_ids(ops);
     assert!(!ids.is_empty());
     let pattern = ids.values().next().unwrap();
+    assert_eq!(pattern.len(), 42, "10-node chain should encode to 42 bytes");
     assert_eq!(
         pattern[0], ENCODING_VERSION,
-        "small group should produce v1 encoding"
+        "small group should produce decodable encoding"
     );
     assert!(
         decode_pattern(pattern).is_some(),
-        "v1 encoding should be decodable"
+        "decodable encoding should decode"
     );
     assert!(
         !is_hashed_pattern(pattern),
-        "v1 encoding should not be identified as hashed"
+        "decodable encoding should not be identified as hashed"
     );
 }
 
 #[test]
-fn pattern_above_threshold_is_hashed() {
-    // A group with > DEFAULT_PATTERN_HASH_THRESHOLD nodes gets hashed.
-    // Default threshold is 25, so 30 nodes should trigger hashing.
+fn pattern_at_byte_threshold_boundary() {
+    // 15 FheAdd nodes × 4 bytes/node + 2 header = 62 bytes → fits in 64 → decodable.
+    let ops_below = build_chain(15, 0xA1);
+    let ids_below = compute_logical_ids(ops_below);
+    let pat_below = ids_below.values().next().unwrap();
+    assert_eq!(
+        pat_below.len(),
+        62,
+        "15-node chain should encode to 62 bytes"
+    );
+    assert_eq!(
+        pat_below[0], ENCODING_VERSION,
+        "62-byte encoding should stay decodable (under 64-byte threshold)"
+    );
+
+    // 16 FheAdd nodes × 4 bytes/node + 2 header = 66 bytes → exceeds 64 → hashed.
+    let ops_above = build_chain(16, 0xA2);
+    let ids_above = compute_logical_ids(ops_above);
+    let pat_above = ids_above.values().next().unwrap();
+    assert!(
+        is_hashed_pattern(pat_above),
+        "66-byte encoding should be hashed (exceeds 64-byte threshold)"
+    );
+    assert_eq!(
+        pat_above.len(),
+        23,
+        "hashed pattern should be exactly 23 bytes"
+    );
+}
+
+#[test]
+fn pattern_above_byte_threshold_is_hashed() {
+    // 30 FheAdd nodes × 4 bytes/node + 2 header = 122 bytes, well above 64-byte threshold.
     let ops = build_chain(30, 0xB0);
     let ids = compute_logical_ids(ops);
     assert!(!ids.is_empty());
     let pattern = ids.values().next().unwrap();
     assert_eq!(
         pattern[0], HASH_VERSION,
-        "large group should produce v2 hashed pattern"
+        "large group should produce hashed pattern"
     );
     assert_eq!(
         pattern.len(),
@@ -1208,7 +1239,7 @@ fn pattern_above_threshold_is_hashed() {
     assert_eq!(node_count, 30, "hashed pattern should encode node_count=30");
     assert!(
         is_hashed_pattern(pattern),
-        "v2 pattern should be identified as hashed"
+        "hashed pattern should be identified as hashed"
     );
     assert!(
         decode_pattern(pattern).is_none(),
@@ -1225,8 +1256,9 @@ fn pattern_above_threshold_is_hashed() {
 
 #[test]
 fn hashed_pattern_deterministic() {
-    // Two chains of the same length with different handles should produce
-    // the same hash (structure is identical, handles don't matter).
+    // Two chains of the same length (30 nodes = 122 bytes, exceeds 64-byte
+    // threshold) with different handles should produce the same hash
+    // (structure is identical, handles don't matter).
     let ops_a = build_chain(30, 0xC0);
     let ops_b = build_chain(30, 0xD0);
     let ids_a = compute_logical_ids(ops_a);
