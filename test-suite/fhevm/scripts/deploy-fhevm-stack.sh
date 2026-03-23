@@ -562,9 +562,25 @@ configure_multichain_envs() {
     set_env_value "$host_node_b_env" "HOST_NODE_CHAIN_ID" "67890"
 
     # Host-sc-b
+    local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
     set_env_value "$host_sc_b_env" "RPC_URL" "http://host-node-b:8547"
     set_env_value "$host_sc_b_env" "HOST_SC_DEPLOY_CONTAINER_NAME" "host-sc-b-deploy"
     set_env_value "$host_sc_b_env" "HOST_SC_PAUSERS_CONTAINER_NAME" "host-sc-b-add-pausers"
+
+    # Propagate coprocessor signer addresses to Chain B so its InputVerifier
+    # contract is deployed with the same signers as Chain A.
+    local num_copro
+    num_copro=$(get_env_value "$host_env" "NUM_COPROCESSORS")
+    if [[ -n "$num_copro" ]]; then
+        set_env_value "$host_sc_b_env" "NUM_COPROCESSORS" "$num_copro"
+        set_env_value "$host_sc_b_env" "COPROCESSOR_THRESHOLD" \
+            "$(get_env_value "$host_env" "COPROCESSOR_THRESHOLD")"
+        for ((idx=0; idx<num_copro; idx++)); do
+            local signer_addr
+            signer_addr=$(get_env_value "$host_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}")
+            set_env_value "$host_sc_b_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}" "$signer_addr"
+        done
+    fi
 
     # Coprocessor-b
     set_env_value "$coprocessor_b_env" "RPC_HTTP_URL" "http://host-node-b:8547"
@@ -603,6 +619,63 @@ KMSHC
     log_info "Multi-chain environment configured (Chain B: chain_id=67890, port=8547)"
 }
 
+
+# Register Chain B in a coprocessor instance's DB, restart its zkproof-worker
+# to reload HostChainsCache, and start Chain B host-listener services.
+setup_coprocessor_chain_b() {
+    local idx=$1
+    local chain_b_acl=$2
+    local db_name="coprocessor"
+    local svc_prefix="coprocessor-"
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local"
+
+    if [[ "$idx" -gt 0 ]]; then
+        db_name="coprocessor_${idx}"
+        svc_prefix="coprocessor${idx}-"
+        env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor-b.${idx}.local"
+        cp "$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local" "$env_file"
+        local instance_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.${idx}.local"
+        set_env_value "$env_file" "DATABASE_URL" "$(get_env_value "$instance_env" "DATABASE_URL")"
+        set_env_value "$env_file" "TX_SENDER_PRIVATE_KEY" "$(get_env_value "$instance_env" "TX_SENDER_PRIVATE_KEY")"
+    fi
+
+    log_info "Registering Chain B in $db_name..."
+    docker exec coprocessor-and-kms-db psql -U postgres -d "$db_name" -c \
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (67890, 'test chain b', '${chain_b_acl}') ON CONFLICT (chain_id) DO NOTHING;"
+
+    # Stop then start so HostChainsCache loads after DB is ready.
+    log_info "Restarting ${svc_prefix}zkproof-worker for Chain B..."
+    docker stop "${svc_prefix}zkproof-worker"
+    docker start "${svc_prefix}zkproof-worker"
+    wait_for_service "" "${svc_prefix}zkproof-worker" "true"
+
+    # Build temp compose: rename host-listener → host-listener-b, swap env file
+    local temp_compose
+    temp_compose=$(mktemp "$SCRIPT_DIR/../docker-compose/${svc_prefix}host-b.XXXXXX")
+    local sed_args=()
+    if [[ "$idx" -gt 0 ]]; then
+        sed_args+=(-e "s/coprocessor-/coprocessor${idx}-/g")
+        sed_args+=(-e "s/--coprocessor${idx}-fhe-threads/--coprocessor-fhe-threads/g")
+    fi
+    sed_args+=(
+        -e "s/^  ${svc_prefix}host-listener-poller:$/  ${svc_prefix}host-listener-poller-b:/"
+        -e "s/^  ${svc_prefix}host-listener:$/  ${svc_prefix}host-listener-b:/"
+        -e "s/container_name: ${svc_prefix}host-listener-poller$/container_name: ${svc_prefix}host-listener-poller-b/"
+        -e "s/container_name: ${svc_prefix}host-listener$/container_name: ${svc_prefix}host-listener-b/"
+        -e "s#../env/staging/.env.coprocessor.local#../env/staging/${env_file##*/}#g"
+        -e "/^      ${svc_prefix}host-listener:$/,/condition:/d"
+    )
+    sed "${sed_args[@]}" "$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml" > "$temp_compose"
+
+    local build_flag=""
+    [[ "$FORCE_BUILD" == true ]] && build_flag="--build"
+    log_info "Starting ${svc_prefix}listeners for Chain B..."
+    docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" \
+        up $build_flag --no-deps -d "${svc_prefix}host-listener-b" "${svc_prefix}host-listener-poller-b"
+    wait_for_service "$temp_compose" "${svc_prefix}host-listener-b" "true"
+    wait_for_service "$temp_compose" "${svc_prefix}host-listener-poller-b" "true"
+    rm -f "$temp_compose"
+}
 
 # Start one extra coprocessor instance (db-migration first, then runtime services).
 run_additional_coprocessor_instance() {
@@ -816,8 +889,8 @@ cleanup_from_step() {
     log_info "Cleanup complete. Services before '$start_step' preserved."
 }
 
-# Single step cleanup: tear down only the specified step's services
-cleanup_single_step() {
+# Clean up only the specified step's services
+cleanup_step() {
     local step=$1
     local compose=$(get_compose_for_step "$step")
 
@@ -841,12 +914,12 @@ cleanup_single_step() {
         fi
     fi
 
-    log_info "Cleanup complete. Only '$step' was cleaned."
+    log_info "Cleanup complete for '$step'."
 }
 
 # Run cleanup based on mode
 if [[ -n "$ONLY_STEP" ]]; then
-    cleanup_single_step "$ONLY_STEP"
+    cleanup_step "$ONLY_STEP"
 elif [[ -n "$RESUME_STEP" ]]; then
     cleanup_from_step "$RESUME_STEP"
 else
@@ -987,39 +1060,13 @@ else
 fi
 
 # Step 7b: coprocessor Chain B listeners (multi-chain only)
-# Reuses coprocessor compose with sed to rename host-listener services + env_file path.
-# Only starts the two host-listener services with --no-deps (db-migration already done).
+# Registers Chain B in each coprocessor database, restarts zkproof-workers (HostChainsCache
+# is loaded once at startup), and starts host-listener-b services via sed-transformed compose.
 if [[ "$MULTI_CHAIN" == "true" ]] && ! should_skip_step "coprocessor"; then
-    # Register Chain B in the coprocessor database so workers (zkproof, etc.) can resolve its ACL address.
-    # This must happen before any Chain B traffic arrives, and the zkproof-worker must be restarted
-    # because HostChainsCache is loaded once at startup.
-    log_info "Registering Chain B (67890) in coprocessor host_chains table..."
     chain_b_acl=$(get_env_value "$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local" "ACL_CONTRACT_ADDRESS")
-    docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c \
-        "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (67890, 'test chain b', '${chain_b_acl}') ON CONFLICT (chain_id) DO NOTHING;"
-
-    log_info "Restarting zkproof-worker to pick up Chain B host_chains entry..."
-    docker restart coprocessor-zkproof-worker
-    wait_for_service "$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml" "coprocessor-zkproof-worker" "true"
-
-    log_info "Starting coprocessor listeners for Chain B..."
-    temp_coproc_b=$(mktemp "$SCRIPT_DIR/../docker-compose/coprocessor-host-b.XXXXXX")
-    # Process poller pattern first (more specific) to avoid partial matches
-    sed -e 's/^  coprocessor-host-listener-poller:$/  coprocessor-host-listener-poller-b:/' \
-        -e 's/^  coprocessor-host-listener:$/  coprocessor-host-listener-b:/' \
-        -e 's/container_name: coprocessor-host-listener-poller$/container_name: coprocessor-host-listener-poller-b/' \
-        -e 's/container_name: coprocessor-host-listener$/container_name: coprocessor-host-listener-b/' \
-        -e 's/\.env\.coprocessor\.local/.env.coprocessor-b.local/g' \
-        "$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml" > "$temp_coproc_b"
-    coprocessor_b_env="$SCRIPT_DIR/../env/staging/.env.coprocessor-b.local"
-    if [[ "$FORCE_BUILD" == true ]]; then
-        docker compose -p "${PROJECT}" --env-file "$coprocessor_b_env" -f "$temp_coproc_b" up --build --no-deps -d coprocessor-host-listener-b coprocessor-host-listener-poller-b
-    else
-        docker compose -p "${PROJECT}" --env-file "$coprocessor_b_env" -f "$temp_coproc_b" up --no-deps -d coprocessor-host-listener-b coprocessor-host-listener-poller-b
-    fi
-    wait_for_service "$temp_coproc_b" "coprocessor-host-listener-b" "true"
-    wait_for_service "$temp_coproc_b" "coprocessor-host-listener-poller-b" "true"
-    rm -f "$temp_coproc_b"
+    for ((idx=0; idx<COPROCESSOR_COUNT; idx++)); do
+        setup_coprocessor_chain_b "$idx" "$chain_b_acl"
+    done
 fi
 
 # Step 8: kms-connector
