@@ -20,6 +20,11 @@ const UINT64_MASK = (1n << 64n) - 1n;
 const OVERSIZED_SHIFT_64 = 70n;
 const REDUCED_SHIFT_64 = 6n;
 const SHIFT_ROTATE_VALUE_64 = 0x123456789abcdef0n;
+const addr = (value: string) => ethers.getAddress(value);
+const ADDR_A = addr('0x8ba1f109551bd432803012645ac136ddd64dba72');
+const ADDR_B = addr('0x8881f109551bd432803012645ac136ddd64dba72');
+const ADDR_C = addr('0x9ba1f109551bd432803012645ac136ddd64dba72');
+const ADDR_D = addr('0x9aa1f109551bd432803012645ac136ddd64dba72');
 
 function rotl64(value: bigint, shift: bigint): bigint {
   const normalized = shift % 64n;
@@ -229,8 +234,8 @@ describe('FHEVM manual operations', function () {
   it('Select works for eaddress returning if false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(false);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_B);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
@@ -242,7 +247,7 @@ describe('FHEVM manual operations', function () {
     const handle = await this.contract.resAdd();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: ethers.getAddress('0x8881f109551bd432803012645ac136ddd64dba72'),
+      [handle]: ADDR_B,
     };
     assert.deepEqual(res.clearValues, expectedRes);
   });
@@ -250,8 +255,8 @@ describe('FHEVM manual operations', function () {
   it('Select works for eaddress returning if true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(true);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x8881f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_B);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
@@ -263,7 +268,7 @@ describe('FHEVM manual operations', function () {
     const handle = await this.contract.resAdd();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: ethers.getAddress('0x8ba1f109551bd432803012645ac136ddd64dba72'),
+      [handle]: ADDR_A,
     };
     assert.deepEqual(res.clearValues, expectedRes);
   });
@@ -408,8 +413,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq eaddress,eaddress true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_A);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_eaddress(
       encryptedAmount.handles[0],
@@ -427,8 +432,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq eaddress,eaddress false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x9ba1f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_C);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_eaddress(
       encryptedAmount.handles[0],
@@ -446,8 +451,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq scalar eaddress,address true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_A;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -461,8 +466,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq scalar eaddress,address false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_D;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -476,8 +481,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq scalar address,eaddress true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_A;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -491,8 +496,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress eq scalar address,eaddress false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_D;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -506,8 +511,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne eaddress,eaddress false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_A);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_eaddress(
       encryptedAmount.handles[0],
@@ -525,8 +530,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne eaddress,eaddress true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    input.addAddress('0x9ba1f109551bd432803012645ac136ddd64dba72');
+    input.addAddress(ADDR_A);
+    input.addAddress(ADDR_C);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_eaddress(
       encryptedAmount.handles[0],
@@ -544,8 +549,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne scalar eaddress,address false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_A;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -559,8 +564,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne scalar eaddress,address true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_D;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -574,8 +579,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne scalar address,eaddress false', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x8ba1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_A;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
@@ -589,8 +594,8 @@ describe('FHEVM manual operations', function () {
 
   it('eaddress ne scalar address,eaddress true', async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
-    const b = '0x9aa1f109551bd432803012645ac136ddd64dba72';
+    input.addAddress(ADDR_A);
+    const b = ADDR_D;
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
