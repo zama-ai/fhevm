@@ -126,6 +126,7 @@ impl CiphertextChecker {
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
+        address: Address,
         pairs: &[HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
@@ -147,7 +148,7 @@ impl CiphertextChecker {
                 let extra_data = extra_data.clone();
                 async move {
                     decryption
-                        .isUserDecryptionReady(pairs, extra_data)
+                        .isUserDecryptionReady_1(address, pairs, extra_data)
                         .call()
                         .await
                 }

@@ -8,7 +8,7 @@ use crate::{
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Bytes, FixedBytes};
+use alloy::primitives::{Address, Bytes, FixedBytes};
 use std::fmt;
 
 /// Steps for readiness checker operations
@@ -104,11 +104,12 @@ impl ReadinessChecker {
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
+        address: Address,
         pairs: &[crate::core::event::HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_user_decryption_readiness(job_id, pairs, extra_data)
+            .check_user_decryption_readiness(job_id, address, pairs, extra_data)
             .await
     }
 

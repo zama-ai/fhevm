@@ -170,7 +170,7 @@ impl FhevmMockWrapper {
         self.json_rpc_server.on_call(
             matches_contract_and_selector_for_call(
                 self.decryption_contract,
-                Decryption::isUserDecryptionReadyCall::SELECTOR,
+                Decryption::isUserDecryptionReady_1Call::SELECTOR,
             ),
             error_response,
             UsageLimit::Unlimited,
@@ -259,7 +259,7 @@ impl FhevmMockWrapper {
         self.json_rpc_server.on_call(
             matches_contract_and_selector_for_call(
                 self.decryption_contract,
-                Decryption::isUserDecryptionReadyCall::SELECTOR,
+                Decryption::isUserDecryptionReady_1Call::SELECTOR,
             ),
             readiness_response,
             usage_limit,
