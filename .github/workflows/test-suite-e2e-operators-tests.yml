@@ -45,6 +45,10 @@ on:
         description: "ZKProof Worker Image Version"
         default: ""
         type: string
+      deploy-build:
+        description: "Build local Docker images from the checked out repository before deploy"
+        default: false
+        type: boolean
       grep:
         description: "Optional grep pattern to narrow operators tests"
         default: ""
@@ -129,8 +133,13 @@ jobs:
           TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
           SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
           ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
+          DEPLOY_BUILD: ${{ inputs.deploy-build }}
         run: |
-          ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
+            ./fhevm-cli deploy --build --coprocessors 2 --coprocessor-threshold 2
+          else
+            ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          fi
 
       - name: All operators tests
         working-directory: test-suite/fhevm
@@ -151,7 +160,7 @@ jobs:
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
-        if: always()
+        if: failure()
         run: |
           echo "::group::Relayer Logs"
           ./fhevm-cli logs relayer
