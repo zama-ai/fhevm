@@ -8,8 +8,12 @@ import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
 
+const ADDRESSES_DIR = path.join(__dirname, '../addresses');
+const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
+const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
+
 function ensureAddressesDirectoryExists() {
-  fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
+  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,7 +81,7 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
   // Ensure the addresses directory exists
-  fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
+  ensureAddressesDirectoryExists();
 
   // Set ACL Address
   const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
@@ -280,10 +284,9 @@ task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
+      fs.writeFileSync(HOST_ENV_FILE, content, { flag: 'w' });
       console.log(`ACL address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write ACL address:', err);
@@ -293,13 +296,13 @@ task('task:setACLAddress')
 
 pragma solidity ^0.8.24;
 
-address constant aclAdd = ${taskArguments.address};\n`;
+    address constant aclAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-      console.log('./addresses/FHEVMHostAddresses.sol file generated successfully!');
+      fs.writeFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'w' });
+      console.log(`${HOST_ADDRESSES_FILE} generated successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });
 
@@ -311,10 +314,9 @@ task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
       console.log(`FHEVMExecutor address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write FHEVMExecutor address:', err);
@@ -324,10 +326,10 @@ task('task:setFHEVMExecutorAddress')
 address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
-      console.log('./addresses/FHEVMHostAddresses.sol file appended with fhevmExecutorAdd successfully!');
+      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log(`${HOST_ADDRESSES_FILE} appended with fhevmExecutorAdd successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });
 
@@ -339,10 +341,9 @@ task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
       console.log(`KMSVerifier address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write KMSVerifier address:', err);
@@ -352,10 +353,10 @@ task('task:setKMSVerifierAddress')
 address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
-      console.log('./addresses/FHEVMHostAddresses.sol file appended with kmsVerifierAdd successfully!');
+      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log(`${HOST_ADDRESSES_FILE} appended with kmsVerifierAdd successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });
 
@@ -368,10 +369,9 @@ task('task:setInputVerifierAddress')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
     // this script also computes the coprocessor address from its private key
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
       console.log(`InputVerifier address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write InputVerifier address:', err);
@@ -381,10 +381,10 @@ task('task:setInputVerifierAddress')
 address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
-      console.log('./addresses/FHEVMHostAddresses.sol file appended with inputVerifierAdd successfully!');
+      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log(`${HOST_ADDRESSES_FILE} appended with inputVerifierAdd successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });
 
@@ -396,10 +396,9 @@ task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
       console.log(`HCULimit address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write HCULimit address:', err);
@@ -409,10 +408,10 @@ task('task:setHCULimitAddress')
 address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
-      console.log('./addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
+      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log(`${HOST_ADDRESSES_FILE} appended with hcuLimitAdd successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });
 
@@ -424,10 +423,9 @@ task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     ensureAddressesDirectoryExists();
-    const envFilePath = path.join(__dirname, '../addresses/.env.host');
     const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      fs.appendFileSync(HOST_ENV_FILE, content, { flag: 'a' });
       console.log(`PauserSet address ${taskArguments.address} written successfully!`);
     } catch (err) {
       console.error('Failed to write PauserSet address:', err);
@@ -437,9 +435,9 @@ task('task:setPauserSetAddress')
 address constant pauserSetAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
-      console.log('./addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
+      fs.appendFileSync(HOST_ADDRESSES_FILE, solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log(`${HOST_ADDRESSES_FILE} appended with pauserSetAdd successfully!`);
     } catch (error) {
-      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+      console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
     }
   });

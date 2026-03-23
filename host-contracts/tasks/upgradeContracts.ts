@@ -100,7 +100,7 @@ async function upgradeCurrentToNew(
   }
 }
 
-async function prepareNewImplementation(
+async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
   expectedArtifactName: string,
   currentImplementation: string,
@@ -127,7 +127,7 @@ async function prepareNewImplementation(
   );
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
 
-  console.log(`Preparing "${newImplementation}" for proxy ${proxyAddress}...`);
+  console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
   const implementationAddress = await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
     kind: 'uups',
   });
@@ -294,7 +294,7 @@ task('task:prepareUpgradeFHEVMExecutor')
       const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
       try {
-        await prepareNewImplementation(
+        await deployImplementationForPreparedUpgrade(
           proxyAddress,
           'FHEVMExecutor',
           currentImplementation,
