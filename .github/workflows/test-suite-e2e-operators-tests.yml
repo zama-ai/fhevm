@@ -6,8 +6,20 @@ name: test-suite-e2e-operators-tests
 on:
   workflow_dispatch:
     inputs:
+      build:
+        description: "Build repo-owned images from the checked out branch on the runner"
+        default: false
+        type: boolean
+      grep:
+        description: "Optional grep pattern for targeted operator tests"
+        default: ""
+        type: string
       connector_version:
         description: "Connector Version"
+        default: ""
+        type: string
+      coprocessor_version:
+        description: "Shared Coprocessor Runtime Image Version"
         default: ""
         type: string
       db_migration_version:
@@ -21,30 +33,6 @@ on:
       gateway_version:
         description: "Gateway Image Version"
         required: false
-        default: ""
-        type: string
-      host_listener_version:
-        description: "Host Listener Image Version"
-        default: ""
-        type: string
-      gateway_listener_version:
-        description: "Gateway Listener Image Version"
-        default: ""
-        type: string
-      tx_sender_version:
-        description: "Transaction Sender Image Version"
-        default: ""
-        type: string
-      tfhe_worker_version:
-        description: "TFHE Worker Image Version"
-        default: ""
-        type: string
-      sns_worker_version:
-        description: "SNS Worker Image Version"
-        default: ""
-        type: string
-      zkproof_worker_version:
-        description: "ZKProof Worker Image Version"
         default: ""
         type: string
 
@@ -84,6 +72,8 @@ jobs:
       packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      BUILD: ${{ inputs.build && 'true' || 'false' }}
+      GREP: ${{ inputs.grep }}
       CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
       CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
@@ -91,12 +81,12 @@ jobs:
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
       HOST_VERSION: ${{ inputs.host_version }}
       GATEWAY_VERSION: ${{ inputs.gateway_version }}
-      COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.host_listener_version }}
-      COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.gateway_listener_version }}
-      COPROCESSOR_TX_SENDER_VERSION: ${{ inputs.tx_sender_version }}
-      COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
-      COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
-      COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
+      COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_TX_SENDER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor_version }}
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
@@ -148,14 +138,26 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli up --target latest-main --scenario two-of-two
+          args=(--target latest-main --scenario two-of-two)
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          ./fhevm-cli deploy "${args[@]}"
 
       - name: All operators tests
+        if: ${{ !inputs.grep }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test operators
 
+      - name: Targeted operators grep
+        if: ${{ inputs.grep != '' }}
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test --parallel --grep "$GREP"
+
       - name: Random operators tests
+        if: ${{ !inputs.grep }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random
