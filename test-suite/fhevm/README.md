@@ -201,7 +201,7 @@ This is how CI works. The merge queue workflow:
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
 merge-candidate SHA-tagged env vars for every repo-owned component.
-For non-workspace companions, `latest-main` uses the maintained mainline baseline from `src/presets.ts`.
+For non-workspace companions, `latest-main` uses the maintained mainline baseline from `src/resolve/presets.ts`.
 The reusable workflow now runs on `pull_request` directly and treats PR e2e as source validation with `build=true`.
 Orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
 
@@ -263,7 +263,7 @@ Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario,
 ### How to update
 
 **Bump the mainline relayer pin:**
-Edit `MAINLINE_COMPANIONS` in `src/presets.ts`. `latest-main` and `sha` pick it up automatically.
+Edit `MAINLINE_COMPANIONS` in `src/resolve/presets.ts`. `latest-main` and `sha` pick it up automatically.
 
 **Add a new incompatibility:**
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.
@@ -280,7 +280,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 
 The CLI is leaner than the old bash path, but a few files still carry most of the maintenance burden:
 
-- `src/presets.ts`: maintained companion pins for `latest-main` and `sha`
+- `src/resolve/presets.ts`: maintained companion pins for `latest-main` and `sha`
 - `src/resolve/target.ts`: support floors and target-resolution policy
 - `src/compat/compat.ts`: legacy shims and explicit incompatibility rules
 - `src/generate/env.ts`: runtime env projection from templates, discovery, topology, and compat
