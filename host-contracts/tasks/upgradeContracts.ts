@@ -266,7 +266,7 @@ task('task:upgradeFHEVMExecutor')
 task('task:prepareUpgradeFHEVMExecutor')
   .addParam(
     'upgradeFromRef',
-    'Git ref used to materialize the implementation currently deployed behind the proxy, eg: v0.11.0',
+    'Git ref used to materialize the implementation currently deployed behind the proxy, eg: v0.11.1',
   )
   .addParam(
     'newImplementation',

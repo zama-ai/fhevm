@@ -59,7 +59,7 @@ Then run:
 ```bash
 npx hardhat task:prepareUpgradeFHEVMExecutor \
   --network sepolia \
-  --upgrade-from-ref v0.11.0 \
+  --upgrade-from-ref v0.11.1 \
   --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor \
   --verify-contract true
 ```

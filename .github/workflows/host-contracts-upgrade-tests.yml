@@ -15,7 +15,7 @@ concurrency:
 # - CHAIN_ID_GATEWAY: The chain ID of the gateway network, used by deployment tasks
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
-  UPGRADE_FROM_TAG: v0.11.0
+  UPGRADE_FROM_TAG: v0.11.1
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
   CHAIN_ID_GATEWAY: 54321
