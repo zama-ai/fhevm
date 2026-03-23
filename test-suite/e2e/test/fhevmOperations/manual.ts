@@ -58,120 +58,140 @@ describe('FHEVM manual operations', function () {
     this.instance = instance;
   });
 
-  it('shr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_shr_euint64_uint8(encryptedAmount.handles[0], OVERSIZED_SHIFT_64, encryptedAmount.inputProof),
-    );
-    assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
-  });
+  // Keep this regression isolated so operators CI can target only the
+  // oversized-index path without pulling the whole manual suite.
+  describe('FHEVM oversized shift and rotate indexes', function () {
+    it('shr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_shr_euint64_uint8(
+          encryptedAmount.handles[0],
+          OVERSIZED_SHIFT_64,
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
+    });
 
-  it('shr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    input.add8(OVERSIZED_SHIFT_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_shr_euint64_euint8(
-        encryptedAmount.handles[0],
-        encryptedAmount.handles[1],
-        encryptedAmount.inputProof,
-      ),
-    );
-    assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
-  });
+    it('shr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      input.add8(OVERSIZED_SHIFT_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_shr_euint64_euint8(
+          encryptedAmount.handles[0],
+          encryptedAmount.handles[1],
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
+    });
 
-  it('shl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_shl_euint64_uint8(encryptedAmount.handles[0], OVERSIZED_SHIFT_64, encryptedAmount.inputProof),
-    );
-    assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
-  });
+    it('shl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_shl_euint64_uint8(
+          encryptedAmount.handles[0],
+          OVERSIZED_SHIFT_64,
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
+    });
 
-  it('shl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    input.add8(OVERSIZED_SHIFT_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_shl_euint64_euint8(
-        encryptedAmount.handles[0],
-        encryptedAmount.handles[1],
-        encryptedAmount.inputProof,
-      ),
-    );
-    assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
-  });
+    it('shl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      input.add8(OVERSIZED_SHIFT_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_shl_euint64_euint8(
+          encryptedAmount.handles[0],
+          encryptedAmount.handles[1],
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
+    });
 
-  it('rotl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_rotl_euint64_uint8(encryptedAmount.handles[0], OVERSIZED_SHIFT_64, encryptedAmount.inputProof),
-    );
-    assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
-  });
+    it('rotl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_rotl_euint64_uint8(
+          encryptedAmount.handles[0],
+          OVERSIZED_SHIFT_64,
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+    });
 
-  it('rotr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_rotr_euint64_uint8(encryptedAmount.handles[0], OVERSIZED_SHIFT_64, encryptedAmount.inputProof),
-    );
-    assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
-  });
+    it('rotr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_rotr_euint64_uint8(
+          encryptedAmount.handles[0],
+          OVERSIZED_SHIFT_64,
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+    });
 
-  it('rotr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    input.add8(OVERSIZED_SHIFT_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_rotr_euint64_euint8(
-        encryptedAmount.handles[0],
-        encryptedAmount.handles[1],
-        encryptedAmount.inputProof,
-      ),
-    );
-    assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
-  });
+    it('rotr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      input.add8(OVERSIZED_SHIFT_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_rotr_euint64_euint8(
+          encryptedAmount.handles[0],
+          encryptedAmount.handles[1],
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+    });
 
-  it('rotl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(SHIFT_ROTATE_VALUE_64);
-    input.add8(OVERSIZED_SHIFT_64);
-    const encryptedAmount = await input.encrypt();
-    const res = await decrypt64Result(
-      this.instance,
-      this.contract,
-      this.contract.test_rotl_euint64_euint8(
-        encryptedAmount.handles[0],
-        encryptedAmount.handles[1],
-        encryptedAmount.inputProof,
-      ),
-    );
-    assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+    it('rotl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add64(SHIFT_ROTATE_VALUE_64);
+      input.add8(OVERSIZED_SHIFT_64);
+      const encryptedAmount = await input.encrypt();
+      const res = await decrypt64Result(
+        this.instance,
+        this.contract,
+        this.contract.test_rotl_euint64_euint8(
+          encryptedAmount.handles[0],
+          encryptedAmount.handles[1],
+          encryptedAmount.inputProof,
+        ),
+      );
+      assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
+    });
   });
 
   it('Select works returning if false', async function () {
