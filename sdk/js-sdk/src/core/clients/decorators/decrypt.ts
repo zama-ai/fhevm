@@ -18,6 +18,11 @@ import {
   type UserDecryptParameters,
   type UserDecryptReturnType,
 } from "../../actions/decrypt/user/userDecrypt.js";
+import {
+  getExtraData,
+  type GetExtraDataParameters,
+  type GetExtraDataReturnType,
+} from "../../actions/decrypt/user/getExtraData.js";
 import type { Fhevm } from "../../types/coreFhevmClient.js";
 import type { WithDecryptAndRelayer } from "../../types/coreFhevmRuntime.js";
 import type { FhevmChain } from "../../types/fhevmChain.js";
@@ -35,6 +40,9 @@ export type DecryptActions = {
   readonly userDecrypt: (
     parameters: UserDecryptParameters,
   ) => Promise<UserDecryptReturnType>;
+  readonly getExtraData: (
+    parameters: GetExtraDataParameters,
+  ) => Promise<GetExtraDataReturnType>;
 };
 
 export function decryptActions(
@@ -47,5 +55,6 @@ export function decryptActions(
       createDelegatedUserDecryptEIP712(fhevm, parameters),
     publicDecrypt: (parameters) => publicDecrypt(fhevm, parameters),
     userDecrypt: (parameters) => userDecrypt(fhevm, parameters),
+    getExtraData: (parameters) => getExtraData(fhevm, parameters),
   };
 }

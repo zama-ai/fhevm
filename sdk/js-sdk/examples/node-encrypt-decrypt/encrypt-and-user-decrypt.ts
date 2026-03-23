@@ -167,7 +167,14 @@ async function main(): Promise<void> {
   console.log("KMS public key:", publicKeyHex.slice(0, 40), "...");
 
   // --------------------------------------------------------------------------
-  // 7. Create and sign an EIP-712 user decryption permit
+  // 7. Fetch extraData for KMS context
+  // --------------------------------------------------------------------------
+  console.log("Fetching extraData for KMS context...");
+  const extraData = await client.getExtraData({});
+  console.log("ExtraData:", extraData.slice(0, 20), "...");
+
+  // --------------------------------------------------------------------------
+  // 8. Create and sign an EIP-712 user decryption permit
   // --------------------------------------------------------------------------
   const now = Math.floor(Date.now() / 1000);
 
@@ -176,7 +183,7 @@ async function main(): Promise<void> {
     contractAddresses: [CONTRACT_ADDRESS],
     startTimestamp: now,
     durationDays: 1,
-    extraData: "0x",
+    extraData: extraData,
   });
 
   console.log("EIP-712 permit created. Signing with wallet...");
@@ -202,7 +209,7 @@ async function main(): Promise<void> {
   console.log("Permit signed:", signature.slice(0, 20), "...");
 
   // --------------------------------------------------------------------------
-  // 8. Decrypt the encrypted handles via user decryption
+  // 9. Decrypt the encrypted handles via user decryption
   // --------------------------------------------------------------------------
   //
   // Note: This will only succeed if:
@@ -224,7 +231,7 @@ async function main(): Promise<void> {
   });
 
   // --------------------------------------------------------------------------
-  // 9. Print results
+  // 10. Print results
   // --------------------------------------------------------------------------
   console.log("\nDecrypted values:");
   for (const result of decryptedResults) {

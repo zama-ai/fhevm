@@ -109,7 +109,7 @@ async function main(): Promise<void> {
         { type: "uint32", value: 42 },
         { type: "bool", value: true },
       ],
-      extraData: asBytesHex("0x"),
+      extraData: asBytesHex("0x00"),
     });
     console.log("  Handles:", proof.externalHandles.length);
     for (const h of proof.externalHandles) {
@@ -134,7 +134,12 @@ async function main(): Promise<void> {
   const pubKeyHex = await decryptionKey.getTkmsPublicKeyHex();
   console.log("  Public key:", pubKeyHex.slice(0, 40) + "...");
 
-  // ── 7. Create EIP-712 permit ───────────────────────────────────────────
+  // ── 7. Fetch extraData for KMS context ────────────────────────────────
+  step("Fetch extraData for KMS context");
+  const extraData = await client.getExtraData({});
+  console.log("  ExtraData:", extraData.slice(0, 20) + "...");
+
+  // ── 8. Create EIP-712 permit ───────────────────────────────────────────
   step("Create EIP-712 user decryption permit");
   const now = Math.floor(Date.now() / 1000);
   const eip712 = client.createUserDecryptEIP712({
@@ -142,13 +147,13 @@ async function main(): Promise<void> {
     contractAddresses: [CONTRACT_ADDRESS],
     startTimestamp: now,
     durationDays: 1,
-    extraData: "0x",
+    extraData: extraData,
   });
   console.log("  Domain:", eip712.domain.name, "v" + eip712.domain.version);
   console.log("  Chain ID:", eip712.domain.chainId.toString());
   console.log("  Contracts:", eip712.message.contractAddresses.length);
 
-  // ── 8. Sign the permit ─────────────────────────────────────────────────
+  // ── 9. Sign the permit ─────────────────────────────────────────────────
   step("Sign EIP-712 permit with wallet");
   const signature = await wallet.signTypedData(
     {
@@ -165,7 +170,7 @@ async function main(): Promise<void> {
   );
   console.log("  Signature:", signature.slice(0, 20) + "...");
 
-  // ── 9. Attempt user decryption ─────────────────────────────────────────
+  // ── 10. Attempt user decryption ────────────────────────────────────────
   step("User decryption (expected to fail — handles not on-chain)");
   if (proof === undefined) {
     console.log("  Skipped — no proof available (encryption failed at relayer step)");
