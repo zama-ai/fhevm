@@ -1,6 +1,6 @@
 # Compatibility
 
-`src/compat.ts` exists for one narrow job: keep explicitly supported old bundles runnable when a runtime contract changes.
+`src/compat/compat.ts` exists for one narrow job: keep explicitly supported old bundles runnable when a runtime contract changes.
 
 The PR workflow runs one behavioral compat smoke:
 
@@ -10,9 +10,9 @@ The PR workflow runs one behavioral compat smoke:
 
 If that smoke fails, do one of these:
 
-1. Add or update a shim in `src/compat.ts`
-2. Add or update an explicit incompatibility rule in `src/compat.ts`
-3. Intentionally raise the support floor in `src/resolve.ts`
+1. Add or update a shim in `src/compat/compat.ts`
+2. Add or update an explicit incompatibility rule in `src/compat/compat.ts`
+3. Intentionally raise the support floor in `src/resolve/target.ts`
 
 Use a shim when the old supported bundle can still run with a small CLI-side adjustment:
 
@@ -21,7 +21,7 @@ Use a shim when the old supported bundle can still run with a small CLI-side adj
 
 Use an incompatibility rule when the combination should fail early with a clear message instead of reaching boot.
 
-Raise the support floor when the project no longer intends to support that old bundle at all. Today that includes both the simple-ACL floor and the later gw-listener drift-address runtime floor in `src/resolve.ts`.
+Raise the support floor when the project no longer intends to support that old bundle at all. Today that includes both the simple-ACL floor and the later gw-listener drift-address runtime floor in `src/resolve/target.ts`.
 
 If you change a runtime flag, env contract, or startup assumption for:
 

@@ -60,6 +60,7 @@ DROP TABLE IF EXISTS drift_injection_state;
 export const driftDatabaseName = (instanceIndex: number) =>
   instanceIndex === 0 ? "coprocessor" : `coprocessor_${instanceIndex}`;
 
+/** Parses a coprocessor instance index from env or CLI input. */
 export const parseDriftInstanceIndex = (value: string) => {
   if (!/^\d+$/.test(value)) {
     throw new Error("instance index must be a non-negative integer");
@@ -67,6 +68,7 @@ export const parseDriftInstanceIndex = (value: string) => {
   return Number(value);
 };
 
+/** Parses a positive integer environment setting used by the drift test. */
 export const parsePositiveInteger = (value: string, name: string) => {
   if (!/^\d+$/.test(value) || Number(value) <= 0) {
     throw new Error(`${name} must be a positive integer`);
