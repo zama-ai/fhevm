@@ -60,6 +60,7 @@ import {
   hostAddressesSolidityPath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
+  hostChainNames,
   hostChainSuffixId,
   hostNodeName,
   hostScName,
@@ -486,14 +487,17 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
         ]
       : []),
     // Multi-chain artifacts: address files, compose overrides, and per-chain coprocessor env files
-    ...state.scenario.hostChains.slice(1).flatMap((chain) => [
-      hostChainAddressesPath(chain.key),
-      ...(state.discovery ? [hostChainAddressesSolidityPath(chain.key)] : []),
-      composePath(hostNodeName(chain.key)),
-      composePath(hostScName(chain.key)),
-      composePath(coprocessorHostKey(chain.key)),
-      ...Array.from({ length: topology.count }, (_, index) => envPath(`coprocessor-${chain.key}.${index}`)),
-    ]),
+    ...state.scenario.hostChains.slice(1).flatMap((chain) => {
+      const { node, sc, copro } = hostChainNames(chain.key);
+      return [
+        hostChainAddressesPath(chain.key),
+        ...(state.discovery ? [hostChainAddressesSolidityPath(chain.key)] : []),
+        composePath(node),
+        composePath(sc),
+        composePath(copro),
+        ...Array.from({ length: topology.count }, (_, index) => envPath(`coprocessor-${chain.key}.${index}`)),
+      ];
+    }),
   ];
   const allExist = (await Promise.all(requiredPaths.map((file) => exists(file)))).every(Boolean);
   if (allExist) {
@@ -507,9 +511,10 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
 const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<[string, StepName]> => {
   const entries: Array<[string, StepName]> = [];
   for (const chain of state.scenario.hostChains.slice(1)) {
-    entries.push([hostNodeName(chain.key), "base"]);
-    entries.push([hostScName(chain.key), "host-deploy"]);
-    entries.push([coprocessorHostKey(chain.key), "coprocessor"]);
+    const { node, sc, copro } = hostChainNames(chain.key);
+    entries.push([node, "base"]);
+    entries.push([sc, "host-deploy"]);
+    entries.push([copro, "coprocessor"]);
   }
   return entries;
 };

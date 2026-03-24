@@ -16,8 +16,8 @@ import {
   GROUP_SERVICE_SUFFIXES,
   TEMPLATE_COMPOSE_DIR,
   composePath,
-  coprocessorHostKey,
   envPath,
+  hostChainNames,
   hostChainSuffixId,
   hostNodeName,
   hostScName,
@@ -443,18 +443,16 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   const primaryChainId = plan.hostChains[0]?.chainId ?? "12345";
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
-    const container = hostNodeName(chain.key);
-    const hostScKey = hostScName(chain.key);
-    const coproKey = coprocessorHostKey(chain.key);
-    extraChainFileNames.push(container, hostScKey, coproKey);
+    const { node, sc, copro } = hostChainNames(chain.key);
+    extraChainFileNames.push(node, sc, copro);
     const [hostNodeDoc, hostScDoc, coproDoc] = await Promise.all([
       buildExtraHostNodeOverride(chain, primaryChainId),
       buildExtraHostScOverride(chain),
       buildExtraCoprocessorListenerOverride(plan, chain),
     ]);
-    await fs.writeFile(composePath(container), YAML.stringify(hostNodeDoc));
-    await fs.writeFile(composePath(hostScKey), YAML.stringify(hostScDoc));
-    await fs.writeFile(composePath(coproKey), YAML.stringify(coproDoc));
+    await fs.writeFile(composePath(node), YAML.stringify(hostNodeDoc));
+    await fs.writeFile(composePath(sc), YAML.stringify(hostScDoc));
+    await fs.writeFile(composePath(copro), YAML.stringify(coproDoc));
   }
   // Clean up stale multi-chain compose files from previous runs.
   // Scan the output directory for files matching multi-chain naming patterns

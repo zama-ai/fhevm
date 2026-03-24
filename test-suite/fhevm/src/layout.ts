@@ -261,6 +261,14 @@ export const hostScName = (key: string) => key.replace(/^host/, "host-sc");
 
 /** Derives the coprocessor-host compose key from a chain key. "host" → "coprocessor-host", "host-b" → "coprocessor-host-b". */
 export const coprocessorHostKey = (key: string) => `coprocessor-${key}`;
+
+/** Returns all derived runtime names for a host chain key in one call. */
+export const hostChainNames = (key: string) => ({
+  node: hostNodeName(key),
+  sc: hostScName(key),
+  copro: coprocessorHostKey(key),
+  suffix: hostChainSuffixId(key),
+});
 export const hostChainAddressesSolidityPath = (key: string) =>
   path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
 export const hostAddressesSolidityPath = hostChainAddressesSolidityPath(PRIMARY_HOST_KEY);

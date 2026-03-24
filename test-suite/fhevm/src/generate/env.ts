@@ -147,8 +147,7 @@ const applyDiscoveryEnv = (
     ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
     PAUSER_SET_CONTRACT_ADDRESS: primaryHost.PAUSER_SET_CONTRACT_ADDRESS,
   });
-  envs["gateway-sc"].HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0 = primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
-  envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_0 = primaryHost.ACL_CONTRACT_ADDRESS;
+  // Per-chain gateway-sc indexed vars are set uniformly in renderEnvMaps below.
   updateContracts(envs["coprocessor"], {
     ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
@@ -165,7 +164,7 @@ const applyDiscoveryEnv = (
     return {
       url: endpoints?.http ?? `http://${hostNodeName(chain.key)}:${chain.rpcPort}`,
       chain_id: Number(chain.chainId),
-      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? primaryHost.ACL_CONTRACT_ADDRESS,
+      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
     };
   });
   updateContracts(envs["kms-connector"], {
@@ -254,68 +253,72 @@ export const renderEnvMaps = async (
   applyDiscoveryEnv(envs, state, plan);
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
-  const extraChains = plan.hostChains.slice(1);
-  if (extraChains.length > 0) {
-    envs["gateway-sc"].NUM_HOST_CHAINS = String(plan.hostChains.length);
+  // Uniform per-chain gateway-sc indexed vars for ALL host chains.
+  envs["gateway-sc"].NUM_HOST_CHAINS = String(plan.hostChains.length);
+  for (let ci = 0; ci < plan.hostChains.length; ci += 1) {
+    const chain = plan.hostChains[ci];
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+    envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${ci}`] = chain.chainId;
+    envs["gateway-sc"][`HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_${ci}`] =
+      hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${ci}`] =
+      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_NAME_${ci}`] = chain.name ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${ci}`] = "";
+  }
 
-    for (let ci = 0; ci < extraChains.length; ci += 1) {
-      const chain = extraChains[ci];
-      const chainIndex = ci + 1;
-      const container = hostNodeName(chain.key);
-      const hostHttp = `http://${container}:${chain.rpcPort}`;
-      const hostWs = `ws://${container}:${chain.rpcPort}`;
-      const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+  // Extra chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
+  for (let ci = 0; ci < plan.hostChains.length - 1; ci += 1) {
+    const chain = plan.hostChains[ci + 1];
+    const chainIndex = ci + 1;
+    const container = hostNodeName(chain.key);
+    const hostHttp = `http://${container}:${chain.rpcPort}`;
+    const hostWs = `ws://${container}:${chain.rpcPort}`;
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
 
-      envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${chainIndex}`] = chain.chainId;
-      envs["gateway-sc"][`HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_${chainIndex}`] =
-        hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ??
-        envs["gateway-sc"].HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0 ?? "";
-      envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${chainIndex}`] =
-        hostAddresses.ACL_CONTRACT_ADDRESS ??
-        envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_0 ?? "";
-      envs["gateway-sc"][`HOST_CHAIN_NAME_${chainIndex}`] = chain.name ?? "";
-      envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${chainIndex}`] = "";
+    instanceEnvs[container] = {
+      ...envs["host-node"],
+      HOST_NODE_CONTAINER_NAME: container,
+      HOST_NODE_PORT: String(chain.rpcPort),
+      HOST_NODE_CHAIN_ID: chain.chainId,
+    };
 
-      instanceEnvs[container] = {
-        ...envs["host-node"],
-        HOST_NODE_CONTAINER_NAME: container,
-        HOST_NODE_PORT: String(chain.rpcPort),
-        HOST_NODE_CHAIN_ID: chain.chainId,
-      };
-
-      const hostScKey = hostScName(chain.key);
-      const hostSc = { ...envs["host-sc"] };
-      hostSc.RPC_URL = hostHttp;
-      hostSc.CHAIN_ID = chain.chainId;
-      hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${hostScKey}-deploy`;
-      hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${hostScKey}-add-pausers`;
-      hostSc.NUM_COPROCESSORS = String(plan.topology.count);
-      hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
-      for (let i = 0; i < plan.topology.count; i += 1) {
-        const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
-        if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
-      }
-      instanceEnvs[hostScKey] = hostSc;
-
-      for (let index = 0; index < plan.topology.count; index += 1) {
-        const baseKey = index === 0 ? "coprocessor" : `coprocessor.${index}`;
-        const baseEnv = index === 0 ? envs["coprocessor"] : instanceEnvs[baseKey];
-        if (!baseEnv) continue;
-        const coproChain = { ...baseEnv };
-        coproChain.RPC_HTTP_URL = hostHttp;
-        coproChain.RPC_WS_URL = hostWs;
-        coproChain.CHAIN_ID = chain.chainId;
-        if (hostAddresses.ACL_CONTRACT_ADDRESS) {
-          coproChain.ACL_CONTRACT_ADDRESS = hostAddresses.ACL_CONTRACT_ADDRESS;
-          coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
-          coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
-        }
-        instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
-      }
-
-      envs["test-suite"][`HOST_CHAIN_${chainIndex}_RPC_URL`] = hostHttp;
-      envs["test-suite"][`HOST_CHAIN_${chainIndex}_CHAIN_ID`] = chain.chainId;
+    const hostScKey = hostScName(chain.key);
+    const hostSc = { ...envs["host-sc"] };
+    hostSc.RPC_URL = hostHttp;
+    hostSc.CHAIN_ID = chain.chainId;
+    hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${hostScKey}-deploy`;
+    hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${hostScKey}-add-pausers`;
+    hostSc.NUM_COPROCESSORS = String(plan.topology.count);
+    hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
+    for (let i = 0; i < plan.topology.count; i += 1) {
+      const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
+      if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
     }
+    instanceEnvs[hostScKey] = hostSc;
+
+    for (let index = 0; index < plan.topology.count; index += 1) {
+      const baseKey = index === 0 ? "coprocessor" : `coprocessor.${index}`;
+      const baseEnv = index === 0 ? envs["coprocessor"] : instanceEnvs[baseKey];
+      if (!baseEnv) continue;
+      const coproChain = { ...baseEnv };
+      coproChain.RPC_HTTP_URL = hostHttp;
+      coproChain.RPC_WS_URL = hostWs;
+      coproChain.CHAIN_ID = chain.chainId;
+      if (hostAddresses.ACL_CONTRACT_ADDRESS) {
+        coproChain.ACL_CONTRACT_ADDRESS = hostAddresses.ACL_CONTRACT_ADDRESS;
+        coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
+        coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
+      }
+      instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
+    }
+
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_RPC_URL`] = hostHttp;
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_CHAIN_ID`] = chain.chainId;
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_ACL_CONTRACT_ADDRESS`] = hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
   }
 
   resolveAllEnvMaps(envs, instanceEnvs);

@@ -10,10 +10,8 @@ import { renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
-  renderHostAddressesEnv,
   renderHostChainAddresses,
   renderHostChainAddressesSolidity,
-  renderHostAddressesSolidity,
   renderPaymentBridgingAddressesSolidity,
 } from "./addresses";
 import { generateComposeOverrides } from "./compose";
@@ -29,8 +27,6 @@ import {
   envPath,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
-  hostAddressesPath,
-  hostAddressesSolidityPath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
@@ -112,9 +108,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     paymentBridgingAddressesSolidityPath,
     renderPaymentBridgingAddressesSolidity(rendered.componentEnvs["gateway-sc"]),
   );
-  await writeWritableFile(hostAddressesPath, renderHostAddressesEnv(state));
-  await writeWritableFile(hostAddressesSolidityPath, renderHostAddressesSolidity(state));
-  for (const chain of plan.hostChains.slice(1)) {
+  for (const chain of plan.hostChains) {
     await writeWritableFile(hostChainAddressesPath(chain.key), renderHostChainAddresses(state, chain.key));
     await writeWritableFile(hostChainAddressesSolidityPath(chain.key), renderHostChainAddressesSolidity(state, chain.key));
   }

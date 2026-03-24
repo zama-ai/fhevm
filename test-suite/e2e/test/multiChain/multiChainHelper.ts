@@ -7,9 +7,6 @@ const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 const mnemonic: string = process.env.MNEMONIC ?? vars.get('MNEMONIC', defaultMnemonic);
 
-const aclAddress = process.env.ACL_CONTRACT_ADDRESS!;
-const kmsVerifierAddress = process.env.KMS_VERIFIER_CONTRACT_ADDRESS!;
-const inputVerifierAddress = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS!;
 const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
@@ -18,6 +15,9 @@ const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
 export interface ChainConfig {
   rpcUrl: string;
   chainId: number;
+  aclAddress: string;
+  kmsVerifierAddress: string;
+  inputVerifierAddress: string;
 }
 
 function requireEnv(name: string): string {
@@ -31,13 +31,22 @@ function parseHostChains(): ChainConfig[] {
   const primary: ChainConfig = {
     rpcUrl: requireEnv('RPC_URL'),
     chainId: Number(requireEnv('CHAIN_ID_HOST')),
+    aclAddress: requireEnv('ACL_CONTRACT_ADDRESS'),
+    kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
+    inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
     const rpcUrl = process.env[`HOST_CHAIN_${i}_RPC_URL`];
     const chainId = process.env[`HOST_CHAIN_${i}_CHAIN_ID`];
     if (!rpcUrl || !chainId) break;
-    chains.push({ rpcUrl, chainId: Number(chainId) });
+    chains.push({
+      rpcUrl,
+      chainId: Number(chainId),
+      aclAddress: requireEnv(`HOST_CHAIN_${i}_ACL_CONTRACT_ADDRESS`),
+      kmsVerifierAddress: requireEnv(`HOST_CHAIN_${i}_KMS_VERIFIER_CONTRACT_ADDRESS`),
+      inputVerifierAddress: requireEnv(`HOST_CHAIN_${i}_INPUT_VERIFIER_CONTRACT_ADDRESS`),
+    });
   }
   return chains;
 }
@@ -114,9 +123,9 @@ export async function createInstance(chain: ChainConfig) {
   return createFhevmInstance({
     verifyingContractAddressDecryption: decryptionAddress,
     verifyingContractAddressInputVerification: inputVerificationAddress,
-    kmsContractAddress: kmsVerifierAddress,
-    inputVerifierContractAddress: inputVerifierAddress,
-    aclContractAddress: aclAddress,
+    kmsContractAddress: chain.kmsVerifierAddress,
+    inputVerifierContractAddress: chain.inputVerifierAddress,
+    aclContractAddress: chain.aclAddress,
     network: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,
