@@ -1241,6 +1241,9 @@ mod tests {
         let missing = iter.get_missing_ancestors(blocks[10]).await;
 
         assert_eq!(missing.len(), 3);
+        assert_eq!(missing[0].number, 7);
+        assert_eq!(missing[1].number, 8);
+        assert_eq!(missing[2].number, 9);
     }
 
     // Skips reorg detection when history has fewer than 2 blocks and just adds the block.

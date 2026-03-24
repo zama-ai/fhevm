@@ -1107,6 +1107,7 @@ mod tests {
         let chains = dependence_chains(&mut logs, &cache, true, true).await;
 
         assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].hash, tx1);
         assert_eq!(cache.read().await.len(), 3);
     }
 }
