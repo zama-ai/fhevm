@@ -217,36 +217,21 @@ where
         delegator_address: Address,
     ) -> Result<(), ProcessingError> {
         let handle_hex = hex::encode(handle);
-        let is_delegated_call = acl_contract.isHandleDelegatedForUserDecryption(
-            delegator_address,
-            user_address,
-            contract_address,
-            handle,
-        );
-        let delegator_allowed_call = acl_contract.isAllowed(handle, delegator_address);
-        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
-
-        let (is_delegated, delegator_allowed, contract_allowed) = tokio::try_join!(
-            is_delegated_call.call(),
-            delegator_allowed_call.call(),
-            contract_allowed_call.call(),
-        )
-        .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        let is_delegated = acl_contract
+            .isHandleDelegatedForUserDecryption(
+                delegator_address,
+                user_address,
+                contract_address,
+                handle,
+            )
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !is_delegated {
             return Err(ProcessingError::Recoverable(anyhow!(
                 "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle_hex}!",
-            )));
-        }
-        if !delegator_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{delegator_address} is not allowed to decrypt {handle_hex}!",
-            )));
-        }
-        if !contract_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
 
@@ -653,11 +638,7 @@ mod tests {
 
     enum DelegatedUserDecryptACLMock {
         Failure(&'static str),
-        Success {
-            is_delegated: bool,
-            delegator_allowed: bool,
-            contract_allowed: bool,
-        },
+        Success { is_delegated: bool },
     }
 
     #[rstest]
@@ -667,22 +648,12 @@ mod tests {
         None
     )]
     #[case::allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: true },
         ExpectedOutcome::Ok,
         None
     )]
-    #[case::delegator_allowed_contract_not_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: false },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
-    #[case::delegator_not_allowed_contract_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: false, contract_allowed: true },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
     #[case::not_delegated(
-        DelegatedUserDecryptACLMock::Success { is_delegated: false, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: false },
         ExpectedOutcome::Recoverable,
         Some("is not a delegate of")
     )]
@@ -725,14 +696,8 @@ mod tests {
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
-            DelegatedUserDecryptACLMock::Success {
-                is_delegated,
-                delegator_allowed,
-                contract_allowed,
-            } => {
+            DelegatedUserDecryptACLMock::Success { is_delegated } => {
                 asserter.push_success(&is_delegated.abi_encode());
-                asserter.push_success(&delegator_allowed.abi_encode());
-                asserter.push_success(&contract_allowed.abi_encode());
             }
         }
 
