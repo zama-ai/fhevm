@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { execSync } from "child_process";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 
@@ -11,7 +11,7 @@ import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./upgrade-report-hints";
 type PackageName = "host-contracts" | "gateway-contracts";
 
 const PACKAGE_CONFIG: Record<PackageName, { extraDeps?: string }> = {
-  "host-contracts": {},
+  "host-contracts": { extraDeps: "forge soldeer install" },
   "gateway-contracts": {},
 };
 
@@ -58,24 +58,6 @@ function addWorktree(repoRoot: string, path: string, ref: string) {
   run(`git worktree add --detach "${path}" "${ref}"`, repoRoot);
 }
 
-function ensureHostFoundryDependencies(currentRepoRoot: string, targetDir: string, baselineDir: string) {
-  const targetDependenciesDir = join(targetDir, "dependencies");
-  const forgeStdDir = join(targetDependenciesDir, "forge-std-1.11.0");
-  if (!existsSync(forgeStdDir)) {
-    const currentCheckoutDependenciesDir = join(currentRepoRoot, "host-contracts", "dependencies");
-    const currentCheckoutForgeStdDir = join(currentCheckoutDependenciesDir, "forge-std-1.11.0");
-    if (existsSync(currentCheckoutForgeStdDir)) {
-      cpSync(currentCheckoutDependenciesDir, targetDependenciesDir, { recursive: true });
-    }
-  }
-  if (!existsSync(forgeStdDir)) {
-    throw new Error(
-      `Missing host-contracts Foundry dependencies in ${targetDependenciesDir}. Run "cd ${targetDir} && forge soldeer install" once, then rerun this command.`,
-    );
-  }
-  cpSync(targetDependenciesDir, join(baselineDir, "dependencies"), { recursive: true });
-}
-
 function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoot: string, pkg: PackageName) {
   const targetDir = join(targetRoot, pkg);
   const baselineDir = join(baselineRoot, pkg);
@@ -83,9 +65,6 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
 
   run("npm ci", targetDir);
   run("npm ci", baselineDir);
-  if (pkg === "host-contracts") {
-    ensureHostFoundryDependencies(currentRepoRoot, targetDir, baselineDir);
-  }
   if (extraDeps) {
     run(extraDeps, targetDir);
     run(extraDeps, baselineDir);
