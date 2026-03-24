@@ -211,3 +211,28 @@ pub async fn create_send_channel(uri: &str, queue_name: &str) -> lapin::Result<C
 
     Ok(channel)
 }
+
+/// Publishes a batch of FHE log messages to the queue
+pub async fn publish_batch(
+    sender_channel: &lapin::Channel,
+    queue: &str,
+    batch: &Vec<fhevm_engine_common::protocol::messages::FheLog>,
+) {
+    info!(target: "tool", batch_size = batch.len(), "Publishing batch of FHE log messages to the queue");
+
+    let payload: Vec<u8> = postcard::to_allocvec(&batch).unwrap();
+
+    let confirm = sender_channel
+        .basic_publish(
+            "",
+            queue,
+            BasicPublishOptions::default(),
+            &payload,
+            lapin::BasicProperties::default(),
+        )
+        .await
+        .unwrap();
+
+    let confirm = confirm.await.unwrap();
+    info!(confirm = ?confirm, "Sent FHE log message to the queue");
+}

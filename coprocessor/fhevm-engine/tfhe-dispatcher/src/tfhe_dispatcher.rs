@@ -4,7 +4,7 @@ use message_broker::{
     create_default_receiver, create_default_sender, DefaultSender, MessageResult, Receiver,
 };
 use std::sync::{Arc, RwLock};
-use tokio::time::{sleep, Duration};
+use tokio::time::{interval, sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -63,6 +63,8 @@ async fn tfhe_dispatcher_loop(
     )
     .await;
 
+    let mut tick = interval(Duration::from_secs(10));
+
     loop {
         tokio::select! {
             biased;
@@ -71,29 +73,39 @@ async fn tfhe_dispatcher_loop(
                 info!("Cancellation requested, exiting dispatcher cycle");
                 return Ok(());
             }
-
             res = fhe_events.recv_and_handle(|batch: Vec<msg::FheLog>, _, state| async move {
+                info!(batch_size = batch.len(), "msg: received batch of FHE log messages");
                 let mut state = state.write().unwrap();
-                state.dispatch(&batch);
+                let dispatched_count = state.dispatch(&batch);
+
+                info!(dispatched_count = dispatched_count, "msg: processed batch of FHE log messages");
                 Ok(MessageResult::Ack)
             }) => {
                 if res.is_err() {
                     return Ok(());
                 }
             }
-
             res = fhe_partition_complete.recv_and_handle(|partition: msg::ExecutablePartition, _, state| async move {
+                info!(
+                    pid = %partition.id(),
+                    "msg: received partition execution completion message"
+                );
                 let mut state = state.write().unwrap();
                 state.on_partition_execution_complete(&partition);
 
-                // Check if new partitions became executable
-                state.dispatch(&[]);
+                // Check and dispatch any new executable partitions that
+                // may have become ready after this completion
+                let dispatched_count = state.dispatch(&[]);
 
+                info!(dispatched_count = dispatched_count, "msg: dispatched new executable partitions after completion");
                 Ok(MessageResult::Ack)
             }) => {
                 if res.is_err() {
                     return Ok(());
                 }
+            }
+             _ = tick.tick() => {
+                 info!("on-idle event");
             }
         }
     }

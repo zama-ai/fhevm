@@ -2,13 +2,15 @@ use fhevm_engine_common::tenant_keys::{
     fetch_tenant_server_key, FetchTenantKeyResult, TfheTenantKeys,
 };
 
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
 use futures_util::stream::StreamExt;
 use message_broker::Sender;
 use redis::{AsyncCommands, Client};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::join;
+use tokio::time::timeout;
 
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -156,11 +158,18 @@ impl Context {
         &self,
         cts: Vec<CiphertextInfo>,
     ) -> Result<(), ComputeError> {
-        self.redis_batch_store(cts).await
-        // TODO: Spawn a task to insert new ciphertexts into PostgreSQL for backwards compatibility.
+        let (redis_res, postgres_res) = join!(
+            self.redis_batch_store(&cts),
+            self.postgres_batch_store(&cts),
+        );
+
+        redis_res?;
+        postgres_res?;
+
+        Ok(())
     }
 
-    async fn redis_batch_store(&self, cts: Vec<CiphertextInfo>) -> Result<(), ComputeError> {
+    async fn redis_batch_store(&self, cts: &Vec<CiphertextInfo>) -> Result<(), ComputeError> {
         let start_time = Instant::now();
 
         let mut conn = self.multiplexed_conn.clone();
@@ -178,7 +187,54 @@ impl Context {
 
         let elapsed = start_time.elapsed();
         REDIS_BATCH_STORE_OVERHEAD.observe(elapsed.as_secs_f64());
-        info!(elapsed = ?elapsed, "Batch stored computed ciphertexts in Redis");
+        info!(elapsed = ?elapsed, "Batch stored in Redis");
+        Ok(())
+    }
+
+    async fn postgres_batch_store(&self, cts: &Vec<CiphertextInfo>) -> Result<(), ComputeError> {
+        for ct in cts.into_iter() {
+            let (ct_type, compressed_ct) = ct.ciphertext.compress();
+            self.insert_ciphertext(1, &ct.handle, &compressed_ct, ct_type)
+                .await?;
+        }
+
+        const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+            .execute(&self.pool)
+            .await
+            .expect("insert into ciphertexts");
+
+        info!(cts_len = cts.len(), "Batch stored in PostgreSQL");
+
+        Ok(())
+    }
+
+    async fn insert_ciphertext(
+        &self,
+        tenant_id: i32,
+        handle: &Vec<u8>,
+        ciphertext: &Vec<u8>,
+        ct_type: i16,
+    ) -> Result<(), ComputeError> {
+        let rows = sqlx::query!(
+            "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type) 
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT DO NOTHING;",
+            tenant_id,
+            handle,
+            ciphertext,
+            0,
+            ct_type,
+            )
+            .execute(&self.pool)
+            .await
+            .expect("insert into ciphertexts");
+        if rows.rows_affected() > 0 {
+            info!(handle = %hex::encode(handle), "Inserted ciphertext into PostgreSQL");
+        } else {
+            info!(handle = %hex::encode(handle), "Ciphertext already exists in PostgreSQL, skipping insert");
+        }
+
         Ok(())
     }
 
@@ -208,13 +264,13 @@ impl Context {
         Ok(CiphertextInfo { handle, ciphertext })
     }
 
-    /// Check if the ciphertext with the given handle exists in any of
-    /// local cache
-    /// Redis.
+    /// Check whether a ciphertext with the specified handle exists in any of the backends:
+    /// local cache, Redis, or PostgreSQL
     /// If not, wait for it to be published via Redis keyspace notifications.
     pub(crate) async fn get_or_wait_for_ciphertext(
         &self,
         handle: &Handle,
+        ops_type: Option<SupportedFheOperations>,
     ) -> Result<CiphertextInfo, ComputeError> {
         let key: String = hex::encode(handle);
 
@@ -238,6 +294,14 @@ impl Context {
             return Ok(ct);
         }
 
+        if let Ok(ct) = self.query_ciphertext_from_db(handle).await {
+            info!(handle = %hex::encode(handle), "PostgreSQL hit for ciphertext");
+            // Optionally cache the result in Redis for future requests
+            let _ = self.redis_store(ct.clone()).await;
+            self.cache_store(&ct).await;
+            return Ok(ct);
+        }
+
         info!(handle = %hex::encode(handle), "Redis-subscribe for ciphertext");
         REDIS_SUB_COUNTER.inc();
 
@@ -251,26 +315,41 @@ impl Context {
         let start_time = Instant::now();
 
         // Wait until the key is actually set, then fetch it
-        while let Some(msg) = stream.next().await {
-            let payload: String = msg.get_payload()?;
 
-            if payload == "set" || payload == "hset" {
-                let elapsed = start_time.elapsed();
-                REDIS_SUB_OVERHEAD.observe(elapsed.as_secs_f64());
-                info!(handle = %hex::encode(handle), elapsed = ?elapsed, "Received Redis notification for ciphertext");
-
-                if let Ok(Some(value)) = conn.get::<_, Option<Vec<u8>>>(&key).await {
-                    let ct = self.deserialize_redis_entry(handle.clone(), value.clone())?;
-                    self.cache_store(&ct).await;
-                    return Ok(ct);
-                }
+        let msg = match timeout(Duration::from_secs(5), stream.next()).await {
+            Ok(Some(msg)) => msg,
+            Ok(None) => {
+                return Err(ComputeError::Other(
+                    "Stream closed while waiting for ciphertext".to_string(),
+                ));
             }
-
-            if start_time.elapsed() > std::time::Duration::from_secs(30) {
-                error!(handle = %hex::encode(handle), "Timeout while waiting for Redis notification for ciphertext");
+            Err(_) => {
+                error!(
+                    ops_type = ?ops_type,
+                    handle = %hex::encode(handle),
+                    "Timeout while waiting for Redis notification for ciphertext"
+                );
                 return Err(ComputeError::Other(
                     "Timeout while waiting for ciphertext".to_string(),
                 ));
+            }
+        };
+
+        let payload: String = msg.get_payload()?;
+
+        if payload == "set" || payload == "hset" {
+            let elapsed = start_time.elapsed();
+            REDIS_SUB_OVERHEAD.observe(elapsed.as_secs_f64());
+            info!(
+                handle = %hex::encode(handle),
+                elapsed = ?elapsed,
+                "Received Redis notification for ciphertext"
+            );
+
+            if let Ok(Some(value)) = conn.get::<_, Option<Vec<u8>>>(&key).await {
+                let ct = self.deserialize_redis_entry(handle.clone(), value.clone())?;
+                self.cache_store(&ct).await;
+                return Ok(ct);
             }
         }
 
@@ -279,6 +358,37 @@ impl Context {
         Err(ComputeError::Other(
             "Stream ended before key was set".to_string(),
         ))
+    }
+
+    pub(crate) async fn query_ciphertext_from_db(
+        &self,
+        handle: &Handle,
+    ) -> Result<CiphertextInfo, ComputeError> {
+        let handle_hex = hex::encode(handle);
+
+        info!(handle = %handle_hex, "Querying ciphertext from PostgreSQL database");
+
+        let record = sqlx::query!(
+            r#"
+            SELECT ciphertext, ciphertext_type AS ct_type
+            FROM ciphertexts
+            WHERE handle = $1
+            "#,
+            handle
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let ciphertext =
+            SupportedFheCiphertexts::decompress_no_memcheck(record.ct_type, &record.ciphertext)
+                .map_err(|e| ComputeError::Tfhe(e.to_string()))?;
+
+        info!(handle = %handle_hex, "Successfully retrieved ciphertext from PostgreSQL database");
+
+        Ok(CiphertextInfo {
+            handle: handle.clone(),
+            ciphertext,
+        })
     }
 
     pub async fn send_partition_complete(&self, payload: Vec<u8>) -> Result<(), ComputeError> {

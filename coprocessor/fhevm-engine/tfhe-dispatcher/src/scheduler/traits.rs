@@ -1,8 +1,13 @@
+use std::collections::HashSet;
+
 use daggy::NodeIndex;
 use fhevm_engine_common::protocol::messages as msg;
 
 pub trait Commands {
-    fn retrieve_executable_partitions(&self) -> Vec<msg::ExecutablePartition>;
+    fn retrieve_executable_partitions(
+        &self,
+        filter: HashSet<[u8; 32]>,
+    ) -> Vec<msg::ExecutablePartition>;
 }
 
 pub trait Events {

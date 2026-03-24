@@ -17,6 +17,9 @@ tracing = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
 
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
 
 lapin = { version = "3.7.2", optional = false }
 redis = { version = "1.0.3", features = ["tokio-comp", "aio", "connection-manager"], optional = true }

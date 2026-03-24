@@ -312,7 +312,7 @@ impl Database {
             is_scalar,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
-            log.is_allowed,
+            true,
             log.block_timestamp
                 .saturating_add(time::Duration::microseconds(
                     log.tx_depth_size as i64
@@ -1140,6 +1140,16 @@ fn create_fhe_log_msg(
         };
 
         deps2.push(dependence);
+    }
+
+    if deps2.len() == 3 {
+        deps2.reverse();
+    }
+
+    if deps2.len() == 2
+        && supported_fhe_operation != SupportedFheOperations::FheTrivialEncrypt
+    {
+        deps2.reverse();
     }
 
     let log = fhevm_engine_common::protocol::messages::FheLog {

@@ -187,7 +187,7 @@ async fn execute_partition(
         let dependence_inputs = futures_util::future::try_join_all(
             inputs
                 .iter()
-                .map(|handle| ctx.get_or_wait_for_ciphertext(handle)),
+                .map(|handle| ctx.get_or_wait_for_ciphertext(handle, Some(op_node.fhe_operation))),
         )
         .await?;
 
@@ -224,7 +224,12 @@ async fn execute_partition(
 
         let ct = match op_node.fhe_operation {
             SupportedFheOperations::FheGetInputCiphertext => {
-                ctx.get_or_wait_for_ciphertext(&op_node.output_handle)
+                info!(
+                    pid = partition.id(),
+                    output_handle = ?handle,
+                    "Performing FheGetInputCiphertext operation"
+                );
+                ctx.get_or_wait_for_ciphertext(&op_node.output_handle, Some(op_node.fhe_operation))
                     .await?
             }
             _ => try_run_computation(

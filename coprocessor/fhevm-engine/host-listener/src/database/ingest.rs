@@ -114,6 +114,9 @@ pub async fn ingest_block_logs(
                     dependence_chain: Default::default(),
                     tx_depth_size: 0,
                 };
+
+                info!(?transaction_hash, ?block_number, "TFHE event");
+
                 tfhe_event_log.push(log);
                 continue;
             }

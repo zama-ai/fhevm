@@ -11,10 +11,10 @@ type PartitionId = [u8; 32];
 type Payload = Vec<u8>;
 
 pub struct Dispatcher<S: Sender<Payload>> {
-    computation_scheduler: ComputationScheduler,
+    scheduler: ComputationScheduler,
 
     /// Set of partitions that are currently being executed by workers
-    running_partitions: HashMap<PartitionId, msg::ExecutablePartition>,
+    in_progress: HashMap<PartitionId, msg::ExecutablePartition>,
 
     /// Default sender to use
     sender: Arc<S>,
@@ -23,8 +23,8 @@ pub struct Dispatcher<S: Sender<Payload>> {
 impl<S: Sender<Payload>> Dispatcher<S> {
     pub fn new(sender: S) -> Self {
         Self {
-            computation_scheduler: ComputationScheduler::new(1),
-            running_partitions: HashMap::new(),
+            scheduler: ComputationScheduler::new(1),
+            in_progress: HashMap::new(),
             sender: Arc::new(sender),
         }
     }
@@ -32,54 +32,53 @@ impl<S: Sender<Payload>> Dispatcher<S> {
     /// Main entry point for processing incoming FHE log batches.
     /// This will update the scheduler's DFG and determine which partitions are now executable.
     /// It will then dispatch those partitions to workers via Message Broker.
-    pub(crate) fn dispatch(&mut self, batch: &[msg::FheLog]) {
+    pub(crate) fn dispatch(&mut self, batch: &[msg::FheLog]) -> usize {
         if !batch.is_empty() {
-            self.computation_scheduler.on_fhe_log_batch(batch);
+            self.scheduler.on_fhe_log_batch(batch);
+
+            #[cfg(feature = "export-graphs")]
+            self.scheduler.export_graphs("./viz");
         }
 
-        let exec_partitions = self.computation_scheduler.retrieve_executable_partitions();
-
-        let new_exec_partitions = &exec_partitions
-            .into_iter()
-            .filter(|p| !self.running_partitions.contains_key(&p.hash))
-            .collect::<Vec<_>>();
+        let exec_partitions = self
+            .scheduler
+            .retrieve_executable_partitions(self.in_progress.keys().cloned().collect());
 
         // For debugging and visualization purposes
-        #[cfg(feature = "export-graphs")]
-        self.computation_scheduler.export_graphs("./viz");
 
-        let running = self.running_partitions.len();
-        info!(
-            count = new_exec_partitions.len(),
-            running, "Dispatching executable partitions"
-        );
+        debug!(partitions =  ?exec_partitions, "New executable partitions");
 
-        debug!(partitions =  ?new_exec_partitions, "New executable partitions");
+        for (index, partition) in exec_partitions.iter().enumerate() {
+            info!(
+                index = index,
+                pid = %partition.id(),
+                "Dispatch exec partition"
+            );
 
-        for p in new_exec_partitions {
             // Mark these partitions as running
-            self.running_partitions.insert(p.hash, p.clone());
-            self.publish(p);
+            // self.in_progress.insert(partition.hash, partition.clone());
+            self.publish(partition);
         }
+        exec_partitions.len()
     }
 
     /// This should be called when a worker reports that it has completed executing a partition.
     pub fn on_partition_execution_complete(&mut self, partition: &msg::ExecutablePartition) {
         // Inform the scheduler about the completed partition so it can update the DFG
         // and potentially unlock dependent partitions
-        self.computation_scheduler.on_partition_completed(partition);
+        self.scheduler.on_partition_completed(partition);
 
         let hash = partition.hash;
-        let known = self.running_partitions.contains_key(&hash);
-        self.running_partitions.remove(&hash);
+        let known = self.in_progress.contains_key(&hash);
+        self.in_progress.remove(&hash);
 
         // Prune unneeded nodes from the scheduler to prevent unbounded memory growth
-        self.computation_scheduler.prune();
+        self.scheduler.prune();
 
         info!(
             pid = %partition.id(),
             known,
-            "Partition execution complete"
+            "Partition completed"
         );
     }
 

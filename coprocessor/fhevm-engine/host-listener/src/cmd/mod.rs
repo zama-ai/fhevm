@@ -6,6 +6,7 @@ use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use fhevm_engine_common::protocol::messages::FheLog;
 use futures_util::stream::StreamExt;
 use rustls;
 use sqlx::types::Uuid;
@@ -893,7 +894,7 @@ async fn db_insert_block(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     args: &Args,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<FheLog>> {
     info!(
         block = ?block_logs.summary,
         nb_events = block_logs.logs.len(),
@@ -924,8 +925,9 @@ async fn db_insert_block(
                     error!(error = %err, "Error notifying listener for new block");
                 };
             }
-            return Ok(());
+            return Ok(batch.clone());
         };
+
         if retries == 0 {
             error!(error = %err, block = ?block_logs.summary, "Error inserting block");
             anyhow::bail!("Error in block insertion transaction: {err}");
@@ -1061,6 +1063,19 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
+    let queue_name = "queue_fhe_events";
+    let sender_channel = message_broker::rabbitmq::create_send_channel(
+        "amqp://admin:admin@localhost:5672/%2f",
+        queue_name,
+    )
+    .await
+    .unwrap();
+
+    sender_channel
+        .confirm_select(Default::default())
+        .await
+        .unwrap();
+
     loop {
         log_iter.new_log_stream(true).await;
 
@@ -1081,6 +1096,19 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 // logging & retry on error is already done in db_insert_block
                 continue;
             };
+
+            if let Ok(batch) = status {
+                info!(batch_size = batch.len(), ">>>>>>>>>> Batch size");
+                if !batch.is_empty() {
+                    message_broker::rabbitmq::publish_batch(
+                        &sender_channel,
+                        queue_name,
+                        &batch,
+                    )
+                    .await;
+                }
+            }
+
             log_iter.last_valid_block = Some(
                 block_logs
                     .summary
