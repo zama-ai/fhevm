@@ -66,6 +66,10 @@ pub struct Config {
     #[serde(default = "default_get_logs_batch_size")]
     pub get_logs_batch_size: u64,
 
+    /// Maximum number of consecutive polling errors before stopping the loop.
+    #[serde(default = "default_max_consecutive_polling_errors")]
+    pub max_consecutive_polling_errors: u8,
+
     /// Optional block number to start processing decryption events from.
     pub decryption_from_block_number: Option<u64>,
     /// Optional block number to start processing KMS operation events from.
@@ -90,6 +94,10 @@ fn default_get_logs_batch_size() -> u64 {
     100
 }
 
+fn default_max_consecutive_polling_errors() -> u8 {
+    10
+}
+
 // Default implementation for testing purpose
 impl Default for Config {
     fn default() -> Self {
@@ -110,6 +118,7 @@ impl Default for Config {
             decryption_polling: default_decryption_polling(),
             key_management_polling: default_key_management_polling(),
             get_logs_batch_size: default_get_logs_batch_size(),
+            max_consecutive_polling_errors: default_max_consecutive_polling_errors(),
             decryption_from_block_number: None,
             kms_operation_from_block_number: None,
         }

@@ -54,6 +54,10 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_GET_LOGS_BATCH_SIZE
 # get_logs_batch_size = 100
 
+# Maximum consecutive polling errors before the listener stops (optional, defaults to 10)
+# ENV: KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS
+# max_consecutive_polling_errors = 10
+
 # Block number to start processing decryption events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER
 # decryption_from_block_number = 1234

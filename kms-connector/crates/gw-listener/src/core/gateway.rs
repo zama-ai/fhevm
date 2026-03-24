@@ -17,7 +17,7 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
 };
 use sqlx::{Pool, Postgres, Row};
-use tokio::task::JoinSet;
+use tokio::{select, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -109,8 +109,12 @@ where
     ///
     /// Cancels all other tasks on failure.
     async fn poll_events(self, contract: MonitoredContract) {
-        if let Err(e) = self.run_poll_loop(contract).await {
-            error!("{contract} polling failed: {e}");
+        select! {
+            biased;
+            _ = self.cancel_token.cancelled() => info!("{contract} polling cancelled..."),
+            result = self.run_poll_loop(contract) => if let Err(e) = result {
+                error!("{contract} polling failed: {e}");
+            }
         }
         self.cancel_token.cancel();
     }
@@ -134,6 +138,8 @@ where
 
         let mut last_processed_block = self.get_start_block(from_block_config, event_types).await?;
         let mut ticker = tokio::time::interval(poll_interval);
+        let max_errors = self.config.max_consecutive_polling_errors;
+        let mut consecutive_errors: u8 = 0;
 
         info!(
             "Started {contract} polling from block {}",
@@ -143,57 +149,63 @@ where
         );
 
         loop {
-            tokio::select! {
-                biased;
-                _ = self.cancel_token.cancelled() => break info!("{contract} polling cancelled..."),
-                _ = ticker.tick() => {
-                    let current_block = match self.provider.get_block_number().await {
-                        Ok(block_number) => block_number,
-                        Err(e) => {
-                            warn!("Failed to get block number: {e}");
-                            continue;
-                        }
-                    };
-
-                    let from_block = match last_processed_block {
-                        Some(last) if last >= current_block => continue,
-                        Some(last) => last + 1,
-                        None => current_block,
-                    };
-
-                    let to_block = std::cmp::min(
-                        from_block.saturating_add(self.config.get_logs_batch_size.saturating_sub(1)),
-                        current_block,
-                    );
-
-                    let filter = Filter::new()
-                        .address(contract_address)
-                        .from_block(from_block)
-                        .to_block(to_block);
-
-                    let logs = match self.provider.get_logs(&filter).await {
-                        Ok(logs) => logs,
-                        Err(e) => {
-                            // TODO: if too many errors, stop the loop?
-                            warn!("Failed to get logs for {contract}: {e}");
-                            continue;
-                        }
-                    };
-
-                    for log in logs {
-                        self.process_log(contract, log).await;
+            ticker.tick().await;
+            let current_block = match self.provider.get_block_number().await {
+                Ok(block_number) => block_number,
+                Err(e) => {
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    warn!("Failed to get block number: {e} ({consecutive_errors}/{max_errors})");
+                    if consecutive_errors >= max_errors {
+                        anyhow::bail!("Too many consecutive polling errors for {contract}");
                     }
-
-                    last_processed_block = Some(to_block);
-                    self.update_block_tracking(event_types, Some(to_block)).await?;
-
-                    if to_block < current_block {
-                        ticker.reset_immediately();
-                    }
+                    continue;
                 }
+            };
+
+            let from_block = match last_processed_block {
+                Some(last) if last >= current_block => continue,
+                Some(last) => last + 1,
+                None => current_block,
+            };
+
+            let to_block = std::cmp::min(
+                from_block.saturating_add(self.config.get_logs_batch_size.saturating_sub(1)),
+                current_block,
+            );
+
+            let filter = Filter::new()
+                .address(contract_address)
+                .from_block(from_block)
+                .to_block(to_block);
+
+            let logs = match self.provider.get_logs(&filter).await {
+                Ok(logs) => logs,
+                Err(e) => {
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    warn!(
+                        "Failed to get logs for {contract}: {e} ({consecutive_errors}/{max_errors})"
+                    );
+                    if consecutive_errors >= max_errors {
+                        anyhow::bail!("Too many consecutive polling errors for {contract}");
+                    }
+                    continue;
+                }
+            };
+
+            consecutive_errors = 0;
+
+            for log in logs {
+                self.process_log(contract, log).await;
+            }
+
+            last_processed_block = Some(to_block);
+            self.update_block_tracking(event_types, Some(to_block))
+                .await?;
+
+            if to_block < current_block {
+                ticker.reset_immediately();
             }
         }
-        Ok(())
     }
 
     /// Decodes a log and dispatches it to the appropriate event handler.
@@ -371,6 +383,7 @@ mod tests {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
             kms_operation_from_block_number,
+            max_consecutive_polling_errors: 1,
             ..Default::default()
         };
         let listener = GatewayListener::new(
