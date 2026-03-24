@@ -194,6 +194,7 @@ export const LIGHT_TEST_PROFILES = [
 export const STANDARD_TEST_PROFILES = [
   "paused-host-contracts",
   "paused-gateway-contracts",
+  "coprocessor-db-state-revert",
   "input-proof",
   "input-proof-compute-decrypt",
   "user-decryption",
@@ -204,12 +205,12 @@ export const STANDARD_TEST_PROFILES = [
   "negative-acl",
   "random-subset",
   "hcu-block-cap",
+  "ciphertext-drift",
 ] as const;
 
 /** Heavy suites are the slowest and most stateful CI checks. */
 export const HEAVY_TEST_PROFILES = [
-  "coprocessor-db-state-revert",
-  "ciphertext-drift",
+  "operators",
 ] as const;
 
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
