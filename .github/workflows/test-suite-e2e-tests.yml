@@ -192,102 +192,16 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
-      - name: Pause Host Contracts
+      - name: Standard e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli pause host
+          ./fhevm-cli test standard
 
-      - name: Paused Host contracts test
+      - name: Heavy e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-host-contracts
-
-      - name: Unpause Host Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause host
-
-      - name: Pause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli pause gateway
-
-      - name: Paused Gateway contracts test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-gateway-contracts
-
-      - name: Unpause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause gateway
-
-      - name: Coprocessor DB state revert test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test coprocessor-db-state-revert
-
-      - name: Input proof test (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof
-
-      - name: Input proof test with compute and decrypt (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof-compute-decrypt
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: Delegated User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test delegated-user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
-      - name: Negative ACL tests
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test negative-acl
-
-      - name: Random operators test (subset)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test random-subset
-
-      - name: HCU block cap test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test hcu-block-cap
-
-      - name: Ciphertext drift test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test ciphertext-drift
-
-      - name: Host listener poller test
-        working-directory: test-suite/fhevm
-        run: |
-          docker stop coprocessor-host-listener
-          trap 'docker start coprocessor-host-listener || true' EXIT
-          ./fhevm-cli test erc20
+          # Heavy covers the slowest and most stateful lanes: db revert and drift.
+          ./fhevm-cli test heavy
 
       - name: Show logs
         working-directory: test-suite/fhevm

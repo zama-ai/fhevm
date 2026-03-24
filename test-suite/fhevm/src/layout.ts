@@ -186,7 +186,7 @@ export const TEST_PARALLEL: Record<string, boolean> = {
   operators: true,
 };
 
-export const LIGHT_TEST_PROFILES = [
+export const STANDARD_TEST_PROFILES = [
   "paused-host-contracts",
   "paused-gateway-contracts",
   "input-proof",
@@ -199,6 +199,11 @@ export const LIGHT_TEST_PROFILES = [
   "negative-acl",
   "random-subset",
   "hcu-block-cap",
+] as const;
+
+/** Heavy suites are the slowest and most stateful CI checks. */
+export const HEAVY_TEST_PROFILES = [
+  "coprocessor-db-state-revert",
   "ciphertext-drift",
 ] as const;
 
