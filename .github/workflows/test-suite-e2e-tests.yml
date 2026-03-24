@@ -200,7 +200,7 @@ jobs:
       - name: Heavy e2e suite
         working-directory: test-suite/fhevm
         run: |
-          # Heavy covers the slowest and most stateful lanes: db revert and drift.
+          # Heavy is the long-running operators lane.
           ./fhevm-cli test heavy
 
       - name: Show logs
