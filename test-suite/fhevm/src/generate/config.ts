@@ -4,6 +4,7 @@
 import YAML from "yaml";
 
 import { requiresLegacyRelayerReadinessConfig } from "../compat/compat";
+import { PRIMARY_HOST_KEY, hostNodeName } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 
@@ -51,11 +52,11 @@ const appendExtraHostChains = (
       typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>).chain_id : undefined,
     ),
   );
-  const primaryAcl = Object.values(state.discovery?.hosts ?? {})[0]?.ACL_CONTRACT_ADDRESS ?? "";
+  const primaryAcl = state.discovery?.hosts[PRIMARY_HOST_KEY]?.ACL_CONTRACT_ADDRESS ?? "";
   for (const chain of extraChains) {
     const chainId = Number(chain.chainId);
     if (existing.has(chainId)) continue;
-    const container = chain.key.replace(/^host/, "host-node");
+    const container = hostNodeName(chain.key);
     const aclAddress = state.discovery?.hosts[chain.key]?.ACL_CONTRACT_ADDRESS ?? primaryAcl;
     hostChainsList.push({
       chain_id: chainId,

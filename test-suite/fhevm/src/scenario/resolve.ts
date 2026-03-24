@@ -11,6 +11,7 @@ import {
   DEFAULT_CHAIN_ID,
   GROUP_SERVICE_SUFFIXES,
   MAX_COPROCESSOR_INSTANCES,
+  PRIMARY_HOST_KEY,
   REPO_ROOT,
   resolveServiceOverrides,
 } from "../layout";
@@ -90,7 +91,7 @@ const scenarioCandidatePaths = (value: string) => {
       ];
 };
 
-const DEFAULT_HOST_CHAIN: HostChainScenario = { key: "host", chainId: DEFAULT_CHAIN_ID, rpcPort: 8545 };
+const DEFAULT_HOST_CHAIN: HostChainScenario = { key: PRIMARY_HOST_KEY, chainId: DEFAULT_CHAIN_ID, rpcPort: 8545 };
 
 /** Parses hostChains from YAML. */
 const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): HostChainScenario[] | undefined => {
@@ -115,6 +116,9 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
       }
       seen.add(key);
       const chainId = normalizeScalar(chain.chainId, `${sourceLabel}: hostChains[${index}].chainId`);
+      if (!/^\d+$/.test(chainId)) {
+        throw new Error(`${sourceLabel}: hostChains[${index}].chainId "${chainId}" must be a numeric string`);
+      }
       const rpcPort = Number(chain.rpcPort);
       if (!Number.isInteger(rpcPort) || rpcPort < 1) {
         throw new Error(`${sourceLabel}: hostChains[${index}].rpcPort must be a positive integer`);

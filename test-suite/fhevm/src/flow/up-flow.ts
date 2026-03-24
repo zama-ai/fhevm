@@ -45,6 +45,7 @@ import {
   MINIO_EXTERNAL_URL,
   MINIO_INTERNAL_URL,
   PORTS,
+  PRIMARY_HOST_KEY,
   PROJECT,
   REPO_ROOT,
   SCHEMA_COUPLED_GROUPS,
@@ -258,7 +259,7 @@ export const discoverContracts = async () => {
   }
   return {
     gateway: await readEnvFile(gatewayAddressesPath),
-    hosts: { host: await readEnvFile(hostAddressesPath) },
+    hosts: { [PRIMARY_HOST_KEY]: await readEnvFile(hostAddressesPath) },
   };
 };
 
@@ -439,10 +440,21 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
       throw new PreflightError(`Missing gateway discovery value ${key}`);
     }
   }
-  const primaryHost = discovery.hosts["host"] ?? {};
+  const primaryHost = discovery.hosts[PRIMARY_HOST_KEY] ?? {};
   for (const key of requiredHost) {
     if (!primaryHost[key]) {
       throw new PreflightError(`Missing host discovery value ${key}`);
+    }
+  }
+  for (const chain of state.scenario.hostChains.slice(1)) {
+    const extraHost = discovery.hosts[chain.key];
+    if (!extraHost) {
+      throw new PreflightError(`Missing discovery for extra host chain "${chain.key}"`);
+    }
+    for (const key of requiredHost) {
+      if (!extraHost[key]) {
+        throw new PreflightError(`Missing host discovery value ${key} for chain "${chain.key}"`);
+      }
     }
   }
   if (!discovery.kmsSigner) {
@@ -1116,7 +1128,7 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
 /** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
 const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
   const plan = stackSpecForState(state);
-  const primaryHost = state.discovery?.hosts["host"] ?? {};
+  const primaryHost = state.discovery?.hosts[PRIMARY_HOST_KEY] ?? {};
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? primaryHost.ACL_CONTRACT_ADDRESS ?? "";
   for (let index = 0; index < plan.topology.count; index += 1) {
@@ -1228,7 +1240,7 @@ export const runStep = async (state: State, step: StepName) => {
       const plan = stackSpecForState(state);
       state.discovery = createDiscovery(await defaultEndpoints());
       for (const chain of plan.hostChains.slice(1)) {
-        const container = chain.key.replace(/^host/, "host-node");
+        const container = hostNodeName(chain.key);
         state.discovery.endpoints.hosts[chain.key] = {
           http: `http://${container}:${chain.rpcPort}`,
           ws: `ws://${container}:${chain.rpcPort}`,
@@ -1236,8 +1248,7 @@ export const runStep = async (state: State, step: StepName) => {
       }
       await generateRuntime(state, stackSpecForState(state));
       for (const chain of plan.hostChains.slice(1)) {
-        const container = chain.key.replace(/^host/, "host-node");
-        await multiChainComposeUp(container);
+        await multiChainComposeUp(hostNodeName(chain.key));
         await waitForRpc(`http://localhost:${chain.rpcPort}`);
       }
       break;
@@ -1362,8 +1373,8 @@ export const runStep = async (state: State, step: StepName) => {
         break;
       }
       const hostPauserRegistered = await castBool(
-        state.discovery!.endpoints.hosts["host"].http,
-        withHexPrefix(state.discovery!.hosts["host"].PAUSER_SET_CONTRACT_ADDRESS),
+        state.discovery!.endpoints.hosts[PRIMARY_HOST_KEY].http,
+        withHexPrefix(state.discovery!.hosts[PRIMARY_HOST_KEY].PAUSER_SET_CONTRACT_ADDRESS),
         "isPauser(address)(bool)",
         withHexPrefix(hostEnv.PAUSER_ADDRESS_0),
       ).catch(() => false);

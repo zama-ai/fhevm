@@ -1,6 +1,7 @@
 /**
  * Renders address artifacts consumed by contracts, operators, and local tooling after deployment discovery.
  */
+import { PRIMARY_HOST_KEY } from "../layout";
 import type { State } from "../types";
 
 const SOLIDITY_HEADER = `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -76,7 +77,7 @@ export const renderHostChainAddresses = (state: Pick<State, "discovery">, chainK
 
 /** Renders discovered primary host addresses into a dotenv artifact. */
 export const renderHostAddressesEnv = (state: Pick<State, "discovery">) =>
-  renderHostChainAddresses(state, "host");
+  renderHostChainAddresses(state, PRIMARY_HOST_KEY);
 
 /** Renders discovered host addresses for a given chain key into Solidity constants. */
 export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">, chainKey: string) => {
@@ -93,4 +94,4 @@ export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">
 
 /** Renders discovered primary host addresses into Solidity constants. */
 export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) =>
-  renderHostChainAddressesSolidity(state, "host");
+  renderHostChainAddressesSolidity(state, PRIMARY_HOST_KEY);

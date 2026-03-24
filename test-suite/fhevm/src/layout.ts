@@ -244,9 +244,11 @@ export const paymentBridgingAddressesSolidityPath = path.join(
   "gateway",
   "PaymentBridgingAddresses.sol",
 );
+/** The chain key used by the primary host chain (hostChains[0]). */
+export const PRIMARY_HOST_KEY = "host";
 export const hostChainAddressesPath = (key: string) =>
   path.join(ADDRESS_DIR, key, ".env.host");
-export const hostAddressesPath = hostChainAddressesPath("host");
+export const hostAddressesPath = hostChainAddressesPath(PRIMARY_HOST_KEY);
 
 /** Extracts the suffix ID from a host chain key. "host" → "", "host-b" → "b", "host-foo" → "foo". */
 export const hostChainSuffixId = (key: string) => (key.length > 5 ? key.slice(5) : "");
@@ -261,7 +263,7 @@ export const hostScName = (key: string) => key.replace(/^host/, "host-sc");
 export const coprocessorHostKey = (key: string) => `coprocessor-${key}`;
 export const hostChainAddressesSolidityPath = (key: string) =>
   path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
-export const hostAddressesSolidityPath = hostChainAddressesSolidityPath("host");
+export const hostAddressesSolidityPath = hostChainAddressesSolidityPath(PRIMARY_HOST_KEY);
 
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [

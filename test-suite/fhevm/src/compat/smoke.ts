@@ -4,7 +4,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { COMPONENTS, GROUP_BUILD_SERVICES, STATE_DIR, TEMPLATE_ENV_DIR, versionsEnvPath, dockerArgs, envPath } from "../layout";
+import { COMPONENTS, GROUP_BUILD_SERVICES, PRIMARY_HOST_KEY, STATE_DIR, TEMPLATE_ENV_DIR, versionsEnvPath, dockerArgs, envPath } from "../layout";
 import { generateComposeOverrides, type ComposeDoc } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -28,7 +28,7 @@ const defaultScenario: State["scenario"] = {
   version: 1,
   kind: "coprocessor-consensus",
   origin: "default",
-  hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
+  hostChains: [{ key: PRIMARY_HOST_KEY, chainId: "12345", rpcPort: 8545 }],
   topology: { count: 1, threshold: 1 },
   instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
 };
