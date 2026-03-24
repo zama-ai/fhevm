@@ -33,10 +33,10 @@ DEPLOYMENT_STEPS=(
     "host-node"
     "gateway-node"
     "coprocessor"
-    "kms-connector"
     "gateway-mocked-payment"
-    "gateway-sc"
     "host-sc"
+    "kms-connector"
+    "gateway-sc"
     "relayer"
     "test-suite"
 )
@@ -863,7 +863,23 @@ else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
 fi
 
-# Step 8: kms-connector
+# Step 8: gateway-mocked-payment
+if ! should_skip_step "gateway-mocked-payment"; then
+    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
+        "gateway-deploy-mocked-zama-oft:complete" \
+        "gateway-set-relayer-mocked-payment:complete"
+else
+    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
+fi
+
+# Step 9: host-sc
+if ! should_skip_step "host-sc"; then
+    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+else
+    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
+fi
+
+# Step 10: kms-connector
 if ! should_skip_step "kms-connector"; then
     ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
         "coprocessor-and-kms-db:running" \
@@ -875,16 +891,7 @@ else
     log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
 fi
 
-# Step 9: gateway-mocked-payment
-if ! should_skip_step "gateway-mocked-payment"; then
-    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-        "gateway-deploy-mocked-zama-oft:complete" \
-        "gateway-set-relayer-mocked-payment:complete"
-else
-    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
-fi
-
-# Step 10: gateway-sc
+# Step 11: gateway-sc
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing
 # the e2e tests too soon may fail if the materials are not ready. Hence, the following
@@ -898,13 +905,6 @@ if ! should_skip_step "gateway-sc"; then
         "gateway-sc-add-pausers:complete"
 else
     log_info "Skipping step: gateway-sc (resuming from $RESUME_STEP)"
-fi
-
-# Step 11: host-sc
-if ! should_skip_step "host-sc"; then
-    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
-else
-    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
 fi
 
 # Step 12: relayer

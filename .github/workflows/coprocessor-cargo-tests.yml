@@ -106,7 +106,7 @@ jobs:
 
     - name: Start localstack
       run: |
-        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:latest
+        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
     - name: Clean previous coverage data
       run: cargo llvm-cov clean --workspace --profile coverage

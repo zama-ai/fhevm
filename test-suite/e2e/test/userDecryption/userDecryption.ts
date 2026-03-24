@@ -167,7 +167,10 @@ describe('User decryption', function () {
         const durationDays = 10;
         const contractAddresses = [this.signers.alice.address];
 
-        const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+        // Build the extraData field
+        const extraData = await this.instances.alice.getExtraData();
+
+        const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
         const signature = await this.signers.alice.signTypedData(
           eip712.domain,
@@ -186,6 +189,7 @@ describe('User decryption', function () {
           this.signers.alice.address,
           startTimeStamp,
           durationDays,
+          extraData,
         );
 
         expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
@@ -208,7 +212,11 @@ describe('User decryption', function () {
       const startTimeStamp = Math.floor(Date.now() / 1000);
       const durationDays = 10;
       const contractAddresses = [wrongContractAddress];
-      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+
+      // Build the extraData field
+      const extraData = await this.instances.alice.getExtraData();
+
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
       const signature = await this.signers.alice.signTypedData(
         eip712.domain,
         { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
@@ -225,6 +233,7 @@ describe('User decryption', function () {
           this.signers.alice.address,
           startTimeStamp,
           durationDays,
+          extraData,
         );
         expect.fail('Expected an error - contract should not be allowed');
       } catch (error) {
@@ -245,7 +254,10 @@ describe('User decryption', function () {
       const durationDays = 10;
       const contractAddresses = [this.contractAddress];
 
-      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+      // Build the extraData field
+      const extraData = await this.instances.alice.getExtraData();
+
+      const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
       const signature = await this.signers.alice.signTypedData(
         eip712.domain,
@@ -265,6 +277,7 @@ describe('User decryption', function () {
           this.signers.alice.address,
           startTimeStamp,
           durationDays,
+          extraData,
         );
         expect.fail('Expected an error to be thrown - request should have expired');
       } catch (error) {

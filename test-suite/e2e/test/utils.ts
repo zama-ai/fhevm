@@ -141,8 +141,11 @@ export const userDecryptSingleHandle = async (
   const durationDays = 10; // Relayer-sdk expects numbers from now on
   const contractAddresses = [contractAddress];
 
+  // Build the extraData field
+  const extraData = await instance.getExtraData();
+
   // Use the new createEIP712 function
-  const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
+  const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
   // Update the signing to match the new primaryType
   const signature = await signer.signTypedData(
@@ -163,6 +166,7 @@ export const userDecryptSingleHandle = async (
     signerAddress,
     startTimeStamp,
     durationDays,
+    extraData,
   );
 
   const decryptedValue = result[handle];
@@ -189,6 +193,9 @@ export const delegatedUserDecryptSingleHandle = async (
   const durationDays = 10;
   const contractAddresses = [contractAddress];
 
+  // Build the extraData field
+  const extraData = await instance.getExtraData();
+
   // The `delegate` creates a EIP712 with the `delegator` address
   const eip712 = instance.createDelegatedUserDecryptEIP712(
     delegatePublicKey,
@@ -196,6 +203,7 @@ export const delegatedUserDecryptSingleHandle = async (
     delegatorAddress,
     startTimeStamp,
     durationDays,
+    extraData,
   );
 
   // Update the signing to match the new primaryType
@@ -217,6 +225,7 @@ export const delegatedUserDecryptSingleHandle = async (
     delegateAddress,
     startTimeStamp,
     durationDays,
+    extraData,
   );
 
   return result[handle];
