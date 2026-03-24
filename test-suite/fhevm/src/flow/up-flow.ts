@@ -58,7 +58,11 @@ import {
   hostAddressesPath,
   hostAddressesSolidityPath,
   hostChainAddressesPath,
+  hostChainAddressesSolidityPath,
   hostChainSuffixId,
+  hostNodeName,
+  hostScName,
+  coprocessorHostKey,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -469,7 +473,15 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
           hostAddressesSolidityPath,
         ]
       : []),
-    ...state.scenario.hostChains.slice(1).map((chain) => hostChainAddressesPath(chain.key)),
+    // Multi-chain artifacts: address files, compose overrides, and per-chain coprocessor env files
+    ...state.scenario.hostChains.slice(1).flatMap((chain) => [
+      hostChainAddressesPath(chain.key),
+      ...(state.discovery ? [hostChainAddressesSolidityPath(chain.key)] : []),
+      composePath(hostNodeName(chain.key)),
+      composePath(hostScName(chain.key)),
+      composePath(coprocessorHostKey(chain.key)),
+      ...Array.from({ length: topology.count }, (_, index) => envPath(`coprocessor-${chain.key}.${index}`)),
+    ]),
   ];
   const allExist = (await Promise.all(requiredPaths.map((file) => exists(file)))).every(Boolean);
   if (allExist) {
@@ -483,11 +495,9 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
 const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<[string, StepName]> => {
   const entries: Array<[string, StepName]> = [];
   for (const chain of state.scenario.hostChains.slice(1)) {
-    const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
-    const container = chain.key.replace(/^host/, "host-node");
-    entries.push([container, "base"]);
-    entries.push([`host-sc-${suffixId}`, "host-deploy"]);
-    entries.push([`coprocessor-host-${suffixId}`, "coprocessor"]);
+    entries.push([hostNodeName(chain.key), "base"]);
+    entries.push([hostScName(chain.key), "host-deploy"]);
+    entries.push([coprocessorHostKey(chain.key), "coprocessor"]);
   }
   return entries;
 };
@@ -1254,8 +1264,7 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("host-sc", state, ["host-sc-deploy"]);
       await waitForContainer("host-sc-deploy", "complete");
       for (const chain of stackSpecForState(state).hostChains.slice(1)) {
-        const suffixId = hostChainSuffixId(chain.key);
-        const scKey = `host-sc-${suffixId}`;
+        const scKey = hostScName(chain.key);
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeUp(scKey, [`${scKey}-deploy`]);
           await waitForContainer(`${scKey}-deploy`, "complete");
@@ -1299,7 +1308,7 @@ export const runStep = async (state: State, step: StepName) => {
           registerExtraChainInCoprocessor(state, chain),
         );
         await timed(`[multi-chain] start host-listener-${suffixId} services`, async () => {
-          await multiChainComposeUp(`coprocessor-host-${suffixId}`);
+          await multiChainComposeUp(coprocessorHostKey(chain.key));
           const topology = topologyForState(state);
           for (let index = 0; index < topology.count; index += 1) {
             const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;

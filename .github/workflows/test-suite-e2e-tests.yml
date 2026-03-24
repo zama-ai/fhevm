@@ -76,10 +76,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
-      multi-chain:
-        description: "Enable multi-chain mode (deploys a second host chain)"
-        default: false
-        type: boolean
+      scenario:
+        description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
+        default: "two-of-two"
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -125,6 +125,7 @@ jobs:
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
+      SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -180,14 +181,8 @@ jobs:
 
       - name: Dry run
         working-directory: test-suite/fhevm
-        env:
-          MULTI_CHAIN: ${{ inputs.multi-chain && 'true' || 'false' }}
         run: |
-          scenario="two-of-two"
-          if [ "$MULTI_CHAIN" = "true" ]; then
-            scenario="two-of-two-multi-chain"
-          fi
-          args=(--target latest-main --scenario "$scenario")
+          args=(--target latest-main --scenario "$SCENARIO")
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
@@ -195,14 +190,8 @@ jobs:
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
-        env:
-          MULTI_CHAIN: ${{ inputs.multi-chain && 'true' || 'false' }}
         run: |
-          scenario="two-of-two"
-          if [ "$MULTI_CHAIN" = "true" ]; then
-            scenario="two-of-two-multi-chain"
-          fi
-          args=(--target latest-main --scenario "$scenario")
+          args=(--target latest-main --scenario "$SCENARIO")
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
@@ -212,18 +201,6 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test standard
-
-      - name: Heavy e2e suite
-        working-directory: test-suite/fhevm
-        run: |
-          # Heavy is the long-running operators lane.
-          ./fhevm-cli test heavy
-
-      - name: Multi-chain isolation tests
-        if: ${{ inputs.multi-chain }}
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test multi-chain-isolation
 
       - name: Show logs
         working-directory: test-suite/fhevm

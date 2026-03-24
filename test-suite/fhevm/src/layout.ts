@@ -250,11 +250,18 @@ export const hostAddressesPath = hostChainAddressesPath("host");
 
 /** Extracts the suffix ID from a host chain key. "host" → "", "host-b" → "b", "host-foo" → "foo". */
 export const hostChainSuffixId = (key: string) => (key.length > 5 ? key.slice(5) : "");
-export const hostAddressesSolidityPath = path.join(
-  ADDRESS_DIR,
-  "host",
-  "FHEVMHostAddresses.sol",
-);
+
+/** Derives the host-node container name from a chain key. "host" → "host-node", "host-b" → "host-node-b". */
+export const hostNodeName = (key: string) => key.replace(/^host/, "host-node");
+
+/** Derives the host-sc service prefix from a chain key. "host" → "host-sc", "host-b" → "host-sc-b". */
+export const hostScName = (key: string) => key.replace(/^host/, "host-sc");
+
+/** Derives the coprocessor-host compose key from a chain key. "host" → "coprocessor-host", "host-b" → "coprocessor-host-b". */
+export const coprocessorHostKey = (key: string) => `coprocessor-${key}`;
+export const hostChainAddressesSolidityPath = (key: string) =>
+  path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
+export const hostAddressesSolidityPath = hostChainAddressesSolidityPath("host");
 
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [

@@ -78,9 +78,9 @@ export const renderHostChainAddresses = (state: Pick<State, "discovery">, chainK
 export const renderHostAddressesEnv = (state: Pick<State, "discovery">) =>
   renderHostChainAddresses(state, "host");
 
-/** Renders discovered host addresses into Solidity constants. */
-export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) => {
-  const host = state.discovery?.hosts["host"];
+/** Renders discovered host addresses for a given chain key into Solidity constants. */
+export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">, chainKey: string) => {
+  const host = state.discovery?.hosts[chainKey];
   return renderSolidityFile([
     ["aclAdd", host?.ACL_CONTRACT_ADDRESS],
     ["fhevmExecutorAdd", host?.FHEVM_EXECUTOR_CONTRACT_ADDRESS],
@@ -90,3 +90,7 @@ export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) => 
     ["pauserSetAdd", host?.PAUSER_SET_CONTRACT_ADDRESS],
   ]);
 };
+
+/** Renders discovered primary host addresses into Solidity constants. */
+export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) =>
+  renderHostChainAddressesSolidity(state, "host");

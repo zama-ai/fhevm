@@ -22,8 +22,9 @@ describe('Multi-Chain State Isolation', function () {
   this.timeout(300_000);
 
   before(async function () {
-    if (!process.env.CHAIN_ID_HOST_B) {
+    if (!CHAIN_B) {
       this.skip();
+      return;
     }
 
     await initSigners(2);

@@ -12,9 +12,10 @@ import {
   DEFAULT_TENANT_API_KEY,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
-  hostChainSuffixId,
+  hostNodeName,
+  hostScName,
 } from "../layout";
-import type { HostChainScenario, State } from "../types";
+import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 import { interpolateString } from "./compose";
 
@@ -23,9 +24,6 @@ export type WalletMaterial = {
   privateKey: string;
 };
 
-/** Derives the docker container name for a host chain. "host" → "host-node", "host-b" → "host-node-b". */
-const hostNodeContainer = (chain: HostChainScenario) =>
-  chain.key.replace(/^host/, "host-node");
 
 const HAS_PLACEHOLDER = /(?<!\$)\$\{[A-Z0-9_]+\}/;
 
@@ -165,7 +163,7 @@ const applyDiscoveryEnv = (
     const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
     const endpoints = state.discovery!.endpoints.hosts[chain.key];
     return {
-      url: endpoints?.http ?? `http://${hostNodeContainer(chain)}:${chain.rpcPort}`,
+      url: endpoints?.http ?? `http://${hostNodeName(chain.key)}:${chain.rpcPort}`,
       chain_id: Number(chain.chainId),
       acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? primaryHost.ACL_CONTRACT_ADDRESS,
     };
@@ -263,8 +261,7 @@ export const renderEnvMaps = async (
     for (let ci = 0; ci < extraChains.length; ci += 1) {
       const chain = extraChains[ci];
       const chainIndex = ci + 1;
-      const container = hostNodeContainer(chain);
-      const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
+      const container = hostNodeName(chain.key);
       const hostHttp = `http://${container}:${chain.rpcPort}`;
       const hostWs = `ws://${container}:${chain.rpcPort}`;
       const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
@@ -286,7 +283,7 @@ export const renderEnvMaps = async (
         HOST_NODE_CHAIN_ID: chain.chainId,
       };
 
-      const hostScKey = `host-sc-${suffixId}`;
+      const hostScKey = hostScName(chain.key);
       const hostSc = { ...envs["host-sc"] };
       hostSc.RPC_URL = hostHttp;
       hostSc.CHAIN_ID = chain.chainId;
@@ -313,11 +310,11 @@ export const renderEnvMaps = async (
           coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
           coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
         }
-        instanceEnvs[`coprocessor-${suffixId}.${index}`] = coproChain;
+        instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
       }
 
-      envs["test-suite"][`RPC_URL_CHAIN_${suffixId.toUpperCase()}`] = hostHttp;
-      envs["test-suite"][`CHAIN_ID_HOST_${suffixId.toUpperCase()}`] = chain.chainId;
+      envs["test-suite"][`HOST_CHAIN_${chainIndex}_RPC_URL`] = hostHttp;
+      envs["test-suite"][`HOST_CHAIN_${chainIndex}_CHAIN_ID`] = chain.chainId;
     }
   }
 

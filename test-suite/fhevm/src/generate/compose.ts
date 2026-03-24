@@ -16,8 +16,11 @@ import {
   GROUP_SERVICE_SUFFIXES,
   TEMPLATE_COMPOSE_DIR,
   composePath,
+  coprocessorHostKey,
   envPath,
   hostChainSuffixId,
+  hostNodeName,
+  hostScName,
 } from "../layout";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
@@ -330,7 +333,7 @@ const buildExtraHostNodeOverride = async (chain: HostChainScenario, primaryChain
   const doc = rewriteComposePaths(await loadComposeDoc("host-node"));
   const hostNode = doc.services["host-node"];
   if (!hostNode) return { services: {} };
-  const container = chain.key.replace(/^host/, "host-node");
+  const container = hostNodeName(chain.key);
   const clone = structuredClone(hostNode);
   clone.container_name = container;
   clone.env_file = [envPath(container)];
@@ -348,8 +351,7 @@ const buildExtraHostNodeOverride = async (chain: HostChainScenario, primaryChain
 /** Builds a host-sc compose override for an extra host chain. */
 const buildExtraHostScOverride = async (chain: HostChainScenario): Promise<ComposeDoc> => {
   const doc = rewriteComposePaths(await loadComposeDoc("host-sc"));
-  const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
-  const scPrefix = `host-sc-${suffixId}`;
+  const scPrefix = hostScName(chain.key);
   const services: Record<string, Record<string, unknown>> = {};
   for (const [name, service] of Object.entries(doc.services)) {
     const cloneName = name.replace("host-sc-", `${scPrefix}-`);
@@ -391,7 +393,7 @@ const buildExtraCoprocessorListenerOverride = async (plan: StackSpec, chain: Hos
           ? inheritedBuildServices
           : new Set<string>();
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
-    const envName = `coprocessor-${suffixId}.${instance.index}`;
+    const envName = `coprocessor-${chain.key}.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
     for (const baseName of listenerServices) {
@@ -441,10 +443,9 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   const primaryChainId = plan.hostChains[0]?.chainId ?? "12345";
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
-    const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
-    const container = chain.key.replace(/^host/, "host-node");
-    const hostScKey = `host-sc-${suffixId}`;
-    const coproKey = `coprocessor-host-${suffixId}`;
+    const container = hostNodeName(chain.key);
+    const hostScKey = hostScName(chain.key);
+    const coproKey = coprocessorHostKey(chain.key);
     extraChainFileNames.push(container, hostScKey, coproKey);
     const [hostNodeDoc, hostScDoc, coproDoc] = await Promise.all([
       buildExtraHostNodeOverride(chain, primaryChainId),
@@ -455,9 +456,16 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
     await fs.writeFile(composePath(hostScKey), YAML.stringify(hostScDoc));
     await fs.writeFile(composePath(coproKey), YAML.stringify(coproDoc));
   }
-  // Clean up stale multi-chain files from previous runs
-  for (const name of ["host-node-b", "host-sc-b", "coprocessor-host-b"]) {
-    if (!extraChainFileNames.includes(name)) {
+  // Clean up stale multi-chain compose files from previous runs.
+  // Scan the output directory for files matching multi-chain naming patterns
+  // and remove any that are not part of the current active set.
+  const MULTI_CHAIN_PREFIXES = ["host-node-", "host-sc-", "coprocessor-host-"];
+  const activeSet = new Set(extraChainFileNames);
+  const dirEntries = await fs.readdir(COMPOSE_OUT_DIR).catch(() => [] as string[]);
+  for (const entry of dirEntries) {
+    if (!entry.endsWith(".yml")) continue;
+    const name = entry.slice(0, -4); // strip .yml
+    if (MULTI_CHAIN_PREFIXES.some((prefix) => name.startsWith(prefix)) && !activeSet.has(name)) {
       await remove(composePath(name));
     }
   }

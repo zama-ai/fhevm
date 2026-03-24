@@ -20,15 +20,36 @@ export interface ChainConfig {
   chainId: number;
 }
 
-export const CHAIN_A: ChainConfig = {
-  rpcUrl: process.env.RPC_URL || 'http://localhost:8545',
-  chainId: Number(process.env.CHAIN_ID_HOST || 12345),
-};
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
 
-export const CHAIN_B: ChainConfig = {
-  rpcUrl: process.env.RPC_URL_CHAIN_B || 'http://localhost:8547',
-  chainId: Number(process.env.CHAIN_ID_HOST_B || 67890),
-};
+/** Discovers all host chains from indexed env vars (HOST_CHAIN_1_*, HOST_CHAIN_2_*, …). */
+function parseHostChains(): ChainConfig[] {
+  const primary: ChainConfig = {
+    rpcUrl: requireEnv('RPC_URL'),
+    chainId: Number(requireEnv('CHAIN_ID_HOST')),
+  };
+  const chains: ChainConfig[] = [primary];
+  for (let i = 1; ; i++) {
+    const rpcUrl = process.env[`HOST_CHAIN_${i}_RPC_URL`];
+    const chainId = process.env[`HOST_CHAIN_${i}_CHAIN_ID`];
+    if (!rpcUrl || !chainId) break;
+    chains.push({ rpcUrl, chainId: Number(chainId) });
+  }
+  return chains;
+}
+
+/** All discovered host chains. Index 0 is the primary chain. */
+export const HOST_CHAINS: ChainConfig[] = parseHostChains();
+
+/** Primary host chain (always present). */
+export const CHAIN_A: ChainConfig = HOST_CHAINS[0];
+
+/** First extra host chain, or undefined in single-chain mode. Guard with `if (!CHAIN_B) this.skip()`. */
+export const CHAIN_B: ChainConfig | undefined = HOST_CHAINS[1];
 
 const providers = new Map<string, ethers.JsonRpcProvider>();
 

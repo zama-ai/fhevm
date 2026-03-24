@@ -91,9 +91,8 @@ const scenarioCandidatePaths = (value: string) => {
 };
 
 const DEFAULT_HOST_CHAIN: HostChainScenario = { key: "host", chainId: DEFAULT_CHAIN_ID, rpcPort: 8545 };
-const LEGACY_CHAIN_B: HostChainScenario = { key: "host-b", chainId: "67890", rpcPort: 8547 };
 
-/** Parses hostChains from YAML, with backward compat for multiChain: true. */
+/** Parses hostChains from YAML. */
 const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): HostChainScenario[] | undefined => {
   if (parsed.hostChains !== undefined) {
     if (!Array.isArray(parsed.hostChains)) {
@@ -106,6 +105,11 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
       }
       const chain = entry as Record<string, unknown>;
       const key = normalizeScalar(chain.key, `${sourceLabel}: hostChains[${index}].key`);
+      if (!/^host(-[a-z0-9]+)?$/.test(key)) {
+        throw new Error(
+          `${sourceLabel}: hostChains[${index}].key "${key}" must match "host" or "host-{id}" where id is lowercase alphanumeric`,
+        );
+      }
       if (seen.has(key)) {
         throw new Error(`${sourceLabel}: duplicate hostChains key "${key}"`);
       }
@@ -122,9 +126,6 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         name: normalizeOptionalText(chain.name, `${sourceLabel}: hostChains[${index}].name`),
       };
     });
-  }
-  if (parsed.multiChain === true) {
-    return [DEFAULT_HOST_CHAIN, LEGACY_CHAIN_B];
   }
   return undefined;
 };

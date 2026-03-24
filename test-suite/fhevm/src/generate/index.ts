@@ -12,6 +12,7 @@ import {
   renderGatewayAddressesSolidity,
   renderHostAddressesEnv,
   renderHostChainAddresses,
+  renderHostChainAddressesSolidity,
   renderHostAddressesSolidity,
   renderPaymentBridgingAddressesSolidity,
 } from "./addresses";
@@ -31,6 +32,7 @@ import {
   hostAddressesPath,
   hostAddressesSolidityPath,
   hostChainAddressesPath,
+  hostChainAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -114,6 +116,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   await writeWritableFile(hostAddressesSolidityPath, renderHostAddressesSolidity(state));
   for (const chain of plan.hostChains.slice(1)) {
     await writeWritableFile(hostChainAddressesPath(chain.key), renderHostChainAddresses(state, chain.key));
+    await writeWritableFile(hostChainAddressesSolidityPath(chain.key), renderHostChainAddressesSolidity(state, chain.key));
   }
 
   await generateComposeOverrides(state, plan);
