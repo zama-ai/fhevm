@@ -28,8 +28,6 @@ import {
 import { describeBundle } from "../resolve/target";
 import {
   ADDRESS_DIR,
-  CHAIN_B_ID,
-  CHAIN_B_PORT,
   COMPOSE_OUT_DIR,
   COMPONENT_BY_STEP,
   COMPONENTS,
@@ -59,7 +57,8 @@ import {
   gatewayAddressesSolidityPath,
   hostAddressesPath,
   hostAddressesSolidityPath,
-  hostBAddressesPath,
+  hostChainAddressesPath,
+  hostChainSuffixId,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -160,7 +159,7 @@ const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) =>
 const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, fromStep?: StepName) => {
   const topology = topologyForState(state);
   const overrides = visibleOverrides(state);
-  const multiChain = state.scenario.multiChain ?? false;
+  const isMultiChain = state.scenario.hostChains.length > 1;
   console.log(`[plan] profile=${state.target}`);
   if (overrides.length) {
     console.log(`[plan] overrides=${overrides.map(describeOverride).join(", ")}`);
@@ -168,7 +167,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
       console.log(`[warn] ${warning}`);
     }
   }
-  console.log(`[plan] topology=n${topology.count}/t${topology.threshold}${multiChain ? " multi-chain" : ""}`);
+  console.log(`[plan] topology=n${topology.count}/t${topology.threshold}${isMultiChain ? " multi-chain" : ""}`);
   console.log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
 };
 
@@ -222,10 +221,8 @@ export const minioIp = async () => {
 export const defaultEndpoints = async () => {
   const ip = await minioIp();
   return {
-    gatewayHttp: "http://gateway-node:8546",
-    gatewayWs: "ws://gateway-node:8546",
-    hostHttp: "http://host-node:8545",
-    hostWs: "ws://host-node:8545",
+    gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+    hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
     minioInternal: MINIO_INTERNAL_URL,
     minioExternal: `http://${ip}:9000`,
   };
@@ -233,7 +230,7 @@ export const defaultEndpoints = async () => {
 
 export const createDiscovery = (endpoints: Discovery["endpoints"]): Discovery => ({
   gateway: {},
-  host: {},
+  hosts: {},
   kmsSigner: "",
   fheKeyId: predictedKeyId(),
   crsKeyId: predictedCrsId(),
@@ -257,7 +254,7 @@ export const discoverContracts = async () => {
   }
   return {
     gateway: await readEnvFile(gatewayAddressesPath),
-    host: await readEnvFile(hostAddressesPath),
+    hosts: { host: await readEnvFile(hostAddressesPath) },
   };
 };
 
@@ -438,8 +435,9 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
       throw new PreflightError(`Missing gateway discovery value ${key}`);
     }
   }
+  const primaryHost = discovery.hosts["host"] ?? {};
   for (const key of requiredHost) {
-    if (!discovery.host[key]) {
+    if (!primaryHost[key]) {
       throw new PreflightError(`Missing host discovery value ${key}`);
     }
   }
@@ -471,7 +469,7 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
           hostAddressesSolidityPath,
         ]
       : []),
-    ...(state.scenario.multiChain ? [hostBAddressesPath] : []),
+    ...state.scenario.hostChains.slice(1).map((chain) => hostChainAddressesPath(chain.key)),
   ];
   const allExist = (await Promise.all(requiredPaths.map((file) => exists(file)))).every(Boolean);
   if (allExist) {
@@ -481,24 +479,30 @@ const ensureRuntimeArtifacts = async (state: State, reason: string) => {
   await generateRuntime(state, stackSpecForState(state));
 };
 
-/** Maps each multi-chain compose file to the pipeline step that creates it. */
-const MULTI_CHAIN_STEP: Record<string, StepName> = {
-  "host-node-b": "base",
-  "host-sc-b": "host-deploy",
-  "coprocessor-host-b": "coprocessor",
+/** Returns multi-chain compose file names and their owning step for the current scenario. */
+const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<[string, StepName]> => {
+  const entries: Array<[string, StepName]> = [];
+  for (const chain of state.scenario.hostChains.slice(1)) {
+    const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
+    const container = chain.key.replace(/^host/, "host-node");
+    entries.push([container, "base"]);
+    entries.push([`host-sc-${suffixId}`, "host-deploy"]);
+    entries.push([`coprocessor-host-${suffixId}`, "coprocessor"]);
+  }
+  return entries;
 };
 
 const resetAfterStep = async (step: StepName, state: Pick<State, "scenario">) => {
   const start = stateStepIndex(step);
   const failed: string[] = [];
-  if (state.scenario.multiChain) {
-    const toTearDown = Object.entries(MULTI_CHAIN_STEP)
-      .filter(([, parentStep]) => stateStepIndex(parentStep) >= start)
-      .map(([name]) => name);
-    const multiChainResults = await Promise.all(
+  const toTearDown = multiChainComposeEntries(state)
+    .filter(([, parentStep]) => stateStepIndex(parentStep) >= start)
+    .map(([name]) => name);
+  if (toTearDown.length) {
+    const results = await Promise.all(
       toTearDown.map(async (name) => ({ name, ok: await multiChainComposeDown(name) })),
     );
-    for (const { name, ok } of multiChainResults) {
+    for (const { name, ok } of results) {
       if (!ok) failed.push(name);
     }
   }
@@ -751,7 +755,7 @@ export const probeBootstrap = async (state: State) => {
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
     const ethCallRaw = async (data: string) => {
-      const rpcUrl = hostReachableRpcUrl(discovery.endpoints.gatewayHttp);
+      const rpcUrl = hostReachableRpcUrl(discovery.endpoints.gateway.http);
       const response = await fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1099,20 +1103,20 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     Array.from({ length: topologyForState(state).count }, (_, index) => (index === 0 ? "coprocessor" : `coprocessor_${index}`)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
-const registerChainBInCoprocessor = async (state: State) => {
+/** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
+const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
   const plan = stackSpecForState(state);
-  const aclAddress =
-    state.discovery?.hostB?.ACL_CONTRACT_ADDRESS ??
-    state.discovery?.host?.ACL_CONTRACT_ADDRESS ??
-    "";
+  const primaryHost = state.discovery?.hosts["host"] ?? {};
+  const chainHost = state.discovery?.hosts[chain.key] ?? {};
+  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? primaryHost.ACL_CONTRACT_ADDRESS ?? "";
   for (let index = 0; index < plan.topology.count; index += 1) {
     const dbName = index === 0 ? "coprocessor" : `coprocessor_${index}`;
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    console.log(`[multi-chain] registering Chain B in ${dbName}`);
+    console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
     await run([
       "docker", "exec", COPROCESSOR_DB_CONTAINER,
       "psql", "-U", "postgres", "-d", dbName, "-c",
-      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${CHAIN_B_ID}, 'test chain b', '${aclAddress}') ON CONFLICT (chain_id) DO NOTHING;`,
+      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, '${chain.key}', '${aclAddress}') ON CONFLICT (chain_id) DO NOTHING;`,
     ]);
     console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
     await run(["docker", "stop", `${prefix}zkproof-worker`]);
@@ -1121,11 +1125,13 @@ const registerChainBInCoprocessor = async (state: State) => {
   }
 };
 
-const discoverChainBContracts = async () => {
-  if (!(await exists(hostBAddressesPath))) {
-    throw new PreflightError("Missing Chain B host address file");
+/** Discovers deployed contracts for an extra host chain from its address file. */
+const discoverExtraChainContracts = async (chainKey: string) => {
+  const addressPath = hostChainAddressesPath(chainKey);
+  if (!(await exists(addressPath))) {
+    throw new PreflightError(`Missing host address file for chain ${chainKey}`);
   }
-  return readEnvFile(hostBAddressesPath);
+  return readEnvFile(addressPath);
 };
 
 /** Waits for the kms-connector runtime services to become ready. */
@@ -1211,14 +1217,18 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForRpc("http://localhost:8546");
       const plan = stackSpecForState(state);
       state.discovery = createDiscovery(await defaultEndpoints());
-      if (plan.multiChain) {
-        state.discovery.endpoints.hostBHttp = `http://host-node-b:${CHAIN_B_PORT}`;
-        state.discovery.endpoints.hostBWs = `ws://host-node-b:${CHAIN_B_PORT}`;
+      for (const chain of plan.hostChains.slice(1)) {
+        const container = chain.key.replace(/^host/, "host-node");
+        state.discovery.endpoints.hosts[chain.key] = {
+          http: `http://${container}:${chain.rpcPort}`,
+          ws: `ws://${container}:${chain.rpcPort}`,
+        };
       }
       await generateRuntime(state, stackSpecForState(state));
-      if (plan.multiChain) {
-        await multiChainComposeUp("host-node-b");
-        await waitForRpc(`http://localhost:${CHAIN_B_PORT}`);
+      for (const chain of plan.hostChains.slice(1)) {
+        const container = chain.key.replace(/^host/, "host-node");
+        await multiChainComposeUp(container);
+        await waitForRpc(`http://localhost:${chain.rpcPort}`);
       }
       break;
     }
@@ -1243,14 +1253,16 @@ export const runStep = async (state: State, step: StepName) => {
     case "host-deploy":
       await stepComposeUp("host-sc", state, ["host-sc-deploy"]);
       await waitForContainer("host-sc-deploy", "complete");
-      if (stackSpecForState(state).multiChain) {
-        await timed("[multi-chain] host-sc-b-deploy", async () => {
-          await multiChainComposeUp("host-sc-b", ["host-sc-b-deploy"]);
-          await waitForContainer("host-sc-b-deploy", "complete");
+      for (const chain of stackSpecForState(state).hostChains.slice(1)) {
+        const suffixId = hostChainSuffixId(chain.key);
+        const scKey = `host-sc-${suffixId}`;
+        await timed(`[multi-chain] ${scKey}-deploy`, async () => {
+          await multiChainComposeUp(scKey, [`${scKey}-deploy`]);
+          await waitForContainer(`${scKey}-deploy`, "complete");
         });
-        await timed("[multi-chain] host-sc-b-add-pausers", async () => {
-          await multiChainComposeUp("host-sc-b", ["host-sc-b-add-pausers"]);
-          await waitForContainer("host-sc-b-add-pausers", "complete");
+        await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
+          await multiChainComposeUp(scKey, [`${scKey}-add-pausers`]);
+          await waitForContainer(`${scKey}-add-pausers`, "complete");
         });
       }
       break;
@@ -1258,9 +1270,9 @@ export const runStep = async (state: State, step: StepName) => {
       const contracts = await discoverContracts();
       const discovery = await ensureDiscovery(state);
       discovery.gateway = contracts.gateway;
-      discovery.host = contracts.host;
-      if (stackSpecForState(state).multiChain) {
-        discovery.hostB = await discoverChainBContracts();
+      discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
+      for (const chain of stackSpecForState(state).hostChains.slice(1)) {
+        discovery.hosts[chain.key] = await discoverExtraChainContracts(chain.key);
       }
       break;
     }
@@ -1281,17 +1293,18 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
       await waitForCoprocessorServices(state, skipMigration);
       await postBootHealthGate(coprocessorHealthContainers(state));
-      if (stackSpecForState(state).multiChain) {
-        await timed("[multi-chain] register Chain B in coprocessor DBs", () =>
-          registerChainBInCoprocessor(state),
+      for (const chain of stackSpecForState(state).hostChains.slice(1)) {
+        const suffixId = hostChainSuffixId(chain.key);
+        await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
+          registerExtraChainInCoprocessor(state, chain),
         );
-        await timed("[multi-chain] start host-listener-b services", async () => {
-          await multiChainComposeUp("coprocessor-host-b");
+        await timed(`[multi-chain] start host-listener-${suffixId} services`, async () => {
+          await multiChainComposeUp(`coprocessor-host-${suffixId}`);
           const topology = topologyForState(state);
           for (let index = 0; index < topology.count; index += 1) {
             const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-            await waitForContainer(`${prefix}host-listener-b`, "running");
-            await waitForContainer(`${prefix}host-listener-poller-b`, "running");
+            await waitForContainer(`${prefix}host-listener-${suffixId}`, "running");
+            await waitForContainer(`${prefix}host-listener-poller-${suffixId}`, "running");
           }
         });
       }
@@ -1318,7 +1331,7 @@ export const runStep = async (state: State, step: StepName) => {
             .filter(Boolean)
             .map((chainId) =>
               castBool(
-                state.discovery!.endpoints.gatewayHttp,
+                state.discovery!.endpoints.gateway.http,
                 withHexPrefix(state.discovery!.gateway.GATEWAY_CONFIG_ADDRESS),
                 "isHostChainRegistered(uint256)(bool)",
                 chainId,
@@ -1340,8 +1353,8 @@ export const runStep = async (state: State, step: StepName) => {
         break;
       }
       const hostPauserRegistered = await castBool(
-        state.discovery!.endpoints.hostHttp,
-        withHexPrefix(state.discovery!.host.PAUSER_SET_CONTRACT_ADDRESS),
+        state.discovery!.endpoints.hosts["host"].http,
+        withHexPrefix(state.discovery!.hosts["host"].PAUSER_SET_CONTRACT_ADDRESS),
         "isPauser(address)(bool)",
         withHexPrefix(hostEnv.PAUSER_ADDRESS_0),
       ).catch(() => false);
@@ -1352,7 +1365,7 @@ export const runStep = async (state: State, step: StepName) => {
         await waitForContainer("host-sc-add-pausers", "complete");
       }
       const gatewayPauserRegistered = await castBool(
-        state.discovery!.endpoints.gatewayHttp,
+        state.discovery!.endpoints.gateway.http,
         withHexPrefix(gatewayEnv.PAUSER_SET_ADDRESS),
         "isPauser(address)(bool)",
         withHexPrefix(gatewayEnv.PAUSER_ADDRESS_0),
@@ -1398,7 +1411,7 @@ const describeResumeState = (state: State) => {
   return [
     `profile=${state.target}`,
     `topology=${topology.count}/${topology.threshold}`,
-    ...(state.scenario.multiChain ? ["multi-chain"] : []),
+    ...(state.scenario.hostChains.length > 1 ? ["multi-chain"] : []),
     ...(state.scenario.origin !== "default"
       ? [`scenario=${state.scenario.origin}${state.scenario.sourcePath ? `:${state.scenario.sourcePath}` : ""}`]
       : []),
@@ -1596,11 +1609,12 @@ export const down = async () => {
     await ensureRuntimeArtifacts(state, "teardown");
   }
   const failed: string[] = [];
-  if (state?.scenario?.multiChain) {
-    const multiChainResults = await Promise.all(
-      ["coprocessor-host-b", "host-sc-b", "host-node-b"].map(async (name) => ({ name, ok: await multiChainComposeDown(name) })),
+  if (state && state.scenario?.hostChains?.length > 1) {
+    const toTearDown = multiChainComposeEntries(state).map(([name]) => name);
+    const results = await Promise.all(
+      toTearDown.map(async (name) => ({ name, ok: await multiChainComposeDown(name) })),
     );
-    for (const { name, ok } of multiChainResults) {
+    for (const { name, ok } of results) {
       if (!ok) failed.push(name);
     }
   }
@@ -1671,7 +1685,7 @@ export const status = async () => {
         console.log(`[warn] ${warning}`);
       }
     }
-    console.log(`[topology] n=${topology.count} t=${topology.threshold}${state.scenario.multiChain ? " multi-chain" : ""}`);
+    console.log(`[topology] n=${topology.count} t=${topology.threshold}${state.scenario.hostChains.length > 1 ? " multi-chain" : ""}`);
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
       for (const instance of state.scenario.instances) {

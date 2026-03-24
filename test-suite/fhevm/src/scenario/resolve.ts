@@ -8,6 +8,7 @@ import YAML from "yaml";
 
 import { PreflightError } from "../errors";
 import {
+  DEFAULT_CHAIN_ID,
   GROUP_SERVICE_SUFFIXES,
   MAX_COPROCESSOR_INSTANCES,
   REPO_ROOT,
@@ -16,6 +17,7 @@ import {
 import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
+  HostChainScenario,
   LocalOverride,
   OverrideGroup,
   ResolvedCoprocessorScenario,
@@ -88,6 +90,49 @@ const scenarioCandidatePaths = (value: string) => {
       ];
 };
 
+const DEFAULT_HOST_CHAIN: HostChainScenario = { key: "host", chainId: DEFAULT_CHAIN_ID, rpcPort: 8545 };
+const LEGACY_CHAIN_B: HostChainScenario = { key: "host-b", chainId: "67890", rpcPort: 8547 };
+
+/** Parses hostChains from YAML, with backward compat for multiChain: true. */
+const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): HostChainScenario[] | undefined => {
+  if (parsed.hostChains !== undefined) {
+    if (!Array.isArray(parsed.hostChains)) {
+      throw new Error(`${sourceLabel}: hostChains must be an array`);
+    }
+    const seen = new Set<string>();
+    return parsed.hostChains.map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        throw new Error(`${sourceLabel}: hostChains[${index}] must be an object`);
+      }
+      const chain = entry as Record<string, unknown>;
+      const key = normalizeScalar(chain.key, `${sourceLabel}: hostChains[${index}].key`);
+      if (seen.has(key)) {
+        throw new Error(`${sourceLabel}: duplicate hostChains key "${key}"`);
+      }
+      seen.add(key);
+      const chainId = normalizeScalar(chain.chainId, `${sourceLabel}: hostChains[${index}].chainId`);
+      const rpcPort = Number(chain.rpcPort);
+      if (!Number.isInteger(rpcPort) || rpcPort < 1) {
+        throw new Error(`${sourceLabel}: hostChains[${index}].rpcPort must be a positive integer`);
+      }
+      return {
+        key,
+        chainId,
+        rpcPort,
+        name: normalizeOptionalText(chain.name, `${sourceLabel}: hostChains[${index}].name`),
+      };
+    });
+  }
+  if (parsed.multiChain === true) {
+    return [DEFAULT_HOST_CHAIN, LEGACY_CHAIN_B];
+  }
+  return undefined;
+};
+
+/** Resolves hostChains, defaulting to the single primary chain when omitted. */
+const resolveHostChains = (hostChains: HostChainScenario[] | undefined): HostChainScenario[] =>
+  hostChains ?? [DEFAULT_HOST_CHAIN];
+
 /** Returns the default single-instance inherited coprocessor scenario. */
 export const defaultCoprocessorScenario = (): ResolvedCoprocessorScenario => ({
   version: COPROCESSOR_SCENARIO_VERSION,
@@ -95,6 +140,7 @@ export const defaultCoprocessorScenario = (): ResolvedCoprocessorScenario => ({
   origin: "default",
   name: "Default",
   description: "Single inherited coprocessor instance.",
+  hostChains: resolveHostChains(undefined),
   topology: { count: 1, threshold: 1 },
   instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
 });
@@ -212,14 +258,14 @@ export const parseCoprocessorScenario = (text: string, sourceLabel = "scenario")
     };
   });
 
-  const multiChain = parsed.multiChain === true ? true : undefined;
+  const hostChains = parseHostChains(parsed, sourceLabel);
 
   return {
     version: COPROCESSOR_SCENARIO_VERSION,
     kind: COPROCESSOR_SCENARIO_KIND,
     name: normalizeOptionalText(parsed.name, `${sourceLabel}: name`),
     description: normalizeOptionalText(parsed.description, `${sourceLabel}: description`),
-    multiChain,
+    hostChains,
     topology: { count, threshold },
     instances,
   };
@@ -267,7 +313,7 @@ export const resolveScenarioFile = (filePath: string, input: CoprocessorScenario
     origin: "file",
     name: input.name,
     description: input.description,
-    multiChain: input.multiChain,
+    hostChains: resolveHostChains(input.hostChains),
     sourcePath: path.resolve(filePath),
     topology: { ...input.topology },
     instances: Array.from({ length: input.topology.count }, (_, index) => {
@@ -369,6 +415,7 @@ export const synthesizeOverrideScenario = (overrides: LocalOverride[]): Resolved
     origin: "override-shorthand",
     name: "Override Shorthand",
     description: "Single local coprocessor instance synthesized from --override coprocessor.",
+    hostChains: resolveHostChains(undefined),
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "local" }, env: {}, args: {}, localServices: mergeOverrideServices(overrides) }],
   };

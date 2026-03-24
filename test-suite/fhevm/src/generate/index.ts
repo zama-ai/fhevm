@@ -11,7 +11,7 @@ import {
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
   renderHostAddressesEnv,
-  renderHostBAddressesEnv,
+  renderHostChainAddresses,
   renderHostAddressesSolidity,
   renderPaymentBridgingAddressesSolidity,
 } from "./addresses";
@@ -30,7 +30,7 @@ import {
   gatewayAddressesSolidityPath,
   hostAddressesPath,
   hostAddressesSolidityPath,
-  hostBAddressesPath,
+  hostChainAddressesPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -78,8 +78,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   await Promise.all([
     ensureDir(ENV_DIR),
     ensureWritableDir(path.join(ADDRESS_DIR, "gateway")),
-    ensureWritableDir(path.join(ADDRESS_DIR, "host")),
-    ...(plan.multiChain ? [ensureWritableDir(path.join(ADDRESS_DIR, "host-b"))] : []),
+    ...plan.hostChains.map((chain) => ensureWritableDir(path.join(ADDRESS_DIR, chain.key))),
     ensureDir(GENERATED_CONFIG_DIR),
   ]);
 
@@ -113,8 +112,8 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   );
   await writeWritableFile(hostAddressesPath, renderHostAddressesEnv(state));
   await writeWritableFile(hostAddressesSolidityPath, renderHostAddressesSolidity(state));
-  if (plan.multiChain) {
-    await writeWritableFile(hostBAddressesPath, renderHostBAddressesEnv(state));
+  for (const chain of plan.hostChains.slice(1)) {
+    await writeWritableFile(hostChainAddressesPath(chain.key), renderHostChainAddresses(state, chain.key));
   }
 
   await generateComposeOverrides(state, plan);

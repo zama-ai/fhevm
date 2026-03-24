@@ -28,6 +28,7 @@ const defaultScenario: State["scenario"] = {
   version: 1,
   kind: "coprocessor-consensus",
   origin: "default",
+  hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
   topology: { count: 1, threshold: 1 },
   instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
 };
@@ -66,12 +67,14 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
     MULTICHAIN_ACL_ADDRESS: "0x0000000000000000000000000000000000000008",
     PROTOCOL_PAYMENT_ADDRESS: "0x0000000000000000000000000000000000000009",
   },
-  host: {
-    ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000010",
-    PAUSER_SET_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000011",
-    FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000002",
-    INPUT_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000012",
-    KMS_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000013",
+  hosts: {
+    host: {
+      ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000010",
+      PAUSER_SET_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000011",
+      FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000002",
+      INPUT_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000012",
+      KMS_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000013",
+    },
   },
   kmsSigner: "0x0000000000000000000000000000000000000014",
   fheKeyId: "0000000000000000000000000000000000000000000000000000000000000001",
@@ -80,10 +83,8 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
   actualCrsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
   minioKeyPrefix: "PUB",
   endpoints: {
-    gatewayHttp: "http://localhost:8546",
-    gatewayWs: "ws://127.0.0.1:1",
-    hostHttp: "http://localhost:8545",
-    hostWs: "ws://127.0.0.1:1",
+    gateway: { http: "http://localhost:8546", ws: "ws://127.0.0.1:1" },
+    hosts: { host: { http: "http://localhost:8545", ws: "ws://127.0.0.1:1" } },
     minioInternal: "http://127.0.0.1:9000",
     minioExternal: "http://127.0.0.1:9000",
   },

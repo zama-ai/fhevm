@@ -2,7 +2,13 @@ version: 1
 kind: coprocessor-consensus
 name: Two Of Two Multi Chain
 description: Two-coprocessor consensus with two host chains for multi-chain + multi-coprocessor testing.
-multiChain: true
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: host-b
+    chainId: "67890"
+    rpcPort: 8547
 topology:
   count: 2
   threshold: 2

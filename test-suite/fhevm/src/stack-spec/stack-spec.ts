@@ -2,6 +2,7 @@
  * Combines resolved versions, overrides, and scenario topology into the stack spec used for generation and orchestration.
  */
 import type {
+  HostChainScenario,
   ResolvedCoprocessorScenario,
   State,
   Topology,
@@ -23,7 +24,7 @@ export type StackSpec = {
   versions: VersionBundle;
   overrides: State["overrides"];
   topology: Topology;
-  multiChain: boolean;
+  hostChains: HostChainScenario[];
   coprocessor: ResolvedCoprocessorScenario;
 };
 
@@ -63,7 +64,7 @@ const stackSpecFromResolved = (input: {
   versions: input.versions,
   overrides: input.overrides,
   topology: topologyFromScenario(input.scenario),
-  multiChain: input.scenario.multiChain ?? false,
+  hostChains: input.scenario.hostChains,
   coprocessor: input.scenario,
 });
 

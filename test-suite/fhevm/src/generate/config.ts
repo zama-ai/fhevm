@@ -4,9 +4,8 @@
 import YAML from "yaml";
 
 import { requiresLegacyRelayerReadinessConfig } from "../compat/compat";
-import { CHAIN_B_ID, CHAIN_B_PORT } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
-import type { State } from "../types";
+import type { HostChainScenario, State } from "../types";
 
 /** Rewrites relayer readiness config into the legacy shape when required. */
 const rewriteRelayerConfig = (
@@ -39,25 +38,31 @@ const rewriteRelayerConfig = (
   return config;
 };
 
-const appendChainB = (
+/** Appends extra host chains to the relayer config, driven by hostChains topology. */
+const appendExtraHostChains = (
   config: Record<string, unknown>,
   state: Pick<State, "discovery">,
+  extraChains: HostChainScenario[],
 ) => {
-  const hostChains = config.host_chains;
-  if (!Array.isArray(hostChains)) return config;
-  const alreadyHasChainB = hostChains.some(
-    (entry: unknown) => typeof entry === "object" && entry !== null && (entry as Record<string, unknown>).chain_id === Number(CHAIN_B_ID),
+  const hostChainsList = config.host_chains;
+  if (!Array.isArray(hostChainsList)) return config;
+  const existing = new Set(
+    hostChainsList.map((entry: unknown) =>
+      typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>).chain_id : undefined,
+    ),
   );
-  if (alreadyHasChainB) return config;
-  const aclAddress =
-    state.discovery?.hostB?.ACL_CONTRACT_ADDRESS ??
-    state.discovery?.host?.ACL_CONTRACT_ADDRESS ??
-    "";
-  hostChains.push({
-    chain_id: Number(CHAIN_B_ID),
-    url: `http://host-node-b:${CHAIN_B_PORT}`,
-    acl_address: aclAddress,
-  });
+  const primaryAcl = Object.values(state.discovery?.hosts ?? {})[0]?.ACL_CONTRACT_ADDRESS ?? "";
+  for (const chain of extraChains) {
+    const chainId = Number(chain.chainId);
+    if (existing.has(chainId)) continue;
+    const container = chain.key.replace(/^host/, "host-node");
+    const aclAddress = state.discovery?.hosts[chain.key]?.ACL_CONTRACT_ADDRESS ?? primaryAcl;
+    hostChainsList.push({
+      chain_id: chainId,
+      url: `http://${container}:${chain.rpcPort}`,
+      acl_address: aclAddress,
+    });
+  }
   return config;
 };
 
@@ -65,11 +70,12 @@ const appendChainB = (
 export const renderRelayerConfig = (
   state: Pick<State, "versions" | "discovery"> & Partial<Pick<State, "overrides">>,
   templateText: string,
-  plan?: Pick<StackSpec, "multiChain">,
+  plan?: Pick<StackSpec, "hostChains">,
 ) => {
   let config = rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state);
-  if (plan?.multiChain) {
-    config = appendChainB(config, state);
+  const extraChains = (plan?.hostChains ?? []).slice(1);
+  if (extraChains.length > 0) {
+    config = appendExtraHostChains(config, state, extraChains);
   }
   return YAML.stringify(config);
 };
