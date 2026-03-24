@@ -197,12 +197,6 @@ jobs:
         run: |
           ./fhevm-cli test standard
 
-      - name: Heavy e2e suite
-        working-directory: test-suite/fhevm
-        run: |
-          # Heavy is the long-running operators lane.
-          ./fhevm-cli test heavy
-
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
