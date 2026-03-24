@@ -1173,6 +1173,7 @@ export const runStep = async (state: State, step: StepName) => {
       await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
       break;
     case "bootstrap": {
+      await ensureRuntimeArtifacts(state, "bootstrap");
       const bootstrapDone = await probeBootstrap(state).catch((error) => (error instanceof MinioError ? null : Promise.reject(error)));
       if (bootstrapDone) {
         state.discovery!.actualFheKeyId = bootstrapDone.actualFheKeyId;
