@@ -172,4 +172,6 @@ jobs:
       connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ""
+      relayer-version: ""
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

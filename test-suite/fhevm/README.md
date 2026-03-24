@@ -57,7 +57,7 @@ Most users should start with `latest-main`.
 
 - fastest local iteration: `./fhevm-cli up --target latest-main --override <group>`
 - full branch validation: `./fhevm-cli up --target latest-main --build`
-- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario + `test light`
+- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario + the explicit pause/unpause, db-revert, and named e2e sequence from CI
 - merge queue: `latest-main` baseline + repo-owned image overrides for components that were actually rebuilt
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
@@ -313,7 +313,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test erc20
 ./fhevm-cli test light
 ./fhevm-cli test operators
-./fhevm-cli test --parallel --grep "test operator" --verbose
+./fhevm-cli test --grep "oversized shift/rotate" --verbose
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
 

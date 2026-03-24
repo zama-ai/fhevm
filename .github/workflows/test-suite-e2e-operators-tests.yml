@@ -11,7 +11,7 @@ on:
         default: false
         type: boolean
       grep:
-        description: "Optional grep pattern for targeted operator tests"
+        description: "Optional narrow grep pattern for targeted operator tests"
         default: ""
         type: string
       connector_version:
@@ -144,6 +144,16 @@ jobs:
           fi
           ./fhevm-cli deploy "${args[@]}"
 
+      - name: Validate targeted grep
+        if: ${{ inputs.grep != '' }}
+        run: |
+          case "$GREP" in
+            "test operator"|"FHEVM manual operations"|"test operator|FHEVM manual operations")
+              echo "grep is too broad for targeted operators runs; pass a narrow explicit pattern" >&2
+              exit 1
+              ;;
+          esac
+
       - name: All operators tests
         if: ${{ !inputs.grep }}
         working-directory: test-suite/fhevm
@@ -164,7 +174,7 @@ jobs:
 
       - name: Show logs
         working-directory: test-suite/fhevm
-        if: always()
+        if: failure()
         run: |
           snapshot_logs() {
             local group="$1"

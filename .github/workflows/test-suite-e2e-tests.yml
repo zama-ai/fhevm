@@ -68,6 +68,14 @@ on:
         description: "Test suite version"
         default: ""
         type: string
+      relayer-version:
+        description: "Relayer version"
+        default: ""
+        type: string
+      kms-core-version:
+        description: "KMS Core version"
+        default: ""
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -111,6 +119,8 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
+      RELAYER_VERSION: ${{ inputs.relayer-version }}
+      CORE_VERSION: ${{ inputs.kms-core-version }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -141,6 +151,12 @@ jobs:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Display component versions
+        env:
+          JSON_INPUT: ${{ toJSON(inputs) }}
+        run: |
+          echo "Component versions: $JSON_INPUT"
 
       - name: Install CLI deps
         working-directory: test-suite/fhevm
@@ -176,10 +192,102 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
-      - name: PR light suite
+      - name: Pause Host Contracts
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test light
+          ./fhevm-cli pause host
+
+      - name: Paused Host contracts test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-host-contracts
+
+      - name: Unpause Host Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli unpause host
+
+      - name: Pause Gateway Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli pause gateway
+
+      - name: Paused Gateway contracts test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-gateway-contracts
+
+      - name: Unpause Gateway Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli unpause gateway
+
+      - name: Coprocessor DB state revert test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test coprocessor-db-state-revert
+
+      - name: Input proof test (uint64)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof
+
+      - name: Input proof test with compute and decrypt (uint64)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof-compute-decrypt
+
+      - name: User Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test user-decryption
+
+      - name: Delegated User Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test delegated-user-decryption
+
+      - name: ERC20 test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test erc20
+
+      - name: Public Decryption HTTP endpoint test (ebool)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-ebool
+
+      - name: Public Decryption HTTP endpoint test (mixed)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-mixed
+
+      - name: Negative ACL tests
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test negative-acl
+
+      - name: Random operators test (subset)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test random-subset
+
+      - name: HCU block cap test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test hcu-block-cap
+
+      - name: Ciphertext drift test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test ciphertext-drift
+
+      - name: Host listener poller test
+        working-directory: test-suite/fhevm
+        run: |
+          docker stop coprocessor-host-listener
+          trap 'docker start coprocessor-host-listener || true' EXIT
+          ./fhevm-cli test erc20
 
       - name: Show logs
         working-directory: test-suite/fhevm
