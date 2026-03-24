@@ -263,36 +263,39 @@ async fn publish_key_reshare_same_set(
     .map_err(anyhow::Error::from)
 }
 
-/// Updates the registered last block polled in DB.
+/// Updates the registered last block polled in DB for the given event types.
 #[tracing::instrument(skip_all)]
 pub async fn update_last_block_polled(
     db_pool: &Pool<Postgres>,
-    event_type: EventType,
+    event_types: &[EventType],
     last_block_polled: Option<u64>,
 ) -> anyhow::Result<()> {
     info!(
         last_block_polled,
-        "Updating last block polled in DB for {event_type}"
+        "Updating last block polled in DB for {event_types:?}"
     );
     let query_result = sqlx::query!(
         "UPDATE last_block_polled SET block_number = $2, updated_at = $3 \
-        WHERE event_type = $1 AND (block_number IS NULL OR block_number < $2)",
-        event_type as EventType,
+        WHERE event_type = ANY($1::event_type[]) AND (block_number IS NULL OR block_number < $2)",
+        event_types as &[EventType],
         last_block_polled.map(|n| n as i64),
         Utc::now(),
     )
     .execute(db_pool)
     .await?;
 
-    if query_result.rows_affected() == 1 {
+    let rows_affected = query_result.rows_affected();
+    if rows_affected > 0 {
         info!(
             last_block_polled,
-            "Last block polled for {event_type} was successfully updated!"
+            "Last block polled updated for {}/{} event types in {event_types:?}",
+            rows_affected,
+            event_types.len()
         );
     } else {
         debug!(
             last_block_polled,
-            "Last block polled for {event_type} was not updated: {query_result:?}"
+            "Last block polled for {event_types:?} were not updated: {query_result:?}"
         );
     }
 

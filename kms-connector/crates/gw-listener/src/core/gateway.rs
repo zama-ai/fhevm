@@ -199,8 +199,7 @@ where
             }
 
             last_processed_block = Some(to_block);
-            self.update_block_tracking(event_types, Some(to_block))
-                .await?;
+            self.update_block_tracking(event_types, to_block).await?;
 
             if to_block < current_block {
                 ticker.reset_immediately();
@@ -243,13 +242,9 @@ where
     async fn update_block_tracking(
         &self,
         event_types: &[EventType],
-        block_number: Option<u64>,
+        block_number: u64,
     ) -> anyhow::Result<()> {
-        for &event_type in event_types {
-            // TODO: update as group?
-            update_last_block_polled(&self.db_pool, event_type, block_number).await?;
-        }
-        Ok(())
+        update_last_block_polled(&self.db_pool, event_types, Some(block_number)).await
     }
 
     /// Determines the last processed block for a polling group from config or DB.
