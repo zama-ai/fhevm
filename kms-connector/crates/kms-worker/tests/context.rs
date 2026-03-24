@@ -52,18 +52,11 @@ async fn test_decryption_context_not_found(#[case] event_type: EventType) -> any
         .with_context_id(unknown_context_id);
 
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
-        match event_type {
-            EventType::PublicDecryptionRequest => {
-                // Mocking isDecryptionDone returns false
-                asserter.push_success(&false.abi_encode());
-            }
-            EventType::UserDecryptionRequest => {
-                // Mocking `get_transaction_by_hash` call result
-                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
-                asserter.push_success(&mock_tx);
-            }
-            _ => panic!("Unexpected event type"),
-        };
+        if matches!(event_type, EventType::UserDecryptionRequest) {
+            // Mocking `get_transaction_by_hash` call result
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            asserter.push_success(&mock_tx);
+        }
     }
 
     let gateway_mock_provider = ProviderBuilder::new()
