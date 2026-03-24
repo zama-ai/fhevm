@@ -46,7 +46,13 @@ cd test-suite/fhevm
 ./fhevm-cli up --target sha --sha 9587546
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
-./fhevm-cli up --target latest-supported --scenario ./scenarios/two-of-two.yaml
+./fhevm-cli up --target latest-supported --scenario two-of-two
+
+# Deploy with multi-chain (two host chains)
+./fhevm-cli up --target latest-supported --scenario multi-chain
+
+# Deploy with multi-chain + multi-coprocessor
+./fhevm-cli up --target latest-supported --scenario two-of-two-multi-chain
 
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
 ./fhevm-cli up --target latest-supported --resume --from-step kms-connector
@@ -58,6 +64,7 @@ cd test-suite/fhevm
 ./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
 ./fhevm-cli test hcu-block-cap
+./fhevm-cli test multi-chain-isolation  # requires multi-chain scenario
 
 # Boot with a local coprocessor override (all services)
 ./fhevm-cli up --target latest-supported --override coprocessor

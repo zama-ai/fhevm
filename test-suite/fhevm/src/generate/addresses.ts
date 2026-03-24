@@ -1,6 +1,7 @@
 /**
  * Renders address artifacts consumed by contracts, operators, and local tooling after deployment discovery.
  */
+import { PRIMARY_HOST_KEY } from "../layout";
 import type { State } from "../types";
 
 const SOLIDITY_HEADER = `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -58,24 +59,39 @@ export const renderPaymentBridgingAddressesSolidity = (gatewayEnv: Record<string
     ["feesSenderToBurnerAddress", gatewayEnv.FEES_SENDER_TO_BURNER_ADDRESS],
   ]);
 
-/** Renders discovered host addresses into a dotenv artifact. */
-export const renderHostAddressesEnv = (state: Pick<State, "discovery">) =>
-  renderEnvFile([
-    ["ACL_CONTRACT_ADDRESS", state.discovery?.host.ACL_CONTRACT_ADDRESS],
-    ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", state.discovery?.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS],
-    ["KMS_VERIFIER_CONTRACT_ADDRESS", state.discovery?.host.KMS_VERIFIER_CONTRACT_ADDRESS],
-    ["INPUT_VERIFIER_CONTRACT_ADDRESS", state.discovery?.host.INPUT_VERIFIER_CONTRACT_ADDRESS],
-    ["HCU_LIMIT_CONTRACT_ADDRESS", state.discovery?.host.HCU_LIMIT_CONTRACT_ADDRESS],
-    ["PAUSER_SET_CONTRACT_ADDRESS", state.discovery?.host.PAUSER_SET_CONTRACT_ADDRESS],
-  ]);
+const HOST_ADDRESS_KEYS = [
+  "ACL_CONTRACT_ADDRESS",
+  "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
+  "KMS_VERIFIER_CONTRACT_ADDRESS",
+  "INPUT_VERIFIER_CONTRACT_ADDRESS",
+  "HCU_LIMIT_CONTRACT_ADDRESS",
+  "PAUSER_SET_CONTRACT_ADDRESS",
+] as const;
 
-/** Renders discovered host addresses into Solidity constants. */
-export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) =>
-  renderSolidityFile([
-    ["aclAdd", state.discovery?.host.ACL_CONTRACT_ADDRESS],
-    ["fhevmExecutorAdd", state.discovery?.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS],
-    ["kmsVerifierAdd", state.discovery?.host.KMS_VERIFIER_CONTRACT_ADDRESS],
-    ["inputVerifierAdd", state.discovery?.host.INPUT_VERIFIER_CONTRACT_ADDRESS],
-    ["hcuLimitAdd", state.discovery?.host.HCU_LIMIT_CONTRACT_ADDRESS],
-    ["pauserSetAdd", state.discovery?.host.PAUSER_SET_CONTRACT_ADDRESS],
+const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
+  renderEnvFile(HOST_ADDRESS_KEYS.map((key) => [key, addresses?.[key]]));
+
+/** Renders discovered host addresses for a given chain key into a dotenv artifact. */
+export const renderHostChainAddresses = (state: Pick<State, "discovery">, chainKey: string) =>
+  renderHostChainAddressesEnv(state.discovery?.hosts[chainKey]);
+
+/** Renders discovered primary host addresses into a dotenv artifact. */
+export const renderHostAddressesEnv = (state: Pick<State, "discovery">) =>
+  renderHostChainAddresses(state, PRIMARY_HOST_KEY);
+
+/** Renders discovered host addresses for a given chain key into Solidity constants. */
+export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">, chainKey: string) => {
+  const host = state.discovery?.hosts[chainKey];
+  return renderSolidityFile([
+    ["aclAdd", host?.ACL_CONTRACT_ADDRESS],
+    ["fhevmExecutorAdd", host?.FHEVM_EXECUTOR_CONTRACT_ADDRESS],
+    ["kmsVerifierAdd", host?.KMS_VERIFIER_CONTRACT_ADDRESS],
+    ["inputVerifierAdd", host?.INPUT_VERIFIER_CONTRACT_ADDRESS],
+    ["hcuLimitAdd", host?.HCU_LIMIT_CONTRACT_ADDRESS],
+    ["pauserSetAdd", host?.PAUSER_SET_CONTRACT_ADDRESS],
   ]);
+};
+
+/** Renders discovered primary host addresses into Solidity constants. */
+export const renderHostAddressesSolidity = (state: Pick<State, "discovery">) =>
+  renderHostChainAddressesSolidity(state, PRIMARY_HOST_KEY);

@@ -17,8 +17,12 @@ import {
   TEMPLATE_COMPOSE_DIR,
   composePath,
   envPath,
+  hostChainNames,
+  hostChainSuffix,
+  hostNodeName,
+  hostScName,
 } from "../layout";
-import type { ResolvedCoprocessorScenarioInstance, State } from "../types";
+import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
 
 export type ComposeDoc = Record<string, unknown> & {
@@ -324,6 +328,98 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   return { services };
 };
 
+/** Builds a host-node compose override for an extra host chain. */
+const buildExtraHostNodeOverride = async (chain: HostChainScenario, primaryChainId: string): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("host-node"));
+  const hostNode = doc.services["host-node"];
+  if (!hostNode) return { services: {} };
+  const container = hostNodeName(chain.key);
+  const clone = structuredClone(hostNode);
+  clone.container_name = container;
+  clone.env_file = [envPath(container)];
+  clone.ports = [`${chain.rpcPort}:${chain.rpcPort}`];
+  if (Array.isArray(clone.entrypoint)) {
+    clone.entrypoint = clone.entrypoint.map((arg: string) => {
+      if (arg === "8545") return String(chain.rpcPort);
+      if (arg === primaryChainId) return chain.chainId;
+      return arg;
+    });
+  }
+  return { services: { [container]: clone } };
+};
+
+/** Builds a host-sc compose override for an extra host chain. */
+const buildExtraHostScOverride = async (chain: HostChainScenario): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("host-sc"));
+  const scPrefix = hostScName(chain.key);
+  const services: Record<string, Record<string, unknown>> = {};
+  for (const [name, service] of Object.entries(doc.services)) {
+    const cloneName = name.replace("host-sc-", `${scPrefix}-`);
+    const cloneService = structuredClone(service);
+    cloneService.container_name = cloneName;
+    cloneService.env_file = [envPath(scPrefix)];
+    delete cloneService.build;
+    if (cloneService.depends_on && typeof cloneService.depends_on === "object") {
+      cloneService.depends_on = Object.fromEntries(
+        Object.entries(cloneService.depends_on as Record<string, unknown>).map(([dep, value]) => [
+          dep.replace("host-sc-", `${scPrefix}-`),
+          value,
+        ]),
+      );
+    }
+    if (Array.isArray(cloneService.volumes)) {
+      cloneService.volumes = (cloneService.volumes as string[]).map((vol: string) =>
+        vol.replace("/addresses/host:", `/addresses/${chain.key}:`),
+      );
+    }
+    services[cloneName] = cloneService;
+  }
+  return { services };
+};
+
+/** Builds coprocessor host-listener overrides for an extra host chain. */
+const buildExtraCoprocessorListenerOverride = async (plan: StackSpec, chain: HostChainScenario): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
+  const services: Record<string, Record<string, unknown>> = {};
+  const compat = compatPolicyForState(plan);
+  const inheritedBuildServices = coprocessorBuildServices(plan);
+  const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
+  const chainSuffix = hostChainSuffix(chain.key);
+  for (const instance of plan.coprocessor.instances) {
+    const localServices =
+      instance.source.mode === "local"
+        ? localServicesForInstance(instance)
+        : instance.source.mode === "inherit"
+          ? inheritedBuildServices
+          : new Set<string>();
+    const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+    const envName = `coprocessor-${chain.key}.${instance.index}`;
+    const envFileValue = envPath(envName);
+    const instanceEnv = await readEnvFile(envFileValue);
+    for (const baseName of listenerServices) {
+      const suffix = baseName.replace(/^coprocessor-/, "");
+      const cloneName = `${prefix}${suffix}${chainSuffix}`;
+      const baseService = doc.services[baseName];
+      if (!baseService) continue;
+      const locallyBuilt = localServices.has(baseName);
+      const adjusted = applyInstanceAdjustments(
+        baseName,
+        baseService,
+        envFileValue,
+        instanceEnv,
+        instance,
+        locallyBuilt ? {} : compat.coprocessorArgs,
+        locallyBuilt ? {} : compat.coprocessorDropFlags,
+      );
+      adjusted.container_name = cloneName;
+      applyCoprocessorSource(adjusted, instance, locallyBuilt);
+      delete adjusted.depends_on;
+      services[cloneName] = adjusted;
+    }
+  }
+  return { services };
+};
+
 /** Lists which components need generated compose overrides for a runtime plan. */
 export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides">) =>
   new Set(["coprocessor", ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group])]);
@@ -340,5 +436,35 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
     }
     const doc = await buildComposeOverride(component, plan);
     await fs.writeFile(target, YAML.stringify(doc));
+  }
+
+  // Extra host chain compose overrides
+  const extraChains = plan.hostChains.slice(1);
+  const primaryChainId = plan.hostChains[0]?.chainId ?? "12345";
+  const extraChainFileNames: string[] = [];
+  for (const chain of extraChains) {
+    const { node, sc, copro } = hostChainNames(chain.key);
+    extraChainFileNames.push(node, sc, copro);
+    const [hostNodeDoc, hostScDoc, coproDoc] = await Promise.all([
+      buildExtraHostNodeOverride(chain, primaryChainId),
+      buildExtraHostScOverride(chain),
+      buildExtraCoprocessorListenerOverride(plan, chain),
+    ]);
+    await fs.writeFile(composePath(node), YAML.stringify(hostNodeDoc));
+    await fs.writeFile(composePath(sc), YAML.stringify(hostScDoc));
+    await fs.writeFile(composePath(copro), YAML.stringify(coproDoc));
+  }
+  // Clean up stale multi-chain compose files from previous runs.
+  // Scan the output directory for files matching multi-chain naming patterns
+  // and remove any that are not part of the current active set.
+  const MULTI_CHAIN_PREFIXES = ["host-node-", "host-sc-", "coprocessor-host-"];
+  const activeSet = new Set(extraChainFileNames);
+  const dirEntries = await fs.readdir(COMPOSE_OUT_DIR).catch(() => [] as string[]);
+  for (const entry of dirEntries) {
+    if (!entry.endsWith(".yml")) continue;
+    const name = entry.slice(0, -4); // strip .yml
+    if (MULTI_CHAIN_PREFIXES.some((prefix) => name.startsWith(prefix)) && !activeSet.has(name)) {
+      await remove(composePath(name));
+    }
   }
 };

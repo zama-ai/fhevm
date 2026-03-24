@@ -26,7 +26,7 @@ const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
-export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 9000, 9001];
+export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 8547, 9000, 9001];
 export const MINIO_INTERNAL_URL = "http://minio:9000";
 export const MINIO_EXTERNAL_URL = "http://localhost:9000";
 export const POSTGRES_HOST = "db:5432";
@@ -35,6 +35,7 @@ export const KMS_CORE_CONTAINER = "kms-core";
 export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
+export const DEFAULT_CHAIN_ID = "12345";
 
 export const COMPONENTS = [
   "minio",
@@ -180,6 +181,7 @@ export const TEST_GREP: Record<string, string> = {
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
   "negative-acl": "negative-acl",
+  "multi-chain-isolation": "Multi-Chain State Isolation",
 };
 
 export const TEST_PARALLEL: Record<string, boolean> = {
@@ -242,12 +244,37 @@ export const paymentBridgingAddressesSolidityPath = path.join(
   "gateway",
   "PaymentBridgingAddresses.sol",
 );
-export const hostAddressesPath = path.join(ADDRESS_DIR, "host", ".env.host");
-export const hostAddressesSolidityPath = path.join(
-  ADDRESS_DIR,
-  "host",
-  "FHEVMHostAddresses.sol",
-);
+/** The chain key used by the primary host chain (hostChains[0]). */
+export const PRIMARY_HOST_KEY = "host";
+export const hostChainAddressesPath = (key: string) =>
+  path.join(ADDRESS_DIR, key, ".env.host");
+export const hostAddressesPath = hostChainAddressesPath(PRIMARY_HOST_KEY);
+
+/**
+ * Derives the suffix appended to service names for a chain key.
+ * Primary chain ("host") has no suffix; extra chains use "-{key}" e.g. "-chain-b".
+ */
+export const hostChainSuffix = (key: string) => (key === PRIMARY_HOST_KEY ? "" : `-${key}`);
+
+/** Derives the host-node container name from a chain key. "host" → "host-node", "chain-b" → "host-node-chain-b". */
+export const hostNodeName = (key: string) => `host-node${hostChainSuffix(key)}`;
+
+/** Derives the host-sc service prefix from a chain key. "host" → "host-sc", "chain-b" → "host-sc-chain-b". */
+export const hostScName = (key: string) => `host-sc${hostChainSuffix(key)}`;
+
+/** Derives the coprocessor-host compose key from a chain key. "host" → "coprocessor-host", "chain-b" → "coprocessor-chain-b". */
+export const coprocessorHostKey = (key: string) => `coprocessor-${key}`;
+
+/** Returns all derived runtime names for a host chain key in one call. */
+export const hostChainNames = (key: string) => ({
+  node: hostNodeName(key),
+  sc: hostScName(key),
+  copro: coprocessorHostKey(key),
+  suffix: hostChainSuffix(key),
+});
+export const hostChainAddressesSolidityPath = (key: string) =>
+  path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
+export const hostAddressesSolidityPath = hostChainAddressesSolidityPath(PRIMARY_HOST_KEY);
 
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [

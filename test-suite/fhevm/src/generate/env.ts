@@ -12,6 +12,8 @@ import {
   DEFAULT_TENANT_API_KEY,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
+  hostNodeName,
+  hostScName,
 } from "../layout";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -21,6 +23,7 @@ export type WalletMaterial = {
   address: string;
   privateKey: string;
 };
+
 
 const HAS_PLACEHOLDER = /(?<!\$)\$\{[A-Z0-9_]+\}/;
 
@@ -131,6 +134,9 @@ const applyDiscoveryEnv = (
     return;
   }
 
+  const primaryKey = plan.hostChains[0].key;
+  const primaryHost = state.discovery.hosts[primaryKey] ?? {};
+
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
     PROTOCOL_PAYMENT_ADDRESS: state.discovery.gateway.PROTOCOL_PAYMENT_ADDRESS,
@@ -138,31 +144,34 @@ const applyDiscoveryEnv = (
   updateContracts(envs["host-sc"], {
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
-    ACL_CONTRACT_ADDRESS: state.discovery.host.ACL_CONTRACT_ADDRESS,
-    PAUSER_SET_CONTRACT_ADDRESS: state.discovery.host.PAUSER_SET_CONTRACT_ADDRESS,
+    ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
+    PAUSER_SET_CONTRACT_ADDRESS: primaryHost.PAUSER_SET_CONTRACT_ADDRESS,
   });
-  envs["gateway-sc"].HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0 = state.discovery.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
-  envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_0 = state.discovery.host.ACL_CONTRACT_ADDRESS;
+  // Per-chain gateway-sc indexed vars are set uniformly in renderEnvMaps below.
   updateContracts(envs["coprocessor"], {
-    ACL_CONTRACT_ADDRESS: state.discovery.host.ACL_CONTRACT_ADDRESS,
-    FHEVM_EXECUTOR_CONTRACT_ADDRESS: state.discovery.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
-    INPUT_VERIFIER_ADDRESS: state.discovery.host.INPUT_VERIFIER_CONTRACT_ADDRESS,
+    ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
+    FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
+    INPUT_VERIFIER_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
     KMS_GENERATION_ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
   });
+
+  const kmsHostChains = plan.hostChains.map((chain) => {
+    const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
+    const endpoints = state.discovery!.endpoints.hosts[chain.key];
+    return {
+      url: endpoints?.http ?? `http://${hostNodeName(chain.key)}:${chain.rpcPort}`,
+      chain_id: Number(chain.chainId),
+      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+    };
+  });
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
-    KMS_CONNECTOR_HOST_CHAINS: JSON.stringify([
-      {
-        url: state.discovery.endpoints.hostHttp,
-        chain_id: Number(envs["coprocessor"].CHAIN_ID ?? "12345"),
-        acl_address: state.discovery.host.ACL_CONTRACT_ADDRESS,
-      },
-    ]),
+    KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
@@ -171,10 +180,10 @@ const applyDiscoveryEnv = (
   updateContracts(envs["test-suite"], {
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
-    KMS_VERIFIER_CONTRACT_ADDRESS: state.discovery.host.KMS_VERIFIER_CONTRACT_ADDRESS,
-    ACL_CONTRACT_ADDRESS: state.discovery.host.ACL_CONTRACT_ADDRESS,
-    INPUT_VERIFIER_CONTRACT_ADDRESS: state.discovery.host.INPUT_VERIFIER_CONTRACT_ADDRESS,
-    FHEVM_EXECUTOR_CONTRACT_ADDRESS: state.discovery.host.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
+    KMS_VERIFIER_CONTRACT_ADDRESS: primaryHost.KMS_VERIFIER_CONTRACT_ADDRESS,
+    ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
+    INPUT_VERIFIER_CONTRACT_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
+    FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
   });
 };
 
@@ -243,6 +252,75 @@ export const renderEnvMaps = async (
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+
+  // Uniform per-chain gateway-sc indexed vars for ALL host chains.
+  envs["gateway-sc"].NUM_HOST_CHAINS = String(plan.hostChains.length);
+  for (let ci = 0; ci < plan.hostChains.length; ci += 1) {
+    const chain = plan.hostChains[ci];
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+    envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${ci}`] = chain.chainId;
+    envs["gateway-sc"][`HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_${ci}`] =
+      hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${ci}`] =
+      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_NAME_${ci}`] = chain.name ?? "";
+    envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${ci}`] = "";
+  }
+
+  // Extra chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
+  for (let ci = 0; ci < plan.hostChains.length - 1; ci += 1) {
+    const chain = plan.hostChains[ci + 1];
+    const chainIndex = ci + 1;
+    const container = hostNodeName(chain.key);
+    const hostHttp = `http://${container}:${chain.rpcPort}`;
+    const hostWs = `ws://${container}:${chain.rpcPort}`;
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+
+    instanceEnvs[container] = {
+      ...envs["host-node"],
+      HOST_NODE_CONTAINER_NAME: container,
+      HOST_NODE_PORT: String(chain.rpcPort),
+      HOST_NODE_CHAIN_ID: chain.chainId,
+    };
+
+    const hostScKey = hostScName(chain.key);
+    const hostSc = { ...envs["host-sc"] };
+    hostSc.RPC_URL = hostHttp;
+    hostSc.CHAIN_ID = chain.chainId;
+    hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${hostScKey}-deploy`;
+    hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${hostScKey}-add-pausers`;
+    hostSc.NUM_COPROCESSORS = String(plan.topology.count);
+    hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
+    for (let i = 0; i < plan.topology.count; i += 1) {
+      const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
+      if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
+    }
+    instanceEnvs[hostScKey] = hostSc;
+
+    for (let index = 0; index < plan.topology.count; index += 1) {
+      const baseKey = index === 0 ? "coprocessor" : `coprocessor.${index}`;
+      const baseEnv = index === 0 ? envs["coprocessor"] : instanceEnvs[baseKey];
+      if (!baseEnv) continue;
+      const coproChain = { ...baseEnv };
+      coproChain.RPC_HTTP_URL = hostHttp;
+      coproChain.RPC_WS_URL = hostWs;
+      coproChain.CHAIN_ID = chain.chainId;
+      if (hostAddresses.ACL_CONTRACT_ADDRESS) {
+        coproChain.ACL_CONTRACT_ADDRESS = hostAddresses.ACL_CONTRACT_ADDRESS;
+        coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
+        coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
+      }
+      instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
+    }
+
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_RPC_URL`] = hostHttp;
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_CHAIN_ID`] = chain.chainId;
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_ACL_CONTRACT_ADDRESS`] = hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+  }
+
   resolveAllEnvMaps(envs, instanceEnvs);
 
   return {

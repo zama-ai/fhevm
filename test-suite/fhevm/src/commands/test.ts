@@ -528,6 +528,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       } finally {
         await runWithHeartbeat(["docker", "start", "coprocessor-host-listener"], "start host listener", { allowFailure: true });
       }
+
+      if (state.scenario.hostChains.length > 1) {
+        await runProfile("multi-chain-isolation");
+      }
     });
   };
 

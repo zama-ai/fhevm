@@ -42,11 +42,19 @@ export type CoprocessorScenarioInstance = {
   localServices?: string[];
 };
 
+export type HostChainScenario = {
+  key: string;
+  chainId: string;
+  rpcPort: number;
+  name?: string;
+};
+
 export type CoprocessorScenario = {
   version: 1;
   kind: "coprocessor-consensus";
   name?: string;
   description?: string;
+  hostChains?: HostChainScenario[];
   topology: {
     count: number;
     threshold: number;
@@ -68,6 +76,7 @@ export type ResolvedCoprocessorScenario = {
   origin: "default" | "file" | "override-shorthand";
   name?: string;
   description?: string;
+  hostChains: HostChainScenario[];
   sourcePath?: string;
   topology: {
     count: number;
@@ -93,9 +102,14 @@ export type Topology = {
   threshold: number;
 };
 
+export type RpcEndpoints = {
+  http: string;
+  ws: string;
+};
+
 export type Discovery = {
   gateway: Record<string, string>;
-  host: Record<string, string>;
+  hosts: Record<string, Record<string, string>>;
   kmsSigner: string;
   fheKeyId: string;
   crsKeyId: string;
@@ -103,10 +117,8 @@ export type Discovery = {
   actualCrsKeyId?: string;
   minioKeyPrefix?: string;
   endpoints: {
-    gatewayHttp: string;
-    gatewayWs: string;
-    hostHttp: string;
-    hostWs: string;
+    gateway: RpcEndpoints;
+    hosts: Record<string, RpcEndpoints>;
     minioInternal: string;
     minioExternal: string;
   };

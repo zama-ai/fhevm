@@ -76,6 +76,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
+      scenario:
+        description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
+        default: "two-of-two"
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -121,6 +125,7 @@ jobs:
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
+      SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -177,7 +182,7 @@ jobs:
       - name: Dry run
         working-directory: test-suite/fhevm
         run: |
-          args=(--target latest-main --scenario two-of-two)
+          args=(--target latest-main --scenario "$SCENARIO")
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
@@ -186,7 +191,7 @@ jobs:
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          args=(--target latest-main --scenario two-of-two)
+          args=(--target latest-main --scenario "$SCENARIO")
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi

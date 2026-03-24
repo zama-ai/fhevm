@@ -10,8 +10,8 @@ import { renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
-  renderHostAddressesEnv,
-  renderHostAddressesSolidity,
+  renderHostChainAddresses,
+  renderHostChainAddressesSolidity,
   renderPaymentBridgingAddressesSolidity,
 } from "./addresses";
 import { generateComposeOverrides } from "./compose";
@@ -27,8 +27,8 @@ import {
   envPath,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
-  hostAddressesPath,
-  hostAddressesSolidityPath,
+  hostChainAddressesPath,
+  hostChainAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -76,7 +76,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   await Promise.all([
     ensureDir(ENV_DIR),
     ensureWritableDir(path.join(ADDRESS_DIR, "gateway")),
-    ensureWritableDir(path.join(ADDRESS_DIR, "host")),
+    ...plan.hostChains.map((chain) => ensureWritableDir(path.join(ADDRESS_DIR, chain.key))),
     ensureDir(GENERATED_CONFIG_DIR),
   ]);
 
@@ -100,7 +100,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
 
   await fs.writeFile(
     relayerConfigPath,
-    renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8")),
+    renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
   );
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));
@@ -108,8 +108,10 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     paymentBridgingAddressesSolidityPath,
     renderPaymentBridgingAddressesSolidity(rendered.componentEnvs["gateway-sc"]),
   );
-  await writeWritableFile(hostAddressesPath, renderHostAddressesEnv(state));
-  await writeWritableFile(hostAddressesSolidityPath, renderHostAddressesSolidity(state));
+  for (const chain of plan.hostChains) {
+    await writeWritableFile(hostChainAddressesPath(chain.key), renderHostChainAddresses(state, chain.key));
+    await writeWritableFile(hostChainAddressesSolidityPath(chain.key), renderHostChainAddressesSolidity(state, chain.key));
+  }
 
   await generateComposeOverrides(state, plan);
 };

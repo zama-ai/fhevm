@@ -4,7 +4,9 @@
 import YAML from "yaml";
 
 import { requiresLegacyRelayerReadinessConfig } from "../compat/compat";
-import type { State } from "../types";
+import { hostNodeName } from "../layout";
+import type { StackSpec } from "../stack-spec/stack-spec";
+import type { HostChainScenario, State } from "../types";
 
 /** Rewrites relayer readiness config into the legacy shape when required. */
 const rewriteRelayerConfig = (
@@ -37,9 +39,43 @@ const rewriteRelayerConfig = (
   return config;
 };
 
+/** Appends extra host chains to the relayer config, driven by hostChains topology. */
+const appendExtraHostChains = (
+  config: Record<string, unknown>,
+  state: Pick<State, "discovery">,
+  extraChains: HostChainScenario[],
+) => {
+  const hostChainsList = config.host_chains;
+  if (!Array.isArray(hostChainsList)) return config;
+  const existing = new Set(
+    hostChainsList.map((entry: unknown) =>
+      typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>).chain_id : undefined,
+    ),
+  );
+  for (const chain of extraChains) {
+    const chainId = Number(chain.chainId);
+    if (existing.has(chainId)) continue;
+    const container = hostNodeName(chain.key);
+    const aclAddress = state.discovery?.hosts[chain.key]?.ACL_CONTRACT_ADDRESS ?? "";
+    hostChainsList.push({
+      chain_id: chainId,
+      url: `http://${container}:${chain.rpcPort}`,
+      acl_address: aclAddress,
+    });
+  }
+  return config;
+};
+
 /** Renders the relayer config file from the template and compatibility policy. */
 export const renderRelayerConfig = (
-  state: Pick<State, "versions"> & Partial<Pick<State, "overrides">>,
+  state: Pick<State, "versions" | "discovery"> & Partial<Pick<State, "overrides">>,
   templateText: string,
-) =>
-  YAML.stringify(rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state));
+  plan?: Pick<StackSpec, "hostChains">,
+) => {
+  let config = rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state);
+  const extraChains = (plan?.hostChains ?? []).slice(1);
+  if (extraChains.length > 0) {
+    config = appendExtraHostChains(config, state, extraChains);
+  }
+  return YAML.stringify(config);
+};
