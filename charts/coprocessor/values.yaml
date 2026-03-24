@@ -1011,6 +1011,24 @@ txSender:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Migration Hooks
+# -----------------------------------------------------------------------------
+# Controls the drain-then-migrate-then-verify sequence during helm upgrade.
+# When enabled, Helm hook Jobs enforce safe shutdown order before DB migration.
+# See RFC-011 for details.
+migration:
+  enabled: false                       # opt-in per upgrade
+  hookImage: "bitnami/kubectl:1.31"    # must also have psql client
+  dbSecretName: "coprocessor-db-url"   # secret containing DATABASE_URL
+  dbSecretKey: "coprocessor-db-url"    # key within the secret
+  drainTimeoutSeconds: 900             # overall drain Job deadline
+  computationDrainTimeout: 600         # max wait for computations to drain
+  transactionDrainTimeout: 300         # max wait for transactions to drain
+  pollIntervalSeconds: 10              # DB poll frequency
+  stableWindowSeconds: 30              # count must stay at 0 for this long
+  verifyTimeoutSeconds: 600            # post-upgrade rollout check deadline
+
+# -----------------------------------------------------------------------------
 # Global Pod Configuration
 # -----------------------------------------------------------------------------
 # Pod annotations for additional metadata
