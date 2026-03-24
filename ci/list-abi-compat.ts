@@ -14,6 +14,27 @@ function usage(): never {
   process.exit(1);
 }
 
+function logStep(message: string) {
+  console.log(`\n==> ${message}`);
+}
+
+function formatExecError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const execError = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer };
+  const stdout = execError.stdout ? String(execError.stdout).trim() : "";
+  const stderr = execError.stderr ? String(execError.stderr).trim() : "";
+  const details = [stderr, stdout].filter(Boolean).join("\n");
+  if (!details) {
+    return execError.message;
+  }
+
+  const maxLen = 2000;
+  return details.length > maxLen ? `${details.slice(-maxLen)}` : details;
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   let fromRef: string | undefined;
@@ -49,11 +70,16 @@ function parseArgs() {
 }
 
 function run(cmd: string, cwd: string) {
-  execSync(cmd, {
-    cwd,
-    stdio: "inherit",
-    env: { ...process.env, NO_COLOR: "1" },
-  });
+  try {
+    execSync(cmd, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  } catch (error) {
+    throw new Error(`Command failed in ${cwd}: ${cmd}\n${formatExecError(error)}`);
+  }
 }
 
 function addWorktree(repoRoot: string, path: string, ref: string) {
@@ -65,15 +91,19 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
   const targetDir = join(targetRoot, pkg);
   const extraDeps = PACKAGE_CONFIG[pkg].extraDeps;
 
+  logStep(`Installing dependencies for ${pkg}`);
   run("npm ci", baselineDir);
   run("npm ci", targetDir);
   if (extraDeps) {
+    logStep(`Installing extra build dependencies for ${pkg}`);
     run(extraDeps, baselineDir);
     run(extraDeps, targetDir);
   }
 
+  logStep(`Generating local compile-time addresses for ${pkg} (no real network deployment)`);
   run("make ensure-addresses", baselineDir);
   run("make ensure-addresses", targetDir);
+  logStep(`Normalizing address constants for ${pkg}`);
   run(
     `bun ci/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`,
     currentRepoRoot,
@@ -84,7 +114,7 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
 function printPackageReport(baselineRoot: string, targetRoot: string, pkg: PackageName) {
   const results = collectAbiCompatResults(join(baselineRoot, pkg), join(targetRoot, pkg), pkg);
 
-  console.log(`\n## ${pkg}`);
+  logStep(`Comparing stable ABI surface for ${pkg}`);
   let packageFailures = 0;
 
   for (const result of results) {
@@ -137,27 +167,52 @@ const tempRoot = mkdtempSync(join(tmpdir(), "fhevm-abi-compat-"));
 const baselineRoot = join(tempRoot, "baseline");
 const targetRoot = toRef ? join(tempRoot, "target") : repoRoot;
 
+let totalFailures = 0;
+
 try {
-  let totalFailures = 0;
+  logStep(`Using temporary workspace at ${tempRoot}`);
+  logStep(`Preparing temporary baseline checkout for ${fromRef}`);
   addWorktree(repoRoot, baselineRoot, fromRef);
   if (toRef) {
+    logStep(`Preparing temporary target checkout for ${toRef}`);
     addWorktree(repoRoot, targetRoot, toRef);
+  } else {
+    logStep("Using current checkout as target");
   }
 
   for (const pkg of packages) {
     preparePackage(repoRoot, targetRoot, baselineRoot, pkg);
     totalFailures += printPackageReport(baselineRoot, targetRoot, pkg);
   }
-
-  if (totalFailures > 0) {
-    throw new Error(`ABI compatibility check found ${totalFailures} issue(s)`);
-  }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`\nABI compatibility run failed: ${message}`);
 } finally {
   if (toRef && existsSync(targetRoot)) {
-    run(`git worktree remove --force "${targetRoot}"`, repoRoot);
+    logStep(`Cleaning temporary target checkout ${targetRoot}`);
+    try {
+      run(`git worktree remove --force "${targetRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean target worktree: ${message}`);
+    }
   }
   if (existsSync(baselineRoot)) {
-    run(`git worktree remove --force "${baselineRoot}"`, repoRoot);
+    logStep(`Cleaning temporary baseline checkout ${baselineRoot}`);
+    try {
+      run(`git worktree remove --force "${baselineRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean baseline worktree: ${message}`);
+    }
   }
   rmSync(tempRoot, { recursive: true, force: true });
+  logStep(`Removed temporary workspace ${tempRoot}`);
 }
+
+if (totalFailures > 0) {
+  console.error(`\nABI compatibility check found ${totalFailures} issue(s)`);
+  process.exit(1);
+}
+
+console.log("\nABI compatibility check passed");
