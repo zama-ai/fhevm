@@ -1015,7 +1015,6 @@ txSender:
 # -----------------------------------------------------------------------------
 # Controls the drain-then-migrate-then-verify sequence during helm upgrade.
 # When enabled, Helm hook Jobs enforce safe shutdown order before DB migration.
-# See RFC-011 for details.
 migration:
   enabled: false                       # opt-in per upgrade
   hookImage: "bitnami/kubectl:1.31"    # must also have psql client
