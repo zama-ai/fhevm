@@ -1,5 +1,5 @@
 /**
- * Runs named e2e test profiles, light-suite orchestration, and topology-specific test flows.
+ * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
@@ -10,7 +10,8 @@ import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
-  LIGHT_TEST_PROFILES,
+  HEAVY_TEST_PROFILES,
+  STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
@@ -35,7 +36,7 @@ const DEFAULT_DB_REVERT_TESTS = "test add 42 to uint64 input and decrypt";
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "light"].sort();
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "standard"].sort();
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -405,7 +406,7 @@ const runDbStateRevert = async (
   });
 };
 
-/** Runs a named test profile, custom grep, or the light-suite orchestration. */
+/** Runs a named test profile, custom grep, or the standard/heavy CI suites. */
 export const test = async (testName: string | undefined, options: TestOptions) => {
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
@@ -492,16 +493,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     );
   };
 
-  if (testName === "light") {
+  const runStandardSuite = async () => {
     if (options.grep) {
-      throw new PreflightError("`fhevm-cli test light` does not accept `--grep`; run a named profile instead");
+      throw new PreflightError("`fhevm-cli test standard` does not accept `--grep`; run a named profile instead");
     }
     if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test light` does not accept `--parallel`; suite members choose their own mode");
+      throw new PreflightError("`fhevm-cli test standard` does not accept `--parallel`; suite members choose their own mode");
     }
-    console.log(`[test] light (${options.network})`);
+    console.log(`[test] standard (${options.network})`);
     const started = Date.now();
-    await runLogged("light", started, async () => {
+    await runLogged("standard", started, async () => {
       await pause("host");
       try {
         await runProfile("paused-host-contracts");
@@ -516,14 +517,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         await unpause("gateway").catch(() => undefined);
       }
 
-      const driftPrecondition = ciphertextDriftRequirement();
-      const profiles = driftPrecondition
-        ? LIGHT_TEST_PROFILES.filter((profile) => profile !== "ciphertext-drift")
-        : LIGHT_TEST_PROFILES;
-      if (driftPrecondition) {
-        console.log(`[skip] ciphertext-drift: ${driftPrecondition}`);
-      }
-      for (const profile of profiles.slice(2)) {
+      for (const profile of STANDARD_TEST_PROFILES.slice(2)) {
         await runProfile(profile);
       }
 
@@ -532,6 +526,27 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         await runProfile("erc20");
       } finally {
         await runWithHeartbeat(["docker", "start", "coprocessor-host-listener"], "start host listener", { allowFailure: true });
+      }
+    });
+  };
+
+  if (testName === "standard") {
+    await runStandardSuite();
+    return;
+  }
+
+  if (testName === "heavy") {
+    if (options.grep) {
+      throw new PreflightError("`fhevm-cli test heavy` does not accept `--grep`; run a named profile instead");
+    }
+    if (options.parallel === true) {
+      throw new PreflightError("`fhevm-cli test heavy` does not accept `--parallel`; suite members choose their own mode");
+    }
+    console.log(`[test] heavy (${options.network})`);
+    const started = Date.now();
+    await runLogged("heavy", started, async () => {
+      for (const profile of HEAVY_TEST_PROFILES) {
+        await runProfile(profile);
       }
     });
     return;

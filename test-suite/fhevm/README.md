@@ -57,7 +57,7 @@ Most users should start with `latest-main`.
 
 - fastest local iteration: `./fhevm-cli up --target latest-main --override <group>`
 - full branch validation: `./fhevm-cli up --target latest-main --build`
-- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario + the explicit pause/unpause, db-revert, and named e2e sequence from CI
+- PR e2e: `latest-main --build` + the checked-in `two-of-two` scenario + `test standard` + `test heavy`
 - merge queue: `latest-main` baseline + repo-owned image overrides for components that were actually rebuilt
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
@@ -86,7 +86,7 @@ bun test
 - `up --scenario <name-or-file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
 - `up --override coprocessor` is the fast local-dev shorthand for a one-instance local coprocessor scenario
 - `scenario list` prints the bundled scenario presets with their intent
-- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test light` runs the non-heavy PR e2e suite in one command and skips `ciphertext-drift` unless the current topology supports it
+- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test standard` runs the default CI lane, and `test heavy` runs the slowest/stateful lanes
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
 - `down` stops the stack, prunes `.fhevm/runtime`, and keeps resumable `.fhevm/state`
@@ -311,7 +311,8 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli logs --no-follow relayer
 ./fhevm-cli test input-proof
 ./fhevm-cli test erc20
-./fhevm-cli test light
+./fhevm-cli test standard
+./fhevm-cli test heavy
 ./fhevm-cli test operators
 ./fhevm-cli test --grep "oversized shift/rotate" --verbose
 ./fhevm-cli pause host
