@@ -186,6 +186,11 @@ export const TEST_PARALLEL: Record<string, boolean> = {
   operators: true,
 };
 
+export const LIGHT_TEST_PROFILES = [
+  "input-proof",
+  "erc20",
+] as const;
+
 export const STANDARD_TEST_PROFILES = [
   "paused-host-contracts",
   "paused-gateway-contracts",

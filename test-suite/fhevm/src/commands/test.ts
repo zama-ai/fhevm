@@ -11,6 +11,7 @@ import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
   HEAVY_TEST_PROFILES,
+  LIGHT_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -36,7 +37,7 @@ const DEFAULT_DB_REVERT_TESTS = "test add 42 to uint64 input and decrypt";
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "standard"].sort();
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -532,6 +533,23 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
   if (testName === "standard") {
     await runStandardSuite();
+    return;
+  }
+
+  if (testName === "light") {
+    if (options.grep) {
+      throw new PreflightError("`fhevm-cli test light` does not accept `--grep`; run a named profile instead");
+    }
+    if (options.parallel === true) {
+      throw new PreflightError("`fhevm-cli test light` does not accept `--parallel`; suite members choose their own mode");
+    }
+    console.log(`[test] light (${options.network})`);
+    const started = Date.now();
+    await runLogged("light", started, async () => {
+      for (const profile of LIGHT_TEST_PROFILES) {
+        await runProfile(profile);
+      }
+    });
     return;
   }
 
