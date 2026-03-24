@@ -54,12 +54,6 @@ function parseHostChains(): ChainConfig[] {
 /** All discovered host chains. Index 0 is the primary chain. */
 export const HOST_CHAINS: ChainConfig[] = parseHostChains();
 
-/** Primary host chain (always present). */
-export const CHAIN_A: ChainConfig = HOST_CHAINS[0];
-
-/** First extra host chain, or undefined in single-chain mode. Guard with `if (!CHAIN_B) this.skip()`. */
-export const CHAIN_B: ChainConfig | undefined = HOST_CHAINS[1];
-
 const providers = new Map<string, ethers.JsonRpcProvider>();
 
 export function getProvider(chain: ChainConfig): ethers.JsonRpcProvider {

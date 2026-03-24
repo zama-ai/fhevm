@@ -61,7 +61,7 @@ import {
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
   hostChainNames,
-  hostChainSuffixId,
+  hostChainSuffix,
   hostNodeName,
   hostScName,
   coprocessorHostKey,
@@ -1042,18 +1042,16 @@ const stepComposeUp = async (
   await composeUp(component, services, options);
 };
 
-const MULTI_CHAIN_ENV_COMPONENT: Record<string, string> = {
-  "coprocessor-host-b": "coprocessor",
-  "host-sc-b": "host-sc-b",
-  "host-node-b": "host-node-b",
-};
+/** Maps a multi-chain compose name to the component whose env it needs. Coprocessor listeners share the base coprocessor env. */
+const multiChainEnvComponent = (name: string) =>
+  name.startsWith("coprocessor-") ? "coprocessor" : name;
 
 const multiChainComposeUp = async (
   name: string,
   services?: string[],
 ) => {
   const file = composePath(name);
-  const component = MULTI_CHAIN_ENV_COMPONENT[name] ?? name;
+  const component = multiChainEnvComponent(name);
   try {
     await runStreaming(
       ["docker", "compose", "-p", PROJECT, "-f", file, "up", "-d", "--no-deps", ...(services ?? [])],
@@ -1066,7 +1064,7 @@ const multiChainComposeUp = async (
 
 const multiChainComposeDown = async (name: string) => {
   const file = composePath(name);
-  const component = MULTI_CHAIN_ENV_COMPONENT[name] ?? name;
+  const component = multiChainEnvComponent(name);
   try {
     const code = await runStreaming(
       ["docker", "compose", "-p", PROJECT, "-f", file, "down", "-v"],
@@ -1133,9 +1131,8 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
 /** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
 const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
   const plan = stackSpecForState(state);
-  const primaryHost = state.discovery?.hosts[PRIMARY_HOST_KEY] ?? {};
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
-  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? primaryHost.ACL_CONTRACT_ADDRESS ?? "";
+  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   for (let index = 0; index < plan.topology.count; index += 1) {
     const dbName = index === 0 ? "coprocessor" : `coprocessor_${index}`;
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -1319,17 +1316,17 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForCoprocessorServices(state, skipMigration);
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of stackSpecForState(state).hostChains.slice(1)) {
-        const suffixId = hostChainSuffixId(chain.key);
+        const suffix = hostChainSuffix(chain.key);
         await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
           registerExtraChainInCoprocessor(state, chain),
         );
-        await timed(`[multi-chain] start host-listener-${suffixId} services`, async () => {
+        await timed(`[multi-chain] start host-listener${suffix} services`, async () => {
           await multiChainComposeUp(coprocessorHostKey(chain.key));
           const topology = topologyForState(state);
           for (let index = 0; index < topology.count; index += 1) {
             const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-            await waitForContainer(`${prefix}host-listener-${suffixId}`, "running");
-            await waitForContainer(`${prefix}host-listener-poller-${suffixId}`, "running");
+            await waitForContainer(`${prefix}host-listener${suffix}`, "running");
+            await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
           }
         });
       }

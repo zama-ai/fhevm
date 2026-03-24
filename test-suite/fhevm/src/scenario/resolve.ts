@@ -106,9 +106,9 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
       }
       const chain = entry as Record<string, unknown>;
       const key = normalizeScalar(chain.key, `${sourceLabel}: hostChains[${index}].key`);
-      if (!/^host(-[a-z0-9]+)?$/.test(key)) {
+      if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(key)) {
         throw new Error(
-          `${sourceLabel}: hostChains[${index}].key "${key}" must match "host" or "host-{id}" where id is lowercase alphanumeric`,
+          `${sourceLabel}: hostChains[${index}].key "${key}" must be a lowercase slug (e.g. "host", "chain-b", "my-chain")`,
         );
       }
       if (seen.has(key)) {

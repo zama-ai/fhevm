@@ -250,16 +250,19 @@ export const hostChainAddressesPath = (key: string) =>
   path.join(ADDRESS_DIR, key, ".env.host");
 export const hostAddressesPath = hostChainAddressesPath(PRIMARY_HOST_KEY);
 
-/** Extracts the suffix ID from a host chain key. "host" → "", "host-b" → "b", "host-foo" → "foo". */
-export const hostChainSuffixId = (key: string) => (key.length > 5 ? key.slice(5) : "");
+/**
+ * Derives the suffix appended to service names for a chain key.
+ * Primary chain ("host") has no suffix; extra chains use "-{key}" e.g. "-chain-b".
+ */
+export const hostChainSuffix = (key: string) => (key === PRIMARY_HOST_KEY ? "" : `-${key}`);
 
-/** Derives the host-node container name from a chain key. "host" → "host-node", "host-b" → "host-node-b". */
-export const hostNodeName = (key: string) => key.replace(/^host/, "host-node");
+/** Derives the host-node container name from a chain key. "host" → "host-node", "chain-b" → "host-node-chain-b". */
+export const hostNodeName = (key: string) => `host-node${hostChainSuffix(key)}`;
 
-/** Derives the host-sc service prefix from a chain key. "host" → "host-sc", "host-b" → "host-sc-b". */
-export const hostScName = (key: string) => key.replace(/^host/, "host-sc");
+/** Derives the host-sc service prefix from a chain key. "host" → "host-sc", "chain-b" → "host-sc-chain-b". */
+export const hostScName = (key: string) => `host-sc${hostChainSuffix(key)}`;
 
-/** Derives the coprocessor-host compose key from a chain key. "host" → "coprocessor-host", "host-b" → "coprocessor-host-b". */
+/** Derives the coprocessor-host compose key from a chain key. "host" → "coprocessor-host", "chain-b" → "coprocessor-chain-b". */
 export const coprocessorHostKey = (key: string) => `coprocessor-${key}`;
 
 /** Returns all derived runtime names for a host chain key in one call. */
@@ -267,7 +270,7 @@ export const hostChainNames = (key: string) => ({
   node: hostNodeName(key),
   sc: hostScName(key),
   copro: coprocessorHostKey(key),
-  suffix: hostChainSuffixId(key),
+  suffix: hostChainSuffix(key),
 });
 export const hostChainAddressesSolidityPath = (key: string) =>
   path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");

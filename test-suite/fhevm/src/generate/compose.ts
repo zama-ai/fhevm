@@ -18,7 +18,7 @@ import {
   composePath,
   envPath,
   hostChainNames,
-  hostChainSuffixId,
+  hostChainSuffix,
   hostNodeName,
   hostScName,
 } from "../layout";
@@ -384,7 +384,7 @@ const buildExtraCoprocessorListenerOverride = async (plan: StackSpec, chain: Hos
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
-  const suffixId = hostChainSuffixId(chain.key); // "host-b" → "b"
+  const chainSuffix = hostChainSuffix(chain.key);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
       instance.source.mode === "local"
@@ -398,7 +398,7 @@ const buildExtraCoprocessorListenerOverride = async (plan: StackSpec, chain: Hos
     const instanceEnv = await readEnvFile(envFileValue);
     for (const baseName of listenerServices) {
       const suffix = baseName.replace(/^coprocessor-/, "");
-      const cloneName = `${prefix}${suffix}-${suffixId}`;
+      const cloneName = `${prefix}${suffix}${chainSuffix}`;
       const baseService = doc.services[baseName];
       if (!baseService) continue;
       const locallyBuilt = localServices.has(baseName);

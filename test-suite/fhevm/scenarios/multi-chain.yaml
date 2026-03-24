@@ -6,7 +6,7 @@ hostChains:
   - key: host
     chainId: "12345"
     rpcPort: 8545
-  - key: host-b
+  - key: chain-b
     chainId: "67890"
     rpcPort: 8547
 topology:
