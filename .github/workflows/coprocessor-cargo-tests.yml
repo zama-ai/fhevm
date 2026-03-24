@@ -32,18 +32,63 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
   cargo-tests:
-    name: coprocessor-cargo-test/cargo-tests (bpr)
+    name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
       packages: 'read' # Required to read GitHub packages/container registry
-      pull-requests: 'write' # Required to post coverage comment on PR
-    runs-on: large_ubuntu_16
+    runs-on: ${{ matrix.runner }}
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: tfhe-worker
+            package: tfhe-worker
+            needs_db: true
+            needs_localstack: false
+            needs_foundry: false
+            runner: large_ubuntu_16
+          - service: sns-worker
+            package: sns-worker
+            needs_db: true
+            needs_localstack: true
+            needs_foundry: false
+            runner: large_ubuntu_16
+          - service: zkproof-worker
+            package: zkproof-worker
+            needs_db: true
+            needs_localstack: false
+            needs_foundry: false
+            runner: large_ubuntu_16
+          - service: transaction-sender
+            package: transaction-sender
+            needs_db: true
+            needs_localstack: true
+            needs_foundry: true
+            runner: large_ubuntu_16
+          - service: gw-listener
+            package: gw-listener
+            needs_db: true
+            needs_localstack: false
+            needs_foundry: true
+            runner: large_ubuntu_16
+          - service: host-listener
+            package: host-listener
+            needs_db: true
+            needs_localstack: false
+            needs_foundry: true
+            runner: large_ubuntu_16
+          - service: common
+            package: fhevm-engine-common
+            needs_db: false
+            needs_localstack: false
+            needs_foundry: false
+            runner: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -55,6 +100,7 @@ jobs:
       run: git lfs checkout
 
     - name: Login to GitHub Container Registry
+      if: ${{ matrix.needs_db }}
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
       with:
         registry: ghcr.io
@@ -62,6 +108,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Login to GitHub Chainguard Registry
+      if: ${{ matrix.needs_db }}
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
       with:
         registry: cgr.dev
@@ -69,6 +116,7 @@ jobs:
         password: ${{ secrets.CGR_PASSWORD }}
 
     - name: Start database services (background)
+      if: ${{ matrix.needs_db }}
       run: |
         nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
       working-directory: coprocessor/fhevm-engine/tfhe-worker
@@ -87,10 +135,13 @@ jobs:
     - name: Install cargo dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y protobuf-compiler mold clang && \
-        cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
+        sudo apt-get install -y protobuf-compiler mold clang
+    - name: Install sqlx-cli
+      if: ${{ matrix.needs_db }}
+      run: cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
     - name: Install foundry
+      if: ${{ matrix.needs_foundry }}
       uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
 
     - name: Cache cargo
@@ -100,8 +151,8 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-coverage-
+        key: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -109,22 +160,23 @@ jobs:
         node-version: 20.x
 
     - name: Start localstack
+      if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
-    - name: Clean previous coverage data
-      run: cargo llvm-cov clean --workspace --profile coverage
-      working-directory: coprocessor/fhevm-engine
-
     - name: Compile tests with coverage instrumentation
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+        SQLX_OFFLINE: 'true'
+        TEST_PACKAGE: ${{ matrix.package }}
       run: |
+        cargo llvm-cov clean --workspace --profile coverage
         cargo llvm-cov show-env --sh > /tmp/llvm-cov-env.sh
         source /tmp/llvm-cov-env.sh
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
-        SQLX_OFFLINE=true \
-        cargo test --no-run --workspace --profile coverage
+        cargo test --no-run -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Wait for database migration
+      if: ${{ matrix.needs_db }}
       run: |
         SECONDS=0
         while ! docker container inspect db-migration > /dev/null 2>&1; do
@@ -146,41 +198,87 @@ jobs:
         echo "Database migration completed"
 
     - name: Run tests with coverage
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+        SQLX_OFFLINE: 'true'
+        TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
+        TEST_PACKAGE: ${{ matrix.package }}
+        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
         source /tmp/llvm-cov-env.sh
-        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
-        TEST_GLOBAL_LOCALSTACK=1 \
-        SQLX_OFFLINE=true \
-        cargo test --workspace --profile coverage
+        # Merge queue: leave unset so supported_types() defaults to full matrix.
+        # PR CI: run only small types (bool through 64-bit) for faster feedback.
+        if [ "$IS_MERGE_QUEUE" != "1" ]; then
+          export TFHE_WORKER_EVENT_TYPE_MATRIX=local
+        fi
+        cargo test -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
-    - name: Generate coverage report
+    - name: Export LCOV coverage data
       if: ${{ !cancelled() }}
       run: |
-        if cargo llvm-cov report --profile coverage > /tmp/cov-report.txt 2>&1; then
-          REPORT=$(cat /tmp/cov-report.txt)
-        else
-          echo "cargo llvm-cov report failed:"
-          cat /tmp/cov-report.txt
-          REPORT=""
+        source /tmp/llvm-cov-env.sh
+        cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
+      working-directory: coprocessor/fhevm-engine
+
+    - name: Upload coverage artifact
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      with:
+        name: lcov-${{ matrix.service }}
+        path: /tmp/lcov.info
+        retention-days: 1
+        if-no-files-found: ignore
+
+  coverage-report:
+    name: coprocessor-cargo-test/coverage-report
+    needs: [check-changes, cargo-tests]
+    if: ${{ !cancelled() && needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'write' # Required to post coverage comment on PR
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: 'false'
+
+    - name: Install lcov
+      run: sudo apt-get update && sudo apt-get install -y lcov
+
+    - name: Download all coverage artifacts
+      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+      with:
+        pattern: lcov-*
+        path: /tmp/coverage
+
+    - name: Merge LCOV files
+      run: |
+        LCOV_FILES=$(find /tmp/coverage -name 'lcov.info' -size +0c)
+        if [ -z "$LCOV_FILES" ]; then
+          echo "No coverage data found"
+          exit 0
         fi
+        LCOV_ARGS=()
+        for f in $LCOV_FILES; do
+          LCOV_ARGS+=(-a "$f")
+        done
+        lcov "${LCOV_ARGS[@]}" -o /tmp/lcov.info
+
+    - name: Generate coverage summary
+      if: ${{ !cancelled() }}
+      run: |
         {
           echo '## Coverage: coprocessor/fhevm-engine'
-          if [ -n "$REPORT" ]; then
+          if [ -f /tmp/lcov.info ]; then
             echo '```'
-            echo "$REPORT"
+            lcov --summary /tmp/lcov.info 2>&1 || true
             echo '```'
           else
             echo '*No coverage data available (tests may have failed before producing profiling data).*'
           fi
         } >> "$GITHUB_STEP_SUMMARY"
-        echo "$REPORT"
-      working-directory: coprocessor/fhevm-engine
-
-    - name: Export LCOV coverage data
-      if: ${{ !cancelled() }}
-      run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
-      working-directory: coprocessor/fhevm-engine
 
     - name: Diff coverage of changed lines
       if: ${{ !cancelled() }}
@@ -230,3 +328,26 @@ jobs:
       uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
       with:
         path: /tmp/coverage-comment.md
+
+  cargo-tests-status:
+    name: coprocessor-cargo-test/cargo-tests (bpr)
+    needs: [check-changes, cargo-tests, coverage-report]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    env:
+      CHECK_CHANGES_RESULT: ${{ needs.check-changes.result }}
+      CARGO_TESTS_RESULT: ${{ needs.cargo-tests.result }}
+      COVERAGE_RESULT: ${{ needs.coverage-report.result }}
+    steps:
+    - name: Check results
+      run: |
+        if [ "$CHECK_CHANGES_RESULT" = "failure" ] || \
+           [ "$CHECK_CHANGES_RESULT" = "cancelled" ] || \
+           [ "$CARGO_TESTS_RESULT" = "failure" ] || \
+           [ "$CARGO_TESTS_RESULT" = "cancelled" ] || \
+           [ "$COVERAGE_RESULT" = "failure" ] || \
+           [ "$COVERAGE_RESULT" = "cancelled" ]; then
+          echo "One or more jobs failed or were cancelled"
+          exit 1
+        fi
+        echo "All jobs passed or were skipped"

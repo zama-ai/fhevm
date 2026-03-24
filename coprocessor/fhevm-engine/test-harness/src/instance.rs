@@ -55,6 +55,33 @@ pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::
     }
 }
 
+// Extracts the database name from a PostgreSQL URL.
+// e.g. "postgresql://user:pass@host:port/mydb?opt=val" -> "mydb"
+// Panics if the extracted name contains characters other than alphanumeric, underscore, or hyphen.
+fn extract_db_name(db_url: &str) -> &str {
+    let after_slash = db_url
+        .rsplit('/')
+        .next()
+        .expect("database URL must contain /");
+    let name = after_slash
+        .split('?')
+        .next()
+        .expect("split always yields at least one element");
+    assert!(
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-'),
+        "invalid database name extracted from URL: {name}"
+    );
+    name
+}
+
+fn admin_url_from(db_url: &str) -> String {
+    let last_slash = db_url.rfind('/').expect("database URL must contain /");
+    format!("{}postgres", &db_url[..=last_slash])
+}
+
 async fn setup_test_app_existing_localhost(
     with_reset: bool,
     mode: ImportMode,
@@ -63,7 +90,7 @@ async fn setup_test_app_existing_localhost(
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.as_str().replace("coprocessor", "postgres");
+        let admin_db_url = admin_url_from(db_url.as_str());
         create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
@@ -122,17 +149,18 @@ async fn create_database(
     db_url: &str,
     mode: ImportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Creating coprocessor db...");
+    let db_name = extract_db_name(db_url);
+    info!(db_name, "Creating database...");
     let admin_pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
         .connect(admin_db_url)
         .await?;
 
-    sqlx::query!("DROP DATABASE IF EXISTS coprocessor;")
+    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{db_name}\""))
         .execute(&admin_pool)
         .await?;
 
-    sqlx::query!("CREATE DATABASE coprocessor;")
+    sqlx::query(&format!("CREATE DATABASE \"{db_name}\""))
         .execute(&admin_pool)
         .await?;
 

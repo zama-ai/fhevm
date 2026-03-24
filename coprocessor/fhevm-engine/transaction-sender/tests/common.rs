@@ -11,8 +11,8 @@ use alloy::{
     sol,
     transports::http::reqwest::Url,
 };
-use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use test_harness::localstack::{
     create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
     LocalstackContainer, LOCALSTACK_PORT,
@@ -53,7 +53,7 @@ pub struct TestEnvironment {
     pub user_address: Address,
     anvil: Option<AnvilInstance>,
     pub wallet: EthereumWallet,
-    // Just keep the handle to destroy the container when it is dropped.
+    _db_instance: DBInstance,
     _localstack: Option<LocalstackContainer>,
 }
 
@@ -80,24 +80,13 @@ impl TestEnvironment {
             .with_test_writer()
             .try_init();
 
+        let db_instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         let db_pool = PgPoolOptions::new()
             .max_connections(10)
-            .connect(DatabaseURL::default().as_str())
+            .connect(db_instance.db_url())
             .await?;
-
-        Self::truncate_tables(
-            &db_pool,
-            vec![
-                "verify_proofs",
-                "ciphertext_digest",
-                "allowed_handles",
-                "delegate_user_decrypt",
-                "keys",
-                "crs",
-                "host_chains",
-            ],
-        )
-        .await?;
 
         let anvil = Self::new_anvil()?;
         let chain_id =
@@ -141,6 +130,7 @@ impl TestEnvironment {
             user_address: PrivateKeySigner::random().address(),
             anvil: Some(anvil),
             wallet,
+            _db_instance: db_instance,
             _localstack: localstack,
         })
     }
@@ -176,13 +166,5 @@ impl TestEnvironment {
 
     fn new_anvil_with_port(port: u16) -> anyhow::Result<AnvilInstance> {
         Ok(Anvil::new().block_time(1).port(port).try_spawn()?)
-    }
-
-    async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
-        for table in tables {
-            let query = format!("TRUNCATE {}", table);
-            sqlx::query(&query).execute(db_pool).await?;
-        }
-        Ok(())
     }
 }
