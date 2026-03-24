@@ -25,13 +25,9 @@ const INSERTION_RETRY_LIMIT: usize = 10;
 const INSERTION_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
 #[tracing::instrument(skip_all)]
-pub async fn publish_event(
-    db_pool: &Pool<Postgres>,
-    event: GatewayEvent,
-    block_number: Option<u64>,
-) -> anyhow::Result<()> {
+pub async fn publish_event(db_pool: &Pool<Postgres>, event: GatewayEvent) -> anyhow::Result<()> {
     for i in 1..=INSERTION_RETRY_LIMIT {
-        match publish_event_inner(db_pool, event.clone(), block_number).await {
+        match publish_event_inner(db_pool, event.clone()).await {
             Ok(()) => return Ok(()),
             Err(e) => error!("Insertion attempt #{i}/{INSERTION_RETRY_LIMIT} failed: {e}"),
         }
@@ -47,14 +43,9 @@ pub async fn publish_event(
     ))
 }
 
-async fn publish_event_inner(
-    db_pool: &Pool<Postgres>,
-    event: GatewayEvent,
-    block_number: Option<u64>,
-) -> anyhow::Result<()> {
-    info!(block_number, "Storing {:?} in DB...", event.kind);
+async fn publish_event_inner(db_pool: &Pool<Postgres>, event: GatewayEvent) -> anyhow::Result<()> {
+    info!("Storing {:?} in DB...", event.kind);
 
-    let event_type = (&event.kind).into();
     let otlp_ctx = event.otlp_context;
     let tx_hash = event.tx_hash;
     let created_at = event.created_at;
@@ -89,7 +80,6 @@ async fn publish_event_inner(
         warn!("Unexpected query result while publishing event: {query_result:?}");
     }
 
-    update_last_block_polled(db_pool, event_type, block_number).await?;
     Ok(())
 }
 

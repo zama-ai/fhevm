@@ -32,7 +32,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-const NB_EVENT_TYPE: usize = 7;
+const NB_POLL_GROUPS: usize = 2;
 
 pub async fn start_test_listener(
     test_instance: &mut TestInstance,
@@ -55,9 +55,9 @@ pub async fn start_test_listener(
 
     let listener_task = tokio::spawn(gw_listener.start());
 
-    // Wait for all gw-listener event filters to be ready + 2 anvil blocks
-    for _ in 0..NB_EVENT_TYPE {
-        test_instance.wait_for_log("Subscribed to ").await;
+    // Wait for both polling tasks to start + 2 anvil blocks
+    for _ in 0..NB_POLL_GROUPS {
+        test_instance.wait_for_log("Started ").await;
     }
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 

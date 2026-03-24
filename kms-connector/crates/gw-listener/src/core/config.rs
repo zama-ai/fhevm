@@ -62,6 +62,10 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_key_management_polling")]
     pub key_management_polling: Duration,
 
+    /// The maximum number of blocks to fetch per `eth_getLogs` request.
+    #[serde(default = "default_get_logs_batch_size")]
+    pub get_logs_batch_size: u64,
+
     /// Optional block number to start processing decryption events from.
     pub decryption_from_block_number: Option<u64>,
     /// Optional block number to start processing KMS operation events from.
@@ -80,6 +84,10 @@ fn default_decryption_polling() -> Duration {
 
 fn default_key_management_polling() -> Duration {
     Duration::from_secs(30)
+}
+
+fn default_get_logs_batch_size() -> u64 {
+    100
 }
 
 // Default implementation for testing purpose
@@ -101,6 +109,7 @@ impl Default for Config {
             healthcheck_timeout: default_healthcheck_timeout(),
             decryption_polling: default_decryption_polling(),
             key_management_polling: default_key_management_polling(),
+            get_logs_batch_size: default_get_logs_batch_size(),
             decryption_from_block_number: None,
             kms_operation_from_block_number: None,
         }
