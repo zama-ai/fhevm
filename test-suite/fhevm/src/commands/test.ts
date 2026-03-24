@@ -19,12 +19,23 @@ import type { TestOptions } from "../types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
+const DB_REVERT_CONTAINERS = [
+  "host-listener",
+  "host-listener-poller",
+  "gw-listener",
+  "tfhe-worker",
+  "sns-worker",
+  "transaction-sender",
+  "zkproof-worker",
+] as const;
+const DEFAULT_DB_REVERT_CHAIN_ID = "12345";
+const DEFAULT_DB_REVERT_TESTS = "test add 42 to uint64 input and decrypt";
 
 /** Formats a progress label with elapsed wall-clock time. */
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "light"].sort();
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "light"].sort();
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -171,6 +182,229 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
   ...tail,
 ];
 
+/** Runs a narrow e2e grep inside the test-suite container. */
+const runNamedE2e = async (network: string, grep: string, label: string) =>
+  runWithHeartbeat(buildTestContainerArgs(["./run-tests.sh", "-n", network, "-g", grep]), label);
+
+/** Builds the coprocessor runtime container names for every configured instance. */
+const coprocessorRuntimeContainers = (instanceCount: number) =>
+  Array.from({ length: instanceCount }, (_, index) => {
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    return DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`);
+  }).flat();
+
+/** Stops or starts each named container and ignores already-stopped/missing cases. */
+const setContainersRunning = async (containers: string[], action: "start" | "stop") => {
+  for (const container of containers) {
+    await run(["docker", action, container], { allowFailure: true });
+  }
+};
+
+/** Reads a one-line postgres query result as trimmed text. */
+const scalarQuery = async (
+  dbName: string,
+  sql: string,
+  options: {
+    postgresContainer: string;
+    postgresUser: string;
+    postgresPassword: string;
+  },
+) => psql(dbName, ["-t", "-A", "-c", sql], options);
+
+type DbRevertSnapshot = {
+  computationsDone: number;
+  computationsTotal: number;
+  allowedHandles: number;
+  pbsComputations: number;
+  ciphertextDigest: number;
+  ciphertexts: number;
+  ciphertexts128: number;
+  erroredComputations?: number;
+};
+
+/** Snapshots the revert-sensitive coprocessor tables for one host chain. */
+const dbRevertSnapshot = async (
+  chainId: string,
+  options: {
+    postgresContainer: string;
+    postgresUser: string;
+    postgresPassword: string;
+    postgresDb: string;
+  },
+): Promise<DbRevertSnapshot> => {
+  const query = (sql: string) => scalarQuery(options.postgresDb, sql, options).then((value) => Number(value || "0"));
+  return {
+    computationsDone: await query(`SELECT COUNT(*) FROM computations WHERE is_completed = true AND host_chain_id = ${chainId}`),
+    computationsTotal: await query(`SELECT COUNT(*) FROM computations WHERE host_chain_id = ${chainId}`),
+    allowedHandles: await query(`SELECT COUNT(*) FROM allowed_handles WHERE host_chain_id = ${chainId}`),
+    pbsComputations: await query(`SELECT COUNT(*) FROM pbs_computations WHERE host_chain_id = ${chainId}`),
+    ciphertextDigest: await query(`SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = ${chainId}`),
+    ciphertexts: await query(`SELECT COUNT(*) FROM ciphertexts WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = ${chainId})`),
+    ciphertexts128: await query(`SELECT COUNT(*) FROM ciphertexts128 WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = ${chainId})`),
+    erroredComputations: await query(`SELECT COUNT(*) FROM computations WHERE is_error = true AND host_chain_id = ${chainId}`),
+  };
+};
+
+/** Formats a compact database revert progress summary. */
+const formatDbRevertSnapshot = (snapshot: DbRevertSnapshot) =>
+  `comp=${snapshot.computationsDone}/${snapshot.computationsTotal} acl=${snapshot.allowedHandles} pbs=${snapshot.pbsComputations} digest=${snapshot.ciphertextDigest} ct=${snapshot.ciphertexts} ct128=${snapshot.ciphertexts128} err=${snapshot.erroredComputations ?? 0}`;
+
+/** Ensures the revert step actually deleted some chain-scoped coprocessor data. */
+const assertRevertDeletedData = (before: DbRevertSnapshot, after: DbRevertSnapshot) => {
+  const unchanged = [
+    after.computationsTotal >= before.computationsTotal ? "computations" : "",
+    before.allowedHandles > 0 && after.allowedHandles >= before.allowedHandles ? "allowed_handles" : "",
+    before.pbsComputations > 0 && after.pbsComputations >= before.pbsComputations ? "pbs_computations" : "",
+    before.ciphertextDigest > 0 && after.ciphertextDigest >= before.ciphertextDigest ? "ciphertext_digest" : "",
+    before.ciphertexts > 0 && after.ciphertexts >= before.ciphertexts ? "ciphertexts" : "",
+    before.ciphertexts128 > 0 && after.ciphertexts128 >= before.ciphertexts128 ? "ciphertexts128" : "",
+  ].filter(Boolean);
+  if (unchanged.length) {
+    throw new PreflightError(`db-state-revert did not delete expected data for: ${unchanged.join(", ")}`);
+  }
+};
+
+/** Waits for the coprocessor to repopulate revert-sensitive tables after a rollback. */
+const waitForDbRevertRecovery = async (
+  before: DbRevertSnapshot,
+  chainId: string,
+  options: {
+    timeoutSeconds: number;
+    pollIntervalSeconds: number;
+    postgresContainer: string;
+    postgresUser: string;
+    postgresPassword: string;
+    postgresDb: string;
+  },
+) => {
+  const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    const snapshot = await dbRevertSnapshot(chainId, options);
+    console.log(`[revert] recovery ${formatDbRevertSnapshot(snapshot)}`);
+    if ((snapshot.erroredComputations ?? 0) > 0) {
+      throw new PreflightError(`db-state-revert found ${snapshot.erroredComputations} errored computations after restart`);
+    }
+    if (
+      snapshot.computationsDone >= before.computationsDone &&
+      snapshot.computationsTotal >= before.computationsTotal &&
+      snapshot.allowedHandles >= before.allowedHandles &&
+      snapshot.pbsComputations >= before.pbsComputations &&
+      snapshot.ciphertextDigest >= before.ciphertextDigest &&
+      snapshot.ciphertexts >= before.ciphertexts &&
+      snapshot.ciphertexts128 >= before.ciphertexts128
+    ) {
+      return;
+    }
+    if (attempt === attempts) {
+      throw new PreflightError(`db-state-revert timed out waiting for coprocessor recovery: ${formatDbRevertSnapshot(snapshot)}`);
+    }
+    await Bun.sleep(options.pollIntervalSeconds * 1000);
+  }
+};
+
+/** Runs the coprocessor DB state revert e2e flow against the active stack. */
+const runDbStateRevert = async (
+  state: Awaited<ReturnType<typeof loadState>>,
+  options: TestOptions,
+) => {
+  if (!state) {
+    throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+  const started = Date.now();
+  const chainId = process.env.CHAIN_ID ?? DEFAULT_DB_REVERT_CHAIN_ID;
+  if (!/^\d+$/.test(chainId)) {
+    throw new PreflightError(`Invalid CHAIN_ID ${chainId}; expected a positive integer`);
+  }
+  const postgres = {
+    postgresContainer: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
+    postgresUser: process.env.POSTGRES_USER ?? "postgres",
+    postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
+    postgresDb: process.env.POSTGRES_DB ?? "coprocessor",
+  };
+  const testsToRun = process.env.TESTS_TO_RUN ?? DEFAULT_DB_REVERT_TESTS;
+  const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
+  const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
+  const containers = coprocessorRuntimeContainers(topologyForState(state).count);
+  const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
+  if (!migrationVersion) {
+    throw new PreflightError("db-state-revert requires COPROCESSOR_DB_MIGRATION_VERSION in the active stack state");
+  }
+  const revertImage = `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${migrationVersion}`;
+  console.log("[test] coprocessor-db-state-revert");
+
+  return runLogged("coprocessor-db-state-revert", started, async () => {
+    await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert seed");
+
+    const before = await dbRevertSnapshot(chainId, postgres);
+    console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
+    if (before.computationsDone === 0) {
+      throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
+    }
+
+    const maxBlock = Number(
+      await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
+    );
+    const revertTo = Math.floor(maxBlock / 2);
+    if (revertTo <= 0) {
+      throw new PreflightError(`db-state-revert requires a positive midpoint block; got max block ${maxBlock}`);
+    }
+
+    let stopped = false;
+    try {
+      await setContainersRunning(containers, "stop");
+      stopped = true;
+
+      const network = (
+        await run([
+          "docker",
+          "inspect",
+          postgres.postgresContainer,
+          "--format",
+          "{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}",
+        ])
+      ).stdout.trim();
+      if (!network) {
+        throw new PreflightError(`db-state-revert could not resolve the docker network for ${postgres.postgresContainer}`);
+      }
+
+      await runWithHeartbeat(
+        [
+          "docker",
+          "run",
+          "--rm",
+          "--network",
+          network,
+          "-e",
+          `DATABASE_URL=postgres://${postgres.postgresUser}:${postgres.postgresPassword}@${postgres.postgresContainer}:5432/${postgres.postgresDb}`,
+          "-e",
+          `CHAIN_ID=${chainId}`,
+          "-e",
+          `TO_BLOCK_NUMBER=${revertTo}`,
+          revertImage,
+          "/revert_coprocessor_db_state.sh",
+        ],
+        "db-state-revert",
+      );
+
+      const after = await dbRevertSnapshot(chainId, postgres);
+      console.log(`[revert] after ${formatDbRevertSnapshot(after)}`);
+      assertRevertDeletedData(before, after);
+    } finally {
+      if (stopped) {
+        await setContainersRunning(containers, "start");
+      }
+    }
+
+    await waitForDbRevertRecovery(before, chainId, {
+      ...postgres,
+      timeoutSeconds,
+      pollIntervalSeconds,
+    });
+
+    await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert verify");
+  });
+};
+
 /** Runs a named test profile, custom grep, or the light-suite orchestration. */
 export const test = async (testName: string | undefined, options: TestOptions) => {
   const state = await loadState();
@@ -195,6 +429,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const runProfile = async (name: string) => {
+    if (name === "coprocessor-db-state-revert") {
+      return runDbStateRevert(state, options);
+    }
     if (name === "ciphertext-drift") {
       console.log("[test] ciphertext-drift");
       const started = Date.now();
