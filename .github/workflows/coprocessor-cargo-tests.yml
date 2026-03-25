@@ -54,6 +54,25 @@ jobs:
     - name: Checkout LFS objects
       run: git lfs checkout
 
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Login to GitHub Chainguard Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: cgr.dev
+        username: ${{ secrets.CGR_USERNAME }}
+        password: ${{ secrets.CGR_PASSWORD }}
+
+    - name: Start database services (background)
+      run: |
+        nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
+      working-directory: coprocessor/fhevm-engine/tfhe-worker
+
     - name: Setup Rust toolchain file
       run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
 
@@ -84,29 +103,10 @@ jobs:
         key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-coverage-
 
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Login to GitHub Chainguard Registry
-      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-      with:
-        registry: cgr.dev
-        username: ${{ secrets.CGR_USERNAME }}
-        password: ${{ secrets.CGR_PASSWORD }}
-
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
       with:
         node-version: 20.x
-
-    - name: Start database services (background)
-      run: |
-        nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
-      working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Start localstack
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
