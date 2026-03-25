@@ -1,13 +1,13 @@
 use crate::{
     core::{Config, publish::publish_batch},
-    monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
+    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
 use alloy::{
     network::Ethereum,
     primitives::Address,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::{SolEventInterface},
+    sol_types::SolEventInterface,
 };
 use anyhow::anyhow;
 use connector_utils::{
@@ -15,10 +15,7 @@ use connector_utils::{
     types::{GatewayEvent, GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{DecryptionEvents},
-    kms_generation::KMSGeneration::{
-        KMSGenerationEvents
-    },
+    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
 };
 use sqlx::{Pool, Postgres, Row};
 use tokio::{select, task::JoinSet};
@@ -160,8 +157,7 @@ where
                     }
                 }
                 Err(e) => {
-                    // TODO: rename metric (+ docs + alarms?)
-                    EVENT_RECEIVED_ERRORS
+                    EVENT_LISTENING_ERRORS
                         .with_label_values(&[contract.to_string().to_lowercase()])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);

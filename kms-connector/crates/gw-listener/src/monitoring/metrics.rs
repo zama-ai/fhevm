@@ -10,11 +10,11 @@ pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
-pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+pub static EVENT_LISTENING_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
-        "kms_connector_gw_listener_event_received_errors",
-        "Number of errors encountered by the GatewayListener while receiving events",
-        &["event_type"]
+        "kms_connector_gw_listener_event_listening_errors",
+        "Number of errors encountered by the GatewayListener while listening for events",
+        &["contract"]
     )
     .unwrap()
 });
