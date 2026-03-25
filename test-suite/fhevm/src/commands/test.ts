@@ -488,6 +488,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return undefined;
   };
 
+  const multiChainIsolationRequirement = () =>
+    state.scenario.hostChains.length > 1
+      ? undefined
+      : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
+
   const runProfile = async (name: string) => {
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
@@ -527,6 +532,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         });
         console.log(`[drift] detected in ${warning.container} for injected handle 0x${injectedHandleHex}`);
       });
+    }
+    if (name === "multi-chain-isolation") {
+      const precondition = multiChainIsolationRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
     }
 
     const filter = TEST_GREP[name];

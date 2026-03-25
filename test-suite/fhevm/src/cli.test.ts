@@ -64,6 +64,26 @@ const persistedState = (target: State["target"] = "latest-main"): State => ({
   updatedAt: "2026-03-19T00:00:00.000Z",
 });
 
+const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
+  ...persistedState(target),
+  discovery: {
+    gateway: {} as NonNullable<State["discovery"]>["gateway"],
+    hosts: { host: {} as NonNullable<State["discovery"]>["hosts"][string] },
+    endpoints: {
+      gateway: { http: "http://127.0.0.1:8545", ws: "ws://127.0.0.1:8546" },
+      hosts: { host: { http: "http://127.0.0.1:9545", ws: "ws://127.0.0.1:9546" } },
+      minioExternal: "http://127.0.0.1:9000",
+      minioInternal: "http://minio:9000",
+    },
+    kmsSigner: "0x0000000000000000000000000000000000000014",
+    fheKeyId: "a".repeat(64),
+    crsKeyId: "b".repeat(64),
+    actualFheKeyId: "a".repeat(64),
+    actualCrsKeyId: "b".repeat(64),
+  },
+  completedSteps: ["bootstrap"],
+});
+
 describe("cli", () => {
   test("prints root help", async () => {
     const result = await execCli(["--help"]);
@@ -114,6 +134,12 @@ describe("cli", () => {
     const result = await execCli(["up", "--target", "sha"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("--target sha requires --sha");
+  });
+
+  test("rejects combining resume with an explicit target", async () => {
+    const result = await execCli(["up", "--target", "latest-main", "--resume"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--resume cannot be used with --target");
   });
 
   test("invalid sha does not print the resume hint", async () => {
@@ -178,5 +204,13 @@ describe("cli", () => {
   test("resume hint is suppressed for explicit fresh-stack flags", () => {
     expect(shouldShowResumeHint(["up"])).toBe(true);
     expect(shouldShowResumeHint(["up", "--target", "sha", "--sha", "badbad"])).toBe(false);
+  });
+
+  test("gates multi-chain isolation before launching tests on a single-chain stack", async () => {
+    await withState(bootstrappedState(), async () => {
+      const result = await execCli(["test", "multi-chain-isolation"]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("multi-chain-isolation requires a multi-chain topology");
+    });
   });
 });

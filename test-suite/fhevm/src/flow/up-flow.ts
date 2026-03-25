@@ -826,6 +826,7 @@ export const probeBootstrap = async (state: State) => {
     if (error instanceof MinioError || error instanceof PreflightError) {
       throw error;
     }
+    console.log(`[warn] bootstrap probe error (will retry): ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 };

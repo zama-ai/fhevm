@@ -67,6 +67,18 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   if (sha && lockFile) {
     throw new PreflightError("--sha cannot be used with --lock-file");
   }
+  if (resume && target) {
+    throw new PreflightError("--resume cannot be used with --target");
+  }
+  if (resume && sha) {
+    throw new PreflightError("--resume cannot be used with --sha");
+  }
+  if (resume && lockFile) {
+    throw new PreflightError("--resume cannot be used with --lock-file");
+  }
+  if (resume && scenarioPath) {
+    throw new PreflightError("--resume cannot be used with --scenario");
+  }
   if (fromStep && !resume && !dryRun) {
     throw new PreflightError("--from-step requires --resume or --dry-run");
   }
