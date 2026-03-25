@@ -106,7 +106,9 @@ jobs:
 
     - name: Start localstack
       run: |
-        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
+        docker run --rm -d -p 4566:4566 --name localstack -e LOCALSTACK_AUTH_TOKEN="$LOCALSTACK_AUTH_TOKEN" localstack/localstack:stable
+      env:
+        LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
 
     - name: Clean previous coverage data
       run: cargo llvm-cov clean --workspace --profile coverage
