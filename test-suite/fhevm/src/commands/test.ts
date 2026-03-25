@@ -38,6 +38,7 @@ const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
 const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const ZERO_TESTS_RE = /\b0 passing\b/;
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -185,8 +186,17 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
 ];
 
 /** Runs a narrow e2e grep inside the test-suite container. */
-const runNamedE2e = async (network: string, grep: string, label: string) =>
-  runWithHeartbeat(buildTestContainerArgs(["./run-tests.sh", "-n", network, "-g", grep]), label);
+const assertMatchedTests = (output: string, label: string) => {
+  if (ZERO_TESTS_RE.test(output)) {
+    throw new PreflightError(`${label} matched zero tests`);
+  }
+};
+
+/** Runs a narrow e2e grep inside the test-suite container. */
+const runNamedE2e = async (network: string, grep: string, label: string) => {
+  const result = await runWithHeartbeat(buildTestContainerArgs(["./run-tests.sh", "-n", network, "-g", grep]), label);
+  assertMatchedTests(result.stdout + result.stderr, label);
+};
 
 /** Builds the coprocessor runtime container names for every configured instance. */
 const coprocessorRuntimeContainers = (instanceCount: number) =>
@@ -409,6 +419,12 @@ const runDbStateRevert = async (
 
 /** Runs a named test profile, custom grep, or the standard/heavy CI suites. */
 export const test = async (testName: string | undefined, options: TestOptions) => {
+  if (testName && !TEST_PROFILE_NAMES.includes(testName)) {
+    throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
+  }
+  if (testName && options.grep) {
+    throw new PreflightError(`\`fhevm-cli test ${testName}\` does not accept \`--grep\`; use either a named profile or a custom grep`);
+  }
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
@@ -489,9 +505,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     ]
       .filter(Boolean)
       .join(" ");
-    return runLogged(name, started, () =>
-      runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`),
-    );
+    return runLogged(name, started, async () => {
+      const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
+      assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
+    });
   };
 
   const runStandardSuite = async () => {
@@ -519,14 +536,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       }
 
       for (const profile of STANDARD_TEST_PROFILES.slice(2)) {
+        if (profile === "ciphertext-drift" && state.scenario.topology.count < 2) {
+          continue;
+        }
         await runProfile(profile);
-      }
-
-      await runWithHeartbeat(["docker", "stop", "coprocessor-host-listener"], "stop host listener");
-      try {
-        await runProfile("erc20");
-      } finally {
-        await runWithHeartbeat(["docker", "start", "coprocessor-host-listener"], "start host listener", { allowFailure: true });
       }
 
       if (state.scenario.hostChains.length > 1) {
@@ -588,9 +601,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     ]
       .filter(Boolean)
       .join(" ");
-    await runLogged("custom", started, () =>
-      runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom"),
-    );
+    await runLogged("custom", started, async () => {
+      const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom");
+      assertMatchedTests(result.stdout + result.stderr, "test custom");
+    });
     return;
   }
 

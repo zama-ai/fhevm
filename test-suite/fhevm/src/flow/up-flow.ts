@@ -1600,7 +1600,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
-  await preflight(state, true, state.requiresGitHub);
+  await preflight(state, false, state.requiresGitHub);
   printBundle(state.versions, { detailed: true });
   printPlan(state, options.fromStep);
   console.log("[dry-run] preflight passed; no state or containers were changed");

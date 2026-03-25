@@ -74,11 +74,14 @@ export const runWithHeartbeat = async (
   label: string,
   options: Omit<RunOptions, "input"> = {},
 ) => {
+  let stdout = "";
+  let stderr = "";
   let sawOutput = false;
   const readLive = async (
     stream: ReadableStream<Uint8Array> | number | null | undefined,
     writer: NodeJS.WriteStream,
     onOutput: () => void,
+    capture: "stdout" | "stderr",
   ) => {
     if (!stream || typeof stream === "number") {
       return;
@@ -93,7 +96,13 @@ export const runWithHeartbeat = async (
         if (value?.length) {
           sawOutput = true;
           onOutput();
-          writer.write(Buffer.from(value));
+          const chunk = Buffer.from(value);
+          if (capture === "stdout") {
+            stdout += chunk.toString();
+          } else {
+            stderr += chunk.toString();
+          }
+          writer.write(chunk);
         }
       }
     } finally {
@@ -129,14 +138,15 @@ export const runWithHeartbeat = async (
       proc.exited,
       readLive(proc.stdout, process.stdout, () => {
         lastOutput = Date.now();
-      }),
+      }, "stdout"),
       readLive(proc.stderr, process.stderr, () => {
         lastOutput = Date.now();
-      }),
+      }, "stderr"),
     ]);
     if (code !== 0 && !options.allowFailure) {
       throw new CommandError(argv, code, sawOutput ? "" : `${argv.join(" ")} failed (${code})`);
     }
+    return { stdout, stderr, code };
   } finally {
     clearInterval(timer);
   }
