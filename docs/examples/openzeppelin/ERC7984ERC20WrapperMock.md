@@ -1,4 +1,9 @@
-Swapping from a non-confidential ERC-20 to a confidential ERC-7984 is simple and done within the `ERC7984ERC20Wrapper`. This example demonstrates how to wrap an ERC-20 token into an ERC-7984 confidential token using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+Swapping from a non-confidential ERC-20 to a confidential ERC-7984 is simple and actually done within the `ERC7984ERC20Wrapper`. The wrapper operates in two steps:
+
+1. **Token transfer**: The ERC-20 tokens are transferred in from the caller using `SafeERC20.safeTransferFrom()`, reverting automatically if unsuccessful.
+2. **Confidential minting**: The contract mints equivalent ERC-7984 tokens to the recipient, which is guaranteed to succeed.
+
+This example demonstrates how to deploy and test the wrapper using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
