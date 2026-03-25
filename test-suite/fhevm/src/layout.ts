@@ -24,6 +24,14 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+export const TEMPLATE_KMS_CORE_CONFIG_LEGACY = path.join(
+  TEMPLATE_CONFIG_DIR,
+  "kms-core-legacy.toml",
+);
+export const TEMPLATE_KMS_CORE_CONFIG_MODERN = path.join(
+  TEMPLATE_CONFIG_DIR,
+  "kms-core-modern.toml",
+);
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
 export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 8547, 9000, 9001];
@@ -233,6 +241,7 @@ const composeFiles = (name: string) =>
     : [composeTemplatePath(name)];
 export const versionsEnvPath = path.join(ENV_DIR, "versions.env");
 export const relayerConfigPath = path.join(GENERATED_CONFIG_DIR, "relayer.yaml");
+export const kmsCoreConfigPath = path.join(GENERATED_CONFIG_DIR, "kms-core.toml");
 export const gatewayAddressesPath = path.join(ADDRESS_DIR, "gateway", ".env.gateway");
 export const gatewayAddressesSolidityPath = path.join(
   ADDRESS_DIR,

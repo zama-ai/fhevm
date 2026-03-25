@@ -18,7 +18,7 @@ services:
         kms-server --config-file config/config.toml
     volumes:
       - fhevm_minio_secrets:/minio_secrets
-      - ../static/config/kms-core/config.toml:/app/kms/core/service/config/config.toml
+      - ../../../.fhevm/runtime/config/kms-core.toml:/app/kms/core/service/config/config.toml
     ports:
       - "50051:50051"
     healthcheck:

@@ -3,7 +3,10 @@
  */
 import YAML from "yaml";
 
-import { requiresLegacyRelayerReadinessConfig } from "../compat/compat";
+import {
+  requiresLegacyKmsCoreConfig,
+  requiresLegacyRelayerReadinessConfig,
+} from "../compat/compat";
 import { hostNodeName } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
@@ -79,3 +82,10 @@ export const renderRelayerConfig = (
   }
   return YAML.stringify(config);
 };
+
+/** Selects the kms-core config template that matches the requested core image schema. */
+export const renderKmsCoreConfig = (
+  state: Pick<State, "versions">,
+  legacyTemplateText: string,
+  modernTemplateText: string,
+) => (requiresLegacyKmsCoreConfig(state) ? legacyTemplateText : modernTemplateText);

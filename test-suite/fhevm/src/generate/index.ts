@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { StackSpec } from "../stack-spec/stack-spec";
-import { renderRelayerConfig } from "./config";
+import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
 import { renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
@@ -22,6 +22,8 @@ import {
   COMPONENTS,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
+  TEMPLATE_KMS_CORE_CONFIG_LEGACY,
+  TEMPLATE_KMS_CORE_CONFIG_MODERN,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
   envPath,
@@ -29,6 +31,7 @@ import {
   gatewayAddressesSolidityPath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
+  kmsCoreConfigPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -101,6 +104,14 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   await fs.writeFile(
     relayerConfigPath,
     renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
+  );
+  await fs.writeFile(
+    kmsCoreConfigPath,
+    renderKmsCoreConfig(
+      state,
+      await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_LEGACY, "utf8"),
+      await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
+    ),
   );
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));

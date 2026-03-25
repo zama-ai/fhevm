@@ -86,8 +86,8 @@ Non-workspace companions still come from the mainline defaults in `src/resolve/p
 - Tracked inputs are split by role:
   - compose templates: `docker-compose/*.yml`
   - env templates: `templates/env/.env.*`
-  - relayer template config: `templates/config/relayer.yaml`
-  - static config: `static/config/kms-core/config.toml`, `static/config/prometheus/prometheus.yml`
+  - generated config templates: `templates/config/relayer.yaml`, `templates/config/kms-core-*.toml`
+  - static config: `static/config/prometheus/prometheus.yml`
   - checked-in scenario inputs under `scenarios/`
 - `src/stack-spec/stack-spec.ts` resolves the final coprocessor/runtime shape consumed by generation.
 - `src/generate/env.ts`, `src/generate/config.ts`, and `src/generate/compose.ts` are the only generation layers.

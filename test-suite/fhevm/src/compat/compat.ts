@@ -135,6 +135,10 @@ export const requiresMultichainAclAddress = (state: CompatState) =>
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
+/** Detects when kms-core still expects the legacy config schema. */
+export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
+  versionLt(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
+
 /** Detects when test-suite should use the legacy relayer base URL. */
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
