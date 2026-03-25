@@ -41,6 +41,9 @@ jobs:
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'write' # Required to post coverage comment on PR
     runs-on: large_ubuntu_16
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -65,7 +68,7 @@ jobs:
     - name: Install cargo dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y protobuf-compiler && \
+        sudo apt-get install -y protobuf-compiler mold clang && \
         cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
     - name: Install foundry
