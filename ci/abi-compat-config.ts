@@ -14,7 +14,14 @@ export const EXCLUDED_MODIFIERS = new Set([
   "onlyInputVerificationContract",
 ]);
 
-export const EXCLUDED_FUNCTION_PATTERNS = [/^initialize/, /^reinitializeV\d+$/];
+export const EXCLUDED_FUNCTION_PATTERNS = [
+  /^initialize/,
+  /^reinitializeV\d+$/,
+  /^acceptOwnership$/,
+  /^owner$/,
+  /^transferOwnership$/,
+  /^upgradeToAndCall$/,
+];
 
 export const PACKAGE_CONFIG: Record<
   PackageName,

@@ -40,6 +40,13 @@ for (const result of results) {
       errors++;
     }
 
+    if (result.allowedMissing.length > 0) {
+      console.log(`${result.name}: accepted stable ABI exceptions`);
+      for (const signature of result.allowedMissing) {
+        console.log(`  ~ ${signature}`);
+      }
+    }
+
     if (result.added.length > 0) {
       console.log(`${result.name}: added stable ABI entries`);
       for (const signature of result.added) {

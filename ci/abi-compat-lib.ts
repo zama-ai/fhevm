@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { EXCLUDED_FUNCTION_PATTERNS, EXCLUDED_MODIFIERS, PACKAGE_CONFIG, type PackageName } from "./abi-compat-config";
+import { ABI_COMPAT_EXCEPTIONS } from "./abi-compat-exceptions";
 
 type AbiParam = {
   type: string;
@@ -24,6 +25,7 @@ export type AbiCompatResult = {
   baselineStableCount: number;
   targetStableCount: number;
   missing: string[];
+  allowedMissing: string[];
   added: string[];
   errors: string[];
 };
@@ -124,6 +126,9 @@ function collectStableSignatures(contract: string, root: string, abi: AbiEntry[]
     if (!["function", "event", "error"].includes(entry.type)) {
       continue;
     }
+    if (entry.name && EXCLUDED_FUNCTION_PATTERNS.some((pattern) => pattern.test(entry.name))) {
+      continue;
+    }
     if (entry.type === "function" && entry.name && excludedNames.has(entry.name)) {
       continue;
     }
@@ -146,6 +151,7 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
         baselineStableCount: 0,
         targetStableCount: 0,
         missing: [],
+        allowedMissing: [],
         added: [],
         errors: [],
       };
@@ -167,6 +173,7 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
         baselineStableCount: 0,
         targetStableCount: 0,
         missing: [],
+        allowedMissing: [],
         added: [],
         errors,
       };
@@ -181,8 +188,13 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
       errors.push(targetStable.error);
     }
 
-    const targetAll = new Set(targetAbi.map(canonicalSignature).filter((entry): entry is string => entry != null));
-    const missing = [...baselineStable.signatures].filter((signature) => !targetAll.has(signature)).sort();
+    const allowedMissingSet = new Set(ABI_COMPAT_EXCEPTIONS[pkg]?.[name] ?? []);
+    const missing = [...baselineStable.signatures]
+      .filter((signature) => !targetStable.signatures.has(signature) && !allowedMissingSet.has(signature))
+      .sort();
+    const allowedMissing = [...baselineStable.signatures]
+      .filter((signature) => !targetStable.signatures.has(signature) && allowedMissingSet.has(signature))
+      .sort();
     const added = [...targetStable.signatures].filter((signature) => !baselineStable.signatures.has(signature)).sort();
 
     return {
@@ -191,6 +203,7 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
       baselineStableCount: baselineStable.count,
       targetStableCount: targetStable.count,
       missing,
+      allowedMissing,
       added,
       errors,
     };
