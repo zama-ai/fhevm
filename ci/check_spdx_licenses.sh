@@ -15,7 +15,7 @@ while IFS= read -r -d '' file; do
         echo "  Expected: // SPDX-License-Identifier: ${EXPECTED_LICENSE}"
         EXIT_CODE=1
     fi
-done < <(find "$CONTRACTS_DIR" -name '*.sol' -print0)
+done < <(find "$CONTRACTS_DIR" -name '*.sol' -print0 | sort -z)
 
 if [ "$EXIT_CODE" -eq 0 ]; then
     echo "All Solidity files use SPDX-License-Identifier: ${EXPECTED_LICENSE}"
