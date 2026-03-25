@@ -162,7 +162,7 @@ function printPackageReport(baselineRoot: string, targetRoot: string, pkg: Packa
 }
 
 const { fromRef, toRef, packages } = parseArgs();
-const repoRoot = resolve(import.meta.dir, "..");
+const repoRoot = resolve(import.meta.dir, "../..");
 const tempRoot = mkdtempSync(join(tmpdir(), "fhevm-abi-compat-"));
 const baselineRoot = join(tempRoot, "baseline");
 const targetRoot = toRef ? join(tempRoot, "target") : repoRoot;
