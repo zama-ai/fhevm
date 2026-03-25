@@ -139,16 +139,6 @@ There are two ways to contribute to FHEVM:
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
 <br></br>
 
-### Contract ABI checks
-
-To compare the stable contract ABI surface between two refs locally, use:
-
-```bash
-bun ci/list-abi-compat.ts --from v0.11.1 --to v0.12.0-0
-```
-
-Pass `--package host-contracts` or `--package gateway-contracts` to limit the scope.
-
 ### License
 
 This software is distributed under the **BSD-3-Clause-Clear** license. Read [this](LICENSE) for more details.
