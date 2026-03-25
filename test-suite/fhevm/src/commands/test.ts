@@ -10,6 +10,7 @@ import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
+  DEFAULT_CHAIN_ID,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
@@ -30,8 +31,7 @@ const DB_REVERT_CONTAINERS = [
   "transaction-sender",
   "zkproof-worker",
 ] as const;
-const DEFAULT_DB_REVERT_CHAIN_ID = "12345";
-const DEFAULT_DB_REVERT_TESTS = "test add 42 to uint64 input and decrypt";
+const DB_REVERT_RECOVERY_PROFILE = "input-proof-compute-decrypt";
 
 /** Formats a progress label with elapsed wall-clock time. */
 const timedLabel = (label: string, started: number) =>
@@ -361,7 +361,7 @@ const runDbStateRevert = async (
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
   }
   const started = Date.now();
-  const chainId = process.env.CHAIN_ID ?? DEFAULT_DB_REVERT_CHAIN_ID;
+  const chainId = process.env.CHAIN_ID ?? state.scenario.hostChains[0]?.chainId ?? DEFAULT_CHAIN_ID;
   if (!/^\d+$/.test(chainId)) {
     throw new PreflightError(`Invalid CHAIN_ID ${chainId}; expected a positive integer`);
   }
@@ -371,7 +371,10 @@ const runDbStateRevert = async (
     postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
     postgresDb: process.env.POSTGRES_DB ?? "coprocessor",
   };
-  const testsToRun = process.env.TESTS_TO_RUN ?? DEFAULT_DB_REVERT_TESTS;
+  const testsToRun = process.env.TESTS_TO_RUN ?? TEST_GREP[DB_REVERT_RECOVERY_PROFILE];
+  if (!testsToRun) {
+    throw new PreflightError(`Missing grep pattern for ${DB_REVERT_RECOVERY_PROFILE}`);
+  }
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
   const containers = coprocessorRuntimeContainers(topologyForState(state).count);

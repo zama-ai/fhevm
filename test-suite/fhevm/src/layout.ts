@@ -34,9 +34,13 @@ export const TEMPLATE_KMS_CORE_CONFIG_MODERN = path.join(
 );
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
-export const PORTS = [3000, 3001, 5432, 5433, 8545, 8546, 8547, 9000, 9001];
-export const MINIO_INTERNAL_URL = "http://minio:9000";
-export const MINIO_EXTERNAL_URL = "http://localhost:9000";
+export const DEFAULT_HOST_RPC_PORT = 8545;
+export const DEFAULT_GATEWAY_RPC_PORT = 8546;
+export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
+export const MINIO_PORT = 9000;
+export const PORTS = [3000, 3001, 5432, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, MINIO_PORT, 9001];
+export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
+export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = "db:5432";
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
 export const KMS_CORE_CONTAINER = "kms-core";

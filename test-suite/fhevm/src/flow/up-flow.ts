@@ -33,6 +33,8 @@ import {
   COMPONENTS,
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_HOST_RPC_PORT,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
   GROUP_BUILD_COMPONENTS,
@@ -42,6 +44,7 @@ import {
   KMS_CORE_CONTAINER,
   LOCK_DIR,
   LOG_TARGETS,
+  MINIO_PORT,
   MINIO_EXTERNAL_URL,
   MINIO_INTERNAL_URL,
   PORTS,
@@ -228,10 +231,10 @@ export const minioIp = async () => {
 export const defaultEndpoints = async () => {
   const ip = await minioIp();
   return {
-    gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
-    hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
+    gateway: { http: `http://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}` },
+    hosts: { host: { http: `http://host-node:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://host-node:${DEFAULT_HOST_RPC_PORT}` } },
     minioInternal: MINIO_INTERNAL_URL,
-    minioExternal: `http://${ip}:9000`,
+    minioExternal: `http://${ip}:${MINIO_PORT}`,
   };
 };
 
@@ -1238,9 +1241,9 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("database", state);
       await waitForContainer(COPROCESSOR_DB_CONTAINER, "healthy");
       await stepComposeUp("host-node", state);
-      await waitForRpc("http://localhost:8545");
+      await waitForRpc(`http://localhost:${DEFAULT_HOST_RPC_PORT}`);
       await stepComposeUp("gateway-node", state);
-      await waitForRpc("http://localhost:8546");
+      await waitForRpc(`http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`);
       const plan = stackSpecForState(state);
       state.discovery = createDiscovery(await defaultEndpoints());
       for (const chain of plan.hostChains.slice(1)) {

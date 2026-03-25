@@ -9,6 +9,7 @@ import YAML from "yaml";
 import { PreflightError } from "../errors";
 import {
   DEFAULT_CHAIN_ID,
+  DEFAULT_HOST_RPC_PORT,
   GROUP_SERVICE_SUFFIXES,
   MAX_COPROCESSOR_INSTANCES,
   PRIMARY_HOST_KEY,
@@ -91,7 +92,7 @@ const scenarioCandidatePaths = (value: string) => {
       ];
 };
 
-const DEFAULT_HOST_CHAIN: HostChainScenario = { key: PRIMARY_HOST_KEY, chainId: DEFAULT_CHAIN_ID, rpcPort: 8545 };
+const DEFAULT_HOST_CHAIN: HostChainScenario = { key: PRIMARY_HOST_KEY, chainId: DEFAULT_CHAIN_ID, rpcPort: DEFAULT_HOST_RPC_PORT };
 
 /** Parses hostChains from YAML. */
 const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): HostChainScenario[] | undefined => {

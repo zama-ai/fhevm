@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { MINIO_EXTERNAL_URL, MINIO_INTERNAL_URL } from "../layout";
+import { MINIO_EXTERNAL_URL, MINIO_INTERNAL_URL, MINIO_PORT } from "../layout";
 
 export type RunOptions = {
   cwd?: string;
@@ -139,13 +139,20 @@ export const toServiceName = (suffix: string, index: number) =>
 const needsQuotes = (value: string) => /\s|["'[\]{}]/.test(value);
 
 /** Rewrites container RPC URLs into host-reachable URLs. */
-export const hostReachableRpcUrl = (url: string) =>
-  url
-    .replace("http://gateway-node:8546", "http://localhost:8546")
-    .replace("http://host-node:8545", "http://localhost:8545");
+export const hostReachableRpcUrl = (url: string) => {
+  try {
+    const next = new URL(url);
+    if (/^[a-z][a-z0-9-]*$/i.test(next.hostname)) {
+      next.hostname = "localhost";
+    }
+    return next.toString().replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+};
 
 /** Rewrites container material URLs into host-reachable MinIO URLs. */
 export const hostReachableMaterialUrl = (url: string) =>
   url
-    .replace(/http:\/\/[^/]+:9000/, MINIO_EXTERNAL_URL)
+    .replace(new RegExp(`http://[^/]+:${MINIO_PORT}`), MINIO_EXTERNAL_URL)
     .replace(MINIO_INTERNAL_URL, MINIO_EXTERNAL_URL);

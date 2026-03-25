@@ -11,6 +11,8 @@ import { topologyForState, type StackSpec } from "../stack-spec/stack-spec";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
+  DEFAULT_CHAIN_ID,
+  DEFAULT_HOST_RPC_PORT,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
@@ -340,7 +342,7 @@ const buildExtraHostNodeOverride = async (chain: HostChainScenario, primaryChain
   clone.ports = [`${chain.rpcPort}:${chain.rpcPort}`];
   if (Array.isArray(clone.entrypoint)) {
     clone.entrypoint = clone.entrypoint.map((arg: string) => {
-      if (arg === "8545") return String(chain.rpcPort);
+      if (arg === String(DEFAULT_HOST_RPC_PORT)) return String(chain.rpcPort);
       if (arg === primaryChainId) return chain.chainId;
       return arg;
     });
@@ -440,7 +442,7 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
 
   // Extra host chain compose overrides
   const extraChains = plan.hostChains.slice(1);
-  const primaryChainId = plan.hostChains[0]?.chainId ?? "12345";
+  const primaryChainId = plan.hostChains[0]?.chainId ?? DEFAULT_CHAIN_ID;
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
     const { node, sc, copro } = hostChainNames(chain.key);
