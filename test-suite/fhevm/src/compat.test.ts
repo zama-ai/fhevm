@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { compatPolicyForState, requiresLegacyRelayerUrl, validateBundleCompatibility } from "./compat/compat";
+import { testDefaultScenario } from "./test-fixtures";
 
 describe("compat", () => {
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
@@ -29,14 +30,7 @@ describe("compat", () => {
         sources: [],
       },
       overrides: [],
-      coprocessor: {
-        version: 1,
-        kind: "coprocessor-consensus",
-        origin: "default",
-        hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
-        topology: { count: 1, threshold: 1 },
-        instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-      },
+      scenario: testDefaultScenario(),
     });
     expect(policy.connectorEnv.KMS_CONNECTOR_CHAIN_ID).toBe("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
   });

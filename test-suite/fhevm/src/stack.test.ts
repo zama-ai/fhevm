@@ -1,17 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import { DEFAULT_EXTRA_HOST_RPC_PORT } from "./layout";
 import { previewStateFromBundle, resolveUpgradePlan } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
+import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
-
-const defaultScenario: State["scenario"] = {
-  version: 1,
-  kind: "coprocessor-consensus",
-  origin: "default",
-  hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
-  topology: { count: 1, threshold: 1 },
-  instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-};
+const defaultScenario: State["scenario"] = testDefaultScenario();
 
 describe("stack", () => {
   test("dry-run preview state uses the resolved lock target", () => {
@@ -35,7 +29,7 @@ describe("stack", () => {
       ...defaultScenario,
       hostChains: [
         defaultScenario.hostChains[0],
-        { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+        { key: "chain-b", chainId: "67890", rpcPort: DEFAULT_EXTRA_HOST_RPC_PORT },
       ],
     };
     expect(() => previewStateFromBundle({ overrides: [], lockFile: "/tmp/testnet-lock.json" }, bundle, multiChainScenario)).toThrow(

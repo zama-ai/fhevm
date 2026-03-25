@@ -4,13 +4,26 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { COMPONENTS, GROUP_BUILD_SERVICES, PRIMARY_HOST_KEY, STATE_DIR, TEMPLATE_ENV_DIR, versionsEnvPath, dockerArgs, envPath } from "../layout";
+import {
+  COMPONENTS,
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_HOST_RPC_PORT,
+  GROUP_BUILD_SERVICES,
+  MINIO_PORT,
+  PRIMARY_HOST_KEY,
+  STATE_DIR,
+  TEMPLATE_ENV_DIR,
+  versionsEnvPath,
+  dockerArgs,
+  envPath,
+} from "../layout";
 import { generateComposeOverrides, type ComposeDoc } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
 import { composeEnv, run } from "../utils/process";
 import type { State } from "../types";
 import { readEnvFile, readJson, writeEnvFile } from "../utils/fs";
+import { testDefaultScenario } from "../test-fixtures";
 
 const COMPAT_DOC = "test-suite/fhevm/COMPAT.md";
 const LEGACY_START_TIMEOUT_MS = 3_000;
@@ -24,14 +37,7 @@ const COMPAT_SERVICES = {
   "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
 } as const;
 
-const defaultScenario: State["scenario"] = {
-  version: 1,
-  kind: "coprocessor-consensus",
-  origin: "default",
-  hostChains: [{ key: PRIMARY_HOST_KEY, chainId: "12345", rpcPort: 8545 }],
-  topology: { count: 1, threshold: 1 },
-  instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-};
+const defaultScenario: State["scenario"] = testDefaultScenario();
 
 const latestSupported = await readJson<Pick<State["versions"], "target" | "lockName" | "env" | "sources">>(
   path.join(import.meta.dir, "..", "..", "profiles", "latest-supported.json"),
@@ -83,10 +89,10 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
   actualCrsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
   minioKeyPrefix: "PUB",
   endpoints: {
-    gateway: { http: "http://localhost:8546", ws: "ws://127.0.0.1:1" },
-    hosts: { host: { http: "http://localhost:8545", ws: "ws://127.0.0.1:1" } },
-    minioInternal: "http://127.0.0.1:9000",
-    minioExternal: "http://127.0.0.1:9000",
+    gateway: { http: `http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`, ws: "ws://127.0.0.1:1" },
+    hosts: { [PRIMARY_HOST_KEY]: { http: `http://localhost:${DEFAULT_HOST_RPC_PORT}`, ws: "ws://127.0.0.1:1" } },
+    minioInternal: `http://127.0.0.1:${MINIO_PORT}`,
+    minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
   },
 };
 

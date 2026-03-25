@@ -11,8 +11,12 @@ import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
+  DEFAULT_POSTGRES_DB,
+  DEFAULT_POSTGRES_PASSWORD,
+  DEFAULT_POSTGRES_USER,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
+  POSTGRES_HOST,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -39,6 +43,8 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
+const STANDARD_PAUSE_PROFILES = ["paused-host-contracts", "paused-gateway-contracts"] as const;
+const STANDARD_PAUSE_PROFILE_SET = new Set<string>(STANDARD_PAUSE_PROFILES);
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   light: "Run the lightweight smoke suite.",
   standard: "Run the default CI suite for the active topology.",
@@ -67,11 +73,15 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
 export const listTestProfiles = () => {
   for (const name of TEST_PROFILE_NAMES) {
     const description = TEST_PROFILE_DESCRIPTIONS[name] ?? "Run this named test profile.";
+    const topologyTags = [
+      name === "ciphertext-drift" ? "2+ coprocessors" : undefined,
+      name === "multi-chain-isolation" ? "multi-chain" : undefined,
+    ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
       STANDARD_TEST_PROFILES.includes(name as (typeof STANDARD_TEST_PROFILES)[number]) ? "standard" : undefined,
       HEAVY_TEST_PROFILES.includes(name as (typeof HEAVY_TEST_PROFILES)[number]) ? "heavy" : undefined,
-      name === "multi-chain-isolation" ? "multi-chain" : undefined,
+      ...topologyTags,
     ].filter(Boolean);
     console.log(`${name}${suiteTags.length ? ` - ${suiteTags.join(", ")}` : ""}`);
     console.log(`  ${description}`);
@@ -261,6 +271,14 @@ const scalarQuery = async (
   },
 ) => psql(dbName, ["-t", "-A", "-c", sql], options);
 
+const postgresRuntime = () => ({
+  postgresContainer: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
+  postgresUser: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
+  postgresPassword: process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD,
+  postgresDb: process.env.POSTGRES_DB ?? DEFAULT_POSTGRES_DB,
+  postgresHost: process.env.POSTGRES_HOST,
+});
+
 type DbRevertSnapshot = {
   computationsDone: number;
   computationsTotal: number;
@@ -366,10 +384,7 @@ const runDbStateRevert = async (
     throw new PreflightError(`Invalid CHAIN_ID ${chainId}; expected a positive integer`);
   }
   const postgres = {
-    postgresContainer: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
-    postgresUser: process.env.POSTGRES_USER ?? "postgres",
-    postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
-    postgresDb: process.env.POSTGRES_DB ?? "coprocessor",
+    ...postgresRuntime(),
   };
   const testsToRun = process.env.TESTS_TO_RUN ?? TEST_GREP[DB_REVERT_RECOVERY_PROFILE];
   if (!testsToRun) {
@@ -428,7 +443,7 @@ const runDbStateRevert = async (
           "--network",
           network,
           "-e",
-          `DATABASE_URL=postgres://${postgres.postgresUser}:${postgres.postgresPassword}@${postgres.postgresContainer}:5432/${postgres.postgresDb}`,
+          `DATABASE_URL=postgres://${postgres.postgresUser}:${postgres.postgresPassword}@${postgres.postgresHost ?? POSTGRES_HOST.replace(/^db:/, `${postgres.postgresContainer}:`)}/${postgres.postgresDb}`,
           "-e",
           `CHAIN_ID=${chainId}`,
           "-e",
@@ -508,6 +523,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(precondition);
       }
       return runLogged("ciphertext-drift", started, async () => {
+        const postgres = postgresRuntime();
         const logSince = new Date().toISOString();
         const faultyInstanceIndex = parseDriftInstanceIndex(process.env.FAULTY_INSTANCE_INDEX ?? "1");
         const driftInjectTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180", "DRIFT_INJECT_TIMEOUT_SECONDS");
@@ -519,12 +535,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           instanceIndex: faultyInstanceIndex,
           timeoutSeconds: driftInjectTimeoutSeconds,
           pollIntervalSeconds: driftInjectPollIntervalSeconds,
-          postgresContainer: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
-          postgresUser: process.env.POSTGRES_USER ?? "postgres",
-          postgresPassword: process.env.POSTGRES_PASSWORD ?? "postgres",
+          postgresContainer: postgres.postgresContainer,
+          postgresUser: postgres.postgresUser,
+          postgresPassword: postgres.postgresPassword,
         });
         await runWithHeartbeat(
-          buildTestContainerArgs(["./run-tests.sh", "-n", "staging", "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
+          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
           "test ciphertext-drift",
         );
         const injectedHandleHex = await injector;
@@ -591,7 +607,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         await unpause("gateway").catch(() => undefined);
       }
 
-      for (const profile of STANDARD_TEST_PROFILES.slice(2)) {
+      for (const profile of STANDARD_TEST_PROFILES.filter((item) => !STANDARD_PAUSE_PROFILE_SET.has(item))) {
         if (profile === "ciphertext-drift" && state.scenario.topology.count < 2) {
           continue;
         }

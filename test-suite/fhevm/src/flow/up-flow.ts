@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import { requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
+import { driftDatabaseName } from "../drift";
 import { type ComposeDoc, generatedComposeComponents, loadMergedComposeDoc, resolvedComposeEnv, serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
@@ -35,6 +36,8 @@ import {
   CRSGEN_ID_SELECTOR,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
+  DEFAULT_POSTGRES_PASSWORD,
+  DEFAULT_POSTGRES_USER,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
   GROUP_BUILD_COMPONENTS,
@@ -120,6 +123,33 @@ const KMS_CONNECTOR_HEALTH_CONTAINERS = [
   "kms-connector-tx-sender",
 ];
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+
+const postgresExecOptions = () => ({
+  user: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
+  password: process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD,
+});
+
+const postgresExec = async (dbName: string, args: string[]) => {
+  const postgres = postgresExecOptions();
+  return run(
+    [
+      "docker",
+      "exec",
+      "-e",
+      `PGPASSWORD=${postgres.password}`,
+      COPROCESSOR_DB_CONTAINER,
+      "psql",
+      "-U",
+      postgres.user,
+      "-d",
+      dbName,
+      ...args,
+    ],
+    { allowFailure: true },
+  );
+};
+
+const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 /** Logs elapsed time for one stack subtask. */
 const timed = async <T>(label: string, task: () => Promise<T>) => {
@@ -269,6 +299,12 @@ export const discoverContracts = async () => {
   };
 };
 
+const ensureGeneratedAddressFile = async (file: string, producer: string) => {
+  if (!(await exists(file))) {
+    throw new PreflightError(`${producer} completed but did not generate ${file}`);
+  }
+};
+
 /** Verifies required local tooling and port availability before boot. */
 export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
@@ -317,66 +353,11 @@ export const preflight = async (state: State, strictPorts = true, needsGitHub = 
   }
 };
 
-const assertSchemaCompatibility = async (
-  bundle: VersionBundle,
-  overrides: LocalOverride[],
-  scenario: State["scenario"],
-  allowSchemaMismatch: boolean,
-) => {
-  if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
-    return;
-  }
-  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
-    const guard = SCHEMA_GUARDS[item.group as keyof typeof SCHEMA_GUARDS];
-    if (!guard) {
-      continue;
-    }
-    const ref = bundle.env[guard.versionKey];
-    if (!ref) {
-      continue;
-    }
-    const verified = await run(["git", "rev-parse", "-q", "--verify", `${ref}^{commit}`], {
-      cwd: REPO_ROOT,
-      allowFailure: true,
-    });
-    if (verified.code !== 0) {
-      throw new SchemaGuardError(
-        item.group,
-        `Cannot compare local ${item.group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or pass --allow-schema-mismatch.`,
-      );
-    }
-    const untracked = await run(
-      ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
-      { cwd: REPO_ROOT, allowFailure: true },
-    );
-    if (untracked.code !== 0) {
-      throw new SchemaGuardError(item.group, `Failed to inspect local ${item.group} migrations`);
-    }
-    if (untracked.stdout.trim()) {
-      throw new SchemaGuardError(
-        item.group,
-        `${item.group}: local DB migrations diverge from ${ref}. Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
-      );
-    }
-    const diff = await run(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
-      cwd: REPO_ROOT,
-      allowFailure: true,
-    });
-    if (diff.code === 1) {
-      throw new SchemaGuardError(
-        item.group,
-        `${item.group}: local DB migrations diverge from ${ref}. Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
-      );
-    }
-    if (diff.code !== 0 && diff.code !== 1) {
-      throw new SchemaGuardError(item.group, `Failed to compare local ${item.group} migrations against ${ref}`);
-    }
-  }
-};
-
-const assertUpgradeSchemaStable = async (
-  bundle: VersionBundle,
+const assertSchemaRepoStable = async (
   group: OverrideGroup,
+  bundle: VersionBundle,
+  missingRefMessage: (ref: string) => string,
+  mismatchMessage: (ref: string) => string,
 ) => {
   const guard = SCHEMA_GUARDS[group as keyof typeof SCHEMA_GUARDS];
   if (!guard || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
@@ -391,10 +372,7 @@ const assertUpgradeSchemaStable = async (
     allowFailure: true,
   });
   if (verified.code !== 0) {
-    throw new SchemaGuardError(
-      group,
-      `Cannot compare local ${group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or do a fresh \`fhevm-cli up\`.`,
-    );
+    throw new SchemaGuardError(group, missingRefMessage(ref));
   }
   const untracked = await run(
     ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
@@ -403,22 +381,49 @@ const assertUpgradeSchemaStable = async (
   if (untracked.code !== 0) {
     throw new SchemaGuardError(group, `Failed to inspect local ${group} migrations`);
   }
-  const diffMessage =
-    `${group}: local DB migrations changed. \`fhevm-cli upgrade ${group}\` only supports runtime rebuilds; do a fresh \`fhevm-cli up\` for schema changes.`;
   if (untracked.stdout.trim()) {
-    throw new SchemaGuardError(group, diffMessage);
+    throw new SchemaGuardError(group, mismatchMessage(ref));
   }
   const diff = await run(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
     cwd: REPO_ROOT,
     allowFailure: true,
   });
   if (diff.code === 1) {
-    throw new SchemaGuardError(group, diffMessage);
+    throw new SchemaGuardError(group, mismatchMessage(ref));
   }
   if (diff.code !== 0 && diff.code !== 1) {
     throw new SchemaGuardError(group, `Failed to compare local ${group} migrations against ${ref}`);
   }
 };
+
+const assertSchemaCompatibility = async (
+  bundle: VersionBundle,
+  overrides: LocalOverride[],
+  scenario: State["scenario"],
+  allowSchemaMismatch: boolean,
+) => {
+  if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
+    return;
+  }
+  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
+    await assertSchemaRepoStable(
+      item.group,
+      bundle,
+      (ref) => `Cannot compare local ${item.group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or pass --allow-schema-mismatch.`,
+      (ref) =>
+        `${item.group}: local DB migrations diverge from ${ref}. Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
+    );
+  }
+};
+
+const assertUpgradeSchemaStable = async (bundle: VersionBundle, group: OverrideGroup) =>
+  assertSchemaRepoStable(
+    group,
+    bundle,
+    (ref) => `Cannot compare local ${group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or do a fresh \`fhevm-cli up\`.`,
+    () =>
+      `${group}: local DB migrations changed. \`fhevm-cli upgrade ${group}\` only supports runtime rebuilds; do a fresh \`fhevm-cli up\` for schema changes.`,
+  );
 
 /** Verifies that required discovery fields are present before rendering runtime artifacts. */
 export const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
@@ -946,6 +951,28 @@ const composeDown = async (component: string) => {
   }
 };
 
+const removeProjectResources = async (kind: "container" | "volume" | "network", format: string) => {
+  const listed = await run(
+    ["docker", kind, "ls", "--filter", `label=com.docker.compose.project=${PROJECT}`, "--format", format],
+    { allowFailure: true },
+  );
+  if (listed.code !== 0) {
+    return;
+  }
+  const names = listed.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!names.length) {
+    return;
+  }
+  await run(
+    kind === "container"
+      ? ["docker", "rm", "-fv", ...names]
+      : kind === "volume"
+        ? ["docker", "volume", "rm", "-f", ...names]
+        : ["docker", "network", "rm", ...names],
+    { allowFailure: true },
+  );
+};
+
 /** Builds one compose component for the selected services. */
 const composeBuild = async (component: string, services: string[], env?: Record<string, string>) => {
   try {
@@ -1122,16 +1149,13 @@ const waitForCoprocessor = async (state: State) => waitForCoprocessorServices(st
 
 /** Checks whether the coprocessor database already contains seeded runtime data. */
 const coprocessorDbSeeded = async (database: string) => {
-  const result = await run(
-    ["docker", "exec", COPROCESSOR_DB_CONTAINER, "psql", "-U", "postgres", "-d", database, "-tAc", "select 1 from host_chains limit 1"],
-    { allowFailure: true },
-  );
+  const result = await postgresExec(database, ["-tAc", "select 1 from host_chains limit 1"]);
   return result.code === 0 && result.stdout.trim() === "1";
 };
 
 const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
-    Array.from({ length: topologyForState(state).count }, (_, index) => (index === 0 ? "coprocessor" : `coprocessor_${index}`)).map(coprocessorDbSeeded),
+    Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
 /** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
@@ -1140,13 +1164,12 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   for (let index = 0; index < plan.topology.count; index += 1) {
-    const dbName = index === 0 ? "coprocessor" : `coprocessor_${index}`;
+    const dbName = driftDatabaseName(index);
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
-    await run([
-      "docker", "exec", COPROCESSOR_DB_CONTAINER,
-      "psql", "-U", "postgres", "-d", dbName, "-c",
-      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, '${chain.key}', '${aclAddress}') ON CONFLICT (chain_id) DO NOTHING;`,
+    await postgresExec(dbName, [
+      "-c",
+      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO NOTHING;`,
     ]);
     console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
     await run(["docker", "stop", `${prefix}zkproof-worker`]);
@@ -1274,6 +1297,7 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("gateway-deploy-mocked-zama-oft", "complete");
       await stepComposeUp("gateway-sc", state, ["gateway-sc-deploy"]);
       await waitForContainer("gateway-sc-deploy", "complete");
+      await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy");
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
       await stepComposeUp("gateway-mocked-payment", state, ["gateway-set-relayer-mocked-payment"], { noDeps: true });
@@ -1282,11 +1306,13 @@ export const runStep = async (state: State, step: StepName) => {
     case "host-deploy":
       await stepComposeUp("host-sc", state, ["host-sc-deploy"]);
       await waitForContainer("host-sc-deploy", "complete");
+      await ensureGeneratedAddressFile(hostAddressesPath, "host-sc-deploy");
       for (const chain of stackSpecForState(state).hostChains.slice(1)) {
         const scKey = hostScName(chain.key);
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeUp(scKey, [`${scKey}-deploy`]);
           await waitForContainer(`${scKey}-deploy`, "complete");
+          await ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), `${scKey}-deploy`);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
           await multiChainComposeUp(scKey, [`${scKey}-add-pausers`]);
@@ -1646,9 +1672,14 @@ export const down = async () => {
     }
     return;
   }
-  if (state) {
-    await ensureRuntimeArtifacts(state, "teardown");
+  if (!state) {
+    await removeProjectResources("container", "{{.ID}}");
+    await removeProjectResources("volume", "{{.Name}}");
+    await removeProjectResources("network", "{{.Name}}");
+    await pruneGeneratedRuntimeArtifacts();
+    return;
   }
+  await ensureRuntimeArtifacts(state, "teardown");
   const failed: string[] = [];
   if (state && state.scenario?.hostChains?.length > 1) {
     const toTearDown = multiChainComposeEntries(state).map(([name]) => name);
@@ -1801,6 +1832,9 @@ export const logs = async (service: string | undefined, options: { follow: boole
     throw new PreflightError(`Multiple containers match ${service}: ${containers.join(", ")}`);
   }
   const container = !requested ? containers[0] : exactMatch ?? containers[0];
+  if (!requested) {
+    console.log(`[logs] following ${container}`);
+  }
   await runStreaming(["docker", "logs", ...(options.follow ? ["--follow"] : []), "--tail", "200", container]);
 };
 

@@ -6,6 +6,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
 } from "../compat/compat";
+import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -220,7 +221,7 @@ const buildInstanceEnvs = async (
       continue;
     }
     const next = { ...envs["coprocessor"] };
-    next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor_${index}`;
+    next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${driftDatabaseName(index)}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});

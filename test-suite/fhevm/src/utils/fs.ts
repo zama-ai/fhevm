@@ -152,7 +152,21 @@ export const hostReachableRpcUrl = (url: string) => {
 };
 
 /** Rewrites container material URLs into host-reachable MinIO URLs. */
-export const hostReachableMaterialUrl = (url: string) =>
-  url
-    .replace(new RegExp(`http://[^/]+:${MINIO_PORT}`), MINIO_EXTERNAL_URL)
-    .replace(MINIO_INTERNAL_URL, MINIO_EXTERNAL_URL);
+export const hostReachableMaterialUrl = (url: string) => {
+  try {
+    const next = new URL(url);
+    const external = new URL(MINIO_EXTERNAL_URL);
+    const looksInternal =
+      next.port === String(MINIO_PORT) &&
+      (/^[a-z][a-z0-9-]*$/i.test(next.hostname) || /^\d+\.\d+\.\d+\.\d+$/.test(next.hostname));
+    if (!looksInternal) {
+      return next.toString().replace(/\/$/, "");
+    }
+    next.protocol = external.protocol;
+    next.hostname = external.hostname;
+    next.port = external.port;
+    return next.toString().replace(/\/$/, "");
+  } catch {
+    return url === MINIO_INTERNAL_URL ? MINIO_EXTERNAL_URL : url;
+  }
+};

@@ -459,13 +459,14 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   // Clean up stale multi-chain compose files from previous runs.
   // Scan the output directory for files matching multi-chain naming patterns
   // and remove any that are not part of the current active set.
-  const MULTI_CHAIN_PREFIXES = ["host-node-", "host-sc-", "coprocessor-host-"];
+  const multiChainPrefixes = (({ node, sc, copro }) => [node, sc, copro])(hostChainNames("__placeholder__"))
+    .map((value) => value.replace("__placeholder__", ""));
   const activeSet = new Set(extraChainFileNames);
   const dirEntries = await fs.readdir(COMPOSE_OUT_DIR).catch(() => [] as string[]);
   for (const entry of dirEntries) {
     if (!entry.endsWith(".yml")) continue;
     const name = entry.slice(0, -4); // strip .yml
-    if (MULTI_CHAIN_PREFIXES.some((prefix) => name.startsWith(prefix)) && !activeSet.has(name)) {
+    if (multiChainPrefixes.some((prefix) => name.startsWith(prefix)) && !activeSet.has(name)) {
       await remove(composePath(name));
     }
   }

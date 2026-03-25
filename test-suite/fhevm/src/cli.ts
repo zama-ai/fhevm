@@ -5,6 +5,7 @@ import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
 import { listTestProfiles, test } from "./commands/test";
+import { STEP_NAMES } from "./types";
 import {
   clean,
   down,
@@ -28,7 +29,7 @@ const upCommandDefinition = {
     target: { type: "string", description: "Bundle source to boot." },
     sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
     override: { type: "string", description: "Build selected workspace groups locally.", alias: "o" },
-    "from-step": { type: "string", description: "Start from a specific pipeline step when resuming or previewing." },
+    "from-step": { type: "string", description: `Start from a specific pipeline step when resuming or previewing. Valid: ${STEP_NAMES.join(", ")}.` },
     "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
     scenario: { type: "string", description: "Scenario preset name or path." },
     resume: { type: "boolean", description: "Resume from persisted state." },

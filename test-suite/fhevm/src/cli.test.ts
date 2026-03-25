@@ -1,9 +1,10 @@
 import path from "node:path";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { TEST_SUITE_CONTAINER } from "./layout";
+import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
 import { buildTestContainerArgs } from "./commands/test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
+import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
@@ -52,14 +53,7 @@ const persistedState = (target: State["target"] = "latest-main"): State => ({
     sources: [],
   },
   overrides: [],
-  scenario: {
-    version: 1,
-    kind: "coprocessor-consensus",
-    origin: "default",
-    hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
-    topology: { count: 1, threshold: 1 },
-    instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-  },
+  scenario: testDefaultScenario(),
   completedSteps: ["preflight"],
   updatedAt: "2026-03-19T00:00:00.000Z",
 });
@@ -70,10 +64,10 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
     gateway: {} as NonNullable<State["discovery"]>["gateway"],
     hosts: { host: {} as NonNullable<State["discovery"]>["hosts"][string] },
     endpoints: {
-      gateway: { http: "http://127.0.0.1:8545", ws: "ws://127.0.0.1:8546" },
-      hosts: { host: { http: "http://127.0.0.1:9545", ws: "ws://127.0.0.1:9546" } },
-      minioExternal: "http://127.0.0.1:9000",
-      minioInternal: "http://minio:9000",
+      gateway: { http: `http://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}` },
+      hosts: { host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` } },
+      minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
+      minioInternal: `http://minio:${MINIO_PORT}`,
     },
     kmsSigner: "0x0000000000000000000000000000000000000014",
     fheKeyId: "a".repeat(64),
@@ -100,6 +94,7 @@ describe("cli", () => {
     expect(output).toContain("Boot the fhevm stack");
     expect(output).toContain("fhevm-cli up");
     expect(output).toContain("--target");
+    expect(output).toContain("preflight, resolve, generate");
     expect(result.stdout).not.toContain("[up] target=");
   });
 
@@ -116,6 +111,7 @@ describe("cli", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
     expect(result.stdout).toContain("multi-chain-isolation");
+    expect(result.stdout).toContain("ciphertext-drift - standard, 2+ coprocessors");
   });
 
   test("lists bundled scenarios", async () => {
@@ -211,6 +207,14 @@ describe("cli", () => {
       const result = await execCli(["test", "multi-chain-isolation"]);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("multi-chain-isolation requires a multi-chain topology");
+    });
+  });
+
+  test("drift profile honors the requested network", async () => {
+    await withState(bootstrappedState(), async () => {
+      const result = await execCli(["test", "ciphertext-drift", "--network", "custom-net"]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).not.toContain("staging");
     });
   });
 });
