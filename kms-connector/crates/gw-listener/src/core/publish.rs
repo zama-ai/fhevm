@@ -14,36 +14,34 @@ use fhevm_gateway_bindings::{
     },
 };
 use sqlx::{
-    Pool, Postgres,
+    PgExecutor, Pool, Postgres,
     postgres::PgQueryResult,
     types::chrono::{DateTime, Utc},
 };
-use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
-const INSERTION_RETRY_LIMIT: usize = 10;
-const INSERTION_RETRY_INTERVAL: Duration = Duration::from_millis(10);
-
+/// Inserts all events and updates the last block polled in a single transaction.
+/// On failure, the transaction is rolled back automatically.
 #[tracing::instrument(skip_all)]
-pub async fn publish_event(db_pool: &Pool<Postgres>, event: GatewayEvent) -> anyhow::Result<()> {
-    for i in 1..=INSERTION_RETRY_LIMIT {
-        match publish_event_inner(db_pool, event.clone()).await {
-            Ok(()) => return Ok(()),
-            Err(e) => error!("Insertion attempt #{i}/{INSERTION_RETRY_LIMIT} failed: {e}"),
-        }
-        if i != INSERTION_RETRY_LIMIT {
-            tokio::time::sleep(INSERTION_RETRY_INTERVAL).await;
-        }
+pub async fn publish_batch(
+    db_pool: &Pool<Postgres>,
+    events: Vec<GatewayEvent>,
+    event_types: &[EventType],
+    block_number: u64,
+) -> anyhow::Result<()> {
+    let mut tx = db_pool.begin().await?;
+    for event in events {
+        publish_event_inner(&mut *tx, event).await?;
     }
-
-    Err(anyhow::anyhow!(
-        "Failed to publish {:?} event after {} attempts",
-        event.kind,
-        INSERTION_RETRY_LIMIT
-    ))
+    update_last_block_polled(&mut *tx, event_types, Some(block_number)).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
-async fn publish_event_inner(db_pool: &Pool<Postgres>, event: GatewayEvent) -> anyhow::Result<()> {
+async fn publish_event_inner<'e>(
+    executor: impl PgExecutor<'e>,
+    event: GatewayEvent,
+) -> anyhow::Result<()> {
     info!("Storing {:?} in DB...", event.kind);
 
     let otlp_ctx = event.otlp_context;
@@ -51,25 +49,30 @@ async fn publish_event_inner(db_pool: &Pool<Postgres>, event: GatewayEvent) -> a
     let created_at = event.created_at;
     let query_result = match event.kind {
         GatewayEventKind::PublicDecryption(e) => {
-            publish_public_decryption(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            publish_public_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         GatewayEventKind::UserDecryption(e) => {
-            publish_user_decryption(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         GatewayEventKind::PrepKeygen(e) => {
-            publish_prep_keygen_request(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            let params_type: ParamsTypeDb = e.paramsType.try_into()?;
+            publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)
+                .await
         }
         GatewayEventKind::Keygen(e) => {
-            publish_keygen_request(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         GatewayEventKind::Crsgen(e) => {
-            publish_crsgen_request(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            let params_type: ParamsTypeDb = e.paramsType.try_into()?;
+            publish_crsgen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx).await
         }
         GatewayEventKind::PrssInit(id) => {
-            publish_prss_init(db_pool, id, tx_hash, created_at, otlp_ctx).await
+            publish_prss_init(executor, id, tx_hash, created_at, otlp_ctx).await
         }
         GatewayEventKind::KeyReshareSameSet(e) => {
-            publish_key_reshare_same_set(db_pool, e, tx_hash, created_at, otlp_ctx).await
+            let params_type: ParamsTypeDb = e.paramsType.try_into()?;
+            publish_key_reshare_same_set(executor, e, params_type, tx_hash, created_at, otlp_ctx)
+                .await
         }
     }
     .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
@@ -83,8 +86,8 @@ async fn publish_event_inner(db_pool: &Pool<Postgres>, event: GatewayEvent) -> a
     Ok(())
 }
 
-async fn publish_public_decryption(
-    db_pool: &Pool<Postgres>,
+async fn publish_public_decryption<'e>(
+    executor: impl PgExecutor<'e>,
     request: PublicDecryptionRequest,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
@@ -108,13 +111,13 @@ async fn publish_public_decryption(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_user_decryption(
-    db_pool: &Pool<Postgres>,
+async fn publish_user_decryption<'e>(
+    executor: impl PgExecutor<'e>,
     request: UserDecryptionRequest,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
@@ -141,19 +144,19 @@ async fn publish_user_decryption(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_prep_keygen_request(
-    db_pool: &Pool<Postgres>,
+async fn publish_prep_keygen_request<'e>(
+    executor: impl PgExecutor<'e>,
     request: PrepKeygenRequest,
+    params_type: ParamsTypeDb,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let params_type: ParamsTypeDb = request.paramsType.try_into()?;
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(\
             prep_keygen_id, epoch_id, params_type, tx_hash, created_at, otlp_context\
@@ -166,13 +169,13 @@ async fn publish_prep_keygen_request(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_keygen_request(
-    db_pool: &Pool<Postgres>,
+async fn publish_keygen_request<'e>(
+    executor: impl PgExecutor<'e>,
     request: KeygenRequest,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
@@ -187,19 +190,19 @@ async fn publish_keygen_request(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_crsgen_request(
-    db_pool: &Pool<Postgres>,
+async fn publish_crsgen_request<'e>(
+    executor: impl PgExecutor<'e>,
     request: CrsgenRequest,
+    params_type: ParamsTypeDb,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let params_type: ParamsTypeDb = request.paramsType.try_into()?;
     sqlx::query!(
         "INSERT INTO crsgen_requests(\
             crs_id, max_bit_length, params_type, tx_hash, created_at, otlp_context\
@@ -212,13 +215,13 @@ async fn publish_crsgen_request(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_prss_init(
-    db_pool: &Pool<Postgres>,
+async fn publish_prss_init<'e>(
+    executor: impl PgExecutor<'e>,
     id: U256,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
@@ -232,19 +235,19 @@ async fn publish_prss_init(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
-async fn publish_key_reshare_same_set(
-    db_pool: &Pool<Postgres>,
+async fn publish_key_reshare_same_set<'e>(
+    executor: impl PgExecutor<'e>,
     request: KeyReshareSameSet,
+    params_type: ParamsTypeDb,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let params_type: ParamsTypeDb = request.paramsType.try_into()?;
     sqlx::query!(
         "INSERT INTO key_reshare_same_set(\
             prep_keygen_id, key_id, key_reshare_id, params_type, tx_hash, created_at, otlp_context\
@@ -258,15 +261,15 @@ async fn publish_key_reshare_same_set(
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(anyhow::Error::from)
 }
 
 /// Updates the registered last block polled in DB for the given event types.
 #[tracing::instrument(skip_all)]
-pub async fn update_last_block_polled(
-    db_pool: &Pool<Postgres>,
+pub async fn update_last_block_polled<'e>(
+    executor: impl PgExecutor<'e>,
     event_types: &[EventType],
     last_block_polled: Option<u64>,
 ) -> anyhow::Result<()> {
@@ -281,7 +284,7 @@ pub async fn update_last_block_polled(
         last_block_polled.map(|n| n as i64),
         Utc::now(),
     )
-    .execute(db_pool)
+    .execute(executor)
     .await?;
 
     let rows_affected = query_result.rows_affected();
@@ -295,7 +298,7 @@ pub async fn update_last_block_polled(
     } else {
         debug!(
             last_block_polled,
-            "Last block polled for {event_types:?} were not updated: {query_result:?}"
+            "Last block polled for {event_types:?} was not updated: {query_result:?}"
         );
     }
 

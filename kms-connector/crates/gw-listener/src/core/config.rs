@@ -83,7 +83,7 @@ fn default_service_name() -> String {
 }
 
 fn default_decryption_polling() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(500)
 }
 
 fn default_key_management_polling() -> Duration {

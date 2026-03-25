@@ -1,25 +1,29 @@
 use crate::{
-    core::{Config, publish::update_last_block_polled, publish_event},
+    core::{Config, publish::publish_batch},
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use alloy::{
     network::Ethereum,
+    primitives::Address,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::SolEventInterface,
+    sol_types::{SolEventInterface},
 };
+use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    tasks::spawn_with_limit,
     types::{GatewayEvent, GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
+    decryption::Decryption::{DecryptionEvents},
+    kms_generation::KMSGeneration::{
+        KMSGenerationEvents
+    },
 };
 use sqlx::{Pool, Postgres, Row};
 use tokio::{select, task::JoinSet};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
@@ -136,154 +140,153 @@ where
             ),
         };
 
-        let mut last_processed_block = self.get_start_block(from_block_config, event_types).await?;
+        let mut from_block = self.get_start_block(from_block_config, event_types).await?;
+        info!("Started {contract} polling from block {from_block}");
+
         let mut ticker = tokio::time::interval(poll_interval);
         let max_errors = self.config.max_consecutive_polling_errors;
         let mut consecutive_errors: u8 = 0;
-
-        info!(
-            "Started {contract} polling from block {}",
-            last_processed_block
-                .map(|b| (b + 1).to_string())
-                .unwrap_or_else(|| "latest".into())
-        );
-
         loop {
             ticker.tick().await;
-            let current_block = match self.provider.get_block_number().await {
-                Ok(block_number) => block_number,
-                Err(e) => {
-                    consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("Failed to get block number: {e} ({consecutive_errors}/{max_errors})");
-                    if consecutive_errors >= max_errors {
-                        anyhow::bail!("Too many consecutive polling errors for {contract}");
+            match self
+                .fetch_and_publish(contract, contract_address, event_types, from_block)
+                .await
+            {
+                Ok((new_from_block, has_more)) => {
+                    consecutive_errors = 0;
+                    from_block = new_from_block;
+                    if has_more {
+                        ticker.reset_immediately();
                     }
-                    continue;
                 }
-            };
-
-            let from_block = match last_processed_block {
-                Some(last) if last >= current_block => continue,
-                Some(last) => last + 1,
-                None => current_block,
-            };
-
-            let to_block = std::cmp::min(
-                from_block.saturating_add(self.config.get_logs_batch_size.saturating_sub(1)),
-                current_block,
-            );
-
-            let filter = Filter::new()
-                .address(contract_address)
-                .from_block(from_block)
-                .to_block(to_block);
-
-            let logs = match self.provider.get_logs(&filter).await {
-                Ok(logs) => logs,
                 Err(e) => {
+                    // TODO: rename metric (+ docs + alarms?)
+                    EVENT_RECEIVED_ERRORS
+                        .with_label_values(&[contract.to_string().to_lowercase()])
+                        .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!(
-                        "Failed to get logs for {contract}: {e} ({consecutive_errors}/{max_errors})"
-                    );
+                    warn!("{contract} error: {e} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
-                        anyhow::bail!("Too many consecutive polling errors for {contract}");
+                        anyhow::bail!("Too many consecutive errors for {contract}");
                     }
-                    continue;
                 }
-            };
-
-            consecutive_errors = 0;
-
-            for log in logs {
-                self.process_log(contract, log).await;
-            }
-
-            last_processed_block = Some(to_block);
-            self.update_block_tracking(event_types, to_block).await?;
-
-            if to_block < current_block {
-                ticker.reset_immediately();
             }
         }
     }
 
-    /// Decodes a log and dispatches it to the appropriate event handler.
-    async fn process_log(&self, contract: MonitoredContract, log: Log) {
-        let contract_label = contract.to_string().to_lowercase();
-        let event: GatewayEventKind = match contract {
-            MonitoredContract::Decryption => match DecryptionEvents::decode_log(&log.inner) {
-                Ok(event) => match event.data {
-                    DecryptionEvents::PublicDecryptionRequest(e) => e.into(),
-                    DecryptionEvents::UserDecryptionRequest(e) => e.into(),
-                    _ => return trace!("Ignoring Decryption event: {log:?}"),
-                },
-                Err(e) => {
-                    EVENT_RECEIVED_ERRORS
-                        .with_label_values(&[&contract_label])
-                        .inc();
-                    return warn!("Failed to decode Decryption event: {e}");
-                }
-            },
-            MonitoredContract::KmsGeneration => match KMSGenerationEvents::decode_log(&log.inner) {
-                Ok(event) => match event.data {
-                    KMSGenerationEvents::PrepKeygenRequest(e) => e.into(),
-                    KMSGenerationEvents::KeygenRequest(e) => e.into(),
-                    KMSGenerationEvents::CrsgenRequest(e) => e.into(),
-                    KMSGenerationEvents::PRSSInit(e) => e.into(),
-                    KMSGenerationEvents::KeyReshareSameSet(e) => e.into(),
-                    _ => return trace!("Ignoring KMSGeneration event: {log:?}"),
-                },
-                Err(e) => {
-                    EVENT_RECEIVED_ERRORS
-                        .with_label_values(&[&contract_label])
-                        .inc();
-                    return warn!("Failed to decode KMSGeneration event: {e}");
-                }
-            },
-        };
-
-        EVENT_RECEIVED_COUNTER
-            .with_label_values(&[EventType::from(&event).as_str()])
-            .inc();
-        let db = self.db_pool.clone();
-        spawn_with_limit(handle_gateway_event(db, event, log)).await;
-    }
-
-    /// Updates block tracking for all event types in a group.
-    async fn update_block_tracking(
-        &self,
-        event_types: &[EventType],
-        block_number: u64,
-    ) -> anyhow::Result<()> {
-        update_last_block_polled(&self.db_pool, event_types, Some(block_number)).await
-    }
-
-    /// Determines the last processed block for a polling group from config or DB.
+    /// Fetches logs for a block range, decodes them, and publishes them in a single transaction.
     ///
-    /// Returns the last **completed** block, so that the polling loop starts from `last + 1`.
+    /// Returns `(new_from_block, has_more_blocks)`.
+    async fn fetch_and_publish(
+        &self,
+        contract: MonitoredContract,
+        contract_address: Address,
+        event_types: &[EventType],
+        from_block: u64,
+    ) -> anyhow::Result<(u64, bool)> {
+        let current_block = self.provider.get_block_number().await?;
+
+        if from_block >= current_block {
+            return Ok((from_block, false));
+        }
+
+        let to_block = std::cmp::min(
+            from_block.saturating_add(self.config.get_logs_batch_size.saturating_sub(1)),
+            current_block,
+        );
+
+        let signatures = event_types
+            .iter()
+            .map(|e| e.signature_hash())
+            .collect::<Vec<_>>();
+        let filter = Filter::new()
+            .address(contract_address)
+            .event_signature(signatures)
+            .from_block(from_block)
+            .to_block(to_block);
+
+        let logs = self.provider.get_logs(&filter).await?;
+        let events = Self::prepare_events(contract, logs)?;
+        publish_batch(&self.db_pool, events, event_types, to_block).await?;
+
+        Ok((to_block.saturating_add(1), to_block < current_block))
+    }
+
+    /// Decodes a log into a `GatewayEventKind`.
+    fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<GatewayEventKind> {
+        match contract {
+            MonitoredContract::Decryption => {
+                let event = DecryptionEvents::decode_log(&log.inner)
+                    .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
+                match event.data {
+                    DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+                    DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+                    _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
+                }
+            }
+            MonitoredContract::KmsGeneration => {
+                let event = KMSGenerationEvents::decode_log(&log.inner)
+                    .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?;
+                match event.data {
+                    KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::PRSSInit(e) => Ok(e.into()),
+                    KMSGenerationEvents::KeyReshareSameSet(e) => Ok(e.into()),
+                    _ => Err(anyhow!("Unexpected KMSGeneration event: {log:?}")),
+                }
+            }
+        }
+    }
+
+    /// Decodes logs and prepares `GatewayEvent` structs with OTLP context and metrics.
+    fn prepare_events(
+        contract: MonitoredContract,
+        logs: Vec<Log>,
+    ) -> anyhow::Result<Vec<GatewayEvent>> {
+        let mut events = Vec::with_capacity(logs.len());
+        for log in logs {
+            let event_kind = Self::decode_log(contract, &log)?;
+            EVENT_RECEIVED_COUNTER
+                .with_label_values(&[EventType::from(&event_kind).as_str()])
+                .inc();
+
+            let span = info_span!("handle_gateway_event", event = %event_kind);
+            let otlp_ctx = PropagationContext::inject(&span.context());
+            events.push(GatewayEvent::new(
+                event_kind,
+                log.transaction_hash,
+                otlp_ctx,
+            ));
+        }
+        Ok(events)
+    }
+
+    /// Determines the block to start event listening from.
     async fn get_start_block(
         &self,
         from_block_config: Option<u64>,
         event_types: &[EventType],
-    ) -> anyhow::Result<Option<u64>> {
+    ) -> anyhow::Result<u64> {
         if let Some(from_block) = from_block_config {
             info!("Found configured from_block_number ({from_block}) for polling");
-            // Subtract 1 because the polling loop will do `last + 1` to get the first block.
-            return Ok(Some(from_block.saturating_sub(1)));
+            return Ok(from_block);
         }
 
-        let mut min_block: Option<u64> = None;
+        let mut min_last_processed_block: Option<u64> = None;
         for &event_type in event_types {
-            if let Some(block) = self.get_last_block_polled_from_db(event_type).await? {
-                min_block = Some(match min_block {
-                    Some(current_min) => std::cmp::min(current_min, block),
-                    None => block,
-                });
+            if let Some(last) = self.get_last_block_polled_from_db(event_type).await? {
+                min_last_processed_block = match min_last_processed_block {
+                    Some(current) => Some(std::cmp::min(current, last)),
+                    None => Some(last),
+                };
             }
         }
 
-        // DB stores the last completed block — return as-is (loop adds +1).
-        Ok(min_block)
+        match min_last_processed_block {
+            Some(last_block_polled) => Ok(last_block_polled.saturating_add(1)),
+            None => Ok(self.provider.get_block_number().await?),
+        }
     }
 
     async fn get_last_block_polled_from_db(
@@ -303,19 +306,6 @@ where
             return Ok(None);
         };
         Ok(Some(block_number as u64))
-    }
-}
-
-/// Main function used to trace a single event handling across all Connector's services.
-#[tracing::instrument(skip_all, fields(event = %event_kind))]
-async fn handle_gateway_event(db_pool: Pool<Postgres>, event_kind: GatewayEventKind, log: Log) {
-    let event = GatewayEvent::new(
-        event_kind,
-        log.transaction_hash,
-        PropagationContext::inject(&tracing::Span::current().context()),
-    );
-    if let Err(err) = publish_event(&db_pool, event).await {
-        error!("Failed to publish event: {err}");
     }
 }
 
