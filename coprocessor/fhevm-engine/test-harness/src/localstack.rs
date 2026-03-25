@@ -24,10 +24,12 @@ pub struct LocalstackContainer {
 
 pub async fn start_localstack() -> anyhow::Result<LocalstackContainer> {
     let host_port = pick_free_port();
-    let container = GenericImage::new("localstack/localstack", "4.14.0")
+    let auth_token = std::env::var("LOCALSTACK_AUTH_TOKEN").unwrap_or_default();
+    let container = GenericImage::new("localstack/localstack", "stable")
         .with_exposed_port(LOCALSTACK_PORT.into())
         .with_wait_for(WaitFor::message_on_stdout("Ready."))
         .with_mapped_port(host_port, LOCALSTACK_PORT.into())
+        .with_env_var("LOCALSTACK_AUTH_TOKEN", &auth_token)
         .start()
         .await?;
     Ok(LocalstackContainer {
