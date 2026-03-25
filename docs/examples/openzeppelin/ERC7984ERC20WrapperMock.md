@@ -1,4 +1,4 @@
-This example demonstrates how to wrap between the ERC20 token into a ERC7984 token using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+Swapping from a non-confidential ERC-20 to a confidential ERC-7984 is simple and done within the `ERC7984ERC20Wrapper`. This example demonstrates how to wrap an ERC-20 token into an ERC-7984 confidential token using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -57,19 +57,19 @@ describe('ERC7984ERC20WrapperExample', function () {
     // Deploy the wrapper
     wrapper = await ethers.deployContract('ERC7984ERC20WrapperExample', [
       await erc20.getAddress(),
-      'Wrapped Confidential Token',
-      'WCTKN',
+      'Confidential Token',
+      'cTKN',
       'https://example.com/wrapped'
     ]);
   });
 
   describe('Initialization', function () {
     it('should set the correct name', async function () {
-      expect(await wrapper.name()).to.equal('Wrapped Confidential Token');
+      expect(await wrapper.name()).to.equal('Confidential Token');
     });
 
     it('should set the correct symbol', async function () {
-      expect(await wrapper.symbol()).to.equal('WCTKN');
+      expect(await wrapper.symbol()).to.equal('cTKN');
     });
 
     it('should reference the correct underlying token', async function () {

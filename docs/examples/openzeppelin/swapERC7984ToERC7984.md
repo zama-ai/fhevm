@@ -1,4 +1,8 @@
-This example demonstrates how to swap between two confidential ERC7984 tokens using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+Swapping from a confidential ERC-7984 to another confidential ERC-7984 is a bit more complex although quite simple given the usage of the `FHE` library. This example demonstrates a **1:1 exchange ratio** swap between two confidential ERC-7984 tokens using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+
+{% hint style="info" %}
+This is a simplified example using a 1:1 exchange ratio. In production, token swaps with proper pricing would typically happen through a DEX contract such as an AMM or intent-based routing.
+{% endhint %}
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -66,19 +70,19 @@ describe('ERC7984ERC20WrapperExample', function () {
     // Deploy the wrapper
     wrapper = await ethers.deployContract('ERC7984ERC20WrapperExample', [
       await erc20.getAddress(),
-      'Wrapped Confidential Token',
-      'WCTKN',
+      'Confidential Token',
+      'cTKN',
       'https://example.com/wrapped'
     ]);
   });
 
   describe('Initialization', function () {
     it('should set the correct name', async function () {
-      expect(await wrapper.name()).to.equal('Wrapped Confidential Token');
+      expect(await wrapper.name()).to.equal('Confidential Token');
     });
 
     it('should set the correct symbol', async function () {
-      expect(await wrapper.symbol()).to.equal('WCTKN');
+      expect(await wrapper.symbol()).to.equal('cTKN');
     });
 
     it('should reference the correct underlying token', async function () {

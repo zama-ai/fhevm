@@ -1,4 +1,8 @@
-This example demonstrates how to swap between a confidential token - the ERC7984 and the ERC20 tokens using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+Swapping from a confidential token to a non-confidential token is the most complex since the decrypted data must be accessed to accurately complete the request. This example demonstrates unwrapping a confidential ERC-7984 token back to a non-confidential ERC-20 token using a **1:1 exchange ratio** with OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+
+{% hint style="info" %}
+This is a simplified example using a 1:1 exchange ratio. The swap requires a two-step process: first the confidential transfer, then a finalization step after the encrypted amount has been decrypted.
+{% endhint %}
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -85,19 +89,19 @@ describe('ERC7984ERC20WrapperExample', function () {
     // Deploy the wrapper
     wrapper = await ethers.deployContract('ERC7984ERC20WrapperExample', [
       await erc20.getAddress(),
-      'Wrapped Confidential Token',
-      'WCTKN',
+      'Confidential Token',
+      'cTKN',
       'https://example.com/wrapped'
     ]);
   });
 
   describe('Initialization', function () {
     it('should set the correct name', async function () {
-      expect(await wrapper.name()).to.equal('Wrapped Confidential Token');
+      expect(await wrapper.name()).to.equal('Confidential Token');
     });
 
     it('should set the correct symbol', async function () {
-      expect(await wrapper.symbol()).to.equal('WCTKN');
+      expect(await wrapper.symbol()).to.equal('cTKN');
     });
 
     it('should reference the correct underlying token', async function () {

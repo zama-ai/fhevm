@@ -2,10 +2,6 @@ This section contains comprehensive guides and examples for using [OpenZeppelin'
 
 The library includes the ERC7984 confidential fungible token standard, an ERC20-to-ERC7984 wrapper, confidential vesting wallets, and encrypted voting utilities. See the [official OpenZeppelin documentation](https://docs.openzeppelin.com/confidential-contracts) for more details.
 
-{% hint style="warning" %}
-This is an **experimental library**. Developing contracts for confidentiality requires extreme care — many functions do not revert on failure as they would in normal contracts.
-{% endhint %}
-
 ## Getting Started
 
 This guide will help you set up a development environment for working with OpenZeppelin's confidential contracts and FHEVM.
@@ -56,8 +52,7 @@ Before you begin, ensure you have the following installed:
 Explore the following guides to learn how to implement confidential contracts using OpenZeppelin's library:
 
 - **[ERC7984 Standard](erc7984.md)** - Learn about the ERC7984 standard for confidential tokens
-- **[ERC7984 Tutorial](erc7984-tutorial.md)** - Step-by-step tutorial for implementing ERC7984 tokens
-- **[ERC7984 to ERC20 Wrapper](ERC7984ERC20WrapperMock.md)** - Convert between confidential and public token standards
-- **[Swap ERC7984 to ERC20](swapERC7984ToERC20.md)** - Implement cross-standard token swapping
+- **[ERC-20 to Wrapped ERC-7984](ERC7984ERC20WrapperMock.md)** - Wrap ERC-20 tokens into confidential ERC-7984 tokens
+- **[Swap ERC7984 to ERC20](swapERC7984ToERC20.md)** - Unwrap confidential tokens back to ERC-20
 - **[Swap ERC7984 to ERC7984](swapERC7984ToERC7984.md)** - Confidential token-to-token swapping
 - **[Vesting Wallet](vesting-wallet.md)** - Implement confidential token vesting mechanisms
