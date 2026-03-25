@@ -25,6 +25,24 @@ describe("stack", () => {
     expect(state.requiresGitHub).toBe(false);
   });
 
+  test("rejects multi-chain scenarios on network targets during preview", () => {
+    const bundle = {
+      ...presetBundle("latest-main", "abcdef0", "testnet.json"),
+      target: "testnet" as const,
+      lockName: "testnet.json",
+    };
+    const multiChainScenario: State["scenario"] = {
+      ...defaultScenario,
+      hostChains: [
+        defaultScenario.hostChains[0],
+        { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+      ],
+    };
+    expect(() => previewStateFromBundle({ overrides: [], lockFile: "/tmp/testnet-lock.json" }, bundle, multiChainScenario)).toThrow(
+      "--target testnet does not currently support multi-chain scenarios",
+    );
+  });
+
   test("upgrade plan restarts runtime services for a full kms-connector override", () => {
     const plan = resolveUpgradePlan({ overrides: [{ group: "kms-connector" }], scenario: defaultScenario }, "kms-connector");
     expect(plan.runtimeServices).toEqual([
