@@ -117,8 +117,8 @@ jobs:
 
     - name: Compile tests with coverage instrumentation
       run: |
-        # shellcheck disable=SC1090
-        source <(cargo llvm-cov show-env --sh)
+        cargo llvm-cov show-env --sh > /tmp/llvm-cov-env.sh
+        source /tmp/llvm-cov-env.sh
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
         SQLX_OFFLINE=true \
         cargo test --no-run --workspace --profile coverage
