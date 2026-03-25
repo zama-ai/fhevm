@@ -94,8 +94,8 @@ gateway:
       capacity: 11000
       safety_margin: 1000
   contracts:
-    decryption_address: "0x35760912360E875DA50D40a74305575c23D55783"
-    input_verification_address: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+    decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
 log:
 
