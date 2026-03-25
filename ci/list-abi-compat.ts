@@ -168,6 +168,7 @@ const baselineRoot = join(tempRoot, "baseline");
 const targetRoot = toRef ? join(tempRoot, "target") : repoRoot;
 
 let totalFailures = 0;
+let runFailed = false;
 
 try {
   logStep(`Using temporary workspace at ${tempRoot}`);
@@ -185,6 +186,7 @@ try {
     totalFailures += printPackageReport(baselineRoot, targetRoot, pkg);
   }
 } catch (error) {
+  runFailed = true;
   const message = error instanceof Error ? error.message : String(error);
   console.error(`\nABI compatibility run failed: ${message}`);
 } finally {
@@ -208,6 +210,10 @@ try {
   }
   rmSync(tempRoot, { recursive: true, force: true });
   logStep(`Removed temporary workspace ${tempRoot}`);
+}
+
+if (runFailed) {
+  process.exit(1);
 }
 
 if (totalFailures > 0) {
