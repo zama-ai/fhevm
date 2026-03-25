@@ -82,6 +82,7 @@ import type {
   StepName,
   UpOptions,
   VersionBundle,
+  VersionTarget,
 } from "../types";
 import { STEP_NAMES } from "../types";
 import {
@@ -1496,22 +1497,34 @@ const startStep = (state: State, options: Pick<UpOptions, "resume" | "fromStep">
 const targetNeedsGitHub = (options: Pick<UpOptions, "target" | "lockFile">) =>
   !options.lockFile && options.target !== "latest-supported";
 
+/** Rejects topology combinations that are not yet supported for a selected target. */
+const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["scenario"]) => {
+  if (NETWORK_TARGETS.has(target) && scenario.hostChains.length > 1) {
+    throw new PreflightError(
+      `--target ${target} does not currently support multi-chain scenarios; rerun without --scenario multi-chain or use latest-main`,
+    );
+  }
+};
+
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
   options: Pick<UpOptions, "overrides" | "lockFile">,
   bundle: VersionBundle,
   scenario: State["scenario"],
-): State => ({
-  target: bundle.target,
-  lockPath: "",
-  requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
-  versions: bundle,
-  overrides: options.overrides,
-  scenario,
-  scenarioSourcePath: scenario.sourcePath,
-  completedSteps: [],
-  updatedAt: new Date().toISOString(),
-});
+): State => {
+  assertSupportedTargetScenario(bundle.target, scenario);
+  return {
+    target: bundle.target,
+    lockPath: "",
+    requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
+    versions: bundle,
+    overrides: options.overrides,
+    scenario,
+    scenarioSourcePath: scenario.sourcePath,
+    completedSteps: [],
+    updatedAt: new Date().toISOString(),
+  };
+};
 
 const bootstrapState = async (options: UpOptions) => {
   console.log(`[up] target=${options.target}`);
@@ -1519,6 +1532,7 @@ const bootstrapState = async (options: UpOptions) => {
   const resolveStarted = Date.now();
   const resolved = await resolveBundle(options, process.env);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
+  assertSupportedTargetScenario(resolved.bundle.target, scenario);
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
   return {

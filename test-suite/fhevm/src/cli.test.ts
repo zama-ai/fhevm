@@ -130,6 +130,12 @@ describe("cli", () => {
     expect(result.stderr).toContain("Unsupported target bogus");
   });
 
+  test("rejects multi-chain scenarios on network targets in dry-run mode", async () => {
+    const result = await execCli(["up", "--target", "testnet", "--scenario", "multi-chain", "--dry-run"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--target testnet does not currently support multi-chain scenarios");
+  });
+
   test("requires --sha for sha target", async () => {
     const result = await execCli(["up", "--target", "sha"]);
     expect(result.code).toBe(1);
