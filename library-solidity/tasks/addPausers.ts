@@ -1,8 +1,6 @@
-import dotenv from 'dotenv';
 import { task, types } from 'hardhat/config';
-import path from 'path';
 
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 // Add pausers to the PauserSet contract
 // Note: Internal PauserSet address is defined in the `addresses/` directory. It should be used
@@ -24,7 +22,7 @@ task('task:addHostPausers')
     }
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join('fhevmTemp/addresses/', '.env.host'), override: true });
+      loadHostAddresses();
     }
     const pauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
 

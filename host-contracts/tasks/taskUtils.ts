@@ -1,9 +1,7 @@
-import dotenv from 'dotenv';
-import fs from 'fs';
-import { task } from 'hardhat/config';
-import type { TaskArguments } from 'hardhat/types';
+import { task, types } from 'hardhat/config';
 
 import { InputVerifier, KMSVerifier } from '../types';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Faucet
@@ -27,18 +25,18 @@ task('task:faucetToPrivate')
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:getKmsSigners')
-  .addOptionalParam(
-    'customKmsVerifierAddress',
-    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.host',
+  .addParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
   )
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
     const factory = await ethers.getContractFactory('./contracts/KMSVerifier.sol:KMSVerifier');
-    let kmsAdd;
-    if (taskArguments.customKmsVerifierAddress) {
-      kmsAdd = taskArguments.customKmsVerifierAddress;
-    } else {
-      kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
     }
+    const kmsAdd = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     const kmsVerifier = factory.attach(kmsAdd).connect(ethers.provider) as KMSVerifier;
     const listCurrentKMSSigners = await kmsVerifier.getKmsSigners();
     console.log('The list of current KMS Signers stored inside KMSVerifier contract is: ', listCurrentKMSSigners);
@@ -49,18 +47,18 @@ task('task:getKmsSigners')
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:getCoprocessorSigners')
-  .addOptionalParam(
-    'customInputVerifierAddress',
-    'Use a custom address for the InputVerifier contract instead of the default one - ie stored inside .env.host',
+  .addParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
   )
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
     const factory = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier');
-    let inputVerifierAdd;
-    if (taskArguments.customInputVerifierAddress) {
-      inputVerifierAdd = taskArguments.customInputVerifierAddress;
-    } else {
-      inputVerifierAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
     }
+    const inputVerifierAdd = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
     const inputVerifier = factory.attach(inputVerifierAdd).connect(ethers.provider) as InputVerifier;
     const listCurrentCoprocessorSigners = await inputVerifier.getCoprocessorSigners();
     console.log(

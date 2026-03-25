@@ -355,28 +355,19 @@ task('task:upgradeInputVerifier')
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-    await checkImplementationArtifacts('InputVerifier', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
       loadHostAddresses();
     }
-    const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
-    let initialSigners: string[] = [];
+    const initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < +numSigners; idx++) {
-      const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
-      initialSigners.push(inputSignerAddress);
+      initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     }
-
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+    await upgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
       initialSigners,
       coprocessorThreshold,
     ]);
@@ -421,29 +412,10 @@ task('task:upgradeHCULimit')
     '20000000',
     types.string,
   )
-  .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      useInternalProxyAddress,
-      verifyContract,
-      hcuCapPerBlock,
-      maxHcuDepthPerTx,
-      maxHcuPerTx,
-    }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-    await checkImplementationArtifacts('HCULimit', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadHostAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      BigInt(hcuCapPerBlock),
-      BigInt(maxHcuDepthPerTx),
-      BigInt(maxHcuPerTx),
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
+      BigInt(taskArgs.hcuCapPerBlock),
+      BigInt(taskArgs.maxHcuDepthPerTx),
+      BigInt(taskArgs.maxHcuPerTx),
     ]);
   });

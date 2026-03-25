@@ -1,5 +1,5 @@
 import { task, types } from "hardhat/config";
-import type { TaskArguments } from "hardhat/types";
+import type { HardhatEthersHelpers, TaskArguments } from "hardhat/types";
 
 import { GatewayConfig } from "../typechain-types";
 
@@ -7,7 +7,7 @@ import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 async function loadGatewayConfigContract(
   useInternalProxyAddress: boolean,
-  ethers: typeof import("hardhat").ethers,
+  ethers: HardhatEthersHelpers,
 ): Promise<GatewayConfig> {
   if (useInternalProxyAddress) {
     loadGatewayAddresses();
