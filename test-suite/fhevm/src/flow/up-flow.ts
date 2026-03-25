@@ -166,6 +166,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
   const topology = topologyForState(state);
   const overrides = visibleOverrides(state);
   const isMultiChain = state.scenario.hostChains.length > 1;
+  const topologyLabel = `${topology.count} coprocessor${topology.count === 1 ? "" : "s"}, threshold ${topology.threshold}`;
   console.log(`[plan] profile=${state.target}`);
   if (overrides.length) {
     console.log(`[plan] overrides=${overrides.map(describeOverride).join(", ")}`);
@@ -173,7 +174,7 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
       console.log(`[warn] ${warning}`);
     }
   }
-  console.log(`[plan] topology=n${topology.count}/t${topology.threshold}${isMultiChain ? " multi-chain" : ""}`);
+  console.log(`[plan] topology=n${topology.count}/t${topology.threshold} (${topologyLabel})${isMultiChain ? " multi-chain" : ""}`);
   console.log(`[plan] steps=${STEP_NAMES.slice(stateStepIndex(fromStep ?? STEP_NAMES[0])).join(" -> ")}`);
 };
 
@@ -1592,7 +1593,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
     await preflight(state, false, state.requiresGitHub);
     printBundle(state.versions, { detailed: true });
     printPlan(state, options.fromStep ?? startStep(state, options));
-    console.log("[dry-run] resume preview uses persisted state only; no state or containers were changed");
+    console.log("[dry-run] resume preview uses persisted state only; no runtime state or containers were changed");
     return;
   }
   console.log(`[up] target=${options.target}`);
@@ -1603,7 +1604,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   await preflight(state, false, state.requiresGitHub);
   printBundle(state.versions, { detailed: true });
   printPlan(state, options.fromStep);
-  console.log("[dry-run] preflight passed; no state or containers were changed");
+  console.log("[dry-run] preflight passed; no runtime state or containers were changed");
 };
 
 /** Deletes generated runtime artifacts while keeping persisted stack state. */
@@ -1707,7 +1708,9 @@ export const status = async () => {
         console.log(`[warn] ${warning}`);
       }
     }
-    console.log(`[topology] n=${topology.count} t=${topology.threshold}${state.scenario.hostChains.length > 1 ? " multi-chain" : ""}`);
+    console.log(
+      `[topology] n=${topology.count} t=${topology.threshold} (${topology.count} coprocessor${topology.count === 1 ? "" : "s"}, threshold ${topology.threshold})${state.scenario.hostChains.length > 1 ? " multi-chain" : ""}`,
+    );
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
       for (const instance of state.scenario.instances) {
@@ -1771,7 +1774,7 @@ export const logs = async (service: string | undefined, options: { follow: boole
     containers = pickContainers(all.stdout);
   }
   if (!containers.length) {
-    throw new PreflightError(`No containers match ${service ?? "fhevm"}`);
+    throw new PreflightError(`No containers match ${service ?? "fhevm"}; run \`fhevm-cli status\` for current stack state`);
   }
   const exactMatch = requested
     ? containers.find((item) => item === requested) ?? containers.find((item) => item.endsWith(`-${requested}`))

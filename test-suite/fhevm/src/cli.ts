@@ -4,7 +4,7 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
-import { test } from "./commands/test";
+import { listTestProfiles, test } from "./commands/test";
 import {
   clean,
   down,
@@ -85,7 +85,7 @@ const root = defineCommand({
       },
     }),
     logs: defineCommand({
-      meta: { name: "logs", description: "Follow container logs for a specified or first container." },
+      meta: { name: "logs", description: "Follow container logs for a specified service, or the first running fhevm container." },
       args: {
         service: { type: "positional", description: "Container alias or service name to target.", required: false },
         "no-follow": { type: "boolean", description: "Print recent logs and exit instead of following." },
@@ -113,7 +113,12 @@ const root = defineCommand({
         parallel: { type: "boolean", description: "Run supported test suites in parallel." },
       },
       async run({ args }) {
-        await test(asString(args.testName), {
+        const testName = asString(args.testName);
+        if (testName === "list") {
+          listTestProfiles();
+          return;
+        }
+        await test(testName, {
           grep: asString(args.grep),
           network: asString(args.network) ?? "staging",
           verbose: asBool(args.verbose),

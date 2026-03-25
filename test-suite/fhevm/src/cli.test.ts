@@ -91,6 +91,13 @@ describe("cli", () => {
     expect(output).toContain("[TESTNAME]");
   });
 
+  test("lists bundled test profiles", async () => {
+    const result = await execCli(["test", "list"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("standard");
+    expect(result.stdout).toContain("multi-chain-isolation");
+  });
+
   test("lists bundled scenarios", async () => {
     const result = await execCli(["scenario", "list"]);
     expect(result.code).toBe(0);
@@ -136,6 +143,7 @@ describe("cli", () => {
     expect(result.code).toBe(0);
     expect(output).toContain("fhevm-cli logs");
     expect(output).toContain("[SERVICE]");
+    expect(output).toContain("first running fhevm container");
   });
 
   test("places extra docker exec flags before the test container", () => {

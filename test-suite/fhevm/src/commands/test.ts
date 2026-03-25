@@ -39,6 +39,44 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
+const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
+  light: "Run the lightweight smoke suite.",
+  standard: "Run the default CI suite for the active topology.",
+  heavy: "Run the long operators suite.",
+  "paused-host-contracts": "Run pause-mode checks with host contracts paused.",
+  "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
+  "input-proof": "Run basic user input proof coverage.",
+  "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
+  "user-decryption": "Run user decryption coverage.",
+  "delegated-user-decryption": "Run delegated user decryption coverage.",
+  "public-decryption": "Run async public decryption coverage.",
+  "public-decrypt-http-ebool": "Run HTTP public decrypt coverage for ebool payloads.",
+  "public-decrypt-http-mixed": "Run mixed HTTP public decrypt coverage.",
+  random: "Run random generation coverage.",
+  "random-subset": "Run a narrower random generation subset.",
+  operators: "Run manual operator workflows.",
+  "hcu-block-cap": "Run HCU block cap scenarios.",
+  erc20: "Run ERC20 transfer coverage.",
+  "negative-acl": "Run negative ACL scenarios.",
+  "multi-chain-isolation": "Run multi-chain state isolation coverage.",
+  "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
+  "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+};
+
+/** Prints the supported named test profiles with short descriptions. */
+export const listTestProfiles = () => {
+  for (const name of TEST_PROFILE_NAMES) {
+    const description = TEST_PROFILE_DESCRIPTIONS[name] ?? "Run this named test profile.";
+    const suiteTags = [
+      LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
+      STANDARD_TEST_PROFILES.includes(name as (typeof STANDARD_TEST_PROFILES)[number]) ? "standard" : undefined,
+      HEAVY_TEST_PROFILES.includes(name as (typeof HEAVY_TEST_PROFILES)[number]) ? "heavy" : undefined,
+      name === "multi-chain-isolation" ? "multi-chain" : undefined,
+    ].filter(Boolean);
+    console.log(`${name}${suiteTags.length ? ` - ${suiteTags.join(", ")}` : ""}`);
+    console.log(`  ${description}`);
+  }
+};
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -419,6 +457,10 @@ const runDbStateRevert = async (
 
 /** Runs a named test profile, custom grep, or the standard/heavy CI suites. */
 export const test = async (testName: string | undefined, options: TestOptions) => {
+  if (testName === "list") {
+    listTestProfiles();
+    return;
+  }
   if (testName && !TEST_PROFILE_NAMES.includes(testName)) {
     throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
   }
