@@ -110,7 +110,7 @@ jobs:
           # the full union of constants with consistent values (PR wins for shared).
           (cd "$PACKAGE" && make ensure-addresses)
           (cd "baseline/$PACKAGE" && make ensure-addresses)
-          bun ci/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
+          bun ci/abi-compat/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
