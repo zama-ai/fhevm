@@ -176,23 +176,18 @@ jobs:
 
       # ── Phase 2: Authenticate & install CLI (before lockdown) ──────────
 
-      - name: Enforce PR is open (and not draft)
+      - name: Enforce PR is open
         env:
           PR_NUMBER: ${{ github.event.issue.number }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state,isDraft --jq '.state')
-          DRAFT=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json isDraft --jq '.isDraft')
+          STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
 
-          echo "PR state: $STATE, draft: $DRAFT"
+          echo "PR state: $STATE"
 
           if [ "$STATE" != "OPEN" ]; then
             echo "::error::PR must be OPEN (got $STATE)"
-            exit 1
-          fi
-          if [ "$DRAFT" = "true" ]; then
-            echo "::error::PR must not be draft"
             exit 1
           fi
 
