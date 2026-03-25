@@ -449,7 +449,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-unpauseAllGatewayContracts}.
-     * If all of the contracts are not paused, the function will revert.
+     * If none of the contracts are paused, the function will revert.
      */
     function unpauseAllGatewayContracts() external virtual onlyOwner {
         if (!DECRYPTION.paused() && !INPUT_VERIFICATION.paused()) {
