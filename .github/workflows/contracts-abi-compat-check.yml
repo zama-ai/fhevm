@@ -1,5 +1,7 @@
 name: contracts-abi-compat-check
 
+# Default to no token permissions at the workflow level; each job opts into the
+# minimum read scopes it needs.
 permissions: {}
 
 on:
