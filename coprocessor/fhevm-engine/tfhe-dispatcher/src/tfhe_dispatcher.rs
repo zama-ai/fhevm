@@ -12,6 +12,7 @@ use crate::{cli::Args, dispatcher::Dispatcher};
 
 type SharedDispatcher = Arc<RwLock<Dispatcher<DefaultSender>>>;
 
+/// Runs the main loop of the tfhe-dispatcher with retry logic and graceful shutdown handling.
 pub async fn run_tfhe_dispatcher(
     args: Args,
     cancel_token: CancellationToken,
@@ -19,19 +20,17 @@ pub async fn run_tfhe_dispatcher(
     info!(target: "tfhe_dispatcher", "Starting tfhe-dispatcher service");
 
     loop {
-        let cancel = cancel_token.clone();
+        if cancel_token.is_cancelled() {
+            info!("Cancellation requested, stopping dispatcher");
+            return Ok(());
+        }
 
-        if let Err(err) = tfhe_dispatcher_loop(&args, cancel).await {
+        if let Err(err) = tfhe_dispatcher_loop(&args, cancel_token.clone()).await {
             error!(
                 target: "tfhe_dispatcher",
                 { error = err },
                 "Error in dispatcher cycle, retrying shortly"
             );
-        }
-
-        if cancel_token.is_cancelled() {
-            info!("Cancellation requested, stopping dispatcher");
-            return Ok(());
         }
 
         sleep(Duration::from_secs(5)).await;
@@ -44,6 +43,7 @@ async fn tfhe_dispatcher_loop(
     args: &Args,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // TODO: make this configurable with new msg_broker API is integrated
     let sender = create_default_sender(
         &args.rmq_uri,
         "shared_tfhe_queue",
@@ -68,45 +68,69 @@ async fn tfhe_dispatcher_loop(
     loop {
         tokio::select! {
             biased;
-
             _ = cancel_token.cancelled() => {
                 info!("Cancellation requested, exiting dispatcher cycle");
                 return Ok(());
             }
-            res = fhe_events.recv_and_handle(|batch: Vec<msg::FheLog>, _, state| async move {
-                info!(batch_size = batch.len(), "msg: received batch of FHE log messages");
-                let mut state = state.write().unwrap();
-                let dispatched_count = state.dispatch(&batch);
-
-                info!(dispatched_count = dispatched_count, "msg: processed batch of FHE log messages");
-                Ok(MessageResult::Ack)
-            }) => {
+            res = fhe_events.recv_and_handle(handle_fhe_events) => {
                 if res.is_err() {
+                    info!("FHE events receiver channel closed");
                     return Ok(());
                 }
             }
-            res = fhe_partition_complete.recv_and_handle(|partition: msg::ExecutablePartition, _, state| async move {
-                info!(
-                    pid = %partition.id(),
-                    "msg: received partition execution completion message"
-                );
-                let mut state = state.write().unwrap();
-                state.on_partition_execution_complete(&partition);
-
-                // Check and dispatch any new executable partitions that
-                // may have become ready after this completion
-                let dispatched_count = state.dispatch(&[]);
-
-                info!(dispatched_count = dispatched_count, "msg: dispatched new executable partitions after completion");
-                Ok(MessageResult::Ack)
-            }) => {
+            res = fhe_partition_complete.recv_and_handle(handle_partition_completion) => {
                 if res.is_err() {
+                    info!("FHE partition complete channel closed");
                     return Ok(());
                 }
             }
              _ = tick.tick() => {
-                 info!("on-idle event");
+                 // Periodic on-idle heartbeat indicating the dispatcher loop is still running,
+                 // even when there are no FHE events or completion messages to process.
+                 // TODO: Add periodic maintenance tasks here if needed ( metrics, health checks).
+                 info!("heartbeat");
+                 let state = state.read().unwrap();
+                 state.report();
+
             }
         }
     }
+}
+
+async fn handle_fhe_events(
+    batch: Vec<msg::FheLog>,
+    _: Vec<u8>,
+    state: SharedDispatcher,
+) -> Result<MessageResult, Box<dyn std::error::Error + Send + Sync>> {
+    info!(batch_size = batch.len(), "newmsg, received FHE logs");
+
+    let mut state = state.write().unwrap();
+    let dispatched = state.dispatch(&batch);
+
+    info!(dispatched, "newmsg, processed FHE logs");
+
+    Ok(MessageResult::Ack)
+}
+
+async fn handle_partition_completion(
+    partition: msg::ExecutablePartition,
+    _: Vec<u8>,
+    state: SharedDispatcher,
+) -> Result<MessageResult, Box<dyn std::error::Error + Send + Sync>> {
+    info!(
+        pid = partition.id(),
+        "newmsg, received partition execution completion message"
+    );
+    let mut state = state.write().unwrap();
+    state.on_partition_execution_complete(&partition);
+
+    // Check and dispatch any new executable partitions that
+    // may have become ready after this completion
+    let dispatched_count = state.dispatch(&[]);
+
+    info!(
+        dispatched_count = dispatched_count,
+        "newmsg, dispatched new executable partitions after completion"
+    );
+    Ok(MessageResult::Ack)
 }

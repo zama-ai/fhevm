@@ -9,6 +9,10 @@ pub struct ExecNode {
 
     /// Number of ExecNode dependences that must be completed before this node can be executed.
     pub dependence_counter: usize,
+
+    /// Shortened hash of the partition that this ExecNode corresponds to.
+    /// For debugging and tracibility purposes.
+    pub pid: String,
 }
 
 impl ExecNode {

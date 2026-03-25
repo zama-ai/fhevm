@@ -7,14 +7,13 @@ use message_broker::Sender;
 use std::{collections::HashMap, sync::Arc};
 use tracing::{debug, error, info};
 
-type PartitionId = [u8; 32];
 type Payload = Vec<u8>;
 
 pub struct Dispatcher<S: Sender<Payload>> {
     scheduler: ComputationScheduler,
 
     /// Set of partitions that are currently being executed by workers
-    in_progress: HashMap<PartitionId, msg::ExecutablePartition>,
+    in_progress: HashMap<msg::PartitionHash, msg::ExecutablePartition>,
 
     /// Default sender to use
     sender: Arc<S>,
@@ -34,8 +33,9 @@ impl<S: Sender<Payload>> Dispatcher<S> {
     /// It will then dispatch those partitions to workers via Message Broker.
     pub(crate) fn dispatch(&mut self, batch: &[msg::FheLog]) -> usize {
         if !batch.is_empty() {
-            self.scheduler.on_fhe_log_batch(batch);
+            let _ = self.scheduler.on_fhe_log_batch(batch);
 
+            // For debugging purposes
             #[cfg(feature = "export-graphs")]
             self.scheduler.export_graphs("./viz");
         }
@@ -43,8 +43,6 @@ impl<S: Sender<Payload>> Dispatcher<S> {
         let exec_partitions = self
             .scheduler
             .retrieve_executable_partitions(self.in_progress.keys().cloned().collect());
-
-        // For debugging and visualization purposes
 
         debug!(partitions =  ?exec_partitions, "New executable partitions");
 
@@ -56,7 +54,7 @@ impl<S: Sender<Payload>> Dispatcher<S> {
             );
 
             // Mark these partitions as running
-            // self.in_progress.insert(partition.hash, partition.clone());
+            self.in_progress.insert(partition.hash, partition.clone());
             self.publish(partition);
         }
         exec_partitions.len()
@@ -106,5 +104,16 @@ impl<S: Sender<Payload>> Dispatcher<S> {
                 }
             }
         });
+    }
+
+    pub fn report(&self) {
+        if !self.in_progress.is_empty() {
+            info!(
+                in_progress = self.in_progress.len(),
+                "Current in-progress partitions"
+            );
+        }
+
+        self.scheduler.stats();
     }
 }

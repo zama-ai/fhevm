@@ -294,13 +294,23 @@ impl Context {
             return Ok(ct);
         }
 
-        if let Ok(ct) = self.query_ciphertext_from_db(handle).await {
-            info!(handle = %hex::encode(handle), "PostgreSQL hit for ciphertext");
-            // Optionally cache the result in Redis for future requests
-            let _ = self.redis_store(ct.clone()).await;
-            self.cache_store(&ct).await;
-            return Ok(ct);
-        }
+        match self.query_ciphertext_from_db(handle).await {
+            Ok(ct) => {
+                info!(handle = %hex::encode(handle), "PostgreSQL hit for ciphertext on second attempt");
+                // Optionally cache the result in Redis for future requests
+                let _ = self.redis_store(ct.clone()).await;
+                self.cache_store(&ct).await;
+                return Ok(ct);
+            }
+            Err(e) => {
+                error!(
+                    ops_type = ?ops_type,
+                    handle = %hex::encode(handle),
+                    error = ?e,
+                    "Failed to fetch ciphertext from PostgreSQL database, will wait for Redis notification"
+                );
+            }
+        };
 
         info!(handle = %hex::encode(handle), "Redis-subscribe for ciphertext");
         REDIS_SUB_COUNTER.inc();
@@ -365,30 +375,34 @@ impl Context {
         handle: &Handle,
     ) -> Result<CiphertextInfo, ComputeError> {
         let handle_hex = hex::encode(handle);
-
         info!(handle = %handle_hex, "Querying ciphertext from PostgreSQL database");
 
         let record = sqlx::query!(
             r#"
-            SELECT ciphertext, ciphertext_type AS ct_type
-            FROM ciphertexts
-            WHERE handle = $1
+                    SELECT ciphertext, ciphertext_type AS ct_type
+                    FROM ciphertexts
+                    WHERE handle = $1
             "#,
             handle
         )
         .fetch_one(&self.pool)
         .await?;
 
+        let keys = self.get_current_key().await?;
+        tfhe::set_server_key(keys.server_key.clone());
         let ciphertext =
             SupportedFheCiphertexts::decompress_no_memcheck(record.ct_type, &record.ciphertext)
                 .map_err(|e| ComputeError::Tfhe(e.to_string()))?;
 
-        info!(handle = %handle_hex, "Successfully retrieved ciphertext from PostgreSQL database");
+        info!(
+            handle = %handle_hex,
+            "Successfully retrieved ciphertext from PostgreSQL database"
+        );
 
-        Ok(CiphertextInfo {
+        return Ok(CiphertextInfo {
             handle: handle.clone(),
             ciphertext,
-        })
+        });
     }
 
     pub async fn send_partition_complete(&self, payload: Vec<u8>) -> Result<(), ComputeError> {

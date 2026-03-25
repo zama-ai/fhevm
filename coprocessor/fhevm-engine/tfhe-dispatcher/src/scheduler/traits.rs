@@ -6,15 +6,20 @@ use fhevm_engine_common::protocol::messages as msg;
 pub trait Commands {
     fn retrieve_executable_partitions(
         &self,
-        filter: HashSet<[u8; 32]>,
+        filter: HashSet<msg::PartitionHash>,
     ) -> Vec<msg::ExecutablePartition>;
 }
 
 pub trait Events {
     /// Process a single FHE log message, update the DFG, and return the corresponding node index.
-    fn on_fhe_log_msg(&mut self, log: &msg::FheLog, update_exec_graph: bool) -> NodeIndex;
+    fn on_fhe_log_msg(
+        &mut self,
+        log: &msg::FheLog,
+        update_exec_graph: bool,
+    ) -> Result<NodeIndex, String>;
+
     /// Process a batch of FHE log messages
-    fn on_fhe_log_batch(&mut self, logs: &[msg::FheLog]) -> Vec<NodeIndex>;
+    fn on_fhe_log_batch(&mut self, logs: &[msg::FheLog]) -> Result<(), String>;
 
     /// Trigger when a partition is completed
     fn on_partition_completed(&mut self, partition: &msg::ExecutablePartition);
