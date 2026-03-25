@@ -147,10 +147,11 @@ jobs:
 
     - name: Run tests with coverage
       run: |
+        source /tmp/llvm-cov-env.sh
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
         TEST_GLOBAL_LOCALSTACK=1 \
         SQLX_OFFLINE=true \
-        cargo llvm-cov --no-report --workspace --profile coverage
+        cargo test --workspace --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Generate coverage report
