@@ -98,27 +98,58 @@ jobs:
         username: ${{ secrets.CGR_USERNAME }}
         password: ${{ secrets.CGR_PASSWORD }}
 
-    - name: Init database
-      run: make init_db
-      working-directory: coprocessor/fhevm-engine/tfhe-worker
-
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
       with:
         node-version: 20.x
 
-    - name: Start localstack
+    - name: Start database services (background)
       run: |
-        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
+        nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
+      working-directory: coprocessor/fhevm-engine/tfhe-worker
+
+    - name: Start localstack
+      run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
     - name: Clean previous coverage data
       run: cargo llvm-cov clean --workspace --profile coverage
       working-directory: coprocessor/fhevm-engine
 
+    - name: Compile tests with coverage instrumentation
+      run: |
+        # shellcheck disable=SC1090
+        source <(cargo llvm-cov show-env --sh)
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
+        SQLX_OFFLINE=true \
+        cargo test --no-run --workspace --profile coverage
+      working-directory: coprocessor/fhevm-engine
+
+    - name: Wait for database migration
+      run: |
+        SECONDS=0
+        while ! docker container inspect db-migration > /dev/null 2>&1; do
+          if [ "$SECONDS" -ge 900 ]; then
+            echo "Timed out waiting for db-migration container after 15 minutes"
+            cat /tmp/db-init.log
+            exit 1
+          fi
+          echo "Waiting for db-migration container to be created..."
+          sleep 2
+        done
+        EXIT_CODE=$(docker wait db-migration)
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "Database migration failed with exit code $EXIT_CODE"
+          docker logs db-migration
+          cat /tmp/db-init.log
+          exit 1
+        fi
+        echo "Database migration completed"
+
     - name: Run tests with coverage
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
         TEST_GLOBAL_LOCALSTACK=1 \
+        SQLX_OFFLINE=true \
         cargo llvm-cov --no-report --workspace --profile coverage
       working-directory: coprocessor/fhevm-engine
 
