@@ -54,5 +54,4 @@ Explore the following guides to learn how to implement confidential contracts us
 - **[ERC7984 Standard](erc7984.md)** - Learn about the ERC7984 standard for confidential tokens
 - **[ERC-20 to Wrapped ERC-7984](ERC7984ERC20WrapperMock.md)** - Wrap ERC-20 tokens into confidential ERC-7984 tokens
 - **[Swap ERC7984 to ERC20](swapERC7984ToERC20.md)** - Unwrap confidential tokens back to ERC-20
-- **[Swap ERC7984 to ERC7984](swapERC7984ToERC7984.md)** - Confidential token-to-token swapping
 - **[Vesting Wallet](vesting-wallet.md)** - Implement confidential token vesting mechanisms
