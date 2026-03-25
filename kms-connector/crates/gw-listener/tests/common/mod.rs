@@ -191,6 +191,26 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
     sqlx::query(query).fetch_all(db).await
 }
 
+pub async fn poll_db_for_event(
+    db: &Pool<Postgres>,
+    event_type: EventType,
+    expected_event: &GatewayEventKind,
+) -> anyhow::Result<()> {
+    let timeout = Duration::from_secs(30);
+    let poll_interval = Duration::from_millis(200);
+    let start = std::time::Instant::now();
+    loop {
+        let rows = fetch_from_db(db, event_type).await?;
+        if check_event_in_db(&rows, expected_event.clone()).is_ok() {
+            return Ok(());
+        }
+        if start.elapsed() > timeout {
+            anyhow::bail!("Timed out waiting for {event_type} event in DB");
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
 pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Result<()> {
     match event {
         GatewayEventKind::PublicDecryption(e) => {
