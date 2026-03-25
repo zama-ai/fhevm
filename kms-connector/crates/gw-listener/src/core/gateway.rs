@@ -1,6 +1,6 @@
 use crate::{
     core::{Config, publish::update_last_block_polled, publish_event},
-    monitoring::metrics::EVENT_RECEIVED_COUNTER,
+    monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use alloy::{
     network::Ethereum,
@@ -105,7 +105,7 @@ where
         info!("GatewayListener stopped successfully!");
     }
 
-    /// Polls a contract group for events using `eth_getLogs`.
+    /// Polls a contract for events using `eth_getLogs`.
     ///
     /// Cancels all other tasks on failure.
     async fn poll_events(self, contract: MonitoredContract) {
@@ -208,15 +208,21 @@ where
     }
 
     /// Decodes a log and dispatches it to the appropriate event handler.
-    async fn process_log(&self, group: MonitoredContract, log: Log) {
-        let event: GatewayEventKind = match group {
+    async fn process_log(&self, contract: MonitoredContract, log: Log) {
+        let contract_label = contract.to_string().to_lowercase();
+        let event: GatewayEventKind = match contract {
             MonitoredContract::Decryption => match DecryptionEvents::decode_log(&log.inner) {
                 Ok(event) => match event.data {
                     DecryptionEvents::PublicDecryptionRequest(e) => e.into(),
                     DecryptionEvents::UserDecryptionRequest(e) => e.into(),
                     _ => return trace!("Ignoring Decryption event: {log:?}"),
                 },
-                Err(e) => return warn!("Failed to decode Decryption event: {e}"),
+                Err(e) => {
+                    EVENT_RECEIVED_ERRORS
+                        .with_label_values(&[&contract_label])
+                        .inc();
+                    return warn!("Failed to decode Decryption event: {e}");
+                }
             },
             MonitoredContract::KmsGeneration => match KMSGenerationEvents::decode_log(&log.inner) {
                 Ok(event) => match event.data {
@@ -227,7 +233,12 @@ where
                     KMSGenerationEvents::KeyReshareSameSet(e) => e.into(),
                     _ => return trace!("Ignoring KMSGeneration event: {log:?}"),
                 },
-                Err(e) => return warn!("Failed to decode KMSGeneration event: {e}"),
+                Err(e) => {
+                    EVENT_RECEIVED_ERRORS
+                        .with_label_values(&[&contract_label])
+                        .inc();
+                    return warn!("Failed to decode KMSGeneration event: {e}");
+                }
             },
         };
 
