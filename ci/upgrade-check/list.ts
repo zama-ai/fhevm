@@ -7,13 +7,7 @@ import { join, resolve } from "path";
 
 import { collectUpgradeVersionResults } from "./lib";
 import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./hints";
-
-type PackageName = "host-contracts" | "gateway-contracts";
-
-const PACKAGE_CONFIG: Record<PackageName, { extraDeps?: string }> = {
-  "host-contracts": { extraDeps: "forge soldeer install" },
-  "gateway-contracts": {},
-};
+import { PACKAGE_CONFIG, type PackageName } from "./config";
 
 function usage(): never {
   console.error("Usage: bun ci/upgrade-check/list.ts --from <tag/ref> [--to <tag/ref>] [--package host-contracts|gateway-contracts]");
