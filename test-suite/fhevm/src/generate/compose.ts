@@ -36,8 +36,9 @@ const LOCAL_BUILD_TAG = "fhevm-local";
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 
 /** Builds the environment passed to docker compose from resolved versions. */
-export const resolvedComposeEnv = (state: Pick<State, "versions">): Record<string, string> => ({
+export const resolvedComposeEnv = (state: Pick<State, "versions" | "overrides" | "scenario">): Record<string, string> => ({
   ...state.versions.env,
+  ...compatPolicyForState(state).composeEnv,
   COMPOSE_IGNORE_ORPHANS: "true",
 });
 

@@ -18,6 +18,7 @@ export type CompatPolicy = {
   coprocessorArgs: Partial<Record<CompatService, Array<readonly [string, CompatArgValue]>>>;
   coprocessorDropFlags: Partial<Record<CompatService, string[]>>;
   connectorEnv: Record<string, string>;
+  composeEnv: Record<string, string>;
 };
 
 export const COMPAT_MATRIX = {
@@ -49,6 +50,7 @@ const SHIM_PROFILES = {
       "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
     },
     connectorEnv: {},
+    composeEnv: {},
   },
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {
@@ -58,11 +60,13 @@ const SHIM_PROFILES = {
     },
     coprocessorDropFlags: {},
     connectorEnv: {},
+    composeEnv: {},
   },
   "legacy-connector-chain-id": {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
     connectorEnv: { KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID" },
+    composeEnv: {},
   },
   "legacy-tx-sender-host-chain-url": {
     coprocessorArgs: {
@@ -70,6 +74,7 @@ const SHIM_PROFILES = {
     },
     coprocessorDropFlags: {},
     connectorEnv: {},
+    composeEnv: {},
   },
   "legacy-tx-sender-gateway-flags": {
     coprocessorArgs: {
@@ -82,6 +87,7 @@ const SHIM_PROFILES = {
     },
     coprocessorDropFlags: {},
     connectorEnv: {},
+    composeEnv: {},
   },
 } as const satisfies Record<string, CompatPolicy>;
 
@@ -143,6 +149,10 @@ export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
+/** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
+const requiresLegacyPauserTaskFlag = (version: string) =>
+  versionLt(version, [0, 12, 0], { unparsed: "modern" });
+
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
 /** Evaluates the compatibility matrix against a resolved bundle. */
@@ -168,6 +178,7 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
     connectorEnv: {},
+    composeEnv: {},
   };
   for (const shim of COMPAT_MATRIX.legacyShims) {
     if (!versionLt(state.versions.env[shim.key] ?? "", shim.below, { unparsed: shim.unparsed })) {
@@ -188,5 +199,15 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
+  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyPauserTaskFlag(
+    state.versions.env.HOST_VERSION ?? "",
+  )
+    ? "--use-internal-pauser-set-address"
+    : "--use-internal-proxy-address";
+  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyPauserTaskFlag(
+    state.versions.env.GATEWAY_VERSION ?? "",
+  )
+    ? "--use-internal-pauser-set-address"
+    : "--use-internal-proxy-address";
   return policy;
 };

@@ -29,7 +29,7 @@ services:
     env_file:
       - ../../../.fhevm/runtime/env/host-sc.env
     command:
-      - npx hardhat task:addHostPausers --use-internal-proxy-address true
+      - npx hardhat task:addHostPausers ${HOST_ADD_PAUSERS_INTERNAL_FLAG} true
     depends_on:
       host-sc-deploy:
         condition: service_completed_successfully
