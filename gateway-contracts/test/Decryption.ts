@@ -106,24 +106,6 @@ describe("Decryption", function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
-  let ciphertextCommits: CiphertextCommits;
-  let decryption: Decryption;
-  let protocolPayment: ProtocolPayment;
-  let mockedZamaOFT: ZamaOFT;
-  let owner: Wallet;
-  let pauser: Wallet;
-  let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
-  let kmsSignatures: string[];
-  let kmsTxSenders: HardhatEthersSigner[];
-  let kmsSigners: HardhatEthersSigner[];
-  let coprocessorTxSenders: HardhatEthersSigner[];
-  let publicDecryptionPrice: bigint;
-  let userDecryptionPrice: bigint;
-  let tokenFundedTxSender: Wallet;
-  let protocolPaymentAddress: string;
-  let decryptionAddress: string;
-  let mockedFeesSenderToBurnerAddress: string;
-
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -152,6 +134,8 @@ describe("Decryption", function () {
   }
 
   describe("Deployment", function () {
+    let decryption: Decryption;
+    let owner: Wallet;
     let decryptionFactory: Decryption__factory;
 
     beforeEach(async function () {
@@ -173,6 +157,21 @@ describe("Decryption", function () {
   });
 
   describe("Public Decryption", function () {
+    let ciphertextCommits: CiphertextCommits;
+    let decryption: Decryption;
+    let protocolPayment: ProtocolPayment;
+    let mockedZamaOFT: ZamaOFT;
+    let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
+    let kmsSignatures: string[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let kmsSigners: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let publicDecryptionPrice: bigint;
+    let tokenFundedTxSender: Wallet;
+    let protocolPaymentAddress: string;
+    let decryptionAddress: string;
+    let mockedFeesSenderToBurnerAddress: string;
     let eip712Message: EIP712;
 
     // Expected decryption request ID (after a first request) for a public decryption request
@@ -215,7 +214,6 @@ describe("Decryption", function () {
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
-      owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       kmsSignatures = fixtureData.kmsSignatures;
@@ -225,7 +223,6 @@ describe("Decryption", function () {
       eip712Message = fixtureData.eip712Message;
       decryptionAddress = fixtureData.decryptionAddress;
       publicDecryptionPrice = fixtureData.publicDecryptionPrice;
-      userDecryptionPrice = fixtureData.userDecryptionPrice;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
 
       protocolPaymentAddress = await protocolPayment.getAddress();
@@ -679,6 +676,21 @@ describe("Decryption", function () {
   });
 
   describe("User Decryption", function () {
+    let ciphertextCommits: CiphertextCommits;
+    let decryption: Decryption;
+    let protocolPayment: ProtocolPayment;
+    let mockedZamaOFT: ZamaOFT;
+    let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
+    let kmsSignatures: string[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let kmsSigners: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let userDecryptionPrice: bigint;
+    let tokenFundedTxSender: Wallet;
+    let protocolPaymentAddress: string;
+    let decryptionAddress: string;
+    let mockedFeesSenderToBurnerAddress: string;
     let userSignature: string;
     let userDecryptedShares: string[];
     let eip712RequestMessage: EIP712;
@@ -717,15 +729,7 @@ describe("Decryption", function () {
     };
 
     // Define fake values
-    const fakeUserAddress = createRandomAddress();
     const fakeContractAddresses = createRandomAddresses(3);
-    const fakeContractAddress = fakeContractAddresses[0];
-    const fakeContractAddressCtHandleContractPairs: CtHandleContractPairStruct[] = [
-      {
-        contractAddress: fakeContractAddress,
-        ctHandle,
-      },
-    ];
 
     // Define utility values
     const tenDaysInSeconds = 10 * 24 * 60 * 60;
@@ -785,7 +789,7 @@ describe("Decryption", function () {
       decryption = fixtureData.decryption;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
-      owner = fixtureData.owner;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       userSignature = fixtureData.userSignature;
@@ -797,7 +801,6 @@ describe("Decryption", function () {
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
       decryptionAddress = fixtureData.decryptionAddress;
-      publicDecryptionPrice = fixtureData.publicDecryptionPrice;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
 
@@ -1636,6 +1639,19 @@ describe("Decryption", function () {
   });
 
   describe("Delegated User Decryption", function () {
+    let ciphertextCommits: CiphertextCommits;
+    let decryption: Decryption;
+    let protocolPayment: ProtocolPayment;
+    let mockedZamaOFT: ZamaOFT;
+    let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
+    let kmsSignatures: string[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let userDecryptionPrice: bigint;
+    let tokenFundedTxSender: Wallet;
+    let protocolPaymentAddress: string;
+    let mockedFeesSenderToBurnerAddress: string;
     let delegateSignature: string;
     let userDecryptedShares: string[];
     let eip712RequestMessage: EIP712;
@@ -1680,19 +1696,7 @@ describe("Decryption", function () {
     };
 
     // Define fake values.
-    const fakeDelegatorAddress = createRandomAddress();
     const fakeContractAddresses = createRandomAddresses(3);
-    const fakeContractAddress = fakeContractAddresses[0];
-    const fakeContractAddressCtHandleContractPairs: CtHandleContractPairStruct[] = [
-      {
-        contractAddress: fakeContractAddress,
-        ctHandle,
-      },
-    ];
-    const fakeDelegatorDelegationAccounts: IDecryption.DelegationAccountsStruct = {
-      delegatorAddress: fakeDelegatorAddress,
-      delegateAddress,
-    };
 
     // Define utility values.
     const tenDaysInSeconds = 10 * 24 * 60 * 60;
@@ -1754,7 +1758,6 @@ describe("Decryption", function () {
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
-      owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       delegateSignature = fixtureData.delegateSignature;
@@ -2428,6 +2431,10 @@ describe("Decryption", function () {
   });
 
   describe("Pause", async function () {
+    let decryption: Decryption;
+    let owner: Wallet;
+    let pauser: Wallet;
+
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       decryption = fixtureData.decryption;
