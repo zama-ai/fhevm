@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { execSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -50,8 +50,34 @@ function parseArgs() {
   };
 }
 
+function formatExecError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const execError = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer };
+  const stdout = execError.stdout ? String(execError.stdout).trim() : "";
+  const stderr = execError.stderr ? String(execError.stderr).trim() : "";
+  const details = [stderr, stdout].filter(Boolean).join("\n");
+  if (!details) {
+    return execError.message;
+  }
+
+  const maxLen = 2000;
+  return details.length > maxLen ? `${details.slice(-maxLen)}` : details;
+}
+
 function run(cmd: string, cwd: string) {
-  execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, NO_COLOR: "1" } });
+  try {
+    execSync(cmd, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  } catch (error) {
+    throw new Error(`Command failed in ${cwd}: ${cmd}\n${formatExecError(error)}`);
+  }
 }
 
 function addWorktree(repoRoot: string, path: string, ref: string) {
@@ -143,9 +169,26 @@ try {
     preparePackage(repoRoot, targetRoot, baselineRoot, pkg);
     printPackageReport(pkg, targetRoot, baselineRoot);
   }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`\nUpgrade report failed: ${message}`);
+  process.exitCode = 1;
 } finally {
-  try {
-    run("git worktree prune", repoRoot);
-  } catch {}
+  if (toRef && existsSync(targetRoot)) {
+    try {
+      run(`git worktree remove --force "${targetRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean target worktree: ${message}`);
+    }
+  }
+  if (existsSync(baselineRoot)) {
+    try {
+      run(`git worktree remove --force "${baselineRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean baseline worktree: ${message}`);
+    }
+  }
   rmSync(tempRoot, { recursive: true, force: true });
 }
