@@ -5,6 +5,7 @@ import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError } from "../errors";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
+import { hostReachableRpcUrl } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -220,6 +221,44 @@ const waitForDriftWarning = async (
     await Bun.sleep(options.pollIntervalSeconds * 1000);
   }
   throw new PreflightError(`drift warning was not observed after injecting handle ${handleHex}`);
+};
+
+/** Topic hash for AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address coprocessorTxSender). */
+const ADD_CIPHERTEXT_MATERIAL_TOPIC = "0x7249a80e5b91709d2170511b960e8a92e1d5849d200f320524dfffd8b50308f7";
+
+/** Queries on-chain AddCiphertextMaterial events and asserts the two submissions have divergent digests. */
+const assertOnChainDivergence = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  handleHex: string,
+) => {
+  const paddedHandle = `0x${handleHex.toLowerCase().padStart(64, "0")}`;
+  const response = await fetch(gatewayRpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [{ fromBlock: "0x0", toBlock: "latest", address: contractAddress, topics: [ADD_CIPHERTEXT_MATERIAL_TOPIC, paddedHandle] }],
+    }),
+  });
+  if (!response.ok) {
+    throw new PreflightError(`eth_getLogs failed: ${response.status} ${response.statusText}`);
+  }
+  const payload = (await response.json()) as { result?: { data: string }[] };
+  const logs = payload.result ?? [];
+  if (logs.length < 2) {
+    throw new PreflightError(`expected 2+ AddCiphertextMaterial events for handle 0x${handleHex}, got ${logs.length}`);
+  }
+  // data layout: keyId (32B) | ciphertextDigest (32B) | snsCiphertextDigest (32B) | coprocessorTxSender (32B)
+  // ciphertextDigest starts at byte offset 32 (chars 66..130 in the 0x-prefixed hex)
+  const digests = logs.map((log) => log.data.slice(66, 130));
+  const unique = new Set(digests);
+  if (unique.size < 2) {
+    throw new PreflightError(`on-chain AddCiphertextMaterial events show identical digests — drift not visible on chain`);
+  }
+  console.log(`[drift] on-chain divergence confirmed: ${logs.length} submissions with ${unique.size} distinct digest(s)`);
 };
 
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
@@ -542,7 +581,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         });
         await runWithHeartbeat(
-          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "EXPECT_CIPHERTEXT_DIVERGENCE=true"]),
+          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
           "test ciphertext-drift",
         );
         const injectedHandleHex = await injector;
@@ -552,6 +591,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
         });
         console.log(`[drift] detected in ${warning.container} for injected handle 0x${injectedHandleHex}`);
+        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
+        if (ciphertextCommitsAddress) {
+          const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+          await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
+        }
       });
     }
     if (name === "multi-chain-isolation") {

@@ -320,22 +320,14 @@ export class ConsensusWatchdog {
    * Check for divergences (instant) and stalls (3-minute timeout).
    * Called in afterEach to fail the current test if consensus is broken.
    */
-  checkHealth(expectDivergence = false): void {
+  checkHealth(): void {
     // Force a sync check of divergences accumulated since last poll.
     if (this.divergences.length > 0) {
       const msg = this.divergences.join('\n\n');
       this.divergences = [];
       this.divergenceKeys.clear();
-      if (expectDivergence) {
-        console.log(`[consensus-watchdog] Expected divergence confirmed:\n\n${msg}`);
-        return;
-      }
       throw new Error(`Consensus divergence detected:\n\n${msg}`);
     }
-
-    // When divergence is expected, the corrupted handle will never reach consensus,
-    // so skip stall checks to avoid a false-positive timeout error.
-    if (expectDivergence) return;
 
     // Check for stalls: handles that received a first submission but no consensus within timeout.
     const now = Date.now();
@@ -421,7 +413,7 @@ export const mochaHooks = {
 
     // Force one last poll before checking health so we catch recent events.
     await watchdog.flush();
-    watchdog.checkHealth(process.env.EXPECT_CIPHERTEXT_DIVERGENCE === 'true');
+    watchdog.checkHealth();
   },
 
   async afterAll(this: Mocha.Context) {
