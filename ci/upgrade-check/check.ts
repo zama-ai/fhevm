@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 // Checks that upgradeable contracts have proper version bumps when bytecode changes.
-// Usage: bun ci/check-upgrade-versions.ts <baseline-pkg-dir> <pr-pkg-dir>
+// Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir>
 
-import { collectUpgradeVersionResults } from "./upgrade-version-check-lib";
+import { collectUpgradeVersionResults } from "./lib";
 
 const [baselineDir, prDir] = process.argv.slice(2);
 if (!baselineDir || !prDir) {
-  console.error("Usage: bun ci/check-upgrade-versions.ts <baseline-pkg-dir> <pr-pkg-dir>");
+  console.error("Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir>");
   process.exit(1);
 }
 
