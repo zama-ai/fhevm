@@ -1251,7 +1251,7 @@ export const runStep = async (state: State, step: StepName) => {
       await preflight(state, true, state.requiresGitHub ?? true);
       break;
     case "resolve":
-      printBundle(state.versions);
+      printBundle(state.versions, { detailed: true });
       break;
     case "generate":
       await generateRuntime(state, stackSpecForState(state));
