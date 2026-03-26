@@ -1,22 +1,16 @@
 #!/usr/bin/env bun
 
 import { execSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { dirname, join, resolve } from "path";
+import { join, resolve } from "path";
 
-import { collectUpgradeVersionResults } from "./upgrade-version-check-lib";
-import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./upgrade-report-hints";
-
-type PackageName = "host-contracts" | "gateway-contracts";
-
-const PACKAGE_CONFIG: Record<PackageName, { extraDeps?: string }> = {
-  "host-contracts": { extraDeps: "forge soldeer install" },
-  "gateway-contracts": {},
-};
+import { collectUpgradeVersionResults } from "./lib";
+import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./hints";
+import { PACKAGE_CONFIG, type PackageName } from "./config";
 
 function usage(): never {
-  console.error("Usage: bun ci/list-upgrades.ts --from <tag/ref> [--to <tag/ref>] [--package host-contracts|gateway-contracts]");
+  console.error("Usage: bun ci/upgrade-check/list.ts --from <tag/ref> [--to <tag/ref>] [--package host-contracts|gateway-contracts]");
   process.exit(1);
 }
 
@@ -34,7 +28,7 @@ function parseArgs() {
       toRef = args[++idx];
     } else if (arg === "--package") {
       const value = args[++idx] as PackageName;
-      if (value !== "host-contracts" && value !== "gateway-contracts") usage();
+      if (!(value in PACKAGE_CONFIG)) usage();
       packages.push(value);
     } else {
       usage();
@@ -46,12 +40,38 @@ function parseArgs() {
   return {
     fromRef,
     toRef,
-    packages: packages.length > 0 ? packages : (["host-contracts", "gateway-contracts"] as PackageName[]),
+    packages: packages.length > 0 ? packages : (Object.keys(PACKAGE_CONFIG) as PackageName[]),
   };
 }
 
+function formatExecError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const execError = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer };
+  const stdout = execError.stdout ? String(execError.stdout).trim() : "";
+  const stderr = execError.stderr ? String(execError.stderr).trim() : "";
+  const details = [stderr, stdout].filter(Boolean).join("\n");
+  if (!details) {
+    return execError.message;
+  }
+
+  const maxLen = 2000;
+  return details.length > maxLen ? `${details.slice(-maxLen)}` : details;
+}
+
 function run(cmd: string, cwd: string) {
-  execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, NO_COLOR: "1" } });
+  try {
+    execSync(cmd, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  } catch (error) {
+    throw new Error(`Command failed in ${cwd}: ${cmd}\n${formatExecError(error)}`);
+  }
 }
 
 function addWorktree(repoRoot: string, path: string, ref: string) {
@@ -71,7 +91,7 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
   }
   run("make ensure-addresses", targetDir);
   run("make ensure-addresses", baselineDir);
-  run(`bun ci/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`, currentRepoRoot);
+  run(`bun ci/shared/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`, currentRepoRoot);
   run(`cp "${join(targetDir, "foundry.toml")}" "${join(baselineDir, "foundry.toml")}"`, currentRepoRoot);
 }
 
@@ -128,7 +148,7 @@ function printPackageReport(pkg: PackageName, repoRoot: string, baselineRoot: st
 }
 
 const { fromRef, toRef, packages } = parseArgs();
-const repoRoot = resolve(dirname(import.meta.dir));
+const repoRoot = resolve(import.meta.dir, "../..");
 const tempRoot = mkdtempSync(join(tmpdir(), "fhevm-upgrade-report-"));
 const baselineRoot = join(tempRoot, "baseline");
 const targetRoot = toRef ? join(tempRoot, "target") : repoRoot;
@@ -143,9 +163,26 @@ try {
     preparePackage(repoRoot, targetRoot, baselineRoot, pkg);
     printPackageReport(pkg, targetRoot, baselineRoot);
   }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`\nUpgrade report failed: ${message}`);
+  process.exitCode = 1;
 } finally {
-  try {
-    run("git worktree prune", repoRoot);
-  } catch {}
+  if (toRef && existsSync(targetRoot)) {
+    try {
+      run(`git worktree remove --force "${targetRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean target worktree: ${message}`);
+    }
+  }
+  if (existsSync(baselineRoot)) {
+    try {
+      run(`git worktree remove --force "${baselineRoot}"`, repoRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to clean baseline worktree: ${message}`);
+    }
+  }
   rmSync(tempRoot, { recursive: true, force: true });
 }
