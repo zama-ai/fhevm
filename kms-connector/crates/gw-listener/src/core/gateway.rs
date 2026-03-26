@@ -122,7 +122,7 @@ where
         self.cancel_token.cancel();
     }
 
-    /// Shared `eth_getLogs` polling loop.
+    /// Polling loop to listen to both [`Decryption`] and [`KMSGeneration`] contracts.
     async fn run_poll_loop(&self, contract: MonitoredContract) -> anyhow::Result<()> {
         let (contract_address, poll_interval, from_block_config, event_types) = match contract {
             MonitoredContract::Decryption => (
