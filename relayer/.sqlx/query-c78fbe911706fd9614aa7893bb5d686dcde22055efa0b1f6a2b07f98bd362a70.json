@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE gateway_block_number_store\n            SET last_block_number = $1,\n                last_block_hash = $2,\n                updated_at = NOW()\n            WHERE instance_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c78fbe911706fd9614aa7893bb5d686dcde22055efa0b1f6a2b07f98bd362a70"
+}

@@ -1,0 +1,1767 @@
+openapi: 3.1.0
+info:
+  title: Relayer API
+  description: |2
+
+    # Relayer API
+
+    Relayer provides an interface to request input proofs and decryptions for ciphertexts on the Zama
+    Gateway Chain.
+
+    ## Overview
+
+    ### Reading FHE Public Key URLs
+
+    | Endpoint  | Method | Description                      |
+    |-----------|--------|----------------------------------|
+    | Key URL   | `GET`  | Returns FHE public key URLs immediately |
+
+    ### Ciphertext Operations (POST/GET polling)
+
+    | Endpoint                 | POST to submit | GET to poll              |
+    |--------------------------|----------------|--------------------------|
+    | Input Proof              | `/v2/input-proof` | `/v2/input-proof/{jobId}` |
+    | User Decrypt             | `/v2/user-decrypt` | `/v2/user-decrypt/{jobId}` |
+    | Delegated User Decrypt   | `/v2/delegated-user-decrypt` | `/v2/delegated-user-decrypt/{jobId}` |
+    | Public Decrypt           | `/v2/public-decrypt` | `/v2/public-decrypt/{jobId}` |
+
+    **Polling flow:**
+
+    1. `POST /v2/{endpoint}` — returns `202` with a `jobId`.
+    2. `GET /v2/{endpoint}/{jobId}` — returns `202` + `Retry-After` while processing.
+    3. Final `GET` — returns `200` with the result, or `4xx`/`5xx` with an `error.label`.
+
+    ## Authentication
+
+    Pass the `X-API-Key` header with every request. Optional on testnet, required on mainnet.
+
+    ## Response Format
+
+    All responses share a common envelope:
+
+    ```json
+    {
+      "status": "queued" | "succeeded" | "failed",
+      "requestId": "uuid",
+      "result": { ... },
+      "error": { "label": "...", "message": "...", "details": [...] }
+    }
+    ```
+
+    | Field     | Present when                                          |
+    |-----------|-------------------------------------------------------|
+    | `status`  | Always                                                |
+    | `result`  | Success (`200`)                                       |
+    | `error`   | Failure — match on `error.label` (see Error Handling) |
+    | `details` | Validation errors (`400`) with per-field issues       |
+
+    The `Retry-After` header appears in two contexts:
+
+    | Context    | Status | Meaning                              |
+    |------------|--------|--------------------------------------|
+    | Polling    | 202    | Suggested interval before next GET   |
+    | Rate limit | 429    | Minimum wait before retrying POST    |
+
+    Always respect this header to avoid unnecessary requests.
+
+    ## Error Handling
+
+    All error responses include a machine-readable `label` field. Each error response also has one or more named examples you can expand below.
+
+    ### Fix and retry (client errors)
+
+    | Label | HTTP | What to fix |
+    |-------|------|-------------|
+    | `malformed_json` | 400 | Fix JSON syntax |
+    | `missing_fields` | 400 | Add required fields (see `details[]`) |
+    | `validation_failed` | 400 | Fix field values (see `details[]`) |
+    | `request_error` | 400 | Fix request body |
+    | `host_chain_id_not_supported` | 400 | Use supported chain ID |
+    | `not_allowed_on_host_acl` | 400 | Contact operator to allowlist contract |
+    | `not_found` | 404 | Check job ID validity |
+
+    ### Retry with backoff (transient errors)
+
+    | Label | HTTP | Guidance |
+    |-------|------|----------|
+    | `rate_limited` | 429 | Wait `Retry-After` seconds |
+    | `host_acl_failed` | 500 | Retry; if persistent, contact operator |
+    | `readiness_check_timed_out` | 503 | Retry with backoff |
+    | `response_timed_out` | 503 | Retry with backoff |
+    | `protocol_paused` | 503 | Wait for unpause |
+    | `gateway_not_reachable` | 503 | Retry with backoff |
+
+    ### Contact operator (infrastructure)
+
+    | Label | HTTP | Guidance |
+    |-------|------|----------|
+    | `internal_server_error` | 500 | Contact operator with `requestId` |
+    | `insufficient_balance` | 503 | Contact operator |
+    | `insufficient_allowance` | 503 | Contact operator |
+
+
+    ## Conventions
+
+    | Value                | Format                                |
+    |----------------------|---------------------------------------|
+    | Ethereum addresses   | `0x` + 40 hex chars                   |
+    | Ciphertext handles   | `0x` + 64 hex chars                   |
+    | Extra data           | Always `"0x00"`                       |
+    | Signatures (request) | Raw hex, 130 chars, no `0x` prefix    |
+    | Public keys          | Raw hex, min 2 chars, no `0x` prefix  |
+  contact:
+    name: Zama
+    url: https://www.zama.ai
+  license:
+    name: BSD-3-Clause-Clear
+    url: https://opensource.org/licenses/BSD-3-Clause-Clear
+  version: 0.9.0-rc.3
+servers:
+- url: /
+  description: Current server
+- url: http://localhost:3000
+  description: Local development
+paths:
+  /v2/keyurl:
+    get:
+      tags:
+      - Key URL
+      summary: Retrieve FHE key material URLs.
+      operationId: keyurl_v2
+      responses:
+        '200':
+          description: FHE public key URLs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyUrlResponseJson'
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                InternalServerError:
+                  summary: Key URL not yet initialized
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Key URL not yet initialized
+                    status: failed
+  /v2/input-proof:
+    post:
+      tags:
+      - Input Proof
+      summary: Submit input proof verification.
+      operationId: input_proof_post_v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputProofRequestJson'
+        required: true
+      responses:
+        '202':
+          description: Request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputProofPostResponseJson'
+        '400':
+          description: 'Invalid request. Error label is one of: `malformed_json`, `missing_fields`, `validation_failed`, `request_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                MalformedJson:
+                  summary: Could not parse request body as JSON
+                  value:
+                    error:
+                      label: malformed_json
+                      message: Could not parse request body as JSON
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MissingFields:
+                  summary: Required fields are missing
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: missing_fields
+                      message: Required fields are missing
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                RequestError:
+                  summary: Invalid request
+                  value:
+                    error:
+                      label: request_error
+                      message: Invalid request
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Request validation failed
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Request validation failed
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '429':
+          description: 'Rate limited. Error label: `rate_limited`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                RateLimited:
+                  summary: Too many requests — retry after the Retry-After interval
+                  value:
+                    error:
+                      label: rate_limited
+                      message: Too many requests — retry after the Retry-After interval
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/input-proof/{job_id}:
+    get:
+      tags:
+      - Input Proof
+      summary: Check input proof status.
+      operationId: input_proof_get_v2
+      parameters:
+      - name: job_id
+        in: path
+        description: Job ID returned from POST request
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputProofSucceededStatusResponse'
+        '202':
+          description: Still processing. Poll again after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusQueued'
+              example:
+                requestId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+        '400':
+          description: 'Request failed. Error label: `validation_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                ValidationFailed:
+                  summary: Signature is invalid
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Signature is invalid
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '404':
+          description: 'Not found. Error label: `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotFound:
+                  summary: Request not found
+                  value:
+                    error:
+                      label: not_found
+                      message: Request not found
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '503':
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                InsufficientAllowance:
+                  summary: Insufficient allowance for transaction
+                  value:
+                    error:
+                      label: insufficient_allowance
+                      message: Insufficient allowance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InsufficientBalance:
+                  summary: Insufficient balance for transaction
+                  value:
+                    error:
+                      label: insufficient_balance
+                      message: Insufficient balance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ProtocolPaused:
+                  summary: Protocol is paused
+                  value:
+                    error:
+                      label: protocol_paused
+                      message: Protocol is paused
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ResponseTimedOut:
+                  summary: Request processing timed out
+                  value:
+                    error:
+                      label: response_timed_out
+                      message: Request processing timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/user-decrypt:
+    post:
+      tags:
+      - User Decrypt
+      summary: Submit user decryption.
+      operationId: user_decrypt_post_v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDecryptRequestJson'
+        required: true
+      responses:
+        '202':
+          description: Request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptPostResponseJson'
+        '400':
+          description: 'Invalid request. Error label is one of: `malformed_json`, `missing_fields`, `validation_failed`, `request_error`, `host_chain_id_not_supported`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                HostChainIdNotSupported:
+                  summary: Chain ID is not supported by this relayer
+                  value:
+                    error:
+                      label: host_chain_id_not_supported
+                      message: Chain ID is not supported by this relayer
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MalformedJson:
+                  summary: Could not parse request body as JSON
+                  value:
+                    error:
+                      label: malformed_json
+                      message: Could not parse request body as JSON
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MissingFields:
+                  summary: Required fields are missing
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: missing_fields
+                      message: Required fields are missing
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                RequestError:
+                  summary: Invalid request
+                  value:
+                    error:
+                      label: request_error
+                      message: Invalid request
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Request validation failed
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Request validation failed
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '429':
+          description: 'Rate limited. Error label: `rate_limited`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                RateLimited:
+                  summary: Too many requests — retry after the Retry-After interval
+                  value:
+                    error:
+                      label: rate_limited
+                      message: Too many requests — retry after the Retry-After interval
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/user-decrypt/{job_id}:
+    get:
+      tags:
+      - User Decrypt
+      summary: Check user decryption status.
+      operationId: user_decrypt_get_v2
+      parameters:
+      - name: job_id
+        in: path
+        description: Job ID returned from POST request
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptSucceededStatusResponse'
+        '202':
+          description: Still processing. Poll again after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusQueued'
+              example:
+                requestId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+        '400':
+          description: 'Request failed. Error label is one of: `validation_failed`, `not_allowed_on_host_acl`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotAllowedOnHostAcl:
+                  summary: Contract is not on the host ACL
+                  value:
+                    error:
+                      label: not_allowed_on_host_acl
+                      message: Contract is not on the host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Signature is invalid
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Signature is invalid
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '404':
+          description: 'Not found. Error label: `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotFound:
+                  summary: Request not found
+                  value:
+                    error:
+                      label: not_found
+                      message: Request not found
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                HostAclFailed:
+                  summary: Failed to check host ACL
+                  value:
+                    error:
+                      label: host_acl_failed
+                      message: Failed to check host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '503':
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                InsufficientAllowance:
+                  summary: Insufficient allowance for transaction
+                  value:
+                    error:
+                      label: insufficient_allowance
+                      message: Insufficient allowance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InsufficientBalance:
+                  summary: Insufficient balance for transaction
+                  value:
+                    error:
+                      label: insufficient_balance
+                      message: Insufficient balance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ProtocolPaused:
+                  summary: Protocol is paused
+                  value:
+                    error:
+                      label: protocol_paused
+                      message: Protocol is paused
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ReadinessCheckTimedOut:
+                  summary: Readiness check timed out
+                  value:
+                    error:
+                      label: readiness_check_timed_out
+                      message: Readiness check timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ResponseTimedOut:
+                  summary: Request processing timed out
+                  value:
+                    error:
+                      label: response_timed_out
+                      message: Request processing timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/delegated-user-decrypt:
+    post:
+      tags:
+      - Delegated User Decrypt
+      summary: Submit delegated user decryption.
+      operationId: delegated_user_decrypt_post_v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegatedUserDecryptRequestJson'
+        required: true
+      responses:
+        '202':
+          description: Request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptPostResponseJson'
+        '400':
+          description: 'Invalid request. Error label is one of: `malformed_json`, `missing_fields`, `validation_failed`, `request_error`, `host_chain_id_not_supported`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                HostChainIdNotSupported:
+                  summary: Chain ID is not supported by this relayer
+                  value:
+                    error:
+                      label: host_chain_id_not_supported
+                      message: Chain ID is not supported by this relayer
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MalformedJson:
+                  summary: Could not parse request body as JSON
+                  value:
+                    error:
+                      label: malformed_json
+                      message: Could not parse request body as JSON
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MissingFields:
+                  summary: Required fields are missing
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: missing_fields
+                      message: Required fields are missing
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                RequestError:
+                  summary: Invalid request
+                  value:
+                    error:
+                      label: request_error
+                      message: Invalid request
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Request validation failed
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Request validation failed
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '429':
+          description: 'Rate limited. Error label: `rate_limited`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                RateLimited:
+                  summary: Too many requests — retry after the Retry-After interval
+                  value:
+                    error:
+                      label: rate_limited
+                      message: Too many requests — retry after the Retry-After interval
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/delegated-user-decrypt/{job_id}:
+    get:
+      tags:
+      - Delegated User Decrypt
+      summary: Check delegated user decryption status.
+      operationId: delegated_user_decrypt_get_v2
+      parameters:
+      - name: job_id
+        in: path
+        description: Job ID returned from POST request
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptSucceededStatusResponse'
+        '202':
+          description: Still processing. Poll again after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusQueued'
+              example:
+                requestId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+        '400':
+          description: 'Request failed. Error label is one of: `validation_failed`, `not_allowed_on_host_acl`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotAllowedOnHostAcl:
+                  summary: Contract is not on the host ACL
+                  value:
+                    error:
+                      label: not_allowed_on_host_acl
+                      message: Contract is not on the host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Signature is invalid
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Signature is invalid
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '404':
+          description: 'Not found. Error label: `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotFound:
+                  summary: Request not found
+                  value:
+                    error:
+                      label: not_found
+                      message: Request not found
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                HostAclFailed:
+                  summary: Failed to check host ACL
+                  value:
+                    error:
+                      label: host_acl_failed
+                      message: Failed to check host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '503':
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                InsufficientAllowance:
+                  summary: Insufficient allowance for transaction
+                  value:
+                    error:
+                      label: insufficient_allowance
+                      message: Insufficient allowance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InsufficientBalance:
+                  summary: Insufficient balance for transaction
+                  value:
+                    error:
+                      label: insufficient_balance
+                      message: Insufficient balance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ProtocolPaused:
+                  summary: Protocol is paused
+                  value:
+                    error:
+                      label: protocol_paused
+                      message: Protocol is paused
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ReadinessCheckTimedOut:
+                  summary: Readiness check timed out
+                  value:
+                    error:
+                      label: readiness_check_timed_out
+                      message: Readiness check timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ResponseTimedOut:
+                  summary: Request processing timed out
+                  value:
+                    error:
+                      label: response_timed_out
+                      message: Request processing timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/public-decrypt:
+    post:
+      tags:
+      - Public Decrypt
+      summary: Submit public decryption.
+      operationId: public_decrypt_post_v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicDecryptRequestJson'
+        required: true
+      responses:
+        '202':
+          description: Request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDecryptPostResponseJson'
+        '400':
+          description: 'Invalid request. Error label is one of: `malformed_json`, `missing_fields`, `validation_failed`, `request_error`, `host_chain_id_not_supported`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                HostChainIdNotSupported:
+                  summary: Chain ID is not supported by this relayer
+                  value:
+                    error:
+                      label: host_chain_id_not_supported
+                      message: Chain ID is not supported by this relayer
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MalformedJson:
+                  summary: Could not parse request body as JSON
+                  value:
+                    error:
+                      label: malformed_json
+                      message: Could not parse request body as JSON
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                MissingFields:
+                  summary: Required fields are missing
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: missing_fields
+                      message: Required fields are missing
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                RequestError:
+                  summary: Invalid request
+                  value:
+                    error:
+                      label: request_error
+                      message: Invalid request
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Request validation failed
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Request validation failed
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '429':
+          description: 'Rate limited. Error label: `rate_limited`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                RateLimited:
+                  summary: Too many requests — retry after the Retry-After interval
+                  value:
+                    error:
+                      label: rate_limited
+                      message: Too many requests — retry after the Retry-After interval
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label: `internal_server_error`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+              examples:
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /v2/public-decrypt/{job_id}:
+    get:
+      tags:
+      - Public Decrypt
+      summary: Check public decryption status.
+      operationId: public_decrypt_get_v2
+      parameters:
+      - name: job_id
+        in: path
+        description: Job ID returned from POST request
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDecryptSucceededStatusResponse'
+        '202':
+          description: Still processing. Poll again after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusQueued'
+              example:
+                requestId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+        '400':
+          description: 'Request failed. Error label is one of: `validation_failed`, `not_allowed_on_host_acl`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotAllowedOnHostAcl:
+                  summary: Contract is not on the host ACL
+                  value:
+                    error:
+                      label: not_allowed_on_host_acl
+                      message: Contract is not on the host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ValidationFailed:
+                  summary: Signature is invalid
+                  value:
+                    error:
+                      details:
+                      - field: fieldName
+                        issue: Validation issue description
+                      label: validation_failed
+                      message: Signature is invalid
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '404':
+          description: 'Not found. Error label: `not_found`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                NotFound:
+                  summary: Request not found
+                  value:
+                    error:
+                      label: not_found
+                      message: Request not found
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '500':
+          description: 'Internal server error. Error label is one of: `internal_server_error`, `host_acl_failed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                HostAclFailed:
+                  summary: Failed to check host ACL
+                  value:
+                    error:
+                      label: host_acl_failed
+                      message: Failed to check host ACL
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InternalServerError:
+                  summary: Internal server error
+                  value:
+                    error:
+                      label: internal_server_error
+                      message: Internal server error
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+        '503':
+          description: 'Service unavailable. Error label is one of: `response_timed_out`, `readiness_check_timed_out`, `protocol_paused`, `insufficient_balance`, `insufficient_allowance`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+              examples:
+                InsufficientAllowance:
+                  summary: Insufficient allowance for transaction
+                  value:
+                    error:
+                      label: insufficient_allowance
+                      message: Insufficient allowance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                InsufficientBalance:
+                  summary: Insufficient balance for transaction
+                  value:
+                    error:
+                      label: insufficient_balance
+                      message: Insufficient balance for transaction
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ProtocolPaused:
+                  summary: Protocol is paused
+                  value:
+                    error:
+                      label: protocol_paused
+                      message: Protocol is paused
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ReadinessCheckTimedOut:
+                  summary: Readiness check timed out
+                  value:
+                    error:
+                      label: readiness_check_timed_out
+                      message: Readiness check timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                ResponseTimedOut:
+                  summary: Request processing timed out
+                  value:
+                    error:
+                      label: response_timed_out
+                      message: Request processing timed out
+                    requestId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+  /liveness:
+    get:
+      tags:
+      - Health
+      summary: Liveness probe
+      operationId: liveness_handler
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessResponse'
+      security:
+      - {}
+  /healthz:
+    get:
+      tags:
+      - Health
+      summary: Health check with dependency status
+      operationId: health_handler
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      security:
+      - {}
+  /version:
+    get:
+      tags:
+      - Health
+      summary: Build version and git info
+      operationId: version_handler
+      responses:
+        '200':
+          description: Version information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+      security:
+      - {}
+components:
+  schemas:
+    ChainId:
+      oneOf:
+      - type: string
+        examples:
+        - '0xaa36a7'
+        - '11155111'
+      - type: integer
+        format: int64
+        example: 11155111
+        minimum: 0
+      description: |-
+        Chain Id
+
+        It does support an ID as an integer or a 0x prefixed hex string
+    DelegatedUserDecryptRequestJson:
+      type: object
+      required:
+      - handleContractPairs
+      - contractsChainId
+      - contractAddresses
+      - delegatorAddress
+      - delegateAddress
+      - startTimestamp
+      - durationDays
+      - signature
+      - publicKey
+      - extraData
+      properties:
+        contractAddresses:
+          type: array
+          items:
+            type: string
+          example:
+          - "0x1234567890123456789012345678901234567890"
+          minItems: 1
+        contractsChainId:
+          $ref: '#/components/schemas/ChainId'
+        delegateAddress:
+          type: string
+          description: Ethereum address of the delegate (the party authorized to decrypt). `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+        delegatorAddress:
+          type: string
+          description: Ethereum address of the delegator (the user who owns the ciphertexts). `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+        durationDays:
+          type: string
+          description: Duration of the delegation in days. Decimal string.
+          example: '1'
+        extraData:
+          type: string
+          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          example: '0x00'
+        handleContractPairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/HandleContractPairJson'
+        publicKey:
+          type: string
+          description: Delegate's public key for re-encryption. Raw hex, no `0x` prefix, minimum 2 chars.
+          example: "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1"
+        signature:
+          type: string
+          description: EIP-712 signature over the delegation request, signed by the delegator. Raw hex, 130 chars, no `0x` prefix.
+          example: "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
+        startTimestamp:
+          type: string
+          description: Unix timestamp (seconds) when the delegation starts. Decimal string.
+          example: '1700000000'
+    FheKeyInfo:
+      type: object
+      required:
+      - fhePublicKey
+      properties:
+        fhePublicKey:
+          $ref: '#/components/schemas/KeyData'
+    HandleContractPairJson:
+      type: object
+      required:
+      - handle
+      - contractAddress
+      properties:
+        contractAddress:
+          type: string
+          description: Address of the contract that produced this ciphertext handle. `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+        handle:
+          type: string
+          description: Ciphertext handle from an on-chain FHE operation. `0x` + 64 hex chars.
+          example: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+    HealthResponse:
+      type: object
+      required:
+      - status
+      properties:
+        dependencies:
+          type:
+          - object
+          - 'null'
+          additionalProperties:
+            type: string
+          propertyNames:
+            type: string
+        status:
+          type: string
+          example: healthy
+    InputProofPostResponseJson:
+      type: object
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/InputProofQueuedResult'
+        status:
+          type: string
+          example: queued
+    InputProofQueuedResult:
+      type: object
+      required:
+      - jobId
+      properties:
+        jobId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+    InputProofRequestJson:
+      type: object
+      required:
+      - contractChainId
+      - contractAddress
+      - userAddress
+      - ciphertextWithInputVerification
+      - extraData
+      properties:
+        ciphertextWithInputVerification:
+          type: string
+          description: ABI-encoded ciphertext with its ZKPoK input verification data. Raw hex, no `0x` prefix.
+          example: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"
+        contractAddress:
+          type: string
+          example: "0x1234567890123456789012345678901234567890"
+        contractChainId:
+          $ref: '#/components/schemas/ChainId'
+        extraData:
+          type: string
+          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          example: '0x00'
+        userAddress:
+          type: string
+          example: "0x1234567890123456789012345678901234567890"
+    InputProofResponseJson:
+      type: object
+      required:
+      - accepted
+      - extraData
+      properties:
+        accepted:
+          type: boolean
+          description: Whether the input proof verification was accepted by the gateway.
+          example: true
+        extraData:
+          type: string
+          description: Extra data echoed back from the gateway contract. `0x`-prefixed hex.
+          example: '0x00'
+        handles:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Verified ciphertext handles. Present only when `accepted` is `true`. Each handle is `0x` + 64 hex chars.
+          example:
+          - "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        signatures:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Gateway signatures over the verified handles. Present only when `accepted` is `true`. Each is `0x`-prefixed hex.
+          example:
+          - "0x1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+    InputProofSucceededStatusResponse:
+      type: object
+      description: GET 200 — input proof verification succeeded (has result, no error).
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/InputProofResponseJson'
+        status:
+          type: string
+          example: succeeded
+    KeyData:
+      type: object
+      required:
+      - dataId
+      - urls
+      properties:
+        dataId:
+          type: string
+          example: fhe_public_key_v1
+        urls:
+          type: array
+          items:
+            type: string
+          example:
+          - https://keys.fhevm.io/v1/fhe_public_key_v1
+    KeyUrlResponseJson:
+      type: object
+      required:
+      - status
+      - response
+      properties:
+        response:
+          $ref: '#/components/schemas/Response'
+        status:
+          type: string
+          example: succeeded
+    LivenessResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          example: alive
+    PublicDecryptPostResponseJson:
+      type: object
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/PublicDecryptQueuedResult'
+        status:
+          type: string
+          example: queued
+    PublicDecryptQueuedResult:
+      type: object
+      required:
+      - jobId
+      properties:
+        jobId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+    PublicDecryptRequestJson:
+      type: object
+      required:
+      - ciphertextHandles
+      - extraData
+      properties:
+        ciphertextHandles:
+          type: array
+          items:
+            type: string
+          description: Ciphertext handles to decrypt. Each is `0x` + 64 hex chars, obtained from an on-chain FHE operation.
+          example:
+          - "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          minItems: 1
+        extraData:
+          type: string
+          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          example: '0x00'
+    PublicDecryptResponseJson:
+      type: object
+      required:
+      - decryptedValue
+      - signatures
+      - extraData
+      properties:
+        decryptedValue:
+          type: string
+          description: Decrypted plaintext value. Raw hex, no `0x` prefix.
+          example: '00000000000000000000000000000001'
+        extraData:
+          type: string
+          description: Extra data echoed back from the gateway contract. `0x`-prefixed hex.
+          example: '0x00'
+        signatures:
+          type: array
+          items:
+            type: string
+          description: Gateway signatures over the decrypted value. Raw hex, no `0x` prefix.
+          example:
+          - "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+    PublicDecryptSucceededStatusResponse:
+      type: object
+      description: GET 200 — public decryption succeeded (has result, no error).
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/PublicDecryptResponseJson'
+        status:
+          type: string
+          example: succeeded
+    RelayerV2ErrorDetail:
+      type: object
+      required:
+      - field
+      - issue
+      properties:
+        field:
+          type: string
+          example: contractAddress
+        issue:
+          type: string
+          example: Must be a valid 42-character hex address with 0x prefix
+    RelayerV2ResponseFailed:
+      type: object
+      description: Failed response wrapper (POST error responses).
+      required:
+      - status
+      - error
+      properties:
+        error:
+          $ref: '#/components/schemas/V2ErrorResponseBody'
+        requestId:
+          type:
+          - string
+          - 'null'
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          example: failed
+    RequestValidityJson:
+      type: object
+      required:
+      - startTimestamp
+      - durationDays
+      properties:
+        durationDays:
+          type: string
+          description: Number of days the request remains valid. Decimal string.
+          example: '1'
+        startTimestamp:
+          type: string
+          description: Unix timestamp (seconds) when this request becomes valid. Decimal string.
+          example: '1700000000'
+    Response:
+      type: object
+      required:
+      - fheKeyInfo
+      - crs
+      properties:
+        crs:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/KeyData'
+          propertyNames:
+            type: string
+        fheKeyInfo:
+          type: array
+          items:
+            $ref: '#/components/schemas/FheKeyInfo'
+    UserDecryptPostResponseJson:
+      type: object
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/UserDecryptQueuedResult'
+        status:
+          type: string
+          example: queued
+    UserDecryptQueuedResult:
+      type: object
+      required:
+      - jobId
+      properties:
+        jobId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+    UserDecryptRequestJson:
+      type: object
+      required:
+      - handleContractPairs
+      - requestValidity
+      - contractsChainId
+      - contractAddresses
+      - userAddress
+      - signature
+      - publicKey
+      - extraData
+      properties:
+        contractAddresses:
+          type: array
+          items:
+            type: string
+          example:
+          - "0x1234567890123456789012345678901234567890"
+          minItems: 1
+        contractsChainId:
+          $ref: '#/components/schemas/ChainId'
+        extraData:
+          type: string
+          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          example: '0x00'
+        handleContractPairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/HandleContractPairJson'
+        publicKey:
+          type: string
+          description: User's public key for re-encryption. Raw hex, no `0x` prefix, minimum 2 chars.
+          example: "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1"
+        requestValidity:
+          $ref: '#/components/schemas/RequestValidityJson'
+        signature:
+          type: string
+          description: EIP-712 signature over the decryption request, signed by the user. Raw hex, 130 chars, no `0x` prefix.
+          example: "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
+        userAddress:
+          type: string
+          description: Ethereum address of the user requesting decryption. `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+    UserDecryptResponseJson:
+      type: object
+      required:
+      - result
+      properties:
+        result:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDecryptResponsePayloadJson'
+    UserDecryptResponsePayloadJson:
+      type: object
+      required:
+      - payload
+      - signature
+      - extraData
+      properties:
+        extraData:
+          type: string
+        payload:
+          type: string
+          description: Re-encrypted share payload. Raw hex, no `0x` prefix.
+          example: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        signature:
+          type: string
+          description: KMS signature over the payload. Raw hex, no `0x` prefix.
+          example: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b"
+    UserDecryptSucceededStatusResponse:
+      type: object
+      description: GET 200 — user decryption succeeded (has result, no error).
+      required:
+      - status
+      - requestId
+      - result
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          $ref: '#/components/schemas/UserDecryptResponseJson'
+        status:
+          type: string
+          example: succeeded
+    V2ApiError:
+      type: object
+      description: Simple error body — used for 400 (no details), 404, 429, 500, and 503.
+      required:
+      - label
+      - message
+      properties:
+        label:
+          $ref: '#/components/schemas/V2ErrorLabel'
+          description: Machine-readable error label for client UX logic.
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Internal server error
+    V2ApiErrorWithDetails:
+      type: object
+      description: Extended error body — used for 400 responses with field-level details.
+      required:
+      - label
+      - message
+      - details
+      properties:
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelayerV2ErrorDetail'
+          description: Per-field validation issues.
+        label:
+          $ref: '#/components/schemas/V2ErrorLabel'
+          description: Machine-readable error label for client UX logic.
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Request validation failed
+    V2ErrorLabel:
+      type: string
+      description: All machine-readable error labels the API can return.
+      enum:
+      - malformed_json
+      - missing_fields
+      - validation_failed
+      - request_error
+      - not_allowed_on_host_acl
+      - host_chain_id_not_supported
+      - not_found
+      - rate_limited
+      - internal_server_error
+      - host_acl_failed
+      - protocol_paused
+      - insufficient_balance
+      - insufficient_allowance
+      - gateway_not_reachable
+      - readiness_check_timed_out
+      - response_timed_out
+    V2ErrorResponseBody:
+      oneOf:
+      - $ref: '#/components/schemas/V2ApiErrorWithDetails'
+      - $ref: '#/components/schemas/V2ApiError'
+      description: |-
+        Union type for all V2 API error bodies.
+
+        Used as the concrete type for the `error` field in status and failed
+        responses. The `#[serde(untagged)]` attribute ensures the JSON output is
+        a flat `{label, message, ...}` object without a discriminator key.
+
+        **Deserialization order matters**: `WithDetails` is tried first so that
+        the `details` array is not silently dropped.
+    V2StatusFailed:
+      type: object
+      description: GET 4xx/5xx — request failed (no result, has error).
+      required:
+      - status
+      - requestId
+      - error
+      properties:
+        error:
+          $ref: '#/components/schemas/V2ErrorResponseBody'
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          example: failed
+    V2StatusQueued:
+      type: object
+      description: GET 202 — request is still queued/processing (no result, no error).
+      required:
+      - status
+      - requestId
+      properties:
+        requestId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          example: queued
+    VersionResponse:
+      type: object
+      required:
+      - name
+      - version
+      - build
+      properties:
+        build:
+          type: string
+          example: a1b2c3d4-clean
+        name:
+          type: string
+          example: fhevm-relayer
+        version:
+          type: string
+          example: 0.9.0
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+- ApiKeyAuth: []
+tags:
+- name: Key URL
+  description: Read FHE public key URLs
+- name: Input Proof
+  description: Verify input proofs for encrypted computations
+- name: User Decrypt
+  description: Decrypt ciphertexts with user-provided key shares
+- name: Delegated User Decrypt
+  description: Decrypt ciphertexts via delegated key shares
+- name: Public Decrypt
+  description: Decrypt ciphertexts using the network public key
+- name: Health
+  description: Liveness, readiness, and version probes
+x-tagGroups:
+- name: Key URL Endpoint
+  tags:
+  - Key URL
+- name: Ciphertext Operation Endpoints
+  tags:
+  - Input Proof
+  - User Decrypt
+  - Delegated User Decrypt
+  - Public Decrypt
+- name: Health Endpoints
+  tags:
+  - Health
