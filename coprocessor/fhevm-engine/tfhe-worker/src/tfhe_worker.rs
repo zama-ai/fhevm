@@ -557,8 +557,9 @@ async fn upload_transaction_graph_results<'a>(
                         CoprocessorError::FhevmError(swap_val).into()
                     } else {
                         CoprocessorError::SchedulerError(
-                            *err.downcast_ref::<SchedulerError>()
-                                .unwrap_or(&SchedulerError::SchedulerError),
+                            err.downcast_ref::<SchedulerError>()
+                                .cloned()
+                                .unwrap_or(SchedulerError::SchedulerError),
                         )
                         .into()
                     };
