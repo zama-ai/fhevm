@@ -4,7 +4,7 @@
 
 The Orchestrator is a framework for structuring software components using an **event-driven architecture**.
 
-- Each functionality of the relayer is modelled as a flow with a series of steps.
+- Each functionality of the relayer is modeled as a flow with a series of steps.
 - Each step in a flow is represented as an **event type**, and every event type has an associated **handler** that processes events of that type.
 - Once an event is processed successfully or fails, the handler emits a **result event** (e.g., success or error).
 - The result event is then processed by following handler and this continues until the flow is complete.

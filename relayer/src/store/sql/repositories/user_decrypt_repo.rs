@@ -68,8 +68,8 @@ impl UserDecryptRepository {
         Self { pool }
     }
 
-    // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is trigged on this condition:
-    // If status == 'receipt_recieved' and now - `updated_at` > 30 min roughly (TBD.)
+    // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
+    // If status == 'receipt_received' and now - `updated_at` > 30 min roughly (TBD.)
     // Update status to timed_out with configured timeout message.
     // OR IN THE TIMEOUT REPO.
 
@@ -684,9 +684,9 @@ impl UserDecryptRepository {
     }
 
     // LISTENER REQUESTS.
-    // If we recieve consensus reached tx:
+    // If we receive consensus reached tx:
     // update user_decrypt_req for gw_consensus_tx_hash by gw_reference_id
-    // and if consensus_tx_hash = null and if status = 'receipt_recieved'
+    // and if consensus_tx_hash = null and if status = 'receipt_received'
     // but in any case return (status, updated_at, err_reason, int_job_id) for `gw_reference_id`
     /// Attempts to update consensus hash ONLY IF status is 'receipt_received' AND hash is null.
     /// ALWAYS returns the current state of the row (req_status, updated_at, etc.) regardless of update success.
@@ -750,7 +750,7 @@ impl UserDecryptRepository {
         Ok(result?)
     }
 
-    // We recieve a share event from the gw.
+    // We receive a share event from the gw.
     /// Insert share and atomically complete request if threshold is reached.
     /// Returns outcome that explicitly indicates whether threshold was reached,
     /// completion succeeded, or request is already in a final state.
@@ -778,7 +778,7 @@ impl UserDecryptRepository {
         //    See: https://www.postgresql.org/docs/current/functions-sequence.html
         //
         // 2. Ensures correct counts by serializing inserts:
-        //    When transactions execute sequentially, COUNT(*) sees all previous INSERTs
+        //    When transactions execute sequentially, COUNT(*) sees all previous INSERTTs
         //    for the same gw_reference_id, providing accurate share counts.
         //
         // 3. Prevents race conditions between threshold check and completion:

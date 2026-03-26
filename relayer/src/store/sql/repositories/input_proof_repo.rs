@@ -55,8 +55,8 @@ impl InputProofRepository {
         Self { pool }
     }
 
-    // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is trigged on this condition:
-    // If status == 'receipt_recieved' and now - `updated_at` > 30 min roughly (TBD.)
+    // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
+    // If status == 'receipt_received' and now - `updated_at` > 30 min roughly (TBD.)
     // Update status to timed_out with configured timeout message.
     // OR IN THE TIMEOUT REPO.
 
@@ -315,7 +315,7 @@ impl InputProofRepository {
         Ok(rows_affected)
     }
 
-    // update the status to 'receipt_recieved' + gw_req_tx_hash + gw_reference_id by int_job_id
+    // update the status to 'receipt_received' + gw_req_tx_hash + gw_reference_id by int_job_id
     /// Update req_status to 'receipt_received', set tx hash and gw_ref_id by int_job_id.
     /// Returns number of rows affected.
     pub async fn update_input_proof_status_to_receipt_received(

@@ -76,7 +76,7 @@ TODO: refine
   sum by (req_type) (relayer_request_count{status="processing"})
   ```
 
-#### Panel 3: Waiting for - KMS, Coproc, Gateway: conensus reached, public decrypt ok, input proof done (Receipt Received)
+#### Panel 3: Waiting for - KMS, Coproc, Gateway: consensus reached, public decrypt ok, input proof done (Receipt Received)
 
 - **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof.
 - **Visualization**: Time Series

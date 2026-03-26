@@ -355,7 +355,7 @@ pub enum ErrorLabel {
     RateLimited,
     /// Internal server processing error
     InternalServerError,
-    /// Protocol Overload used for boucing
+    /// Protocol Overload used for bouncing
     ProtocolOverload,
     /// Host chain ID not supported
     HostChainIdNotSupported,

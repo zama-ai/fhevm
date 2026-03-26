@@ -152,7 +152,7 @@ pub struct TxThrottlingSender<T> {
     current_tps: Arc<AtomicU32>,
 }
 
-// NOTE: There must be at least one instance of this and hence the reciever for the queue channel to stay alive.
+// NOTE: There must be at least one instance of this and hence the receiver for the queue channel to stay alive.
 /// The Background Worker.
 pub struct TxThrottlingWorker<T> {
     tx_type: TxThrottlingType,

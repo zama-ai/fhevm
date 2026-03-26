@@ -15,7 +15,7 @@ use crate::gateway::utils::RevertReason;
 // Counter on nonces error.
 // Counter on Transport errors.
 // Counter on RPC errors which are not nonce errors.
-// 2. track number of success resp, track nimber of responses (failed) and label them (Counters).
+// 2. track number of success resp, track number of responses (failed) and label them (Counters).
 #[derive(Debug)]
 struct TransactionMetrics {
     // Transaction currently in the engine.

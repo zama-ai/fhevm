@@ -8,9 +8,9 @@ flowchart TD
         eventHandler --> eventMatch{Event Type?}
         
         eventMatch -->|DecryptRequestRcvd| decryptReq[send_decryption_request_to_rollup]
-        eventMatch -->|DecryptResponseEventLog| responseLog[handle_decrypt_reponse_event_log]
+        eventMatch -->|DecryptResponseEventLog| responseLog[handle_decrypt_response_event_log]
         eventMatch -->|DecryptionRequestSent| requestSent[handle_decrypt_request_sent]
-        eventMatch -->|Other| noop[noop_handle_decrypt_reponse_event_log]
+        eventMatch -->|Other| noop[noop_handle_decrypt_response_event_log]
     end
     
     subgraph Decryption Request Flow

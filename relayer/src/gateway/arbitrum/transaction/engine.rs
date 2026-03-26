@@ -374,7 +374,7 @@ impl
     }
 
     // TODO: Add gas bump
-    // TODO: Match all thoses errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
+    // TODO: Match all those errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
     pub async fn send_raw_transaction_sync_with_retries(
         &self,
         job_id: &JobId,

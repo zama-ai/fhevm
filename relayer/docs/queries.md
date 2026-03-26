@@ -7,8 +7,8 @@
 - (Medium/high frequency): Update by gatweay Id (number) with response jsonb and status to completed. - (triggered when user decrypt available)
 - (Periodic query): LATER: Scan the table and update status timed_out request for too long queued.
 - (High frequency): Select by external Id to get the response attached + internal request Id + Status. (GET ROUTE)
-- (Internal transaction poller): Update status to in-flight for oldest queued status and retrive request payload and internal ref id.(Limited number of in-flight requests at the same time).
-- (At start): Query all tx_sent transaction and polulate an hashmap with corresponding gw_request_id(key), and consensus reached (value) (boolean hashmap)
+- (Internal transaction poller): Update status to in-flight for oldest queued status and retrieve request payload and internal ref id.(Limited number of in-flight requests at the same time).
+- (At start): Query all tx_sent transaction and populate an hashmap with corresponding gw_request_id(key), and consensus reached (value) (boolean hashmap)
 - (Medium update) - Update field consensus_reached by gateway id.
 
 ### User decrypt share requests:
@@ -25,7 +25,7 @@
 - (Medium/high frequency): Update by gatweay Id (number) with response jsonb and status to completed. - (when public decrypt is available (event listener))
 - (Periodic query): LATER: Scan the table and update status timed_out request for too long queued.
 - (High frequency): Select by external Id to get the response attached + internal request Id + Status. (GET ROUTE)
-- (Internal transaction poller): Update status to in-flight for oldest queued status and retrive request payload and internal ref id. (Limited number of in-flight requests at the same time).
+- (Internal transaction poller): Update status to in-flight for oldest queued status and retrieve request payload and internal ref id. (Limited number of in-flight requests at the same time).
 
 ### Input proof:
 
@@ -34,4 +34,4 @@
 - (Medium/high frequency): Update by gatweay Id (number) with response jsonb and status to completed. - (when public decrypt is available (event listener))
 - (Periodic query): LATER: Scan the table and update status timed_out request for too long queued.
 - (High frequency): Select by external Id to get the response attached + internal request Id + Status. (GET ROUTE)
-- (Internal transaction poller (each 1 sec)): Update status to in-flight for oldest queued status and retrive request payload and internal ref id (Limited number of in-flight requests at the same time).
+- (Internal transaction poller (each 1 sec)): Update status to in-flight for oldest queued status and retrieve request payload and internal ref id (Limited number of in-flight requests at the same time).

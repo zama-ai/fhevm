@@ -47,7 +47,7 @@ end
 Orchestrator -> ArbitrumGwL2Handler: Handle\nEventLogFromGwL2 event
 opt #LightGreen topic matches PublicDecryptionResponse Event
 ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Decode event
-ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Retreive from context data\n(Orchestrator Request ID for\nPublic Decryption ID in Event Log)
+ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Retrieve from context data\n(Orchestrator Request ID for\nPublic Decryption ID in Event Log)
 ArbitrumGwL2Handler -> Orchestrator: Dispatch\nDecryptionResponseRcvdFromGwL2 event
 else #White topic does not match
 ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Ignore the event log

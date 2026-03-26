@@ -192,7 +192,7 @@ impl GatewayHandler {
                     "Request queued for readiness check"
                 );
             }
-            // Thoses errors are putting request in failure mode.
+            // Those errors are putting request in failure mode.
             // This introduce a new termination error, which is failure for readiness,
             // should NEVER happen with the bouncer.
             // NOTE: time_out instead ?
