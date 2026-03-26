@@ -36,11 +36,13 @@ jobs:
               - .github/workflows/contracts-upgrade-version-check.yml
               - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
+              - ci/upgrade-version-check-lib.ts
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-version-check.yml
               - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
+              - ci/upgrade-version-check-lib.ts
               - gateway-contracts/**
 
   check:
