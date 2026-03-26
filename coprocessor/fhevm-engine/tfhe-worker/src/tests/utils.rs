@@ -150,6 +150,30 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     })
 }
 
+pub async fn errors_on_allowed_handles(
+    test_instance: &TestInstance,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(test_instance.db_url())
+        .await?;
+    let records = sqlx::query!(
+        "SELECT error_message FROM computations WHERE is_allowed = TRUE AND is_error = TRUE",
+    )
+    .fetch_all(&pool)
+    .await?;
+    let mut errors: Vec<String> = vec![];
+    for error in &records {
+        errors.push(
+            error
+                .error_message
+                .clone()
+                .unwrap_or_else(|| "No error message".to_string()),
+        );
+    }
+    Ok(errors)
+}
+
 pub async fn wait_until_all_allowed_handles_computed(
     test_instance: &TestInstance,
 ) -> Result<(), Box<dyn std::error::Error>> {

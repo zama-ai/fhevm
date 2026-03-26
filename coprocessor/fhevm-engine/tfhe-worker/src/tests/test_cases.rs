@@ -6,6 +6,7 @@ use fhevm_engine_common::types::{is_ebytes_type, FheOperationType, SupportedFheO
 use std::ops::Not;
 use strum::IntoEnumIterator;
 
+#[derive(Clone, Debug)]
 pub struct BinaryOperatorTestCase {
     pub bits: i32,
     pub operator: i32,
@@ -45,6 +46,32 @@ fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
         2048 => 11,
         other => panic!("unknown supported bits: {other}"),
     }
+}
+
+pub fn generate_panic_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
+    let mut new_cases = vec![];
+    for mut op in generate_binary_test_cases() {
+        if op.bits >= 256 {
+            // avoid non supported scalar in test
+            continue;
+        }
+        if !op.is_scalar {
+            continue;
+        }
+        let operator = SupportedFheOperations::try_from(op.operator).unwrap();
+        if op.operator != SupportedFheOperations::FheDiv as i32
+            && op.operator != SupportedFheOperations::FheRem as i32
+        {
+            continue;
+        }
+        let modulo = BigInt::from(1) << op.bits;
+        op.lhs = BigInt::from(1) << (op.bits - 1); // max positive value for signed integer of op.bits bits
+        op.rhs = modulo;
+        op.expected_output = compute_expected_binary_output(&op.lhs, &op.rhs, operator)
+            % (BigInt::from(1) << op.bits); // expected result
+        new_cases.push(op);
+    }
+    new_cases
 }
 
 pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
