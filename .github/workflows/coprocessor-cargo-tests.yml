@@ -38,7 +38,6 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
-      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ${{ matrix.runner }}
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -49,43 +48,36 @@ jobs:
         include:
           - service: tfhe-worker
             package: tfhe-worker
-            needs_db: true
             needs_localstack: false
             needs_foundry: false
             runner: large_ubuntu_16
           - service: sns-worker
             package: sns-worker
-            needs_db: true
             needs_localstack: true
             needs_foundry: false
             runner: large_ubuntu_16
           - service: zkproof-worker
             package: zkproof-worker
-            needs_db: true
             needs_localstack: false
             needs_foundry: false
             runner: large_ubuntu_16
           - service: transaction-sender
             package: transaction-sender
-            needs_db: true
             needs_localstack: true
             needs_foundry: true
             runner: large_ubuntu_16
           - service: gw-listener
             package: gw-listener
-            needs_db: true
             needs_localstack: false
             needs_foundry: true
             runner: large_ubuntu_16
           - service: host-listener
             package: host-listener
-            needs_db: true
             needs_localstack: false
             needs_foundry: true
             runner: large_ubuntu_16
           - service: common
             package: fhevm-engine-common
-            needs_db: false
             needs_localstack: false
             needs_foundry: false
             runner: ubuntu-latest
@@ -98,28 +90,6 @@ jobs:
 
     - name: Checkout LFS objects
       run: git lfs checkout
-
-    - name: Login to GitHub Container Registry
-      if: ${{ matrix.needs_db }}
-      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Login to GitHub Chainguard Registry
-      if: ${{ matrix.needs_db }}
-      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-      with:
-        registry: cgr.dev
-        username: ${{ secrets.CGR_USERNAME }}
-        password: ${{ secrets.CGR_PASSWORD }}
-
-    - name: Start database services (background)
-      if: ${{ matrix.needs_db }}
-      run: |
-        nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
-      working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Setup Rust toolchain file
       run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
@@ -136,10 +106,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler mold clang
-    - name: Install sqlx-cli
-      if: ${{ matrix.needs_db }}
-      run: cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
-
     - name: Install foundry
       if: ${{ matrix.needs_foundry }}
       uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
@@ -163,40 +129,6 @@ jobs:
       if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
-    - name: Compile tests with coverage instrumentation
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
-        SQLX_OFFLINE: 'true'
-        TEST_PACKAGE: ${{ matrix.package }}
-      run: |
-        cargo llvm-cov clean --workspace --profile coverage
-        cargo llvm-cov show-env --sh > /tmp/llvm-cov-env.sh
-        source /tmp/llvm-cov-env.sh
-        cargo test --no-run -p "$TEST_PACKAGE" --profile coverage
-      working-directory: coprocessor/fhevm-engine
-
-    - name: Wait for database migration
-      if: ${{ matrix.needs_db }}
-      run: |
-        SECONDS=0
-        while ! docker container inspect db-migration > /dev/null 2>&1; do
-          if [ "$SECONDS" -ge 900 ]; then
-            echo "Timed out waiting for db-migration container after 15 minutes"
-            cat /tmp/db-init.log
-            exit 1
-          fi
-          echo "Waiting for db-migration container to be created..."
-          sleep 2
-        done
-        EXIT_CODE=$(docker wait db-migration)
-        if [ "$EXIT_CODE" != "0" ]; then
-          echo "Database migration failed with exit code $EXIT_CODE"
-          docker logs db-migration
-          cat /tmp/db-init.log
-          exit 1
-        fi
-        echo "Database migration completed"
-
     - name: Run tests with coverage
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
@@ -205,20 +137,18 @@ jobs:
         TEST_PACKAGE: ${{ matrix.package }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
-        source /tmp/llvm-cov-env.sh
         # Merge queue: leave unset so supported_types() defaults to full matrix.
         # PR CI: run only small types (bool through 64-bit) for faster feedback.
         if [ "$IS_MERGE_QUEUE" != "1" ]; then
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
         fi
-        cargo test -p "$TEST_PACKAGE" --profile coverage
+        cargo llvm-cov clean --workspace --profile coverage
+        cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Export LCOV coverage data
       if: ${{ !cancelled() }}
-      run: |
-        source /tmp/llvm-cov-env.sh
-        cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
+      run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
       working-directory: coprocessor/fhevm-engine
 
     - name: Upload coverage artifact
