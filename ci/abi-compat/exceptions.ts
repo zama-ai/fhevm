@@ -1,4 +1,4 @@
-import type { PackageName } from "./abi-compat-config";
+import type { PackageName } from "./config";
 
 export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<string, string[]>>>> = {
   "host-contracts": {
