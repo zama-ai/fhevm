@@ -38,6 +38,8 @@ interface IGatewayConfig {
         uint256 coprocessorThreshold;
     }
 
+    error AllGatewayContractsAlreadyPaused();
+    error AllGatewayContractsAlreadyUnpaused();
     error ChainIdNotUint64(uint256 chainId);
     error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
     error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
@@ -1443,6 +1445,16 @@ interface IGatewayConfig {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AllGatewayContractsAlreadyPaused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AllGatewayContractsAlreadyUnpaused",
+    "inputs": []
   },
   {
     "type": "error",
@@ -3276,6 +3288,156 @@ struct Thresholds { uint256 mpcThreshold; uint256 publicDecryptionThreshold; uin
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `AllGatewayContractsAlreadyPaused()` and selector `0x547b8e4b`.
+```solidity
+error AllGatewayContractsAlreadyPaused();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct AllGatewayContractsAlreadyPaused;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<AllGatewayContractsAlreadyPaused>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: AllGatewayContractsAlreadyPaused) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for AllGatewayContractsAlreadyPaused {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for AllGatewayContractsAlreadyPaused {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "AllGatewayContractsAlreadyPaused()";
+            const SELECTOR: [u8; 4] = [84u8, 123u8, 142u8, 75u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `AllGatewayContractsAlreadyUnpaused()` and selector `0x7aa26d10`.
+```solidity
+error AllGatewayContractsAlreadyUnpaused();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct AllGatewayContractsAlreadyUnpaused;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<AllGatewayContractsAlreadyUnpaused>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: AllGatewayContractsAlreadyUnpaused) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for AllGatewayContractsAlreadyUnpaused {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for AllGatewayContractsAlreadyUnpaused {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "AllGatewayContractsAlreadyUnpaused()";
+            const SELECTOR: [u8; 4] = [122u8, 162u8, 109u8, 16u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -15075,6 +15237,10 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IGatewayConfigErrors {
         #[allow(missing_docs)]
+        AllGatewayContractsAlreadyPaused(AllGatewayContractsAlreadyPaused),
+        #[allow(missing_docs)]
+        AllGatewayContractsAlreadyUnpaused(AllGatewayContractsAlreadyUnpaused),
+        #[allow(missing_docs)]
         ChainIdNotUint64(ChainIdNotUint64),
         #[allow(missing_docs)]
         CoprocessorSignerAlreadyRegistered(CoprocessorSignerAlreadyRegistered),
@@ -15141,7 +15307,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [59u8, 185u8, 158u8, 34u8],
             [62u8, 229u8, 7u8, 116u8],
             [65u8, 120u8, 222u8, 66u8],
+            [84u8, 123u8, 142u8, 75u8],
             [109u8, 165u8, 127u8, 153u8],
+            [122u8, 162u8, 109u8, 16u8],
             [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
             [144u8, 126u8, 102u8, 129u8],
@@ -15162,10 +15330,16 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 24usize;
+        const COUNT: usize = 26usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::AllGatewayContractsAlreadyPaused(_) => {
+                    <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::AllGatewayContractsAlreadyUnpaused(_) => {
+                    <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::ChainIdNotUint64(_) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -15355,6 +15529,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     ChainIdNotUint64
                 },
                 {
+                    fn AllGatewayContractsAlreadyPaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::AllGatewayContractsAlreadyPaused)
+                    }
+                    AllGatewayContractsAlreadyPaused
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -15366,6 +15551,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             )
                     }
                     CustodianTxSenderAlreadyRegistered
+                },
+                {
+                    fn AllGatewayContractsAlreadyUnpaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::AllGatewayContractsAlreadyUnpaused,
+                            )
+                    }
+                    AllGatewayContractsAlreadyUnpaused
                 },
                 {
                     fn InvalidHighPublicDecryptionThreshold(
@@ -15653,6 +15851,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     ChainIdNotUint64
                 },
                 {
+                    fn AllGatewayContractsAlreadyPaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::AllGatewayContractsAlreadyPaused)
+                    }
+                    AllGatewayContractsAlreadyPaused
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -15664,6 +15873,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             )
                     }
                     CustodianTxSenderAlreadyRegistered
+                },
+                {
+                    fn AllGatewayContractsAlreadyUnpaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::AllGatewayContractsAlreadyUnpaused,
+                            )
+                    }
+                    AllGatewayContractsAlreadyUnpaused
                 },
                 {
                     fn InvalidHighPublicDecryptionThreshold(
@@ -15843,6 +16065,16 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::AllGatewayContractsAlreadyPaused(inner) => {
+                    <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::AllGatewayContractsAlreadyUnpaused(inner) => {
+                    <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::ChainIdNotUint64(inner) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -15964,6 +16196,18 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::AllGatewayContractsAlreadyPaused(inner) => {
+                    <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::AllGatewayContractsAlreadyUnpaused(inner) => {
+                    <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::ChainIdNotUint64(inner) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
