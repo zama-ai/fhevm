@@ -1048,4 +1048,66 @@ mod tests {
         assert!(logs[2].dependence_chain == tx3);
         assert_eq!(cache.read().await.len(), 3);
     }
+
+    #[tokio::test]
+    async fn test_dependence_chains_empty_logs() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs: Vec<LogTfhe> = vec![];
+
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+
+        assert!(chains.is_empty());
+        assert_eq!(cache.read().await.len(), 0);
+    }
+
+    // Known past handle with across_blocks=false should not extent a past chain.
+    // This verifies that cross-block dependency tracking is disabled when the flag is off.
+    #[tokio::test]
+    async fn test_dependence_chains_across_blocks_false() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_handle = new_handle();
+        let past_chain_hash = past_chain(0).hash;
+        cache.write().await.put(past_handle, past_chain_hash);
+
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let _v = op1(past_handle, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, false, false).await;
+
+        assert_eq!(chains.len(), 1);
+        // Chain is local (tx1), not the past chain
+        assert_eq!(chains[0].hash, tx1);
+        assert!(logs.iter().all(|log| log.dependence_chain == tx1));
+        // Cache not updated when across_blocks is false
+        assert_eq!(cache.read().await.len(), 1);
+    }
+
+    // Connex mode: 2 past chains feed into 1 tx, producing a single component.
+    #[tokio::test]
+    async fn test_dependence_chains_connex_two_past_chains_merge() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_handle1 = new_handle();
+        let past_handle2 = new_handle();
+        let past_chain_hash1 = past_chain(100).hash;
+        let past_chain_hash2 = past_chain(101).hash;
+        cache.write().await.put(past_handle1, past_chain_hash1);
+        cache.write().await.put(past_handle2, past_chain_hash2);
+
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let _v = op2(past_handle1, past_handle2, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, true, true).await;
+
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].hash, tx1);
+        assert_eq!(cache.read().await.len(), 3);
+    }
 }

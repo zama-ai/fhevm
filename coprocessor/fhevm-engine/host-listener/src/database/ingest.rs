@@ -465,4 +465,90 @@ mod tests {
         assert!(slow_dep_chain_ids.contains(&chains[2].hash));
         assert!(!slow_dep_chain_ids.contains(&chains[3].hash));
     }
+
+    // 4 independent chains each with exactly max_per_chain ops.
+    // Since they are disconnected, each represents its own component.
+    #[test]
+    fn classify_slow_disconnected_components_at_threshold_are_fast() {
+        let chains = vec![
+            fixture_chain(1, &[]),
+            fixture_chain(2, &[]),
+            fixture_chain(3, &[]),
+            fixture_chain(4, &[]),
+        ];
+        let max = 64_u64;
+        let dependent_ops_by_chain = HashMap::from([
+            (chains[0].hash, max),
+            (chains[1].hash, max),
+            (chains[2].hash, max),
+            (chains[3].hash, max),
+        ]);
+
+        let slow = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            max,
+        );
+
+        assert!(
+            slow.is_empty(),
+            "no chain should be slow at exactly the threshold"
+        );
+    }
+
+    // Single chain with exactly max_per_chain ops is not slow.
+    // One more dep makes it fast.
+    #[test]
+    fn classify_slow_single_chain_at_boundary() {
+        let chains = vec![fixture_chain(1, &[])];
+        let max = 64_u64;
+
+        let at_boundary = classify_slow_by_split_dependency_closure(
+            &chains,
+            &HashMap::from([(chains[0].hash, max)]),
+            max,
+        );
+        assert!(
+            at_boundary.is_empty(),
+            "exactly at threshold should be fast"
+        );
+
+        let over_boundary = classify_slow_by_split_dependency_closure(
+            &chains,
+            &HashMap::from([(chains[0].hash, max + 1)]),
+            max,
+        );
+        assert!(
+            over_boundary.contains(&chains[0].hash),
+            "one over threshold should be slow"
+        );
+    }
+
+    // Non linear: A -> B, A -> C, B -> D, C -> D
+    // Mark A slow, verify B, C, D all become slow via propagate_slow_lane_to_dependents.
+    #[test]
+    fn propagate_slow_lane_non_linear_dependency() {
+        let chain_a = fixture_chain(1, &[]);
+        let chain_b = fixture_chain(2, &[1]);
+        let chain_c = fixture_chain(3, &[1]);
+        let chain_d = fixture_chain(4, &[2, 3]);
+        let chains = vec![chain_a, chain_b, chain_c, chain_d];
+
+        let mut slow = HashSet::from([chains[0].hash]);
+        propagate_slow_lane_to_dependents(&chains, &mut slow);
+
+        assert!(slow.contains(&chains[0].hash), "A should be slow");
+        assert!(
+            slow.contains(&chains[1].hash),
+            "B should be slow (depends on A)"
+        );
+        assert!(
+            slow.contains(&chains[2].hash),
+            "C should be slow (depends on A)"
+        );
+        assert!(
+            slow.contains(&chains[3].hash),
+            "D should be slow (depends on B and C)"
+        );
+    }
 }
