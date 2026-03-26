@@ -317,7 +317,7 @@ fn add_log_event_other_op(
         created_at: SystemTime::now(),
         block_info: BlockContext {
             txn_hash: [1u8; 32],
-            block_number: 1,
+            block_height: 1,
             block_hash: [1u8; 32],
         },
     };

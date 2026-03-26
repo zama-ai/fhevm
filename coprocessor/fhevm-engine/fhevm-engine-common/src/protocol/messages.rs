@@ -6,9 +6,9 @@ use xxhash_rust::xxh3::xxh3_128;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockContext {
-    pub txn_hash: [u8; 32],
-    pub block_number: u64,
+    pub block_height: u64,
     pub block_hash: [u8; 32],
+    pub txn_hash: [u8; 32],
 }
 
 type ScalarBytes = Vec<u8>;
@@ -23,6 +23,8 @@ pub struct OpNode {
     pub scalar_operands: Vec<ScalarBytes>,
     pub created_at: SystemTime,
     pub status: Status,
+
+    /// Host Block details used for re-randomisation in the compute node
     pub block_info: BlockContext,
 }
 
@@ -34,8 +36,8 @@ impl OpNode {
             .collect()
     }
 
-    pub fn output_handle(&self) -> Handle {
-        self.output_handle.clone()
+    pub fn output_handle(&self) -> &Handle {
+        &self.output_handle
     }
 }
 
@@ -138,13 +140,19 @@ impl ExecutablePartition {
         computations: Vec<(
             OpNode,
             NodeIndex,
-            Vec<Handle>, /* dependencies/inputs */
+            Vec<&Handle>, /* dependencies/inputs */
         )>,
     ) -> Self {
         let mut partition = Self {
             key_id,
             exec_node_idx,
-            computations,
+            computations: computations
+                .into_iter()
+                .map(|(op, idx, deps)| {
+                    let dep_handles = deps.into_iter().cloned().collect();
+                    (op, idx, dep_handles)
+                })
+                .collect(),
             hash: [0u8; 16],
             created_at: Some(SystemTime::now()),
         };
@@ -162,7 +170,7 @@ impl ExecutablePartition {
 
     /// Calculate a hash for the partition based on the output handles of its computations.
     fn compute_hash_inner(&self) -> PartitionHash {
-        let output_handles: Vec<Handle> = self
+        let output_handles: Vec<&Handle> = self
             .computations
             .iter()
             .map(|(comp, _, _)| comp.output_handle())
@@ -171,37 +179,39 @@ impl ExecutablePartition {
         Self::compute_hash(&output_handles)
     }
 
-    fn compute_hash(output_handles: &[Handle]) -> PartitionHash {
+    fn compute_hash(output_handles: &[&Handle]) -> PartitionHash {
         let mut buffer = Vec::with_capacity(output_handles.len() * 32);
-
         for handle in output_handles {
             buffer.extend_from_slice(handle);
         }
 
-        let h1 = xxh3_128(&buffer).to_le_bytes();
-
-        let mut out = [0u8; 16];
-        out[..16].copy_from_slice(&h1);
-
+        let mut out = xxh3_128(&buffer).to_le_bytes();
         // Overwrite the last 1 byte with the length of the partition for debugging
-        let len_bytes = (output_handles.len() as u8).to_le_bytes();
-        let from = out.len().saturating_sub(1);
-        out[from..].copy_from_slice(&len_bytes);
-
+        // Clamp to u8::MAX to avoid truncation if there are more than 255 computations.
+        let len = output_handles.len();
+        let len_u8 = if len > u8::MAX as usize {
+            u8::MAX
+        } else {
+            len as u8
+        };
+        out[15] = len_u8;
         out
     }
 
     /// Create ID from first 2 bytes and last 2 bytes of the hash for easier debugging
     pub fn id(&self) -> String {
-        let prefix = &self.hash[..2];
-        let suffix = &self.hash[15..];
-        format!("{}..{}", hex::encode(prefix), hex::encode(suffix))
+        Self::short_id(&self.hash)
     }
 
-    pub fn compute_id(output_handles: &[Handle]) -> String {
+    pub fn compute_id(output_handles: &[&Handle]) -> String {
         let hash = Self::compute_hash(output_handles);
+        Self::short_id(&hash)
+    }
+
+    #[inline]
+    fn short_id(hash: &[u8]) -> String {
         let prefix = &hash[..2];
-        let suffix = &hash[15..];
+        let suffix = &hash[hash.len() - 2..];
         format!("{}..{}", hex::encode(prefix), hex::encode(suffix))
     }
 

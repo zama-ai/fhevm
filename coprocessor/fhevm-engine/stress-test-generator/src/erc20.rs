@@ -23,7 +23,7 @@ fn add_input(batch: &mut Vec<FheLog>, output_handle: Handle) -> FheLog {
         created_at: std::time::SystemTime::now(),
         block_info: BlockContext {
             txn_hash: [1u8; 32],
-            block_number: 1,
+            block_height: 1,
             block_hash: [1u8; 32],
         },
     };

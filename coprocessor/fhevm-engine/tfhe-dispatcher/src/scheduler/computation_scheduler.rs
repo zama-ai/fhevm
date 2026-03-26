@@ -75,8 +75,7 @@ impl Commands for ComputationScheduler {
                 continue;
             }
 
-            let partition =
-                msg::ExecutablePartition::new(self.key_id, *exec_idx, computations.clone());
+            let partition = msg::ExecutablePartition::new(self.key_id, *exec_idx, computations);
 
             if filter.contains(&partition.hash) {
                 continue;
@@ -120,7 +119,7 @@ impl ComputationScheduler {
                     .map(|edge| edge.target())
                     .collect();
 
-                // decrement their dependents dependence counters in DFG
+                // decrement their dependents' dependence counters in DFG
                 for dependent_idx in dependents {
                     Self::dec_dependence_counter(&mut self.dataflow_graph[dependent_idx].status);
                 }
@@ -140,7 +139,7 @@ impl ComputationScheduler {
             pid = %partition.id(),
             exec_node_idx = ?partition.exec_node_idx,
             dependents_count = dependents.len(),
-            "msg: Marking partition as executed and updating dependent Exec nodes"
+            "Marking partition as executed and updating dependent Exec nodes"
         );
 
         for dep in dependents {
@@ -151,10 +150,10 @@ impl ComputationScheduler {
                         pid = %partition.id(),
                         dep_exec_node_idx = ?dep,
                         remaining_deps = exec_node.dependence_counter,
-                        "msg: Decremented dependence counter for dependent Exec node"
+                        "Decremented dependence counter for dependent Exec node"
                     );
                 } else {
-                    warn!("Exec node {:?} has already satisfied all dependences", dep);
+                    warn!("Exec node {:?} has already satisfied all dependencies", dep);
                 }
             }
         }
@@ -198,7 +197,7 @@ impl ComputationScheduler {
                     .add_edge(producer_idx, node_idx, ())
                     .map_err(|_| format!("Cycle detected when adding edge from producer {:?} to consumer {:?} for handle {:?}", producer_idx, node_idx, hex::encode(handle_dep)))?;
             } else {
-                // TODO: what if the missing producer is actually a producer that we have been seen before.
+                // TODO: what if the missing producer is actually not a FheGetInputCiphertext
 
                 // A missing producer means that this computation depends on an input ciphertext
                 // that has to be queried from DataLayer
@@ -343,8 +342,8 @@ impl ComputationScheduler {
             let pid = ExecutablePartition::compute_id(
                 &chain
                     .iter()
-                    .map(|idx| dfg_graph[*idx].clone().output_handle)
-                    .collect::<Vec<Handle>>(),
+                    .map(|idx| dfg_graph[*idx].output_handle())
+                    .collect::<Vec<&Handle>>(),
             );
 
             // Create execution node only for new chain
@@ -361,11 +360,11 @@ impl ComputationScheduler {
             newly_created_exec_nodes.push(exec_node);
         }
 
-        self.add_exec_dependences(newly_created_exec_nodes);
+        self.add_exec_dependencies(newly_created_exec_nodes);
         Ok(())
     }
 
-    fn add_exec_dependences(&mut self, new_exec_nodes: Vec<NodeIndex>) {
+    fn add_exec_dependencies(&mut self, new_exec_nodes: Vec<NodeIndex>) {
         let dfg = &self.dataflow_graph;
         let exec_graph = &mut self.exec_graph;
 
@@ -397,14 +396,14 @@ impl ComputationScheduler {
         touched.extend(new_exec_nodes);
 
         for node in touched {
-            let dependents = exec_graph
+            let dependencies = exec_graph
                 .edges_directed(node, Incoming)
                 .map(|idx| idx.source())
                 .collect::<Vec<_>>();
 
-            // Check if corresponding DFG nodes for dependents are computed; if not computed, increment the dependence counter
+            // Check if corresponding DFG nodes for dependencies are computed; if not computed, increment the dependence counter
             let mut dep_count = 0;
-            for dep in dependents {
+            for dep in dependencies {
                 let dfg_nodes = &exec_graph.node_weight(dep).unwrap().chain;
                 for dfg_node in dfg_nodes.iter() {
                     if !matches!(dfg[*dfg_node].status, Status::Computed { .. }) {
@@ -418,7 +417,7 @@ impl ComputationScheduler {
     }
 
     /// Gets dependencies for a given DFG node, which are the inputs of the corresponding computation.
-    fn get_dependencies(&self, dfg_idx: NodeIndex) -> Vec<Handle> {
+    fn get_dependencies(&self, dfg_idx: NodeIndex) -> Vec<&Handle> {
         self.dataflow_graph
             .edges_directed(dfg_idx, Incoming)
             .map(|edge| {
@@ -434,6 +433,7 @@ impl ComputationScheduler {
 
     pub fn stats(&self) {
         info!(
+            tag = "stats",
             dfg_nodes = self.dataflow_graph.node_count(),
             dfg_edges = self.dataflow_graph.edge_count(),
             exec_nodes = self.exec_graph.node_count(),
@@ -441,7 +441,7 @@ impl ComputationScheduler {
         );
     }
 
-    /// Decrement the dependence counter for the given Exec node
+    /// Decrement the dependence counter stored in the given `Status` value for a DFG node.
     fn dec_dependence_counter(status: &mut Status) {
         match status {
             Status::Pending { remaining_deps } if *remaining_deps > 0 => {

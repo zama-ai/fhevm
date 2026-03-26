@@ -13,7 +13,7 @@ impl TestContext {
         Self {
             block_info: BlockContext {
                 txn_hash,
-                block_number,
+                block_height: block_number,
                 block_hash,
             },
         }
@@ -35,7 +35,7 @@ impl TestContext {
             dependencies,
             block_info: BlockContext {
                 txn_hash: self.block_info.txn_hash,
-                block_number: self.block_info.block_number,
+                block_height: self.block_info.block_height,
                 block_hash: self.block_info.block_hash,
             },
         }

@@ -684,7 +684,7 @@ async fn generate_transaction(
             )
             .await?;
 
-            publish_batch(&sender_channel, queue_name, batch).await;
+            message_broker::rabbitmq::publish_batch(&sender_channel, queue_name, batch).await;
 
             tx.commit().await?;
             Ok((output_dependence, output_dependence))
@@ -835,24 +835,4 @@ async fn generate_transaction(
             Ok((e_total_paid, e_total_paid))
         }
     }
-}
-
-async fn publish_batch(sender_channel: &lapin::Channel, queue: &str, batch: &Vec<FheLog>) {
-    info!(target: "tool", batch_size = batch.len(), "Publishing batch of FHE log messages to the queue");
-
-    let payload: Vec<u8> = postcard::to_allocvec(&batch).unwrap();
-
-    let confirm = sender_channel
-        .basic_publish(
-            "",
-            queue,
-            BasicPublishOptions::default(),
-            &payload,
-            lapin::BasicProperties::default(),
-        )
-        .await
-        .unwrap();
-
-    let confirm = confirm.await.unwrap();
-    info!(confirm = ?confirm, "Sent FHE log message to the queue");
 }

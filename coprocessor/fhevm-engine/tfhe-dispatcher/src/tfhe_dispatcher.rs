@@ -3,8 +3,11 @@ use fhevm_engine_common::protocol::messages as msg;
 use message_broker::{
     create_default_receiver, create_default_sender, DefaultSender, MessageResult, Receiver,
 };
-use std::sync::{Arc, RwLock};
-use tokio::time::{interval, sleep, Duration};
+use std::sync::Arc;
+use tokio::{
+    sync::RwLock,
+    time::{interval, sleep, Duration},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -89,8 +92,8 @@ async fn tfhe_dispatcher_loop(
                  // even when there are no FHE events or completion messages to process.
                  // TODO: Add periodic maintenance tasks here if needed ( metrics, health checks).
                  info!("heartbeat");
-                 let state = state.read().unwrap();
-                 state.report();
+                 let state = state.read().await;
+                 state.report().await;
 
             }
         }
@@ -102,12 +105,12 @@ async fn handle_fhe_events(
     _: Vec<u8>,
     state: SharedDispatcher,
 ) -> Result<MessageResult, Box<dyn std::error::Error + Send + Sync>> {
-    info!(batch_size = batch.len(), "newmsg, received FHE logs");
+    info!(batch_size = batch.len(), tag = "msg", "Received FHE logs");
 
-    let mut state = state.write().unwrap();
-    let dispatched = state.dispatch(&batch);
+    let mut state = state.write().await;
+    let dispatched = state.dispatch(&batch).await;
 
-    info!(dispatched, "newmsg, processed FHE logs");
+    info!(dispatched, tag = "msg", "Processed FHE logs");
 
     Ok(MessageResult::Ack)
 }
@@ -119,18 +122,20 @@ async fn handle_partition_completion(
 ) -> Result<MessageResult, Box<dyn std::error::Error + Send + Sync>> {
     info!(
         pid = partition.id(),
-        "newmsg, received partition execution completion message"
+        tag = "msg",
+        "Received completion message"
     );
-    let mut state = state.write().unwrap();
-    state.on_partition_execution_complete(&partition);
+    let mut state = state.write().await;
+    state.on_partition_execution_complete(&partition).await;
 
     // Check and dispatch any new executable partitions that
     // may have become ready after this completion
-    let dispatched_count = state.dispatch(&[]);
+    let dispatched_count = state.dispatch(&[]).await;
 
     info!(
-        dispatched_count = dispatched_count,
-        "newmsg, dispatched new executable partitions after completion"
+        dispatched = dispatched_count,
+        tag = "msg",
+        "Processed completion message"
     );
     Ok(MessageResult::Ack)
 }
