@@ -120,6 +120,8 @@ jobs:
       run: |
         nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
       working-directory: coprocessor/fhevm-engine/tfhe-worker
+      env:
+        DB_HOST_PORT: 15432
 
     - name: Setup Rust toolchain file
       run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
@@ -161,7 +163,7 @@ jobs:
 
     - name: Compile tests with coverage instrumentation
       env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+        DATABASE_URL: postgresql://postgres:postgres@localhost:15432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_PACKAGE: ${{ matrix.package }}
       run: |
@@ -175,13 +177,19 @@ jobs:
       if: ${{ matrix.needs_db }}
       run: |
         SECONDS=0
-        while ! docker container inspect db-migration > /dev/null 2>&1; do
+        # Wait for db-migration container to be created AND started (not just "Created" state)
+        while true; do
           if [ "$SECONDS" -ge 900 ]; then
             echo "Timed out waiting for db-migration container after 15 minutes"
             cat /tmp/db-init.log
             exit 1
           fi
-          echo "Waiting for db-migration container to be created..."
+          STATE=$(docker container inspect --format '{{.State.Status}}' db-migration 2>/dev/null || echo "missing")
+          if [ "$STATE" = "running" ] || [ "$STATE" = "exited" ]; then
+            echo "db-migration container is $STATE"
+            break
+          fi
+          echo "Waiting for db-migration container (state: $STATE)..."
           sleep 2
         done
         EXIT_CODE=$(docker wait db-migration)
@@ -193,9 +201,23 @@ jobs:
         fi
         echo "Database migration completed"
 
+    - name: Verify database is accessible
+      if: ${{ matrix.needs_db }}
+      run: |
+        echo "=== Docker containers ==="
+        docker ps -a
+        echo "=== Port mapping for db container ==="
+        docker port db || true
+        echo "=== db-init.log ==="
+        cat /tmp/db-init.log || true
+        echo "=== Checking localhost:15432 ==="
+        docker exec db psql -U postgres -c '\l' || true
+        echo "=== Checking from host ==="
+        PGPASSWORD=postgres psql -h localhost -p 15432 -U postgres -c '\l' 2>&1 || true
+
     - name: Run tests with coverage
       env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+        DATABASE_URL: postgresql://postgres:postgres@localhost:15432/coprocessor
         SQLX_OFFLINE: 'true'
         COPROCESSOR_TEST_LOCALHOST: '1'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}

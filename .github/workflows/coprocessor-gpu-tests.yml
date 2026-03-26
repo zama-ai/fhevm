@@ -171,6 +171,8 @@ jobs:
         run: |
           nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
         working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          DB_HOST_PORT: 15432
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -218,7 +220,7 @@ jobs:
         env:
           IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
         run: |
-          export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor
+          export DATABASE_URL=postgresql://postgres:postgres@localhost:15432/coprocessor
           export COPROCESSOR_TEST_LOCALHOST=1
           # Merge queue: leave unset so supported_types() defaults to full matrix.
           # PR CI: run only FHEUint64 for faster feedback.
