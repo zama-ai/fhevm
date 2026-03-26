@@ -106,6 +106,10 @@ deploy-setup-contracts:
 ensure-addresses:
 	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
+# Make sure all Solidity contracts use the expected SPDX license identifier (BSD-3-Clause-Clear)
+check-spdx-headers:
+	bash ../ci/check_spdx_licenses.sh contracts
+
 # Make sure we only use allowed licenses for dependencies
 # Full list of SPDX identifiers can be found here: https://spdx.org/licenses/
 # The following packages are exceptionally excluded from the check:

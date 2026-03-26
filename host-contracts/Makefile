@@ -60,5 +60,10 @@ lint-bindings:
 # Update auto-generated files for conformance checks
 update-conformance: update-bindings update-selectors
 
+# Make sure all Solidity contracts use the expected SPDX license identifier (BSD-3-Clause-Clear)
+# We also check lib/ but exclude external dependencies (forge-std, OpenZeppelin-derived FhevmECDSA).
+check-spdx-headers:
+	bash ../ci/check_spdx_licenses.sh contracts lib --exclude forge-std --exclude cryptography/FhevmECDSA.sol
+
 # Conform to pre-commit checks
 conformance: prettier update-conformance
