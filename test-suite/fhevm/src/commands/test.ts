@@ -43,8 +43,10 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
-const STANDARD_PAUSE_PROFILES = ["paused-host-contracts", "paused-gateway-contracts"] as const;
-const STANDARD_PAUSE_PROFILE_SET = new Set<string>(STANDARD_PAUSE_PROFILES);
+const PAUSE_PROFILE_SCOPE: Record<string, string> = {
+  "paused-host-contracts": "host",
+  "paused-gateway-contracts": "gateway",
+};
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   light: "Run the lightweight smoke suite.",
   standard: "Run the default CI suite for the active topology.",
@@ -563,24 +565,39 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     if (!filter) {
       throw new PreflightError(`Unknown test profile ${name}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
     }
-    const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
-    console.log(`[test] ${name} (${options.network})`);
-    const started = Date.now();
-    const command = [
-      "./run-tests.sh",
-      options.verbose ? "-v" : "",
-      shouldParallel ? "--parallel" : "",
-      "-n",
-      shellEscape(options.network),
-      "-g",
-      shellEscape(filter),
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return runLogged(name, started, async () => {
-      const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
-      assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
-    });
+
+    const runGrep = async () => {
+      const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
+      console.log(`[test] ${name} (${options.network})`);
+      const started = Date.now();
+      const command = [
+        "./run-tests.sh",
+        options.verbose ? "-v" : "",
+        shouldParallel ? "--parallel" : "",
+        "-n",
+        shellEscape(options.network),
+        "-g",
+        shellEscape(filter),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return runLogged(name, started, async () => {
+        const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
+        assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
+      });
+    };
+
+    const pauseScope = PAUSE_PROFILE_SCOPE[name];
+    if (pauseScope) {
+      await pause(pauseScope);
+      try {
+        return await runGrep();
+      } finally {
+        await unpause(pauseScope).catch(() => undefined);
+      }
+    }
+
+    return runGrep();
   };
 
   const runStandardSuite = async () => {
@@ -593,21 +610,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     console.log(`[test] standard (${options.network})`);
     const started = Date.now();
     await runLogged("standard", started, async () => {
-      await pause("host");
-      try {
-        await runProfile("paused-host-contracts");
-      } finally {
-        await unpause("host").catch(() => undefined);
-      }
-
-      await pause("gateway");
-      try {
-        await runProfile("paused-gateway-contracts");
-      } finally {
-        await unpause("gateway").catch(() => undefined);
-      }
-
-      for (const profile of STANDARD_TEST_PROFILES.filter((item) => !STANDARD_PAUSE_PROFILE_SET.has(item))) {
+      for (const profile of STANDARD_TEST_PROFILES) {
         if (profile === "ciphertext-drift" && state.scenario.topology.count < 2) {
           continue;
         }
