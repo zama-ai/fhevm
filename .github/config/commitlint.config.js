@@ -31,7 +31,8 @@ const Configuration = {
         'sdk',
         'test-suite',
         'charts',
-        'common'
+        'common',
+        'relayer'
       ]
     ],
   },
