@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE last_block_polled SET block_number = $2, updated_at = $3 WHERE event_type = ANY($1::event_type[]) AND (block_number IS NULL OR block_number < $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "event_type[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "event_type",
+                  "kind": {
+                    "Enum": [
+                      "PublicDecryptionRequest",
+                      "UserDecryptionRequest",
+                      "PrepKeygenRequest",
+                      "KeygenRequest",
+                      "CrsgenRequest",
+                      "PrssInit",
+                      "KeyReshareSameSet"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08628a859406ce5a66dda3b9729847a3846a59691b8dde5f518c2cb40b687742"
+}

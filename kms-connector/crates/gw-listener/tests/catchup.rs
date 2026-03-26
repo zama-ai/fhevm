@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::{check_event_in_db, fetch_from_db, mock_event_on_gw, start_test_listener};
+use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
 use connector_utils::{tests::setup::TestInstanceBuilder, types::db::EventType};
 use rstest::rstest;
 use std::time::Duration;
@@ -63,13 +63,11 @@ async fn test_catchup_from_block(event_type: EventType) -> anyhow::Result<()> {
     // Wait for two more anvil blocks so anvil is fully ready
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
-    let mut nb_event = 1;
     let (event1, block1) = mock_event_on_gw(&test_instance, event_type).await?;
     assert!(block1.is_some());
     let event2 = if !matches!(event_type, EventType::PrssInit) {
         let (event2, block2) = mock_event_on_gw(&test_instance, event_type).await?;
         assert_ne!(block1, block2);
-        nb_event += 1;
         Some(event2)
     } else {
         None
@@ -79,16 +77,9 @@ async fn test_catchup_from_block(event_type: EventType) -> anyhow::Result<()> {
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), block1).await;
 
-    for _ in 0..nb_event {
-        test_instance
-            .wait_for_log("Event successfully stored in DB!")
-            .await;
-    }
-
-    let rows = fetch_from_db(test_instance.db(), event_type).await?;
-    check_event_in_db(&rows, event1)?;
-    if let Some(event2) = event2 {
-        check_event_in_db(&rows, event2)?;
+    poll_db_for_event(test_instance.db(), event_type, &event1).await?;
+    if let Some(ref event2) = event2 {
+        poll_db_for_event(test_instance.db(), event_type, event2).await?;
     }
     info!("Events successfully stored! Stopping GatewayListener...");
 

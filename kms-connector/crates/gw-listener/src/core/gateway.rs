@@ -1,32 +1,58 @@
 use crate::{
-    core::{Config, publish::update_last_block_polled, publish_event},
-    monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
+    core::{Config, publish::publish_batch},
+    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
 use alloy::{
-    contract::{Event, EventPoller},
     network::Ethereum,
-    primitives::LogData,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::SolEvent,
+    sol_types::SolEventInterface,
 };
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    tasks::spawn_with_limit,
     types::{GatewayEvent, GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionInstance},
-    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
+    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
 };
 use sqlx::{Pool, Postgres, Row};
-use std::time::Duration;
-use tokio::{select, task::JoinSet, time::timeout};
-use tokio_stream::StreamExt;
+use tokio::{select, task::JoinSet};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
+    EventType::PublicDecryptionRequest,
+    EventType::UserDecryptionRequest,
+];
+
+const KMS_GENERATION_EVENT_TYPES: [EventType; 5] = [
+    EventType::PrepKeygenRequest,
+    EventType::KeygenRequest,
+    EventType::CrsgenRequest,
+    EventType::PrssInit,
+    EventType::KeyReshareSameSet,
+];
+
+/// Identifies which contract is being polled.
+///
+/// **Note:** The kms-connector is designed to listen to a specific set of events/contracts,
+/// so listening to a new contract/event to monitor requires a code change and a new release.
+#[derive(Clone, Copy)]
+enum MonitoredContract {
+    Decryption,
+    KmsGeneration,
+}
+
+impl std::fmt::Display for MonitoredContract {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MonitoredContract::Decryption => write!(f, "Decryption"),
+            MonitoredContract::KmsGeneration => write!(f, "KmsGeneration"),
+        }
+    }
+}
 
 /// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
@@ -37,11 +63,8 @@ where
     /// The database pool for storing Gateway's events.
     db_pool: Pool<Postgres>,
 
-    /// The Gateway's `Decryption` contract instance which is monitored.
-    decryption_contract: DecryptionInstance<P>,
-
-    /// The Gateway's `KMSGeneration` contract instance which is monitored.
-    kms_generation_contract: KMSGenerationInstance<P>,
+    /// The Gateway RPC Provider.
+    provider: P,
 
     /// The configuration of the `GatewayListener`.
     config: Config,
@@ -61,15 +84,9 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> Self {
-        let decryption_contract =
-            Decryption::new(config.decryption_contract.address, provider.clone());
-        let kms_generation_contract =
-            KMSGeneration::new(config.kms_generation_contract.address, provider);
-
         Self {
             db_pool,
-            decryption_contract,
-            kms_generation_contract,
+            provider,
             config: config.clone(),
             cancel_token,
         }
@@ -77,17 +94,11 @@ where
 
     /// Starts the `GatewayListener`.
     ///
-    /// Spawns and joins the `GatewayListener` event monitoring tasks.
+    /// Spawns two polling tasks: one for Decryption events and one for KMSGeneration events.
     pub async fn start(self) {
         let mut tasks = JoinSet::new();
-
-        tasks.spawn(self.clone().subscribe(EventType::PublicDecryptionRequest));
-        tasks.spawn(self.clone().subscribe(EventType::UserDecryptionRequest));
-        tasks.spawn(self.clone().subscribe(EventType::PrepKeygenRequest));
-        tasks.spawn(self.clone().subscribe(EventType::KeygenRequest));
-        tasks.spawn(self.clone().subscribe(EventType::CrsgenRequest));
-        tasks.spawn(self.clone().subscribe(EventType::PrssInit));
-        tasks.spawn(self.subscribe(EventType::KeyReshareSameSet));
+        tasks.spawn(self.clone().poll_events(MonitoredContract::Decryption));
+        tasks.spawn(self.poll_events(MonitoredContract::KmsGeneration));
 
         while let Some(res) = tasks.join_next().await {
             if let Err(e) = res {
@@ -97,233 +108,183 @@ where
         info!("GatewayListener stopped successfully!");
     }
 
-    /// Subscribes to a particular set of events.
+    /// Polls a contract for events using `eth_getLogs`.
     ///
-    /// Each event received from the `event_filer` is then published in the DB.
-    pub async fn subscribe(self, event_type: EventType) {
-        let polling = match &event_type {
-            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
-                self.config.decryption_polling
-            }
-            _ => self.config.key_management_polling,
-        };
-
-        let result = match &event_type {
-            EventType::PublicDecryptionRequest => {
-                let filter = self.decryption_contract.PublicDecryptionRequest_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::UserDecryptionRequest => {
-                let filter = self.decryption_contract.UserDecryptionRequest_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::PrepKeygenRequest => {
-                let filter = self.kms_generation_contract.PrepKeygenRequest_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::KeygenRequest => {
-                let filter = self.kms_generation_contract.KeygenRequest_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::CrsgenRequest => {
-                let filter = self.kms_generation_contract.CrsgenRequest_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::PrssInit => {
-                let filter = self.kms_generation_contract.PRSSInit_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-            EventType::KeyReshareSameSet => {
-                let filter = self.kms_generation_contract.KeyReshareSameSet_filter();
-                self.subscribe_inner(event_type, filter, polling).await
-            }
-        };
-        self.cancel_token.cancel(); // Cancel other event subscription tasks
-
-        if let Err(e) = result {
-            error!("{e}");
-        }
-    }
-
-    async fn subscribe_inner<E>(
-        &self,
-        event_type: EventType,
-        event_filter: Event<&'_ P, E>,
-        poll_interval: Duration,
-    ) -> anyhow::Result<()>
-    where
-        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
-    {
-        let mut last_block_polled = self.get_last_block_polled(event_type).await?;
-        let mut event_poller = event_filter
-            .watch()
-            .await
-            .map_err(|e| anyhow!("Failed to subscribe to {event_type} events: {e}"))?;
-        event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
-        info!("✓ Subscribed to {event_type} events");
-
-        let _ = self
-            .catchup_past_events::<E>(&mut last_block_polled, event_type)
-            .await
-            .inspect_err(|e| warn!("Failed to catch up past {event_type} events: {e}"));
-
+    /// Cancels all other tasks on failure.
+    async fn poll_events(self, contract: MonitoredContract) {
         select! {
-            _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
-            _ = self.cancel_token.cancelled() => info!("{event_type} subscription cancelled..."),
+            biased;
+            _ = self.cancel_token.cancelled() => info!("{contract} polling cancelled..."),
+            result = self.run_poll_loop(contract) => if let Err(e) = result {
+                error!("{contract} polling failed: {e}");
+            }
         }
-
-        // Use a timeout to ensure we are not preventing the `GatewayListener` from being shutdown
-        // if the `last_block_polled` update get stuck for some reason.
-        timeout(
-            LAST_BLOCK_POLLED_UPDATE_TIMEOUT,
-            update_last_block_polled(&self.db_pool, event_type, last_block_polled),
-        )
-        .await??;
-        Ok(())
+        self.cancel_token.cancel();
     }
 
-    /// Catches events created before the event filter using `eth_getFilterLogs`.
-    async fn catchup_past_events<E>(
-        &self,
-        last_block_polled: &mut Option<u64>,
-        event_type: EventType,
-    ) -> anyhow::Result<()>
-    where
-        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
-    {
-        let catchup_from_block = match last_block_polled {
-            None => {
-                info!(
-                    "No previously polled block for {event_type}; skipping catchup of past events."
-                );
-                return Ok(());
-            }
-            Some(block) => *block,
+    /// Polling loop to listen to both [`Decryption`] and [`KMSGeneration`] contracts.
+    async fn run_poll_loop(&self, contract: MonitoredContract) -> anyhow::Result<()> {
+        let (contract_address, poll_interval, from_block_config, event_types) = match contract {
+            MonitoredContract::Decryption => (
+                self.config.decryption_contract.address,
+                self.config.decryption_polling,
+                self.config.decryption_from_block_number,
+                DECRYPTION_EVENT_TYPES.as_slice(),
+            ),
+            MonitoredContract::KmsGeneration => (
+                self.config.kms_generation_contract.address,
+                self.config.key_management_polling,
+                self.config.kms_operation_from_block_number,
+                KMS_GENERATION_EVENT_TYPES.as_slice(),
+            ),
         };
 
-        let contract_address = match event_type {
-            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
-                self.decryption_contract.address()
-            }
-            _ => self.kms_generation_contract.address(),
-        };
+        let event_signatures = event_types
+            .iter()
+            .map(|e| e.signature_hash())
+            .collect::<Vec<_>>();
+        let base_filter = Filter::new()
+            .address(contract_address)
+            .event_signature(event_signatures);
 
-        let filter = Filter::new()
-            .address(*contract_address)
-            .event_signature(E::SIGNATURE_HASH)
-            .from_block(catchup_from_block);
-        let provider = self.decryption_contract.provider();
+        let mut from_block = self.get_start_block(from_block_config, event_types).await?;
+        info!("Started {contract} polling from block {from_block}");
 
-        info!("Catching up {event_type} from {catchup_from_block}...");
-        let mut event_count = 0;
-        let event_filter_id = provider.new_filter(&filter).await?;
-        let past_events = provider
-            .get_filter_logs(event_filter_id)
-            .await?
-            .into_iter()
-            .map(|log| {
-                decode_log::<E>(&log).map(|event| {
-                    event_count += 1;
-                    (event, log)
-                })
-            });
-
-        for event in past_events {
-            self.spawn_event_handling(event_type, event, last_block_polled)
-                .await;
-        }
-
-        info!(
-            "Successfully caught {event_count} {event_type} events from block {catchup_from_block}!"
-        );
-        if let Err(e) = provider.uninstall_filter(event_filter_id).await {
-            warn!("Failed to uninstall {event_type} event catchup filter: {e}");
-        }
-        Ok(())
-    }
-
-    /// Event processing loop.
-    async fn process_events<E>(
-        &self,
-        event_type: EventType,
-        event_poller: EventPoller<E>,
-        last_block_polled: &mut Option<u64>,
-    ) where
-        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
-    {
-        let mut events = event_poller.into_stream();
+        let mut ticker = tokio::time::interval(poll_interval);
+        let max_errors = self.config.max_consecutive_polling_errors;
+        let mut consecutive_errors: usize = 0;
         loop {
-            info!("Waiting for next {event_type}...");
-            match events.next().await {
-                Some(event) => {
-                    self.spawn_event_handling(event_type, event, last_block_polled)
-                        .await
+            ticker.tick().await;
+            match self
+                .fetch_and_publish(contract, base_filter.clone(), event_types, from_block)
+                .await
+            {
+                Ok((new_from_block, has_more)) => {
+                    consecutive_errors = 0;
+                    from_block = new_from_block;
+                    if has_more {
+                        ticker.reset_immediately();
+                    }
                 }
-                None => break error!("Alloy Provider was dropped for {event_type}"),
+                Err(e) => {
+                    EVENT_LISTENING_ERRORS
+                        .with_label_values(&[contract.to_string().to_lowercase()])
+                        .inc();
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    warn!("{contract} listening error: {e} ({consecutive_errors}/{max_errors})");
+                    if consecutive_errors >= max_errors {
+                        anyhow::bail!("Too many consecutive errors for {contract}");
+                    }
+                }
             }
         }
     }
 
-    async fn spawn_event_handling<E>(
+    /// Fetches logs for a block range, decodes them, and publishes them in a single transaction.
+    ///
+    /// Returns `(new_from_block, has_more_blocks)`.
+    async fn fetch_and_publish(
         &self,
-        event_type: EventType,
-        event: alloy::sol_types::Result<(E, Log)>,
-        last_block: &mut Option<u64>,
-    ) where
-        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
-    {
-        match event {
-            Ok((event, log)) => {
-                *last_block = log.block_number;
-                EVENT_RECEIVED_COUNTER
-                    .with_label_values(&[event_type.as_str()])
-                    .inc();
+        contract: MonitoredContract,
+        base_filter: Filter,
+        event_types: &[EventType],
+        from_block: u64,
+    ) -> anyhow::Result<(u64, bool)> {
+        let current_block = self.provider.get_block_number().await?;
 
-                let db = self.db_pool.clone();
-                spawn_with_limit(handle_gateway_event(db, event.into(), log)).await;
-            }
-            Err(err) => {
-                error!("Error while listening for {event_type} events: {err}");
-                EVENT_RECEIVED_ERRORS
-                    .with_label_values(&[event_type.as_str()])
-                    .inc();
-            }
+        if from_block > current_block {
+            return Ok((from_block, false));
         }
-    }
 
-    /// Get the last block polled from config or DB.
-    async fn get_last_block_polled(&self, event_type: EventType) -> anyhow::Result<Option<u64>> {
-        let from_block_number = match event_type {
-            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
-                self.config.decryption_from_block_number
-            }
-            _ => self.config.kms_operation_from_block_number,
-        };
-
-        let last_block_polled = match from_block_number {
-            // Start polling event from the configured `from_block_number` if set
-            Some(from_block) => {
-                info!(
-                    "Found configured `from_block_number` ({from_block}) for {event_type} subscriptions!"
-                );
-                Some(from_block)
-            }
-            // Start from `last_block_polled` stored in DB + 1 if not configured
-            None => self
-                .get_last_block_polled_from_db(event_type)
-                .await?
-                .map(|n| n + 1),
-        };
-
-        info!(
-            "Starting {} subscriptions from block {}...",
-            event_type,
-            last_block_polled
-                .map(|b| b.to_string())
-                .unwrap_or_else(|| "latest".into())
+        let to_block = std::cmp::min(
+            from_block.saturating_add(self.config.get_logs_batch_size.saturating_sub(1)),
+            current_block,
         );
 
-        Ok(last_block_polled)
+        let filter = base_filter.from_block(from_block).to_block(to_block);
+
+        let logs = self.provider.get_logs(&filter).await?;
+        let events = Self::prepare_events(contract, logs)?;
+        publish_batch(&self.db_pool, events, event_types, to_block).await?;
+
+        Ok((to_block.saturating_add(1), to_block < current_block))
+    }
+
+    /// Decodes a log into a `GatewayEventKind`.
+    fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<GatewayEventKind> {
+        match contract {
+            MonitoredContract::Decryption => {
+                let event = DecryptionEvents::decode_log(&log.inner)
+                    .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
+                match event.data {
+                    DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+                    DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+                    _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
+                }
+            }
+            MonitoredContract::KmsGeneration => {
+                let event = KMSGenerationEvents::decode_log(&log.inner)
+                    .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?;
+                match event.data {
+                    KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
+                    KMSGenerationEvents::PRSSInit(e) => Ok(e.into()),
+                    KMSGenerationEvents::KeyReshareSameSet(e) => Ok(e.into()),
+                    _ => Err(anyhow!("Unexpected KMSGeneration event: {log:?}")),
+                }
+            }
+        }
+    }
+
+    /// Decodes logs and prepares `GatewayEvent` structs with OTLP context and metrics.
+    fn prepare_events(
+        contract: MonitoredContract,
+        logs: Vec<Log>,
+    ) -> anyhow::Result<Vec<GatewayEvent>> {
+        let mut events = Vec::with_capacity(logs.len());
+        for log in logs {
+            let event_kind = Self::decode_log(contract, &log)?;
+            EVENT_RECEIVED_COUNTER
+                .with_label_values(&[EventType::from(&event_kind).as_str()])
+                .inc();
+
+            let span = info_span!("handle_gateway_event", event = %event_kind);
+            let otlp_ctx = PropagationContext::inject(&span.context());
+            events.push(GatewayEvent::new(
+                event_kind,
+                log.transaction_hash,
+                otlp_ctx,
+            ));
+        }
+        Ok(events)
+    }
+
+    /// Determines the block to start event listening from.
+    async fn get_start_block(
+        &self,
+        from_block_config: Option<u64>,
+        event_types: &[EventType],
+    ) -> anyhow::Result<u64> {
+        if let Some(from_block) = from_block_config {
+            info!("Found configured from_block_number ({from_block}) for polling");
+            return Ok(from_block);
+        }
+
+        let mut min_last_processed_block: Option<u64> = None;
+        for &event_type in event_types {
+            if let Some(last) = self.get_last_block_polled_from_db(event_type).await? {
+                min_last_processed_block = match min_last_processed_block {
+                    Some(current) => Some(std::cmp::min(current, last)),
+                    None => Some(last),
+                };
+            }
+        }
+
+        match min_last_processed_block {
+            Some(last_block_polled) => Ok(last_block_polled.saturating_add(1)),
+            None => Ok(self.provider.get_block_number().await?),
+        }
     }
 
     async fn get_last_block_polled_from_db(
@@ -346,88 +307,54 @@ where
     }
 }
 
-/// Main function used to trace a single event handling across all Connector's services.
-#[tracing::instrument(skip_all, fields(event = %event_kind))]
-async fn handle_gateway_event(db_pool: Pool<Postgres>, event_kind: GatewayEventKind, log: Log) {
-    let event = GatewayEvent::new(
-        event_kind,
-        log.transaction_hash,
-        PropagationContext::inject(&tracing::Span::current().context()),
-    );
-    if let Err(err) = publish_event(&db_pool, event, log.block_number).await {
-        error!("Failed to publish event: {err}");
-    }
-}
-
-fn decode_log<E: SolEvent>(log: &Log) -> alloy::sol_types::Result<E> {
-    let log_data: &LogData = log.as_ref();
-    E::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
-}
-
-/// The timeout we allow for the listener to store the last block polled in DB.
-const LAST_BLOCK_POLLED_UPDATE_TIMEOUT: Duration = Duration::from_mins(5);
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::{
-        primitives::Address,
-        providers::{
-            Identity, ProviderBuilder, RootProvider,
-            fillers::{
-                BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
-            },
-            mock::Asserter,
-        },
-        rpc::json_rpc::ErrorPayload,
+    use alloy::providers::{
+        Identity, ProviderBuilder, RootProvider,
+        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+        mock::Asserter,
     };
+    use alloy::rpc::json_rpc::ErrorPayload;
     use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
+    use std::time::Duration;
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
-    async fn test_reset_filter_stops_listener() {
+    async fn test_consecutive_get_logs_error_stops_listener() {
         let (_test_instance, asserter, gw_listener) = test_setup(None).await;
 
-        asserter.push_failure(ErrorPayload {
-            code: -32000,
-            message: "filter not found".into(),
-            data: None,
-        });
+        // Initial get_block_number succeeds
+        asserter.push_success(&100_u64);
 
-        gw_listener.subscribe(EventType::KeygenRequest).await;
+        for _ in 0..MAX_CONSECUTIVE_POLLING_ERRORS {
+            // Loop get_block_number succeeds
+            asserter.push_success(&101_u64);
+
+            // get_logs fails
+            asserter.push_failure(ErrorPayload {
+                code: -32000,
+                message: "get logs error".into(),
+                data: None,
+            });
+        }
+
+        gw_listener.poll_events(MonitoredContract::Decryption).await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
-    async fn test_failed_catchup_does_not_stop_listener() {
-        let (mut test_instance, asserter, gw_listener) = test_setup(Some(0)).await;
-
-        asserter.push_failure(ErrorPayload {
-            code: -32002,
-            message: "request timed out".into(),
-            data: None,
-        });
-
-        let event_type = EventType::KeygenRequest;
-        tokio::spawn(gw_listener.subscribe(event_type));
-        test_instance.wait_for_log("Failed to catch up").await;
-        test_instance
-            .wait_for_log(&format!("Waiting for next {event_type}"))
-            .await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(90))]
-    #[tokio::test]
-    async fn test_listener_ended_by_end_of_any_task() {
+    async fn test_listener_ended_by_cancel_token() {
         let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
-        // Will stop because some subscription tasks will not be able to init their event filter
-        gw_listener.start().await;
+        gw_listener.cancel_token.cancel();
 
-        test_instance.wait_for_log("Failed to subscribe to").await;
+        gw_listener.start().await;
+        test_instance
+            .wait_for_log("GatewayListener stopped successfully")
+            .await;
     }
 
     type MockProvider = FillProvider<
@@ -438,23 +365,21 @@ mod tests {
         RootProvider,
     >;
 
+    const MAX_CONSECUTIVE_POLLING_ERRORS: usize = 2;
+
     async fn test_setup(
         kms_operation_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
-        // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
         let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
-
-        // Used to mock response of `filter.watch()` operation
-        let mocked_eth_get_filter_changes_result = Address::default();
-        asserter.push_success(&mocked_eth_get_filter_changes_result);
 
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
             kms_operation_from_block_number,
+            max_consecutive_polling_errors: MAX_CONSECUTIVE_POLLING_ERRORS,
             ..Default::default()
         };
         let listener = GatewayListener::new(
