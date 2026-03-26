@@ -44,6 +44,16 @@ function runJson(command: string) {
   });
 }
 
+function formatRawOutput(raw: string) {
+  const output = raw.trim();
+  if (!output) {
+    return "<empty output>";
+  }
+
+  const maxLen = 2000;
+  return output.length > maxLen ? output.slice(-maxLen) : output;
+}
+
 function forgeInspectAbi(contract: string, root: string): AbiEntry[] | null {
   try {
     const raw = runJson(`forge inspect "contracts/${contract}.sol:${contract}" abi --root "${root}" --json --force`);
@@ -51,9 +61,20 @@ function forgeInspectAbi(contract: string, root: string): AbiEntry[] | null {
     // clean directory.  Extract the JSON array instead of parsing the whole output.
     const jsonStart = raw.indexOf("[");
     if (jsonStart === -1) {
+      console.error(`forge inspect for ${contract}: no JSON array found in output\n${formatRawOutput(raw)}`);
       return null;
     }
-    return JSON.parse(raw.slice(jsonStart));
+
+    try {
+      return JSON.parse(raw.slice(jsonStart));
+    } catch (error) {
+      console.error(
+        `forge inspect for ${contract}: failed to parse JSON output\n${
+          error instanceof Error ? error.message : String(error)
+        }\n${formatRawOutput(raw)}`,
+      );
+      return null;
+    }
   } catch (error: any) {
     if (error.stderr) {
       console.error(String(error.stderr));
