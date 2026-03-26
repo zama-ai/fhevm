@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: cgr.dev/zama.ai/postgres:17
+        image: cgr.dev/zama.ai/postgres:17.9@sha256:d42847b7c5f9ece73655164588b2387dcd5fadd618ea64761c19d3484498cef0
         credentials:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
