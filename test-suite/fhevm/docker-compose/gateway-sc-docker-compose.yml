@@ -51,7 +51,7 @@ services:
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     command:
-      - npx hardhat task:addGatewayPausers --use-internal-pauser-set-address true
+      - npx hardhat task:addGatewayPausers --use-internal-proxy-address true
     depends_on:
       gateway-sc-add-network:
         condition: service_completed_successfully

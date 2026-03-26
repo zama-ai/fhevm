@@ -953,7 +953,7 @@ const composeDown = async (component: string) => {
 
 const removeProjectResources = async (kind: "container" | "volume" | "network", format: string) => {
   const listed = await run(
-    ["docker", kind, "ls", "--filter", `label=com.docker.compose.project=${PROJECT}`, "--format", format],
+    ["docker", kind, "ls", ...(kind === "container" ? ["-a"] : []), "--filter", `label=com.docker.compose.project=${PROJECT}`, "--format", format],
     { allowFailure: true },
   );
   if (listed.code !== 0) {
