@@ -228,11 +228,11 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
-#### Metric Name: `kms_connector_gw_listener_event_received_errors`
+#### Metric Name: `kms_connector_gw_listener_event_listening_errors`
  - **Type**: Counter
  - **Labels**:
-   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
- - **Description**: Counts the number of errors encountered by the GW listener while receiving events.
+   - `contract`: can be used to filter by contract (decryption, kmsgeneration).
+ - **Description**: Counts the number of errors encountered by the GW listener while listening for events.
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
