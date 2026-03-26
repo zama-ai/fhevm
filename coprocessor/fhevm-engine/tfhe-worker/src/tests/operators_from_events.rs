@@ -10,10 +10,12 @@ use crate::tests::event_helpers::{
     zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
-    generate_binary_test_cases, generate_unary_test_cases, BinaryOperatorTestCase,
-    UnaryOperatorTestCase,
+    generate_binary_test_cases, generate_panic_binary_test_cases, generate_unary_test_cases,
+    BinaryOperatorTestCase, UnaryOperatorTestCase,
 };
-use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_allowed_handles_computed};
+use crate::tests::utils::{
+    decrypt_ciphertexts, errors_on_allowed_handles, wait_until_all_allowed_handles_computed,
+};
 
 const LOCAL_SUPPORTED_TYPES: &[i32] = &[
     0, // bool
@@ -316,6 +318,93 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         );
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool: _,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let mut cases = vec![];
+    for op in generate_panic_binary_test_cases() {
+        if !supported_types().contains(&op.input_types) {
+            continue;
+        }
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
+            continue;
+        }
+        let lhs_handle = next_handle();
+        let rhs_handle = next_handle();
+        let output_handle = next_handle();
+        let transaction_id = next_handle();
+
+        let lhs_bytes = as_scalar_uint(&op.lhs);
+        let rhs_bytes = as_scalar_uint(&op.rhs);
+
+        println!(
+            "Operations for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs
+        );
+        let caller = zero_address();
+
+        let mut tx = listener_db.new_transaction().await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            transaction_id,
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: lhs_bytes,
+                toType: to_ty(op.input_types),
+                result: lhs_handle,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &lhs_handle).await?;
+        if !op.is_scalar {
+            insert_event(
+                &listener_db,
+                &mut tx,
+                transaction_id,
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: rhs_bytes,
+                    toType: to_ty(op.input_types),
+                    result: rhs_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &rhs_handle).await?;
+        }
+        let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
+        insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
+        allow_handle(&listener_db, &mut tx, &output_handle).await?;
+        tx.commit().await?;
+
+        cases.push((op, output_handle));
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    let errors = errors_on_allowed_handles(&app).await?;
+    for msg in &errors {
+        assert!(
+            msg.contains("ExecutionPanic"),
+            "Expected error message to contain 'ExecutionPanic', but got: {msg}"
+        );
+    }
+    assert_eq!(
+        errors.len(),
+        cases.len(),
+        "Expected all computations to have errors, but some succeeded"
+    );
     Ok(())
 }
 
