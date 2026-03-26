@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET req_status = 'processing'::req_status\n            WHERE req_status = 'tx_in_flight'::req_status\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6edd94d68d67c229107ace8c19014a794a581beb1f2424073a97ae3e5c320637"
+}
