@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::{check_event_in_db, fetch_from_db, mock_event_on_gw, start_test_listener};
+use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
 use connector_utils::{tests::setup::TestInstanceBuilder, types::db::EventType};
 use rstest::rstest;
 use std::time::Duration;
@@ -67,12 +67,7 @@ async fn test_block_tracking(event_type: EventType) -> anyhow::Result<()> {
         start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
 
     let (expected_event, _) = mock_event_on_gw(&test_instance, event_type).await?;
-    test_instance
-        .wait_for_log("Event successfully stored in DB!")
-        .await;
-
-    let rows = fetch_from_db(test_instance.db(), event_type).await?;
-    check_event_in_db(&rows, expected_event)?;
+    poll_db_for_event(test_instance.db(), event_type, &expected_event).await?;
     info!("Event successfully stored! Stopping GatewayListener...");
     cancel_token.cancel();
     gw_listener_task?.await?;
@@ -87,12 +82,7 @@ async fn test_block_tracking(event_type: EventType) -> anyhow::Result<()> {
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
 
-    test_instance
-        .wait_for_log("Event successfully stored in DB!")
-        .await;
-
-    let rows = fetch_from_db(test_instance.db(), event_type).await?;
-    check_event_in_db(&rows, expected_event)?;
+    poll_db_for_event(test_instance.db(), event_type, &expected_event).await?;
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
