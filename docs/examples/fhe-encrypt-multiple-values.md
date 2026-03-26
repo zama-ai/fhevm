@@ -1,4 +1,4 @@
-This example demonstrates the FHE encryption mechanism with multiple values.
+This example shows how to encrypt and handle multiple values in a single transaction.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -81,7 +81,7 @@ contract EncryptMultipleValues is ZamaEthereumConfig {
 
 {% tab title="EncryptMultipleValues.ts" %}
 
-```ts
+```typescript
 //TODO;
 import { EncryptMultipleValues, EncryptMultipleValues__factory } from "../../../types";
 import type { Signers } from "../../types";

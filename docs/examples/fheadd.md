@@ -1,4 +1,4 @@
-This example demonstrates how to write a simple "a + b" contract using FHEVM.
+This example demonstrates how to perform addition operations on encrypted values.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -66,14 +66,15 @@ contract FHEAdd is ZamaEthereumConfig {
 
 {% tab title="FHEAdd.ts" %}
 
-```ts
-import { FHEAdd, FHEAdd__factory } from "../../../types";
-import type { Signers } from "../../types";
+```typescript
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as hre from "hardhat";
+
+import { FHEAdd, FHEAdd__factory } from "../../../types";
+import type { Signers } from "../../types";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
@@ -148,6 +149,7 @@ describe("FHEAdd", function () {
     expect(clearAplusB).to.equal(a + b);
   });
 });
+
 ```
 
 {% endtab %}
