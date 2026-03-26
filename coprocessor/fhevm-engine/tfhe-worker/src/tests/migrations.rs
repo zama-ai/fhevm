@@ -517,3 +517,74 @@ async fn test_remove_tenants_migration_empty_db() {
         "key_id_gw default should be empty bytes on empty DB"
     );
 }
+
+/// Verifies that testcontainers applies new migrations correctly.
+/// This test can be removed once CI migration validation is confirmed.
+#[tokio::test]
+async fn test_ci_migration_applied() {
+    let db = setup_test_db(ImportMode::None)
+        .await
+        .expect("setup test db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    // Verify ALTER TABLE added the column
+    let column_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'ciphertexts128' AND column_name = 'ci_test_column'
+        )",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        column_exists,
+        "ci_test_column should exist on ciphertexts128"
+    );
+
+    // Verify CREATE TABLE
+    let table_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'ci_test_table'
+        )",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(table_exists, "ci_test_table should exist");
+
+    // Verify INDEX was created
+    let index_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE indexname = 'idx_ci_test_table_name'
+        )",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(index_exists, "idx_ci_test_table_name index should exist");
+
+    // Verify INSERT seeded data
+    let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ci_test_table")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row_count, 3, "ci_test_table should have 3 seeded rows");
+
+    // Verify data integrity
+    let sum: bigdecimal::BigDecimal = sqlx::query_scalar("SELECT SUM(value) FROM ci_test_table")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sum, 600.into(), "sum of values should be 600");
+
+    // Verify JSONB column
+    let ci_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ci_test_table WHERE metadata->>'env' = 'ci'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ci_count, 2, "two rows should have env=ci in metadata");
+}
