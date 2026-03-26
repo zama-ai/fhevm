@@ -83,12 +83,34 @@ async fn setup_test_app_existing_localhost(
     if with_reset {
         info!("Resetting local database at {db_url}");
         let admin_db_url = admin_url_from(db_url.as_str());
-        create_database(&admin_db_url, db_url.as_str(), mode).await?;
+        create_database(&admin_db_url, db_url.as_str(), mode.clone()).await?;
     }
 
     info!("Using existing local database at {db_url}");
 
-    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?).await;
+    let pool = sqlx::PgPool::connect(db_url.as_str()).await?;
+
+    if !with_reset {
+        match mode {
+            ImportMode::WithKeysNoSns => {
+                info!("Loading test keys (without SnS) into existing database...");
+                sqlx::query("TRUNCATE keys, host_chains, crs CASCADE")
+                    .execute(&pool)
+                    .await?;
+                setup_test_key(&pool, false).await?;
+            }
+            ImportMode::WithAllKeys => {
+                info!("Loading test keys (with all keys) into existing database...");
+                sqlx::query("TRUNCATE keys, host_chains, crs CASCADE")
+                    .execute(&pool)
+                    .await?;
+                setup_test_key(&pool, true).await?;
+            }
+            _ => {}
+        }
+    }
+
+    let _ = get_sns_pk_size(&pool).await;
 
     Ok(DBInstance {
         _container: None,
@@ -129,6 +151,7 @@ async fn setup_test_app_custom_docker(
     })
 }
 
+#[derive(Clone)]
 pub enum ImportMode {
     None,
     WithKeysNoSns,

@@ -230,7 +230,7 @@ jobs:
         if [ "$IS_MERGE_QUEUE" != "1" ]; then
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
         fi
-        cargo test -p "$TEST_PACKAGE" --profile coverage
+        cargo test -p "$TEST_PACKAGE" --profile coverage -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
 
     - name: Export LCOV coverage data
