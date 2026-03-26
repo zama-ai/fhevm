@@ -429,21 +429,47 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-pauseAllGatewayContracts}.
      * Contracts that are technically pausable but do not provide any pausable functions are not
-     * paused. If at least one of the contracts is already paused, the function will revert.
+     * paused. If all of the contracts are already paused, the function will revert.
      */
     function pauseAllGatewayContracts() external virtual onlyPauser {
-        DECRYPTION.pause();
-        INPUT_VERIFICATION.pause();
+        bool isDecryptionPaused = DECRYPTION.paused();
+        bool isInputVerificationPaused = INPUT_VERIFICATION.paused();
+
+        if (isDecryptionPaused && isInputVerificationPaused) {
+            revert AllGatewayContractsAlreadyPaused();
+        }
+
+        if (!isDecryptionPaused) {
+            DECRYPTION.pause();
+        }
+
+        if (!isInputVerificationPaused) {
+            INPUT_VERIFICATION.pause();
+        }
+
         emit PauseAllGatewayContracts();
     }
 
     /**
      * @notice See {IGatewayConfig-unpauseAllGatewayContracts}.
-     * If at least one of the contracts is not paused, the function will revert.
+     * If none of the contracts are paused, the function will revert.
      */
     function unpauseAllGatewayContracts() external virtual onlyOwner {
-        DECRYPTION.unpause();
-        INPUT_VERIFICATION.unpause();
+        bool isDecryptionPaused = DECRYPTION.paused();
+        bool isInputVerificationPaused = INPUT_VERIFICATION.paused();
+
+        if (!isDecryptionPaused && !isInputVerificationPaused) {
+            revert AllGatewayContractsAlreadyUnpaused();
+        }
+
+        if (isDecryptionPaused) {
+            DECRYPTION.unpause();
+        }
+
+        if (isInputVerificationPaused) {
+            INPUT_VERIFICATION.unpause();
+        }
+
         emit UnpauseAllGatewayContracts();
     }
 
