@@ -76,7 +76,7 @@ contract UserDecryptSingleValue is ZamaEthereumConfig {
 
 ```ts
 import { UserDecryptSingleValue, UserDecryptSingleValue__factory } from "../../../types";
-import type { Signers } from "../../types";
+import type { Signers } from "../../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
