@@ -36,6 +36,9 @@ const KMS_GENERATION_EVENT_TYPES: [EventType; 5] = [
 ];
 
 /// Identifies which contract is being polled.
+///
+/// **Note:** The kms-connector is designed to listen to a specific set of events/contracts,
+/// so listening to a new contract/event to monitor requires a code change and a new release.
 #[derive(Clone, Copy)]
 enum MonitoredContract {
     Decryption,
