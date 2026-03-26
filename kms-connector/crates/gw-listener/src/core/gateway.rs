@@ -189,7 +189,7 @@ where
     ) -> anyhow::Result<(u64, bool)> {
         let current_block = self.provider.get_block_number().await?;
 
-        if from_block >= current_block {
+        if from_block > current_block {
             return Ok((from_block, false));
         }
 
