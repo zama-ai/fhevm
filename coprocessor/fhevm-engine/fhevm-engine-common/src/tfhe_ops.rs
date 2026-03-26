@@ -75,22 +75,25 @@ pub fn deserialize_fhe_ciphertext(
 }
 
 /// Function assumes encryption key already set
-pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> SupportedFheCiphertexts {
+pub fn trivial_encrypt_be_bytes(
+    output_type: i16,
+    input_bytes: &[u8],
+) -> Result<SupportedFheCiphertexts, FhevmError> {
     let last_byte = if !input_bytes.is_empty() {
         input_bytes[input_bytes.len() - 1]
     } else {
         0
     };
     match output_type {
-        0 => SupportedFheCiphertexts::FheBool(
+        0 => Ok(SupportedFheCiphertexts::FheBool(
             FheBool::try_encrypt_trivial(last_byte > 0).expect("trivial encrypt bool"),
-        ),
-        1 => SupportedFheCiphertexts::FheUint4(
+        )),
+        1 => Ok(SupportedFheCiphertexts::FheUint4(
             FheUint4::try_encrypt_trivial(last_byte).expect("trivial encrypt 4"),
-        ),
-        2 => SupportedFheCiphertexts::FheUint8(
+        )),
+        2 => Ok(SupportedFheCiphertexts::FheUint8(
             FheUint8::try_encrypt_trivial(last_byte).expect("trivial encrypt 8"),
-        ),
+        )),
         3 => {
             let mut padded: [u8; 2] = [0; 2];
             if !input_bytes.is_empty() {
@@ -105,9 +108,9 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                     .copy_from_slice(&input_bytes[input_bytes.len() - len..]);
             }
             let res = u16::from_be_bytes(padded);
-            SupportedFheCiphertexts::FheUint16(
+            Ok(SupportedFheCiphertexts::FheUint16(
                 FheUint16::try_encrypt_trivial(res).expect("trivial encrypt 16"),
-            )
+            ))
         }
         4 => {
             let mut padded: [u8; 4] = [0; 4];
@@ -123,9 +126,9 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                     .copy_from_slice(&input_bytes[input_bytes.len() - len..]);
             }
             let res: u32 = u32::from_be_bytes(padded);
-            SupportedFheCiphertexts::FheUint32(
+            Ok(SupportedFheCiphertexts::FheUint32(
                 FheUint32::try_encrypt_trivial(res).expect("trivial encrypt 32"),
-            )
+            ))
         }
         5 => {
             let mut padded: [u8; 8] = [0; 8];
@@ -141,9 +144,9 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                     .copy_from_slice(&input_bytes[input_bytes.len() - len..]);
             }
             let res: u64 = u64::from_be_bytes(padded);
-            SupportedFheCiphertexts::FheUint64(
+            Ok(SupportedFheCiphertexts::FheUint64(
                 FheUint64::try_encrypt_trivial(res).expect("trivial encrypt 64"),
-            )
+            ))
         }
         6 => {
             let mut padded: [u8; 16] = [0; 16];
@@ -160,7 +163,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
             }
             let res: u128 = u128::from_be_bytes(padded);
             let output = FheUint128::try_encrypt_trivial(res).expect("trivial encrypt 128");
-            SupportedFheCiphertexts::FheUint128(output)
+            Ok(SupportedFheCiphertexts::FheUint128(output))
         }
         7 => {
             let mut padded: [u8; 32] = [0; 32];
@@ -180,7 +183,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
             let output: FheUint160 = FheUint256::try_encrypt_trivial(be)
                 .expect("trivial encrypt 160")
                 .cast_into();
-            SupportedFheCiphertexts::FheUint160(output)
+            Ok(SupportedFheCiphertexts::FheUint160(output))
         }
         8 => {
             let mut padded: [u8; 32] = [0; 32];
@@ -198,7 +201,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                 be.copy_from_be_byte_slice(&padded);
             }
             let output = FheUint256::try_encrypt_trivial(be).expect("trivial encrypt 256");
-            SupportedFheCiphertexts::FheUint256(output)
+            Ok(SupportedFheCiphertexts::FheUint256(output))
         }
         9 => {
             let mut padded: [u8; 64] = [0; 64];
@@ -216,7 +219,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                 be.copy_from_be_byte_slice(&padded);
             }
             let output = FheUint512::try_encrypt_trivial(be).expect("trivial encrypt 512");
-            SupportedFheCiphertexts::FheBytes64(output)
+            Ok(SupportedFheCiphertexts::FheBytes64(output))
         }
         10 => {
             let mut padded: [u8; 128] = [0; 128];
@@ -234,7 +237,7 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                 be.copy_from_be_byte_slice(&padded);
             }
             let output = FheUint1024::try_encrypt_trivial(be).expect("trivial encrypt 1024");
-            SupportedFheCiphertexts::FheBytes128(output)
+            Ok(SupportedFheCiphertexts::FheBytes128(output))
         }
         11 => {
             let mut padded: [u8; 256] = [0; 256];
@@ -252,11 +255,9 @@ pub fn trivial_encrypt_be_bytes(output_type: i16, input_bytes: &[u8]) -> Support
                 be.copy_from_be_byte_slice(&padded);
             }
             let output = FheUint2048::try_encrypt_trivial(be).expect("trivial encrypt 2048");
-            SupportedFheCiphertexts::FheBytes256(output)
+            Ok(SupportedFheCiphertexts::FheBytes256(output))
         }
-        other => {
-            panic!("Unknown input type for trivial encryption: {other}")
-        }
+        other => Err(FhevmError::UnknownFheType(other as i32)),
     }
 }
 
@@ -698,9 +699,10 @@ pub fn check_fhe_operand_types(
 
                     Ok(())
                 }
-                other => {
-                    panic!("Unexpected branch: {:?}", other)
-                }
+                other => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("Unexpected op_type branch: {:?}", other),
+                    input_types: vec![],
+                }),
             }
         }
     }
@@ -3058,7 +3060,10 @@ pub fn perform_fhe_operation_impl(
                             let out: tfhe::FheUint1024 = inp.clone().cast_into();
                             Ok(SupportedFheCiphertexts::FheBytes128(out))
                         }
-                        other => panic!("unexpected type: {other}"),
+                        other => Err(FhevmError::UnknownCastType {
+                            fhe_operation: format!("{:?}", fhe_operation),
+                            type_to_cast_to: other,
+                        }),
                     }
                 }
             }
@@ -3070,7 +3075,7 @@ pub fn perform_fhe_operation_impl(
         SupportedFheOperations::FheTrivialEncrypt => match (&input_operands[0], &input_operands[1])
         {
             (SupportedFheCiphertexts::Scalar(inp), SupportedFheCiphertexts::Scalar(op)) => {
-                Ok(trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, inp))
+                trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, inp)
             }
             _ => Err(FhevmError::UnsupportedFheTypes {
                 fhe_operation: format!("{:?}", fhe_operation),
@@ -3092,7 +3097,7 @@ pub fn perform_fhe_operation_impl(
             };
             let rand_seed = to_be_u128_bit(rand_counter);
             let to_type = to_be_u16_bit(to_type) as i16;
-            Ok(generate_random_number(to_type as i16, rand_seed, None))
+            generate_random_number(to_type as i16, rand_seed, None)
         }
         SupportedFheOperations::FheRandBounded => {
             let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
@@ -3115,13 +3120,12 @@ pub fn perform_fhe_operation_impl(
             };
             let rand_seed = to_be_u128_bit(rand_counter);
             let to_type = to_be_u16_bit(to_type) as i16;
-            Ok(generate_random_number(
-                to_type as i16,
-                rand_seed,
-                Some(upper_bound),
-            ))
+            generate_random_number(to_type as i16, rand_seed, Some(upper_bound))
         }
-        SupportedFheOperations::FheGetInputCiphertext => todo!("Implement FheGetInputCiphertext"),
+        SupportedFheOperations::FheGetInputCiphertext => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!("{:?}", fhe_operation),
+            input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        }),
     }
 }
 
@@ -3288,20 +3292,19 @@ pub fn generate_random_number(
     the_type: i16,
     seed: u128,
     upper_bound: Option<&[u8]>,
-) -> SupportedFheCiphertexts {
+) -> Result<SupportedFheCiphertexts, FhevmError> {
     match the_type {
-        0 => {
-            SupportedFheCiphertexts::FheBool(FheBool::generate_oblivious_pseudo_random(Seed(seed)))
-        }
+        0 => Ok(SupportedFheCiphertexts::FheBool(
+            FheBool::generate_oblivious_pseudo_random(Seed(seed)),
+        )),
         1 => {
             let bit_count = 4;
             let random_bits = upper_bound
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint4(FheUint4::generate_oblivious_pseudo_random_bounded(
-                Seed(seed),
-                random_bits,
+            Ok(SupportedFheCiphertexts::FheUint4(
+                FheUint4::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         2 => {
@@ -3310,9 +3313,8 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint8(FheUint8::generate_oblivious_pseudo_random_bounded(
-                Seed(seed),
-                random_bits,
+            Ok(SupportedFheCiphertexts::FheUint8(
+                FheUint8::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         3 => {
@@ -3321,9 +3323,8 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint16(FheUint16::generate_oblivious_pseudo_random_bounded(
-                Seed(seed),
-                random_bits,
+            Ok(SupportedFheCiphertexts::FheUint16(
+                FheUint16::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         4 => {
@@ -3332,9 +3333,8 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint32(FheUint32::generate_oblivious_pseudo_random_bounded(
-                Seed(seed),
-                random_bits,
+            Ok(SupportedFheCiphertexts::FheUint32(
+                FheUint32::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         5 => {
@@ -3343,9 +3343,8 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint64(FheUint64::generate_oblivious_pseudo_random_bounded(
-                Seed(seed),
-                random_bits,
+            Ok(SupportedFheCiphertexts::FheUint64(
+                FheUint64::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         6 => {
@@ -3354,9 +3353,9 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint128(
+            Ok(SupportedFheCiphertexts::FheUint128(
                 FheUint128::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
         7 => {
             let bit_count = 160;
@@ -3364,9 +3363,9 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint160(
+            Ok(SupportedFheCiphertexts::FheUint160(
                 FheUint160::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
         8 => {
             let bit_count = 256;
@@ -3374,9 +3373,9 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheUint256(
+            Ok(SupportedFheCiphertexts::FheUint256(
                 FheUint256::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
         9 => {
             let bit_count = 512;
@@ -3384,9 +3383,9 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheBytes64(
+            Ok(SupportedFheCiphertexts::FheBytes64(
                 FheUint512::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
         10 => {
             let bit_count = 1024;
@@ -3394,9 +3393,9 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheBytes128(
+            Ok(SupportedFheCiphertexts::FheBytes128(
                 FheUint1024::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
         11 => {
             let bit_count = 2048;
@@ -3404,12 +3403,10 @@ pub fn generate_random_number(
                 .map(be_number_random_bits)
                 .unwrap_or(bit_count)
                 .min(bit_count) as u64;
-            SupportedFheCiphertexts::FheBytes256(
+            Ok(SupportedFheCiphertexts::FheBytes256(
                 FheUint2048::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            )
+            ))
         }
-        other => {
-            panic!("unknown type to trim to: {other}")
-        }
+        other => Err(FhevmError::UnknownFheType(other as i32)),
     }
 }
