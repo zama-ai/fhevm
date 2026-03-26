@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT ext_job_id\n            FROM public_decrypt_req\n            WHERE int_job_id = $1\n              AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "983c4ee7a837cc15d10984b211e525c7855155ca6a3319095c01a02833db8fc8"
+}

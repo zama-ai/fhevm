@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH target AS (\n                SELECT id FROM user_decrypt_req WHERE gw_reference_id = $2\n            ),\n            updated_row AS (\n                UPDATE user_decrypt_req\n                SET gw_consensus_tx_hash = $1\n                WHERE id = (SELECT id FROM target)\n                  AND gw_consensus_tx_hash IS NULL\n                  AND req_status IN ('receipt_received'::req_status, 'completed'::req_status)\n                RETURNING req_status, updated_at, err_reason, int_job_id\n            )\n            -- 1. Select from updated_row\n            SELECT\n                req_status as \"req_status!: ReqStatus\",\n                updated_at as \"updated_at!\",\n                err_reason,\n                int_job_id as \"int_job_id!\"\n            FROM updated_row\n\n            UNION ALL\n\n            -- 2. Select from original table\n            SELECT\n                req_status as \"req_status!: ReqStatus\",\n                updated_at as \"updated_at!\",\n                err_reason,\n                int_job_id as \"int_job_id!\"\n            FROM user_decrypt_req\n            WHERE id = (SELECT id FROM target)\n              AND NOT EXISTS (SELECT 1 FROM updated_row)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "err_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "int_job_id!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "33fc40764a8e52bbe22db567fd0467a02b5e3cebe7965429b429755b33370356"
+}
