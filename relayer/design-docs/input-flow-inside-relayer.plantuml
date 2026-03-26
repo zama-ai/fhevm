@@ -1,0 +1,57 @@
+@startuml Input flow inside relayer
+
+participant User as "User"
+
+box Relayer #LightGray
+participant HTTPListener as "HTTP Listener"
+participant InputHandler_UserApi as "Input handler\nUser API"
+participant InputHandler_Gateway as "Input handler\nGateway"
+participant GatewayL2EventListener as "Gateway L2\nEvent Listener" 
+participant Orchestrator as "Orchestrator"
+end box
+
+participant GatewayL2 as "Gateway L2"
+
+
+User -> HTTPListener: Send HTTP Post Request to\n"/input-proofs" endpoint
+HTTPListener -> HTTPListener: Generate\nOrchestrator Request ID
+HTTPListener -> Orchestrator: Register once handlers for the Orchestrator Request ID\nand for events Input:ResultFromGwL2, Input:Error
+HTTPListener -> Orchestrator: Dispatch\nInput:HTTPRequestFromUser event
+Orchestrator -> InputHandler_UserApi:Handle\nInput:HTTPRequestFromUser event
+InputHandler_UserApi -> Orchestrator: Dispatch\nInput:RequestFromUser event
+
+Orchestrator -> InputHandler_Gateway: Handle\nInput:RequestFromUser event
+InputHandler_Gateway -> GatewayL2: Send "VerifyProofRequest" transaction to\nZkPoK Manager contract
+InputHandler_Gateway <- GatewayL2: Receive Transaction receipt\ncontaining ZkProof ID.
+InputHandler_Gateway -> InputHandler_Gateway: Store (ZkProof ID,Orchestrator Request ID)\nmapping in context data.
+
+== Wait until request is picked up by "k" coprocessors (threshold defined in ZkPoK Manager),\nprocessed and result is posted back. ==
+
+
+opt #LightGreen
+GatewayL2 -> GatewayL2EventListener: Send Result (Success)
+GatewayL2EventListener -> Orchestrator: Dispatch\nEventLogFromGwL2 event
+else #LightPink Result not available within HTTP timeout
+note over GatewayL2, GatewayL2EventListener: Yet to define how this should be handled\nMaybe do nothing and HTTP server sends\n"timed out" error to user.
+
+end
+
+
+Orchestrator -> InputHandler_Gateway: Handle\nEventLogFromGwL2 event
+
+opt #LightGreen topic matches VerifyProofResponse Event 
+InputHandler_Gateway -> InputHandler_Gateway: Decode event data 
+InputHandler_Gateway -> InputHandler_Gateway: Retrieve the request ID for\nZkProofID in Event Log\nfrom context data
+InputHandler_Gateway -> Orchestrator: Dispatch\nInput:ResultFromGwL2
+else #White topic does not match
+InputHandler_Gateway -> InputHandler_Gateway: Ignore the event log
+end
+
+Orchestrator -> InputHandler_UserApi: Handle Input:ResultFromGwL2\nfor the specific Request ID
+InputHandler_UserApi -> User: Send ZkPoK ID and Attestation\nin HTTP Post Response
+
+note over User: If the user wants to retrieve the attestation\nfor same ZkPoK at later time, they would need\nthe ZkPoK ID. As ZkPoK ID is not deterministically\nderived from the ZkPok data.
+
+note over InputHandler_UserApi: Potential feature:\nMaybe the relayer could derive a deterministic ID\nfrom ZkPoK, map to ZkPoK ID from Gateway L2\nand provide a cache layer.
+
+@enduml

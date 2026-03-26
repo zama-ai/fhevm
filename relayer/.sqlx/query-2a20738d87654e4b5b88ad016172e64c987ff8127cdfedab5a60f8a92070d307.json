@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                ext_job_id,\n                req_status as \"req_status!: ReqStatus\", -- Force Non-Null Enum\n                res,\n                err_reason,\n                updated_at\n            FROM public_decrypt_req\n            WHERE ext_job_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "res",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "err_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "2a20738d87654e4b5b88ad016172e64c987ff8127cdfedab5a60f8a92070d307"
+}

@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT req_status as \"req_status!: ReqStatus\"\n                FROM input_proof_req\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8864b8e11244693474b49f264923f339821a0752f66956436c15bda419354da4"
+}
