@@ -18,10 +18,8 @@ jobs:
   check-changes:
     name: contracts-abi-compat-check/check-changes
     permissions:
-      # Required by actions/checkout to clone the repository.
-      contents: read
-      # Required by dorny/paths-filter to inspect changed files on pull requests.
-      pull-requests: read
+      contents: read # Required by actions/checkout to clone the repository
+      pull-requests: read # Required by dorny/paths-filter to inspect changed files
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
@@ -49,8 +47,7 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
-      # Required by actions/checkout to clone the PR branch and baseline tag.
-      contents: read
+      contents: read # Required by actions/checkout to clone the PR branch and baseline tag
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
