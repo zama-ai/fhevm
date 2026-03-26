@@ -41,7 +41,7 @@ function runJson(command: string) {
 function forgeInspectAbi(contract: string, root: string): AbiEntry[] | null {
   try {
     return JSON.parse(
-      runJson(`forge inspect "contracts/${contract}.sol:${contract}" abi --root "${root}" --json --force`),
+      runJson(`forge inspect "contracts/${contract}.sol:${contract}" abi --root "${root}" --json`),
     );
   } catch (error: any) {
     if (error.stderr) {

@@ -28,7 +28,7 @@ function parseArgs() {
       toRef = args[++idx];
     } else if (arg === "--package") {
       const value = args[++idx] as PackageName;
-      if (value !== "host-contracts" && value !== "gateway-contracts") usage();
+      if (!(value in PACKAGE_CONFIG)) usage();
       packages.push(value);
     } else {
       usage();
@@ -40,7 +40,7 @@ function parseArgs() {
   return {
     fromRef,
     toRef,
-    packages: packages.length > 0 ? packages : (["host-contracts", "gateway-contracts"] as PackageName[]),
+    packages: packages.length > 0 ? packages : (Object.keys(PACKAGE_CONFIG) as PackageName[]),
   };
 }
 

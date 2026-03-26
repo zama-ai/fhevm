@@ -154,11 +154,7 @@ function printPackageReport(baselineRoot: string, targetRoot: string, pkg: Packa
     }
   }
 
-  if (packageFailures > 0) {
-    return packageFailures;
-  }
-
-  return 0;
+  return packageFailures;
 }
 
 const { fromRef, toRef, packages } = parseArgs();
