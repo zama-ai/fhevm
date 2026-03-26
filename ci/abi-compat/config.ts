@@ -23,6 +23,10 @@ export const EXCLUDED_FUNCTION_PATTERNS = [
   /^upgradeToAndCall$/,
 ];
 
+export const EXCLUDED_CONTRACT_FUNCTION_PATTERNS: Record<string, RegExp[]> = {
+  HCULimit: [/^checkHCUFor/],
+};
+
 export const PACKAGE_CONFIG: Record<
   PackageName,
   {
@@ -31,10 +35,10 @@ export const PACKAGE_CONFIG: Record<
   }
 > = {
   "host-contracts": {
-    contracts: ["ACL", "FHEVMExecutor", "InputVerifier", "KMSVerifier"],
+    contracts: ["ACL", "FHEVMExecutor", "HCULimit", "InputVerifier", "KMSVerifier"],
     extraDeps: "forge soldeer install",
   },
   "gateway-contracts": {
-    contracts: ["Decryption", "GatewayConfig", "InputVerification", "KMSGeneration"],
+    contracts: ["CiphertextCommits", "Decryption", "GatewayConfig", "InputVerification", "KMSGeneration"],
   },
 };

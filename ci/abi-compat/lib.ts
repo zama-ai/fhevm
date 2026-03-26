@@ -2,7 +2,13 @@ import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-import { EXCLUDED_FUNCTION_PATTERNS, EXCLUDED_MODIFIERS, PACKAGE_CONFIG, type PackageName } from "./config";
+import {
+  EXCLUDED_CONTRACT_FUNCTION_PATTERNS,
+  EXCLUDED_FUNCTION_PATTERNS,
+  EXCLUDED_MODIFIERS,
+  PACKAGE_CONFIG,
+  type PackageName,
+} from "./config";
 import { ABI_COMPAT_EXCEPTIONS } from "./exceptions";
 
 type AbiParam = {
@@ -96,14 +102,18 @@ function stripComments(source: string) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
-function excludedFunctionNames(source: string) {
+function excludedFunctionNames(contract: string, source: string) {
   const names = new Set<string>();
   const sanitized = stripComments(source);
   const matcher = /function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*?)\)\s*([^{;]*)[;{]/g;
+  const contractPatterns = EXCLUDED_CONTRACT_FUNCTION_PATTERNS[contract] ?? [];
 
   for (const match of sanitized.matchAll(matcher)) {
     const name = match[1];
-    if (EXCLUDED_FUNCTION_PATTERNS.some((pattern) => pattern.test(name))) {
+    if (
+      EXCLUDED_FUNCTION_PATTERNS.some((pattern) => pattern.test(name)) ||
+      contractPatterns.some((pattern) => pattern.test(name))
+    ) {
       names.add(name);
       continue;
     }
@@ -124,14 +134,19 @@ function collectStableSignatures(contract: string, root: string, abi: AbiEntry[]
     return { signatures: new Set<string>(), count: 0, error: `Missing source file for ${contract}: ${sourcePath}` };
   }
 
-  const excludedNames = excludedFunctionNames(readFileSync(sourcePath, "utf-8"));
+  const excludedNames = excludedFunctionNames(contract, readFileSync(sourcePath, "utf-8"));
+  const contractPatterns = EXCLUDED_CONTRACT_FUNCTION_PATTERNS[contract] ?? [];
   const signatures = new Set<string>();
 
   for (const entry of abi) {
     if (!["function", "event", "error"].includes(entry.type)) {
       continue;
     }
-    if (entry.name && EXCLUDED_FUNCTION_PATTERNS.some((pattern) => pattern.test(entry.name))) {
+    if (
+      entry.name &&
+      (EXCLUDED_FUNCTION_PATTERNS.some((pattern) => pattern.test(entry.name)) ||
+        contractPatterns.some((pattern) => pattern.test(entry.name)))
+    ) {
       continue;
     }
     if (entry.type === "function" && entry.name && excludedNames.has(entry.name)) {
