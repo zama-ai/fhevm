@@ -41,6 +41,9 @@ jobs:
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'write' # Required to post coverage comment on PR
     runs-on: large_ubuntu_16
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -50,36 +53,6 @@ jobs:
 
     - name: Checkout LFS objects
       run: git lfs checkout
-
-    - name: Setup Rust toolchain file
-      run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
-
-    - name: Setup Rust
-      uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
-
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
-      with:
-        tool: cargo-llvm-cov
-
-    - name: Install cargo dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler && \
-        cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
-
-    - name: Install foundry
-      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
-
-    - name: Cache cargo
-      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-coverage-
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -95,9 +68,40 @@ jobs:
         username: ${{ secrets.CGR_USERNAME }}
         password: ${{ secrets.CGR_PASSWORD }}
 
-    - name: Init database
-      run: make init_db
+    - name: Start database services (background)
+      run: |
+        nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
       working-directory: coprocessor/fhevm-engine/tfhe-worker
+
+    - name: Setup Rust toolchain file
+      run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
+
+    - name: Setup Rust
+      uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+      with:
+        tool: cargo-llvm-cov
+
+    - name: Install cargo dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler mold clang && \
+        cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
+
+    - name: Install foundry
+      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+
+    - name: Cache cargo
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-coverage-
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -105,18 +109,49 @@ jobs:
         node-version: 20.x
 
     - name: Start localstack
-      run: |
-        docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
+      run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
     - name: Clean previous coverage data
       run: cargo llvm-cov clean --workspace --profile coverage
       working-directory: coprocessor/fhevm-engine
 
+    - name: Compile tests with coverage instrumentation
+      run: |
+        cargo llvm-cov show-env --sh > /tmp/llvm-cov-env.sh
+        source /tmp/llvm-cov-env.sh
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
+        SQLX_OFFLINE=true \
+        cargo test --no-run --workspace --profile coverage
+      working-directory: coprocessor/fhevm-engine
+
+    - name: Wait for database migration
+      run: |
+        SECONDS=0
+        while ! docker container inspect db-migration > /dev/null 2>&1; do
+          if [ "$SECONDS" -ge 900 ]; then
+            echo "Timed out waiting for db-migration container after 15 minutes"
+            cat /tmp/db-init.log
+            exit 1
+          fi
+          echo "Waiting for db-migration container to be created..."
+          sleep 2
+        done
+        EXIT_CODE=$(docker wait db-migration)
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "Database migration failed with exit code $EXIT_CODE"
+          docker logs db-migration
+          cat /tmp/db-init.log
+          exit 1
+        fi
+        echo "Database migration completed"
+
     - name: Run tests with coverage
       run: |
+        source /tmp/llvm-cov-env.sh
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
         TEST_GLOBAL_LOCALSTACK=1 \
-        cargo llvm-cov --no-report --workspace --profile coverage
+        SQLX_OFFLINE=true \
+        cargo test --workspace --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Generate coverage report

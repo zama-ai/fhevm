@@ -167,8 +167,9 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
-      - name: Init database
-        run: make init_db
+      - name: Start database services (background)
+        run: |
+          nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
         working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
@@ -181,6 +182,37 @@ jobs:
       - run: "cd host-contracts && npm run deploy:emptyProxies && npx hardhat compile"
         env:
           HARDHAT_NETWORK: hardhat
+
+      - name: Compile GPU test artifacts
+        run: |
+          SQLX_OFFLINE=true cargo test --no-run \
+          -p tfhe-worker \
+          -p sns-worker \
+          -p zkproof-worker \
+          --release \
+          --features=gpu
+        working-directory: coprocessor/fhevm-engine
+
+      - name: Wait for database migration
+        run: |
+          SECONDS=0
+          while ! docker container inspect db-migration > /dev/null 2>&1; do
+            if [ "$SECONDS" -ge 900 ]; then
+              echo "Timed out waiting for db-migration container after 15 minutes"
+              cat /tmp/db-init.log
+              exit 1
+            fi
+            echo "Waiting for db-migration container to be created..."
+            sleep 2
+          done
+          EXIT_CODE=$(docker wait db-migration)
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Database migration failed with exit code $EXIT_CODE"
+            docker logs db-migration
+            cat /tmp/db-init.log
+            exit 1
+          fi
+          echo "Database migration completed"
 
       - name: Run GPU tests for the worker services.
         run: |
