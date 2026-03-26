@@ -1,0 +1,45 @@
+[package]
+name = "ethereum_rpc_mock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core async runtime - match relayer versions
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "signal"] }
+tokio-util = "0.7.18"
+
+# Serialization - match relayer versions
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Logging - match relayer versions
+tracing = "0.1.44"
+
+# Core types - match relayer versions
+hex = "0.4.3"
+rand = "0.10.0"
+indexmap = "2.13.0"
+
+# Ethereum types with WebSocket support - match relayer version + add needed features
+alloy = { version = "1.7.3", features = [
+  "provider-ws",
+  "rpc-types",
+  "json-rpc",
+] }
+
+# Error handling - match relayer versions
+anyhow = "1.0.102"
+
+# Async traits - match relayer version
+async-trait = "0.1.51"
+
+# FHEVM bindings - match relayer version exactly
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "aa25e2e089da3651f59b8c68a3d32865301ea6bf" }
+
+# JSON-RPC server - unique to mock
+jsonrpsee = { version = "0.26.0", features = ["server", "macros"] }
+
+[dev-dependencies]
+# Additional futures utilities for tests
+futures = "0.3.32"
+futures-util = "0.3.32"

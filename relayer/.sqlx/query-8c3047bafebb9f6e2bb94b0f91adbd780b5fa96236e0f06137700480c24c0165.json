@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_job_id,\n                int_job_id,\n                req,\n                req_type\n            )\n            VALUES ($1, $2, $3, $4::user_decrypt_req_type)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            DO UPDATE SET updated_at = user_decrypt_req.updated_at\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", gw_reference_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_inserted!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "gw_reference_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb",
+        {
+          "Custom": {
+            "name": "user_decrypt_req_type",
+            "kind": {
+              "Enum": [
+                "legacy",
+                "user_decrypt",
+                "delegated_user_decrypt"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      true
+    ]
+  },
+  "hash": "8c3047bafebb9f6e2bb94b0f91adbd780b5fa96236e0f06137700480c24c0165"
+}
