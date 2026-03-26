@@ -53,11 +53,11 @@ services:
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
-      - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_WS_URL}
       - --initial-block-time=1
+      - --catchup-finalization-in-blocks=5
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -78,10 +78,10 @@ services:
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
-      - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
+      - --finality-lag=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -112,6 +112,8 @@ services:
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
@@ -140,7 +142,7 @@ services:
       - --pg-pool-max-connections=10
       - --worker-polling-interval-ms=1000
       - --work-items-batch-size=10
-      - --tenant-key-cache-size=32
+      - --key-cache-size=32
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
@@ -188,7 +190,6 @@ services:
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
-      - --tenant-api-key=${TENANT_API_KEY}
       - --pg-listen-channels
       - event_pbs_computations
       - event_ciphertext_computed
@@ -230,7 +231,6 @@ services:
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
-      - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --database-pool-size=10
       - --database-polling-interval-secs=20
       - --verify-proof-resp-database-channel=event_zkpok_computed
@@ -239,12 +239,6 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
-      - --host-chain-url=${RPC_WS_URL}
-      - --delegation-block-delay=10
-      - --delegation-clear-after-n-blocks=648000
-      - --delegation-fallback-polling=30
-      - --delegation-max-retry=100000
-      - --retry-immediately-on-nonce-error=2
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
