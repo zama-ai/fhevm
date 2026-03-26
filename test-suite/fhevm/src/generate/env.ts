@@ -323,10 +323,11 @@ export const renderEnvMaps = async (
   }
 
   resolveAllEnvMaps(envs, instanceEnvs);
+  const compat = compatPolicyForState(plan);
 
   return {
     componentEnvs: envs,
     instanceEnvs,
-    versionsEnv: plan.versions.env,
+    versionsEnv: { ...plan.versions.env, ...compat.composeEnv },
   };
 };
