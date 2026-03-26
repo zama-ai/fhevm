@@ -1257,6 +1257,10 @@ export const runStep = async (state: State, step: StepName) => {
       await generateRuntime(state, stackSpecForState(state));
       break;
     case "base": {
+      await run(
+        ["docker", "network", "create", "--label", `com.docker.compose.project=${PROJECT}`, "--label", "com.docker.compose.network=default", `${PROJECT}_default`],
+        { allowFailure: true },
+      );
       await stepComposeUp("minio", state);
       await waitForContainer("fhevm-minio", "healthy");
       await waitForContainer("fhevm-minio-setup", "complete");
@@ -1709,6 +1713,7 @@ export const down = async () => {
     console.log(`[down] removing ${ids.length} stale project container${ids.length === 1 ? "" : "s"}`);
     await run(["docker", "rm", "-fv", ...ids], { allowFailure: true });
   }
+  await removeProjectResources("network", "{{.Name}}");
   await pruneGeneratedRuntimeArtifacts();
 };
 
