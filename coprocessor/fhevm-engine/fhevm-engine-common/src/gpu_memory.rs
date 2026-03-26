@@ -53,10 +53,6 @@ impl SupportedFheCiphertexts {
     }
 }
 
-pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
-    trivial_encrypt_be_bytes(ct_type, &[1u8]).get_size_on_gpu()
-}
-
 // Reserving GPU memory happens in two stages:
 //  - we add the amount we need atomically to the GPU's reservation pool
 //  - we check that the new pool fits on GPU
@@ -1724,11 +1720,10 @@ pub fn get_op_size_on_gpu(
         }
         SupportedFheOperations::FheTrivialEncrypt | SupportedFheOperations::FheCast => {
             match (&input_operands[0], &input_operands[1]) {
-                (_, SupportedFheCiphertexts::Scalar(op)) => Ok(trivial_encrypt_be_bytes(
-                    to_be_u16_bit(op) as i16,
-                    &[1u8],
-                )
-                .get_size_on_gpu()),
+                (_, SupportedFheCiphertexts::Scalar(op)) => {
+                    Ok(trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, &[1u8])?
+                        .get_size_on_gpu())
+                }
                 (_, _) => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
