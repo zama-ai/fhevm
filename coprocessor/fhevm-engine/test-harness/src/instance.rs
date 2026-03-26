@@ -3,7 +3,8 @@ use std::sync::Arc;
 use crate::db_utils::setup_test_key;
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::types::Oid;
-use sqlx::Row;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::{ConnectOptions, Row};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -55,31 +56,22 @@ pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::
     }
 }
 
-// Extracts the database name from a PostgreSQL URL.
-// e.g. "postgresql://user:pass@host:port/mydb?opt=val" -> "mydb"
-// Panics if the extracted name contains characters other than alphanumeric, underscore, or hyphen.
-fn extract_db_name(db_url: &str) -> &str {
-    let after_slash = db_url
-        .rsplit('/')
-        .next()
-        .expect("database URL must contain /");
-    let name = after_slash
-        .split('?')
-        .next()
-        .expect("split always yields at least one element");
-    assert!(
-        !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || c == '-'),
-        "invalid database name extracted from URL: {name}"
-    );
-    name
+fn connect_options(db_url: &str) -> PgConnectOptions {
+    db_url.parse().expect("database URL should be valid")
+}
+
+fn extract_db_name(db_url: &str) -> String {
+    connect_options(db_url)
+        .get_database()
+        .expect("database URL must contain a database name")
+        .to_owned()
 }
 
 fn admin_url_from(db_url: &str) -> String {
-    let last_slash = db_url.rfind('/').expect("database URL must contain /");
-    format!("{}postgres", &db_url[..=last_slash])
+    connect_options(db_url)
+        .database("postgres")
+        .to_url_lossy()
+        .to_string()
 }
 
 async fn setup_test_app_existing_localhost(
@@ -126,8 +118,8 @@ async fn setup_test_app_custom_docker(
     let cont_host = container.get_host().await?;
     let cont_port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
 
-    let admin_db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/postgres");
     let db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/coprocessor");
+    let admin_db_url = admin_url_from(&db_url);
     create_database(&admin_db_url, &db_url, mode).await?;
 
     Ok(DBInstance {
