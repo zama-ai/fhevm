@@ -152,7 +152,7 @@ where
 
         let mut ticker = tokio::time::interval(poll_interval);
         let max_errors = self.config.max_consecutive_polling_errors;
-        let mut consecutive_errors: u8 = 0;
+        let mut consecutive_errors: usize = 0;
         loop {
             ticker.tick().await;
             match self
@@ -365,7 +365,7 @@ mod tests {
         RootProvider,
     >;
 
-    const MAX_CONSECUTIVE_POLLING_ERRORS: u8 = 2;
+    const MAX_CONSECUTIVE_POLLING_ERRORS: usize = 2;
 
     async fn test_setup(
         kms_operation_from_block_number: Option<u64>,

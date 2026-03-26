@@ -68,7 +68,7 @@ pub struct Config {
 
     /// Maximum number of consecutive polling errors before stopping the loop.
     #[serde(default = "default_max_consecutive_polling_errors")]
-    pub max_consecutive_polling_errors: u8,
+    pub max_consecutive_polling_errors: usize,
 
     /// Optional block number to start processing decryption events from.
     pub decryption_from_block_number: Option<u64>,
@@ -94,7 +94,7 @@ fn default_get_logs_batch_size() -> u64 {
     100
 }
 
-fn default_max_consecutive_polling_errors() -> u8 {
+fn default_max_consecutive_polling_errors() -> usize {
     20
 }
 
@@ -228,7 +228,7 @@ mod tests {
         let gateway_chain_id = 77737;
         let service_name = "kms-connector-override";
         let get_logs_batch_size: u64 = 500;
-        let max_consecutive_polling_errors: u8 = 5;
+        let max_consecutive_polling_errors = 5;
         let mut expected_config = example_config.clone();
         expected_config.gateway_chain_id = gateway_chain_id;
         expected_config.service_name = service_name.to_string();
