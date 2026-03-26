@@ -1,5 +1,9 @@
 # ABI Compatibility
 
+ABI coverage is derived from each package's `upgrade-manifest.json`.
+Stable-surface policy lives in [`config.ts`](./config.ts): initializer, ownership, upgrade,
+and other intentionally non-public entrypoints are excluded there.
+
 Compare the stable contract ABI surface between two refs locally with:
 
 ```bash

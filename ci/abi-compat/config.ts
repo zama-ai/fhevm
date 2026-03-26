@@ -23,6 +23,8 @@ export const EXCLUDED_FUNCTION_PATTERNS = [
   /^upgradeToAndCall$/,
 ];
 
+// ABI coverage is derived from each package's upgrade-manifest.json.
+// Keep only stable-surface exclusions here.
 export const EXCLUDED_CONTRACT_FUNCTION_PATTERNS: Record<string, RegExp[]> = {
   HCULimit: [/^checkHCUFor/],
 };
@@ -30,15 +32,11 @@ export const EXCLUDED_CONTRACT_FUNCTION_PATTERNS: Record<string, RegExp[]> = {
 export const PACKAGE_CONFIG: Record<
   PackageName,
   {
-    contracts: string[];
     extraDeps?: string;
   }
 > = {
   "host-contracts": {
-    contracts: ["ACL", "FHEVMExecutor", "HCULimit", "InputVerifier", "KMSVerifier"],
     extraDeps: "forge soldeer install",
   },
-  "gateway-contracts": {
-    contracts: ["CiphertextCommits", "Decryption", "GatewayConfig", "InputVerification", "KMSGeneration"],
-  },
+  "gateway-contracts": {},
 };

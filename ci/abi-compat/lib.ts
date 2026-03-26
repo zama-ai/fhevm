@@ -161,8 +161,18 @@ function collectStableSignatures(contract: string, root: string, abi: AbiEntry[]
   return { signatures, count: signatures.size };
 }
 
+function readManifestContracts(root: string) {
+  const manifestPath = join(root, "upgrade-manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(`upgrade-manifest.json not found in ${root}`);
+  }
+  return JSON.parse(readFileSync(manifestPath, "utf-8")) as string[];
+}
+
 export function collectAbiCompatResults(baselineDir: string, targetDir: string, pkg: PackageName): AbiCompatResult[] {
-  return PACKAGE_CONFIG[pkg].contracts.map((name) => {
+  const contracts = readManifestContracts(targetDir);
+
+  return contracts.map((name) => {
     const baselineSource = join(baselineDir, "contracts", `${name}.sol`);
     if (!existsSync(baselineSource)) {
       return {
