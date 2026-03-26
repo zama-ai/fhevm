@@ -123,6 +123,39 @@ describe('ConsensusWatchdog', function () {
     });
   });
 
+  describe('checkHealth — expected divergence', function () {
+    it('should not throw when divergence is expected', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xhandle1', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+          fakeEvent('0xhandle1', 1n, '0xdigestB', '0xsnsDigestA', '0xCoprocessor2'),
+        ],
+        [],
+      );
+
+      setBlock(1);
+      await watchdog.flush();
+
+      expect(() => watchdog.checkHealth(true)).to.not.throw();
+    });
+
+    it('should skip stall checks when divergence is expected', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+
+      setBlock(1);
+      await watchdog.flush();
+
+      const pending = (watchdog as any).pendingHandles.get('0xhandle1');
+      pending.firstSeenAt = Date.now() - 4 * 60 * 1000;
+
+      expect(() => watchdog.checkHealth(true)).to.not.throw();
+    });
+  });
+
   describe('checkHealth — stall detection', function () {
     it('should throw when consensus is not reached within timeout', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();

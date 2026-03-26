@@ -542,7 +542,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         });
         await runWithHeartbeat(
-          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
+          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "EXPECT_CIPHERTEXT_DIVERGENCE=true"]),
           "test ciphertext-drift",
         );
         const injectedHandleHex = await injector;
