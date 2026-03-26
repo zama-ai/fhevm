@@ -54,6 +54,7 @@ pub struct TestEnvironment {
     anvil: Option<AnvilInstance>,
     pub wallet: EthereumWallet,
     _db_instance: DBInstance,
+    // Just keep the handle to destroy the container when it is dropped.
     _localstack: Option<LocalstackContainer>,
 }
 
@@ -87,6 +88,20 @@ impl TestEnvironment {
             .max_connections(10)
             .connect(db_instance.db_url())
             .await?;
+
+        Self::truncate_tables(
+            &db_pool,
+            vec![
+                "verify_proofs",
+                "ciphertext_digest",
+                "allowed_handles",
+                "delegate_user_decrypt",
+                "keys",
+                "crs",
+                "host_chains",
+            ],
+        )
+        .await?;
 
         let anvil = Self::new_anvil()?;
         let chain_id =
@@ -166,5 +181,13 @@ impl TestEnvironment {
 
     fn new_anvil_with_port(port: u16) -> anyhow::Result<AnvilInstance> {
         Ok(Anvil::new().block_time(1).port(port).try_spawn()?)
+    }
+
+    async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
+        for table in tables {
+            let query = format!("TRUNCATE {}", table);
+            sqlx::query(&query).execute(db_pool).await?;
+        }
+        Ok(())
     }
 }
