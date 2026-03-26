@@ -155,10 +155,11 @@ jobs:
             echo "TEST_DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
           } >> "$GITHUB_ENV"
 
+      - name: Setup Rust toolchain file
+        run: cp relayer/rust-toolchain.toml .
+
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
-        with:
-          toolchain: stable
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
 
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
