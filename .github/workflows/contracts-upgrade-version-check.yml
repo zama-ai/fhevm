@@ -9,7 +9,7 @@ on:
 # This avoids unnecessary reinitializer bumps when multiple PRs modify
 # the same contract between deployments. Keep in sync with *-upgrade-tests.yml.
 env:
-  UPGRADE_FROM_TAG: v0.11.0
+  UPGRADE_FROM_TAG: v0.11.1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,11 +36,13 @@ jobs:
               - .github/workflows/contracts-upgrade-version-check.yml
               - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
+              - ci/upgrade-version-check-lib.ts
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-version-check.yml
               - ci/check-upgrade-versions.ts
               - ci/merge-address-constants.ts
+              - ci/upgrade-version-check-lib.ts
               - gateway-contracts/**
 
   check:

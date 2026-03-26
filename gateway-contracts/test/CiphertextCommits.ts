@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig } from "../typechain-types";
+import { CiphertextCommits, CiphertextCommits__factory } from "../typechain-types";
 import {
   createBytes32,
   createCtHandle,
@@ -37,11 +37,9 @@ describe("CiphertextCommits", function () {
   const fakeTxSender = createRandomWallet();
   const fakeCiphertextDigest = createBytes32();
 
-  let gatewayConfig: GatewayConfig;
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: Wallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -69,11 +67,9 @@ describe("CiphertextCommits", function () {
   beforeEach(async function () {
     // Initialize globally used variables before each test
     const fixture = await loadFixture(prepareFixture);
-    gatewayConfig = fixture.gatewayConfig;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextCommits = fixture.ciphertextCommits;
     owner = fixture.owner;
-    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {

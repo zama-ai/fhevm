@@ -307,6 +307,23 @@ pub async fn insert_random_keys_and_host_chain(
     Ok((host_chain_id, key_id))
 }
 
+/// Returns the revert_coprocessor_db_state SQL script with psql variables substituted.
+/// This allows running the production script via sqlx without a psql layer.
+pub fn revert_coprocessor_db_state_sql(chain_id: i64, to_block_number: i64) -> String {
+    let raw = include_str!("../../db-migration/db-scripts/revert_coprocessor_db_state.sql");
+    let mut sql = String::new();
+    for line in raw.lines() {
+        if line.starts_with("\\set ") {
+            continue;
+        }
+        sql.push_str(line);
+        sql.push('\n');
+    }
+    sql = sql.replace(":'chain_id'", &chain_id.to_string());
+    sql = sql.replace(":'to_block_number'", &to_block_number.to_string());
+    sql
+}
+
 pub async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
     for table in tables {
         let query = format!("TRUNCATE {}", table);

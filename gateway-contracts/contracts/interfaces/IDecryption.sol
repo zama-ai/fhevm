@@ -236,6 +236,19 @@ interface IDecryption {
     );
 
     /**
+     * @notice Error indicating that the extraData length is invalid.
+     * @param length The length of the extraData.
+     * @param minimumLength The minimum expected length.
+     */
+    error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
+
+    /**
+     * @notice Error indicating that the extraData version is unsupported.
+     * @param version The unsupported version byte.
+     */
+    error UnsupportedExtraDataVersion(uint8 version);
+
+    /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
      * @param decryptionId The decryption request ID.
      */
@@ -332,6 +345,19 @@ interface IDecryption {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function isUserDecryptionReady(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external view returns (bool);
+
+    /**
+     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @param userAddress The user's address (unused, kept for backward compatibility).
+     * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Use isUserDecryptionReady(CtHandleContractPair[], bytes) instead.
+     */
+    function isUserDecryptionReady(
+        address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
     ) external view returns (bool);

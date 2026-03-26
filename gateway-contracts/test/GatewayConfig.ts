@@ -27,6 +27,9 @@ describe("GatewayConfig", function () {
   const hostChainIds = loadHostChainIds();
 
   // Define input values
+  // KMS context ID format: [0x07 | counter_1..31]
+  const initialKmsContextId = (7n << 248n) | 1n;
+  const nextKmsContextId = (7n << 248n) | 2n;
   const protocolMetadata = { name: "Protocol", website: "https://protocol.com" };
   const mpcThreshold = 1;
   const publicDecryptionThreshold = 3;
@@ -55,26 +58,6 @@ describe("GatewayConfig", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
 
-  let gatewayConfig: GatewayConfig;
-  let owner: Wallet;
-  let pauser: Wallet;
-  let nKmsNodes: number;
-  let kmsNodes: KmsNodeStruct[];
-  let kmsTxSenders: HardhatEthersSigner[];
-  let kmsSigners: HardhatEthersSigner[];
-  let coprocessors: CoprocessorStruct[];
-  let nCoprocessors: number;
-  let coprocessorTxSenders: HardhatEthersSigner[];
-  let coprocessorSigners: HardhatEthersSigner[];
-  let custodians: CustodianStruct[];
-  let custodianTxSenders: HardhatEthersSigner[];
-  let custodianSigners: HardhatEthersSigner[];
-  let highMpcThreshold: number;
-  let highPublicDecryptionThreshold: number;
-  let highUserDecryptionThreshold: number;
-  let highKmsGenThreshold: number;
-  let highCoprocessorThreshold: number;
-
   async function getInputsForDeployFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const {
@@ -94,7 +77,7 @@ describe("GatewayConfig", function () {
     } = fixtureData;
 
     // Create KMS nodes with the tx sender and signer addresses
-    kmsNodes = [];
+    const kmsNodes: KmsNodeStruct[] = [];
     for (let i = 0; i < nKmsNodes; i++) {
       kmsNodes.push({
         txSenderAddress: kmsTxSenders[i].address,
@@ -105,7 +88,7 @@ describe("GatewayConfig", function () {
     }
 
     // Create coprocessors with the tx sender and signer addresses
-    coprocessors = [];
+    const coprocessors: CoprocessorStruct[] = [];
     for (let i = 0; i < nCoprocessors; i++) {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
@@ -115,7 +98,7 @@ describe("GatewayConfig", function () {
     }
 
     // Create custodians with the tx sender addresses
-    custodians = [];
+    const custodians: CustodianStruct[] = [];
     for (let i = 0; i < nCustodians; i++) {
       custodians.push({
         txSenderAddress: custodianTxSenders[i].address,
@@ -124,34 +107,42 @@ describe("GatewayConfig", function () {
       });
     }
 
-    return fixtureData;
+    return { ...fixtureData, kmsNodes, coprocessors, custodians };
   }
 
-  before(async function () {
-    // Initialize globally used variables before each test
-    const fixtureData = await loadFixture(getInputsForDeployFixture);
-    gatewayConfig = fixtureData.gatewayConfig;
-    owner = fixtureData.owner;
-    pauser = fixtureData.pauser;
-    nKmsNodes = fixtureData.nKmsNodes;
-    kmsTxSenders = fixtureData.kmsTxSenders;
-    kmsSigners = fixtureData.kmsSigners;
-    nCoprocessors = fixtureData.nCoprocessors;
-    coprocessorTxSenders = fixtureData.coprocessorTxSenders;
-    coprocessorSigners = fixtureData.coprocessorSigners;
-
-    highMpcThreshold = nKmsNodes;
-    highPublicDecryptionThreshold = nKmsNodes + 1;
-    highUserDecryptionThreshold = nKmsNodes + 1;
-    highKmsGenThreshold = nKmsNodes + 1;
-    highCoprocessorThreshold = nCoprocessors + 1;
-  });
-
   describe("Deployment", function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let kmsNodes: KmsNodeStruct[];
+    let coprocessors: CoprocessorStruct[];
+    let custodians: CustodianStruct[];
+    let nKmsNodes: number;
+    let nCoprocessors: number;
+    let highMpcThreshold: number;
+    let highPublicDecryptionThreshold: number;
+    let highUserDecryptionThreshold: number;
+    let highKmsGenThreshold: number;
+    let highCoprocessorThreshold: number;
     let proxyContract: EmptyUUPSProxyGatewayConfig;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
+      // Load fixture data locally
+      const fixtureData = await loadFixture(getInputsForDeployFixture);
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
+      kmsNodes = fixtureData.kmsNodes;
+      coprocessors = fixtureData.coprocessors;
+      custodians = fixtureData.custodians;
+      nKmsNodes = fixtureData.nKmsNodes;
+      nCoprocessors = fixtureData.nCoprocessors;
+
+      highMpcThreshold = nKmsNodes;
+      highPublicDecryptionThreshold = nKmsNodes + 1;
+      highUserDecryptionThreshold = nKmsNodes + 1;
+      highKmsGenThreshold = nKmsNodes + 1;
+      highCoprocessorThreshold = nCoprocessors + 1;
+
       // Deploy a new proxy contract for the GatewayConfig contract
       const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
       proxyContract = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
@@ -172,7 +163,7 @@ describe("GatewayConfig", function () {
       const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
         call: {
           fn: "initializeFromEmptyProxy",
-          args: [protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
+          args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
         },
       });
 
@@ -187,6 +178,7 @@ describe("GatewayConfig", function () {
       // It should emit one event containing the initialization parameters
       expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
+        initialKmsContextId.toString(),
         toValues(protocolMetadata).toString(),
         toValues(thresholds).toString(),
         toValues(kmsNodes).toString(),
@@ -200,7 +192,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, emptyKmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, thresholds, emptyKmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
@@ -215,7 +207,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, duplicatedTxSenderKmsNode, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              duplicatedTxSenderKmsNode,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -232,7 +231,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, duplicatedSignerKmsNode, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              duplicatedSignerKmsNode,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -245,7 +251,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, emptyCoprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, emptyCoprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
@@ -260,7 +266,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, duplicatedTxSenderCoprocessor, custodians],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              duplicatedTxSenderCoprocessor,
+              custodians,
+            ],
           },
         }),
       )
@@ -277,7 +290,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, duplicatedSignerCoprocessor, custodians],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              duplicatedSignerCoprocessor,
+              custodians,
+            ],
           },
         }),
       )
@@ -290,7 +310,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, emptyCustodians],
+            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, emptyCustodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
@@ -305,7 +325,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, duplicatedTxSenderCustodian],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              coprocessors,
+              duplicatedTxSenderCustodian,
+            ],
           },
         }),
       )
@@ -322,7 +349,14 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, duplicatedSignerCustodian],
+            args: [
+              initialKmsContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              coprocessors,
+              duplicatedSignerCustodian,
+            ],
           },
         }),
       )
@@ -343,7 +377,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       )
@@ -363,7 +397,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPublicDecryptionThreshold");
@@ -383,7 +417,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       )
@@ -403,7 +437,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullUserDecryptionThreshold");
@@ -423,7 +457,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       )
@@ -443,7 +477,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsGenThreshold");
@@ -463,7 +497,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       )
@@ -483,7 +517,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullCoprocessorThreshold");
@@ -503,7 +537,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       )
@@ -516,7 +550,7 @@ describe("GatewayConfig", function () {
         hre.upgrades.upgradeProxy(gatewayConfig, newGatewayConfigFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
+            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "NotInitializingFromEmptyProxy");
@@ -524,15 +558,48 @@ describe("GatewayConfig", function () {
   });
 
   describe("After deployment", function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let pauser: Wallet;
+    let nKmsNodes: number;
+    let kmsNodes: KmsNodeStruct[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let kmsSigners: HardhatEthersSigner[];
+    let nCoprocessors: number;
+    let coprocessors: CoprocessorStruct[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let coprocessorSigners: HardhatEthersSigner[];
+    let custodians: CustodianStruct[];
+    let custodianTxSenders: HardhatEthersSigner[];
+    let custodianSigners: HardhatEthersSigner[];
+    let highMpcThreshold: number;
+    let highPublicDecryptionThreshold: number;
+    let highUserDecryptionThreshold: number;
+    let highKmsGenThreshold: number;
+    let highCoprocessorThreshold: number;
+
     beforeEach(async function () {
-      const fixture = await loadFixture(loadTestVariablesFixture);
+      const fixture = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixture.gatewayConfig;
+      owner = fixture.owner;
       pauser = fixture.pauser;
+      nKmsNodes = fixture.nKmsNodes;
+      kmsNodes = fixture.kmsNodes;
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
+      nCoprocessors = fixture.nCoprocessors;
+      coprocessors = fixture.coprocessors;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
+      coprocessorSigners = fixture.coprocessorSigners;
+      custodians = fixture.custodians;
       custodianTxSenders = fixture.custodianTxSenders;
       custodianSigners = fixture.custodianSigners;
+
+      highMpcThreshold = nKmsNodes;
+      highPublicDecryptionThreshold = nKmsNodes + 1;
+      highUserDecryptionThreshold = nKmsNodes + 1;
+      highKmsGenThreshold = nKmsNodes + 1;
+      highCoprocessorThreshold = nCoprocessors + 1;
     });
 
     describe("Operators updates", function () {
@@ -553,10 +620,12 @@ describe("GatewayConfig", function () {
           const newPublicDecryptionThreshold = 1;
           const newUserDecryptionThreshold = 1;
           const newKmsGenThreshold = 1;
+          const newContextId = nextKmsContextId;
 
           const tx = await gatewayConfig
             .connect(owner)
-            .updateKmsNodes(
+            .updateKmsContext(
+              newContextId,
               newKmsNodes,
               newMpcThreshold,
               newPublicDecryptionThreshold,
@@ -565,8 +634,9 @@ describe("GatewayConfig", function () {
             );
 
           await expect(tx)
-            .to.emit(gatewayConfig, "UpdateKmsNodes")
+            .to.emit(gatewayConfig, "UpdateKmsContext")
             .withArgs(
+              newContextId,
               toValues(newKmsNodes),
               newMpcThreshold,
               newPublicDecryptionThreshold,
@@ -574,17 +644,33 @@ describe("GatewayConfig", function () {
               newKmsGenThreshold,
             );
 
-          // Check that the KMS nodes have been updated
+          // Check that the KMS nodes have been updated (global getters)
           expect(await gatewayConfig.isKmsTxSender(newTxSenderAddress)).to.be.true;
           expect(await gatewayConfig.isKmsSigner(newSignerAddress)).to.be.true;
           expect(await gatewayConfig.getKmsNode(newTxSenderAddress)).to.deep.equal(toValues(newKmsNode));
           expect(await gatewayConfig.getKmsTxSenders()).to.deep.equal([newTxSenderAddress]);
           expect(await gatewayConfig.getKmsSigners()).to.deep.equal([newSignerAddress]);
 
+          // Check that the context-indexed state has been updated
+          expect(await gatewayConfig.isKmsTxSenderForContext(newContextId, newTxSenderAddress)).to.be.true;
+          expect(await gatewayConfig.isKmsSignerForContext(newContextId, newSignerAddress)).to.be.true;
+          expect(await gatewayConfig.getKmsNodeForContext(newContextId, newTxSenderAddress)).to.deep.equal(
+            toValues(newKmsNode),
+          );
+          expect(await gatewayConfig.getKmsTxSendersForContext(newContextId)).to.deep.equal([newTxSenderAddress]);
+          expect(await gatewayConfig.getKmsSignersForContext(newContextId)).to.deep.equal([newSignerAddress]);
+
+          // Check that the active context ID has been updated
+          expect(await gatewayConfig.getCurrentKmsContextId()).to.equal(newContextId);
+
           // Check that the thresholds have been updated
           expect(await gatewayConfig.getMpcThreshold()).to.equal(newMpcThreshold);
-          expect(await gatewayConfig.getPublicDecryptionThreshold()).to.equal(newPublicDecryptionThreshold);
-          expect(await gatewayConfig.getUserDecryptionThreshold()).to.equal(newUserDecryptionThreshold);
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(newContextId)).to.equal(
+            newPublicDecryptionThreshold,
+          );
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(newContextId)).to.equal(
+            newUserDecryptionThreshold,
+          );
           expect(await gatewayConfig.getKmsGenThreshold()).to.equal(newKmsGenThreshold);
 
           // Define the null KMS node
@@ -609,7 +695,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(fakeOwner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -625,7 +712,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 emptyKmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -639,7 +727,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 highMpcThreshold,
                 publicDecryptionThreshold,
@@ -655,7 +744,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 nullPublicDecryptionThreshold,
@@ -670,7 +760,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 highPublicDecryptionThreshold,
@@ -686,7 +777,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -701,7 +793,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -717,7 +810,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -732,7 +826,8 @@ describe("GatewayConfig", function () {
           await expect(
             gatewayConfig
               .connect(owner)
-              .updateKmsNodes(
+              .updateKmsContext(
+                nextKmsContextId,
                 kmsNodes,
                 mpcThreshold,
                 publicDecryptionThreshold,
@@ -742,6 +837,72 @@ describe("GatewayConfig", function () {
           )
             .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
             .withArgs(highKmsGenThreshold, nKmsNodes);
+        });
+
+        it("Should revert because the contextId is already registered", async function () {
+          // initialKmsContextId is already registered from initialization
+          const newKmsNode: KmsNodeStruct = {
+            txSenderAddress: newTxSenderAddress,
+            signerAddress: newSignerAddress,
+            ipAddress: "127.0.0.100",
+            storageUrl: "s3://kms-bucket-100",
+          };
+
+          await expect(gatewayConfig.connect(owner).updateKmsContext(initialKmsContextId, [newKmsNode], 0, 1, 1, 1))
+            .to.be.revertedWithCustomError(gatewayConfig, "KmsContextAlreadyRegistered")
+            .withArgs(initialKmsContextId, initialKmsContextId);
+        });
+
+        it("Should revert because the contextId is zero", async function () {
+          const newKmsNode: KmsNodeStruct = {
+            txSenderAddress: newTxSenderAddress,
+            signerAddress: newSignerAddress,
+            ipAddress: "127.0.0.100",
+            storageUrl: "s3://kms-bucket-100",
+          };
+
+          await expect(
+            gatewayConfig.connect(owner).updateKmsContext(0, [newKmsNode], 0, 1, 1, 1),
+          ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsContextId");
+        });
+
+        it("Should preserve initial context after registering a new one", async function () {
+          const newKmsNode: KmsNodeStruct = {
+            txSenderAddress: newTxSenderAddress,
+            signerAddress: newSignerAddress,
+            ipAddress: "127.0.0.100",
+            storageUrl: "s3://kms-bucket-100",
+          };
+
+          await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, [newKmsNode], 0, 1, 1, 1);
+
+          // Initial context should still have the original nodes
+          expect(await gatewayConfig.getKmsSignersForContext(initialKmsContextId)).to.have.lengthOf(kmsSigners.length);
+          for (const kmsSigner of kmsSigners) {
+            expect(await gatewayConfig.isKmsSignerForContext(initialKmsContextId, kmsSigner.address)).to.be.true;
+          }
+          for (const kmsTxSender of kmsTxSenders) {
+            expect(await gatewayConfig.isKmsTxSenderForContext(initialKmsContextId, kmsTxSender.address)).to.be.true;
+          }
+
+          // New context should have the new node
+          expect(await gatewayConfig.isKmsSignerForContext(nextKmsContextId, newSignerAddress)).to.be.true;
+          expect(await gatewayConfig.isKmsTxSenderForContext(nextKmsContextId, newTxSenderAddress)).to.be.true;
+
+          // Active context should be updated
+          expect(await gatewayConfig.getCurrentKmsContextId()).to.equal(nextKmsContextId);
+
+          // Initial context should have original thresholds
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(initialKmsContextId)).to.equal(
+            publicDecryptionThreshold,
+          );
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(initialKmsContextId)).to.equal(
+            userDecryptionThreshold,
+          );
+
+          // New context should have the new thresholds
+          expect(await gatewayConfig.getPublicDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
+          expect(await gatewayConfig.getUserDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
         });
       });
 
@@ -1088,7 +1249,10 @@ describe("GatewayConfig", function () {
           .withArgs(newPublicDecryptionThreshold);
 
         // Check that the public decryption threshold has been updated
-        expect(await gatewayConfig.getPublicDecryptionThreshold()).to.equal(newPublicDecryptionThreshold);
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+        expect(await gatewayConfig.getPublicDecryptionThresholdForContext(currentContextId)).to.equal(
+          newPublicDecryptionThreshold,
+        );
       });
 
       it("Should revert because the public decryption threshold is null", async function () {
@@ -1126,7 +1290,10 @@ describe("GatewayConfig", function () {
         await expect(tx).to.emit(gatewayConfig, "UpdateUserDecryptionThreshold").withArgs(newUserDecryptionThreshold);
 
         // Check that the user decryption threshold has been updated
-        expect(await gatewayConfig.getUserDecryptionThreshold()).to.equal(newUserDecryptionThreshold);
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+        expect(await gatewayConfig.getUserDecryptionThresholdForContext(currentContextId)).to.equal(
+          newUserDecryptionThreshold,
+        );
       });
 
       it("Should revert because the user decryption threshold is null", async function () {
@@ -1308,6 +1475,10 @@ describe("GatewayConfig", function () {
   });
 
   describe("Pause", async function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let pauser: Wallet;
+
     const fakeOwner = createRandomWallet();
     const fakePauser = createRandomWallet();
 
@@ -1342,6 +1513,39 @@ describe("GatewayConfig", function () {
         expect(await inputVerification.paused()).to.be.true;
       });
 
+      it("Should pause contracts not yet paused even when some contract is already paused", async function () {
+        await decryption.connect(pauser).pause();
+
+        // Check that the decryption contract is paused and the input verification contract is not paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.false;
+
+        const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
+
+        // Check that the pausable contracts are paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.true;
+      });
+
+      it("Should unpause contracts not yet unpaused even when some contract is already unpaused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await decryption.connect(owner).unpause();
+
+        // Check that the decryption contract is unpaused and the input verification contract is paused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.true;
+
+        const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
+
+        // Check that the pausable contracts are unpaused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+      });
+
       it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
         await expect(gatewayConfig.connect(fakePauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
@@ -1367,6 +1571,21 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(fakeOwner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
           "OwnableUnauthorizedAccount",
+        );
+      });
+
+      it("Should revert on pause all gateway contracts because they are already paused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await expect(gatewayConfig.connect(pauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyPaused",
+        );
+      });
+
+      it("Should revert on unpause all gateway contracts because they are already unpaused", async function () {
+        await expect(gatewayConfig.connect(owner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyUnpaused",
         );
       });
     });

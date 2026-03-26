@@ -35,7 +35,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(fhevmExecutorProxy), fhevmExecutorAdd, "FHEVMExecutor proxy address mismatch");
         assertNotEq(fhevmExecutorImplementation, address(0), "Implementation not deployed");
-        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.2.0", "Version mismatch");
+        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.3.0", "Version mismatch");
         assertEq(
             _readImplementationSlot(fhevmExecutorAdd),
             fhevmExecutorImplementation,
@@ -61,7 +61,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.1.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.2.0", "Version mismatch");
         assertEq(kmsVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
         assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");

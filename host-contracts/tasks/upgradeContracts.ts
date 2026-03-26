@@ -1,9 +1,11 @@
-import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
+import fs from 'fs';
+import path from 'path';
+import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -15,6 +17,36 @@ function getImplementationDirectory(input: string): string {
     return input.substring(0, colonIndex);
   }
   return input;
+}
+
+function materializeContractsFromGit(gitRef: string, relativeDir: string) {
+  const repoRoot = path.resolve(__dirname, '../..');
+  const absoluteDir = path.resolve(__dirname, '..', relativeDir);
+  fs.mkdirSync(absoluteDir, { recursive: true });
+
+  execFileSync(
+    'sh',
+    [
+      '-c',
+      'git archive --format=tar "$1" '
+        + 'host-contracts/contracts/FHEVMExecutor.sol '
+        + 'host-contracts/contracts/ACL.sol '
+        + 'host-contracts/contracts/HCULimit.sol '
+        + 'host-contracts/contracts/FHEEvents.sol '
+        + 'host-contracts/contracts/ACLEvents.sol '
+        + 'host-contracts/contracts/interfaces/IPauserSet.sol '
+        + 'host-contracts/contracts/shared '
+        + '| tar -x -C "$2" --strip-components=2',
+      'sh',
+      gitRef,
+      absoluteDir,
+    ],
+    { cwd: repoRoot },
+  );
+
+  return {
+    cleanup: () => fs.rmSync(absoluteDir, { recursive: true, force: true }),
+  };
 }
 
 async function upgradeCurrentToNew(
@@ -67,6 +99,56 @@ async function upgradeCurrentToNew(
   }
 }
 
+async function deployImplementationForPreparedUpgrade(
+  proxyAddress: string,
+  expectedArtifactName: string,
+  currentImplementation: string,
+  newImplementation: string,
+  verifyContract: boolean,
+  hre: HardhatRuntimeEnvironment,
+): Promise<void> {
+  // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
+  // reusing artifacts compiled against another environment.
+  await hre.run('clean');
+  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+
+  await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
+
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+  const currentImplementationFactory = await hre.ethers.getContractFactory(currentImplementation, deployer);
+  await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
+
+  const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
+  const reinitializeFunction = newImplementationArtifact.abi.find(
+    (item) => item.type === 'function' && item.name.includes(REINITIALIZE_FUNCTION_PREFIX),
+  );
+  const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+
+  console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
+  const implementationAddress = await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
+    kind: 'uups',
+  });
+  console.log('New implementation deployed at:', implementationAddress);
+
+  const reinitializeCalldata = hre.ethers.Interface.from(newImplementationArtifact.abi).encodeFunctionData(
+    reinitializeFunction.name,
+    [],
+  );
+  console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
+
+  if (verifyContract) {
+    console.log('Waiting 2 minutes before contract verification... Please wait...');
+    await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
+    await hre.run('verify:verify', {
+      address: implementationAddress,
+      contract: newImplementation,
+      constructorArguments: [],
+    });
+  }
+}
+
 async function compileImplementations(
   currentImplementation: string,
   newImplementation: string,
@@ -106,6 +188,32 @@ async function checkImplementationArtifacts(
   }
 }
 
+// Helper to perform a standard upgrade: compile, check artifacts, load address, upgrade
+async function upgradeContract(
+  contractName: string,
+  addressEnvVar: string,
+  taskArgs: TaskArguments,
+  hre: HardhatRuntimeEnvironment,
+  reinitializeArgs: unknown[] = [],
+) {
+  await compileImplementations(taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+  await checkImplementationArtifacts(contractName, taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+
+  if (taskArgs.useInternalProxyAddress) {
+    loadHostAddresses();
+  }
+  const proxyAddress = getRequiredEnvVar(addressEnvVar);
+
+  await upgradeCurrentToNew(
+    proxyAddress,
+    taskArgs.currentImplementation,
+    taskArgs.newImplementation,
+    taskArgs.verifyContract,
+    hre,
+    reinitializeArgs,
+  );
+}
+
 task('task:upgradeACL')
   .addParam(
     'currentImplementation',
@@ -127,20 +235,8 @@ task('task:upgradeACL')
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('ACL', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
-    }
-    const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('ACL', 'ACL_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:upgradeFHEVMExecutor')
@@ -164,21 +260,54 @@ task('task:upgradeFHEVMExecutor')
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('FHEVMExecutor', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
-    }
-    const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre);
   });
+
+task('task:prepareUpgradeFHEVMExecutor')
+  .addParam(
+    'upgradeFromRef',
+    'Git ref used to materialize the implementation currently deployed behind the proxy, eg: v0.11.1',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/FHEVMExecutor.sol:FHEVMExecutor',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(
+    async function ({ upgradeFromRef, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments, hre) {
+      const generatedCurrentImplementation = materializeContractsFromGit(upgradeFromRef, 'generated-upgrade-from-contracts');
+      const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
+      if (useInternalProxyAddress) {
+        loadHostAddresses();
+      }
+      const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
+
+      try {
+        await deployImplementationForPreparedUpgrade(
+          proxyAddress,
+          'FHEVMExecutor',
+          currentImplementation,
+          newImplementation,
+          verifyContract,
+          hre,
+        );
+      } finally {
+        generatedCurrentImplementation.cleanup();
+      }
+    },
+  );
 
 task('task:upgradeKMSVerifier')
   .addParam(
@@ -201,20 +330,8 @@ task('task:upgradeKMSVerifier')
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('KMSVerifier', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
-    }
-    const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:upgradeInputVerifier')
@@ -238,29 +355,19 @@ task('task:upgradeInputVerifier')
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('InputVerifier', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
     }
-    const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
-    let initialSigners: string[] = [];
+    const initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < +numSigners; idx++) {
-      const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
-      initialSigners.push(inputSignerAddress);
+      initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     }
-
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+    await upgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
       initialSigners,
       coprocessorThreshold,
     ]);
@@ -305,30 +412,10 @@ task('task:upgradeHCULimit')
     '20000000',
     types.string,
   )
-  .setAction(async function (
-    {
-      currentImplementation,
-      newImplementation,
-      useInternalProxyAddress,
-      verifyContract,
-      hcuCapPerBlock,
-      maxHcuDepthPerTx,
-      maxHcuPerTx,
-    }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts('HCULimit', currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
-    }
-    const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      BigInt(hcuCapPerBlock),
-      BigInt(maxHcuDepthPerTx),
-      BigInt(maxHcuPerTx),
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
+      BigInt(taskArgs.hcuCapPerBlock),
+      BigInt(taskArgs.maxHcuDepthPerTx),
+      BigInt(taskArgs.maxHcuPerTx),
     ]);
   });

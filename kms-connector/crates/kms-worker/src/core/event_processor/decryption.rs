@@ -1,6 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{ProcessingError, s3::S3Service},
+    event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
 };
 use alloy::{
     consensus::Transaction,
@@ -10,7 +10,10 @@ use alloy::{
     sol_types::SolCall,
 };
 use anyhow::anyhow;
-use connector_utils::types::{KmsGrpcRequest, fhe::extract_chain_id_from_handle};
+use connector_utils::types::{
+    KmsGrpcRequest, extra_data::parse_extra_data_context, handle::extract_chain_id_from_handle,
+    u256_to_request_id,
+};
 use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
     userDecryptionRequestCall,
@@ -24,9 +27,12 @@ use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
+pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
+
+    /// The entity used to validate KMS context.
+    context_manager: C,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<GP>,
@@ -38,13 +44,15 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     s3_service: S3Service<GP>,
 }
 
-impl<GP, HP> DecryptionProcessor<GP, HP>
+impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
 where
     GP: Provider,
     HP: Provider,
+    C: ContextManager,
 {
     pub fn new(
         config: &Config,
+        context_manager: C,
         gateway_provider: GP,
         acl_contracts: HashMap<u64, ACLInstance<HP>>,
         s3_service: S3Service<GP>,
@@ -61,30 +69,11 @@ where
 
         Self {
             domain,
+            context_manager,
             decryption_contract,
             acl_contracts,
             s3_service,
         }
-    }
-
-    pub async fn check_decryption_not_already_done(
-        &self,
-        decryption_id: U256,
-    ) -> Result<(), ProcessingError> {
-        let is_decryption_done = self
-            .decryption_contract
-            .isDecryptionDone(decryption_id)
-            .call()
-            .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
-
-        if is_decryption_done {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "Decryption already done on the Gateway"
-            )));
-        }
-
-        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
@@ -208,36 +197,21 @@ where
         delegator_address: Address,
     ) -> Result<(), ProcessingError> {
         let handle_hex = hex::encode(handle);
-        let is_delegated_call = acl_contract.isHandleDelegatedForUserDecryption(
-            delegator_address,
-            user_address,
-            contract_address,
-            handle,
-        );
-        let delegator_allowed_call = acl_contract.isAllowed(handle, delegator_address);
-        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
-
-        let (is_delegated, delegator_allowed, contract_allowed) = tokio::try_join!(
-            is_delegated_call.call(),
-            delegator_allowed_call.call(),
-            contract_allowed_call.call(),
-        )
-        .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        let is_delegated = acl_contract
+            .isHandleDelegatedForUserDecryption(
+                delegator_address,
+                user_address,
+                contract_address,
+                handle,
+            )
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !is_delegated {
             return Err(ProcessingError::Recoverable(anyhow!(
                 "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle_hex}!",
-            )));
-        }
-        if !delegator_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{delegator_address} is not allowed to decrypt {handle_hex}!",
-            )));
-        }
-        if !contract_allowed {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
 
@@ -291,12 +265,23 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
+        let context_id = self.extract_and_validate_context(extra_data).await?;
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
-        let request_id = Some(RequestId {
-            request_id: hex::encode(decryption_id.to_be_bytes::<32>()),
-        });
-        let extra_data = extra_data.to_vec();
+        let request_id = Some(u256_to_request_id(decryption_id));
+
+        // TODO(https://github.com/zama-ai/fhevm-internal/issues/1167):
+        // Workaround for backward compatibility with relayer-sdk <=0.4.2.
+        // The SDK sends extraData=0x00 in the user decryption request, but does not pass extraData
+        // to the TKMS library during response signature verification (reconstruction step),
+        // effectively verifying against empty bytes. We normalize 0x00 → vec![] here so the KMS
+        // signs over empty extraData, matching what the SDK expects during verification.
+        // This is fixed in relayer-sdk v0.5.0.
+        let extra_data = if extra_data.as_ref() == [0x00] {
+            vec![]
+        } else {
+            extra_data.to_vec()
+        };
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -310,7 +295,7 @@ where
                 typed_ciphertexts: ciphertexts,
                 extra_data,
                 epoch_id: None,
-                context_id: None,
+                context_id,
             };
 
             Ok(user_decryption_request.into())
@@ -322,7 +307,7 @@ where
                 domain: Some(self.domain.clone()),
                 extra_data,
                 epoch_id: None,
-                context_id: None,
+                context_id,
             };
             Ok(public_decryption_request.into())
         }
@@ -375,6 +360,21 @@ where
             })
             .map(|tx| tx.input().to_vec())
     }
+
+    /// Parses `extraData` for a context ID and validates it if present.
+    async fn extract_and_validate_context(
+        &self,
+        extra_data: &[u8],
+    ) -> Result<Option<RequestId>, ProcessingError> {
+        match parse_extra_data_context(extra_data) {
+            Err(e) => Err(ProcessingError::Irrecoverable(e)),
+            Ok(None) => Ok(None),
+            Ok(Some(context_id)) => {
+                self.context_manager.validate_context(context_id).await?;
+                Ok(Some(u256_to_request_id(context_id)))
+            }
+        }
+    }
 }
 
 pub struct UserDecryptionExtraData {
@@ -407,58 +407,8 @@ mod tests {
     enum ExpectedOutcome {
         Ok,
         Recoverable,
+        #[allow(unused)]
         Irrecoverable,
-    }
-
-    enum DecryptionReadyMock {
-        Failure(&'static str),
-        Success(bool),
-    }
-
-    #[rstest]
-    #[case::transport_error(
-        DecryptionReadyMock::Failure("Transport Error"),
-        ExpectedOutcome::Recoverable
-    )]
-    #[case::not_done(DecryptionReadyMock::Success(false), ExpectedOutcome::Ok)]
-    #[case::already_done(DecryptionReadyMock::Success(true), ExpectedOutcome::Irrecoverable)]
-    #[tokio::test]
-    async fn check_decryption_not_already_done(
-        #[case] mock_response: DecryptionReadyMock,
-        #[case] expected: ExpectedOutcome,
-    ) {
-        let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-        let acl_contracts_mock = HashMap::from([(
-            u64::default(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
-
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
-
-        match mock_response {
-            DecryptionReadyMock::Failure(msg) => asserter.push_failure_msg(msg),
-            DecryptionReadyMock::Success(val) => asserter.push_success(&val.abi_encode()),
-        }
-
-        let result = decryption_processor
-            .check_decryption_not_already_done(U256::ZERO)
-            .await;
-
-        match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            ExpectedOutcome::Recoverable => {
-                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
-            }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
-        }
     }
 
     enum PubDecryptACLMock {
@@ -491,8 +441,13 @@ mod tests {
         let sns_ciphertexts = vec![sns_ct];
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -572,8 +527,13 @@ mod tests {
         let user_address = Address::default();
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             UserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -603,11 +563,7 @@ mod tests {
 
     enum DelegatedUserDecryptACLMock {
         Failure(&'static str),
-        Success {
-            is_delegated: bool,
-            delegator_allowed: bool,
-            contract_allowed: bool,
-        },
+        Success { is_delegated: bool },
     }
 
     #[rstest]
@@ -617,22 +573,12 @@ mod tests {
         None
     )]
     #[case::allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: true },
         ExpectedOutcome::Ok,
         None
     )]
-    #[case::delegator_allowed_contract_not_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: false },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
-    #[case::delegator_not_allowed_contract_allowed(
-        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: false, contract_allowed: true },
-        ExpectedOutcome::Recoverable,
-        Some("is not allowed to decrypt")
-    )]
     #[case::not_delegated(
-        DelegatedUserDecryptACLMock::Success { is_delegated: false, delegator_allowed: true, contract_allowed: true },
+        DelegatedUserDecryptACLMock::Success { is_delegated: false },
         ExpectedOutcome::Recoverable,
         Some("is not a delegate of")
     )]
@@ -665,19 +611,18 @@ mod tests {
         let user_address = Address::default();
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor =
-            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts_mock,
+            s3_service,
+        );
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
-            DelegatedUserDecryptACLMock::Success {
-                is_delegated,
-                delegator_allowed,
-                contract_allowed,
-            } => {
+            DelegatedUserDecryptACLMock::Success { is_delegated } => {
                 asserter.push_success(&is_delegated.abi_encode());
-                asserter.push_success(&delegator_allowed.abi_encode());
-                asserter.push_success(&contract_allowed.abi_encode());
             }
         }
 
@@ -700,6 +645,14 @@ mod tests {
                 }
                 _ => panic!("Expected Irrecoverable error, got: {:?}", result),
             },
+        }
+    }
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+            Ok(())
         }
     }
 }

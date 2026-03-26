@@ -187,7 +187,17 @@ jobs:
         run: |
           ./fhevm-cli unpause gateway
 
-      # E2E tests after unpausing the Host and Gateway contracts
+      # E2E tests after unpausing the Host and Gateway contracts.
+      
+      # The revert test runs first: it populates the DB, reverts to a midpoint,
+      # and waits for the coprocessor to recover. All subsequent tests then run
+      # against a post-revert DB, providing a stronger guarantee that the
+      # coprocessor works correctly after a state revert.
+      - name: Coprocessor DB state revert test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test coprocessor-db-state-revert
+
       - name: Input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |

@@ -49,7 +49,7 @@ describe('Upgrades', function () {
     });
     const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, { unsafeAllow: ['missing-initializer'] });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.1.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.2.0');
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
     expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
@@ -69,7 +69,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.2.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.3.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');

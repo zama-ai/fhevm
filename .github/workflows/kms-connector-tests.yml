@@ -39,8 +39,8 @@ jobs:
             - kms-connector/connector-db/**
             - kms-connector/crates/**
             - kms-connector/Cargo.*
-            - gateway-contracts/rust-bindings/**
-            - host-contracts/rust-bindings/**
+            - gateway-contracts/rust_bindings/**
+            - host-contracts/rust_bindings/**
 
   start-runner:
     name: kms-connector-tests/start-runner

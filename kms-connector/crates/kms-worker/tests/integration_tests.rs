@@ -2,8 +2,8 @@ mod common;
 
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
 use alloy::{
-    hex::{self, FromHex},
-    primitives::{FixedBytes, U256},
+    hex::FromHex,
+    primitives::FixedBytes,
     providers::{ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
 };
@@ -20,13 +20,13 @@ use connector_utils::{
     },
     types::{
         GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, db::EventType,
-        kms_response,
+        kms_response, u256_to_request_id,
     },
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::{
     CrsGenResult, Empty, InitiateResharingResponse, KeyGenPreprocResult, KeyGenResult,
-    PublicDecryptionResponse, PublicDecryptionResponsePayload, RequestId, UserDecryptionResponse,
+    PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
     UserDecryptionResponsePayload,
 };
 use kms_worker::core::Config;
@@ -70,20 +70,13 @@ async fn test_processing_request(
     let mut insert_options = InsertRequestOptions::new()
         .with_already_sent(already_sent)
         .with_sns_ct_materials(vec![sns_ct.clone()]);
-    match event_type {
-        EventType::PublicDecryptionRequest => {
-            // Mocking isDecryptionDone returns false
-            asserter.push_success(&false.abi_encode());
-        }
-        EventType::UserDecryptionRequest => {
-            // Mocking `get_transaction_by_hash` call result
-            let tx_hash = rand_digest();
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
-            insert_options = insert_options.with_tx_hash(tx_hash);
-            asserter.push_success(&mock_tx);
-        }
-        _ => (),
-    };
+    if matches!(event_type, EventType::UserDecryptionRequest) {
+        // Mocking `get_transaction_by_hash` call result
+        let tx_hash = rand_digest();
+        let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+        insert_options = insert_options.with_tx_hash(tx_hash);
+        asserter.push_success(&mock_tx);
+    }
 
     let get_copro_call_response = Coprocessor {
         s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
@@ -174,7 +167,7 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
         GatewayEventKind::PrssInit(id) => (*id, "Init", ""),
         GatewayEventKind::KeyReshareSameSet(r) => (r.keyId, "InitiateResharing", ""),
     };
-    let request_id = u256_to_request_id(request_id_u256);
+    let request_id = Some(u256_to_request_id(request_id_u256));
 
     // No mock if `already_sent` to ensure this request is skipped on kms_worker side
     if !already_sent {
@@ -288,15 +281,15 @@ fn check_response_data(request: &GatewayEventKind, response: KmsResponse) -> any
             },
         },
         GatewayEventKind::PrepKeygen(r) => KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
-            preprocessing_id: u256_to_request_id(r.prepKeygenId),
+            preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
         GatewayEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
-            request_id: u256_to_request_id(r.keyId),
+            request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
         }),
         GatewayEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {
-            request_id: u256_to_request_id(r.crsId),
+            request_id: Some(u256_to_request_id(r.crsId)),
             ..Default::default()
         }),
         _ => unimplemented!(),
@@ -304,10 +297,4 @@ fn check_response_data(request: &GatewayEventKind, response: KmsResponse) -> any
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
     info!("OK!");
     Ok(())
-}
-
-fn u256_to_request_id(value: U256) -> Option<RequestId> {
-    Some(RequestId {
-        request_id: hex::encode(value.to_be_bytes::<32>()),
-    })
 }

@@ -106,6 +106,32 @@ async function checkImplementationArtifacts(
   }
 }
 
+// Helper to perform a standard upgrade: compile, check artifacts, load address, upgrade
+async function upgradeContract(
+  contractName: string,
+  addressEnvVar: string,
+  taskArgs: TaskArguments,
+  hre: HardhatRuntimeEnvironment,
+  reinitializeArgs: unknown[] = [],
+) {
+  await compileImplementations(taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+  await checkImplementationArtifacts(contractName, taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+
+  if (taskArgs.useInternalProxyAddress) {
+    loadGatewayAddresses();
+  }
+  const proxyAddress = getRequiredEnvVar(addressEnvVar);
+
+  await upgradeCurrentToNew(
+    proxyAddress,
+    taskArgs.currentImplementation,
+    taskArgs.newImplementation,
+    taskArgs.verifyContract,
+    hre,
+    reinitializeArgs,
+  );
+}
+
 task("task:upgradeCiphertextCommits")
   .addParam(
     "currentImplementation",
@@ -127,20 +153,8 @@ task("task:upgradeCiphertextCommits")
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("CiphertextCommits", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract("CiphertextCommits", "CIPHERTEXT_COMMITS_ADDRESS", taskArgs, hre);
   });
 
 task("task:upgradeDecryption")
@@ -164,20 +178,8 @@ task("task:upgradeDecryption")
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("Decryption", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract("Decryption", "DECRYPTION_ADDRESS", taskArgs, hre);
   });
 
 task("task:upgradeGatewayConfig")
@@ -201,20 +203,9 @@ task("task:upgradeGatewayConfig")
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("GatewayConfig", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, []);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const kmsContextId = getRequiredEnvVar("KMS_CONTEXT_ID");
+    await upgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre, [kmsContextId]);
   });
 
 task("task:upgradeKMSGeneration")
@@ -238,20 +229,8 @@ task("task:upgradeKMSGeneration")
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("KMSGeneration", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("KMS_GENERATION_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract("KMSGeneration", "KMS_GENERATION_ADDRESS", taskArgs, hre);
   });
 
 task("task:upgradeInputVerification")
@@ -275,18 +254,6 @@ task("task:upgradeInputVerification")
     true,
     types.boolean,
   )
-  .setAction(async function (
-    { currentImplementation, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
-    hre,
-  ) {
-    await compileImplementations(currentImplementation, newImplementation, hre);
-
-    await checkImplementationArtifacts("InputVerification", currentImplementation, newImplementation, hre);
-
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract("InputVerification", "INPUT_VERIFICATION_ADDRESS", taskArgs, hre);
   });

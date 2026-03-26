@@ -370,7 +370,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.2.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.3.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -491,12 +491,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         /// @dev The scalar byte is used in the division operation at the moment.
         bytes1 scalarByte = bytes1(0x01);
+        bytes32 rhs = bytes32(uint256(1));
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheDiv,
@@ -520,12 +519,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
         /// @dev The scalar byte is used in the rem operation at the moment.
         bytes1 scalarByte = bytes1(0x01);
+        bytes32 rhs = bytes32(uint256(1));
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
 
         bytes32 expectedResult = _computeExpectedResultBinaryOp(
             FHEVMExecutor.Operators.fheRem,
@@ -1739,6 +1737,28 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     function test_RevertsIfFheRemTriesDividingByZero() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = 0;
+        address account = address(123);
+        _approveHandleInACL(lhs, account);
+
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.prank(account);
+        fhevmExecutor.fheRem(lhs, rhs, 0x01);
+    }
+
+    function test_RevertsIfFheDivScalarTruncatesToZero() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint8);
+        bytes32 rhs = bytes32(uint256(1 << 8));
+        address account = address(123);
+        _approveHandleInACL(lhs, account);
+
+        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.prank(account);
+        fhevmExecutor.fheDiv(lhs, rhs, 0x01);
+    }
+
+    function test_RevertsIfFheRemScalarTruncatesToZero() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint8);
+        bytes32 rhs = bytes32(uint256(1 << 8));
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
