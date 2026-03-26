@@ -34,15 +34,13 @@ jobs:
           filters: |
             host-contracts:
               - .github/workflows/contracts-upgrade-version-check.yml
-              - ci/check-upgrade-versions.ts
-              - ci/merge-address-constants.ts
-              - ci/upgrade-version-check-lib.ts
+              - ci/upgrade-check/**
+              - ci/shared/**
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-upgrade-version-check.yml
-              - ci/check-upgrade-versions.ts
-              - ci/merge-address-constants.ts
-              - ci/upgrade-version-check-lib.ts
+              - ci/upgrade-check/**
+              - ci/shared/**
               - gateway-contracts/**
 
   check:
@@ -110,11 +108,11 @@ jobs:
           # the full union of constants with consistent values (PR wins for shared).
           (cd "$PACKAGE" && make ensure-addresses)
           (cd "baseline/$PACKAGE" && make ensure-addresses)
-          bun ci/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
+          bun ci/shared/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
       - name: Run upgrade version check
         env:
           PACKAGE: ${{ matrix.package }}
-        run: bun ci/check-upgrade-versions.ts "baseline/$PACKAGE" "$PACKAGE"
+        run: bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE"
