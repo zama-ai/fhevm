@@ -1,39 +1,44 @@
-import dotenv from "dotenv";
-import fs from "fs";
-import { task } from "hardhat/config";
+import { task, types } from "hardhat/config";
 import type { HardhatEthersHelpers, TaskArguments } from "hardhat/types";
 
 import { GatewayConfig } from "../typechain-types";
 
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
+
 async function loadGatewayConfigContract(
-  customGatewayConfigAddress: string | undefined,
+  useInternalProxyAddress: boolean,
   ethers: HardhatEthersHelpers,
 ): Promise<GatewayConfig> {
+  if (useInternalProxyAddress) {
+    loadGatewayAddresses();
+  }
+  const gatewayConfigAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
   const gatewayConfigFactory = await ethers.getContractFactory("./contracts/GatewayConfig.sol:GatewayConfig");
-  const gatewayConfigAddress = customGatewayConfigAddress
-    ? customGatewayConfigAddress
-    : dotenv.parse(fs.readFileSync("addresses/.env.gateway")).GATEWAY_CONFIG_ADDRESS;
   return gatewayConfigFactory.attach(gatewayConfigAddress).connect(ethers.provider) as GatewayConfig;
 }
 
 task("task:getKmsSigners")
   .addOptionalParam(
-    "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
+    const gatewayConfig = await loadGatewayConfigContract(taskArguments.useInternalProxyAddress, ethers);
     const listCurrentKMSSigners = await gatewayConfig.getKmsSigners();
     console.log("The list of current KMS Signers stored inside GatewayConfig contract is: ", listCurrentKMSSigners);
   });
 
 task("task:getCoprocessorSigners")
   .addOptionalParam(
-    "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
+    const gatewayConfig = await loadGatewayConfigContract(taskArguments.useInternalProxyAddress, ethers);
     const listCurrentCoprocessorSigners = await gatewayConfig.getCoprocessorSigners();
     console.log(
       "The list of current Coprocessor Signers stored inside GatewayConfig contract is: ",
@@ -43,11 +48,13 @@ task("task:getCoprocessorSigners")
 
 task("task:getHostChains")
   .addOptionalParam(
-    "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
+    const gatewayConfig = await loadGatewayConfigContract(taskArguments.useInternalProxyAddress, ethers);
     const listCurrentHostChains = await gatewayConfig.getHostChains();
     console.log("The list of current host chains stored inside GatewayConfig contract is: ", listCurrentHostChains);
   });

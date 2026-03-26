@@ -8,6 +8,9 @@ import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
+export const ADDRESSES_DIR = resolve(__dirname, 'addresses');
+export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
+
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
@@ -56,7 +59,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployAllHostContracts');
     // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
     // for local testing
-    await hre.run('task:addHostPausers', { useInternalPauserSetAddress: true });
+    await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
