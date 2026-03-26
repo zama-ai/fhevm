@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM input_proof_req\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "59c5edf1a858d61a5f7ccf4271a6aa2043cf49dc2ca3ec3b4f413899e754f29e"
+}
