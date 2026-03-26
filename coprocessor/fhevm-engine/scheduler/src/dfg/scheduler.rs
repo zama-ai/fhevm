@@ -458,13 +458,24 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    Ok(run_computation(
-        opcode,
-        cts,
-        node_index,
-        gpu_idx,
-        transaction_id,
-    ))
+    let result = std::panic::catch_unwind(|| {
+        run_computation(opcode, cts, node_index, gpu_idx, transaction_id)
+    });
+    match result {
+        Err(e) => {
+            let msg = e
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| e.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic payload".to_string());
+            eprintln!("Panic while executing operation: {msg}");
+            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), msg },
+               "Panic while executing operation");
+            telemetry::set_current_span_error(&msg);
+            Err(SchedulerError::ExecutionPanic(msg).into())
+        }
+        Ok(r) => Ok(r),
+    }
 }
 
 type OpResult = Result<CompressedCiphertext>;

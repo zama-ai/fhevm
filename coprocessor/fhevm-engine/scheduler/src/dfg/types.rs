@@ -62,7 +62,7 @@ impl std::fmt::Debug for DFGTaskInput {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum SchedulerError {
     CyclicDependence,
     DataflowGraphError,
@@ -70,6 +70,7 @@ pub enum SchedulerError {
     DecompressionError,
     ReRandomisationError,
     SchedulerError,
+    ExecutionPanic(String),
 }
 
 impl std::error::Error for SchedulerError {}
@@ -94,6 +95,9 @@ impl std::fmt::Display for SchedulerError {
             }
             Self::SchedulerError => {
                 write!(f, "Generic scheduler error")
+            }
+            Self::ExecutionPanic(s) => {
+                write!(f, "Panic during execution of operation: {}", s)
             }
         }
     }
