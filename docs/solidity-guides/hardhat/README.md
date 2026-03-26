@@ -15,7 +15,7 @@ It extends Hardhat’s functionality with a complete FHEVM API that allows you:
 
 ## Where to go next
 
-🟨 Go to [**Setup Hardhat**](https://docs.zama.ai/protocol/solidity-guides/getting-started/setup) to initialize your FHEVM Hardhat project.
+🟨 Go to [**Setup Hardhat**](../getting-started/quick-start-tutorial/setup.md) to initialize your FHEVM Hardhat project.
 
 🟨 Go to [**Write FHEVM Tests in Hardhat**](write_test.md) for details on writing tests of FHEVM smart contracts using Hardhat.
 

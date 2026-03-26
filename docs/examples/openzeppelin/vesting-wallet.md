@@ -1,7 +1,5 @@
 This example demonstrates how to create a vesting wallet using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
 
-`VestingWalletConfidential` receives `ERC7984` tokens and releases them to the beneficiary according to a confidential, linear vesting schedule.
-
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
 
@@ -14,6 +12,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 {% tabs %}
 
 {% tab title="VestingWalletExample.sol" %}
+
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
@@ -22,15 +21,15 @@ import {FHE, ebool, euint64, euint128} from "@fhevm/solidity/lib/FHE.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
-import {IERC7984} from "../interfaces/IERC7984.sol";
+import {IERC7984} from "@openzeppelin/confidential-contracts/interfaces/IERC7984.sol";
 
 /**
  * @title VestingWalletExample
  * @dev A simple example demonstrating how to create a vesting wallet for ERC7984 tokens
- * 
+ *
  * This contract shows how to create a vesting wallet that receives ERC7984 tokens
  * and releases them to the beneficiary according to a confidential, linear vesting schedule.
- * 
+ *
  * This is a non-upgradeable version for demonstration purposes.
  */
 contract VestingWalletExample is Ownable, ReentrancyGuardTransient, ZamaEthereumConfig {
@@ -118,11 +117,13 @@ contract VestingWalletExample is Ownable, ReentrancyGuardTransient, ZamaEthereum
         }
     }
 }
+
 ```
 
 {% endtab %}
 
-{% tab title="VestingWalletExample.test.ts" %}
+{% tab title="VestingWallet.test.ts" %}
+
 ```typescript
 import { expect } from 'chai';
 import { ethers, fhevm } from 'hardhat';
@@ -143,7 +144,7 @@ describe('VestingWalletExample', function () {
     [owner, beneficiary, other] = accounts;
 
     // Deploy ERC7984 mock token
-    token = await ethers.deployContract('$ERC7984Mock', [
+    token = await ethers.deployContract('ERC7984Mock', [
       'TestToken',
       'TT',
       'https://example.com/metadata'
@@ -166,11 +167,11 @@ describe('VestingWalletExample', function () {
       .add64(VESTING_AMOUNT)
       .encrypt();
 
-    await (token as any)
+    await token
       .connect(owner)
-      ['$_mint(address,bytes32,bytes)'](
-        vestingWallet.target, 
-        encryptedInput.handles[0], 
+      ['mint(address,bytes32,bytes)'](
+        vestingWallet.target,
+        encryptedInput.handles[0],
         encryptedInput.inputProof
       );
   });
@@ -186,7 +187,7 @@ describe('VestingWalletExample', function () {
       const currentTime = await time.latest();
       const startTime = currentTime + 60;
       const midpoint = startTime + (VESTING_DURATION / 2);
-      
+
       await time.increaseTo(midpoint);
       // Just verify the contract can be called without FHEVM decryption for now
       await expect(vestingWallet.connect(beneficiary).release(await token.getAddress()))
@@ -197,7 +198,7 @@ describe('VestingWalletExample', function () {
       const currentTime = await time.latest();
       const startTime = currentTime + 60;
       const endTime = startTime + VESTING_DURATION + 1000;
-      
+
       await time.increaseTo(endTime);
       // Just verify the contract can be called without FHEVM decryption for now
       await expect(vestingWallet.connect(beneficiary).release(await token.getAddress()))
@@ -205,62 +206,9 @@ describe('VestingWalletExample', function () {
     });
   });
 });
+
 ```
-{% endtab %}
 
-{% tab title="VestingWalletExample.fixture.ts" %}
-```typescript
-import { ethers } from 'hardhat';
-import { time } from '@nomicfoundation/hardhat-network-helpers';
-
-export async function deployVestingWalletExampleFixture() {
-  const [owner, beneficiary] = await ethers.getSigners();
-
-  // Deploy ERC7984 mock token
-  const token = await ethers.deployContract('ERC7984Example', [
-    'TestToken',
-    'TT',
-    'https://example.com/metadata'
-  ]);
-
-  // Get current time and set vesting to start in 1 minute
-  const currentTime = await time.latest();
-  const startTime = currentTime + 60;
-  const duration = 60 * 60; // 1 hour
-
-  // Deploy and initialize vesting wallet in one step
-  const vestingWallet = await ethers.deployContract('VestingWalletExample', [
-    beneficiary.address,
-    startTime,
-    duration
-  ]);
-
-  return { vestingWallet, token, owner, beneficiary, startTime, duration };
-}
-
-export async function deployVestingWalletWithTokensFixture() {
-  const { vestingWallet, token, owner, beneficiary, startTime, duration } = await deployVestingWalletExampleFixture();
-  
-  // Import fhevm for token minting
-  const { fhevm } = await import('hardhat');
-  
-  // Mint tokens to the vesting wallet
-  const encryptedInput = await fhevm
-    .createEncryptedInput(await token.getAddress(), owner.address)
-    .add64(1000) // 1000 tokens
-    .encrypt();
-
-  await (token as any)
-    .connect(owner)
-    ['$_mint(address,bytes32,bytes)'](
-      vestingWallet.target, 
-      encryptedInput.handles[0], 
-      encryptedInput.inputProof
-    );
-
-  return { vestingWallet, token, owner, beneficiary, startTime, duration, vestingAmount: 1000 };
-}
-```
 {% endtab %}
 
 {% endtabs %}
