@@ -32,19 +32,24 @@ jobs:
             rust-files:
               - .github/workflows/relayer-tests.yaml
               - relayer/**
+
   unit-test:
-    name: relayer-test/unit-test
+    name: relayer-test/unit-test (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Project
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 #v1
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
         with:
           toolchain: stable
           components: rustfmt
@@ -52,29 +57,33 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          workspaces: apps/relayer
-          key: rust-build-apps/relayer
+          workspaces: relayer
+          key: rust-build-relayer
           cache-targets: true
           cache-all-crates: true
 
       - name: Format
-        working-directory: apps/relayer
+        working-directory: relayer
         run: cargo fmt --all -- --check
 
       - name: Build for tests (no rpc mock)
-        working-directory: apps/relayer
+        working-directory: relayer
         run: cargo test --no-run --lib
 
       - name: Unit tests
-        working-directory: apps/relayer
+        working-directory: relayer
         run: RUST_BACKTRACE=full make test-unit
 
   clippy:
-    name: relayer-test/clippy
+    name: relayer-test/clippy (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Project
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
@@ -89,15 +98,19 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          workspaces: apps/relayer
-          key: rust-build-apps/relayer
+          workspaces: relayer
+          key: rust-build-relayer
 
       - name: Clippy
-        working-directory: apps/relayer
+        working-directory: relayer
         run: cargo clippy -- -D warnings
 
   integration-test:
-    name: relayer-test/integration-test
+    name: relayer-test/integration-test (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -126,7 +139,7 @@ jobs:
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
@@ -150,8 +163,8 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          workspaces: apps/relayer
-          key: rust-build-apps/relayer
+          workspaces: relayer
+          key: rust-build-relayer
           cache-targets: true
           cache-all-crates: true
 
@@ -165,9 +178,9 @@ jobs:
           fi
 
       - name: Migrate Database
-        working-directory: apps/relayer/relayer-migrate
+        working-directory: relayer/relayer-migrate
         run: sqlx migrate run
 
       - name: Run tests
-        working-directory: apps/relayer
+        working-directory: relayer
         run: RUST_BACKTRACE=full make test-run
