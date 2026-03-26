@@ -71,7 +71,7 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
   }
   run("make ensure-addresses", targetDir);
   run("make ensure-addresses", baselineDir);
-  run(`bun ci/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`, currentRepoRoot);
+  run(`bun ci/shared/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`, currentRepoRoot);
   run(`cp "${join(targetDir, "foundry.toml")}" "${join(baselineDir, "foundry.toml")}"`, currentRepoRoot);
 }
 

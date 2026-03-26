@@ -36,10 +36,12 @@ jobs:
             host-contracts:
               - .github/workflows/contracts-abi-compat-check.yml
               - ci/abi-compat/**
+              - ci/shared/**
               - host-contracts/**
             gateway-contracts:
               - .github/workflows/contracts-abi-compat-check.yml
               - ci/abi-compat/**
+              - ci/shared/**
               - gateway-contracts/**
 
   check:
@@ -101,7 +103,7 @@ jobs:
         run: |
           (cd "$PACKAGE" && make ensure-addresses)
           (cd "baseline/$PACKAGE" && make ensure-addresses)
-          bun ci/abi-compat/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
+          bun ci/shared/merge-address-constants.ts "baseline/$PACKAGE/addresses" "$PACKAGE/addresses"
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
       - name: Run ABI compatibility check

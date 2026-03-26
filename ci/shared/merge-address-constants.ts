@@ -24,7 +24,7 @@
 // so the PR compiles.  The merged file is copied to both sides.
 //
 // USAGE
-//   bun ci/abi-compat/merge-address-constants.ts <baseline-addresses-dir> <pr-addresses-dir>
+//   bun ci/shared/merge-address-constants.ts <baseline-addresses-dir> <pr-addresses-dir>
 //
 // For each .sol file present in either directory, writes a merged version to
 // BOTH directories.  Exits 0 on success, 1 on error.
@@ -103,7 +103,7 @@ function renderAddressFile(header: string, constants: AddressConstant[]): string
 
 const [baselineDir, prDir] = process.argv.slice(2);
 if (!baselineDir || !prDir) {
-  console.error("Usage: bun ci/abi-compat/merge-address-constants.ts <baseline-addresses-dir> <pr-addresses-dir>");
+  console.error("Usage: bun ci/shared/merge-address-constants.ts <baseline-addresses-dir> <pr-addresses-dir>");
   process.exit(1);
 }
 

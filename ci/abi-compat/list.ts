@@ -105,7 +105,7 @@ function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoo
   run("make ensure-addresses", targetDir);
   logStep(`Normalizing address constants for ${pkg}`);
   run(
-    `bun ci/abi-compat/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`,
+    `bun ci/shared/merge-address-constants.ts "${join(baselineDir, "addresses")}" "${join(targetDir, "addresses")}"`,
     currentRepoRoot,
   );
   run(`cp "${join(targetDir, "foundry.toml")}" "${join(baselineDir, "foundry.toml")}"`, currentRepoRoot);
