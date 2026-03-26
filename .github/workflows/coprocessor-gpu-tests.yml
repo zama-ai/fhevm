@@ -215,8 +215,15 @@ jobs:
           echo "Database migration completed"
 
       - name: Run GPU tests for the worker services.
+        env:
+          IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
         run: |
           export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor
+          # Merge queue: leave unset so supported_types() defaults to full matrix.
+          # PR CI: run only FHEUint64 for faster feedback.
+          if [ "$IS_MERGE_QUEUE" != "1" ]; then
+            export TFHE_WORKER_EVENT_TYPE_MATRIX=uint64
+          fi
           cargo test \
           -p tfhe-worker \
           -p sns-worker \
