@@ -42,9 +42,9 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
 
-# The polling interval for decryption requests (optional, defaults to 1s)
+# The polling interval for decryption requests (optional, defaults to 500ms)
 # ENV: KMS_CONNECTOR_DECRYPTION_POLLING (format: https://docs.rs/humantime/latest/humantime/)
-# decryption_polling = "1s"
+# decryption_polling = "500ms"
 
 # The polling interval for key management requests (optional, defaults to 30s)
 # ENV: KMS_CONNECTOR_KMS_GENERATION_POLLING (format: https://docs.rs/humantime/latest/humantime/)
@@ -54,9 +54,9 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_GET_LOGS_BATCH_SIZE
 # get_logs_batch_size = 100
 
-# Maximum consecutive polling errors before the listener stops (optional, defaults to 10)
+# Maximum consecutive polling errors before the listener stops (optional, defaults to 20)
 # ENV: KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS
-# max_consecutive_polling_errors = 10
+# max_consecutive_polling_errors = 20
 
 # Block number to start processing decryption events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER

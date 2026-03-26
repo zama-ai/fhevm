@@ -4,7 +4,6 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
-    primitives::Address,
     providers::Provider,
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
@@ -127,15 +126,23 @@ where
                 self.config.decryption_contract.address,
                 self.config.decryption_polling,
                 self.config.decryption_from_block_number,
-                &DECRYPTION_EVENT_TYPES[..],
+                DECRYPTION_EVENT_TYPES.as_slice(),
             ),
             MonitoredContract::KmsGeneration => (
                 self.config.kms_generation_contract.address,
                 self.config.key_management_polling,
                 self.config.kms_operation_from_block_number,
-                &KMS_GENERATION_EVENT_TYPES[..],
+                KMS_GENERATION_EVENT_TYPES.as_slice(),
             ),
         };
+
+        let event_signatures = event_types
+            .iter()
+            .map(|e| e.signature_hash())
+            .collect::<Vec<_>>();
+        let base_filter = Filter::new()
+            .address(contract_address)
+            .event_signature(event_signatures);
 
         let mut from_block = self.get_start_block(from_block_config, event_types).await?;
         info!("Started {contract} polling from block {from_block}");
@@ -146,7 +153,7 @@ where
         loop {
             ticker.tick().await;
             match self
-                .fetch_and_publish(contract, contract_address, event_types, from_block)
+                .fetch_and_publish(contract, base_filter.clone(), event_types, from_block)
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -161,7 +168,7 @@ where
                         .with_label_values(&[contract.to_string().to_lowercase()])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("{contract} error: {e} ({consecutive_errors}/{max_errors})");
+                    warn!("{contract} listening error: {e} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
                         anyhow::bail!("Too many consecutive errors for {contract}");
                     }
@@ -176,7 +183,7 @@ where
     async fn fetch_and_publish(
         &self,
         contract: MonitoredContract,
-        contract_address: Address,
+        base_filter: Filter,
         event_types: &[EventType],
         from_block: u64,
     ) -> anyhow::Result<(u64, bool)> {
@@ -191,15 +198,7 @@ where
             current_block,
         );
 
-        let signatures = event_types
-            .iter()
-            .map(|e| e.signature_hash())
-            .collect::<Vec<_>>();
-        let filter = Filter::new()
-            .address(contract_address)
-            .event_signature(signatures)
-            .from_block(from_block)
-            .to_block(to_block);
+        let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
         let events = Self::prepare_events(contract, logs)?;
@@ -320,17 +319,23 @@ mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
-    async fn test_get_logs_error_stops_listener() {
+    async fn test_consecutive_get_logs_error_stops_listener() {
         let (_test_instance, asserter, gw_listener) = test_setup(None).await;
 
-        // get_block_number succeeds
+        // Initial get_block_number succeeds
         asserter.push_success(&100_u64);
-        // get_logs fails
-        asserter.push_failure(ErrorPayload {
-            code: -32000,
-            message: "get logs error".into(),
-            data: None,
-        });
+
+        for _ in 0..MAX_CONSECUTIVE_POLLING_ERRORS {
+            // Loop get_block_number succeeds
+            asserter.push_success(&101_u64);
+
+            // get_logs fails
+            asserter.push_failure(ErrorPayload {
+                code: -32000,
+                message: "get logs error".into(),
+                data: None,
+            });
+        }
 
         gw_listener.poll_events(MonitoredContract::Decryption).await;
     }
@@ -338,21 +343,15 @@ mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
-    async fn test_listener_ended_by_end_of_any_task() {
-        let (mut test_instance, asserter, gw_listener) = test_setup(None).await;
+    async fn test_listener_ended_by_cancel_token() {
+        let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
-        // Both tasks will fail on get_block_number or get_logs
-        for _ in 0..2 {
-            asserter.push_success(&100_u64);
-            asserter.push_failure(ErrorPayload {
-                code: -32000,
-                message: "rpc error".into(),
-                data: None,
-            });
-        }
+        gw_listener.cancel_token.cancel();
 
         gw_listener.start().await;
-        test_instance.wait_for_log("polling failed").await;
+        test_instance
+            .wait_for_log("GatewayListener stopped successfully")
+            .await;
     }
 
     type MockProvider = FillProvider<
@@ -362,6 +361,8 @@ mod tests {
         >,
         RootProvider,
     >;
+
+    const MAX_CONSECUTIVE_POLLING_ERRORS: u8 = 2;
 
     async fn test_setup(
         kms_operation_from_block_number: Option<u64>,
@@ -375,7 +376,7 @@ mod tests {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
             kms_operation_from_block_number,
-            max_consecutive_polling_errors: 1,
+            max_consecutive_polling_errors: MAX_CONSECUTIVE_POLLING_ERRORS,
             ..Default::default()
         };
         let listener = GatewayListener::new(

@@ -95,7 +95,7 @@ fn default_get_logs_batch_size() -> u64 {
 }
 
 fn default_max_consecutive_polling_errors() -> u8 {
-    10
+    20
 }
 
 // Default implementation for testing purpose
@@ -143,6 +143,8 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_GET_LOGS_BATCH_SIZE");
+            env::remove_var("KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS");
         }
     }
 
@@ -225,15 +227,27 @@ mod tests {
         // Set an environment variable to override the file
         let gateway_chain_id = 77737;
         let service_name = "kms-connector-override";
+        let get_logs_batch_size: u64 = 500;
+        let max_consecutive_polling_errors: u8 = 5;
         let mut expected_config = example_config.clone();
         expected_config.gateway_chain_id = gateway_chain_id;
         expected_config.service_name = service_name.to_string();
+        expected_config.get_logs_batch_size = get_logs_batch_size;
+        expected_config.max_consecutive_polling_errors = max_consecutive_polling_errors;
         unsafe {
             env::set_var(
                 "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
                 gateway_chain_id.to_string(),
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", service_name);
+            env::set_var(
+                "KMS_CONNECTOR_GET_LOGS_BATCH_SIZE",
+                get_logs_batch_size.to_string(),
+            );
+            env::set_var(
+                "KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS",
+                max_consecutive_polling_errors.to_string(),
+            );
         }
 
         // Load config from both sources
