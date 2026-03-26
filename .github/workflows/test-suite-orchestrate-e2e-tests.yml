@@ -2,6 +2,7 @@ name: test-suite-orchestrate-e2e-tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
       - release/*
@@ -15,7 +16,7 @@ concurrency:
 jobs:
   coprocessor-docker-build:
     if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/')
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'orchestrate')
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
