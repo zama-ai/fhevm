@@ -40,9 +40,14 @@ function runJson(command: string) {
 
 function forgeInspectAbi(contract: string, root: string): AbiEntry[] | null {
   try {
-    return JSON.parse(
-      runJson(`forge inspect "contracts/${contract}.sol:${contract}" abi --root "${root}" --json --force`),
-    );
+    const raw = runJson(`forge inspect "contracts/${contract}.sol:${contract}" abi --root "${root}" --json --force`);
+    // Forge may prepend compilation progress to stdout on the first invocation in a
+    // clean directory.  Extract the JSON array instead of parsing the whole output.
+    const jsonStart = raw.indexOf("[");
+    if (jsonStart === -1) {
+      return null;
+    }
+    return JSON.parse(raw.slice(jsonStart));
   } catch (error: any) {
     if (error.stderr) {
       console.error(String(error.stderr));
