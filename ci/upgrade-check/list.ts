@@ -3,10 +3,10 @@
 import { execSync } from "child_process";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { dirname, join, resolve } from "path";
+import { join, resolve } from "path";
 
-import { collectUpgradeVersionResults } from "./upgrade-version-check-lib";
-import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./upgrade-report-hints";
+import { collectUpgradeVersionResults } from "./lib";
+import { CONTRACT_HINTS, PACKAGE_CONSTRAINTS } from "./hints";
 
 type PackageName = "host-contracts" | "gateway-contracts";
 
@@ -16,7 +16,7 @@ const PACKAGE_CONFIG: Record<PackageName, { extraDeps?: string }> = {
 };
 
 function usage(): never {
-  console.error("Usage: bun ci/list-upgrades.ts --from <tag/ref> [--to <tag/ref>] [--package host-contracts|gateway-contracts]");
+  console.error("Usage: bun ci/upgrade-check/list.ts --from <tag/ref> [--to <tag/ref>] [--package host-contracts|gateway-contracts]");
   process.exit(1);
 }
 
@@ -128,7 +128,7 @@ function printPackageReport(pkg: PackageName, repoRoot: string, baselineRoot: st
 }
 
 const { fromRef, toRef, packages } = parseArgs();
-const repoRoot = resolve(dirname(import.meta.dir));
+const repoRoot = resolve(import.meta.dir, "../..");
 const tempRoot = mkdtempSync(join(tmpdir(), "fhevm-upgrade-report-"));
 const baselineRoot = join(tempRoot, "baseline");
 const targetRoot = toRef ? join(tempRoot, "target") : repoRoot;
