@@ -120,8 +120,6 @@ jobs:
       run: |
         nohup docker compose up -d --build db-migration > /tmp/db-init.log 2>&1 &
       working-directory: coprocessor/fhevm-engine/tfhe-worker
-      env:
-        DB_HOST_PORT: 15432
 
     - name: Setup Rust toolchain file
       run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
@@ -163,7 +161,7 @@ jobs:
 
     - name: Compile tests with coverage instrumentation
       env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:15432/coprocessor
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_PACKAGE: ${{ matrix.package }}
       run: |
@@ -201,23 +199,9 @@ jobs:
         fi
         echo "Database migration completed"
 
-    - name: Verify database is accessible
-      if: ${{ matrix.needs_db }}
-      run: |
-        echo "=== Docker containers ==="
-        docker ps -a
-        echo "=== Port mapping for db container ==="
-        docker port db || true
-        echo "=== db-init.log ==="
-        cat /tmp/db-init.log || true
-        echo "=== Checking localhost:15432 ==="
-        docker exec db psql -U postgres -c '\l' || true
-        echo "=== Checking from host ==="
-        PGPASSWORD=postgres psql -h localhost -p 15432 -U postgres -c '\l' 2>&1 || true
-
     - name: Run tests with coverage
       env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:15432/coprocessor
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         COPROCESSOR_TEST_LOCALHOST: '1'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
