@@ -6038,12 +6038,15 @@ name = "scheduler"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "daggy",
  "fhevm-engine-common",
  "hex",
+ "lru 0.13.0",
  "opentelemetry",
  "prometheus",
  "rayon",
+ "sha3",
  "tfhe",
  "tokio",
  "tracing",
@@ -7361,6 +7364,7 @@ name = "tfhe-worker"
 version = "0.7.0"
 dependencies = [
  "alloy",
+ "base64 0.22.1",
  "bigdecimal",
  "chrono",
  "clap",

@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -212,25 +212,6 @@ pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str
     let config = config.copied().unwrap_or_default();
     register_histogram!(name, desc, gen_linear_buckets(&config))
         .unwrap_or_else(|_| panic!("Failed to register latency histogram: {}", name))
-}
-
-/// Returns the legacy short-form hex id used by telemetry spans.
-pub fn short_hex_id(value: &[u8]) -> String {
-    to_hex(value).get(0..10).unwrap_or_default().to_owned()
-}
-
-pub fn record_short_hex(span: &Span, field: &'static str, value: &[u8]) {
-    span.record(field, tracing::field::display(short_hex_id(value)));
-}
-
-pub fn record_short_hex_if_some<T: AsRef<[u8]>>(
-    span: &Span,
-    field: &'static str,
-    value: Option<T>,
-) {
-    if let Some(value) = value {
-        record_short_hex(span, field, value.as_ref());
-    }
 }
 
 pub fn set_current_span_error(error: &impl fmt::Display) {

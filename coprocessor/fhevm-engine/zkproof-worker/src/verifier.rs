@@ -298,15 +298,16 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span =
-            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &verify_span,
-            "txn_id",
-            transaction_id.as_deref(),
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            transaction_hash = transaction_id
+                .as_deref()
+                .map(fhevm_engine_common::utils::to_hex)
+                .unwrap_or_default(),
         );
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
+            info!(request_id, "processing verify task");
             let aux_data = auxiliary::ZkData {
                 contract_address,
                 user_address,
@@ -320,16 +321,14 @@ async fn execute_verify_proof_routine(
 
         let db_insert_span = tracing::info_span!(
             "db_insert",
-            request_id,
-            txn_id = tracing::field::Empty,
+            transaction_hash = transaction_id
+                .as_deref()
+                .map(fhevm_engine_common::utils::to_hex)
+                .unwrap_or_default(),
             valid = tracing::field::Empty,
             count = tracing::field::Empty
         );
-        fhevm_engine_common::telemetry::record_short_hex_if_some(
-            &db_insert_span,
-            "txn_id",
-            transaction_id.as_deref(),
-        );
+        info!(request_id, "inserting zkproof result");
 
         async {
             let mut verified = false;

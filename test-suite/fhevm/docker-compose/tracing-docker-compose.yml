@@ -12,6 +12,23 @@ services:
       - prom_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--enable-feature=exemplar-storage'  # Enable exemplar support for spanmetrics trace links
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.120.0  # spanmetrics connector available since 0.86.0
+    ports:
+      - "4317:4317"    # OTLP gRPC (services send traces here instead of directly to Jaeger)
+      - "4318:4318"    # OTLP HTTP (optional)
+      - "8889:8889"    # Prometheus exporter (spanmetrics output)
+      - "8888:8888"    # Collector health/self-monitoring metrics
+    volumes:
+      - ../config/otel-collector/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    depends_on:
+      - jaeger
+    restart: unless-stopped
 
   jaeger:
     container_name: jaeger
@@ -24,9 +41,10 @@ services:
       - "6831:6831/udp"
       - "6832:6832/udp"
       - "5778:5778"
-      - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
+      - "16686:16686"   # Jaeger UI (keep exposed to host)
+      # NOTE: OTLP ports 4317 and 4318 are intentionally NOT exposed to the host.
+      # The OTEL Collector is the new ingress point for OTLP traces (owns host port 4317).
+      # Jaeger receives traces from the collector via Docker DNS (jaeger:4317).
       - "14250:14250"
       - "14268:14268"
       - "14269:14269"

@@ -10,7 +10,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::{telemetry, utils::to_hex};
+use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha3::{Digest, Keccak256};
@@ -535,15 +535,14 @@ async fn fetch_pending_uploads(
         if !ct64_compressed.is_empty() || !is_ct128_empty {
             let recovery_span = tracing::info_span!(
                 "recovery_task",
-                txn_id = tracing::field::Empty,
-                handle = tracing::field::Empty
+                transaction_hash = transaction_id.as_deref().map(to_hex).unwrap_or_default(),
             );
-            telemetry::record_short_hex(&recovery_span, "handle", &handle);
-            telemetry::record_short_hex_if_some(
-                &recovery_span,
-                "txn_id",
-                transaction_id.as_deref(),
-            );
+            recovery_span.in_scope(|| {
+                info!(
+                    handle = %to_hex(&handle),
+                    "recovery task for handle"
+                );
+            });
             let item = HandleItem {
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,

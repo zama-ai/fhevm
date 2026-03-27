@@ -4,11 +4,15 @@ use fhevm_engine_common::db_keys::{DbKey, DbKeyCache};
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
 use tracing::Level;
+use tracing_subscriber::layer::SubscriberExt;
 
 pub struct TestInstance {
     // just to destroy container
@@ -46,7 +50,33 @@ pub fn default_dependence_cache_size() -> u16 {
     128
 }
 
+static TEST_SPAN_EXPORTER: OnceLock<InMemorySpanExporter> = OnceLock::new();
+
+fn ensure_test_tracing() -> &'static InMemorySpanExporter {
+    TEST_SPAN_EXPORTER.get_or_init(|| {
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let tracer = provider.tracer("tfhe-worker-tests");
+        let layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("tfhe-worker tests require the shared tracing subscriber");
+        exporter
+    })
+}
+
+pub fn reset_test_spans() {
+    ensure_test_tracing().reset();
+}
+
+pub fn finished_test_spans() -> Result<Vec<SpanData>, opentelemetry_sdk::InMemoryExporterError> {
+    ensure_test_tracing().get_finished_spans()
+}
+
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    ensure_test_tracing();
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
         setup_test_app_existing_db().await
     } else {
