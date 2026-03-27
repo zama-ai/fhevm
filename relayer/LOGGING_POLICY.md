@@ -4,7 +4,7 @@ How we handle logging and correlation in the relayer's event-driven architecture
 
 The relayer processes jobs through async flows: HTTP requests trigger blockchain transactions, then gateway events complete the cycle. Correlation IDs track these flows end-to-end.
 
-**Applies to:** `src/src/`
+**Applies to:** `src/`
 
 **Notation:**
 - **For developers** - Sections for human understanding and implementation
@@ -309,18 +309,18 @@ subscription active) remain **INFO**. Reconnects and dropped subscriptions remai
 
 ```bash
 # 1. No ERROR in non-boundaries (should find nothing)
-rg 'error!\(' src/src/core/
-rg 'error!\(' src/src/store/sql/repositories/ --glob '!cron_task.rs'
-rg 'error!\(' src/src/orchestrator/
+rg 'error!\(' src/core/
+rg 'error!\(' src/store/sql/repositories/ --glob '!cron_task.rs'
+rg 'error!\(' src/orchestrator/
 
 # 2. ERROR only in boundaries (should only find here)
-rg 'error!\(' src/src/http/endpoints/
-rg 'error!\(' src/src/gateway/ --glob '*_handler.rs'
-rg 'error!\(' src/src/gateway/arbitrum/listener.rs
-rg 'error!\(' src/src/store/sql/repositories/cron_task.rs
+rg 'error!\(' src/http/endpoints/
+rg 'error!\(' src/gateway/ --glob '*_handler.rs'
+rg 'error!\(' src/gateway/arbitrum/listener.rs
+rg 'error!\(' src/store/sql/repositories/cron_task.rs
 
 # 3. No ext_job_id in gateway handlers (should find nothing)
-rg 'ext_job_id' src/src/gateway/ --glob '*_handler.rs'
+rg 'ext_job_id' src/gateway/ --glob '*_handler.rs'
 
 # 4. Structured logging - check for string interpolation in messages (code smell)
 # Look for patterns like: info!("Message {}", var) or error!("Error: {}", e)
