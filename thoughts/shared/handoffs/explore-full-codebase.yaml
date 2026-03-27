@@ -1,0 +1,262 @@
+---
+type: exploration
+ts: 2026-01-13T15:00:00Z
+depth: deep
+focus: entire codebase
+commit: 8b6af23a
+---
+
+summary: FHEVM is a comprehensive monorepo implementing confidential smart contracts on EVM blockchains using Fully Homomorphic Encryption (FHE), comprising Solidity libraries, Rust coprocessor/KMS services, and protocol governance contracts.
+
+# Architecture Overview
+
+## System Components
+
+### 1. library-solidity (Core Library for dApp Developers)
+location: /Users/clementwalter/Documents/zama/fhevm/library-solidity/
+purpose: Main Solidity library that dApp developers use to write confidential smart contracts
+
+key_files:
+  - lib/FHE.sol: Main API (9,524 lines) - all FHE operations (add, sub, mul, eq, etc.)
+  - lib/Impl.sol: Implementation layer interfacing with coprocessor (916 lines)
+  - lib/FheType.sol: Type definitions (89 types including euint8-256, ebool, eaddress)
+  - codegen/: TypeScript-based code generation from templates
+
+encrypted_types:
+  - ebool, euint8, euint16, euint32, euint64, euint128, euint256, eaddress
+  - All wrap bytes32 handles representing encrypted values
+  - External input types: externalEuint* for user-provided encrypted data
+
+usage_pattern: |
+  1. Setup: FHE.setCoprocessor(CoprocessorSetup.defaultConfig())
+  2. Accept input: euint64 amount = FHE.fromExternal(encryptedAmount, inputProof)
+  3. Operations: euint64 result = FHE.add(balance, amount)
+  4. Grant access: FHE.allowThis(result); FHE.allow(result, msg.sender)
+
+examples:
+  - examples/EncryptedERC20.sol: Confidential token with encrypted balances
+  - examples/HeadsOrTails.sol: Coin flip game
+  - examples/Rand.sol: Random number generation
+
+### 2. host-contracts (FHE Workflow Orchestration)
+location: /Users/clementwalter/Documents/zama/fhevm/host-contracts/
+purpose: Smart contracts deployed on host chain for orchestrating FHE workflows
+
+core_contracts:
+  - contracts/ACL.sol: Access Control List (v0.2.0) - manages permissions for encrypted values
+  - contracts/FHEVMExecutor.sol: Symbolic execution engine (v0.1.0) - 30+ FHE operations
+  - contracts/InputVerifier.sol: Verifies user encrypted inputs (v0.2.0)
+  - contracts/KMSVerifier.sol: Verifies decryption responses (v0.1.0)
+  - contracts/HCULimit.sol: Gas metering via Homomorphic Computation Units (v0.1.0)
+
+handle_format: |
+  hash[0:20] || index[21] || chainID[22:29] || type[30] || version[31]
+  Deterministic handle generation for encrypted values
+
+hcu_limits:
+  per_transaction: 20M HCU
+  sequential_depth: 5M
+  purpose: Prevent DoS via expensive FHE operations
+
+patterns:
+  - UUPS upgradeable proxy pattern
+  - ERC-7201 namespaced storage
+  - Custom errors for gas efficiency
+  - Comprehensive event emission
+
+### 3. gateway-contracts (Cross-chain Gateway)
+location: /Users/clementwalter/Documents/zama/fhevm/gateway-contracts/
+purpose: Smart contracts managing gateway between on-chain and off-chain components
+
+core_contracts:
+  - contracts/GatewayConfig.sol: Central registry for KMS nodes, coprocessors, host chains
+  - contracts/MultichainACL.sol: Access control for ciphertexts across chains
+  - contracts/Decryption.sol: Orchestrates public/user/delegated decryption requests
+  - contracts/KMSGeneration.sol: Manages FHE key and CRS generation
+  - contracts/InputVerification.sol: Validates zero-knowledge proofs
+  - contracts/CiphertextCommits.sol: Registry of ciphertext commitments
+  - contracts/ProtocolPayment.sol: Fee collection in $ZAMA tokens
+
+patterns:
+  - EIP-712 signatures for all off-chain operations
+  - Threshold consensus (KMS nodes + coprocessors vote on operations)
+  - Multi-chain design (single gateway serves multiple host chains)
+  - Centralized ownership via GatewayConfig owner
+  - Emergency pause functionality
+
+### 4. coprocessor (Rust FHE Computation Engine)
+location: /Users/clementwalter/Documents/zama/fhevm/coprocessor/
+purpose: Rust microservices architecture for executing FHE computations
+
+workspace_members:
+  - fhevm-engine-common: Foundation library (8,323 lines) with FHE operations
+  - tfhe-worker: Computation engine (gRPC API + background worker)
+  - scheduler: DAG scheduler for dependency graph execution
+  - host-listener: Blockchain event ingestion
+  - transaction-sender: Result publishing back to blockchain
+  - gw-listener: Gateway integration for input verification
+  - zkproof-worker: Zero-knowledge proof generation
+  - sns-worker: S3/SNS for large ciphertext storage
+
+data_flow: |
+  Host Blockchain -> host-listener -> PostgreSQL -> tfhe-worker -> scheduler
+                                          |
+                                    transaction-sender -> Blockchain
+
+database:
+  type: PostgreSQL
+  tables:
+    - computations: FHE operations and dependencies
+    - ciphertexts: Encrypted computation results
+    - tenants: Multi-tenant key management
+  coordination: NOTIFY/LISTEN for event-driven work distribution
+
+### 5. kms-connector (Key Management Service Interface)
+location: /Users/clementwalter/Documents/zama/fhevm/kms-connector/
+purpose: Bridge between Gateway smart contracts and KMS Core
+
+microservices:
+  - GatewayListener: Listens to Gateway blockchain events
+  - KmsWorker: Forwards events to KMS Core via gRPC
+  - TransactionSender: Submits KMS responses back to Gateway
+
+kms_operations:
+  - Public/User decryption requests
+  - Key generation (preprocessing + full keygen)
+  - CRS generation, PRSS initialization, key resharing
+
+configuration:
+  format: TOML + environment variables
+  env_prefix: KMS_CONNECTOR_*
+  supports: Private key and AWS KMS signing
+
+### 6. protocol-contracts (Protocol Infrastructure)
+location: /Users/clementwalter/Documents/zama/fhevm/protocol-contracts/
+purpose: Protocol-level contracts (governance, staking, token)
+
+sub_projects:
+  token/:
+    purpose: Zama ERC20 token with LayerZero OFT bridges
+  governance/:
+    purpose: Cross-chain governance (Ethereum <-> Gateway) via LayerZero
+    flow: Aragon DAO -> GovernanceOAppSender -> LayerZero -> GovernanceOAppReceiver -> AdminModule -> Safe
+  staking/:
+    purpose: Protocol staking with rewards distribution and ERC20Votes
+  safe/:
+    purpose: Admin module for Safe smart accounts
+  confidential-wrapper/:
+    purpose: ERC7984 wrapper converting ERC20 to confidential tokens
+  feesBurner/:
+    purpose: Fee collection on Gateway, burning on Ethereum
+  fhevm-cli/:
+    purpose: Hardhat tasks for FHE encryption/decryption
+  deployment-cli/:
+    purpose: Orchestrated deployment tool (10 automated steps)
+
+### 7. test-suite (E2E Testing)
+location: /Users/clementwalter/Documents/zama/fhevm/test-suite/
+purpose: Docker-based integration testing
+
+cli: ./fhevm-cli
+commands:
+  - deploy: Deploy entire stack
+  - test <name>: Run specific tests (input-proof, user-decryption, erc20, etc.)
+  - upgrade <service>: Upgrade specific service
+  - logs <service>: View service logs
+  - clean: Tear down stack
+
+kms_modes:
+  - Centralized
+  - Threshold
+
+# Build System
+
+workspaces:
+  - host-contracts
+  - library-solidity
+  - library-solidity/codegen
+  - test-suite/e2e
+
+tools:
+  - Hardhat: Solidity compilation and testing
+  - Foundry: Alternative Solidity toolchain (coming)
+  - Cargo: Rust workspace management
+  - Docker Compose: E2E testing infrastructure
+
+code_generation:
+  location: library-solidity/codegen/
+  language: TypeScript
+  generates:
+    - FHE.sol from templates
+    - TypeScript test files
+
+# Key Integration Points
+
+## Smart Contract Developer Flow
+1. Import FHE library
+2. Configure coprocessor addresses
+3. Accept encrypted inputs with proofs
+4. Perform FHE operations (symbolic on-chain)
+5. Grant access permissions via ACL
+6. Actual FHE computation happens asynchronously on coprocessor
+
+## Decryption Flow
+1. Contract marks handle as decryptable
+2. Request sent to Gateway
+3. KMS nodes vote on decryption (threshold)
+4. Result sent back to contract
+
+## Cross-Chain Architecture
+- Host chain: Where dApps deploy (EVM-compatible)
+- Gateway chain: Coordinates FHE operations, KMS, decryption
+- LayerZero: Cross-chain messaging for governance
+
+# Development Conventions
+
+solidity:
+  version: "^0.8.24"
+  patterns:
+    - UUPS upgradeable proxies
+    - ERC-7201 namespaced storage
+    - Custom errors (gas efficiency)
+    - EIP-712 typed signatures
+
+rust:
+  edition: "2021"
+  async_runtime: tokio
+  database: sqlx with PostgreSQL
+  grpc: tonic
+
+testing:
+  unit: Per-package (Hardhat, Cargo test)
+  e2e: Docker Compose with fhevm-cli
+  ci: GitHub Actions
+
+# Next Steps for Implementation
+
+suggested_tasks:
+  - Read library-solidity/examples/EncryptedERC20.sol for usage patterns
+  - Check host-contracts/test/ for expected contract behavior
+  - Review gateway-contracts/test/ for gateway integration patterns
+  - Explore coprocessor/docs/ for architecture diagrams
+  - Run test-suite with ./fhevm-cli deploy && ./fhevm-cli test <name>
+
+refs:
+  - path: library-solidity/lib/FHE.sol
+    role: Main developer API for FHE operations
+  - path: library-solidity/lib/Impl.sol
+    role: Implementation layer connecting to coprocessor
+  - path: host-contracts/contracts/FHEVMExecutor.sol
+    role: Symbolic FHE execution on host chain
+  - path: host-contracts/contracts/ACL.sol
+    role: Access control for encrypted values
+  - path: gateway-contracts/contracts/GatewayConfig.sol
+    role: Central configuration for gateway
+  - path: gateway-contracts/contracts/Decryption.sol
+    role: Decryption request orchestration
+  - path: coprocessor/fhevm-engine/fhevm-engine-common/src/tfhe_ops.rs
+    role: Core FHE operation implementations (3,414 lines)
+  - path: kms-connector/crates/kms_worker/src/main.rs
+    role: KMS worker entry point
+  - path: test-suite/README.md
+    role: E2E testing documentation
