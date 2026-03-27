@@ -1,0 +1,14 @@
+version: 1
+kind: coprocessor-consensus
+name: Multi Chain
+description: Single coprocessor with two host chains for cross-chain isolation testing.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 1
+  threshold: 1

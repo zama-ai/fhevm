@@ -1,8 +1,23 @@
 name: test-suite-e2e-tests
 
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   workflow_dispatch:
     inputs: &workflow_inputs
+      orchestrated:
+        description: "Run from the orchestrated image-validation path."
+        default: false
+        type: boolean
+      build:
+        description: "Build repo-owned images from the checked out branch on the runner"
+        default: true
+        type: boolean
       coprocessor-db-migration-version:
         description: "Coprocessor DB Migration Image Version"
         default: ""
@@ -67,10 +82,10 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
-      deploy-build:
-        description: "Build local Docker images from the checked out repository before deploy"
-        default: false
-        type: boolean
+      scenario:
+        description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
+        default: "two-of-two"
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -83,18 +98,22 @@ on:
 
 permissions: {}
 
-# Allow to run multiple instances of the same workflow in parallel when triggered manually
+# Cancel stale PR runs on new pushes while keeping manual dispatches independent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
   fhevm-e2e-test:
+    # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
+    if: ${{ github.event_name != 'pull_request' || inputs.orchestrated || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') && contains(github.event.pull_request.labels.*.name, 'e2e')) }}
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      BUILD: ${{ inputs.orchestrated && 'false' || github.event_name == 'pull_request' && 'true' || inputs.build && 'true' || 'false' }}
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
       COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}
       COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor-gw-listener-version }}
@@ -111,17 +130,22 @@ jobs:
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
+      SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
+          fetch-depth: 0
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      - name: Install Foundry
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Login to GitHub Container Registry
@@ -144,159 +168,77 @@ jobs:
         run: |
           echo "Component versions: $JSON_INPUT"
 
-      - name: Deploy fhevm Stack
+      - name: Install CLI deps
         working-directory: test-suite/fhevm
-        env:
-          DEPLOY_BUILD: ${{ inputs.deploy-build }}
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck CLI
+        working-directory: test-suite/fhevm
+        run: bun run check
+
+      - name: Unit test CLI
+        working-directory: test-suite/fhevm
+        run: bun test src
+
+      - name: Compat smoke
+        working-directory: test-suite/fhevm
+        run: bun run compat-smoke
+
+      - name: Dry run
+        working-directory: test-suite/fhevm
         run: |
-          if [[ "$DEPLOY_BUILD" == 'true' ]]; then
-            ./fhevm-cli deploy --build --coprocessors 2 --coprocessor-threshold 2
-          else
-            ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+          args=(--target latest-main --scenario "$SCENARIO")
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
           fi
+          ./fhevm-cli up "${args[@]}" --dry-run
 
-      # E2E tests on pausing the Host contracts
-      - name: Pause Host Contracts
+      - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli pause host
+          args=(--target latest-main --scenario "$SCENARIO")
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          ./fhevm-cli up "${args[@]}"
 
-      - name: Paused Host contracts test
+      - name: Standard e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-host-contracts
+          ./fhevm-cli test standard
 
-      - name: Unpause Host Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause host
-
-      # E2E tests on pausing the Gateway contracts
-      - name: Pause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli pause gateway
-
-      - name: Paused Gateway contracts test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-gateway-contracts
-
-      - name: Unpause Gateway Contracts
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli unpause gateway
-
-      # E2E tests after unpausing the Host and Gateway contracts.
-      
-      # The revert test runs first: it populates the DB, reverts to a midpoint,
-      # and waits for the coprocessor to recover. All subsequent tests then run
-      # against a post-revert DB, providing a stronger guarantee that the
-      # coprocessor works correctly after a state revert.
-      - name: Coprocessor DB state revert test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test coprocessor-db-state-revert
-
-      - name: Input proof test (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof
-
-      - name: Input proof test with compute and decrypt (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof-compute-decrypt
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: Delegated User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test delegated-user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
-      - name: Negative ACL tests
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test negative-acl
-
-      - name: Random operators test (subset)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test random-subset
-
-      - name: HCU block cap test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test hcu-block-cap
-
-      - name: Ciphertext drift test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test ciphertext-drift
-
-      - name: Host listener poller test
-        working-directory: test-suite/fhevm
-        run: |
-          docker stop coprocessor-host-listener
-          ./fhevm-cli test erc20
-          docker start coprocessor-host-listener
-
-      - name: Show logs on test failure
+      - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
         run: |
-          echo "::group::Relayer Logs"
-          ./fhevm-cli logs fhevm-relayer
-          echo "::endgroup::"
-          echo "::group::SNS Worker Logs"
-          ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
-          echo "::endgroup::"
-          echo "::group::Transaction Sender Logs (filtered)"
-          ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process"
-          echo "::endgroup::"
-          echo "::group::Host Listener"
-          ./fhevm-cli logs coprocessor-host-listener
-          echo "::endgroup::"
-          echo "::group::Gateway Listener"
-          ./fhevm-cli logs coprocessor-gw-listener
-          echo "::endgroup::"
-          echo "::group::ZKProof Worker"
-          ./fhevm-cli logs coprocessor-zkproof-worker
-          echo "::endgroup::"
-          echo "::group::TFHE Worker"
-          ./fhevm-cli logs coprocessor-tfhe-worker
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - SNS Worker"
-          ./fhevm-cli logs coprocessor-2-sns-worker 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - Transaction Sender (filtered)"
-          ./fhevm-cli logs coprocessor-2-transaction-sender 2>/dev/null | grep -v "Selected 0 rows to process" || true
-          echo "::endgroup::"
-          echo "::group::Coprocessor 2 - TFHE Worker"
-          ./fhevm-cli logs coprocessor-2-tfhe-worker 2>/dev/null || true
-          echo "::endgroup::"
+          snapshot_logs() {
+            local group="$1"
+            local container="$2"
+            local filter="${3:-}"
+            echo "::group::${group}"
+            if [ -n "$filter" ]; then
+              docker logs --tail 120 "${container}" 2>&1 | grep -v "$filter" || true
+            else
+              docker logs --tail 120 "${container}" 2>&1 || true
+            fi
+            echo "::endgroup::"
+          }
+          snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "SNS Worker Logs" coprocessor-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Transaction Sender Logs (filtered)" coprocessor-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "Host Listener" coprocessor-host-listener
+          snapshot_logs "Gateway Listener" coprocessor-gw-listener
+          snapshot_logs "ZKProof Worker" coprocessor-zkproof-worker
+          snapshot_logs "TFHE Worker" coprocessor-tfhe-worker
+          snapshot_logs "Coprocessor 2 - Host Listener" coprocessor1-host-listener
+          snapshot_logs "Coprocessor 2 - Gateway Listener" coprocessor1-gw-listener
+          snapshot_logs "Coprocessor 2 - SNS Worker" coprocessor1-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor1-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "Coprocessor 2 - ZKProof Worker" coprocessor1-zkproof-worker
+          snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor1-tfhe-worker
 
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()
         run: |
-          ./fhevm-cli clean
+          ./fhevm-cli clean --images

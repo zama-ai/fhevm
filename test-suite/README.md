@@ -17,10 +17,8 @@ KMS can be configured to two modes:
 - [Main Features](#main-features)
 - [Get Started](#get-started)
   - [Quickstart](#quickstart)
-  - [Forcing Local Builds](#wip---forcing-local-builds---build)
-  - [Local Developer Optimizations](#local-developer-optimizations)
+  - [Local Overrides](#local-overrides)
   - [Resuming a Deployment](#resuming-a-deployment)
-  - [Deploying a Single Step](#deploying-a-single-step)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -38,34 +36,38 @@ The test suite offers a unified CLI for all operations:
 ```sh
 cd test-suite/fhevm
 
-# Deploy the entire stack
-./fhevm-cli deploy
+# Preview the resolved bundle and boot plan
+./fhevm-cli up --target latest-supported --dry-run
+./fhevm-cli up --target sha --sha 9587546 --dry-run
 
-# Deploy with local BuildKit cache (disables provenance attestations)
-./fhevm-cli deploy --local
+# Boot the stack
+./fhevm-cli up --target latest-supported
+./fhevm-cli deploy --target latest-supported
+./fhevm-cli up --target sha --sha 9587546
 
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
-./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
+./fhevm-cli up --target latest-supported --scenario two-of-two
+
+# Deploy with multi-chain (two host chains)
+./fhevm-cli up --target latest-supported --scenario multi-chain
+
+# Deploy with multi-chain + multi-coprocessor
+./fhevm-cli up --target latest-supported --scenario two-of-two-multi-chain
 
 # Resume a failed deploy from a specific step (keeps existing containers/volumes)
-./fhevm-cli deploy --resume kms-connector
-
-# Deploy only a single step (useful for redeploying one service)
-./fhevm-cli deploy --only coprocessor
+./fhevm-cli up --target latest-supported --resume --from-step kms-connector
 
 # Run specific tests (works for both 1/1 and n/t topologies)
 ./fhevm-cli test input-proof
-# Skip Hardhat compile when artifacts are already up to date
-./fhevm-cli test input-proof --no-hardhat-compile
-# Trivial
 ./fhevm-cli test user-decryption
-# Trivial
 ./fhevm-cli test public-decrypt-http-mixed
 ./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
+./fhevm-cli test hcu-block-cap
+./fhevm-cli test multi-chain-isolation  # requires multi-chain scenario
 
-# Upgrade a specific service
-./fhevm-cli upgrade coprocessor
+# Boot with a local coprocessor override (all services)
+./fhevm-cli up --target latest-supported --override coprocessor
 
 # View logs
 ./fhevm-cli logs relayer
@@ -74,80 +76,38 @@ cd test-suite/fhevm
 ./fhevm-cli clean
 ```
 
-### WIP - Forcing Local Builds (`--build`)
+For the local CLI entrypoint and architecture, see [test-suite/fhevm/README.md](fhevm/README.md) and [test-suite/fhevm/ARCHITECTURE.md](fhevm/ARCHITECTURE.md).
 
-⚠️ **IMPORTANT: THIS FEATURE IS STILL A WORK IN PROGRESS!** ⚠️
-We are actively working to optimize caching for local machines and GitHub runners.
+### Local overrides
 
-🚨 **SECURITY NOTICE:**
-The pre-built Docker images for the FHEVM stack are currently hosted in a **private registry** and are **not publicly available** for direct pulling. This is intentional for security reasons.
-
-Therefore, for external developers or anyone setting up the stack for the first time without access to our private registry, **using the `--build` option is the recommended and necessary way to get started:**
+To run one local component on top of an otherwise versioned stack, use `--override`:
 
 ```sh
-./fhevm-cli deploy --build
-```
+# Override an entire group (builds all services locally)
+./fhevm-cli up --target latest-supported --override coprocessor
 
-This command instructs Docker Compose to:
+Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
+Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
+Local overrides always build release images.
+On `latest-supported`, per-service overrides for `coprocessor` and `kms-connector` are rejected by default when local DB migrations diverge from the tracked baseline profile. Use the full-group override, or pass `--allow-schema-mismatch` if you know the mixed stack remains compatible.
 
-1.  Build the images locally using the `Dockerfile` and context specified in the respective `docker-compose/*.yml` files for each service. This process uses the source code available in your local checkout (or cloned sub-repositories).
-2.  Tag the newly built images with the versions specified in the `fhevm-cli` script.
-3.  Then, start the services using these freshly built local images.
-
-**Why `--build` is essential for external developers:**
-
-- **Image Access:** Since pre-built images are private, `--build` allows you to construct the necessary images from the publicly available source code.
-- **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
-- **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
-
-🚧 **In summary:** Until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
-
-### Local developer optimizations
-
-For faster local iteration, use `--local` to enable a local BuildKit cache (stored under `.buildx-cache/`) and disable default provenance attestations:
-
-```sh
-./fhevm-cli deploy --local
-```
-
-When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
-
-```sh
-./fhevm-cli test input-proof --no-hardhat-compile
-```
+When specifying individual services, use the short suffix after the group prefix (e.g., `host-listener` not `coprocessor-host-listener`). Services that share a Docker image are automatically co-selected (e.g., `host-listener` includes `host-listener-poller`).
 
 ### Resuming a deployment
 
-If a deploy fails mid-way, you can resume from a specific step without tearing down containers or regenerating `.env` files:
+If a boot fails mid-way, you can resume from a specific step:
 
 ```sh
-./fhevm-cli deploy --resume kms-connector
+./fhevm-cli up --target latest-supported --resume --from-step kms-connector
 ```
 
 Resume steps (in order):
-`minio`, `core`, `kms-signer`, `database`, `host-node`, `gateway-node`, `coprocessor`,
-`kms-connector`, `gateway-mocked-payment`, `gateway-sc`, `host-sc`, `relayer`, `test-suite`.
+`preflight`, `resolve`, `generate`, `base`, `kms-signer`, `gateway-deploy`, `host-deploy`, `discover`,
+`regenerate`, `validate`, `coprocessor`, `kms-connector`, `bootstrap`, `relayer`, `test-suite`.
 
 When resuming:
-- Services **before** the resume step are preserved (containers + volumes kept)
-- Services **from** the resume step onwards are torn down and redeployed
-
-### Deploying a single step
-
-To redeploy only a single service without touching others:
-
-```sh
-./fhevm-cli deploy --only coprocessor
-```
-
-This is useful when you need to restart or rebuild just one component. Only the specified step's containers are torn down and redeployed; all other services remain untouched.
-
-You can combine `--only` or `--resume` with other flags:
-
-```sh
-# Redeploy only gateway-sc with a local build
-./fhevm-cli deploy --only gateway-sc --build --local
-```
+- Steps before the resume step are preserved
+- Steps from the resume step onward are regenerated and restarted under `.fhevm`
 
 ## Security policy
 
@@ -157,7 +117,7 @@ This document outlines security best practices for the FHEVM project, particular
 
 #### Environment files
 
-Our repository contains example environment files `env/staging` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
+Our repository contains example environment files under `test-suite/fhevm/templates/env/.env.*` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
 
 For production deployments:
 
@@ -202,7 +162,7 @@ The following values should NEVER be committed to repositories:
 
 ### Reporting security issues
 
-Please report security vulnerabilities to `security@zama.ia` rather than creating public issues.
+Please report security vulnerabilities to `security@zama.ai` rather than creating public issues.
 
 Include:
 

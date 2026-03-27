@@ -2,6 +2,7 @@ name: test-suite-orchestrate-e2e-tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
       - release/*
@@ -15,7 +16,7 @@ concurrency:
 jobs:
   coprocessor-docker-build:
     if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/')
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -60,9 +61,8 @@ jobs:
       - host-contracts-docker-build
       - kms-connector-docker-build
       - test-suite-docker-build
-    if: ${{ success() || failure() }}
+    if: *build-trigger-condition
     env:
-      PREVIOUS_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
@@ -82,54 +82,71 @@ jobs:
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-
       - id: create-e2e-tests-input
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
-        with:
-          script: |
-            const previousCommitHash = process.env.PREVIOUS_COMMIT_HASH;
-            const newCommitHash = process.env.NEW_COMMIT_HASH;
-            console.log(`Previous commit hash: ${previousCommitHash}`)
-            console.log(`New commit hash: ${newCommitHash}`)
-            console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
+        run: |
+          set -euo pipefail
+          short_tag="${NEW_COMMIT_HASH:0:7}"
+          needs_file="$RUNNER_TEMP/docker-build-results.json"
+          printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
 
-            const { execSync } = require('child_process');
-            const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
-            function getImageTagIfBuilt(key, build_result) {
-              let imageCommit = dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
-              let imageTag;
-              try {
-                imageTag = execSync(`git rev-parse --short ${imageCommit}`, { encoding: 'utf8' }).trim();
-              } catch (err) {
-                console.log(`Failed to resolve short hash for ${imageCommit}, falling back to substring`);
-                imageTag = imageCommit.substring(0, 7);
-              }
-              console.log(`Assigning image tag '${imageTag}' for ${key}`);
-              return imageTag;
-            }
+          outputs=(
+            coprocessor-db-migration-version
+            coprocessor-gw-listener-version
+            coprocessor-host-listener-version
+            coprocessor-sns-worker-version
+            coprocessor-tfhe-worker-version
+            coprocessor-tx-sender-version
+            coprocessor-zkproof-worker-version
+            connector-db-migration-version
+            connector-gw-listener-version
+            connector-kms-worker-version
+            connector-tx-sender-version
+            gateway-version
+            host-version
+            test-suite-version
+          )
+          for key in "${outputs[@]}"; do
+            echo "$key=" >> "$GITHUB_OUTPUT"
+          done
 
-            core.setOutput('coprocessor-db-migration-version', getImageTagIfBuilt('coprocessor-docker-build', 'db_migration_build_result'));
-            core.setOutput('coprocessor-gw-listener-version', getImageTagIfBuilt('coprocessor-docker-build', 'gw_listener_build_result'));
-            core.setOutput('coprocessor-host-listener-version', getImageTagIfBuilt('coprocessor-docker-build', 'host_listener_build_result'));
-            core.setOutput('coprocessor-sns-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'sns_worker_build_result'));
-            core.setOutput('coprocessor-tfhe-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'tfhe_worker_build_result'));
-            core.setOutput('coprocessor-tx-sender-version', getImageTagIfBuilt('coprocessor-docker-build', 'tx_sender_build_result'));
-            core.setOutput('coprocessor-zkproof-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'zkproof_worker_build_result'));
+          failures=()
+          while IFS='|' read -r job result_key output_key; do
+            result="$(jq -r --arg job "$job" --arg key "$result_key" '.[$job].outputs[$key] // "missing"' "$needs_file")"
+            case "$result" in
+              success)
+                echo "$output_key=$short_tag" >> "$GITHUB_OUTPUT"
+                ;;
+              skipped)
+                ;;
+              *)
+                failures+=("$job.$result_key=$result")
+                ;;
+            esac
+          done <<'EOF'
+          coprocessor-docker-build|db_migration_build_result|coprocessor-db-migration-version
+          coprocessor-docker-build|gw_listener_build_result|coprocessor-gw-listener-version
+          coprocessor-docker-build|host_listener_build_result|coprocessor-host-listener-version
+          coprocessor-docker-build|sns_worker_build_result|coprocessor-sns-worker-version
+          coprocessor-docker-build|tfhe_worker_build_result|coprocessor-tfhe-worker-version
+          coprocessor-docker-build|tx_sender_build_result|coprocessor-tx-sender-version
+          coprocessor-docker-build|zkproof_worker_build_result|coprocessor-zkproof-worker-version
+          kms-connector-docker-build|db_migration_build_result|connector-db-migration-version
+          kms-connector-docker-build|gw_listener_build_result|connector-gw-listener-version
+          kms-connector-docker-build|kms_worker_build_result|connector-kms-worker-version
+          kms-connector-docker-build|tx_sender_build_result|connector-tx-sender-version
+          gateway-contracts-docker-build|build_result|gateway-version
+          host-contracts-docker-build|build_result|host-version
+          test-suite-docker-build|build_result|test-suite-version
+          EOF
 
-            core.setOutput('connector-db-migration-version', getImageTagIfBuilt('kms-connector-docker-build', 'db_migration_build_result'));
-            core.setOutput('connector-gw-listener-version', getImageTagIfBuilt('kms-connector-docker-build', 'gw_listener_build_result'));
-            core.setOutput('connector-kms-worker-version', getImageTagIfBuilt('kms-connector-docker-build', 'kms_worker_build_result'));
-            core.setOutput('connector-tx-sender-version', getImageTagIfBuilt('kms-connector-docker-build', 'tx_sender_build_result'));
-
-            core.setOutput('gateway-version', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
-            core.setOutput('host-version', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
-            core.setOutput('test-suite-version', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
+          if [ "${#failures[@]}" -gt 0 ]; then
+            echo "Required repo-owned build outputs failed: ${failures[*]}" >&2
+            exit 1
+          fi
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]
+    if: *build-trigger-condition
     uses:
       ./.github/workflows/test-suite-e2e-tests.yml
     permissions:
@@ -141,6 +158,8 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     with:
+      orchestrated: true
+      build: false
       coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
       coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
       coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
@@ -154,4 +173,6 @@ jobs:
       connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ""
+      relayer-version: ""
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

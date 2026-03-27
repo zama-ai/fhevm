@@ -22,14 +22,13 @@ services:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_DB_MIGRATION:-type=gha}
       cache_to:
         - ${FHEVM_CACHE_TO_KMS_CONNECTOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ../../../.fhevm/runtime/env/kms-connector.env
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
@@ -39,14 +38,13 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: gw-listener
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
       cache_to:
         - ${FHEVM_CACHE_TO_KMS_CONNECTOR:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ../../../.fhevm/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -59,12 +57,11 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: kms-worker
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ../../../.fhevm/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -77,12 +74,11 @@ services:
       dockerfile: kms-connector/Dockerfile.workspace
       target: tx-sender
       args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
         RUST_IMAGE_VERSION: 1.91.0
       cache_from:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ../../../.fhevm/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
