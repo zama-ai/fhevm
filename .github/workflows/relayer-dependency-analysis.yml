@@ -1,0 +1,75 @@
+name: relayer-dependency-analysis
+
+permissions: {}
+
+on:
+  pull_request:
+
+concurrency:
+  group: fhevm-relayer-deps-analysis-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    name: relayer-dependency-analysis/check-changes
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    runs-on: ubuntu-latest
+    outputs:
+      changes-rust-files: ${{ steps.filter.outputs.rust-files }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            rust-files:
+              - .github/workflows/relayer-dependency-analysis.yml
+              - relayer/**
+  dependencies-check:
+    name: relayer-dependency-analysis/dependencies-check (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Rust toolchain file
+        run: cp relayer/rust-toolchain.toml .
+
+      - name: Rust setup
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14
+
+      - name: Install cargo tools
+        run: |
+          cargo binstall --no-confirm --force \
+            cargo-audit@0.22.0 \
+            cargo-deny@0.16.2
+
+      - name: Check that Cargo.lock is the source of truth
+        run: |
+          cd relayer
+          cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
+
+      - name: License whitelist
+        run: |
+          cd relayer
+          cargo-deny deny check license --deny license-not-encountered
+
+      - name: Security issue whitelist
+        run: |
+          cd relayer
+          cargo-audit audit
