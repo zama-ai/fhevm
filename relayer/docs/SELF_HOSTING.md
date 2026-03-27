@@ -27,7 +27,7 @@ Running your own relayer gives you permissionless, independent access to the FHE
 
 ### Step-by-step
 
-All commands run from `apps/relayer/`.
+All commands run from `relayer/`.
 
 #### 1. Start the database
 
