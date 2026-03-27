@@ -199,6 +199,24 @@ async fn setup_with_block_time(
         .connect(test_instance.db_url())
         .await?;
 
+    for table in [
+        "transactions",
+        "computations",
+        "allowed_handles",
+        "host_chain_blocks_valid",
+        "host_listener_poller_state",
+        "dependence_chain",
+        "delegate_user_decrypt",
+        "ciphertexts",
+        "ciphertexts128",
+        "ciphertext_digest",
+        "pbs_computations",
+    ] {
+        sqlx::query(&format!("TRUNCATE {table} CASCADE"))
+            .execute(&db_pool)
+            .await?;
+    }
+
     let anvil = Anvil::new()
         .block_time_f64(block_time_secs)
         .args(["--accounts", "15"])

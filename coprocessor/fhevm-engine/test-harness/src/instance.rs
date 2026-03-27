@@ -80,7 +80,10 @@ async fn setup_test_app_existing_localhost(
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
     let db_url = DatabaseURL::default();
 
-    if with_reset {
+    // SkipMigrations always needs a fresh DB with no migrations.
+    let needs_reset = with_reset || matches!(mode, ImportMode::SkipMigrations);
+
+    if needs_reset {
         info!("Resetting local database at {db_url}");
         let admin_db_url = admin_url_from(db_url.as_str());
         create_database(&admin_db_url, db_url.as_str(), mode.clone()).await?;
@@ -90,8 +93,51 @@ async fn setup_test_app_existing_localhost(
 
     let pool = sqlx::PgPool::connect(db_url.as_str()).await?;
 
-    if !with_reset {
+    if !needs_reset {
+        // Check if the schema is intact. A prior SkipMigrations test (in the
+        // same binary) may have dropped+recreated the DB with partial migrations
+        // via raw_sql, leaving _sqlx_migrations missing or incomplete.
+        let migrator = sqlx::migrate!("./migrations");
+        let expected = migrator
+            .migrations
+            .iter()
+            .filter(|m| !m.migration_type.is_down_migration())
+            .count() as i64;
+        let applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+
+        if applied != expected {
+            info!(
+                applied,
+                expected, "Schema is incomplete, forcing drop+create..."
+            );
+            // Close our connection before dropping the database.
+            pool.close().await;
+            let admin_db_url = admin_url_from(db_url.as_str());
+            create_database(&admin_db_url, db_url.as_str(), mode).await?;
+            let pool = sqlx::PgPool::connect(db_url.as_str()).await?;
+            let _ = get_sns_pk_size(&pool).await;
+            return Ok(DBInstance {
+                _container: None,
+                db_url,
+                parent_token: CancellationToken::new(),
+            });
+        }
+
         match mode {
+            ImportMode::None => {
+                info!("Truncating all data tables for clean test state...");
+                sqlx::query(
+                    "TRUNCATE keys, host_chains, crs, transactions, computations, \
+                     allowed_handles, host_chain_blocks_valid, host_listener_poller_state, \
+                     dependence_chain, delegate_user_decrypt, ciphertexts, ciphertexts128, \
+                     ciphertext_digest, pbs_computations, input_blobs, verify_proofs CASCADE",
+                )
+                .execute(&pool)
+                .await?;
+            }
             ImportMode::WithKeysNoSns => {
                 info!("Loading test keys (without SnS) into existing database...");
                 sqlx::query("TRUNCATE keys, host_chains, crs CASCADE")

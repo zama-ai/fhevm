@@ -609,7 +609,12 @@ async fn insert_into_pbs_computations(
 async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     truncate_tables(
         pool,
-        vec!["pbs_computations", "ciphertexts", "ciphertext_digest"],
+        vec![
+            "pbs_computations",
+            "ciphertexts",
+            "ciphertexts128",
+            "ciphertext_digest",
+        ],
     )
     .await?;
 
