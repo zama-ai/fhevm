@@ -3,7 +3,8 @@ use std::sync::Arc;
 use crate::db_utils::setup_test_key;
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::types::Oid;
-use sqlx::Row;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::{ConnectOptions, Row};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -55,6 +56,24 @@ pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::
     }
 }
 
+fn connect_options(db_url: &str) -> PgConnectOptions {
+    db_url.parse().expect("database URL should be valid")
+}
+
+fn extract_db_name(db_url: &str) -> String {
+    connect_options(db_url)
+        .get_database()
+        .expect("database URL must contain a database name")
+        .to_owned()
+}
+
+fn admin_url_from(db_url: &str) -> String {
+    connect_options(db_url)
+        .database("postgres")
+        .to_url_lossy()
+        .to_string()
+}
+
 async fn setup_test_app_existing_localhost(
     with_reset: bool,
     mode: ImportMode,
@@ -63,7 +82,7 @@ async fn setup_test_app_existing_localhost(
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.as_str().replace("coprocessor", "postgres");
+        let admin_db_url = admin_url_from(db_url.as_str());
         create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
@@ -99,8 +118,8 @@ async fn setup_test_app_custom_docker(
     let cont_host = container.get_host().await?;
     let cont_port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
 
-    let admin_db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/postgres");
     let db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/coprocessor");
+    let admin_db_url = admin_url_from(&db_url);
     create_database(&admin_db_url, &db_url, mode).await?;
 
     Ok(DBInstance {
@@ -122,17 +141,18 @@ async fn create_database(
     db_url: &str,
     mode: ImportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Creating coprocessor db...");
+    let db_name = extract_db_name(db_url);
+    info!(db_name, "Creating database...");
     let admin_pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
         .connect(admin_db_url)
         .await?;
 
-    sqlx::query!("DROP DATABASE IF EXISTS coprocessor;")
+    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{db_name}\""))
         .execute(&admin_pool)
         .await?;
 
-    sqlx::query!("CREATE DATABASE coprocessor;")
+    sqlx::query(&format!("CREATE DATABASE \"{db_name}\""))
         .execute(&admin_pool)
         .await?;
 

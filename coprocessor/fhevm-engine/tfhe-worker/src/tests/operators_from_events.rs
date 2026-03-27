@@ -41,9 +41,14 @@ const FULL_SUPPORTED_TYPES: &[i32] = &[
     11, // 2048 bit
 ];
 
+const UINT64_ONLY: &[i32] = &[
+    5, // 64 bit
+];
+
 pub fn supported_types() -> &'static [i32] {
     match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
         Ok(mode) if mode.eq_ignore_ascii_case("local") => LOCAL_SUPPORTED_TYPES,
+        Ok(mode) if mode.eq_ignore_ascii_case("uint64") => UINT64_ONLY,
         _ => FULL_SUPPORTED_TYPES,
     }
 }
