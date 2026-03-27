@@ -15,6 +15,7 @@ test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 /host-contracts/ @zama-ai/fhevm-gateway
 /library-solidity/ @zama-ai/fhevm-gateway
 /kms-connector/ @zama-ai/mpc-devs @dartdart26
+/relayer/ @zama-ai/fhevm-gateway
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
