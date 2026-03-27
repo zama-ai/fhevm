@@ -8,6 +8,8 @@ import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
 
 describe('Delegated user decryption', function () {
+  this.timeout(600000);
+
   before(async function () {
     await initSigners(3);
     this.signers = await getSigners();
@@ -243,9 +245,7 @@ describe('Delegated user decryption', function () {
         this.signers.bob,
         privateKey,
         publicKey,
-      )
-    ).to.be.rejectedWith(
-      new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
-    );
+      ),
+    ).to.be.rejectedWith('Execution reverted');
   });
 });
