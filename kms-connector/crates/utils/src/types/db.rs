@@ -1,8 +1,19 @@
 use crate::types::GatewayEventKind;
-use alloy::primitives::{Address, U256};
+use alloy::{
+    primitives::{Address, B256, U256},
+    sol_types::SolEvent,
+};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::{
-    decryption::Decryption::SnsCiphertextMaterial, kms_generation::IKMSGeneration::KeyDigest,
+    decryption::Decryption::{
+        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    },
+    kms_generation::{
+        IKMSGeneration::KeyDigest,
+        KMSGeneration::{
+            CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
+        },
+    },
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
@@ -201,6 +212,18 @@ impl EventType {
             EventType::CrsgenRequest => "crsgen_request",
             EventType::PrssInit => "prss_init",
             EventType::KeyReshareSameSet => "key_reshare_same_set",
+        }
+    }
+
+    pub fn signature_hash(&self) -> B256 {
+        match self {
+            EventType::PublicDecryptionRequest => PublicDecryptionRequest::SIGNATURE_HASH,
+            EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
+            EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
+            EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
+            EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
+            EventType::PrssInit => PRSSInit::SIGNATURE_HASH,
+            EventType::KeyReshareSameSet => KeyReshareSameSet::SIGNATURE_HASH,
         }
     }
 }

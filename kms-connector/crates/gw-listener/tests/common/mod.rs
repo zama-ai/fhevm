@@ -32,7 +32,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-const NB_EVENT_TYPE: usize = 7;
+const NB_POLL_GROUPS: usize = 2;
 
 pub async fn start_test_listener(
     test_instance: &mut TestInstance,
@@ -55,9 +55,9 @@ pub async fn start_test_listener(
 
     let listener_task = tokio::spawn(gw_listener.start());
 
-    // Wait for all gw-listener event filters to be ready + 2 anvil blocks
-    for _ in 0..NB_EVENT_TYPE {
-        test_instance.wait_for_log("Subscribed to ").await;
+    // Wait for both polling tasks to start + 2 anvil blocks
+    for _ in 0..NB_POLL_GROUPS {
+        test_instance.wait_for_log("Started ").await;
     }
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
@@ -189,6 +189,26 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
         EventType::KeyReshareSameSet => "SELECT * FROM key_reshare_same_set",
     };
     sqlx::query(query).fetch_all(db).await
+}
+
+pub async fn poll_db_for_event(
+    db: &Pool<Postgres>,
+    event_type: EventType,
+    expected_event: &GatewayEventKind,
+) -> anyhow::Result<()> {
+    let timeout = Duration::from_secs(30);
+    let poll_interval = Duration::from_millis(200);
+    let start = std::time::Instant::now();
+    loop {
+        let rows = fetch_from_db(db, event_type).await?;
+        if check_event_in_db(&rows, expected_event.clone()).is_ok() {
+            return Ok(());
+        }
+        if start.elapsed() > timeout {
+            anyhow::bail!("Timed out waiting for {event_type} event in DB");
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
 }
 
 pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Result<()> {
