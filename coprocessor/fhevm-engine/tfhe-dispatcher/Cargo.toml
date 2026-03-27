@@ -63,6 +63,7 @@ message-broker = { path = "../message-broker", features = ["rabbitmq"] }
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu",  "fhevm-engine-common/gpu"]
 export-graphs = []
+tfhe-rs-compute-graph = []
 
 
 [build-dependencies]

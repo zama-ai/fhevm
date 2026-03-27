@@ -23,17 +23,17 @@ pub async fn run_tfhe_dispatcher(
     info!(target: "tfhe_dispatcher", "Starting tfhe-dispatcher service");
 
     loop {
-        if cancel_token.is_cancelled() {
-            info!("Cancellation requested, stopping dispatcher");
-            return Ok(());
-        }
-
         if let Err(err) = tfhe_dispatcher_loop(&args, cancel_token.clone()).await {
             error!(
                 target: "tfhe_dispatcher",
                 { error = err },
                 "Error in dispatcher cycle, retrying shortly"
             );
+        }
+
+        if cancel_token.is_cancelled() {
+            info!("Cancellation requested, stopping dispatcher");
+            return Ok(());
         }
 
         sleep(Duration::from_secs(5)).await;

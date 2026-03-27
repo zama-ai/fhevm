@@ -2,13 +2,14 @@ use crate::scheduler::{
     computation_scheduler::ComputationScheduler,
     traits::{Commands, Events},
 };
-use fhevm_engine_common::protocol::messages::{self as msg, ExecutablePartition};
+use fhevm_engine_common::protocol::messages::{self as msg};
 use message_broker::Sender;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 type Payload = Vec<u8>;
+const KEY_ID: u64 = 1u64;
 
 pub struct Dispatcher<S: Sender<Payload>> {
     scheduler: ComputationScheduler,
@@ -23,7 +24,7 @@ pub struct Dispatcher<S: Sender<Payload>> {
 impl<S: Sender<Payload>> Dispatcher<S> {
     pub fn new(sender: S) -> Self {
         Self {
-            scheduler: ComputationScheduler::new(1),
+            scheduler: ComputationScheduler::new(KEY_ID),
             in_progress: Arc::new(RwLock::new(HashMap::new())),
             sender: Arc::new(sender),
         }
@@ -112,16 +113,9 @@ impl<S: Sender<Payload>> Dispatcher<S> {
                 return;
             }
 
-            Self::insert_in_progress(in_progress, partition).await;
+            in_progress.write().await.insert(partition.hash, partition);
             info!(pid = %pid, "Partition published successfully");
         });
-    }
-
-    async fn insert_in_progress(
-        in_progress: Arc<RwLock<HashMap<msg::PartitionHash, msg::ExecutablePartition>>>,
-        partition: ExecutablePartition,
-    ) {
-        in_progress.write().await.insert(partition.hash, partition);
     }
 
     pub async fn report(&self) {

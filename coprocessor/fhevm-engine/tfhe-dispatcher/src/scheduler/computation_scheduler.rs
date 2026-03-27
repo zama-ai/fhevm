@@ -54,7 +54,7 @@ impl Commands for ComputationScheduler {
                 .exec_graph
                 .node_weight(*exec_idx)
                 .expect("Exec node should exist")
-                .chain
+                .compute_graph
                 .iter()
                 .filter(|dfg_idx| {
                     matches!(
@@ -348,7 +348,7 @@ impl ComputationScheduler {
 
             // Create execution node only for new chain
             let exec_node = exec_graph.add_node(ExecNode {
-                chain: chain.clone(),
+                compute_graph: chain.clone(),
                 dependence_counter: 0,
                 pid,
             });
@@ -404,7 +404,7 @@ impl ComputationScheduler {
             // Check if corresponding DFG nodes for dependencies are computed; if not computed, increment the dependence counter
             let mut dep_count = 0;
             for dep in dependencies {
-                let dfg_nodes = &exec_graph.node_weight(dep).unwrap().chain;
+                let dfg_nodes = &exec_graph.node_weight(dep).unwrap().compute_graph;
                 for dfg_node in dfg_nodes.iter() {
                     if !matches!(dfg[*dfg_node].status, Status::Computed { .. }) {
                         dep_count += 1;
