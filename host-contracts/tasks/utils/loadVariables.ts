@@ -4,13 +4,16 @@ import path from 'path';
 
 import { ADDRESSES_DIR, HOST_ADDRESSES_ENV_FILE_NAME } from '../../hardhat.config';
 
-// Get the required environment variable, throw an error if it's not set
-// We only check if the variable is set, not if it's empty
+// Get the required environment variable, throw an error if it's not set or empty
 export function getRequiredEnvVar(name: string): string {
   if (!(name in process.env)) {
     throw new Error(`"${name}" env variable is not set`);
   }
-  return process.env[name]!;
+  const value = process.env[name]!;
+  if (value.trim() === '') {
+    throw new Error(`"${name}" env variable is set but empty`);
+  }
+  return value;
 }
 
 // Load the addresses as environment variables from the env file
