@@ -5,13 +5,14 @@ use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::protocol::messages::{ExecutablePartition, OpNode};
 use fhevm_engine_common::tenant_keys::FetchTenantKeyResult;
 use fhevm_engine_common::tfhe_ops;
-use fhevm_engine_common::types::{SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
 
 use message_broker::{MessageResult, Receiver};
-use sqlx::types::Uuid;
+use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 use tfhe::ReRandomizationContext;
+use tokio::task::JoinSet;
 
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -20,20 +21,16 @@ pub async fn run_tfhe_compute(
     args: Args,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Determine worker ID to use for the lifetime of this process
-    // In case of a failure in tfhe_compute_cycle, the same id must be reused to quickly unlock any held locks
-    let id = args.worker_id.unwrap_or(Uuid::new_v4());
-    info!( id = %id, "Starting tfhe-compute-node service");
+    info!("Starting tfhe-compute-node service");
 
     loop {
+        if let Err(cycle_error) = tfhe_compute_cycle(&args, cancel_token.clone()).await {
+            error!( { error = ?cycle_error }, "Error in background worker, retrying shortly");
+        }
+
         if cancel_token.is_cancelled() {
             info!("Cancellation requested, not restarting compute cycle");
             return Ok(());
-        }
-
-        // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_compute_cycle(&args, id, cancel_token.clone()).await {
-            error!( { error = ?cycle_error }, "Error in background worker, retrying shortly");
         }
 
         tokio::time::sleep(Duration::from_millis(5000)).await;
@@ -43,7 +40,6 @@ pub async fn run_tfhe_compute(
 /// The main compute cycle for the TFHE compute node worker
 async fn tfhe_compute_cycle(
     args: &Args,
-    _worker_id: Uuid,
     _cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = args.database_url.clone().unwrap_or_default();
@@ -67,8 +63,12 @@ async fn tfhe_compute_cycle(
 
             res = receiver.recv_and_handle(async |partition: ExecutablePartition, payload_raw, _state| {
                 info!("Received message on local queue");
-                process_delivery(&ctx, partition, payload_raw).await;
-                Ok(MessageResult::Ack)
+                if let Err(_) = process_delivery(&ctx, partition, payload_raw).await {
+                    // TODO: Distinguish between retryable and non-retryable errors
+                    Ok(MessageResult::Nack(true, 1)) // requeue the message for retry
+                } else {
+                    Ok(MessageResult::Ack)
+                }
             }) => {
                 if let Err(e) = res {
                     error!(error = ?e, "Error receiving message from RabbitMQ");
@@ -88,7 +88,7 @@ async fn create_receiver(
     queue_name: &str,
     ctx: Context,
 ) -> impl Receiver<ExecutablePartition, Context> {
-    let consumer_tag = format!("tfhe_compute_node_{}", Uuid::new_v4());
+    let consumer_tag = format!("tfhe_compute_node_{}", uuid::Uuid::new_v4());
     message_broker::rabbitmq::RabbitMQReceiver::new(&args.rmq_uri, queue_name, &consumer_tag, ctx)
         .await
 }
@@ -102,7 +102,11 @@ async fn create_receiver(
     message_broker::redis_stream::RedisStreamReceiver::new(&args.redis_url, queue_name).await
 }
 
-async fn process_delivery(ctx: &Context, partition: ExecutablePartition, payload: Vec<u8>) {
+async fn process_delivery(
+    ctx: &Context,
+    partition: ExecutablePartition,
+    payload: Vec<u8>,
+) -> Result<(), ComputeError> {
     let exec = Execution {
         received_at: Instant::now(),
         partition_id: hex::encode(partition.hash),
@@ -110,17 +114,20 @@ async fn process_delivery(ctx: &Context, partition: ExecutablePartition, payload
 
     info!(delivery = ?exec, "Received FHE partition for execution");
 
-    match prepare_and_execute(ctx.clone(), partition, exec.received_at).await {
-        Ok(_) => {
-            if let Err(err) = ctx.send_partition_complete(payload).await {
-                error!(error = ?err, exec = ?exec, "Error sending partition completion");
-            }
-        }
-        Err(err) => {
-            // Errors will cause the partition execution to be retried by this or another compute-node.
+    prepare_and_execute(ctx.clone(), partition, exec.received_at)
+        .await
+        .inspect_err(|err| {
             error!(error = ?err, exec = ?exec, "Error executing partition");
-        }
-    }
+        })?;
+
+    ctx.send_partition_complete(payload).await.map_err(|err| {
+        error!(error = ?err, exec = ?exec, "Error sending partition completion");
+        ComputeError::Other(format!(
+            "Failed to send partition completion message: {err}"
+        ))
+    })?;
+
+    Ok(())
 }
 
 /// Prepares the context and executes the given partition, handling caching and Redis storage of results.
@@ -133,13 +140,6 @@ async fn prepare_and_execute(
 ) -> Result<(), ComputeError> {
     ctx.set_key_id(partition.key_id as i64).await;
     let pid = partition.id();
-
-    info!(
-        pid = %pid,
-        key_id = partition.key_id,
-        "Fetched tenant keys for partition execution"
-    );
-
     let _otel_ctx = ctx.get_otel_ctx();
 
     // Elapsed time since message was received until the start of execution.
@@ -149,13 +149,105 @@ async fn prepare_and_execute(
     info!(pid, elapsed, "Executing partition with scheduler");
     CONSUMER_OVERHEAD.observe(elapsed);
 
-    let exec_result = execute_partition(&ctx, partition).await?;
+    let cts = execute_partition(&ctx, partition).await?;
 
-    let count = exec_result.len();
-    ctx.batch_store_ciphertexts(exec_result).await?;
+    let count = cts.len();
+    ctx.batch_store_ciphertexts(cts).await?;
     info!(pid, count, "Stored computed ciphertexts (data-layer)");
 
     Ok(())
+}
+
+/// Checks the operand types for the given operation node and its dependent inputs.
+/// This is a wrapper around tfhe_ops::check_fhe_operand_types
+fn check_fhe_operand_types(op_node: &OpNode, inputs: &[Vec<u8>]) -> Result<(), ComputeError> {
+    let mut this_comp_inputs: Vec<Vec<u8>> = Vec::new();
+    let mut is_scalar_op_vec: Vec<bool> = Vec::new();
+
+    let non_scalar_inputs: Vec<(fhevm_engine_common::types::Handle, Vec<u8>)> = inputs
+        .iter()
+        .map(|handle| (handle.clone(), Vec::new()))
+        .collect();
+
+    let scalar_inputs = op_node
+        .scalar_operands
+        .iter()
+        .map(|s| (vec![0u8; 32], s.clone()))
+        .collect::<Vec<_>>();
+    let is_scalar = !scalar_inputs.is_empty();
+
+    let mut inputs = non_scalar_inputs;
+    inputs.extend_from_slice(&scalar_inputs);
+
+    let fhe_op = op_node.fhe_operation;
+    for (idx, (handle, dh)) in inputs.iter().enumerate() {
+        let is_operand_scalar = is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+
+        is_scalar_op_vec.push(is_operand_scalar);
+        if is_operand_scalar {
+            this_comp_inputs.push(dh.clone());
+        } else {
+            this_comp_inputs.push(handle.clone());
+        }
+    }
+
+    tfhe_ops::check_fhe_operand_types(fhe_op as i32, &this_comp_inputs, &is_scalar_op_vec)
+        .map_err(|err| ComputeError::Other(format!("Operand type check failed: {err}")))?;
+
+    Ok(())
+}
+
+/// Concurrently retrieves input ciphertexts for all FheGetInputCiphertext nodes in the partition and stores them in the local cache.
+async fn get_input_ciphertexts(
+    ctx: &Context,
+    partition: &ExecutablePartition,
+) -> Result<HashMap<Handle, CiphertextInfo>, ComputeError> {
+    let mut tasks = JoinSet::new();
+    let pid = partition.id();
+
+    for (op_node, _, _) in partition.computations.iter() {
+        // Process only SupportedFheOperations::FheGetInputCiphertext
+        if op_node.fhe_operation != SupportedFheOperations::FheGetInputCiphertext {
+            continue;
+        }
+
+        let ctx = ctx.clone();
+        let output_handle = op_node.output_handle.clone();
+        let op = op_node.fhe_operation;
+        let pid = pid.clone();
+
+        tasks.spawn(async move {
+            let handle = hex_handle(&output_handle);
+
+            info!(
+                pid = pid,
+                output_handle = ?handle,
+                op = ?op,
+                tag = "operation",
+                "Fetching FheGetInputCiphertext input"
+            );
+
+            let ct = ctx.retrieve_ciphertext(&output_handle, Some(op)).await?;
+            ctx.cache_store(&ct).await;
+
+            info!(
+                pid = pid,
+                output_handle = ?handle,
+                "Stored input ciphertext in local cache"
+            );
+
+            Ok::<CiphertextInfo, ComputeError>(ct)
+        });
+    }
+
+    let mut cts = HashMap::new();
+
+    while let Some(join_result) = tasks.join_next().await {
+        let ct = join_result.map_err(ComputeError::from)??;
+        cts.insert(ct.handle.clone(), ct);
+    }
+
+    Ok(cts)
 }
 
 /// Executes the computations in the partition sequentially
@@ -164,30 +256,64 @@ async fn prepare_and_execute(
 async fn execute_partition(
     ctx: &Context,
     partition: ExecutablePartition,
-) -> Result<Vec<CiphertextInfo>, ComputeError> {
-    // TODO: determine GPU index to use for this partition execution, if GPU is enabled
+) -> Result<HashMap<Handle, CiphertextInfo>, ComputeError> {
     let keys: FetchTenantKeyResult = ctx.get_current_key().await?;
     let pid = partition.id();
 
-    let mut computed_cts = Vec::new();
+    // Validate operand types for every node in the partition before executing any of
+    // them, so we fail fast on unexpected input types.
+    partition
+        .computations
+        .iter()
+        .try_for_each(|(op_node, _, inputs)| {
+            let handle = hex_handle(&op_node.output_handle);
+
+            info!(
+                pid = pid,
+                output_handle = ?handle,
+                op = ?op_node.fhe_operation,
+                "Checking FHE operands"
+            );
+
+            check_fhe_operand_types(op_node, inputs).map_err(|err| {
+                error!(
+                    pid = pid,
+                    output_handle = ?handle,
+                    op = ?op_node.fhe_operation,
+                    error = ?err,
+                    "Operand type check failed for node in partition"
+                );
+                err
+            })
+        })?;
+
+    // Make sure all input ciphertexts for FheGetInputCiphertext nodes are retrieved and stored in the local cache before
+    // executing any of the nodes in the partition.
+    let mut cts = get_input_ciphertexts(ctx, &partition).await?;
+
+    // Compute all fhe operations in the partition sequentially as they are expected to be topologically sorted
+    // Later, this should be a ComputeGraph instead without assuming any particular order and with more parallelism within the partition execution.
     for (op_node, dfg_idx, inputs) in &partition.computations {
-        let handle = short_handle(&op_node.output_handle);
+        // Skip FheGetInputCiphertext nodes, their ciphertexts were already fetched into the cache
+        if op_node.fhe_operation == SupportedFheOperations::FheGetInputCiphertext {
+            continue;
+        }
+
+        let handle_as_hex = hex_handle(&op_node.output_handle);
         info!(
             pid = pid,
-            output_handle = ?handle,
+            output_handle = ?handle_as_hex,
             op = ?op_node.fhe_operation,
-            "Executing node in partition"
+            "Executing fhe operation"
         );
 
-        // query inputs (input ciphertexts) from either DataLayer or local cache,
+        // retrieve inputs (input ciphertexts) from either local cache or DataLayer
         let dependence_inputs = futures_util::future::try_join_all(
             inputs
                 .iter()
-                .map(|handle| ctx.get_or_wait_for_ciphertext(handle, Some(op_node.fhe_operation))),
+                .map(|handle| ctx.retrieve_ciphertext(handle, Some(op_node.fhe_operation))),
         )
         .await?;
-
-        tfhe::set_server_key(keys.server_key.clone());
 
         // scalar operands are sent along with the partition execution message
         let scalar_inputs = op_node
@@ -199,52 +325,46 @@ async fn execute_partition(
         let mut inputs: Vec<SupportedFheCiphertexts> = dependence_inputs
             .iter()
             .map(|ci| ci.ciphertext.clone())
-            .collect();
+            .collect::<Vec<_>>();
 
         // Re-randomise the ciphertexts before performing any operation on them.
         let rerand_seed = [
             op_node.block_info.txn_hash.as_slice(),
             &dfg_idx.index().to_be_bytes(),
         ];
+
+        tfhe::set_server_key(keys.server_key.clone());
         re_randomise_inputs(&mut inputs, rerand_seed, keys.pks.clone())?;
 
         inputs.extend(scalar_inputs);
 
         info!(
             pid = pid,
-            output_handle = ?handle,
+            output_handle = ?handle_as_hex,
             op = ?op_node.fhe_operation,
             inputs = ?dependence_inputs.iter().map(|i| hex::encode(&i.handle)).collect::<Vec<_>>(),
             "Fetched input ciphertexts for node in partition"
         );
 
-        let ct = match op_node.fhe_operation {
-            SupportedFheOperations::FheGetInputCiphertext => {
-                info!(
-                    pid = pid,
-                    output_handle = ?handle,
-                    "Performing FheGetInputCiphertext operation"
-                );
-                ctx.get_or_wait_for_ciphertext(&op_node.output_handle, Some(op_node.fhe_operation))
-                    .await?
-            }
-            _ => try_run_computation(
-                pid.as_str(),
-                op_node,
-                inputs,
-                false,
-                0,
-                keys.client_key.clone(),
-            )?,
-        };
+        let ct = try_run_computation(
+            pid.as_str(),
+            op_node,
+            inputs,
+            false,
+            0,
+            keys.client_key.clone(),
+        )?;
 
         ctx.cache_store(&ct).await;
-        info!(pid = pid, handle, "Stored computed ciphertext in cache");
+        info!(
+            pid = pid,
+            handle_as_hex, "Stored computed ciphertext in cache"
+        );
 
-        computed_cts.push(ct);
+        cts.insert(ct.handle.clone(), ct);
     }
 
-    Ok(computed_cts)
+    Ok(cts)
 }
 
 /// Executes the given FHE operation node with the provided input ciphertexts.
@@ -258,9 +378,6 @@ fn try_run_computation(
 ) -> Result<CiphertextInfo, ComputeError> {
     let opcode = op_node.fhe_operation as i32;
     let handle = hex::encode(&op_node.output_handle[0..4]);
-
-    // let is_input_handle_scalar = Vec::new();
-    // TODO: tfhe_ops::check_fhe_operand_types(opcode, &inputs, &is_input_handle_scalar).unwrap();
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         run_computation(opcode, inputs, compress_result, gpu_index)
@@ -323,7 +440,7 @@ fn run_computation(
         .map(|o| format!("{:?}", o))
         .unwrap_or_else(|_| format!("Unknown({})", operation));
 
-    info!(op_name, gpu_idx, "Performing FHE operation");
+    info!(op_name, gpu_idx, tag = "operation", "Compute FHE operation");
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             warn!("FheGetCiphertext operation should be handled separately");
@@ -380,6 +497,6 @@ fn re_randomise_inputs<'a>(
 }
 
 #[inline]
-fn short_handle(handle: &[u8]) -> String {
+fn hex_handle(handle: &[u8]) -> String {
     hex::encode(&handle[..handle.len().min(4)])
 }

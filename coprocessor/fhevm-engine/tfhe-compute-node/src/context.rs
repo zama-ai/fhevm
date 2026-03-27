@@ -3,26 +3,24 @@ use fhevm_engine_common::tenant_keys::{
 };
 
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
-use futures_util::stream::StreamExt;
 use message_broker::Sender;
 use redis::{AsyncCommands, Client};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::join;
-use tokio::time::timeout;
 
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     CiphertextInfo, ComputeError, RedisCiphertextRecord, SenderType, CACHE_HITS_COUNTER,
-    REDIS_BATCH_STORE_OVERHEAD, REDIS_HITS_COUNTER, REDIS_SUB_COUNTER, REDIS_SUB_OVERHEAD,
+    REDIS_BATCH_STORE_OVERHEAD, REDIS_HITS_COUNTER,
 };
 
 #[derive(Clone)]
 pub(crate) struct Context {
-    redis: redis::Client,
     multiplexed_conn: redis::aio::MultiplexedConnection,
 
     pool: sqlx::PgPool,
@@ -32,7 +30,7 @@ pub(crate) struct Context {
 
     // caches
     key_cache: Arc<RwLock<lru::LruCache<i64, TfheTenantKeys>>>,
-    ciphertext_cache: Arc<RwLock<lru::LruCache<Handle, CiphertextInfo>>>,
+    ciphertext_lru_cache: Arc<RwLock<lru::LruCache<Handle, CiphertextInfo>>>,
 
     // Observability
     otel_ctx: opentelemetry::Context,
@@ -77,11 +75,10 @@ impl Context {
         .await;
 
         Ok(Self {
-            redis,
             multiplexed_conn,
             pool,
             key_cache,
-            ciphertext_cache,
+            ciphertext_lru_cache: ciphertext_cache,
             otel_ctx,
             current_key_id: Arc::new(RwLock::new(None)),
             complete_partition_sender: sender,
@@ -122,17 +119,19 @@ impl Context {
         Ok(keys)
     }
 
+    /// Stores the given ciphertext in the LRU cache.
     pub(crate) async fn cache_store(&self, ct: &CiphertextInfo) {
-        let mut cache = self.ciphertext_cache.write().await;
+        let mut cache = self.ciphertext_lru_cache.write().await;
         if cache.contains(&ct.handle) {
             return;
         }
         cache.put(ct.handle.clone(), ct.clone());
     }
 
+    /// Tries to retrieve a ciphertext from the LRU cache using the given handle.
     pub(crate) async fn cache_get(&self, handle: &Handle) -> Option<CiphertextInfo> {
-        let cache = self.ciphertext_cache.read().await;
-        cache.peek(handle).cloned()
+        let mut cache = self.ciphertext_lru_cache.write().await;
+        cache.get(handle).cloned()
     }
 
     /// Store the given ciphertext in Redis with the handle as the key.
@@ -156,8 +155,10 @@ impl Context {
     /// For backwards compatibility, it can store in PostgreSQL as well
     pub(crate) async fn batch_store_ciphertexts(
         &self,
-        cts: Vec<CiphertextInfo>,
+        cts: HashMap<Handle, CiphertextInfo>,
     ) -> Result<(), ComputeError> {
+        let cts = cts.into_values().collect::<Vec<_>>();
+
         let (redis_res, postgres_res) = join!(
             self.redis_batch_store(&cts),
             self.postgres_batch_store(&cts),
@@ -169,12 +170,12 @@ impl Context {
         Ok(())
     }
 
-    async fn redis_batch_store(&self, cts: &Vec<CiphertextInfo>) -> Result<(), ComputeError> {
+    async fn redis_batch_store(&self, cts: &[CiphertextInfo]) -> Result<(), ComputeError> {
         let start_time = Instant::now();
 
         let mut conn = self.multiplexed_conn.clone();
         let mut pipe = redis::pipe();
-        for ct in cts.into_iter() {
+        for ct in cts.iter() {
             let bytes = postcard::to_allocvec(&RedisCiphertextRecord {
                 ct_type: ct.ciphertext.type_num(),
                 raw_ct: Some(ct.ciphertext.serialize().1),
@@ -191,10 +192,12 @@ impl Context {
         Ok(())
     }
 
-    async fn postgres_batch_store(&self, cts: &Vec<CiphertextInfo>) -> Result<(), ComputeError> {
-        for ct in cts.into_iter() {
+    async fn postgres_batch_store(&self, cts: &[CiphertextInfo]) -> Result<(), ComputeError> {
+        let key_id = (*self.current_key_id.read().await).ok_or(ComputeError::MissingKeyId)?;
+
+        for ct in cts.iter() {
             let (ct_type, compressed_ct) = ct.ciphertext.compress();
-            self.insert_ciphertext(1, &ct.handle, &compressed_ct, ct_type)
+            self.insert_ciphertext(key_id as i32, &ct.handle, &compressed_ct, ct_type)
                 .await?;
         }
 
@@ -202,7 +205,7 @@ impl Context {
         let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
             .execute(&self.pool)
             .await
-            .expect("insert into ciphertexts");
+            .expect("failed to send PostgreSQL notification event_ciphertext_computed");
 
         info!(cts_len = cts.len(), "Batch stored in PostgreSQL");
 
@@ -212,8 +215,8 @@ impl Context {
     async fn insert_ciphertext(
         &self,
         tenant_id: i32,
-        handle: &Vec<u8>,
-        ciphertext: &Vec<u8>,
+        handle: &[u8],
+        ciphertext: &[u8],
         ct_type: i16,
     ) -> Result<(), ComputeError> {
         let rows = sqlx::query!(
@@ -266,17 +269,15 @@ impl Context {
 
     /// Check whether a ciphertext with the specified handle exists in any of the backends:
     /// local cache, Redis, or PostgreSQL
-    /// If not, wait for it to be published via Redis keyspace notifications.
-    pub(crate) async fn get_or_wait_for_ciphertext(
+    pub(crate) async fn retrieve_ciphertext(
         &self,
         handle: &Handle,
         ops_type: Option<SupportedFheOperations>,
     ) -> Result<CiphertextInfo, ComputeError> {
-        let key: String = hex::encode(handle);
-
+        let handle_hex = hex::encode(handle);
         // Check local cache
         if let Some(ct) = self.cache_get(handle).await {
-            info!(handle = %hex::encode(handle), "Cache hit for ciphertext");
+            info!(handle = %handle_hex, "Cache hit for ciphertext");
             CACHE_HITS_COUNTER.inc();
             return Ok(ct);
         }
@@ -285,8 +286,8 @@ impl Context {
         let mut conn = self.multiplexed_conn.clone();
 
         // Check Redis directly
-        if let Ok(Some(bytes)) = conn.get::<_, Option<Vec<u8>>>(&key).await {
-            info!(handle = %hex::encode(handle), "Redis hit for ciphertext");
+        if let Ok(Some(bytes)) = conn.get::<_, Option<Vec<u8>>>(&handle_hex).await {
+            info!(handle = %handle_hex, "Redis hit for ciphertext");
             REDIS_HITS_COUNTER.inc();
 
             let ct = self.deserialize_redis_entry(handle.clone(), bytes)?;
@@ -294,9 +295,14 @@ impl Context {
             return Ok(ct);
         }
 
+        warn!(handle = %handle_hex, "Ciphertext not found in local cache or Redis, try to query PostgreSQL");
+
+        // Query PostgreSQL as a fallback
+        // Since zkproof-worker stores ciphertexts in PostgreSQL but not Redis,
+        // this is necessary to retrieve input ciphertexts
         match self.query_ciphertext_from_db(handle).await {
             Ok(ct) => {
-                info!(handle = %hex::encode(handle), "PostgreSQL hit for ciphertext on second attempt");
+                info!(handle = %handle_hex, "PostgreSQL hit for ciphertext on second attempt");
                 // Optionally cache the result in Redis for future requests
                 let _ = self.redis_store(ct.clone()).await;
                 self.cache_store(&ct).await;
@@ -305,68 +311,15 @@ impl Context {
             Err(e) => {
                 error!(
                     ops_type = ?ops_type,
-                    handle = %hex::encode(handle),
+                    handle = %handle_hex,
                     error = ?e,
                     "Failed to fetch ciphertext from PostgreSQL database, will wait for Redis notification"
                 );
             }
         };
 
-        info!(handle = %hex::encode(handle), "Redis-subscribe for ciphertext");
-        REDIS_SUB_COUNTER.inc();
-
-        // Subscribe to keyspace notifications
-        let mut pubsub = self.redis.get_async_pubsub().await?;
-        let channel = format!("__keyspace@0__:{}", key);
-        pubsub.subscribe(&channel).await?;
-
-        let mut stream = pubsub.on_message();
-
-        let start_time = Instant::now();
-
-        // Wait until the key is actually set, then fetch it
-
-        let msg = match timeout(Duration::from_secs(5), stream.next()).await {
-            Ok(Some(msg)) => msg,
-            Ok(None) => {
-                return Err(ComputeError::Other(
-                    "Stream closed while waiting for ciphertext".to_string(),
-                ));
-            }
-            Err(_) => {
-                error!(
-                    ops_type = ?ops_type,
-                    handle = %hex::encode(handle),
-                    "Timeout while waiting for Redis notification for ciphertext"
-                );
-                return Err(ComputeError::Other(
-                    "Timeout while waiting for ciphertext".to_string(),
-                ));
-            }
-        };
-
-        let payload: String = msg.get_payload()?;
-
-        if payload == "set" || payload == "hset" {
-            let elapsed = start_time.elapsed();
-            REDIS_SUB_OVERHEAD.observe(elapsed.as_secs_f64());
-            info!(
-                handle = %hex::encode(handle),
-                elapsed = ?elapsed,
-                "Received Redis notification for ciphertext"
-            );
-
-            if let Ok(Some(value)) = conn.get::<_, Option<Vec<u8>>>(&key).await {
-                let ct = self.deserialize_redis_entry(handle.clone(), value.clone())?;
-                self.cache_store(&ct).await;
-                return Ok(ct);
-            }
-        }
-
-        error!(handle = %hex::encode(handle), "Stream ended before receiving Redis notification for ciphertext");
-
         Err(ComputeError::Other(
-            "Stream ended before key was set".to_string(),
+            "Could not retrieve ciphertext".to_string(),
         ))
     }
 
@@ -399,10 +352,10 @@ impl Context {
             "Successfully retrieved ciphertext from PostgreSQL database"
         );
 
-        return Ok(CiphertextInfo {
+        Ok(CiphertextInfo {
             handle: handle.clone(),
             ciphertext,
-        });
+        })
     }
 
     pub async fn send_partition_complete(&self, payload: Vec<u8>) -> Result<(), ComputeError> {
