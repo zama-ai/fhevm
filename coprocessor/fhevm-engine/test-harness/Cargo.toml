@@ -23,10 +23,6 @@ tokio-util = { workspace = true}
 tracing = { workspace = true }
 bytesize = { workspace = true }
 
-# crates.io dependencies
-base64 = "0.22.1"
-k256 = { version = "0.13.4", default-features = false, features = ["pkcs8"] }
-
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 

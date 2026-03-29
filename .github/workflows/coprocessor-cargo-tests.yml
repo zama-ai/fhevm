@@ -125,15 +125,20 @@ jobs:
       with:
         node-version: 20.x
 
-    - name: Start localstack
+    - name: Start robotocore (S3 for sns-worker tests)
       if: ${{ matrix.needs_localstack }}
-      run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
+      run: docker run --rm -d -p 4566:4566 --name robotocore ghcr.io/robotocore/robotocore:latest
+
+    - name: Start local-kms (KMS for transaction-sender tests)
+      if: ${{ matrix.needs_localstack }}
+      run: docker run --rm -d -p 8080:8080 --name local-kms nsmithuk/local-kms
 
     - name: Run tests with coverage
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
-        TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
+        TEST_GLOBAL_ROBOTOCORE: ${{ matrix.needs_localstack && '1' || '0' }}
+        TEST_GLOBAL_LOCAL_KMS: ${{ matrix.needs_localstack && '1' || '0' }}
         TEST_PACKAGE: ${{ matrix.package }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |

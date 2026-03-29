@@ -1518,9 +1518,9 @@ async fn stop_retrying_verify_proof_on_gw_config_error(
         verify_proof_remove_after_max_retries: false,
         ..Default::default()
     };
-    let force_per_test_localstack = false;
+    let force_per_test_local_kms = false;
     let env =
-        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())

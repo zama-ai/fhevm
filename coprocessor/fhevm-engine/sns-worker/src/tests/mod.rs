@@ -20,7 +20,7 @@ use std::{
 use test_harness::{
     db_utils::truncate_tables,
     instance::{setup_test_db, DBInstance, ImportMode},
-    localstack::{LocalstackContainer, LOCALSTACK_PORT},
+    robotocore::{RobotocoreContainer, ROBOTOCORE_PORT},
     s3_utils,
 };
 use tfhe::{
@@ -407,7 +407,7 @@ struct TestEnvironment {
     pub key_id_gw: DbKeyId,
     pub host_chain_id: i64,
     pub db_instance: DBInstance,
-    pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
+    pub s3_instance: Option<Arc<RobotocoreContainer>>, // If None, the global Robotocore is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
 }
@@ -436,7 +436,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
             aws_sdk_s3::Client::new(&aws_config::load_defaults(BehaviorVersion::latest()).await),
         )
     } else {
-        setup_localstack(&conf).await?
+        setup_robotocore(&conf).await?
     };
 
     let token = db_instance.parent_token.child_token();
@@ -473,23 +473,23 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     })
 }
 
-/// Deploys a LocalStack instance and creates S3 buckets for ciphertext128 and ciphertext64
+/// Deploys a Robotocore instance and creates S3 buckets for ciphertext128 and ciphertext64
 ///
 /// # Returns
-/// A tuple containing the LocalStack instance and the S3 client
-async fn setup_localstack(
+/// A tuple containing the Robotocore instance and the S3 client
+async fn setup_robotocore(
     conf: &Config,
-) -> anyhow::Result<(Option<Arc<LocalstackContainer>>, aws_sdk_s3::Client)> {
-    let (localstack, host_port) =
-        if std::env::var("TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
-            (None, LOCALSTACK_PORT)
+) -> anyhow::Result<(Option<Arc<RobotocoreContainer>>, aws_sdk_s3::Client)> {
+    let (robotocore, host_port) =
+        if std::env::var("TEST_GLOBAL_ROBOTOCORE").unwrap_or("0".to_string()) == "1" {
+            (None, ROBOTOCORE_PORT)
         } else {
-            let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
-            let host_port = localstack_instance.host_port;
-            (Some(localstack_instance), host_port)
+            let robotocore_instance = Arc::new(test_harness::robotocore::start_robotocore().await?);
+            let host_port = robotocore_instance.host_port;
+            (Some(robotocore_instance), host_port)
         };
 
-    tracing::info!("LocalStack started on port: {}", host_port);
+    tracing::info!("Robotocore started on port: {}", host_port);
 
     let endpoint_url = format!("http://127.0.0.1:{}", host_port);
     std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
@@ -503,7 +503,7 @@ async fn setup_localstack(
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
     recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
 
-    Ok((localstack, client))
+    Ok((robotocore, client))
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
