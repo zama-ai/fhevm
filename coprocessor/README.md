@@ -205,8 +205,6 @@ Options:
           [default: event_zkpok_computed]
       --add-ciphertexts-database-channel <ADD_CIPHERTEXTS_DATABASE_CHANNEL>
           [default: event_ciphertexts_uploaded]
-      --allow-handle-database-channel <ALLOW_HANDLE_DATABASE_CHANNEL>
-          [default: event_allowed_handle]
       --verify-proof-resp-batch-limit <VERIFY_PROOF_RESP_BATCH_LIMIT>
           [default: 128]
       --verify-proof-resp-max-retries <VERIFY_PROOF_RESP_MAX_RETRIES>
@@ -215,10 +213,6 @@ Options:
           
       --add-ciphertexts-batch-limit <ADD_CIPHERTEXTS_BATCH_LIMIT>
           [default: 10]
-      --allow-handle-batch-limit <ALLOW_HANDLE_BATCH_LIMIT>
-          [default: 10]
-      --allow-handle-max-retries <ALLOW_HANDLE_MAX_RETRIES>
-          [default: 2147483647]
       --add-ciphertexts-max-retries <ADD_CIPHERTEXTS_MAX_RETRIES>
           [default: 2147483647]
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
