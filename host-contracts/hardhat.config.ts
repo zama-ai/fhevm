@@ -17,6 +17,8 @@ import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
 import './tasks/ownership';
 import './tasks/pauseContracts';
+import './tasks/removePausers';
+import './tasks/swapPausers';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
