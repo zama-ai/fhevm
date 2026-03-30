@@ -1,0 +1,96 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-verify-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: fhevm-coprocessor
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migration.verifyTimeoutSeconds | default 600 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Release.Name }}-drain-hook
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 16Mi
+      containers:
+      - name: verify
+        image: {{ .Values.migration.hookImage | default "bitnami/kubectl:1.31" }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        env:
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        command: ["/bin/sh"]
+        args:
+        - -ec
+        - |
+          echo "=== Post-upgrade verification ==="
+
+          # Static app labels used by coprocessor deployments — these never
+          # change regardless of nameOverride or release name.
+          APP_LABELS="coprocessor-host-listener
+          coprocessor-host-listener-poller
+          coprocessor-host-listener-catchup-only
+          coprocessor-gw-listener
+          coprocessor-tfhe-worker
+          coprocessor-zkproof-worker
+          coprocessor-sns-worker
+          coprocessor-tx-sender"
+
+          verified=0
+          skipped=0
+
+          for label in $APP_LABELS; do
+            # Discover deployment(s) by static app label
+            for deploy in $(kubectl get deploy -n "$NAMESPACE" -l "app=$label" -o name 2>/dev/null); do
+              replicas=$(kubectl get "$deploy" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null)
+              if [ -z "$replicas" ]; then
+                echo "WARNING: Could not read replicas for $deploy"
+                skipped=$((skipped + 1))
+              elif [ "$replicas" -gt 0 ]; then
+                echo "Waiting for rollout: $deploy"
+                kubectl rollout status "$deploy" -n "$NAMESPACE" --timeout=300s
+                verified=$((verified + 1))
+              else
+                echo "Skipping $deploy (0 replicas)"
+                skipped=$((skipped + 1))
+              fi
+            done
+          done
+
+          echo ""
+          echo "Verified: $verified deployment(s), Skipped: $skipped"
+          if [ "$verified" -eq 0 ]; then
+            echo "WARNING: No deployments had replicas > 0. Verify that Helm restored replica counts."
+          fi
+          echo "=== Post-upgrade verification complete ==="
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+{{- end }}

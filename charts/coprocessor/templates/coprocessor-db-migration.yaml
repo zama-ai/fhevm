@@ -7,8 +7,13 @@ metadata:
     app: coprocessor-db-migration
     app.kubernetes.io/name: {{ .Release.Name }}-db-migration
   namespace: {{ .Release.Namespace }}
-  {{- with .Values.dbMigration.annotations }}
   annotations:
+  {{- if .Values.migration.enabled }}
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+  {{- end }}
+  {{- with .Values.dbMigration.annotations }}
   {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:

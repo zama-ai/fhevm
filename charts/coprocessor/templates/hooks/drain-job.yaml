@@ -1,0 +1,241 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-drain-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: fhevm-coprocessor
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migration.drainTimeoutSeconds | default 900 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Release.Name }}-drain-hook
+      imagePullSecrets:
+        - name: registry-credentials
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 16Mi
+      containers:
+      - name: drain
+        image: {{ .Values.migration.hookImage | default "bitnami/kubectl:1.31" }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        env:
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.migration.dbSecretName | default "coprocessor-db-url" }}
+              key: {{ .Values.migration.dbSecretKey | default "coprocessor-db-url" }}
+        - name: POLL_INTERVAL
+          value: {{ .Values.migration.pollIntervalSeconds | default "10" | quote }}
+        - name: STABLE_WINDOW
+          value: {{ .Values.migration.stableWindowSeconds | default "30" | quote }}
+        - name: COMPUTATION_TIMEOUT
+          value: {{ .Values.migration.computationDrainTimeout | default "600" | quote }}
+        - name: TRANSACTION_TIMEOUT
+          value: {{ .Values.migration.transactionDrainTimeout | default "300" | quote }}
+        command: ["/bin/sh"]
+        args:
+        - -ec
+        - |
+          echo "=== FHEVM Coprocessor Drain ==="
+          echo "Namespace: $NAMESPACE"
+
+          # ── Preflight checks ──────────────────────────────
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "ERROR: psql not found in container image."
+            echo "The hook image must include a PostgreSQL client."
+            echo "Current image: see migration.hookImage in values.yaml"
+            exit 1
+          fi
+
+          # Verify DB connectivity before starting drain
+          if ! psql "$DATABASE_URL" -c "SELECT 1" >/dev/null 2>&1; then
+            echo "ERROR: Cannot connect to database. Check DATABASE_URL secret."
+            exit 1
+          fi
+          echo "Database connectivity: OK"
+
+          # ── Helper functions ────────────────────────────────
+
+          scale_down() {
+            local label=$1
+            local component=$2
+            local found=0
+            # Save current replicas to ConfigMap before scaling
+            for deploy in $(kubectl get deploy -n "$NAMESPACE" -l "$label" -o name 2>/dev/null); do
+              found=1
+              replicas=$(kubectl get "$deploy" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}')
+              deploy_name=$(echo "$deploy" | sed 's|deployment.apps/||')
+              kubectl create configmap "${deploy_name}-pre-drain-replicas" \
+                -n "$NAMESPACE" \
+                --from-literal=replicas="$replicas" \
+                --dry-run=client -o yaml | kubectl apply -f -
+            done
+            if [ "$found" = "1" ]; then
+              kubectl scale deploy -n "$NAMESPACE" -l "$label" --replicas=0
+              echo "  Scaled down: $component"
+            else
+              echo "  Skipped: $component (no matching deployment)"
+            fi
+          }
+
+          # poll_db_stable — wait until a DB count reaches 0 AND stays
+          # at 0 for STABLE_WINDOW seconds.
+          #
+          # Args: $1=query  $2=description  $3=timeout
+          poll_db_stable() {
+            local query=$1
+            local desc=$2
+            local timeout=$3
+            local elapsed=0
+            local stable_at_zero=0
+            local prev_count=""
+            local stall_seconds=0
+
+            while true; do
+              # Capture stdout+stderr together; use exit code to distinguish success/failure.
+              # On success psql -t -A prints just the number; on failure the error message.
+              psql_output=$(psql "$DATABASE_URL" -t -A -c "$query" 2>&1)
+              psql_rc=$?
+
+              if [ "$psql_rc" -ne 0 ]; then
+                echo "  $desc: DB query failed: $psql_output. Retrying..."
+                stable_at_zero=0
+                stall_seconds=0
+                count="-1"
+              else
+                count="$psql_output"
+              fi
+
+              if [ "$count" = "0" ]; then
+                stable_at_zero=$((stable_at_zero + POLL_INTERVAL))
+                stall_seconds=0
+                if [ "$stable_at_zero" -ge "$STABLE_WINDOW" ]; then
+                  echo "  $desc: confirmed drained (0 for ${STABLE_WINDOW}s)"
+                  return 0
+                fi
+                echo "  $desc: 0 remaining (confirming stability: ${stable_at_zero}/${STABLE_WINDOW}s)"
+              elif [ "$count" != "-1" ]; then
+                stable_at_zero=0
+                if [ "$count" = "$prev_count" ]; then
+                  stall_seconds=$((stall_seconds + POLL_INTERVAL))
+                  echo "  $desc: $count remaining (unchanged for ${stall_seconds}s)"
+                  if [ "$stall_seconds" -ge "$STABLE_WINDOW" ]; then
+                    echo "  WARNING: $desc stalled at $count for ${STABLE_WINDOW}s — workers may be stuck"
+                  fi
+                else
+                  stall_seconds=0
+                  echo "  $desc: $count remaining (was ${prev_count:-?}, still draining)"
+                fi
+              fi
+
+              prev_count="$count"
+              elapsed=$((elapsed + POLL_INTERVAL))
+              if [ "$elapsed" -ge "$timeout" ]; then
+                echo "ERROR: $desc timed out after ${timeout}s ($count remaining)"
+                exit 1
+              fi
+              sleep "$POLL_INTERVAL"
+            done
+          }
+
+          # ── Step 1: Stop listeners ─────────────────────────
+          echo ""
+          echo "Step 1/5: Stopping listeners..."
+          scale_down "app=coprocessor-host-listener" "host-listener"
+          scale_down "app=coprocessor-host-listener-poller" "host-listener-poller"
+          scale_down "app=coprocessor-host-listener-catchup-only" "host-listener-catchup-only"
+          scale_down "app=coprocessor-gw-listener" "gw-listener"
+
+          # ── Step 2: Wait for computation backlog ───────────
+          echo ""
+          echo "Step 2/5: Waiting for computation backlog to drain..."
+          echo "  (will confirm 0 remaining for ${STABLE_WINDOW}s before proceeding)"
+          poll_db_stable \
+            "SELECT COUNT(*) FROM computations WHERE is_completed = false AND is_error = false" \
+            "pending computations" \
+            "$COMPUTATION_TIMEOUT"
+
+          # ── Step 3: Stop workers ───────────────────────────
+          echo ""
+          echo "Step 3/5: Stopping workers..."
+          # Suspend HPAs before scaling workers to prevent them from fighting replicas=0
+          suspend_hpa() {
+            local hpa_label=$1
+            for hpa in $(kubectl get hpa -n "$NAMESPACE" -l "app=$hpa_label" -o name 2>/dev/null); do
+              current_min=$(kubectl get "$hpa" -n "$NAMESPACE" -o jsonpath='{.spec.minReplicas}' 2>/dev/null || echo "")
+              if [ -n "$current_min" ]; then
+                kubectl annotate "$hpa" -n "$NAMESPACE" "migration/pre-drain-min=$current_min" --overwrite
+                kubectl patch "$hpa" -n "$NAMESPACE" -p '{"spec":{"minReplicas":0}}' --type=merge
+                echo "  Suspended HPA: $hpa (was minReplicas=$current_min)"
+              else
+                echo "  WARNING: Could not read minReplicas from $hpa, skipping suspend"
+              fi
+            done
+          }
+          {{- if .Values.tfheWorker.hpa.enabled }}
+          suspend_hpa "coprocessor-tfhe-worker"
+          {{- end }}
+          {{- if .Values.zkProofWorker.hpa.enabled }}
+          suspend_hpa "coprocessor-zkproof-worker"
+          {{- end }}
+          {{- if .Values.snsWorker.hpa.enabled }}
+          suspend_hpa "coprocessor-sns-worker"
+          {{- end }}
+          scale_down "app=coprocessor-tfhe-worker" "tfhe-worker"
+          scale_down "app=coprocessor-zkproof-worker" "zkproof-worker"
+          scale_down "app=coprocessor-sns-worker" "sns-worker"
+          # Wait for pods to actually terminate
+          kubectl wait pod -n "$NAMESPACE" \
+            -l "app in (coprocessor-tfhe-worker,coprocessor-zkproof-worker,coprocessor-sns-worker)" \
+            --for=delete --timeout=120s 2>/dev/null || true
+
+          # ── Step 4: Wait for pending transactions ──────────
+          echo ""
+          echo "Step 4/5: Waiting for pending transactions to drain..."
+          echo "  (will confirm 0 remaining for ${STABLE_WINDOW}s before proceeding)"
+          poll_db_stable \
+            "SELECT COUNT(*) FROM transactions WHERE completed_at IS NULL" \
+            "pending transactions" \
+            "$TRANSACTION_TIMEOUT"
+
+          # ── Step 5: Stop transaction-sender ────────────────
+          echo ""
+          echo "Step 5/5: Stopping transaction-sender..."
+          scale_down "app=coprocessor-tx-sender" "tx-sender"
+          kubectl wait pod -n "$NAMESPACE" \
+            -l "app=coprocessor-tx-sender" \
+            --for=delete --timeout=60s 2>/dev/null || true
+
+          echo ""
+          echo "=== Drain complete. Pipeline is quiesced. ==="
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+{{- end }}
