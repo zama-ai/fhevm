@@ -10,7 +10,7 @@ task('task:addHostPausers')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts/immutable' });
