@@ -77,9 +77,9 @@ podLabels: {}
 config:
   enabled: true
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/kube-utils
-    tag: 0.1.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/security-hub/infra/kube-utils
+    tag: v0.4.3
 
   # Coprocessor cryptographic key configuration
   # TODO: this should be deprecated, to be confirmed
@@ -122,9 +122,9 @@ dbMigration:
     # "helm.sh/hook-weight": "0"
     # "helm.sh/hook-needs": "config-setup"
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-db-migration
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
+    tag: v0.11.0
 
   # Environment variables for migration process
   # DATABASE_URL is injected automatically from commonConfig. Use env to set
@@ -160,9 +160,9 @@ hostListener:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
@@ -260,9 +260,9 @@ hostListenerPoller:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.10.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
@@ -360,9 +360,9 @@ hostListenerCatchupOnly:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.10.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
@@ -456,9 +456,9 @@ gwListener:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
+    tag: v0.11.0
 
   replicas: 1
 
@@ -553,9 +553,9 @@ tfheWorker:
   enabled: true
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tfhe-worker
+    tag: v0.11.0
 
   replicas: 1
 
@@ -684,9 +684,9 @@ zkProofWorker:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/zkproof-worker
+    tag: v0.11.0
 
   replicas: 1
 
@@ -792,8 +792,8 @@ snsWorker:
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/sns-worker
+    tag: v0.11.0
 
   replicas: 1
 
@@ -923,9 +923,9 @@ txSender:
   enabled: false
   nameOverride:
 
-  image: # TODO: Update to zama-protocol
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tx-sender
+    tag: v0.11.0
 
   replicas: 1
 
