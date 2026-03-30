@@ -159,10 +159,33 @@ impl ComputationScheduler {
         }
     }
 
+    fn update_ordering(&mut self, log: &msg::FheLog) -> msg::FheLog {
+        let mut log = log.clone();
+        let supported_fhe_operation = log.fhe_operation;
+
+        let should_reverse = match log.dependencies.len() {
+            3 => supported_fhe_operation != SupportedFheOperations::FheRandBounded,
+            2 => {
+                supported_fhe_operation != SupportedFheOperations::FheTrivialEncrypt
+                    && supported_fhe_operation != SupportedFheOperations::FheRand
+                    && supported_fhe_operation != SupportedFheOperations::FheCast
+            }
+            _ => false,
+        };
+
+        if should_reverse {
+            log.dependencies.reverse();
+        }
+
+        log
+    }
+
     fn add_computation_node(&mut self, log: &msg::FheLog) -> Result<NodeIndex, String> {
         if let Some(index) = self.handle_to_node_idx.get(&log.output_handle) {
             return Ok(*index);
         }
+
+        let log = self.update_ordering(log);
 
         let uncomputed_deps_count = log
             .dependence_handles()
@@ -176,7 +199,7 @@ impl ComputationScheduler {
             })
             .count();
 
-        let node_idx = self.add_dfg_node(log, uncomputed_deps_count, false);
+        let node_idx = self.add_dfg_node(&log, uncomputed_deps_count, false);
 
         if self
             .handle_to_node_idx

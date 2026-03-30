@@ -65,13 +65,14 @@ async fn tfhe_compute_cycle(
                 info!("Received message on local queue");
                 if let Err(_) = process_delivery(&ctx, partition, payload_raw).await {
                     // TODO: Distinguish between retryable and non-retryable errors
-                    Ok(MessageResult::Nack(true, 1)) // requeue the message for retry
+                    // TODO: requeue the message for retry
+                    Ok(MessageResult::Nack(false, 0))
                 } else {
                     Ok(MessageResult::Ack)
                 }
             }) => {
                 if let Err(e) = res {
-                    error!(error = ?e, "Error receiving message from RabbitMQ");
+                    error!(error = ?e, "Error receiving message from Broker");
                     // In case of an error in receiving messages, we break the loop to restart the connection and consumer channel
                     break;
                 }
