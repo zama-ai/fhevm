@@ -20,7 +20,9 @@ import "./tasks/getters";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
+import "./tasks/removePausers";
 import "./tasks/reshareKeys";
+import "./tasks/swapPausers";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
