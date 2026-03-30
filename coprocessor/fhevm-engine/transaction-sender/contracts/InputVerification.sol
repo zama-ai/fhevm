@@ -21,12 +21,14 @@ contract InputVerification {
      * @param signer The signer address of the coprocessor that has already rejected.
      */
     error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
+    error VerifyProofNotRequested(uint256 zkProofId);
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
     error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
 
     bool alreadyVerifiedRevert;
     bool alreadyRejectedRevert;
+    bool verifyProofNotRequestedRevert;
     bool otherRevert;
     ConfigErrorMode configErrorMode;
 
@@ -37,9 +39,10 @@ contract InputVerification {
         CoprocessorSignerDoesNotMatchTxSender
     }
 
-    constructor(bool _alreadyVerifiedRevert, bool _alreadyRejectedRevert, bool _otherRevert) {
+    constructor(bool _alreadyVerifiedRevert, bool _alreadyRejectedRevert, bool _verifyProofNotRequestedRevert, bool _otherRevert) {
         alreadyVerifiedRevert = _alreadyVerifiedRevert;
         alreadyRejectedRevert = _alreadyRejectedRevert;
+        verifyProofNotRequestedRevert = _verifyProofNotRequestedRevert;
         otherRevert = _otherRevert;
     }
 
@@ -71,6 +74,10 @@ contract InputVerification {
             revert("Other revert");
         }
 
+        if (verifyProofNotRequestedRevert) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
         if (alreadyVerifiedRevert) {
             revert CoprocessorAlreadyVerified(zkProofId, msg.sender, msg.sender);
         }
@@ -83,6 +90,9 @@ contract InputVerification {
     function rejectProofResponse(uint256 zkProofId, bytes calldata /* extraData */) public {
         if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
             revert NotCoprocessorTxSender(msg.sender);
+        }
+        if (verifyProofNotRequestedRevert) {
+            revert VerifyProofNotRequested(zkProofId);
         }
         if (otherRevert) {
             revert("Other revert");
