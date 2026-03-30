@@ -8,55 +8,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(EventType::PublicDecryptionRequest)]
+#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::prep_keygen(EventType::PrepKeygenRequest)]
+#[case::keygen(EventType::KeygenRequest)]
+#[case::crsgen(EventType::CrsgenRequest)]
+#[case::prss_init(EventType::PrssInit)]
+#[case::key_reshare_same_set(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_catchup_public_decryption_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_user_decryption_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_prep_keygen_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_keygen_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_crsgen_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_prss_init_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_catchup_key_reshare_same_set_from_block() -> anyhow::Result<()> {
-    test_catchup_from_block(EventType::KeyReshareSameSet).await
-}
-
-async fn test_catchup_from_block(event_type: EventType) -> anyhow::Result<()> {
+async fn test_catchup_from_block(#[case] event_type: EventType) -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
 

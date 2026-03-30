@@ -7,7 +7,7 @@ use crate::core::event_processor::{
 use alloy::providers::Provider;
 use anyhow::anyhow;
 use connector_utils::types::{
-    GatewayEvent, GatewayEventKind, KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind,
+    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
 };
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
@@ -44,7 +44,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
 }
 
 impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventProcessor<GP, HP, C> {
-    type Event = GatewayEvent;
+    type Event = ProtocolEvent;
 
     #[tracing::instrument(skip_all)]
     async fn process(&mut self, event: &mut Self::Event) -> Option<KmsResponseKind> {
@@ -59,7 +59,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
                 Err(ProcessingError::Recoverable(e)),
                 // Consider all errors as irrecoverable for PrssInit and KeyReshareSameSet, as KMS does
                 // not provide any response for these operations
-                GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
+                ProtocolEventKind::PrssInit(_) | ProtocolEventKind::KeyReshareSameSet(_),
             ) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
                 event.mark_as_failed(&self.db_pool).await;
@@ -72,7 +72,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
             // key management operation at all cost.
             (
                 Err(ProcessingError::Recoverable(e)),
-                GatewayEventKind::PublicDecryption(_) | GatewayEventKind::UserDecryption(_),
+                ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
@@ -120,10 +120,10 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
     #[tracing::instrument(skip_all)]
     async fn prepare_request(
         &self,
-        event: &mut GatewayEvent,
+        event: &mut ProtocolEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let request = match &event.kind {
-            GatewayEventKind::PublicDecryption(req) => {
+            ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
                     .await?;
@@ -137,7 +137,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     )
                     .await?
             }
-            GatewayEventKind::UserDecryption(req) => {
+            ProtocolEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
 
@@ -166,19 +166,19 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     )
                     .await?
             }
-            GatewayEventKind::PrepKeygen(req) => self
+            ProtocolEventKind::PrepKeygen(req) => self
                 .kms_generation_processor
                 .prepare_prep_keygen_request(req),
-            GatewayEventKind::Keygen(req) => {
+            ProtocolEventKind::Keygen(req) => {
                 self.kms_generation_processor.prepare_keygen_request(req)
             }
-            GatewayEventKind::Crsgen(req) => {
+            ProtocolEventKind::Crsgen(req) => {
                 self.kms_generation_processor.prepare_crsgen_request(req)
             }
-            GatewayEventKind::PrssInit(id) => {
+            ProtocolEventKind::PrssInit(id) => {
                 self.kms_generation_processor.prepare_prss_init_request(*id)
             }
-            GatewayEventKind::KeyReshareSameSet(req) => self
+            ProtocolEventKind::KeyReshareSameSet(req) => self
                 .kms_generation_processor
                 .prepare_initiate_resharing_request(req),
         };
@@ -188,7 +188,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
     /// Core event processing logic function.
     async fn inner_process(
         &mut self,
-        event: &mut GatewayEvent,
+        event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
         let request = self
             .prepare_request(event)

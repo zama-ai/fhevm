@@ -18,7 +18,7 @@ use connector_utils::{
             init_host_chains_acl_contracts_mock,
         },
     },
-    types::{GatewayEventKind, db::EventType},
+    types::{ProtocolEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::{Empty, InitiateResharingResponse};
@@ -126,10 +126,10 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
 
     match &request {
         // Wait for kms_worker to remove the request from DB, then stop it
-        GatewayEventKind::PublicDecryption(_)
-        | GatewayEventKind::UserDecryption(_)
-        | GatewayEventKind::PrssInit(_)
-        | GatewayEventKind::KeyReshareSameSet(_) => {
+        ProtocolEventKind::PublicDecryption(_)
+        | ProtocolEventKind::UserDecryption(_)
+        | ProtocolEventKind::PrssInit(_)
+        | ProtocolEventKind::KeyReshareSameSet(_) => {
             while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .is_err()
@@ -157,18 +157,18 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
     Ok(())
 }
 
-fn prepare_mocks(req: &GatewayEventKind) -> MockSet {
+fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
     let mut kms_mocks = MockSet::new();
 
     // Gets the endpoints for the given request type
     let (req_endpoint, resp_endpoint) = match req {
-        GatewayEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
-        GatewayEventKind::UserDecryption(_) => ("UserDecrypt", "GetUserDecryptionResult"),
-        GatewayEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
-        GatewayEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
-        GatewayEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
-        GatewayEventKind::PrssInit(_) => ("Init", ""),
-        GatewayEventKind::KeyReshareSameSet(_) => ("InitiateResharing", ""),
+        ProtocolEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
+        ProtocolEventKind::UserDecryption(_) => ("UserDecrypt", "GetUserDecryptionResult"),
+        ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
+        ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
+        ProtocolEventKind::PrssInit(_) => ("Init", ""),
+        ProtocolEventKind::KeyReshareSameSet(_) => ("InitiateResharing", ""),
     };
 
     // Mock initial KMS response to initial GRPC request
@@ -177,7 +177,9 @@ fn prepare_mocks(req: &GatewayEventKind) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
         ));
         match req {
-            GatewayEventKind::KeyReshareSameSet(_) => then.pb(InitiateResharingResponse::default()),
+            ProtocolEventKind::KeyReshareSameSet(_) => {
+                then.pb(InitiateResharingResponse::default())
+            }
             // KMS returns `Empty` for all kind of requests except `KeyReshareSameSet`
             _ => then.pb(Empty::default()),
         };
