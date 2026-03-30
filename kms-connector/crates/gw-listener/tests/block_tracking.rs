@@ -8,59 +8,18 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(EventType::PublicDecryptionRequest)]
+#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::prep_keygen(EventType::PrepKeygenRequest)]
+#[case::keygen(EventType::KeygenRequest)]
+#[case::crsgen(EventType::CrsgenRequest)]
+// As there is currently only one PRSS init ID allowed, the test won't pass as there will be only
+// one row in the DB instead of two.
+// #[case::prss_init(EventType::PrssInit)]
+#[case::key_reshare_same_set(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(90))]
 #[tokio::test]
-async fn test_block_tracking_public_decryption() -> anyhow::Result<()> {
-    test_block_tracking(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-async fn test_block_tracking_user_decryption() -> anyhow::Result<()> {
-    test_block_tracking(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-async fn test_block_tracking_prep_keygen() -> anyhow::Result<()> {
-    test_block_tracking(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-async fn test_block_tracking_keygen() -> anyhow::Result<()> {
-    test_block_tracking(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-async fn test_block_tracking_crsgen() -> anyhow::Result<()> {
-    test_block_tracking(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-#[ignore = "
-    As there is currently only one PRSS init ID allowed,
-    the test won't pass as there will be only one row in the DB instead of two
-"]
-async fn test_block_tracking_prss_init() -> anyhow::Result<()> {
-    test_block_tracking(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(90))]
-#[tokio::test]
-async fn test_block_tracking_key_reshare_same_set() -> anyhow::Result<()> {
-    test_block_tracking(EventType::KeyReshareSameSet).await
-}
-
-async fn test_block_tracking(event_type: EventType) -> anyhow::Result<()> {
+async fn test_block_tracking(#[case] event_type: EventType) -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task =
