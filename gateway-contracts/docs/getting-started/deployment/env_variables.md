@@ -44,6 +44,8 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `HOST_CHAIN_WEBSITE_{k}`            | Website of the host chain `k`              | string        | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                             |
 | `NUM_PAUSERS`                       | Number of pausers to register              | -             | -                                                                                                   | Must be at least the number of pausers registered below                          |
 | `PAUSER_ADDRESS_{l}`                | Address of the pauser `l`                  | address       | -                                                                                                   | If `l` >= `NUM_PAUSERS`, the variable is ignored                                 |
+| `OLD_PAUSER_ADDRESS_{l}`            | Previous pauser address for swap `l`       | address       | -                                                                                                   | Used by the pauser swap task; if `l` >= `NUM_PAUSERS`, the variable is ignored   |
+| `NEW_PAUSER_ADDRESS_{l}`            | New pauser address for swap `l`            | address       | -                                                                                                   | Used by the pauser swap task; if `l` >= `NUM_PAUSERS`, the variable is ignored   |
 | `INPUT_VERIFICATION_PRICE`          | Price of an input verification             | address       | -                                                                                                   | The price is in $ZAMA base units (using 18 decimals)                             |
 | `PUBLIC_DECRYPTION_PRICE`           | Price of a public decryption               | address       | -                                                                                                   | The price is in $ZAMA base units (using 18 decimals)                             |
 | `USER_DECRYPTION_PRICE`             | Price of a user decryption                 | address       | -                                                                                                   | The price is in $ZAMA base units (using 18 decimals)                             |
@@ -177,6 +179,13 @@ The number of pausers should correspond to the total number of registered operat
 
 ```bash
 PAUSER_ADDRESS_0="0x6591319B97979Acc59b7191A8B4Ec381375bFc92" # (address)
+```
+
+The `task:swapGatewayPausers` task uses indexed pairs of old and new pauser addresses:
+
+```bash
+OLD_PAUSER_ADDRESS_0="0x6591319B97979Acc59b7191A8B4Ec381375bFc92" # (address)
+NEW_PAUSER_ADDRESS_0="0xb19e21437c47A541842bB84b018d3955462B35De" # (address)
 ```
 
 ### ProtocolPayment values
