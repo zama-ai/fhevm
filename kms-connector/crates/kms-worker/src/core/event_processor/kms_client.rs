@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
     types::{
-        KmsGrpcRequest, KmsGrpcResponse, db::EventType, gw_event::PRSS_INIT_ID, request_id_to_u256,
+        KmsGrpcRequest, KmsGrpcResponse, db::EventType, event::PRSS_INIT_ID, request_id_to_u256,
         u256_to_request_id, u256_to_u32,
     },
 };

@@ -5,9 +5,9 @@ use crate::{
         setup::{S3_CT_DIGEST, S3_CT_HANDLE, TESTING_KMS_CONTEXT},
     },
     types::{
-        GatewayEventKind,
+        ProtocolEventKind,
         db::{EventType, OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
-        gw_event::PRSS_INIT_ID,
+        event::PRSS_INIT_ID,
     },
 };
 use alloy::{
@@ -30,7 +30,7 @@ pub async fn insert_rand_request(
     db: &Pool<Postgres>,
     event_type: EventType,
     options: InsertRequestOptions,
-) -> anyhow::Result<GatewayEventKind> {
+) -> anyhow::Result<ProtocolEventKind> {
     let inserted_response = match event_type {
         EventType::PublicDecryptionRequest => insert_rand_public_decryption_request(db, options)
             .await?
