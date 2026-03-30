@@ -13,6 +13,8 @@ import * as path from 'path';
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
+import './tasks/removePausers';
+import './tasks/swapPausers';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 

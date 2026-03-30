@@ -21,6 +21,8 @@ import './tasks/kmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/prepareCoprocessorUpgrade';
+import './tasks/removePausers';
+import './tasks/swapPausers';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
