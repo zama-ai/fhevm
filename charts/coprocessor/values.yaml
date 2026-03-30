@@ -1,14 +1,6 @@
 # =============================================================================
 # FHEVM Coprocessor Configuration
 # =============================================================================
-
-# -----------------------------------------------------------------------------
-# Shared host-listener dependence settings (applies to all HL types)
-# -----------------------------------------------------------------------------
-dependentOps:
-  # Max dependent ops per chain per ingested block before slow-lane.
-  # 0 disables slow-lane decisions.
-  maxPerChain: 0
 # This chart deploys the FHEVM coprocessor components including:
 # - Configuration setup
 # - Database migration
@@ -21,13 +13,69 @@ dependentOps:
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Common Configuration
+# -----------------------------------------------------------------------------
+# Shared configuration across all coprocessor components
+commonConfig:
+  # Database connection string
+  # Can use $(VAR_NAME) syntax to reference variables from commonConfig.env
+  databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+
+  # Host chain configuration
+  # Used by: hostListener, hostListenerPoller, hostListenerCatchupOnly, tfheWorker
+  hostChainWsUrl: "ws://ethereum-node:8546"
+  hostChainHttpUrl: "http://ethereum-node:8545"
+  aclContractAddress: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  fhevmExecutorContractAddress: "0x0000000000000000000000000000000000000000"
+
+  # Gateway chain configuration
+  # Used by: gwListener, txSender
+  gatewayUrl: "ws://gateway-rpc-node:8548"
+  gatewayContractAddresses:
+    inputVerification: "0x0000000000000000000000000000000000000000"
+    kmsGeneration: "0x0000000000000000000000000000000000000000"
+    ciphertextCommits: "0x0000000000000000000000000000000000000000"
+    gatewayConfig: "0x0000000000000000000000000000000000000000"
+
+  # Max dependent ops per chain per ingested block before slow-lane.
+  # 0 disables slow-lane decisions.
+  # Used by: hostListener, hostListenerPoller, hostListenerCatchupOnly
+  dependentOpsMaxPerChain: 0
+
+  # Distributed tracing configuration
+  tracing:
+    enabled: false
+    endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
+
+  # Additional environment variables shared across all components
+  # Useful for database credentials, secrets, etc.
+  # Example:
+  # - name: PGPASSWORD
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: coprocessor-db
+  #       key: password
+  env: []
+
+# -----------------------------------------------------------------------------
+# Global Pod Configuration
+# -----------------------------------------------------------------------------
+# Pod annotations for additional metadata
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+# Pod labels for selection and organization
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+# -----------------------------------------------------------------------------
 # Configuration Setup
 # -----------------------------------------------------------------------------
 # Initializes secrets and configuration required by other components
 config:
   enabled: true
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/kube-utils
     tag: 0.1.0
 
@@ -39,7 +87,7 @@ config:
       key: coprocessor.hex
 
   # Database connection configuration
-  database:
+  database: # TODO: Update to commonConfig.env?
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
@@ -71,21 +119,17 @@ dbMigration:
     # "helm.sh/hook-weight": "0"
     # "helm.sh/hook-needs": "config-setup"
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-db-migration
     tag: v0.9.0
 
   # Environment variables for migration process
+  # DATABASE_URL is injected automatically from commonConfig.databaseUrl
   env:
     - name: CHAIN_ID
       value: "12345"
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
 
-  serviceAccountName:
+  serviceAccountName: # TODO: need serviceAccountName?
 
   # Persistent volume for migration data
   storage:
@@ -99,37 +143,37 @@ dbMigration:
       cpu: 500m
       memory: 512Mi
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
   affinity:
-    enabled: false
-
   tolerations:
-    enabled: false
-    items: []
 
 # -----------------------------------------------------------------------------
 # Host Listener
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain
+# Processes blockchain events from the host chain via WebSocket
 hostListener:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Component-specific configuration
+  config:
+    # Override commonConfig.hostChainWsUrl if needed
+    # hostChainUrl:
+
+  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig)
+  env: []
 
   # Command line arguments for the host listener
-  args:
+  args: # TODO: how would we override an individual value?
     - --database-url=$(DATABASE_URL)
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
@@ -143,7 +187,7 @@ hostListener:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
+    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -193,12 +237,14 @@ hostListener:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -209,24 +255,26 @@ hostListener:
 # -----------------------------------------------------------------------------
 # Host Listener Poller
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain
+# Processes blockchain events from the host chain via HTTP polling
 hostListenerPoller:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.10.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Component-specific configuration
+  config:
+    # Override commonConfig.hostChainHttpUrl if needed
+    # hostChainUrl:
+
+  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_HTTP_URL,
+  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig)
+  env: []
 
   # Command line arguments for the host listener poller
   args:
@@ -256,7 +304,7 @@ hostListenerPoller:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
+    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
 
   # Service ports configuration
   ports:
@@ -293,12 +341,14 @@ hostListenerPoller:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -314,19 +364,21 @@ hostListenerCatchupOnly:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.10.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Component-specific configuration
+  config:
+    # Override commonConfig.hostChainWsUrl if needed
+    # hostChainUrl:
+
+  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig)
+  env: []
 
   # Command line arguments for the host listener catchup only mode
   # NOTE: --only-catchup-loop requires --end-at-block to be set
@@ -352,7 +404,7 @@ hostListenerCatchupOnly:
     # - --start-at-block  # To catch up from a specific block
     # - --catchup-margin
     # - --catchup-paging
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
+    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
 
   # Service ports configuration
   ports:
@@ -389,12 +441,14 @@ hostListenerCatchupOnly:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -410,45 +464,29 @@ gwListener:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
 
   replicas: 1
 
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: INPUT_VERIFICATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: input_verification.address
-    - name: KMS_GENERATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: kms_generation.address
-    - name: CIPHERTEXT_COMMITS_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: ciphertext_commits.address
-    - name: GATEWAY_CONFIG_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: gateway_config.address
+  # Component-specific configuration
+  config:
+    # Override commonConfig.gatewayUrl if needed
+    # gatewayUrl:
+
+  # Additional environment variables (DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS,
+  # CIPHERTEXT_COMMITS_ADDRESS, GATEWAY_CONFIG_ADDRESS are injected
+  # automatically from commonConfig)
+  env: []
 
   # Command line arguments for the gateway listener
   args:
     - --database-url=$(DATABASE_URL)
     - --database-pool-size=16
     - --verify-proof-req-database-channel=event_zkpok_new_work
-    - --gw-url=ws://gateway-rpc-node:8548
+    - --gw-url=$(GATEWAY_URL)
     - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
     - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
     - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
@@ -505,12 +543,14 @@ gwListener:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -526,21 +566,18 @@ tfheWorker:
   enabled: true
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: ACL_CONTRACT_ADDRESS
-      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  # Additional environment variables (DATABASE_URL and ACL_CONTRACT_ADDRESS
+  # are injected automatically from commonConfig)
+  # Example: set WORKER_ID to override the auto-generated UUID
+  # - name: WORKER_ID
+  #   value: "00000000-0000-0000-0000-000000000001"
+  env: []
 
   # Command line arguments for TFHE worker
   args:
@@ -558,9 +595,6 @@ tfheWorker:
     - --log-level=INFO
     # Should not be used (unsafe - testing only, keep false values except CI)
     - --generate-fhe-keys=false
-    # Unique worker identifier (valid UUID v4 format)
-    # If not set, defaults to a random UUID generated at startup
-    - --worker-id=$(WORKER_ID)
     - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
     # Disable dependence chain ID locking
     # WARNING: May cause multiple workers to process the same DCID concurrently
@@ -612,17 +646,15 @@ tfheWorker:
       periodSeconds: 10
 
   # Distributed tracing configuration
+  # If enabled, overrides commonConfig.tracing.enabled for this component
   tracing:
     enabled: false
-    endpoint: ""
     service: "coprocessor_server"
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
   affinity:
-    enabled: false
-
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -631,6 +663,7 @@ tfheWorker:
       maxUnavailable: 0
 
   # Horizontal Pod Autoscaler configuration
+  # TODO: check dependencies required for hpa (metrics-server?)
   hpa:
     enabled: false
     minReplicas: 1
@@ -663,19 +696,15 @@ zkProofWorker:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Additional environment variables (DATABASE_URL is injected automatically
+  # from commonConfig)
+  env: []
 
   # Command line arguments for ZK proof worker
   args:
@@ -725,12 +754,14 @@ zkProofWorker:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -777,13 +808,14 @@ snsWorker:
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Component-specific configuration
+  config:
+    # S3 bucket name for ciphertext storage (ct64 and ct128)
+    s3BucketName: ""
+
+  # Additional environment variables (DATABASE_URL and S3_BUCKET_NAME are
+  # injected automatically from commonConfig and config respectively)
+  env: []
 
   # Command line arguments for SNS worker
   args:
@@ -853,12 +885,14 @@ snsWorker:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -899,37 +933,40 @@ txSender:
   enabled: false
   nameOverride:
 
-  image:
+  image: # TODO: Update to zama-protocol
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: TX_SENDER_PRIVATE_KEY
-      value: "0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e"
-    - name: INPUT_VERIFICATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: input_verification.address
-    - name: CIPHERTEXT_COMMITS_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: ciphertext_commits.address
+  # Component-specific configuration
+  config:
+    # Override commonConfig.gatewayUrl if needed
+    # gatewayUrl:
+
+  # Additional environment variables (DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS and
+  # TX_SENDER_PRIVATE_KEY (or AWS KMS key) are injected automatically)
+  env: []
+
+  # Wallet configuration for transaction signing
+  wallet:
+    awsKms:
+      # If set to true, will use the AWS KMS key specified in the configmap
+      # instead of the private key specified in the secret
+      enabled: false
+      configmap:
+        name: coprocessor-tx-sender
+        key: TX_SENDER_AWS_KMS_KEY_ID
+    secret:
+      name: coprocessor-tx-sender
+      key: private-key
 
   # Command line arguments for transaction sender
   args:
     - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
     - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --gateway-url=ws://gateway-rpc-node:8548
+    - --gateway-url=$(GATEWAY_URL)
     - --signer-type=private-key
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
     - --database-url=$(DATABASE_URL)
@@ -997,26 +1034,17 @@ txSender:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # TODO: check affinity and tolerations
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-
-# -----------------------------------------------------------------------------
-# Global Pod Configuration
-# -----------------------------------------------------------------------------
-# Pod annotations for additional metadata
-# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-podAnnotations: {}
-
-# Pod labels for selection and organization
-# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-podLabels: {}

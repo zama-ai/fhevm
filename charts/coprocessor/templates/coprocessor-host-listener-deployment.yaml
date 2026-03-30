@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.hostListener.affinity .Values.hostListener.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.hostListener.affinity "enabled") | indent 8 }}
+      {{- with .Values.hostListener.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.hostListener.tolerations .Values.hostListener.tolerations.enabled }}
+      {{- with .Values.hostListener.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hostListener.tolerations }}
       tolerations:
-{{ toYaml .Values.hostListener.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.hostListener.serviceAccountName }}
       serviceAccountName: {{ .Values.hostListener.serviceAccountName }}
@@ -52,9 +56,30 @@ spec:
             - {{ $arg | quote }}
             {{- end }}
             {{- end }}
-            - --dependent-ops-max-per-chain={{ int .Values.dependentOps.maxPerChain }}
+            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
           env:
-{{ toYaml .Values.hostListener.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.hostListener.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: ETHEREUM_RPC_URL
+              value: {{ default .Values.commonConfig.hostChainWsUrl (.Values.hostListener.config).hostChainUrl | quote }}
+            - name: ACL_CONTRACT_ADDRESS
+              value: {{ .Values.commonConfig.aclContractAddress | quote }}
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: {{ .Values.commonConfig.fhevmExecutorContractAddress | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.hostListener.ports }}
             - name: {{ $portName }}
@@ -70,10 +95,10 @@ spec:
               memory: {{ .Values.hostListener.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.hostListener.probes .Values.hostListener.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.hostListener.probes .Values.hostListener.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.gwListener.affinity .Values.gwListener.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.gwListener.affinity "enabled") | indent 8 }}
+      {{- with .Values.gwListener.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.gwListener.tolerations .Values.gwListener.tolerations.enabled }}
+      {{- with .Values.gwListener.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gwListener.tolerations }}
       tolerations:
-{{ toYaml .Values.gwListener.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.gwListener.serviceAccountName }}
       serviceAccountName: {{ .Values.gwListener.serviceAccountName }}
@@ -47,9 +51,34 @@ spec:
           image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
           command: ["gw_listener"]
           args:
-{{ toYaml .Values.gwListener.args | nindent 12 }}
+            {{- toYaml .Values.gwListener.args | nindent 12 }}
           env:
-{{ toYaml .Values.gwListener.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.gwListener.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: GATEWAY_URL
+              value: {{ default .Values.commonConfig.gatewayUrl (.Values.gwListener.config).gatewayUrl | quote }}
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
+            - name: KMS_GENERATION_ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+            - name: GATEWAY_CONFIG_ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.gwListener.ports }}
             - name: {{ $portName }}
@@ -65,10 +94,10 @@ spec:
               memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.gwListener.probes .Values.gwListener.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.gwListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.gwListener.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.gwListener.probes .Values.gwListener.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.gwListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.gwListener.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}
