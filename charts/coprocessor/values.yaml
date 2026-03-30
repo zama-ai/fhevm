@@ -132,6 +132,11 @@ dbMigration:
     - name: CHAIN_ID
       value: "12345"
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   # Persistent volume for migration data
@@ -160,6 +165,9 @@ dbMigration:
 # Processes blockchain events from the host chain via WebSocket
 hostListener:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -212,6 +220,11 @@ hostListener:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -263,6 +276,9 @@ hostListener:
 # Processes blockchain events from the host chain via HTTP polling
 hostListenerPoller:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -315,6 +331,11 @@ hostListenerPoller:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -366,6 +387,9 @@ hostListenerPoller:
 # Host listener variant that runs only the catchup loop without real-time subscription.
 hostListenerCatchupOnly:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -414,6 +438,11 @@ hostListenerCatchupOnly:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -465,6 +494,9 @@ hostListenerCatchupOnly:
 # Processes events from the gateway chain
 gwListener:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -514,6 +546,11 @@ gwListener:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -565,6 +602,9 @@ gwListener:
 # Performs FHE (Fully Homomorphic Encryption) computations
 tfheWorker:
   enabled: true
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -620,6 +660,11 @@ tfheWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -699,6 +744,9 @@ tfheWorker:
 # Generates zero-knowledge proofs for verification
 zkProofWorker:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -733,6 +781,11 @@ zkProofWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -809,6 +862,9 @@ zkProofWorker:
 # Handles Simple Notification Service operations
 snsWorker:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -868,6 +924,11 @@ snsWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -944,6 +1005,9 @@ snsWorker:
 # Submits transactions to the blockchain
 txSender:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
@@ -1017,6 +1081,11 @@ txSender:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
