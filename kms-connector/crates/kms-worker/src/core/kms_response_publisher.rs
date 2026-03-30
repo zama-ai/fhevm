@@ -1,8 +1,8 @@
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        CrsgenResponse, GatewayEvent, KeygenResponse, KmsResponse, KmsResponseKind,
-        PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
+        CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
+        ProtocolEvent, PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
     },
 };
 use sqlx::{
@@ -175,7 +175,7 @@ impl DbKmsResponsePublisher {
     }
 
     /// Sets the `status` field of the event to `pending` in the database.
-    pub async fn mark_event_as_pending(&self, event: GatewayEvent) {
+    pub async fn mark_event_as_pending(&self, event: ProtocolEvent) {
         event.mark_as_pending(&self.db_pool).await
     }
 }

@@ -19,7 +19,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
     tasks::spawn_with_limit,
-    types::{GatewayEvent, KmsResponse},
+    types::{KmsResponse, ProtocolEvent},
 };
 use fhevm_host_bindings::acl::ACL;
 use std::collections::HashMap;
@@ -41,8 +41,8 @@ pub struct KmsWorker<E, Proc> {
 
 impl<E, Proc> KmsWorker<E, Proc>
 where
-    E: EventPicker<Event = GatewayEvent>,
-    Proc: EventProcessor<Event = GatewayEvent> + Clone + Send + 'static,
+    E: EventPicker<Event = ProtocolEvent>,
+    Proc: EventProcessor<Event = ProtocolEvent> + Clone + Send + 'static,
 {
     /// Creates a new `KmsWorker<E, Proc>`.
     pub fn new(
@@ -77,7 +77,7 @@ where
     }
 
     /// Spawns a new task to process each event.
-    async fn spawn_event_processing_tasks(&self, events: Vec<GatewayEvent>) {
+    async fn spawn_event_processing_tasks(&self, events: Vec<ProtocolEvent>) {
         for event in events {
             let event_processor = self.event_processor.clone();
             let response_publisher = self.response_publisher.clone();
@@ -94,7 +94,7 @@ where
     async fn handle_event(
         mut event_processor: Proc,
         response_publisher: DbKmsResponsePublisher,
-        mut event: GatewayEvent,
+        mut event: ProtocolEvent,
     ) {
         let otlp_context = event.otlp_context.clone();
         tracing::Span::current().set_parent(otlp_context.extract());
