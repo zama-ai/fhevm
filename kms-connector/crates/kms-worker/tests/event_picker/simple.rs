@@ -5,7 +5,7 @@ use connector_utils::{
         setup::TestInstanceBuilder,
     },
     types::{
-        GatewayEvent, GatewayEventKind,
+        ProtocolEvent, ProtocolEventKind,
         db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
     },
 };
@@ -49,10 +49,10 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     info!("Checking PublicDecryptionRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
+            kind: ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
                 extraData: vec![].into(),
@@ -101,10 +101,10 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     info!("Checking UserDecryptionRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::UserDecryption(UserDecryptionRequest {
+            kind: ProtocolEventKind::UserDecryption(UserDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
                 userAddress: user_address,
@@ -146,10 +146,10 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     info!("Checking PrepKeygenRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::PrepKeygen(PrepKeygenRequest {
+            kind: ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
                 prepKeygenId: prep_keygen_request_id,
                 epochId: epoch_id,
                 paramsType: params_type as u8,
@@ -187,10 +187,10 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     info!("Checking KeygenRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::Keygen(KeygenRequest {
+            kind: ProtocolEventKind::Keygen(KeygenRequest {
                 prepKeygenId: prep_key_id,
                 keyId: key_id,
             }),
@@ -229,10 +229,10 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     info!("Checking CrsgenRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::Crsgen(CrsgenRequest {
+            kind: ProtocolEventKind::Crsgen(CrsgenRequest {
                 crsId: crs_id,
                 maxBitLength: max_bit_length,
                 paramsType: params_type as u8,
@@ -277,10 +277,10 @@ async fn test_polling_backup() -> anyhow::Result<()> {
     info!("Checking PublicDecryptionRequest data...");
     assert_eq!(
         events,
-        vec![GatewayEvent {
+        vec![ProtocolEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
+            kind: ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
                 extraData: vec![].into(),

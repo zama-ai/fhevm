@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        GatewayEvent, GatewayEventKind,
+        ProtocolEvent, ProtocolEventKind,
         db::{EventType, ParamsTypeDb, SnsCiphertextMaterialDbItem},
     },
 };
@@ -25,7 +25,7 @@ use tracing::{debug, info, warn};
 #[tracing::instrument(skip_all)]
 pub async fn publish_batch(
     db_pool: &Pool<Postgres>,
-    events: Vec<GatewayEvent>,
+    events: Vec<ProtocolEvent>,
     event_types: &[EventType],
     block_number: u64,
 ) -> anyhow::Result<()> {
@@ -40,7 +40,7 @@ pub async fn publish_batch(
 
 async fn publish_event_inner<'e>(
     executor: impl PgExecutor<'e>,
-    event: GatewayEvent,
+    event: ProtocolEvent,
 ) -> anyhow::Result<()> {
     info!("Storing {:?} in DB...", event.kind);
 
@@ -48,28 +48,28 @@ async fn publish_event_inner<'e>(
     let tx_hash = event.tx_hash;
     let created_at = event.created_at;
     let query_result = match event.kind {
-        GatewayEventKind::PublicDecryption(e) => {
+        ProtocolEventKind::PublicDecryption(e) => {
             publish_public_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        GatewayEventKind::UserDecryption(e) => {
+        ProtocolEventKind::UserDecryption(e) => {
             publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        GatewayEventKind::PrepKeygen(e) => {
+        ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)
                 .await
         }
-        GatewayEventKind::Keygen(e) => {
+        ProtocolEventKind::Keygen(e) => {
             publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        GatewayEventKind::Crsgen(e) => {
+        ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_crsgen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx).await
         }
-        GatewayEventKind::PrssInit(id) => {
+        ProtocolEventKind::PrssInit(id) => {
             publish_prss_init(executor, id, tx_hash, created_at, otlp_ctx).await
         }
-        GatewayEventKind::KeyReshareSameSet(e) => {
+        ProtocolEventKind::KeyReshareSameSet(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_key_reshare_same_set(executor, e, params_type, tx_hash, created_at, otlp_ctx)
                 .await

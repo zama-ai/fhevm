@@ -11,7 +11,7 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{GatewayEvent, GatewayEventKind, db::EventType},
+    types::{ProtocolEvent, ProtocolEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
@@ -210,8 +210,8 @@ where
         Ok((to_block.saturating_add(1), to_block < current_block))
     }
 
-    /// Decodes a log into a `GatewayEventKind`.
-    fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<GatewayEventKind> {
+    /// Decodes a log into a `ProtocolEventKind`.
+    fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<ProtocolEventKind> {
         match contract {
             MonitoredContract::Decryption => {
                 let event = DecryptionEvents::decode_log(&log.inner)
@@ -237,11 +237,11 @@ where
         }
     }
 
-    /// Decodes logs and prepares `GatewayEvent` structs with OTLP context and metrics.
+    /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
     fn prepare_events(
         contract: MonitoredContract,
         logs: Vec<Log>,
-    ) -> anyhow::Result<Vec<GatewayEvent>> {
+    ) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
             let event_kind = Self::decode_log(contract, &log)?;
@@ -251,7 +251,7 @@ where
 
             let span = info_span!("handle_gateway_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());
-            events.push(GatewayEvent::new(
+            events.push(ProtocolEvent::new(
                 event_kind,
                 log.transaction_hash,
                 otlp_ctx,

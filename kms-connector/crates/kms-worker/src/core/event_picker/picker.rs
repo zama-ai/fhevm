@@ -3,7 +3,7 @@ use crate::{
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, db::EventType, gw_event};
+use connector_utils::types::{ProtocolEvent, db::EventType, event};
 use sqlx::{Pool, Postgres};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
@@ -52,7 +52,7 @@ impl DbEventPicker {
 }
 
 impl EventPicker for DbEventPicker {
-    type Event = GatewayEvent;
+    type Event = ProtocolEvent;
 
     /// Picks events from the database.
     ///
@@ -94,7 +94,7 @@ impl DbEventPicker {
     async fn pick_notified_events(
         &self,
         notification: &EventType,
-    ) -> anyhow::Result<Vec<GatewayEvent>> {
+    ) -> anyhow::Result<Vec<ProtocolEvent>> {
         match notification {
             EventType::PublicDecryptionRequest => self.pick_public_decryption_requests().await,
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
@@ -106,7 +106,7 @@ impl DbEventPicker {
         }
     }
 
-    async fn pick_public_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_public_decryption_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
@@ -126,11 +126,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_public_decryption_row)
+        .map(event::from_public_decryption_row)
         .collect()
     }
 
-    async fn pick_user_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_user_decryption_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
@@ -150,11 +150,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_user_decryption_row)
+        .map(event::from_user_decryption_row)
         .collect()
     }
 
-    async fn pick_prep_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_prep_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
@@ -173,11 +173,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_prep_keygen_row)
+        .map(event::from_prep_keygen_row)
         .collect()
     }
 
-    async fn pick_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE keygen_requests
@@ -196,11 +196,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_keygen_row)
+        .map(event::from_keygen_row)
         .collect()
     }
 
-    async fn pick_crsgen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_crsgen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE crsgen_requests
@@ -219,11 +219,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_crsgen_row)
+        .map(event::from_crsgen_row)
         .collect()
     }
 
-    async fn pick_prss_init(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_prss_init(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE prss_init
@@ -241,11 +241,11 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_prss_init_row)
+        .map(event::from_prss_init_row)
         .collect()
     }
 
-    async fn pick_key_reshare_same_set(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+    async fn pick_key_reshare_same_set(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
                 UPDATE key_reshare_same_set
@@ -264,7 +264,7 @@ impl DbEventPicker {
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(gw_event::from_key_reshare_same_set_row)
+        .map(event::from_key_reshare_same_set_row)
         .collect()
     }
 }
