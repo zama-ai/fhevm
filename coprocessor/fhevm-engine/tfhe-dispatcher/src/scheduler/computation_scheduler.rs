@@ -18,6 +18,11 @@ use fhevm_engine_common::{protocol::messages as msg, types::SupportedFheOperatio
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use tracing::{error, info, warn};
+
+#[derive(Clone, Copy, Debug, Default)]
+struct EdgeData {
+    input_index: usize,
+}
 /// The ComputationScheduler is responsible for maintaining the Dataflow Graph (DFG) of computations
 /// and the Execution Graph (ExecGraph) that represents executable partitions of the DFG.
 ///
@@ -25,7 +30,7 @@ use tracing::{error, info, warn};
 /// and determine which partitions of computations are ready for execution based on their dependencies.
 pub struct ComputationScheduler {
     key_id: u64,
-    dataflow_graph: Dag<OpNode, ()>,
+    dataflow_graph: Dag<OpNode, EdgeData>,
     exec_graph: Dag<ExecNode, ()>,
 
     // Mapping between DFG nodes and execution nodes
@@ -159,38 +164,24 @@ impl ComputationScheduler {
         }
     }
 
-    fn update_ordering(&mut self, log: &msg::FheLog) -> msg::FheLog {
-        let mut log = log.clone();
-        let supported_fhe_operation = log.fhe_operation;
-
-        let should_reverse = match log.dependencies.len() {
-            3 => supported_fhe_operation != SupportedFheOperations::FheRandBounded,
-            2 => {
-                supported_fhe_operation != SupportedFheOperations::FheTrivialEncrypt
-                    && supported_fhe_operation != SupportedFheOperations::FheRand
-                    && supported_fhe_operation != SupportedFheOperations::FheCast
-            }
-            _ => false,
-        };
-
-        if should_reverse {
-            log.dependencies.reverse();
-        }
-
-        log
-    }
-
     fn add_computation_node(&mut self, log: &msg::FheLog) -> Result<NodeIndex, String> {
         if let Some(index) = self.handle_to_node_idx.get(&log.output_handle) {
             return Ok(*index);
         }
 
-        let log = self.update_ordering(log);
-
-        let uncomputed_deps_count = log
-            .dependence_handles()
+        let dependence_handles = log
+            .dependencies
             .iter()
-            .filter(|handle| match self.handle_to_node_idx.get(*handle) {
+            .enumerate()
+            .filter_map(|(input_index, dep)| match dep {
+                msg::Dependence::Reference(handle) => Some((input_index, handle)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let uncomputed_deps_count = dependence_handles
+            .iter()
+            .filter(|(_, handle)| match self.handle_to_node_idx.get(*handle) {
                 Some(&producer) => !matches!(
                     self.dataflow_graph.node_weight(producer).unwrap().status,
                     Status::Computed { .. }
@@ -212,12 +203,16 @@ impl ComputationScheduler {
             ));
         }
 
-        let dependence_handles = log.dependence_handles();
-
-        for handle_dep in dependence_handles.iter() {
-            if let Some(&producer_idx) = self.handle_to_node_idx.get(handle_dep) {
+        for (input_index, handle_dep) in dependence_handles.iter() {
+            if let Some(&producer_idx) = self.handle_to_node_idx.get(*handle_dep) {
                 self.dataflow_graph
-                    .add_edge(producer_idx, node_idx, ())
+                    .add_edge(
+                        producer_idx,
+                        node_idx,
+                        EdgeData {
+                            input_index: *input_index,
+                        },
+                    )
                     .map_err(|_| format!("Cycle detected when adding edge from producer {:?} to consumer {:?} for handle {:?}", producer_idx, node_idx, hex::encode(handle_dep)))?;
             } else {
                 // TODO: what if the missing producer is actually not a FheGetInputCiphertext
@@ -226,7 +221,7 @@ impl ComputationScheduler {
                 // that has to be queried from DataLayer
                 let producer_idx = self.add_dfg_node(
                     &msg::FheLog {
-                        output_handle: handle_dep.clone(),
+                        output_handle: (*handle_dep).clone(),
                         fhe_operation: SupportedFheOperations::FheGetInputCiphertext,
                         created_at: log.created_at,
                         block_info: log.block_info.clone(),
@@ -239,10 +234,16 @@ impl ComputationScheduler {
                 );
 
                 self.handle_to_node_idx
-                    .insert(handle_dep.clone(), producer_idx);
+                    .insert((*handle_dep).clone(), producer_idx);
 
                 self.dataflow_graph
-                    .add_edge(producer_idx, node_idx, ())
+                    .add_edge(
+                        producer_idx,
+                        node_idx,
+                        EdgeData {
+                            input_index: *input_index,
+                        },
+                    )
                     .map_err(|_| format!("Cycle detected when adding edge from synthetic producer {:?} to consumer {:?} for handle {:?}", producer_idx, node_idx, hex::encode(handle_dep)))?;
 
                 // This synthetic FheGetInputCiphertext producer has no dependencies of its own,
@@ -441,12 +442,17 @@ impl ComputationScheduler {
 
     /// Gets dependencies for a given DFG node, which are the inputs of the corresponding computation.
     fn get_dependencies(&self, dfg_idx: NodeIndex) -> Vec<&Handle> {
-        self.dataflow_graph
+        let mut dependencies = self
+            .dataflow_graph
             .edges_directed(dfg_idx, Incoming)
-            .map(|edge| {
-                let src_idx = edge.source();
-                self.dataflow_graph[src_idx].output_handle()
-            })
+            .map(|edge| (edge.weight().input_index, edge.source()))
+            .collect::<Vec<_>>();
+
+        dependencies.sort_by_key(|(input_index, _)| *input_index);
+
+        dependencies
+            .into_iter()
+            .map(|(_, src_idx)| self.dataflow_graph[src_idx].output_handle())
             .collect()
     }
 
