@@ -494,10 +494,10 @@ openapi-check: ## Verify generated OpenAPI spec is up to date
 # ---------------------------------------------------------------------------
 
 docker-build: _check-docker ## Build relayer image (TAG=v0.9.0-rc.3 to version)
-	@docker build -f ../../docker/relayer/Dockerfile -t $(RELAYER_IMAGE):$(TAG) ../..
+	@docker build -f docker/relayer/Dockerfile -t $(RELAYER_IMAGE):$(TAG) .
 
 docker-build-migrate: _check-docker ## Build relayer-migrate image (TAG=v0.9.0-rc.3 to version)
-	@docker build -f ../../docker/relayer-migrate/Dockerfile -t $(MIGRATE_IMAGE):$(TAG) ../..
+	@docker build -f docker/relayer-migrate/Dockerfile -t $(MIGRATE_IMAGE):$(TAG) .
 
 docker-build-all: docker-build docker-build-migrate ## Build all Docker images
 
