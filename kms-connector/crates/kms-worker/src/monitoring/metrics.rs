@@ -1,4 +1,4 @@
-use connector_utils::types::{GatewayEvent, GatewayEventKind, db::EventType};
+use connector_utils::types::{ProtocolEvent, ProtocolEventKind, db::EventType};
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, register_histogram_vec,
     register_int_counter, register_int_counter_vec,
@@ -92,10 +92,10 @@ pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(
     .unwrap()
 });
 
-pub fn register_event_latency(event: &GatewayEvent) {
+pub fn register_event_latency(event: &ProtocolEvent) {
     if matches!(
         event.kind,
-        GatewayEventKind::PublicDecryption(_) | GatewayEventKind::UserDecryption(_)
+        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM

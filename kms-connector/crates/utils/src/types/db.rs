@@ -1,4 +1,4 @@
-use crate::types::GatewayEventKind;
+use crate::types::ProtocolEventKind;
 use alloy::{
     primitives::{Address, B256, U256},
     sol_types::SolEvent,
@@ -159,16 +159,16 @@ impl Display for EventType {
     }
 }
 
-impl From<&GatewayEventKind> for EventType {
-    fn from(value: &GatewayEventKind) -> Self {
+impl From<&ProtocolEventKind> for EventType {
+    fn from(value: &ProtocolEventKind) -> Self {
         match value {
-            GatewayEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            GatewayEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
-            GatewayEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
-            GatewayEventKind::Keygen(_) => Self::KeygenRequest,
-            GatewayEventKind::Crsgen(_) => Self::CrsgenRequest,
-            GatewayEventKind::PrssInit(_) => Self::PrssInit,
-            GatewayEventKind::KeyReshareSameSet(_) => Self::KeyReshareSameSet,
+            ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
+            ProtocolEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
+            ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
+            ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
+            ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
+            ProtocolEventKind::PrssInit(_) => Self::PrssInit,
+            ProtocolEventKind::KeyReshareSameSet(_) => Self::KeyReshareSameSet,
         }
     }
 }

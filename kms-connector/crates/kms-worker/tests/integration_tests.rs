@@ -19,7 +19,7 @@ use connector_utils::{
         },
     },
     types::{
-        GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, db::EventType,
+        KmsGrpcResponse, KmsResponse, KmsResponseKind, ProtocolEventKind, db::EventType,
         kms_response, u256_to_request_id,
     },
 };
@@ -127,7 +127,7 @@ async fn test_processing_request(
 
     // Waiting for kms_worker to process the request
     match &request {
-        GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_) => {
+        ProtocolEventKind::PrssInit(_) | ProtocolEventKind::KeyReshareSameSet(_) => {
             while let Err(e) =
                 check_no_uncompleted_request_in_db(test_instance.db(), event_type).await
             {
@@ -148,24 +148,24 @@ async fn test_processing_request(
     Ok(())
 }
 
-fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
+fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
     let mut kms_mocks = MockSet::new();
 
     // Gets the request ID and endpoints for the given request type
     let (request_id_u256, req_endpoint, resp_endpoint) = match req {
-        GatewayEventKind::PublicDecryption(r) => {
+        ProtocolEventKind::PublicDecryption(r) => {
             (r.decryptionId, "PublicDecrypt", "GetPublicDecryptionResult")
         }
-        GatewayEventKind::UserDecryption(r) => {
+        ProtocolEventKind::UserDecryption(r) => {
             (r.decryptionId, "UserDecrypt", "GetUserDecryptionResult")
         }
-        GatewayEventKind::PrepKeygen(r) => {
+        ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
-        GatewayEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
-        GatewayEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
-        GatewayEventKind::PrssInit(id) => (*id, "Init", ""),
-        GatewayEventKind::KeyReshareSameSet(r) => (r.keyId, "InitiateResharing", ""),
+        ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
+        ProtocolEventKind::PrssInit(id) => (*id, "Init", ""),
+        ProtocolEventKind::KeyReshareSameSet(r) => (r.keyId, "InitiateResharing", ""),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -177,7 +177,7 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
                 "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
             ));
             match req {
-                GatewayEventKind::KeyReshareSameSet(_) => {
+                ProtocolEventKind::KeyReshareSameSet(_) => {
                     then.pb(InitiateResharingResponse::default())
                 }
                 // KMS returns `Empty` for all kind of requests except `KeyReshareSameSet`
@@ -192,23 +192,23 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
         ));
         match req {
-            GatewayEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
+            ProtocolEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 ..Default::default()
             }),
-            GatewayEventKind::UserDecryption(_) => then.pb(UserDecryptionResponse {
+            ProtocolEventKind::UserDecryption(_) => then.pb(UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
                 ..Default::default()
             }),
-            GatewayEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
+            ProtocolEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
-            GatewayEventKind::Keygen(_) => then.pb(KeyGenResult {
+            ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
                 request_id,
                 ..Default::default()
             }),
-            GatewayEventKind::Crsgen(_) => then.pb(CrsGenResult {
+            ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
                 ..Default::default()
             }),
@@ -221,15 +221,15 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
 
 async fn wait_for_response_in_db(
     db: &Pool<Postgres>,
-    req: &GatewayEventKind,
+    req: &ProtocolEventKind,
 ) -> anyhow::Result<KmsResponse> {
     info!("Waiting for response to be stored in DB...");
     let query = match req {
-        GatewayEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
-        GatewayEventKind::UserDecryption(_) => "SELECT * FROM user_decryption_responses",
-        GatewayEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        GatewayEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
-        GatewayEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
+        ProtocolEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
+        ProtocolEventKind::UserDecryption(_) => "SELECT * FROM user_decryption_responses",
+        ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
+        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         _ => unimplemented!(),
     };
     let response = loop {
@@ -240,19 +240,19 @@ async fn wait_for_response_in_db(
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
-                GatewayEventKind::PublicDecryption(_) => {
+                ProtocolEventKind::PublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
                 }
-                GatewayEventKind::UserDecryption(_) => {
+                ProtocolEventKind::UserDecryption(_) => {
                     break kms_response::from_user_decryption_row(&result[0])?;
                 }
-                GatewayEventKind::PrepKeygen(_) => {
+                ProtocolEventKind::PrepKeygen(_) => {
                     break kms_response::from_prep_keygen_row(&result[0])?;
                 }
-                GatewayEventKind::Keygen(_) => {
+                ProtocolEventKind::Keygen(_) => {
                     break kms_response::from_keygen_row(&result[0])?;
                 }
-                GatewayEventKind::Crsgen(_) => {
+                ProtocolEventKind::Crsgen(_) => {
                     break kms_response::from_crsgen_row(&result[0])?;
                 }
                 _ => unimplemented!(),
@@ -263,32 +263,32 @@ async fn wait_for_response_in_db(
     Ok(response)
 }
 
-fn check_response_data(request: &GatewayEventKind, response: KmsResponse) -> anyhow::Result<()> {
+fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> anyhow::Result<()> {
     info!("Checking response data...");
     let expected_response = match request {
-        GatewayEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
+        ProtocolEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
             decryption_id: r.decryptionId,
             grpc_response: PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 ..Default::default()
             },
         },
-        GatewayEventKind::UserDecryption(r) => KmsGrpcResponse::UserDecryption {
+        ProtocolEventKind::UserDecryption(r) => KmsGrpcResponse::UserDecryption {
             decryption_id: r.decryptionId,
             grpc_response: UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
                 ..Default::default()
             },
         },
-        GatewayEventKind::PrepKeygen(r) => KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
+        ProtocolEventKind::PrepKeygen(r) => KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
-        GatewayEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
+        ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
         }),
-        GatewayEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {
+        ProtocolEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {
             request_id: Some(u256_to_request_id(r.crsId)),
             ..Default::default()
         }),

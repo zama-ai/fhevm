@@ -20,10 +20,10 @@ use sqlx::{
 use std::fmt::Display;
 use tracing::{info, warn};
 
-/// The events emitted by the Gateway which are monitored by the KMS Connector.
+/// The events emitted by the Zama Protocol which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
-pub struct GatewayEvent {
-    pub kind: GatewayEventKind,
+pub struct ProtocolEvent {
+    pub kind: ProtocolEventKind,
     pub tx_hash: Option<FixedBytes<32>>,
     pub already_sent: bool,
     pub error_counter: i16,
@@ -31,13 +31,13 @@ pub struct GatewayEvent {
     pub otlp_context: PropagationContext,
 }
 
-impl GatewayEvent {
+impl ProtocolEvent {
     pub fn new(
-        kind: GatewayEventKind,
+        kind: ProtocolEventKind,
         tx_hash: Option<FixedBytes<32>>,
         otlp_context: PropagationContext,
     ) -> Self {
-        GatewayEvent {
+        ProtocolEvent {
             kind,
             tx_hash,
             already_sent: false,
@@ -69,25 +69,25 @@ impl GatewayEvent {
         let already_sent = self.already_sent;
         let err_count = self.error_counter;
         match &self.kind {
-            GatewayEventKind::PublicDecryption(e) => {
+            ProtocolEventKind::PublicDecryption(e) => {
                 update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
-            GatewayEventKind::UserDecryption(e) => {
+            ProtocolEventKind::UserDecryption(e) => {
                 update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
-            GatewayEventKind::PrepKeygen(e) => {
+            ProtocolEventKind::PrepKeygen(e) => {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
-            GatewayEventKind::Keygen(e) => {
+            ProtocolEventKind::Keygen(e) => {
                 update_keygen_status(db, e.keyId, status, already_sent).await
             }
-            GatewayEventKind::Crsgen(e) => {
+            ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
-            GatewayEventKind::PrssInit(id) => update_prss_init_status(db, *id, status).await,
-            GatewayEventKind::KeyReshareSameSet(e) => {
+            ProtocolEventKind::PrssInit(id) => update_prss_init_status(db, *id, status).await,
+            ProtocolEventKind::KeyReshareSameSet(e) => {
                 update_key_reshare_same_set_status(db, e.keyId, status).await
             }
         }
@@ -95,7 +95,7 @@ impl GatewayEvent {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum GatewayEventKind {
+pub enum ProtocolEventKind {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
     PrepKeygen(PrepKeygenRequest),
@@ -105,19 +105,19 @@ pub enum GatewayEventKind {
     KeyReshareSameSet(KeyReshareSameSet),
 }
 
-pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
+pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let sns_ct_materials = row
         .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
         .iter()
         .map(SnsCiphertextMaterial::from)
         .collect();
 
-    let kind = GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
+    let kind = ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
         decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
         snsCtMaterials: sns_ct_materials,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
@@ -130,14 +130,14 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
+pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let sns_ct_materials = row
         .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
         .iter()
         .map(SnsCiphertextMaterial::from)
         .collect();
 
-    let kind = GatewayEventKind::UserDecryption(UserDecryptionRequest {
+    let kind = ProtocolEventKind::UserDecryption(UserDecryptionRequest {
         decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
         snsCtMaterials: sns_ct_materials,
         userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
@@ -145,7 +145,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
 
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
@@ -158,13 +158,13 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let kind = GatewayEventKind::PrepKeygen(PrepKeygenRequest {
+pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
     });
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
 
         tx_hash: row
@@ -179,12 +179,12 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let kind = GatewayEventKind::Keygen(KeygenRequest {
+pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::Keygen(KeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
     });
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
 
         tx_hash: row
@@ -199,13 +199,13 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let kind = GatewayEventKind::Crsgen(CrsgenRequest {
+pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::Crsgen(CrsgenRequest {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
         maxBitLength: U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
     });
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
 
         tx_hash: row
@@ -220,9 +220,9 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
-    Ok(GatewayEvent {
+pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
+    Ok(ProtocolEvent {
         kind,
 
         tx_hash: row
@@ -237,14 +237,14 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     })
 }
 
-pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let kind = GatewayEventKind::KeyReshareSameSet(KeyReshareSameSet {
+pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::KeyReshareSameSet(KeyReshareSameSet {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
         keyReshareId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_reshare_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
     });
-    Ok(GatewayEvent {
+    Ok(ProtocolEvent {
         kind,
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
@@ -380,65 +380,65 @@ async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgr
     }
 }
 
-impl Display for GatewayEventKind {
+impl Display for ProtocolEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GatewayEventKind::PublicDecryption(e) => {
+            ProtocolEventKind::PublicDecryption(e) => {
                 write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
             }
-            GatewayEventKind::UserDecryption(e) => {
+            ProtocolEventKind::UserDecryption(e) => {
                 write!(f, "UserDecryptionRequest #{}", e.decryptionId)
             }
-            GatewayEventKind::PrepKeygen(e) => {
+            ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
             }
-            GatewayEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
-            GatewayEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
-            GatewayEventKind::PrssInit(id) => write!(f, "PrssInit #{id}"),
-            GatewayEventKind::KeyReshareSameSet(e) => {
+            ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
+            ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
+            ProtocolEventKind::PrssInit(id) => write!(f, "PrssInit #{id}"),
+            ProtocolEventKind::KeyReshareSameSet(e) => {
                 write!(f, "KeyReshareSameSet #{}", e.keyId)
             }
         }
     }
 }
 
-impl From<PublicDecryptionRequest> for GatewayEventKind {
+impl From<PublicDecryptionRequest> for ProtocolEventKind {
     fn from(value: PublicDecryptionRequest) -> Self {
         Self::PublicDecryption(value)
     }
 }
 
-impl From<UserDecryptionRequest> for GatewayEventKind {
+impl From<UserDecryptionRequest> for ProtocolEventKind {
     fn from(value: UserDecryptionRequest) -> Self {
         Self::UserDecryption(value)
     }
 }
 
-impl From<PrepKeygenRequest> for GatewayEventKind {
+impl From<PrepKeygenRequest> for ProtocolEventKind {
     fn from(value: PrepKeygenRequest) -> Self {
         Self::PrepKeygen(value)
     }
 }
 
-impl From<KeygenRequest> for GatewayEventKind {
+impl From<KeygenRequest> for ProtocolEventKind {
     fn from(value: KeygenRequest) -> Self {
         Self::Keygen(value)
     }
 }
 
-impl From<CrsgenRequest> for GatewayEventKind {
+impl From<CrsgenRequest> for ProtocolEventKind {
     fn from(value: CrsgenRequest) -> Self {
         Self::Crsgen(value)
     }
 }
 
-impl From<PRSSInit> for GatewayEventKind {
+impl From<PRSSInit> for ProtocolEventKind {
     fn from(_value: PRSSInit) -> Self {
         Self::PrssInit(PRSS_INIT_ID)
     }
 }
 
-impl From<KeyReshareSameSet> for GatewayEventKind {
+impl From<KeyReshareSameSet> for ProtocolEventKind {
     fn from(value: KeyReshareSameSet) -> Self {
         Self::KeyReshareSameSet(value)
     }
