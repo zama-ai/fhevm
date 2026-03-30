@@ -100,7 +100,6 @@ config:
     # "helm.sh/hook": "pre-install"
     # "helm.sh/hook-weight": "-1"
 
-  # TODO: Move to general pod configuration?
   resources:
     requests:
       cpu: 100m
@@ -133,7 +132,7 @@ dbMigration:
     - name: CHAIN_ID
       value: "12345"
 
-  serviceAccountName: # TODO: need serviceAccountName?
+  serviceAccountName:
 
   # Persistent volume for migration data
   storage:
@@ -147,7 +146,10 @@ dbMigration:
       cpu: 500m
       memory: 512Mi
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -241,7 +243,10 @@ hostListener:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -341,7 +346,10 @@ hostListenerPoller:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -437,7 +445,10 @@ hostListenerCatchupOnly:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -534,7 +545,10 @@ gwListener:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -639,7 +653,10 @@ tfheWorker:
     enabled: false
     service: "coprocessor_server"
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -747,7 +764,10 @@ zkProofWorker:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -879,7 +899,10 @@ snsWorker:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
@@ -1025,7 +1048,10 @@ txSender:
   tracing:
     enabled: false
 
-  # TODO: check affinity and tolerations
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
   nodeSelector:
   affinity:
   tolerations:
