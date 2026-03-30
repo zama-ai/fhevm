@@ -34,12 +34,6 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
 
-#### Metric Name: `coprocessor_allow_handle_unsent_gauge`
- - **Type**: Gauge
- - **Description**: Tracks the number of unsent allow handle transactions in the transaction-sender.
- - **Alarm**: If the gauge value exceeds a predefined threshold.
-    - **Recommendation**: more than 100 unsent over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
-
 #### Metric Name: `coprocessor_add_ciphertext_material_unsent_gauge`
  - **Type**: Gauge
  - **Description**: Tracks the number of unsent add ciphertext material transactions in the transaction-sender.
