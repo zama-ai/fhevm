@@ -18,9 +18,9 @@ use std::{
 };
 
 use test_harness::{
+    containers::{TestContainer, MINIO_PORT},
     db_utils::truncate_tables,
     instance::{setup_test_db, DBInstance, ImportMode},
-    robotocore::{RobotocoreContainer, ROBOTOCORE_PORT},
     s3_utils,
 };
 use tfhe::{
@@ -407,7 +407,7 @@ struct TestEnvironment {
     pub key_id_gw: DbKeyId,
     pub host_chain_id: i64,
     pub db_instance: DBInstance,
-    pub s3_instance: Option<Arc<RobotocoreContainer>>, // If None, the global Robotocore is used
+    pub s3_instance: Option<Arc<TestContainer>>, // If None, the global MinIO is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
 }
@@ -436,7 +436,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
             aws_sdk_s3::Client::new(&aws_config::load_defaults(BehaviorVersion::latest()).await),
         )
     } else {
-        setup_robotocore(&conf).await?
+        setup_minio(&conf).await?
     };
 
     let token = db_instance.parent_token.child_token();
@@ -473,29 +473,29 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     })
 }
 
-/// Deploys a Robotocore instance and creates S3 buckets for ciphertext128 and ciphertext64
+/// Deploys a MinIO instance and creates S3 buckets for ciphertext128 and ciphertext64
 ///
 /// # Returns
-/// A tuple containing the Robotocore instance and the S3 client
-async fn setup_robotocore(
+/// A tuple containing the MinIO instance and the S3 client
+async fn setup_minio(
     conf: &Config,
-) -> anyhow::Result<(Option<Arc<RobotocoreContainer>>, aws_sdk_s3::Client)> {
-    let (robotocore, host_port) =
-        if std::env::var("TEST_GLOBAL_ROBOTOCORE").unwrap_or("0".to_string()) == "1" {
-            (None, ROBOTOCORE_PORT)
-        } else {
-            let robotocore_instance = Arc::new(test_harness::robotocore::start_robotocore().await?);
-            let host_port = robotocore_instance.host_port;
-            (Some(robotocore_instance), host_port)
-        };
+) -> anyhow::Result<(Option<Arc<TestContainer>>, aws_sdk_s3::Client)> {
+    let (minio, host_port) = if std::env::var("TEST_GLOBAL_MINIO").unwrap_or("0".to_string()) == "1"
+    {
+        (None, MINIO_PORT)
+    } else {
+        let minio_instance = Arc::new(test_harness::containers::start_minio().await?);
+        let host_port = minio_instance.host_port;
+        (Some(minio_instance), host_port)
+    };
 
-    tracing::info!("Robotocore started on port: {}", host_port);
+    tracing::info!("MinIO started on port: {}", host_port);
 
     let endpoint_url = format!("http://127.0.0.1:{}", host_port);
     std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
     std::env::set_var("AWS_REGION", "us-east-1");
-    std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+    std::env::set_var("AWS_ACCESS_KEY_ID", "minioadmin");
+    std::env::set_var("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
@@ -503,7 +503,7 @@ async fn setup_robotocore(
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
     recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
 
-    Ok((robotocore, client))
+    Ok((minio, client))
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {

@@ -5,20 +5,18 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::aws::AwsSigner;
 use alloy::signers::Signer;
 use alloy::{
-    network::{EthereumWallet, TransactionBuilder},
+    network::EthereumWallet,
     node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, U256},
-    rpc::types::TransactionRequest,
     signers::local::PrivateKeySigner,
     sol,
     transports::http::reqwest::Url,
 };
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
-use test_harness::robotocore::{
-    create_kms_client, create_kms_signing_key, start_local_kms, RobotocoreContainer,
-    LOCAL_KMS_PORT,
+use test_harness::containers::{
+    create_kms_client, create_kms_signing_key, start_local_kms, TestContainer, LOCAL_KMS_PORT,
 };
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 use transaction_sender::{get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings};
@@ -57,7 +55,7 @@ pub struct TestEnvironment {
     pub wallet: EthereumWallet,
     _db_instance: DBInstance,
     // Just keep the handle to destroy the container when it is dropped.
-    _local_kms: Option<RobotocoreContainer>,
+    _local_kms: Option<TestContainer>,
 }
 
 impl TestEnvironment {
@@ -186,18 +184,18 @@ impl TestEnvironment {
         }
     }
 
-    /// Fund an address from Anvil's first pre-funded account.
-    /// Used for KMS signers whose address is not built into Anvil.
+    /// Fund an address using Anvil's anvil_setBalance cheat code.
+    /// local-kms generates a random key on CreateKey, it does not support
+    /// importing known secp256k1 key material. So the derived address is unknown to Anvil
+    /// and must be funded explicitly.
     async fn fund_from_anvil(anvil: &AnvilInstance, recipient: Address) -> anyhow::Result<()> {
-        let funder = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
-        let funder_wallet = EthereumWallet::from(funder);
-        let provider = ProviderBuilder::new()
-            .wallet(funder_wallet)
-            .connect_http(anvil.endpoint_url());
-        let tx = TransactionRequest::default()
-            .with_to(recipient)
-            .with_value(U256::from(10_000_000_000_000_000_000u128)); // 10 ETH
-        provider.send_transaction(tx).await?.get_receipt().await?;
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        provider
+            .raw_request::<_, ()>(
+                "anvil_setBalance".into(),
+                (recipient, U256::from(10_000_000_000_000_000_000u128)), // 10 ETH
+            )
+            .await?;
         Ok(())
     }
 

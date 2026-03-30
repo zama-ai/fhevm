@@ -12,36 +12,37 @@ pub fn pick_free_port() -> u16 {
         .port()
 }
 
-/// Default port for Robotocore (used for S3 by sns-worker tests).
-pub const ROBOTOCORE_PORT: u16 = 4566;
+/// Default port for MinIO (used for S3 by sns-worker tests).
+pub const MINIO_PORT: u16 = 9000;
 
 /// Default port for local-kms.
 pub const LOCAL_KMS_PORT: u16 = 8080;
 
-pub struct RobotocoreContainer {
+pub struct TestContainer {
     pub container: ContainerAsync<GenericImage>,
     pub host_port: u16,
 }
 
-/// Starts a Robotocore container for S3 operations (sns-worker tests).
-pub async fn start_robotocore() -> anyhow::Result<RobotocoreContainer> {
+/// Starts a MinIO container for S3 operations (sns-worker tests).
+pub async fn start_minio() -> anyhow::Result<TestContainer> {
     let host_port = pick_free_port();
-    let container = GenericImage::new("ghcr.io/robotocore/robotocore", "latest")
-        .with_exposed_port(ROBOTOCORE_PORT.into())
-        .with_wait_for(WaitFor::Duration {
-            length: std::time::Duration::from_secs(5),
-        })
-        .with_mapped_port(host_port, ROBOTOCORE_PORT.into())
+    let container = GenericImage::new("minio/minio", "latest")
+        .with_exposed_port(MINIO_PORT.into())
+        .with_wait_for(WaitFor::message_on_stderr("API:"))
+        .with_mapped_port(host_port, MINIO_PORT.into())
+        .with_env_var("MINIO_ROOT_USER", "minioadmin")
+        .with_env_var("MINIO_ROOT_PASSWORD", "minioadmin")
+        .with_cmd(["server", "/data", "--console-address", ":9001"])
         .start()
         .await?;
-    Ok(RobotocoreContainer {
+    Ok(TestContainer {
         container,
         host_port,
     })
 }
 
 /// Starts a local-kms container for KMS operations (transaction-sender tests).
-pub async fn start_local_kms() -> anyhow::Result<RobotocoreContainer> {
+pub async fn start_local_kms() -> anyhow::Result<TestContainer> {
     let host_port = pick_free_port();
     let container = GenericImage::new("nsmithuk/local-kms", "latest")
         .with_exposed_port(LOCAL_KMS_PORT.into())
@@ -51,7 +52,7 @@ pub async fn start_local_kms() -> anyhow::Result<RobotocoreContainer> {
         .with_env_var("KMS_REGION", "us-east-1")
         .start()
         .await?;
-    Ok(RobotocoreContainer {
+    Ok(TestContainer {
         container,
         host_port,
     })

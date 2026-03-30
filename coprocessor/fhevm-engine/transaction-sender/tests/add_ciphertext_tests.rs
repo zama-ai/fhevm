@@ -417,8 +417,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     };
 
     let force_per_test_local_kms = false;
-    let env =
-        TestEnvironment::new_with_config(signer_type, conf, force_per_test_local_kms).await?;
+    let env = TestEnvironment::new_with_config(signer_type, conf, force_per_test_local_kms).await?;
 
     // Create a provider with a random wallet without funds.
     let wallet: EthereumWallet = PrivateKeySigner::random().into();
@@ -612,9 +611,8 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
         ..Default::default()
     };
     let force_per_test_local_kms = false;
-    let env =
-        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
-            .await?;
+    let env = TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
+        .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))

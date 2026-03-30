@@ -170,9 +170,9 @@ jobs:
         with:
           node-version: 20.x
 
-      - name: Start robotocore (S3 for sns-worker tests)
+      - name: Start MinIO (S3 for sns-worker tests)
         run: |
-          docker run --rm -d -p 4566:4566 --name robotocore ghcr.io/robotocore/robotocore:latest
+          docker run --rm -d -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin --name minio minio/minio server /data --console-address :9001
 
       - name: Start local-kms (KMS for transaction-sender tests)
         run: |
@@ -180,7 +180,7 @@ jobs:
 
       - name: Run benchmarks on CPU
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TEST_GLOBAL_ROBOTOCORE=1 TEST_GLOBAL_LOCAL_KMS=1 BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" make -e "benchmark_${BENCHMARKS}_cpu"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TEST_GLOBAL_MINIO=1 TEST_GLOBAL_LOCAL_KMS=1 BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" make -e "benchmark_${BENCHMARKS}_cpu"
         working-directory: coprocessor/fhevm-engine/tfhe-worker
         env:
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}

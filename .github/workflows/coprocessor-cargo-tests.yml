@@ -48,37 +48,37 @@ jobs:
         include:
           - service: tfhe-worker
             package: tfhe-worker
-            needs_localstack: false
+            needs_mock_services: false
             needs_foundry: false
             runner: large_ubuntu_16
           - service: sns-worker
             package: sns-worker
-            needs_localstack: true
+            needs_mock_services: true
             needs_foundry: false
             runner: large_ubuntu_16
           - service: zkproof-worker
             package: zkproof-worker
-            needs_localstack: false
+            needs_mock_services: false
             needs_foundry: false
             runner: large_ubuntu_16
           - service: transaction-sender
             package: transaction-sender
-            needs_localstack: true
+            needs_mock_services: true
             needs_foundry: true
             runner: large_ubuntu_16
           - service: gw-listener
             package: gw-listener
-            needs_localstack: false
+            needs_mock_services: false
             needs_foundry: true
             runner: large_ubuntu_16
           - service: host-listener
             package: host-listener
-            needs_localstack: false
+            needs_mock_services: false
             needs_foundry: true
             runner: large_ubuntu_16
           - service: common
             package: fhevm-engine-common
-            needs_localstack: false
+            needs_mock_services: false
             needs_foundry: false
             runner: ubuntu-latest
     steps:
@@ -125,20 +125,20 @@ jobs:
       with:
         node-version: 20.x
 
-    - name: Start robotocore (S3 for sns-worker tests)
-      if: ${{ matrix.needs_localstack }}
-      run: docker run --rm -d -p 4566:4566 --name robotocore ghcr.io/robotocore/robotocore:latest
+    - name: Start MinIO (S3 for sns-worker tests)
+      if: ${{ matrix.needs_mock_services }}
+      run: docker run --rm -d -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin --name minio minio/minio server /data --console-address :9001
 
     - name: Start local-kms (KMS for transaction-sender tests)
-      if: ${{ matrix.needs_localstack }}
+      if: ${{ matrix.needs_mock_services }}
       run: docker run --rm -d -p 8080:8080 --name local-kms nsmithuk/local-kms
 
     - name: Run tests with coverage
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
-        TEST_GLOBAL_ROBOTOCORE: ${{ matrix.needs_localstack && '1' || '0' }}
-        TEST_GLOBAL_LOCAL_KMS: ${{ matrix.needs_localstack && '1' || '0' }}
+        TEST_GLOBAL_MINIO: ${{ matrix.needs_mock_services && '1' || '0' }}
+        TEST_GLOBAL_LOCAL_KMS: ${{ matrix.needs_mock_services && '1' || '0' }}
         TEST_PACKAGE: ${{ matrix.package }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
