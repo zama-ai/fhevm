@@ -42,14 +42,14 @@ spec:
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
         command: ["/initialize_db.sh"]
         env:
+          - name: DATABASE_URL
+            value: {{ .Values.commonConfig.databaseUrl | quote }}
         {{- with .Values.commonConfig.env }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
         {{- with .Values.dbMigration.env }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
-          - name: DATABASE_URL
-            value: {{ .Values.commonConfig.databaseUrl | quote }}
         resources:
           requests:
             cpu: {{ .Values.dbMigration.resources.requests.cpu | default "100m" }}

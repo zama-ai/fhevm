@@ -53,16 +53,10 @@ spec:
           args:
             {{- toYaml .Values.txSender.args | nindent 12 }}
           env:
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.txSender.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: GATEWAY_URL
-              value: {{ default .Values.commonConfig.gatewayUrl (.Values.txSender.config).gatewayUrl | quote }}
+              value: {{ .Values.commonConfig.gatewayUrl | quote }}
             - name: INPUT_VERIFICATION_ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
@@ -87,6 +81,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.txSender.env }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.txSender.ports }}

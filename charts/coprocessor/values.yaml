@@ -47,8 +47,10 @@ commonConfig:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
 
-  # Additional environment variables shared across all components
-  # Useful for database credentials, secrets, etc.
+  # Environment variables applied to all components before component-level env vars.
+  # Use this to set shared variables (e.g. credentials sourced from secrets) or to
+  # override any hardcoded default injected from commonConfig (e.g. DATABASE_URL).
+  # Component-level env vars are applied after and take the highest precedence.
   # Example:
   # - name: PGPASSWORD
   #   valueFrom:
@@ -69,7 +71,7 @@ podAnnotations: {}
 podLabels: {}
 
 # -----------------------------------------------------------------------------
-# Configuration Setup
+# Coprocessor Configuration Setup
 # -----------------------------------------------------------------------------
 # Initializes secrets and configuration required by other components
 config:
@@ -98,6 +100,7 @@ config:
     # "helm.sh/hook": "pre-install"
     # "helm.sh/hook-weight": "-1"
 
+  # TODO: Move to general pod configuration?
   resources:
     requests:
       cpu: 100m
@@ -124,7 +127,8 @@ dbMigration:
     tag: v0.9.0
 
   # Environment variables for migration process
-  # DATABASE_URL is injected automatically from commonConfig.databaseUrl
+  # DATABASE_URL is injected automatically from commonConfig. Use env to set
+  # additional variables or override it.
   env:
     - name: CHAIN_ID
       value: "12345"
@@ -162,14 +166,10 @@ hostListener:
 
   replicas: 1
 
-  # Component-specific configuration
-  config:
-    # Override commonConfig.hostChainWsUrl if needed
-    # hostChainUrl:
-
-  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_URL,
-  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
-  # automatically from commonConfig)
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
   env: []
 
   # Command line arguments for the host listener
@@ -266,14 +266,10 @@ hostListenerPoller:
 
   replicas: 1
 
-  # Component-specific configuration
-  config:
-    # Override commonConfig.hostChainHttpUrl if needed
-    # hostChainUrl:
-
-  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_HTTP_URL,
-  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
-  # automatically from commonConfig)
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_HTTP_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
   env: []
 
   # Command line arguments for the host listener poller
@@ -370,14 +366,10 @@ hostListenerCatchupOnly:
 
   replicas: 1
 
-  # Component-specific configuration
-  config:
-    # Override commonConfig.hostChainWsUrl if needed
-    # hostChainUrl:
-
-  # Additional environment variables (DATABASE_URL, ETHEREUM_RPC_URL,
-  # ACL_CONTRACT_ADDRESS, FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
-  # automatically from commonConfig)
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
   env: []
 
   # Command line arguments for the host listener catchup only mode
@@ -470,15 +462,10 @@ gwListener:
 
   replicas: 1
 
-  # Component-specific configuration
-  config:
-    # Override commonConfig.gatewayUrl if needed
-    # gatewayUrl:
-
-  # Additional environment variables (DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS,
-  # CIPHERTEXT_COMMITS_ADDRESS, GATEWAY_CONFIG_ADDRESS are injected
-  # automatically from commonConfig)
+  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS,
+  # and GATEWAY_CONFIG_ADDRESS are injected automatically from commonConfig.
+  # Use env to set component-specific variables or override any of the above.
   env: []
 
   # Command line arguments for the gateway listener
@@ -572,8 +559,9 @@ tfheWorker:
 
   replicas: 1
 
-  # Additional environment variables (DATABASE_URL and ACL_CONTRACT_ADDRESS
-  # are injected automatically from commonConfig)
+  # Additional environment variables. DATABASE_URL and ACL_CONTRACT_ADDRESS are
+  # injected automatically from commonConfig. Use env to set component-specific
+  # variables or override any of the above.
   # Example: set WORKER_ID to override the auto-generated UUID
   # - name: WORKER_ID
   #   value: "00000000-0000-0000-0000-000000000001"
@@ -702,8 +690,9 @@ zkProofWorker:
 
   replicas: 1
 
-  # Additional environment variables (DATABASE_URL is injected automatically
-  # from commonConfig)
+  # Additional environment variables. DATABASE_URL is injected automatically
+  # from commonConfig. Use env to set component-specific variables or override
+  # any of the above.
   env: []
 
   # Command line arguments for ZK proof worker
@@ -813,8 +802,9 @@ snsWorker:
     # S3 bucket name for ciphertext storage (ct64 and ct128)
     s3BucketName: ""
 
-  # Additional environment variables (DATABASE_URL and S3_BUCKET_NAME are
-  # injected automatically from commonConfig and config respectively)
+  # Additional environment variables. DATABASE_URL is injected automatically
+  # from commonConfig and S3_BUCKET_NAME from config. Use env to set
+  # component-specific variables or override any of the above.
   env: []
 
   # Command line arguments for SNS worker
@@ -939,14 +929,11 @@ txSender:
 
   replicas: 1
 
-  # Component-specific configuration
-  config:
-    # Override commonConfig.gatewayUrl if needed
-    # gatewayUrl:
-
-  # Additional environment variables (DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS and
-  # TX_SENDER_PRIVATE_KEY (or AWS KMS key) are injected automatically)
+  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS, and
+  # TX_SENDER_PRIVATE_KEY (or TX_SENDER_AWS_KMS_KEY_ID) are injected
+  # automatically. Use env to set component-specific variables or override
+  # any of the above.
   env: []
 
   # Wallet configuration for transaction signing

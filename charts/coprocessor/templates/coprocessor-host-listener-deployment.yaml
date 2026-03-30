@@ -58,16 +58,10 @@ spec:
             {{- end }}
             - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
           env:
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.hostListener.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: ETHEREUM_RPC_URL
-              value: {{ default .Values.commonConfig.hostChainWsUrl (.Values.hostListener.config).hostChainUrl | quote }}
+              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
             - name: ACL_CONTRACT_ADDRESS
               value: {{ .Values.commonConfig.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
@@ -79,6 +73,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.hostListener.env }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.hostListener.ports }}

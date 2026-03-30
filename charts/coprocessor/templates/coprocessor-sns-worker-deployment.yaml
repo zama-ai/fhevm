@@ -53,12 +53,6 @@ spec:
           args:
             {{- toYaml .Values.snsWorker.args | nindent 12 }}
           env:
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.snsWorker.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: S3_BUCKET_NAME
@@ -70,6 +64,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.snsWorker.env }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.snsWorker.ports }}

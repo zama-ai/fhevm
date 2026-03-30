@@ -53,12 +53,6 @@ spec:
           args:
             {{- toYaml .Values.tfheWorker.args | nindent 12 }}
           env:
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.tfheWorker.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: ACL_CONTRACT_ADDRESS
@@ -68,6 +62,12 @@ spec:
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.tfheWorker.tracing.service | quote }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tfheWorker.env }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.tfheWorker.ports }}
