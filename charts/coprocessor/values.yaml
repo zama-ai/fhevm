@@ -22,14 +22,12 @@ commonConfig:
   databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
 
   # Host chain configuration
-  # Used by: hostListener, hostListenerPoller, hostListenerCatchupOnly, tfheWorker
   hostChainWsUrl: "ws://ethereum-node:8546"
   hostChainHttpUrl: "http://ethereum-node:8545"
   aclContractAddress: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
   fhevmExecutorContractAddress: "0x0000000000000000000000000000000000000000"
 
   # Gateway chain configuration
-  # Used by: gwListener, txSender
   gatewayUrl: "ws://gateway-rpc-node:8548"
   gatewayContractAddresses:
     inputVerification: "0x0000000000000000000000000000000000000000"
@@ -39,7 +37,6 @@ commonConfig:
 
   # Max dependent ops per chain per ingested block before slow-lane.
   # 0 disables slow-lane decisions.
-  # Used by: hostListener, hostListenerPoller, hostListenerCatchupOnly
   dependentOpsMaxPerChain: 0
 
   # Distributed tracing configuration
@@ -89,7 +86,7 @@ config:
       key: coprocessor.hex
 
   # Database connection configuration
-  database: # TODO: Update to commonConfig.env?
+  database:
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
@@ -192,19 +189,20 @@ hostListener:
     logLevel: INFO
     initialBlockTime: 12        # switches to real block time when data is available
     reorgMaximumDurationInBlocks: 50
+    # New in v0.10
     serviceName: host-listener
     catchupFinalizationInBlocks: 20  # continuous catchup will wait for block "finalization"
 
   # Additional args appended after all template-injected and structured args.
   # Use for optional flags not covered by args fields above, e.g.:
   #   - --dependence-cache-size=10000
-  #   - --dependence-by-connexity     # build connected components instead of linear chains
-  #   - --dependence-cross-block      # allow chains to cross L1 block boundaries
+  #   - --dependence-by-connexity
+  #   - --dependence-cross-block
   #   - --catchup-margin=10
   #   - --catchup-paging=100
   #   - --start-at-block=12345
   #   - --end-at-block=12400
-  #   - --timeout-request-websocket=15
+  #   - --timeout-request-websocket=15  # new in v0.11: default timeout (seconds) for websocket interactions
   extraArgs: []
 
   # Service ports configuration
@@ -298,7 +296,7 @@ hostListenerPoller:
     logLevel: INFO
     serviceName: host-listener-poller
     finalityLag: 3
-    batchSize: 100              # maximum blocks to process per iteration
+    batchSize: 100              # maximum number of blocks to process per iteration
     pollIntervalMs: 6000        # sleep between iterations (half block time ~6s for Ethereum)
     retryIntervalMs: 1000       # backoff between retry attempts for RPC/DB failures
     maxHttpRetries: 45          # maximum HTTP/RPC retry attempts before failing an operation
@@ -307,8 +305,8 @@ hostListenerPoller:
   # Additional args appended after all template-injected and structured args.
   # Use for optional flags not covered by args fields above, e.g.:
   #   - --dependence-cache-size=10000
-  #   - --dependence-by-connexity     # build connected components instead of linear chains
-  #   - --dependence-cross-block      # allow chains to cross L1 block boundaries
+  #   - --dependence-by-connexity
+  #   - --dependence-cross-block
   extraArgs: []
 
   # Service ports configuration
@@ -406,6 +404,7 @@ hostListenerCatchupOnly:
     reorgMaximumDurationInBlocks: 50
     serviceName: host-listener-catchup-only
     catchupFinalizationInBlocks: 20
+    # Catchup-only specific parameters
     onlyCatchupLoop: true       # run only the catchup loop, not real-time subscription
     endAtBlock: -15             # relative to latest block (negative value)
     catchupLoopSleepSecs: 60
@@ -615,16 +614,16 @@ tfheWorker:
     serviceName: tfhe-worker    # service name in OTLP traces
     runBgWorker: true
     workerPollingIntervalMs: 10000
-    workItemsBatchSize: 100
+    workItemsBatchSize: 100     # scheduling changed
     dependenceChainsPerBatch: 100  # deprecated, to be removed in a future release
     keyCacheSize: 32
-    coprocessorFheThreads: 64
-    tokioThreads: 16
+    coprocessorFheThreads: 64   # scheduling changed
+    tokioThreads: 16            # scheduling changed
     pgPoolMaxConnections: 10
     generateFheKeys: false      # unsafe - for testing only, keep false in production
     dcidTtlSec: 30              # time-to-live (seconds) for dependence chain locks
-    disableDcidLocking: false   # WARNING: may cause concurrent DCID processing if true
-    dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain
+    disableDcidLocking: false   # WARNING: may cause multiple workers to process the same DCID concurrently
+    dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain; locks released if exceeded
     processedDcidTtlSec: 172800 # time-to-live (seconds) for processed dependence chains (default 48h)
     dcidCleanupIntervalSec: 3600  # interval (seconds) for cleaning up expired DCID locks
     dcidMaxNoProgressCycles: 2  # worker cycles without progress before releasing
@@ -900,7 +899,7 @@ snsWorker:
 
   # Additional args appended after all template-injected and structured args.
   # Use for optional flags, e.g.:
-  #   - --gauge-update-interval-secs=10
+  #   - --gauge-update-interval-secs=10  # only enable on select workers to reduce DB load
   #   - --pg-auto-explain-with-min-duration=30s
   #   - --keys-file-path=/path/to/keys
   extraArgs: []
@@ -1041,7 +1040,7 @@ txSender:
     allowHandleDatabaseChannel: event_allowed_handle
     verifyProofRespBatchLimit: 128
     verifyProofRespMaxRetries: 6
-    verifyProofRemoveAfterMaxRetries: true  # boolean flag: remove failed entries after max retries
+    verifyProofRemoveAfterMaxRetries: true
     addCiphertextsBatchLimit: 10
     allowHandleBatchLimit: 10
     allowHandleMaxRetries: "2147483647"
