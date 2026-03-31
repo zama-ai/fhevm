@@ -110,6 +110,9 @@ spec:
                 configMapKeyRef:
                   name: {{ .Values.txSender.wallet.awsKms.configmap.name | quote }}
                   key: {{ .Values.txSender.wallet.awsKms.configmap.key | quote }}
+            {{- else if .Values.txSender.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ .Values.txSender.wallet.secret.value | quote }}
             {{- else }}
             - name: TX_SENDER_PRIVATE_KEY
               valueFrom:

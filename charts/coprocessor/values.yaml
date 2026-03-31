@@ -1023,6 +1023,7 @@ txSender:
     secret:
       name: coprocessor-tx-sender
       key: private-key
+      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
 
   # Command line arguments for the transaction sender.
   # The following are injected automatically by the template:
