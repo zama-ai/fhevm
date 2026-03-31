@@ -783,11 +783,13 @@ log_info "  kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}${BUILD_
 log_info "  kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}${BUILD_TAG}"
 log_info "  kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}${BUILD_TAG}"
 log_info "  kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}${BUILD_TAG}"
+log_info "FHEVM Relayer:"
+log_info "  fhevm/relayer:${RELAYER_VERSION}"
+log_info "  fhevm/relayer-migrate:${RELAYER_MIGRATE_VERSION}"
 log_info "FHEVM Test Suite:"
 log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
 log_info "External Dependencies:"
 log_info "  kms-core-service:${CORE_VERSION}"
-log_info "  fhevm-relayer:${RELAYER_VERSION}"
 
 # Step 1: minio
 if ! should_skip_step "minio"; then

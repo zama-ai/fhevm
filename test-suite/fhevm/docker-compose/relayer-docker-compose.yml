@@ -20,7 +20,7 @@ services:
   relayer-db-migration:
     container_name: relayer-db-migration
     platform: linux/amd64
-    image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}
+    image: ghcr.io/zama-ai/fhevm/relayer-migrate:${RELAYER_MIGRATE_VERSION}
     env_file:
       - ../env/staging/.env.relayer.local
     command:
@@ -34,7 +34,7 @@ services:
   relayer:
     container_name: fhevm-relayer
     platform: linux/amd64
-    image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/relayer:${RELAYER_VERSION}
     env_file:
       - ../env/staging/.env.relayer.local
     command:
