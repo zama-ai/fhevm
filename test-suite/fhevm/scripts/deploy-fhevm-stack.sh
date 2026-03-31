@@ -22,6 +22,9 @@ log_error() {
 # Global project vars
 PROJECT="fhevm"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+STACK_MODE_FILE="$SCRIPT_DIR/../env/staging/.stack-mode.local"
+SOLANA_LOCALNET_SCRIPT="$SCRIPT_DIR/manage-solana-localnet.sh"
+SOLANA_MODE=false
 
 # Deployment steps registry - defines all steps in execution order
 # These names are used for --resume functionality
@@ -45,6 +48,18 @@ DEPLOYMENT_STEPS=(
 # kms-signer has no compose file (it's just a script), returns empty
 get_compose_for_step() {
     local step=$1
+    if [[ "$SOLANA_MODE" == true ]]; then
+        case "$step" in
+            coprocessor)
+                echo "coprocessor-solana"
+                return
+                ;;
+            host-node|host-sc|kms-connector)
+                echo ""
+                return
+                ;;
+        esac
+    fi
     case "$step" in
         minio|core|database|host-node|gateway-node|coprocessor|kms-connector|gateway-mocked-payment|gateway-sc|host-sc|relayer|test-suite)
             echo "$step"
@@ -112,6 +127,9 @@ for arg in "$@"; do
   elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
     LOCAL_BUILD=true
     log_info "Local optimization option detected."
+  elif [[ "$arg" == "--solana" ]]; then
+    SOLANA_MODE=true
+    log_info "Solana host mode detected."
   elif [[ "$arg" == "--resume" ]]; then
     RESUME_FLAG_DETECTED=true
   elif [[ "$arg" == "--only" ]]; then
@@ -188,6 +206,11 @@ if [[ -n "$RESUME_STEP" && -n "$ONLY_STEP" ]]; then
   exit 1
 fi
 
+if [[ "$SOLANA_MODE" == true && ( -n "$RESUME_STEP" || -n "$ONLY_STEP" ) ]]; then
+  log_error "Solana host mode currently does not support --resume or --only"
+  exit 1
+fi
+
 if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]] && [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" -gt "$COPROCESSOR_COUNT" ]]; then
   log_error "Invalid coprocessor threshold: $COPROCESSOR_THRESHOLD_OVERRIDE (must be <= --coprocessors $COPROCESSOR_COUNT)"
   exit 1
@@ -195,6 +218,11 @@ fi
 
 if [[ "$COPROCESSOR_COUNT" -gt 5 ]]; then
   log_error "This local multicoprocessor mode currently supports up to 5 coprocessors"
+  exit 1
+fi
+
+if [[ "$SOLANA_MODE" == true && "$COPROCESSOR_COUNT" -ne 1 ]]; then
+  log_error "Solana host mode currently supports only a single coprocessor instance"
   exit 1
 fi
 
@@ -404,6 +432,9 @@ prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
     local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
+    if [[ "$SOLANA_MODE" == true ]]; then
+        components+=("coprocessor-solana")
+    fi
 
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
@@ -669,6 +700,8 @@ get_minio_ip() {
 
 cleanup() {
     log_warn "Setup new environment, cleaning up..."
+    "${SOLANA_LOCALNET_SCRIPT}" stop >/dev/null 2>&1 || true
+    rm -f "$STACK_MODE_FILE"
     docker compose -p "${PROJECT}" down -v --remove-orphans
 
     # Only exit if requested
@@ -684,6 +717,12 @@ cleanup_from_step() {
     local start_index=$(get_step_index "$start_step")
 
     log_warn "Resume mode: cleaning up services from '$start_step' onwards..."
+
+    local host_node_index
+    host_node_index=$(get_step_index "host-node")
+    if [[ "$start_index" -le "$host_node_index" ]]; then
+        "${SOLANA_LOCALNET_SCRIPT}" stop >/dev/null 2>&1 || true
+    fi
 
     # Collect steps to cleanup (from start_step to end)
     local steps_to_cleanup=()
@@ -722,6 +761,11 @@ cleanup_single_step() {
     local compose=$(get_compose_for_step "$step")
 
     if [[ -z "$compose" ]]; then
+        if [[ "$step" == "host-node" ]]; then
+            "${SOLANA_LOCALNET_SCRIPT}" stop >/dev/null 2>&1 || true
+            log_info "Cleanup complete. Solana host node stopped."
+            return 0
+        fi
         log_info "Step '$step' has no compose file to clean up"
         return 0
     fi
@@ -744,6 +788,12 @@ cleanup_single_step() {
     log_info "Cleanup complete. Only '$step' was cleaned."
 }
 
+write_stack_mode_file() {
+    cat > "$STACK_MODE_FILE" <<EOF
+HOST_MODE=$1
+EOF
+}
+
 # Run cleanup based on mode
 if [[ -n "$ONLY_STEP" ]]; then
     cleanup_single_step "$ONLY_STEP"
@@ -759,6 +809,11 @@ configure_multicoprocessor_envs
 
 log_info "Deploying FHEVM Stack..."
 log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
+if [[ "$SOLANA_MODE" == true ]]; then
+    log_info "Host mode: Solana"
+else
+    log_info "Host mode: EVM"
+fi
 
 BUILD_TAG=""
 if [ "$FORCE_BUILD" = true ]; then
@@ -772,8 +827,12 @@ log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"
 log_info "FHEVM Coprocessor Services:"
 log_info "  coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/poller:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+if [[ "$SOLANA_MODE" == true ]]; then
+    log_info "  coprocessor/solana-host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+else
+    log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+    log_info "  coprocessor/poller:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+fi
 log_info "  coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}${BUILD_TAG}"
@@ -833,7 +892,12 @@ fi
 
 # Step 5: host-node
 if ! should_skip_step "host-node"; then
-    ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+    if [[ "$SOLANA_MODE" == true ]]; then
+        log_info "Starting Solana host node and deploying Solana host programs..."
+        "${SOLANA_LOCALNET_SCRIPT}" start
+    else
+        ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+    fi
 else
     log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
 fi
@@ -847,18 +911,30 @@ fi
 
 # Step 7: coprocessor
 if ! should_skip_step "coprocessor"; then
-    ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
-        "coprocessor-and-kms-db:running" \
-        "coprocessor-db-migration:complete" \
-        "coprocessor-host-listener:running" \
-        "coprocessor-gw-listener:running" \
-        "coprocessor-tfhe-worker:running" \
-        "coprocessor-zkproof-worker:running" \
-        "coprocessor-sns-worker:running" \
-        "coprocessor-transaction-sender:running"
-    for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
-        run_additional_coprocessor_instance "$idx"
-    done
+    if [[ "$SOLANA_MODE" == true ]]; then
+        ${RUN_COMPOSE} "coprocessor-solana" "Coprocessor Services (Solana host listener)" \
+            "coprocessor-and-kms-db:running" \
+            "coprocessor-db-migration:complete" \
+            "coprocessor-host-listener:running" \
+            "coprocessor-gw-listener:running" \
+            "coprocessor-tfhe-worker:running" \
+            "coprocessor-zkproof-worker:running" \
+            "coprocessor-sns-worker:running" \
+            "coprocessor-transaction-sender:running"
+    else
+        ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
+            "coprocessor-and-kms-db:running" \
+            "coprocessor-db-migration:complete" \
+            "coprocessor-host-listener:running" \
+            "coprocessor-gw-listener:running" \
+            "coprocessor-tfhe-worker:running" \
+            "coprocessor-zkproof-worker:running" \
+            "coprocessor-sns-worker:running" \
+            "coprocessor-transaction-sender:running"
+        for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+            run_additional_coprocessor_instance "$idx"
+        done
+    fi
 else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
 fi
@@ -874,19 +950,27 @@ fi
 
 # Step 9: host-sc
 if ! should_skip_step "host-sc"; then
-    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+    if [[ "$SOLANA_MODE" == true ]]; then
+        log_info "Skipping EVM host contracts in Solana host mode; Solana host programs were deployed during the host-node step."
+    else
+        ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+    fi
 else
     log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
 fi
 
 # Step 10: kms-connector
 if ! should_skip_step "kms-connector"; then
-    ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
-        "coprocessor-and-kms-db:running" \
-        "kms-connector-db-migration:complete" \
-        "kms-connector-gw-listener:running" \
-        "kms-connector-kms-worker:running" \
-        "kms-connector-tx-sender:running"
+    if [[ "$SOLANA_MODE" == true ]]; then
+        log_warn "Skipping kms-connector in Solana host mode; the current connector path still hard-depends on an EVM host chain and KMSVerifier/ACL contracts."
+    else
+        ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
+            "coprocessor-and-kms-db:running" \
+            "kms-connector-db-migration:complete" \
+            "kms-connector-gw-listener:running" \
+            "kms-connector-kms-worker:running" \
+            "kms-connector-tx-sender:running"
+    fi
 else
     log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
 fi
@@ -921,6 +1005,12 @@ if ! should_skip_step "test-suite"; then
     ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
 else
     log_info "Skipping step: test-suite (resuming from $RESUME_STEP)"
+fi
+
+if [[ "$SOLANA_MODE" == true ]]; then
+    write_stack_mode_file "solana"
+else
+    write_stack_mode_file "evm"
 fi
 
 log_info "All services started successfully!"

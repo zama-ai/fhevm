@@ -76,10 +76,10 @@ function usage {
 	echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
 	echo
 	echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
+	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--solana] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
 	echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
-	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|coprocessor-db-state-revert|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|debug)"
+	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|coprocessor-db-state-revert|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|solana-input-proof|solana-user-decryption|solana-public-decrypt-http-ebool|solana-public-decrypt-http-mixed|solana-erc20|debug)"
 	echo -e "  ${YELLOW}smoke${RESET} ${CYAN}[PROFILE]${RESET}      Run multicoproc smoke profile (multi-2-2|multi-3-5)"
 	echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
 	echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -97,6 +97,7 @@ function usage {
 	echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli deploy --local --solana${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli smoke multi-3-5${RESET}"
@@ -106,6 +107,11 @@ function usage {
 	echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-input-proof${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-user-decryption${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-public-decrypt-http-ebool${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-public-decrypt-http-mixed${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-erc20${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
 	echo -e "${BLUE}============================================================${RESET}"
@@ -204,6 +210,10 @@ deploy)
 			;;
 		--local | --dev)
 			DEPLOY_ARGS+=("--local")
+			shift
+			;;
+		--solana)
+			DEPLOY_ARGS+=("--solana")
 			shift
 			;;
 		--coprocessors)
@@ -324,6 +334,32 @@ test)
 			;;
 		esac
 	done
+
+	if [[ "$TEST_TYPE" =~ ^solana- ]]; then
+		case $TEST_TYPE in
+		solana-input-proof)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA INPUT PROOF${RESET}"
+			;;
+		solana-user-decryption)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA USER DECRYPTION${RESET}"
+			;;
+		solana-public-decrypt-http-ebool)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA PUBLIC DECRYPT HTTP EBOOL${RESET}"
+			;;
+		solana-public-decrypt-http-mixed)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA PUBLIC DECRYPT HTTP MIXED${RESET}"
+			;;
+		solana-erc20)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA ERC20${RESET}"
+			;;
+		esac
+
+		solana_args=("$TEST_TYPE")
+		if [ -n "$VERBOSE" ]; then
+			solana_args+=("--verbose")
+		fi
+		exec node "${SCRIPT_DIR}/scripts/run-solana-e2e.mjs" "${solana_args[@]}"
+	fi
 
 	docker_args=("./run-tests.sh")
 	if [ -n "$VERBOSE" ]; then
@@ -489,6 +525,8 @@ upgrade)
 
 clean)
 	echo -e "${LIGHT_BLUE}[CLEAN]${RESET} ${BOLD}Cleaning up FHEVM stack...${RESET}"
+	"${SCRIPT_DIR}/scripts/manage-solana-localnet.sh" stop >/dev/null 2>&1 || true
+	rm -f "${SCRIPT_DIR}/env/staging/.stack-mode.local"
 	docker compose -p "${PROJECT}" down -v --remove-orphans
 	echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}FHEVM stack cleaned successfully${RESET}"
 	;;

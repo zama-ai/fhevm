@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "core",
+    "program",
+    "local-cli",
+    "test-input-core",
+    "test-input-program",
+    "encrypted-erc20-core",
+    "encrypted-erc20-program",
+]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true

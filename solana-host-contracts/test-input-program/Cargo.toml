@@ -1,0 +1,21 @@
+[package]
+name = "solana-test-input-program"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+description = "Deployable Solana TestInput app program for local FHEVM parity tests"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+no-entrypoint = []
+
+[dependencies]
+borsh = { version = "1.6.0", features = ["derive"] }
+solana-host-contracts-core = { path = "../core" }
+solana-program = "4.0.0"
+solana-slot-hashes = "3.0.1"
+solana-system-interface = { version = "3.0.0", features = ["bincode"] }
+solana-test-input-core = { path = "../test-input-core" }

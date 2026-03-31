@@ -44,6 +44,9 @@ cd test-suite/fhevm
 # Deploy with local BuildKit cache (disables provenance attestations)
 ./fhevm-cli deploy --local
 
+# Deploy the Solana-host stack
+./fhevm-cli deploy --local --solana
+
 # Deploy with threshold 2 out of 2 coprocessors (local multicoprocessor mode)
 ./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2
 
@@ -63,6 +66,12 @@ cd test-suite/fhevm
 ./fhevm-cli test public-decrypt-http-mixed
 ./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
+
+# Solana host compatibility e2e canaries
+./fhevm-cli test solana-input-proof
+./fhevm-cli test solana-user-decryption
+./fhevm-cli test solana-public-decrypt-http-ebool
+./fhevm-cli test solana-public-decrypt-http-mixed
 
 # Upgrade a specific service
 ./fhevm-cli upgrade coprocessor
@@ -115,6 +124,68 @@ When running tests and you know your Hardhat artifacts are already up to date, y
 ```sh
 ./fhevm-cli test input-proof --no-hardhat-compile
 ```
+
+The Solana e2e commands do not use Hardhat. They run against the locally deployed stack, but with
+the host side deployed in Solana mode:
+
+- use `./fhevm-cli deploy --local --solana`
+- the Anvil `host-node` step is replaced by a managed Solana local validator
+- the EVM `coprocessor-host-listener` path is replaced by the new `solana-host-listener`
+- the gateway, relayer, and the rest of the coprocessor remain in the normal deployed stack
+- the Solana canaries then run against the Solana programs deployed on that validator
+
+The current Solana-host deploy mode intentionally skips two EVM-only pieces:
+
+- `host-sc`, because the host functionality is provided by the Solana programs instead of the EVM host contracts
+- `kms-connector`, because its current `gw-listener` and `kms-worker` still hard-depend on an EVM host chain, `KMSVerifier`, and EVM ACL addresses
+
+So the Solana-host stack today is:
+
+- Solana validator for the host-chain role
+- `coprocessor-host-listener` container running the Solana listener binary
+- normal gateway node
+- normal coprocessor workers
+- normal relayer
+
+Deploy and run the Solana canaries like this:
+
+```sh
+./fhevm-cli deploy --local --solana
+./fhevm-cli test solana-input-proof
+./fhevm-cli test solana-user-decryption
+./fhevm-cli test solana-public-decrypt-http-ebool
+./fhevm-cli test solana-public-decrypt-http-mixed
+```
+
+If the external Solana validator is not reachable when a Solana canary starts, the runner will
+bootstrap it for the duration of that test run so the deployed stack can still be exercised:
+
+```sh
+./fhevm-cli test solana-input-proof
+```
+
+For local Solana runs, the listener is exercised with `confirmed` commitment in these canaries
+because the local validator does not reliably advance `finalized` during this workflow. The
+standalone Solana listener still defaults to `finalized`.
+
+These Solana commands are compatibility canaries:
+
+- `solana-input-proof` now runs through a Solana `TestInput`-style wrapper program, analogous to
+  the Solidity `TestInput` contract. It mirrors `requestUint64NonTrivial`: `VerifyInput`, then a
+  durable `Allow` on the verified handle. The Solana listener ingests that ACL event successfully.
+  `VerifyInput` itself is still skipped by the listener, which is acceptable for this dapp-style
+  flow because the durable ACL event is the downstream signal that matters.
+- `solana-user-decryption` shows the current relayer user-decryption API still validates
+  contract/user identifiers as Ethereum `0x` addresses, which blocks native Solana program/account
+  IDs even though the Solana wrapper program now emits the same durable host events as the EVM
+  `TestInput` flow.
+- `solana-public-decrypt-http-ebool` and `solana-public-decrypt-http-mixed` now also run through
+  the Solana wrapper program and make the handles publicly decryptable on the Solana host. The
+  remaining blocker is higher in the stack: the relayer rejects the request with
+  `host_chain_id_not_supported`, which means Solana host-chain support is not wired into the
+  relayer host-chain registry/configuration yet.
+
+The `./fhevm-cli deploy --local --solana` mode currently does not support `--resume` or `--only`.
 
 ### Resuming a deployment
 
