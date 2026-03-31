@@ -78,6 +78,7 @@ spec:
             - --lifo={{ .Values.snsWorker.args.lifo }}
             - --enable-compression={{ .Values.snsWorker.args.enableCompression }}
             - --schedule-policy={{ .Values.snsWorker.args.schedulePolicy }}
+            - --tenant-api-key=$(TENANT_API_KEY)
             {{- with .Values.snsWorker.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

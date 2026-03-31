@@ -55,6 +55,7 @@ spec:
             - --gateway-url=$(GATEWAY_URL)
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
             {{- if .Values.txSender.wallet.awsKms.enabled }}
             - --signer-type=aws-kms
             - --aws-kms-key-id=$(TX_SENDER_AWS_KMS_KEY_ID)
@@ -92,6 +93,7 @@ spec:
             - --metric-host-txn-latency={{ .Values.txSender.args.metricHostTxnLatency }}
             - --metric-zkproof-txn-latency={{ .Values.txSender.args.metricZkproofTxnLatency }}
             - --gauge-update-interval-secs={{ .Values.txSender.args.gaugeUpdateIntervalSecs }}
+            - --delegation-block-delay={{ .Values.txSender.args.delegationBlockDelay }}
             {{- with .Values.txSender.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -104,6 +106,8 @@ spec:
               value: {{ .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+            - name: MULTICHAIN_ACL_ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.multichainAcl | quote }}
             {{- if .Values.txSender.wallet.awsKms.enabled }}
             - name: TX_SENDER_AWS_KMS_KEY_ID
               valueFrom:

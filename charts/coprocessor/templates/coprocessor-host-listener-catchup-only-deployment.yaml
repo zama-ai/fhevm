@@ -68,6 +68,7 @@ spec:
             {{- end }}
             - --end-at-block={{ .Values.hostListenerCatchupOnly.args.endAtBlock }}
             - --catchup-loop-sleep-secs={{ .Values.hostListenerCatchupOnly.args.catchupLoopSleepSecs }}
+            - --coprocessor-api-key=$(TENANT_API_KEY)
             {{- with .Values.hostListenerCatchupOnly.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

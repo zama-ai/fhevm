@@ -62,6 +62,7 @@ spec:
             - --reorg-maximum-duration-in-blocks={{ .Values.hostListener.args.reorgMaximumDurationInBlocks }}
             - --service-name={{ .Values.hostListener.args.serviceName }}
             - --catchup-finalization-in-blocks={{ .Values.hostListener.args.catchupFinalizationInBlocks }}
+            - --coprocessor-api-key=$(TENANT_API_KEY)
             {{- with .Values.hostListener.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

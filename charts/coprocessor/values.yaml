@@ -34,6 +34,7 @@ commonConfig:
     kmsGeneration: "0x0000000000000000000000000000000000000000"
     ciphertextCommits: "0x0000000000000000000000000000000000000000"
     gatewayConfig: "0x0000000000000000000000000000000000000000"
+    multichainAcl: "0x0000000000000000000000000000000000000000"
 
   # Max dependent ops per chain per ingested block before slow-lane.
   # 0 disables slow-lane decisions.
@@ -177,6 +178,8 @@ hostListener:
   # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
   # automatically from commonConfig. Use env to set component-specific variables
   # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
   env: []
 
   # Command line arguments for the host listener.
@@ -184,6 +187,7 @@ hostListener:
   #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
@@ -284,6 +288,8 @@ hostListenerPoller:
   # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
   # automatically from commonConfig. Use env to set component-specific variables
   # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
   env: []
 
   # Command line arguments for the host listener poller.
@@ -291,6 +297,7 @@ hostListenerPoller:
   #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
   #   --health-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
@@ -388,6 +395,8 @@ hostListenerCatchupOnly:
   # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
   # automatically from commonConfig. Use env to set component-specific variables
   # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
   env: []
 
   # Command line arguments for the host listener catchup only mode.
@@ -396,6 +405,7 @@ hostListenerCatchupOnly:
   #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
@@ -520,6 +530,7 @@ gwListener:
   # Use for replay parameters, e.g.:
   #   - --replay-from-block=12345
   #   - --replay-skip-verify-proof
+  #   - --catchup-kms-generation-from-block=12345
   extraArgs: []
 
   # Service ports configuration
@@ -866,12 +877,15 @@ snsWorker:
   # Additional environment variables. DATABASE_URL is injected automatically
   # from commonConfig and S3_BUCKET_NAME from config. Use env to set
   # component-specific variables or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # tenant API key is required (--tenant-api-key is always injected).
   env: []
 
   # Command line arguments for the SNS worker.
   # The following are injected automatically by the template:
   #   --database-url (from commonConfig)
   #   --bucket-name-ct64 and --bucket-name-ct128 (from S3_BUCKET_NAME env var)
+  #   --tenant-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
@@ -1005,10 +1019,10 @@ txSender:
   replicas: 1
 
   # Additional environment variables. DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS, and
-  # TX_SENDER_PRIVATE_KEY (or TX_SENDER_AWS_KMS_KEY_ID) are injected
-  # automatically. Use env to set component-specific variables or override
-  # any of the above.
+  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS,
+  # MULTICHAIN_ACL_ADDRESS, and TX_SENDER_PRIVATE_KEY (or TX_SENDER_AWS_KMS_KEY_ID)
+  # are injected automatically. Use env to set component-specific variables or
+  # override any of the above.
   env: []
 
   # Wallet configuration for transaction signing
@@ -1027,7 +1041,8 @@ txSender:
 
   # Command line arguments for the transaction sender.
   # The following are injected automatically by the template:
-  #   --database-url, --gateway-url, --input-verification-address, --ciphertext-commits-address (from commonConfig)
+  #   --database-url, --gateway-url, --input-verification-address, --ciphertext-commits-address,
+  #   --multichain-acl-address (from commonConfig)
   #   --signer-type and wallet key args (from wallet config)
   #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
   # Use extraArgs to pass flags not covered by the fields below.
@@ -1058,6 +1073,7 @@ txSender:
     metricHostTxnLatency: "0.1:60.0:0.1"
     metricZkproofTxnLatency: "0.1:60.0:0.1"
     gaugeUpdateIntervalSecs: 10
+    delegationBlockDelay: 10  # number of blocks to wait before processing delegation events
 
   # Additional args appended after all template-injected and structured args.
   extraArgs: []
