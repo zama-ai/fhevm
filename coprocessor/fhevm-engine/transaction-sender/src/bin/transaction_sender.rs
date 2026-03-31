@@ -73,9 +73,6 @@ struct Conf {
     #[arg(long, default_value = "event_ciphertexts_uploaded")]
     add_ciphertexts_database_channel: String,
 
-    #[arg(long, default_value = "event_allowed_handle")]
-    allow_handle_database_channel: String,
-
     #[arg(long, default_value_t = 128)]
     verify_proof_resp_batch_limit: u32,
 
@@ -87,13 +84,6 @@ struct Conf {
 
     #[arg(long, default_value_t = 10)]
     add_ciphertexts_batch_limit: u32,
-
-    #[arg(long, default_value_t = 10)]
-    allow_handle_batch_limit: u32,
-
-    // For now, use i32 as that's what we have in the DB as integer type.
-    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
-    allow_handle_max_retries: i32,
 
     // For now, use i32 as that's what we have in the DB as integer type.
     #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
@@ -309,7 +299,6 @@ async fn main() -> anyhow::Result<()> {
     let config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
         add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-        allow_handle_db_channel: conf.allow_handle_database_channel,
         verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
         verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
         verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
@@ -318,8 +307,6 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,
         add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
-        allow_handle_batch_limit: conf.allow_handle_batch_limit,
-        allow_handle_max_retries: conf.allow_handle_max_retries,
         send_txn_sync_timeout_secs: conf.send_txn_sync_timeout_secs,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,

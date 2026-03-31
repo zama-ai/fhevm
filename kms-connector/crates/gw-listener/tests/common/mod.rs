@@ -11,9 +11,9 @@ use connector_utils::{
         setup::TestInstance,
     },
     types::{
-        GatewayEventKind,
+        ProtocolEventKind,
         db::{EventType, ParamsTypeDb},
-        gw_event::PRSS_INIT_ID,
+        event::PRSS_INIT_ID,
     },
 };
 use fhevm_gateway_bindings::{
@@ -67,7 +67,7 @@ pub async fn start_test_listener(
 pub async fn mock_event_on_gw(
     test_instance: &TestInstance,
     event_type: EventType,
-) -> anyhow::Result<(GatewayEventKind, Option<u64>)> {
+) -> anyhow::Result<(ProtocolEventKind, Option<u64>)> {
     info!("Mocking {event_type} on Anvil...");
     let (pending_tx, event) = match event_type {
         EventType::PublicDecryptionRequest => {
@@ -194,7 +194,7 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
 pub async fn poll_db_for_event(
     db: &Pool<Postgres>,
     event_type: EventType,
-    expected_event: &GatewayEventKind,
+    expected_event: &ProtocolEventKind,
 ) -> anyhow::Result<()> {
     let timeout = Duration::from_secs(30);
     let poll_interval = Duration::from_millis(200);
@@ -211,16 +211,16 @@ pub async fn poll_db_for_event(
     }
 }
 
-pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Result<()> {
+pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Result<()> {
     match event {
-        GatewayEventKind::PublicDecryption(e) => {
+        ProtocolEventKind::PublicDecryption(e) => {
             for r in rows {
                 if e.extraData.to_vec() == r.try_get::<Vec<u8>, _>("extra_data")? {
                     return Ok(());
                 }
             }
         }
-        GatewayEventKind::UserDecryption(e) => {
+        ProtocolEventKind::UserDecryption(e) => {
             for r in rows {
                 if e.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
                     && e.userAddress == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
@@ -229,14 +229,14 @@ pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Res
                 }
             }
         }
-        GatewayEventKind::PrepKeygen(_) => {
+        ProtocolEventKind::PrepKeygen(_) => {
             for r in rows {
                 if r.try_get::<ParamsTypeDb, _>("params_type")? == ParamsTypeDb::Test {
                     return Ok(());
                 }
             }
         }
-        GatewayEventKind::Keygen(e) => {
+        ProtocolEventKind::Keygen(e) => {
             for r in rows {
                 if e.prepKeygenId
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
@@ -245,7 +245,7 @@ pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Res
                 }
             }
         }
-        GatewayEventKind::Crsgen(e) => {
+        ProtocolEventKind::Crsgen(e) => {
             for r in rows {
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
@@ -254,14 +254,14 @@ pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Res
                 }
             }
         }
-        GatewayEventKind::PrssInit(_) => {
+        ProtocolEventKind::PrssInit(_) => {
             for r in rows {
                 if U256::from_le_bytes(r.try_get::<[u8; 32], _>("id")?) == PRSS_INIT_ID {
                     return Ok(());
                 }
             }
         }
-        GatewayEventKind::KeyReshareSameSet(e) => {
+        ProtocolEventKind::KeyReshareSameSet(e) => {
             for r in rows {
                 if e.keyId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("key_id")?) {
                     return Ok(());

@@ -1,12 +1,12 @@
 pub mod db;
+pub mod event;
 pub mod extra_data;
 mod grpc;
-pub mod gw_event;
 pub mod handle;
 pub mod kms_response;
 
+pub use event::{ProtocolEvent, ProtocolEventKind};
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
-pub use gw_event::{GatewayEvent, GatewayEventKind};
 pub use kms_response::{
     CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
     PublicDecryptionResponse, UserDecryptionResponse,
