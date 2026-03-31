@@ -635,7 +635,7 @@ tfheWorker:
     dcidTtlSec: 30              # time-to-live (seconds) for dependence chain locks
     disableDcidLocking: false   # WARNING: may cause multiple workers to process the same DCID concurrently
     dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain; locks released if exceeded
-    processedDcidTtlSec: 172800 # time-to-live (seconds) for processed dependence chains (default 48h)
+    processedDcidTtlSec: 172800  # time-to-live (seconds) for processed dependence chains (default 48h)
     dcidCleanupIntervalSec: 3600  # interval (seconds) for cleaning up expired DCID locks
     dcidMaxNoProgressCycles: 2  # worker cycles without progress before releasing
 
