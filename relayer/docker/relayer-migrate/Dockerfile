@@ -17,11 +17,11 @@ WORKDIR /app
 USER root
 RUN apk add --no-cache openssl-dev=3.6.1-r4 clang=22.1.1-r1
 
-RUN --mount=type=bind,source=relayer-migrate/Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=relayer-migrate/Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=relayer-migrate/src,target=src \
-    --mount=type=bind,source=relayer-migrate/migrations,target=migrations \
-    --mount=type=bind,source=relayer-migrate/down,target=down \
+RUN --mount=type=bind,source=relayer/relayer-migrate/Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=relayer/relayer-migrate/Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=relayer/relayer-migrate/src,target=src \
+    --mount=type=bind,source=relayer/relayer-migrate/migrations,target=migrations \
+    --mount=type=bind,source=relayer/relayer-migrate/down,target=down \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \

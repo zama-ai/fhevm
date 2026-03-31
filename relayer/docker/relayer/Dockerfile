@@ -17,16 +17,16 @@ WORKDIR /app
 USER root
 RUN apk add --no-cache openssl-dev=3.6.1-r4
 
-RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=build.rs,target=build.rs \
-    --mount=type=bind,source=src,target=src \
-    --mount=type=bind,source=test-support,target=test-support \
+RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=relayer/Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=relayer/build.rs,target=build.rs \
+    --mount=type=bind,source=relayer/src,target=src \
+    --mount=type=bind,source=relayer/test-support,target=test-support \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
 #    --mount=type=bind,source=.git/refs,target=.git/refs \
-    --mount=type=bind,source=.sqlx,target=.sqlx \
+    --mount=type=bind,source=relayer/.sqlx,target=.sqlx \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
