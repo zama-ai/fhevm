@@ -4,7 +4,13 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { getTxHCUFromTxReceipt, mineNBlocks, waitForPendingTransactions, waitForTransactionReceipt } from '../utils';
+import {
+  encryptAndLog,
+  getTxHCUFromTxReceipt,
+  mineNBlocks,
+  waitForPendingTransactions,
+  waitForTransactionReceipt,
+} from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 // Minimal ABI for HCULimit — the contract is deployed by the host-sc stack
@@ -43,7 +49,7 @@ describe('EncryptedERC20:HCU', function () {
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(input, 'encryptedERC20HCU.transfer.input', this.contractAddress);
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -71,7 +77,7 @@ describe('EncryptedERC20:HCU', function () {
 
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
-    const encryptedAllowanceAmount = await inputAlice.encrypt();
+    const encryptedAllowanceAmount = await encryptAndLog(inputAlice, 'encryptedERC20HCU.approve.input', this.contractAddress);
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedAllowanceAmount.handles[0],
@@ -82,7 +88,11 @@ describe('EncryptedERC20:HCU', function () {
     const bobErc20 = this.erc20.connect(this.signers.bob);
     const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob2.add64(1337); // below allowance so next tx should send token
-    const encryptedTransferAmount2 = await inputBob2.encrypt();
+    const encryptedTransferAmount2 = await encryptAndLog(
+      inputBob2,
+      'encryptedERC20HCU.transferFrom.input',
+      this.contractAddress,
+    );
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -125,7 +135,7 @@ describe('EncryptedERC20:HCU', function () {
       const erc20 = ctx.erc20.connect(ctx.signers[sender]);
       const input = ctx.instances[sender].createEncryptedInput(ctx.contractAddress, ctx.signers[sender].address);
       input.add64(amount);
-      const enc = await input.encrypt();
+      const enc = await encryptAndLog(input, `encryptedERC20HCU.blockCap.${sender}.input`, ctx.contractAddress);
       return erc20['transfer(address,bytes32,bytes)'](recipient, enc.handles[0], enc.inputProof, overrides ?? {});
     }
 
