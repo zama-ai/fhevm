@@ -51,7 +51,36 @@ spec:
           image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
           command: ["sns_worker"]
           args:
-            {{- toYaml .Values.snsWorker.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --bucket-name-ct64=$(S3_BUCKET_NAME)
+            - --bucket-name-ct128=$(S3_BUCKET_NAME)
+            - --log-level={{ .Values.snsWorker.args.logLevel }}
+            - --service-name={{ .Values.snsWorker.args.serviceName }}
+            - --pg-listen-channels
+            {{- range .Values.snsWorker.args.pgListenChannels }}
+            - {{ . | quote }}
+            {{- end }}
+            - --pg-notify-channel
+            - {{ .Values.snsWorker.args.pgNotifyChannel | quote }}
+            - --work-items-batch-size={{ .Values.snsWorker.args.workItemsBatchSize }}
+            - --pg-polling-interval={{ .Values.snsWorker.args.pgPollingInterval }}
+            - --pg-pool-connections={{ .Values.snsWorker.args.pgPoolConnections }}
+            - --pg-timeout={{ .Values.snsWorker.args.pgTimeout }}
+            - --s3-max-concurrent-uploads={{ .Values.snsWorker.args.s3MaxConcurrentUploads }}
+            - --s3-max-retries-per-upload={{ .Values.snsWorker.args.s3MaxRetriesPerUpload }}
+            - --s3-max-backoff={{ .Values.snsWorker.args.s3MaxBackoff }}
+            - --s3-max-retries-timeout={{ .Values.snsWorker.args.s3MaxRetriesTimeout }}
+            - --s3-recheck-duration={{ .Values.snsWorker.args.s3RecheckDuration }}
+            - --s3-regular-recheck-duration={{ .Values.snsWorker.args.s3RegularRecheckDuration }}
+            - --gc-batch-size={{ .Values.snsWorker.args.gcBatchSize }}
+            - --cleanup-interval={{ .Values.snsWorker.args.cleanupInterval }}
+            - --liveness-threshold={{ .Values.snsWorker.args.livenessThreshold }}
+            - --lifo={{ .Values.snsWorker.args.lifo }}
+            - --enable-compression={{ .Values.snsWorker.args.enableCompression }}
+            - --schedule-policy={{ .Values.snsWorker.args.schedulePolicy }}
+            {{- with .Values.snsWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

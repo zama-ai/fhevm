@@ -182,35 +182,30 @@ hostListener:
   # or override any of the above.
   env: []
 
-  # Command line arguments for the host listener
-  args: # TODO: how would we override an individual value?
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-    - --initial-block-time=12  # it can switch to real blockTime when data is available
-    - --log-level=INFO
-    - --health-port=8080
-    - --reorg-maximum-duration-in-blocks=50
+  # Command line arguments for the host listener.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  # Use extraArgs to pass flags not covered by the fields below.
+  args:
+    logLevel: INFO
+    initialBlockTime: 12        # switches to real block time when data is available
+    reorgMaximumDurationInBlocks: 50
+    serviceName: host-listener
+    catchupFinalizationInBlocks: 20  # continuous catchup will wait for block "finalization"
 
-    ### Dependence chains parameters
-    # - --dependence-cache-size=10000
-    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
-    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
-
-    ### Catchup parameters (optional)
-    # - --catchup-margin
-    # - --catchup-paging
-    # - --start-at-block  # To be used to catch up from a specific block
-    # - --end-at-block    # To be used to stop at a specific block
-
-    ### New in v0.10
-    - --service-name="host-listener"
-    - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
-
-    ### New in v0.11
-    # - --timeout-request-websocket=15 # OPTIONAL, Default timeout in seconds for websocket interactions
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --dependence-cache-size=10000
+  #   - --dependence-by-connexity     # build connected components instead of linear chains
+  #   - --dependence-cross-block      # allow chains to cross L1 block boundaries
+  #   - --catchup-margin=10
+  #   - --catchup-paging=100
+  #   - --start-at-block=12345
+  #   - --end-at-block=12400
+  #   - --timeout-request-websocket=15
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -293,35 +288,28 @@ hostListenerPoller:
   # or override any of the above.
   env: []
 
-  # Command line arguments for the host listener poller
+  # Command line arguments for the host listener poller.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    ### Required parameters
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_HTTP_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+    logLevel: INFO
+    serviceName: host-listener-poller
+    finalityLag: 3
+    batchSize: 100              # maximum blocks to process per iteration
+    pollIntervalMs: 6000        # sleep between iterations (half block time ~6s for Ethereum)
+    retryIntervalMs: 1000       # backoff between retry attempts for RPC/DB failures
+    maxHttpRetries: 45          # maximum HTTP/RPC retry attempts before failing an operation
+    rpcComputeUnitsPerSecond: 1000  # rate limiting budget for RPC calls during block catchup
 
-    ### Polling and block processing parameters
-    - --finality-lag=3
-    - --batch-size=100  # Maximum number of blocks to process per iteration
-    - --poll-interval-ms=6000  # Sleep duration between iterations in milliseconds (half block time ~6s for Ethereum)
-    - --retry-interval-ms=1000  # Backoff between retry attempts for RPC/DB failures in milliseconds
-    - --max-http-retries=45  # Maximum number of HTTP/RPC retry attempts before failing an operation
-    - --rpc-compute-units-per-second=1000  # Rate limiting budget for RPC calls during block catchup (compute units per second)
-
-    ### Observability parameters
-    - --log-level=INFO
-    - --health-port=8080
-    - --service-name=host-listener-poller
-
-    ### Prometheus metrics
-    - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
-
-    ### Dependence chains parameters
-    # - --dependence-cache-size=10000
-    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
-    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --dependence-cache-size=10000
+  #   - --dependence-by-connexity     # build connected components instead of linear chains
+  #   - --dependence-cross-block      # allow chains to cross L1 block boundaries
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -404,31 +392,30 @@ hostListenerCatchupOnly:
   # or override any of the above.
   env: []
 
-  # Command line arguments for the host listener catchup only mode
-  # NOTE: --only-catchup-loop requires --end-at-block to be set
+  # Command line arguments for the host listener catchup only mode.
+  # NOTE: onlyCatchupLoop requires endAtBlock to be set.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-    - --initial-block-time=12
-    - --log-level=INFO
-    - --health-port=8080
-    - --dependence-cache-size=128
-    - --reorg-maximum-duration-in-blocks=50
-    - --service-name="host-listener-catchup-only"
-    - --catchup-finalization-in-blocks=20
+    logLevel: INFO
+    initialBlockTime: 12
+    dependenceCacheSize: 128
+    reorgMaximumDurationInBlocks: 50
+    serviceName: host-listener-catchup-only
+    catchupFinalizationInBlocks: 20
+    onlyCatchupLoop: true       # run only the catchup loop, not real-time subscription
+    endAtBlock: -15             # relative to latest block (negative value)
+    catchupLoopSleepSecs: 60
 
-    ### Catchup-only specific parameters (required)
-    - --only-catchup-loop
-    - --end-at-block=-15  # Relative to latest block (negative value)
-    - --catchup-loop-sleep-secs=60
-
-    ### Optional catchup parameters
-    # - --start-at-block  # To catch up from a specific block
-    # - --catchup-margin
-    # - --catchup-paging
-    # - --dependent-ops-max-per-chain is injected from commonConfig.dependentOpsMaxPerChain
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --start-at-block=12345
+  #   - --catchup-margin=10
+  #   - --catchup-paging=100
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -511,32 +498,30 @@ gwListener:
   # Use env to set component-specific variables or override any of the above.
   env: []
 
-  # Command line arguments for the gateway listener
+  # Command line arguments for the gateway listener.
+  # The following are injected automatically by the template:
+  #   --database-url, --gw-url, --input-verification-address, --kms-generation-address,
+  #   --ciphertext-commits-address, --gateway-config-address (from commonConfig)
+  #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --database-pool-size=16
-    - --verify-proof-req-database-channel=event_zkpok_new_work
-    - --gw-url=$(GATEWAY_URL)
-    - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-    - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
-    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-    - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=10
-    - --health-check-port=8080
-    - --metrics-addr=0.0.0.0:9100
-    - --provider-max-retries=4294967295
-    - --provider-retry-interval=4s
-    - --log-level=INFO
-    - --get-logs-poll-interval=500ms
-    - --get-logs-block-batch-size=100
-    - --service-name=gw-listener
-    - --log-last-processed-every-number-of-updates=50
-    ### Replay parameters (optional)
-    # --replay-from-block BLOCK_NUMBER
-    # To go back in time from latest block
-    # --replay-from-block -NB_BLOCK
-    # --replay-skip-verify-proof  # Skip VerifyProofRequest events during replay
+    logLevel: INFO
+    serviceName: gw-listener
+    databasePoolSize: 16
+    verifyProofReqDatabaseChannel: event_zkpok_new_work
+    errorSleepInitialSecs: 1
+    errorSleepMaxSecs: 10
+    providerMaxRetries: "4294967295"
+    providerRetryInterval: 4s
+    getLogsPollInterval: 500ms
+    getLogsBlockBatchSize: 100
+    logLastProcessedEveryNumberOfUpdates: 50
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for replay parameters, e.g.:
+  #   - --replay-from-block=12345
+  #   - --replay-skip-verify-proof
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -621,36 +606,31 @@ tfheWorker:
   #   value: "00000000-0000-0000-0000-000000000001"
   env: []
 
-  # Command line arguments for TFHE worker
+  # Command line arguments for the TFHE worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --run-bg-worker=true
-    - --worker-polling-interval-ms=10000
-    - --work-items-batch-size=100  # scheduling changed
-    - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
-    - --key-cache-size=32
-    - --coprocessor-fhe-threads=64  # scheduling changed
-    - --tokio-threads=16  # scheduling changed
-    - --pg-pool-max-connections=10
-    - --metrics-addr=0.0.0.0:9100
-    - --service-name=tfhe-worker  # tfhe-worker service name in OTLP traces
-    - --log-level=INFO
-    # Should not be used (unsafe - testing only, keep false values except CI)
-    - --generate-fhe-keys=false
-    - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
-    # Disable dependence chain ID locking
-    # WARNING: May cause multiple workers to process the same DCID concurrently
-    # Defaults to false
-    - --disable-dcid-locking=false
-    # Time slice (in seconds) for processing a single dependence chain
-    # Locks are released if processing exceeds this duration
-    - --dcid-timeslice-sec=90
-    # Processed DCIDs older than this value are cleaned up
-    # Defaults to 48 hours (172800 seconds)
-    # Time-to-live (in seconds) for processed dependence chains
-    - --processed-dcid-ttl-sec=172800
-    - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
-    - --dcid-max-no-progress-cycles=2   # Worker cycles without progress before releasing
+    logLevel: INFO
+    serviceName: tfhe-worker    # service name in OTLP traces
+    runBgWorker: true
+    workerPollingIntervalMs: 10000
+    workItemsBatchSize: 100
+    dependenceChainsPerBatch: 100  # deprecated, to be removed in a future release
+    keyCacheSize: 32
+    coprocessorFheThreads: 64
+    tokioThreads: 16
+    pgPoolMaxConnections: 10
+    generateFheKeys: false      # unsafe - for testing only, keep false in production
+    dcidTtlSec: 30              # time-to-live (seconds) for dependence chain locks
+    disableDcidLocking: false   # WARNING: may cause concurrent DCID processing if true
+    dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain
+    processedDcidTtlSec: 172800 # time-to-live (seconds) for processed dependence chains (default 48h)
+    dcidCleanupIntervalSec: 3600  # interval (seconds) for cleaning up expired DCID locks
+    dcidMaxNoProgressCycles: 2  # worker cycles without progress before releasing
+
+  # Additional args appended after all template-injected and structured args.
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -760,18 +740,24 @@ zkProofWorker:
   # any of the above.
   env: []
 
-  # Command line arguments for ZK proof worker
+  # Command line arguments for the ZK proof worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --pg-listen-channel=event_zkpok_new_work
-    - --pg-notify-channel=event_zkpok_computed
-    - --pg-polling-interval=5
-    - --pg-pool-connections=5
-    - --pg-timeout=15s
-    - --worker-thread-count=8
-    - --service-name=zkproof-worker
-    - --log-level=INFO
-    # - --pg-auto-explain-with-min-duration="30s"
+    logLevel: INFO
+    serviceName: zkproof-worker
+    pgListenChannel: event_zkpok_new_work
+    pgNotifyChannel: event_zkpok_computed
+    pgPollingInterval: 5
+    pgPoolConnections: 5
+    pgTimeout: 15s
+    workerThreadCount: 8
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags, e.g.:
+  #   - --pg-auto-explain-with-min-duration=30s
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -883,38 +869,41 @@ snsWorker:
   # component-specific variables or override any of the above.
   env: []
 
-  # Command line arguments for SNS worker
+  # Command line arguments for the SNS worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig)
+  #   --bucket-name-ct64 and --bucket-name-ct128 (from S3_BUCKET_NAME env var)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --pg-listen-channels
-    - event_pbs_computations
-    - event_ciphertext_computed
-    - --pg-notify-channel
-    - event_ciphertext128_computed
-    - --work-items-batch-size=20
-    - --pg-polling-interval=1
-    - --pg-pool-connections=10
-    - --pg-timeout=15s
-    - --bucket-name-ct64=$(S3_BUCKET_NAME)
-    - --bucket-name-ct128=$(S3_BUCKET_NAME)
-    - --s3-max-concurrent-uploads=100
-    - --s3-max-retries-per-upload=100
-    - --s3-max-backoff=10s
-    - --s3-max-retries-timeout=120s
-    - --s3-recheck-duration=2s
-    - --s3-regular-recheck-duration=120s
-    - --gc-batch-size=80
-    - --cleanup-interval=120s
-    - --liveness-threshold=70s
-    - --lifo=false
-    - --enable-compression=true
-    - --schedule-policy=rayon_parallel
-    - --service-name=sns-worker
-    - --log-level=INFO
-    # Only enable `gauge-update-interval-secs` for some of the workers to reduce DB load and not have duplicate metrics data for no reason.
-    # --gauge-update-interval-secs=10
-    # - --pg-auto-explain-with-min-duration="30s"
-    # - --keys-file-path
+    logLevel: INFO
+    serviceName: sns-worker
+    pgListenChannels:           # list of pg channels to listen on
+      - event_pbs_computations
+      - event_ciphertext_computed
+    pgNotifyChannel: event_ciphertext128_computed
+    workItemsBatchSize: 20
+    pgPollingInterval: 1
+    pgPoolConnections: 10
+    pgTimeout: 15s
+    s3MaxConcurrentUploads: 100
+    s3MaxRetriesPerUpload: 100
+    s3MaxBackoff: 10s
+    s3MaxRetriesTimeout: 120s
+    s3RecheckDuration: 2s
+    s3RegularRecheckDuration: 120s
+    gcBatchSize: 80
+    cleanupInterval: 120s
+    livenessThreshold: 70s
+    lifo: false
+    enableCompression: true
+    schedulePolicy: rayon_parallel
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags, e.g.:
+  #   - --gauge-update-interval-secs=10
+  #   - --pg-auto-explain-with-min-duration=30s
+  #   - --keys-file-path=/path/to/keys
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -1036,42 +1025,42 @@ txSender:
       name: coprocessor-tx-sender
       key: private-key
 
-  # Command line arguments for transaction sender
+  # Command line arguments for the transaction sender.
+  # The following are injected automatically by the template:
+  #   --database-url, --gateway-url, --input-verification-address, --ciphertext-commits-address (from commonConfig)
+  #   --signer-type and wallet key args (from wallet config)
+  #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --gateway-url=$(GATEWAY_URL)
-    - --signer-type=private-key
-    - --private-key=$(TX_SENDER_PRIVATE_KEY)
-    - --database-url=$(DATABASE_URL)
-    - --database-pool-size=10
-    - --database-polling-interval-secs=1
-    - --verify-proof-resp-database-channel=event_zkpok_computed
-    - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
-    - --allow-handle-database-channel=event_allowed_handle
-    - --verify-proof-resp-batch-limit=128
-    - --verify-proof-resp-max-retries=6
-    - --verify-proof-remove-after-max-retries
-    - --add-ciphertexts-batch-limit=10
-    - --allow-handle-batch-limit=10
-    - --allow-handle-max-retries=2147483647
-    - --add-ciphertexts-max-retries=2147483647
-    - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=4
-    - --txn-receipt-timeout-secs=4
-    - --review-after-unlimited-retries=30
-    - --provider-max-retries=4294967295
-    - --provider-retry-interval=4s
-    - --health-check-port=8080
-    - --metrics-addr=0.0.0.0:9100
-    - --health-check-timeout=4s
-    - --log-level=INFO
-    - --gas-limit-overprovision-percent=120
-    - --graceful-shutdown-timeout=8s
-    - --service-name=txn-sender
-    - --metric-host-txn-latency=0.1:60.0:0.1
-    - --metric-zkproof-txn-latency=0.1:60.0:0.1
-    - --gauge-update-interval-secs=10
+    logLevel: INFO
+    serviceName: txn-sender
+    databasePoolSize: 10
+    databasePollingIntervalSecs: 1
+    verifyProofRespDatabaseChannel: event_zkpok_computed
+    addCiphertextsDatabaseChannel: event_ciphertexts_uploaded
+    allowHandleDatabaseChannel: event_allowed_handle
+    verifyProofRespBatchLimit: 128
+    verifyProofRespMaxRetries: 6
+    verifyProofRemoveAfterMaxRetries: true  # boolean flag: remove failed entries after max retries
+    addCiphertextsBatchLimit: 10
+    allowHandleBatchLimit: 10
+    allowHandleMaxRetries: "2147483647"
+    addCiphertextsMaxRetries: "2147483647"
+    errorSleepInitialSecs: 1
+    errorSleepMaxSecs: 4
+    txnReceiptTimeoutSecs: 4
+    reviewAfterUnlimitedRetries: 30
+    providerMaxRetries: "4294967295"
+    providerRetryInterval: 4s
+    healthCheckTimeout: 4s
+    gasLimitOverprovisionPercent: 120
+    gracefulShutdownTimeout: 8s
+    metricHostTxnLatency: "0.1:60.0:0.1"
+    metricZkproofTxnLatency: "0.1:60.0:0.1"
+    gaugeUpdateIntervalSecs: 10
+
+  # Additional args appended after all template-injected and structured args.
+  extraArgs: []
 
   # Service ports configuration
   ports:

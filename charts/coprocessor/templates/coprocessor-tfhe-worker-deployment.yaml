@@ -51,7 +51,28 @@ spec:
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
           command: ["tfhe_worker"]
           args:
-            {{- toYaml .Values.tfheWorker.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --metrics-addr=0.0.0.0:{{ .Values.tfheWorker.ports.metrics }}
+            - --log-level={{ .Values.tfheWorker.args.logLevel }}
+            - --service-name={{ .Values.tfheWorker.args.serviceName }}
+            - --run-bg-worker={{ .Values.tfheWorker.args.runBgWorker }}
+            - --worker-polling-interval-ms={{ .Values.tfheWorker.args.workerPollingIntervalMs }}
+            - --work-items-batch-size={{ .Values.tfheWorker.args.workItemsBatchSize }}
+            - --dependence-chains-per-batch={{ .Values.tfheWorker.args.dependenceChainsPerBatch }}
+            - --key-cache-size={{ .Values.tfheWorker.args.keyCacheSize }}
+            - --coprocessor-fhe-threads={{ .Values.tfheWorker.args.coprocessorFheThreads }}
+            - --tokio-threads={{ .Values.tfheWorker.args.tokioThreads }}
+            - --pg-pool-max-connections={{ .Values.tfheWorker.args.pgPoolMaxConnections }}
+            - --generate-fhe-keys={{ .Values.tfheWorker.args.generateFheKeys }}
+            - --dcid-ttl-sec={{ .Values.tfheWorker.args.dcidTtlSec }}
+            - --disable-dcid-locking={{ .Values.tfheWorker.args.disableDcidLocking }}
+            - --dcid-timeslice-sec={{ .Values.tfheWorker.args.dcidTimesliceSec }}
+            - --processed-dcid-ttl-sec={{ .Values.tfheWorker.args.processedDcidTtlSec }}
+            - --dcid-cleanup-interval-sec={{ .Values.tfheWorker.args.dcidCleanupIntervalSec }}
+            - --dcid-max-no-progress-cycles={{ .Values.tfheWorker.args.dcidMaxNoProgressCycles }}
+            {{- with .Values.tfheWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

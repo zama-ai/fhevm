@@ -51,7 +51,28 @@ spec:
           image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
           command: ["gw_listener"]
           args:
-            {{- toYaml .Values.gwListener.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --gw-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            - --health-check-port={{ .Values.gwListener.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ .Values.gwListener.ports.metrics }}
+            - --log-level={{ .Values.gwListener.args.logLevel }}
+            - --service-name={{ .Values.gwListener.args.serviceName }}
+            - --database-pool-size={{ .Values.gwListener.args.databasePoolSize }}
+            - --verify-proof-req-database-channel={{ .Values.gwListener.args.verifyProofReqDatabaseChannel }}
+            - --error-sleep-initial-secs={{ .Values.gwListener.args.errorSleepInitialSecs }}
+            - --error-sleep-max-secs={{ .Values.gwListener.args.errorSleepMaxSecs }}
+            - --provider-max-retries={{ .Values.gwListener.args.providerMaxRetries }}
+            - --provider-retry-interval={{ .Values.gwListener.args.providerRetryInterval }}
+            - --get-logs-poll-interval={{ .Values.gwListener.args.getLogsPollInterval }}
+            - --get-logs-block-batch-size={{ .Values.gwListener.args.getLogsBlockBatchSize }}
+            - --log-last-processed-every-number-of-updates={{ .Values.gwListener.args.logLastProcessedEveryNumberOfUpdates }}
+            {{- with .Values.gwListener.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

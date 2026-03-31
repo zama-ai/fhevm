@@ -51,12 +51,26 @@ spec:
           image: {{ .Values.hostListenerCatchupOnly.image.name }}:{{ .Values.hostListenerCatchupOnly.image.tag }}
           command: ["host_listener"]
           args:
-            {{- range $arg := .Values.hostListenerCatchupOnly.args }}
-            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
-            - {{ $arg | quote }}
-            {{- end }}
-            {{- end }}
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port={{ .Values.hostListenerCatchupOnly.ports.healthcheck }}
             - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ .Values.hostListenerCatchupOnly.args.logLevel }}
+            - --initial-block-time={{ .Values.hostListenerCatchupOnly.args.initialBlockTime }}
+            - --dependence-cache-size={{ .Values.hostListenerCatchupOnly.args.dependenceCacheSize }}
+            - --reorg-maximum-duration-in-blocks={{ .Values.hostListenerCatchupOnly.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ .Values.hostListenerCatchupOnly.args.serviceName }}
+            - --catchup-finalization-in-blocks={{ .Values.hostListenerCatchupOnly.args.catchupFinalizationInBlocks }}
+            {{- if .Values.hostListenerCatchupOnly.args.onlyCatchupLoop }}
+            - --only-catchup-loop
+            {{- end }}
+            - --end-at-block={{ .Values.hostListenerCatchupOnly.args.endAtBlock }}
+            - --catchup-loop-sleep-secs={{ .Values.hostListenerCatchupOnly.args.catchupLoopSleepSecs }}
+            {{- with .Values.hostListenerCatchupOnly.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

@@ -51,12 +51,20 @@ spec:
           image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
           command: ["host_listener"]
           args:
-            {{- range $arg := .Values.hostListener.args }}
-            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
-            - {{ $arg | quote }}
-            {{- end }}
-            {{- end }}
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port={{ .Values.hostListener.ports.healthcheck }}
             - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ .Values.hostListener.args.logLevel }}
+            - --initial-block-time={{ .Values.hostListener.args.initialBlockTime }}
+            - --reorg-maximum-duration-in-blocks={{ .Values.hostListener.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ .Values.hostListener.args.serviceName }}
+            - --catchup-finalization-in-blocks={{ .Values.hostListener.args.catchupFinalizationInBlocks }}
+            {{- with .Values.hostListener.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

@@ -51,12 +51,24 @@ spec:
           image: {{ .Values.hostListenerPoller.image.name }}:{{ .Values.hostListenerPoller.image.tag }}
           command: ["host_listener_poller"]
           args:
-            {{- range $arg := .Values.hostListenerPoller.args }}
-            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
-            - {{ $arg | quote }}
-            {{- end }}
-            {{- end }}
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_HTTP_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port={{ .Values.hostListenerPoller.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ .Values.hostListenerPoller.ports.metrics }}
             - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ .Values.hostListenerPoller.args.logLevel }}
+            - --service-name={{ .Values.hostListenerPoller.args.serviceName }}
+            - --finality-lag={{ .Values.hostListenerPoller.args.finalityLag }}
+            - --batch-size={{ .Values.hostListenerPoller.args.batchSize }}
+            - --poll-interval-ms={{ .Values.hostListenerPoller.args.pollIntervalMs }}
+            - --retry-interval-ms={{ .Values.hostListenerPoller.args.retryIntervalMs }}
+            - --max-http-retries={{ .Values.hostListenerPoller.args.maxHttpRetries }}
+            - --rpc-compute-units-per-second={{ .Values.hostListenerPoller.args.rpcComputeUnitsPerSecond }}
+            {{- with .Values.hostListenerPoller.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}

@@ -51,7 +51,18 @@ spec:
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
           command: ["zkproof_worker"]
           args:
-            {{- toYaml .Values.zkProofWorker.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --log-level={{ .Values.zkProofWorker.args.logLevel }}
+            - --service-name={{ .Values.zkProofWorker.args.serviceName }}
+            - --pg-listen-channel={{ .Values.zkProofWorker.args.pgListenChannel }}
+            - --pg-notify-channel={{ .Values.zkProofWorker.args.pgNotifyChannel }}
+            - --pg-polling-interval={{ .Values.zkProofWorker.args.pgPollingInterval }}
+            - --pg-pool-connections={{ .Values.zkProofWorker.args.pgPoolConnections }}
+            - --pg-timeout={{ .Values.zkProofWorker.args.pgTimeout }}
+            - --worker-thread-count={{ .Values.zkProofWorker.args.workerThreadCount }}
+            {{- with .Values.zkProofWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
