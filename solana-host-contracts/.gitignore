@@ -1,0 +1,6 @@
+target/
+.anchor/
+.env.local
+addresses/.env.host
+addresses/.env.local
+addresses/localnet.json

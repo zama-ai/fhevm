@@ -1,0 +1,30 @@
+[package]
+name = "solana-host-contracts"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+description = "Deployable Solana host-contract program for FHEVM"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+no-entrypoint = []
+
+[dependencies]
+bincode = "1.3.3"
+borsh = { version = "1.6.0", features = ["derive"] }
+solana-host-contracts-core = { path = "../core" }
+solana-program = "4.0.0"
+solana-slot-hashes = "3.0.1"
+solana-system-interface = { version = "3.0.0", features = ["bincode"] }
+
+[dev-dependencies]
+k256 = { version = "0.13.4", features = ["ecdsa"] }
+sha3 = "0.10.8"
+solana-program-test = { version = "4.0.0-beta.4", features = ["agave-unstable-api"] }
+solana-instruction = "3.2.0"
+solana-signer = "3.0.0"
+solana-transaction = "3.1.0"
+tokio = { version = "1.44.1", features = ["macros", "rt-multi-thread"] }
