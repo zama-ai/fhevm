@@ -79,13 +79,13 @@ spec:
             - name: GATEWAY_URL
               value: {{ .Values.commonConfig.gatewayUrl | quote }}
             - name: INPUT_VERIFICATION_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.inputVerification is required" .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
             - name: KMS_GENERATION_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.kmsGeneration is required" .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.ciphertextCommits is required" .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
             - name: GATEWAY_CONFIG_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.gatewayConfig is required" .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

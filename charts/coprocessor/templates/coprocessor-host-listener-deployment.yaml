@@ -72,9 +72,9 @@ spec:
             - name: ETHEREUM_RPC_URL
               value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ .Values.commonConfig.aclContractAddress | quote }}
+              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ .Values.commonConfig.fhevmExecutorContractAddress | quote }}
+              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

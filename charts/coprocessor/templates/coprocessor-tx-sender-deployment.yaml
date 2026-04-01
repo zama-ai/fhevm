@@ -103,11 +103,11 @@ spec:
             - name: GATEWAY_URL
               value: {{ .Values.commonConfig.gatewayUrl | quote }}
             - name: INPUT_VERIFICATION_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.inputVerification is required" .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.ciphertextCommits is required" .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
             - name: MULTICHAIN_ACL_ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.multichainAcl | quote }}
+              value: {{ required "commonConfig.gatewayContractAddresses.multichainAcl is required" .Values.commonConfig.gatewayContractAddresses.multichainAcl | quote }}
             {{- if .Values.txSender.wallet.awsKms.enabled }}
             - name: TX_SENDER_AWS_KMS_KEY_ID
               valueFrom:
