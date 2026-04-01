@@ -79,6 +79,11 @@ library FHE {
     /// @notice Returned if the sender is not allowed to use the handle.
     error SenderNotAllowedToUseHandle(bytes32 handle, address sender);
 
+    /// @notice Returned if a collection operator (isIn, sum) receives an out-of-range array size.
+    /// @param actual     The actual array length provided.
+    /// @param maxAllowed The maximum allowed array length for this type.
+    error FHECollectionSizeInvalid(uint256 actual, uint256 maxAllowed);
+
     /// @notice This event is emitted when public decryption has been successfully verified.
     event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
 
@@ -96,6 +101,14 @@ library FHE {
     //$$ -
     //$$ -----------------------------------------------------------------------
     $${FHEOperators}$$
+    //$$ -----------------------------------------------------------------------
+
+    //$$ -----------------------------------------------------------------------
+    //$$ -
+    //$$ -          FHE Collection Operators Template Placeholder
+    //$$ -
+    //$$ -----------------------------------------------------------------------
+    $${FHECollectionOperators}$$
     //$$ -----------------------------------------------------------------------
 
     /**

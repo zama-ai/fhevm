@@ -73,6 +73,11 @@ library FHE {
     /// @notice Returned if the sender is not allowed to use the handle.
     error SenderNotAllowedToUseHandle(bytes32 handle, address sender);
 
+    /// @notice Returned if a collection operator (isIn, sum) receives an out-of-range array size.
+    /// @param actual     The actual array length provided.
+    /// @param maxAllowed The maximum allowed array length for this type.
+    error FHECollectionSizeInvalid(uint256 actual, uint256 maxAllowed);
+
     /// @notice This event is emitted when public decryption has been successfully verified.
     event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
 
@@ -8788,6 +8793,404 @@ library FHE {
      */
     function randEuint256(uint256 upperBound) internal returns (euint256) {
         return euint256.wrap(Impl.randBounded(upperBound, FheType.Uint256));
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint8 value, uint8[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function sum(euint8[] memory values) internal returns (euint8) {
+        if (values.length == 0 || values.length > 128) revert FHECollectionSizeInvalid(values.length, 128);
+
+        euint8[] memory acc = new euint8[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint16 value, uint16[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function sum(euint16[] memory values) internal returns (euint16) {
+        if (values.length == 0 || values.length > 128) revert FHECollectionSizeInvalid(values.length, 128);
+
+        euint16[] memory acc = new euint16[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint32 value, uint32[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function sum(euint32[] memory values) internal returns (euint32) {
+        if (values.length == 0 || values.length > 128) revert FHECollectionSizeInvalid(values.length, 128);
+
+        euint32[] memory acc = new euint32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint64 value, uint64[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: 64 (bounded by maxHCUPerTx=20M).
+     */
+    function sum(euint64[] memory values) internal returns (euint64) {
+        if (values.length == 0 || values.length > 64) revert FHECollectionSizeInvalid(values.length, 64);
+
+        euint64[] memory acc = new euint64[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint128 value, uint128[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: 64 (bounded by maxHCUPerTx=20M).
+     */
+    function sum(euint128[] memory values) internal returns (euint128) {
+        if (values.length == 0 || values.length > 64) revert FHECollectionSizeInvalid(values.length, 64);
+
+        euint128[] memory acc = new euint128[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(eaddress value, address[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: 128 (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(euint256 value, uint256[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > 128) revert FHECollectionSizeInvalid(set.length, 128);
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
     }
 
     /**

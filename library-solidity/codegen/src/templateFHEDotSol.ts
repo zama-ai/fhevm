@@ -32,6 +32,7 @@ export function generateSolidityFHELib({
   // $${EcdsaDotSol}$$
   // $${FheTypeDotSol}$$
   // $${FHEOperators}$$
+  // $${FHECollectionOperators}$$
   // $${ACLFunctions}$$
   // $${FHEtoBytes32}$$
   const file = resolveTemplatePath('FHE.sol-template');
@@ -47,6 +48,7 @@ export function generateSolidityFHELib({
   const adjustedFheTypes = generateAdjustedFheTypeArray(fheTypes);
 
   code = code.replace('$${FHEOperators}$$', generateFHEOperators(operators, adjustedFheTypes));
+  code = code.replace('$${FHECollectionOperators}$$', generateFHECollectionOperators(adjustedFheTypes));
   code = code.replace('$${ACLFunctions}$$', generateSolidityACLMethods(adjustedFheTypes));
   code = code.replace('$${FHEtoBytes32}$$', generateToBytes32(adjustedFheTypes));
 
@@ -634,6 +636,147 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     `;
   }
   return result;
+}
+
+/**
+ * Generates Solidity collection operators (isIn, sum) for all arithmetic FHE types.
+ *
+ * isIn: tests whether an encrypted value is a member of a cleartext set.
+ *       Uses scalar eq for each element (all independent → coprocessor parallelizes them),
+ *       then tree-reduces the boolean results with OR.
+ *       DFG depth: ceil(log2(n)) + 1 instead of n.
+ *
+ * sum: sums an array of encrypted values via tree accumulation.
+ *      DFG depth: ceil(log2(n)) instead of n-1 (critical for per-tx depth limits).
+ *      Overflow wraps silently, matching FHE.add semantics.
+ *
+ * Only generated for types that support both 'add' and 'eq' (Uint8–Uint128).
+ */
+// Maximum array size for each collection operator, derived from maxHCUPerTx = 20,000,000.
+// Based on gas profiling (see library-solidity/gas-profile-results.md):
+//   isIn: euint8/16 safe at 128 (HCU ≈ 10.1M); euint32/64 ≈ 13.7M; euint128/eaddress/euint256 ≈ 18M
+//   sum:  euint8/16/32 safe at 128; euint64/128 limited to 64 (euint64 n=128 ≈ 23.9M > 20M)
+// Note: isIn uses 128 for all types. euint128/eaddress/euint256 at n=128 consume ~18M HCU,
+// leaving ~10% headroom. If maxHCUPerTx is reduced or eq costs increase, revisit these limits.
+function maxIsInSize(): number {
+  // All types currently fit at 128 based on profiling, but wider types (euint128, eaddress, euint256)
+  // reach ~18M HCU at n=128 — only ~10% below maxHCUPerTx. If costs change, this needs updating.
+  // The limit is kept uniform for API simplicity; see gas-profile-results.md for per-type HCU.
+  return 128;
+}
+
+function maxSumSize(bitLength: number): number {
+  return bitLength >= 64 ? 64 : 128;
+}
+
+function generateIsInBlock(etype: string, clearType: string, isInMax: number): string {
+  return `
+    /**
+     * @notice Returns true if 'value' is found in the cleartext 'set', false otherwise.
+     * @dev    Each equality check is independent — the coprocessor parallelizes them.
+     *         The OR tree-reduction keeps DFG depth at ceil(log2(n))+1 instead of n.
+     *         Max set size: ${isInMax} (bounded by maxHCUPerTx=20M).
+     */
+    function isIn(${etype} value, ${clearType}[] memory set) internal returns (ebool) {
+        if (set.length == 0 || set.length > ${isInMax}) revert FHECollectionSizeInvalid(set.length, ${isInMax});
+
+        if (set.length == 1) {
+            return eq(value, set[0]);
+        }
+
+        ebool[] memory eqs = new ebool[](set.length);
+        for (uint256 i = 0; i < set.length; i++) {
+            eqs[i] = eq(value, set[i]);
+        }
+
+        uint256 len = set.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                eqs[i] = or(eqs[i], eqs[half + i]);
+            }
+            if (len % 2 == 1) {
+                eqs[half] = eqs[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return eqs[0];
+    }
+`;
+}
+
+function generateFHECollectionOperators(adjustedFheTypes: AdjustedFheType[]): string {
+  const res: string[] = [];
+
+  const arithmeticTypes = adjustedFheTypes.filter(
+    (t) =>
+      !t.isAlias &&
+      t.supportedOperators.includes('add') &&
+      t.supportedOperators.includes('eq'),
+  );
+
+  arithmeticTypes.forEach((fheType) => {
+    const etype = `e${fheType.type.toLowerCase()}`;
+    const clearType = fheType.clearMatchingType;
+    const isInMax = maxIsInSize();
+    const sumMax = maxSumSize(fheType.bitLength);
+
+    res.push(generateIsInBlock(etype, clearType, isInMax));
+
+    res.push(`
+    /**
+     * @notice Sums an array of encrypted values.
+     * @dev    Tree accumulation keeps DFG depth at ceil(log2(n)) instead of n-1,
+     *         which is critical for large arrays given the per-transaction depth limit.
+     *         Overflow wraps silently, matching FHE.add semantics.
+     *         The input array is not modified.
+     *         Max array size: ${sumMax} (bounded by maxHCUPerTx=20M).
+     */
+    function sum(${etype}[] memory values) internal returns (${etype}) {
+        if (values.length == 0 || values.length > ${sumMax}) revert FHECollectionSizeInvalid(values.length, ${sumMax});
+
+        ${etype}[] memory acc = new ${etype}[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            acc[i] = values[i];
+        }
+
+        uint256 len = acc.length;
+        while (len > 1) {
+            uint256 half = len / 2;
+            for (uint256 i = 0; i < half; i++) {
+                acc[i] = add(acc[i], acc[half + i]);
+            }
+            if (len % 2 == 1) {
+                acc[half] = acc[len - 1];
+                len = half + 1;
+            } else {
+                len = half;
+            }
+        }
+        return acc[0];
+    }
+`);
+  });
+
+  // isIn-only types: support eq but not add (euint256, eaddress).
+  // Excludes ebool — isIn on a boolean is trivially expressible with eq/not.
+  const isInOnlyTypes = adjustedFheTypes.filter(
+    (t) =>
+      t.supportedOperators.includes('eq') &&
+      !t.supportedOperators.includes('add') &&
+      t.type !== 'Bool',
+  );
+
+  isInOnlyTypes.forEach((fheType) => {
+    const etype = `e${fheType.type.toLowerCase()}`;
+    const clearType = fheType.clearMatchingType;
+    const isInMax = maxIsInSize();
+    res.push(generateIsInBlock(etype, clearType, isInMax));
+  });
+
+  return res.join('');
 }
 
 /**
