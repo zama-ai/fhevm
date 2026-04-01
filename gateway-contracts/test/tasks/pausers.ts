@@ -1,20 +1,18 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
+import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { PauserSet } from "../../typechain-types";
-import { createRandomAddress, loadTestVariablesFixture } from "../utils";
+import { getPauserSetContract } from "../../tasks/utils/loadVariables";
 
 describe("Pauser tasks", function () {
-  let pauserSet: PauserSet;
+  let pauserSet: Awaited<ReturnType<typeof getPauserSetContract>>;
 
   before(async function () {
-    const fixtureData = await loadFixture(loadTestVariablesFixture);
-    pauserSet = fixtureData.pauserSet;
+    pauserSet = await getPauserSetContract(true, hre);
   });
 
   it("Should add pausers through the task", async function () {
-    const newPauser = createRandomAddress();
+    const newPauser = Wallet.createRandom().address;
 
     expect(await pauserSet.isPauser(newPauser)).to.eq(false);
 
@@ -27,10 +25,8 @@ describe("Pauser tasks", function () {
   });
 
   it("Should remove a pauser through the task", async function () {
-    const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const owner = fixtureData.owner;
-    const pauserToRemove = createRandomAddress();
-    await pauserSet.connect(owner).addPauser(pauserToRemove);
+    const pauserToRemove = Wallet.createRandom().address;
+    await pauserSet.addPauser(pauserToRemove);
 
     expect(await pauserSet.isPauser(pauserToRemove)).to.eq(true);
 
@@ -43,11 +39,9 @@ describe("Pauser tasks", function () {
   });
 
   it("Should swap a pauser through the task", async function () {
-    const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const owner = fixtureData.owner;
-    const oldPauser = createRandomAddress();
-    const newPauser = createRandomAddress();
-    await pauserSet.connect(owner).addPauser(oldPauser);
+    const oldPauser = Wallet.createRandom().address;
+    const newPauser = Wallet.createRandom().address;
+    await pauserSet.addPauser(oldPauser);
 
     expect(await pauserSet.isPauser(oldPauser)).to.eq(true);
     expect(await pauserSet.isPauser(newPauser)).to.eq(false);
