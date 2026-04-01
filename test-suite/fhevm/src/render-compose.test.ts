@@ -67,6 +67,11 @@ const multiChainHostContractsState: State = {
   }),
 };
 
+const relayerOverrideState: State = {
+  ...state,
+  overrides: [{ group: "relayer" }],
+};
+
 describe("render-compose", () => {
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
@@ -118,6 +123,22 @@ describe("render-compose", () => {
       expect(doc.services["host-sc-chain-b-deploy"]?.build).toBeTruthy();
       expect(doc.services["host-sc-chain-b-add-pausers"]?.image).toContain(":fhevm-local");
       expect(doc.services["host-sc-chain-b-add-pausers"]?.build).toBeTruthy();
+    });
+  });
+
+  test("retags relayer services for local builds when the relayer group is overridden", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(relayerOverrideState, stackSpecForState(relayerOverrideState));
+      const doc = YAML.parse(await readFile(composePath("relayer"), "utf8")) as {
+        services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
+      };
+      expect(doc.services["relayer-db-migration"]?.image).toContain(":fhevm-local");
+      expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain("relayer/docker/relayer-migrate/Dockerfile");
+      expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
+      expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
     });
   });
 

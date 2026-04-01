@@ -168,7 +168,7 @@ describe("cli", () => {
   test("lists valid overrides when override parsing fails", async () => {
     const result = await execCli(["up", "--override", "bogus"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("Valid: all, coprocessor, kms-connector, gateway-contracts, host-contracts, test-suite");
+    expect(result.stderr).toContain("Valid: all, coprocessor, kms-connector, relayer, gateway-contracts, host-contracts, test-suite");
   });
 
   test("prints logs help with an optional service argument", async () => {

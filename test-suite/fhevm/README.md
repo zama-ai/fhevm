@@ -28,7 +28,7 @@ Launching this stack is harder than "run docker compose up".
 The CLI has to assemble one runnable stack from components that move at different speeds:
 
 - repo-owned services can be built from `main`, from a specific SHA, from local workspace code, or from a tracked supported profile
-- non-repo companions such as relayer and kms-core do not automatically track repo-owned `main`
+- non-repo companions such as kms-core do not automatically track repo-owned `main`
 - some targets are meant to reproduce a known baseline (`latest-supported`, network targets, lock files)
 - some targets are meant for active integration work (`latest-main`, `--build`, local overrides)
 - coprocessor topology can also change independently through explicit scenarios

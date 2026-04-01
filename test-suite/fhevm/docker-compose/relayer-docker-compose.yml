@@ -21,6 +21,9 @@ services:
     container_name: relayer-db-migration
     platform: linux/amd64
     image: ${RELAYER_MIGRATE_IMAGE_REPOSITORY}:${RELAYER_MIGRATE_VERSION}
+    build:
+      context: ../../..
+      dockerfile: relayer/docker/relayer-migrate/Dockerfile
     env_file:
       - ../../../.fhevm/runtime/env/relayer.env
     command:
@@ -35,6 +38,9 @@ services:
     container_name: fhevm-relayer
     platform: linux/amd64
     image: ${RELAYER_IMAGE_REPOSITORY}:${RELAYER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: relayer/docker/relayer/Dockerfile
     env_file:
       - ../../../.fhevm/runtime/env/relayer.env
     command:
