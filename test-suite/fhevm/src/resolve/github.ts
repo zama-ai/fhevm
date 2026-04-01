@@ -8,6 +8,8 @@ const FHEVM_REPO = "zama-ai/fhevm";
 const GITOPS_REPO = "zama-zws/gitops";
 const GH_OWNER = "zama-ai";
 const GH_API_TIMEOUT_MS = 20_000;
+const GH_API_RETRIES = 3;
+const GH_API_RETRY_DELAY_MS = 500;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
 const explainGitHubCliError = (message: string): string => {
@@ -28,15 +30,33 @@ const explainGitHubCliError = (message: string): string => {
 };
 
 /** Runs `gh api` and parses its JSON payload with CLI-specific error handling. */
+const shouldRetryGitHubCliError = (message: string) => {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("connection refused") ||
+    lower.includes("timed out") ||
+    lower.includes("tls handshake timeout") ||
+    lower.includes("temporary failure") ||
+    lower.includes("connection reset") ||
+    lower.includes("econnreset")
+  );
+};
+
 const runGhApi = async <T>(apiPath: string): Promise<T> => {
-  try {
-    const result = await run(["gh", "api", apiPath], { timeoutMs: GH_API_TIMEOUT_MS });
-    return JSON.parse(result.stdout) as T;
-  } catch (error) {
-    const message =
-      error instanceof Error ? explainGitHubCliError(error.message) : String(error);
-    throw new GitHubApiError(message);
+  for (let attempt = 1; attempt <= GH_API_RETRIES; attempt += 1) {
+    try {
+      const result = await run(["gh", "api", apiPath], { timeoutMs: GH_API_TIMEOUT_MS });
+      return JSON.parse(result.stdout) as T;
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
+        await Bun.sleep(GH_API_RETRY_DELAY_MS * attempt);
+        continue;
+      }
+      throw new GitHubApiError(explainGitHubCliError(raw));
+    }
   }
+  throw new GitHubApiError("GitHub metadata lookup failed");
 };
 
 /** Fetches paginated GitHub API items until exhausted or the limit is reached. */

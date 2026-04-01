@@ -98,12 +98,15 @@ const SHIM_PROFILES = {
 
 /** Parses a semver-like version string into comparable numeric parts. */
 const parseCompatVersion = (version: string) => {
-  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+]).*)?$/);
   if (!match) {
     return undefined;
   }
-  const [, major, minor, patch] = match;
-  return [Number(major), Number(minor), Number(patch)] as const;
+  const [, major, minor, patch, suffixType] = match;
+  return {
+    parts: [Number(major), Number(minor), Number(patch)] as const,
+    prerelease: suffixType === "-",
+  };
 };
 
 const usesModernRelayerRepository = (version: string) => !parseCompatVersion(version);
@@ -124,12 +127,12 @@ const versionLt = (
   if (!parsed) {
     return options?.unparsed === "legacy";
   }
-  for (let index = 0; index < parsed.length; index += 1) {
-    if (parsed[index] !== target[index]) {
-      return parsed[index] < target[index];
+  for (let index = 0; index < parsed.parts.length; index += 1) {
+    if (parsed.parts[index] !== target[index]) {
+      return parsed.parts[index] < target[index];
     }
   }
-  return false;
+  return parsed.prerelease;
 };
 
 type CompatState =

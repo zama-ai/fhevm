@@ -27,6 +27,21 @@ describe("compat", () => {
     expect(issues).toHaveLength(1);
   });
 
+  test("treats prerelease relayer versions as older than the final release", () => {
+    const issues = validateBundleCompatibility({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          RELAYER_VERSION: "v0.10.0-rc.1",
+          TEST_SUITE_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+    });
+    expect(issues).toHaveLength(1);
+  });
+
   test("builds legacy shim policy for old connector listener", () => {
     const policy = compatPolicyForState({
       versions: {
