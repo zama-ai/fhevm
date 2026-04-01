@@ -801,6 +801,7 @@ export const up = async (options: UpOptions) => {
   const started = Date.now();
   const persistedState = await loadState();
   let state = options.resume ? persistedState : undefined;
+  let fromStep = options.fromStep;
   if (options.resume && !state) {
     throw new ResumeError("No .fhevm/state/state.json to resume from");
   }
@@ -819,12 +820,30 @@ export const up = async (options: UpOptions) => {
     ensureResumeOptions(state, options);
     await ensureRuntimeArtifacts(state, "resume");
     const running = await projectContainers();
-    if (!running.length && !options.fromStep) {
-      console.log("[resume] stack is stopped; restarting from base");
+    if (!running.length) {
+      console.log(
+        fromStep
+          ? `[resume] stack is stopped; ignoring --from-step ${fromStep} and restarting from base`
+          : "[resume] stack is stopped; restarting from base",
+      );
       state.completedSteps = [];
+      fromStep = undefined;
       await saveState(state);
-    } else if (!options.fromStep) {
-      const repairFrom = resumeRepairStep(state, running);
+    } else if (!fromStep) {
+      const names = await projectContainers(true);
+      const inspected = await Promise.all(names.map(async (name) => (await dockerInspect(name))[0]));
+      const repairFrom = resumeRepairStep(
+        state,
+        new Map(
+          names.map((name, index) => [
+            name,
+            {
+              status: inspected[index]?.State.Status ?? "missing",
+              health: inspected[index]?.State.Health?.Status,
+            },
+          ]),
+        ),
+      );
       if (repairFrom) {
         console.log(`[resume] detected degraded stack; repairing from ${repairFrom}`);
         state.completedSteps = state.completedSteps.filter((step) => stateStepIndex(step) < stateStepIndex(repairFrom));
@@ -838,12 +857,12 @@ export const up = async (options: UpOptions) => {
   for (const warning of overrideWarnings(visibleOverrides(state), state.target)) {
     console.log(`[warn] ${warning}`);
   }
-  if (options.resume && options.fromStep) {
-    await resetAfterStep(options.fromStep, STEP_NAMES, COMPONENT_BY_STEP, stateStepIndex, state);
-    state.completedSteps = state.completedSteps.filter((step) => stateStepIndex(step) < stateStepIndex(options.fromStep!));
+  if (options.resume && fromStep) {
+    await resetAfterStep(fromStep, STEP_NAMES, COMPONENT_BY_STEP, stateStepIndex, state);
+    state.completedSteps = state.completedSteps.filter((step) => stateStepIndex(step) < stateStepIndex(fromStep));
     await saveState(state);
   }
-  const from = startStep(state, options);
+  const from = startStep(state, { ...options, fromStep });
   for (const step of STEP_NAMES.slice(stateStepIndex(from))) {
     if (options.resume && state.completedSteps.includes(step) && !options.fromStep) {
       continue;
@@ -1116,15 +1135,18 @@ export const upgrade = async (groupValue: string | undefined) => {
   await maybeBuild(component, state, { force: true });
   await composeUp(component, runtimeServices, { noDeps: true });
   if (group === "coprocessor") {
-    for (const target of multiChainCoprocessorUpgradeTargets(state, runtimeServices)) {
+    const extraTargets = multiChainCoprocessorUpgradeTargets(state, runtimeServices);
+    for (const target of extraTargets) {
       if (target.services.length) {
         await multiChainComposeUp(target.compose, target.services);
       }
       await waitForStableChainListeners(state, target.chainKey);
     }
     await waitForCoprocessor(state);
+    await postBootHealthGate([...runtimeServices, ...extraTargets.flatMap((target) => target.services)]);
   } else if (group === "kms-connector") {
     await waitForKmsConnector();
+    await postBootHealthGate(runtimeServices);
   } else {
     await waitForContainer(TEST_SUITE_CONTAINER, "running");
   }

@@ -14,6 +14,7 @@ import {
 } from "./target";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
+const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
 
 /** Computes the cache file path for a resolved bundle target. */
 const resolveCachePath = (target: string, sha?: string) => {
@@ -37,6 +38,9 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   }
   if (typeof candidate.lockName !== "string" || !candidate.lockName.length) {
     throw new GitHubApiError("Lock file must include a non-empty lockName");
+  }
+  if (path.basename(candidate.lockName) !== candidate.lockName || !SAFE_LOCK_NAME.test(candidate.lockName)) {
+    throw new GitHubApiError(`Lock file has an invalid lockName: ${candidate.lockName}`);
   }
   if (!Array.isArray(candidate.sources) || candidate.sources.some((source) => typeof source !== "string")) {
     throw new GitHubApiError("Lock file must include a string[] sources list");

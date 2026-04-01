@@ -83,13 +83,16 @@ const validateInstanceArgs = (args: Record<string, string[]> | undefined, label:
 /** Resolves a scenario reference into candidate on-disk YAML paths. */
 const scenarioCandidatePaths = (value: string) => {
   const absolute = path.resolve(value);
-  const explicit = value.includes("/") || value.includes("\\") || SCENARIO_FILE.test(value);
-  return explicit
-    ? [absolute]
-    : [
-        path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yaml`),
-        path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yml`),
-      ];
+  if (value.includes("/") || value.includes("\\")) {
+    return [absolute];
+  }
+  if (SCENARIO_FILE.test(value)) {
+    return [path.join(COPROCESSOR_SCENARIO_DIR, value), absolute];
+  }
+  return [
+    path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yaml`),
+    path.join(COPROCESSOR_SCENARIO_DIR, `${value}.yml`),
+  ];
 };
 
 const DEFAULT_HOST_CHAIN: HostChainScenario = { key: DEFAULT_HOST_CHAIN_KEY, chainId: DEFAULT_CHAIN_ID, rpcPort: DEFAULT_HOST_RPC_PORT };

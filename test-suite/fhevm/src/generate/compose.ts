@@ -109,6 +109,25 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 
+/** Normalizes compose environment syntax into a flat map before local overrides are merged. */
+const normalizeEnvironment = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return Object.fromEntries(
+      value.map((item) => {
+        const entry = String(item);
+        const index = entry.indexOf("=");
+        return index < 0 ? [entry, ""] : [entry.slice(0, index), entry.slice(index + 1)];
+      }),
+    ) as Record<string, string>;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, String(item ?? "")]),
+    ) as Record<string, string>;
+  }
+  return {} as Record<string, string>;
+};
+
 /** Recursively interpolates compose values using a flat env map. */
 const interpolateComposeValue = (value: unknown, vars: Record<string, string>): unknown => {
   if (typeof value === "string") {
@@ -156,7 +175,7 @@ const applyInstanceAdjustments = (
   }
   next.env_file = [envFileValue];
   if (Object.keys(override.env).length) {
-    next.environment = { ...(next.environment as Record<string, string> | undefined), ...override.env };
+    next.environment = { ...normalizeEnvironment(next.environment), ...override.env };
   }
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
@@ -184,7 +203,7 @@ const applyInstanceAdjustments = (
   }
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
-    next.command = mergeArgs(current, override.args[serviceKey] ?? override.args["*"] ?? []);
+    next.command = mergeArgs(current, [...(override.args["*"] ?? []), ...(override.args[serviceKey] ?? [])]);
   }
   return next;
 };

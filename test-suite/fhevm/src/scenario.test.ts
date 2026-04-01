@@ -15,6 +15,11 @@ describe("scenario", () => {
     expect(path.basename(file)).toBe("two-of-two.yaml");
   });
 
+  test("parses bundled scenarios by filename form", async () => {
+    const file = await resolveScenarioReference("two-of-two.yaml");
+    expect(path.basename(file)).toBe("two-of-two.yaml");
+  });
+
   test("rejects localServices unless source.mode=local", () => {
     expect(() =>
       parseCoprocessorScenario(`

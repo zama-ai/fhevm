@@ -1,3 +1,5 @@
+import path from "node:path";
+import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -9,7 +11,8 @@ import {
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
-import { targetUsesCache } from "./resolve/bundle-store";
+import { resolveBundle, targetUsesCache } from "./resolve/bundle-store";
+import { withTempStateDir } from "./test-state";
 
 describe("resolve", () => {
   test("locates the ACL and runtime compat floors", () => {
@@ -52,5 +55,32 @@ describe("resolve", () => {
     expect(targetUsesCache("testnet")).toBe(false);
     expect(targetUsesCache("mainnet")).toBe(false);
     expect(targetUsesCache("sha")).toBe(true);
+  });
+
+  test("rejects lock names that escape the lock directory", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "malicious-lock.json");
+      await writeFile(
+        lockFile,
+        JSON.stringify({
+          target: "latest-main",
+          lockName: "../../escape.json",
+          sources: ["test"],
+          env: presetBundle("latest-main", "abcdef0", "latest-main.json").env,
+        }),
+      );
+      await expect(
+        resolveBundle(
+          {
+            target: "latest-main",
+            requestedTarget: undefined,
+            sha: undefined,
+            lockFile,
+            reset: false,
+          },
+          process.env,
+        ),
+      ).rejects.toThrow("invalid lockName");
+    });
   });
 });

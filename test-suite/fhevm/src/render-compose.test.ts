@@ -72,6 +72,31 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const envAndArgsScenarioState: State = {
+  ...state,
+  scenario: resolveScenarioFile(
+    path.join("/tmp", "env-and-args.yaml"),
+    parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: local
+    env:
+      EXTRA_FLAG: enabled
+    args:
+      "*":
+        - --error-sleep-max-secs=30
+      host-listener:
+        - --initial-block-time=2
+`),
+  ),
+};
+
 describe("render-compose", () => {
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
@@ -177,6 +202,37 @@ describe("render-compose", () => {
       expect(defaultMount).toContain("/addresses/chain-a:/app/addresses");
       expect(extra.services["host-sc-chain-b-deploy"]?.volumes?.[0]).toContain(
         "/addresses/chain-b:/app/addresses",
+      );
+    });
+  });
+
+  test("merges instance env into list-form service environments without dropping KEY_ID", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "FHE_KEY_ID=deadbeef\n");
+      await generateComposeOverrides(envAndArgsScenarioState, stackSpecForState(envAndArgsScenarioState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { environment?: Record<string, string> }>;
+      };
+      expect(doc.services["coprocessor1-db-migration"]?.environment).toMatchObject({
+        KEY_ID: "deadbeef",
+        EXTRA_FLAG: "enabled",
+      });
+    });
+  });
+
+  test("composes wildcard and service-specific scenario args", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(envAndArgsScenarioState, stackSpecForState(envAndArgsScenarioState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
+        expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
       );
     });
   });

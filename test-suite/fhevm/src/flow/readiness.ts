@@ -111,7 +111,12 @@ export const waitForRpc = async (url: string) => {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
       });
       if (response.ok) {
-        return;
+        const body = await response.json().catch(() => null) as
+          | { jsonrpc?: string; result?: unknown; error?: unknown }
+          | null;
+        if (body?.jsonrpc === "2.0" && typeof body.result === "string" && !body.error) {
+          return;
+        }
       }
     } catch {
       // retry

@@ -47,13 +47,25 @@ export const resumeSteadyStateServices = (state: State) => {
   } satisfies Partial<Record<StepName, string[]>>;
 };
 
+type RuntimeServiceStatus = { status: string; health?: string };
+const normalizeRuntimeStatuses = (running: Iterable<string> | ReadonlyMap<string, RuntimeServiceStatus>) =>
+  running instanceof Map
+    ? running
+    : new Map([...running].map((name) => [name, { status: "running" }] as const));
+
+const isRuntimeServiceHealthy = (status: RuntimeServiceStatus | undefined) =>
+  status?.status === "running" && (status.health === undefined || status.health === "healthy");
+
 /** Chooses the earliest step that must rerun to repair a degraded resumed stack. */
-export const resumeRepairStep = (state: State, running: Iterable<string>): StepName | undefined => {
-  const live = new Set(running);
+export const resumeRepairStep = (
+  state: State,
+  running: Iterable<string> | ReadonlyMap<string, RuntimeServiceStatus>,
+): StepName | undefined => {
+  const live = normalizeRuntimeStatuses(running);
   const expected = resumeSteadyStateServices(state);
   const completed = new Set(state.completedSteps);
   return (Object.entries(expected) as Array<[StepName, string[]]>).find(
-    ([step, services]) => completed.has(step) && services.some((service) => !live.has(service)),
+    ([step, services]) => completed.has(step) && services.some((service) => !isRuntimeServiceHealthy(live.get(service))),
   )?.[0];
 };
 

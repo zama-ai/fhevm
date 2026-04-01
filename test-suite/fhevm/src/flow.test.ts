@@ -189,6 +189,30 @@ describe("resumeRepairStep", () => {
     ];
     expect(resumeRepairStep(state, running)).toBeUndefined();
   });
+
+  test("repairs from coprocessor when a required runtime container is unhealthy", () => {
+    const live = new Map([
+      ["fhevm-minio", { status: "running" }],
+      ["coprocessor-and-kms-db", { status: "running", health: "healthy" }],
+      ["kms-core", { status: "running" }],
+      ["host-node", { status: "running" }],
+      ["gateway-node", { status: "running" }],
+      ["coprocessor-host-listener", { status: "running" }],
+      ["coprocessor-host-listener-poller", { status: "running" }],
+      ["coprocessor-gw-listener", { status: "running" }],
+      ["coprocessor-tfhe-worker", { status: "running", health: "unhealthy" }],
+      ["coprocessor-zkproof-worker", { status: "running" }],
+      ["coprocessor-sns-worker", { status: "running" }],
+      ["coprocessor-transaction-sender", { status: "running" }],
+      ["kms-connector-gw-listener", { status: "running" }],
+      ["kms-connector-kms-worker", { status: "running" }],
+      ["kms-connector-tx-sender", { status: "running" }],
+      ["fhevm-relayer-db", { status: "running", health: "healthy" }],
+      ["fhevm-relayer", { status: "running" }],
+      ["fhevm-test-suite-e2e-debug", { status: "running" }],
+    ]);
+    expect(resumeRepairStep(completeState(), live)).toBe("coprocessor");
+  });
 });
 
 describe("runtime helpers", () => {
