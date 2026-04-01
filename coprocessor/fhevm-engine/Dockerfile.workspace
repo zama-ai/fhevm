@@ -216,6 +216,7 @@ COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 
 # Copy migrations and initialization script from source
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh /initialize_db.sh
+COPY coprocessor/fhevm-engine/db-migration/insert_test_host_chain.sh /insert_test_host_chain.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations /migrations
 
 # Copy user/group from builder for consistency
@@ -223,7 +224,7 @@ COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 
 # Set ownership
-RUN chown -R fhevm:fhevm /initialize_db.sh /migrations
+RUN chown -R fhevm:fhevm /initialize_db.sh /insert_test_host_chain.sh /migrations
 
 USER fhevm:fhevm
 
