@@ -128,4 +128,5 @@ describe("resolve", () => {
       ),
     ).rejects.toThrow("Relayer only serves /v1 API");
   });
+
 });

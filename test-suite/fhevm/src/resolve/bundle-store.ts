@@ -58,11 +58,16 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   return candidate as VersionBundle;
 };
 
-const validateRuntimeCompat = async (bundle: VersionBundle) => {
+const validateBundleCompat = async (bundle: VersionBundle) => {
   const incompatibilities = validateBundleCompatibility({ versions: bundle });
   if (incompatibilities.length) {
     throw new GitHubApiError(incompatibilities.map((item) => item.message).join("\n"));
   }
+  return bundle;
+};
+
+const validateRuntimeCompat = async (bundle: VersionBundle) => {
+  await validateBundleCompat(bundle);
   if (bundle.target === "sha") {
     try {
       assertSupportedShaBundle(bundle, await mainCommits(5000));
@@ -169,7 +174,7 @@ export const resolveBundle = async (
   env: Record<string, string | undefined>,
 ) => {
   const bundle = await cachedResolve(options);
-  const resolved = await validateRuntimeCompat(applyVersionEnvOverrides(bundle, env));
+  const resolved = await validateBundleCompat(applyVersionEnvOverrides(bundle, env));
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
 };
@@ -178,4 +183,4 @@ export const resolveBundle = async (
 export const previewBundle = async (
   options: CachedResolveOptions,
   env: Record<string, string | undefined>,
-) => validateRuntimeCompat(applyVersionEnvOverrides(await cachedResolve(options), env));
+) => validateBundleCompat(applyVersionEnvOverrides(await cachedResolve(options), env));
