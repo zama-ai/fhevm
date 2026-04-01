@@ -32,7 +32,7 @@ export const dockerInspect = async (name: string) => {
     if (/no such object|no such container/i.test(message)) {
       return [] as Array<{
         Name: string;
-        State: { Status: string; ExitCode: number; Health?: { Status: string } };
+        State: { Status: string; ExitCode: number; StartedAt?: string; Health?: { Status: string } };
         NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
       }>;
     }
@@ -41,7 +41,7 @@ export const dockerInspect = async (name: string) => {
   try {
     return JSON.parse(result.stdout) as Array<{
       Name: string;
-      State: { Status: string; ExitCode: number; Health?: { Status: string } };
+      State: { Status: string; ExitCode: number; StartedAt?: string; Health?: { Status: string } };
       NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
     }>;
   } catch (error) {
@@ -81,13 +81,16 @@ export const waitForContainer = async (container: string, want: "running" | "hea
 /** Waits until container logs contain the requested pattern. */
 export const waitForLog = async (container: string, pattern: RegExp) => {
   for (let attempt = 0; attempt <= 90; attempt += 1) {
-    const logs = await run(["docker", "logs", container], { allowFailure: true });
+    const [inspect] = await dockerInspect(container);
+    const logs = await run(
+      ["docker", "logs", ...(inspect?.State.StartedAt ? ["--since", inspect.State.StartedAt] : []), container],
+      { allowFailure: true },
+    );
     const combined = logs.stdout + logs.stderr;
     const match = combined.match(pattern);
     if (match) {
       return match[0];
     }
-    const [inspect] = await dockerInspect(container);
     if (inspect?.State.Status === "exited") {
       if (inspect.State.ExitCode !== 0) {
         throw new ContainerCrashed(container, inspect.State.ExitCode, combined.trim());

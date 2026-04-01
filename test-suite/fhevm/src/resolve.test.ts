@@ -12,7 +12,7 @@ import {
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
-import { resolveBundle, targetUsesCache } from "./resolve/bundle-store";
+import { previewBundle, resolveBundle, targetUsesCache } from "./resolve/bundle-store";
 import { withTempStateDir } from "./test-state";
 
 describe("resolve", () => {
@@ -109,5 +109,23 @@ describe("resolve", () => {
         ),
       ).rejects.toThrow("invalid lockName");
     });
+  });
+
+  test("rejects incompatible env-overridden bundles during preview", async () => {
+    await expect(
+      previewBundle(
+        {
+          target: "latest-supported",
+          requestedTarget: undefined,
+          sha: undefined,
+          lockFile: undefined,
+          reset: false,
+        },
+        {
+          RELAYER_VERSION: "v0.9.0",
+          TEST_SUITE_VERSION: "v0.11.0",
+        },
+      ),
+    ).rejects.toThrow("Relayer only serves /v1 API");
   });
 });

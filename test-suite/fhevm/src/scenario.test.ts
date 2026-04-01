@@ -93,6 +93,25 @@ topology:
     ).toThrow('duplicate hostChains rpcPort "8545"');
   });
 
+  test("rejects duplicate hostChains chainIds", () => {
+    expect(() =>
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "12345"
+    rpcPort: 8547
+topology:
+  count: 1
+  threshold: 1
+`),
+    ).toThrow('duplicate hostChains chainId "12345"');
+  });
+
   test("synthesizes a local coprocessor scenario from override shorthand", () => {
     const scenario = synthesizeOverrideScenario([
       { group: "coprocessor", services: ["coprocessor-host-listener"] },

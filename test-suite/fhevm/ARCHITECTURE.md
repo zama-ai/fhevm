@@ -132,7 +132,7 @@ Only non-repo companions still come from the mainline defaults in `src/resolve/p
   - env templates: `templates/env/.env.*`
   - generated config templates: `templates/config/relayer.yaml`, `templates/config/kms-core-*.toml`
   - static config: `static/config/prometheus/prometheus.yml`
-  - checked-in scenario inputs under `scenarios/`
+  - checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 - `src/stack-spec/stack-spec.ts` resolves the final stack spec consumed by generation.
 - `src/generate/env.ts`, `src/generate/config.ts`, and `src/generate/compose.ts` are the only generation layers.
 - Compatibility is enforced in two layers: `src/compat/compat.ts` defines shims and incompatibilities, and `bun run compat-smoke` probes the generated legacy command/env contract. It is not a full rendered-runtime replay.

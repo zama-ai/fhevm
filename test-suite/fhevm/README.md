@@ -103,7 +103,7 @@ There are four kinds of inputs/runtime artifacts:
 - tracked config:
   - relayer template input: `templates/config/relayer.yaml`
   - template/static config: `templates/config/kms-core-*.toml`, `static/config/prometheus/prometheus.yml`
-- checked-in scenario inputs under `scenarios/` (currently `two-of-two.yaml`)
+- checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 
 Generated runtime artifacts always live under `.fhevm/`:
 
@@ -341,6 +341,7 @@ Supported groups:
 
 - `coprocessor`
 - `kms-connector`
+- `relayer`
 - `gateway-contracts`
 - `host-contracts`
 - `test-suite`
@@ -349,6 +350,7 @@ Supported groups:
 
 ```sh
 ./fhevm-cli up --target latest-supported --override coprocessor
+./fhevm-cli up --target latest-main --override relayer
 ./fhevm-cli up --target latest-main --override test-suite
 ```
 

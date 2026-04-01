@@ -104,6 +104,7 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
       throw new Error(`${sourceLabel}: hostChains must be an array`);
     }
     const seen = new Set<string>();
+    const seenChainIds = new Set<string>();
     const seenPorts = new Set<number>();
     const hostChains = parsed.hostChains.map((entry, index) => {
       if (!entry || typeof entry !== "object") {
@@ -124,6 +125,10 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
       if (!/^\d+$/.test(chainId)) {
         throw new Error(`${sourceLabel}: hostChains[${index}].chainId "${chainId}" must be a numeric string`);
       }
+      if (seenChainIds.has(chainId)) {
+        throw new Error(`${sourceLabel}: duplicate hostChains chainId "${chainId}"`);
+      }
+      seenChainIds.add(chainId);
       const rpcPort = Number(chain.rpcPort);
       if (!Number.isInteger(rpcPort) || rpcPort < 1) {
         throw new Error(`${sourceLabel}: hostChains[${index}].rpcPort must be a positive integer`);

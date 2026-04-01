@@ -4,6 +4,7 @@
 import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
+import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
@@ -310,7 +311,12 @@ const snsWorkerContainers = (instanceCount: number) =>
   Array.from({ length: instanceCount }, (_, index) => (index === 0 ? "coprocessor-sns-worker" : `coprocessor${index}-sns-worker`));
 
 /** Builds the docker logs command used to detect sns-worker key bootstrap. */
-export const keyBootstrapLogArgs = (container: string) => ["docker", "logs", container];
+export const keyBootstrapLogArgs = (container: string, since?: string) => [
+  "docker",
+  "logs",
+  ...(since ? ["--since", since] : []),
+  container,
+];
 
 /** Waits until enough sns-worker containers have fetched key material after bootstrap. */
 export const waitForKeyBootstrap = async (
@@ -322,7 +328,12 @@ export const waitForKeyBootstrap = async (
 ) => {
   const topology = topologyForState(state);
   const containers = snsWorkerContainers(topology.count);
-  const readLogs = deps.readLogs ?? ((container: string) => run(keyBootstrapLogArgs(container), { allowFailure: true }));
+  const readLogs =
+    deps.readLogs ??
+    (async (container: string) => {
+      const [inspect] = await dockerInspect(container);
+      return run(keyBootstrapLogArgs(container, inspect?.State.StartedAt), { allowFailure: true });
+    });
   const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     let ready = 0;

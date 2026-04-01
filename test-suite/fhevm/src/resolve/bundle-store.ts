@@ -58,7 +58,7 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   return candidate as VersionBundle;
 };
 
-const validateLockedRuntimeCompat = async (bundle: VersionBundle) => {
+const validateRuntimeCompat = async (bundle: VersionBundle) => {
   const incompatibilities = validateBundleCompatibility({ versions: bundle });
   if (incompatibilities.length) {
     throw new GitHubApiError(incompatibilities.map((item) => item.message).join("\n"));
@@ -108,7 +108,7 @@ const bundleFromFile = async (target: VersionTarget | undefined, lockFile: strin
   if (target && bundle.target && bundle.target !== target) {
     throw new GitHubApiError(`Lock file target mismatch: bundle=${bundle.target}, requested=${target}`);
   }
-  return validateLockedRuntimeCompat({
+  return validateRuntimeCompat({
     ...bundle,
     target: bundle.target ?? target ?? "latest-main",
   });
@@ -145,7 +145,7 @@ const cachedResolve = async (options: CachedResolveOptions) => {
       throw new GitHubApiError(`Cached bundle target mismatch: cache=${cached.target}, requested=${options.target}`);
     }
     console.log(`[resolve] using cached ${options.target} bundle`);
-    return await validateLockedRuntimeCompat(cached);
+    return await validateRuntimeCompat(cached);
   }
 
   console.log(`[resolve] resolving ${options.target} bundle`);
@@ -169,7 +169,7 @@ export const resolveBundle = async (
   env: Record<string, string | undefined>,
 ) => {
   const bundle = await cachedResolve(options);
-  const resolved = applyVersionEnvOverrides(bundle, env);
+  const resolved = await validateRuntimeCompat(applyVersionEnvOverrides(bundle, env));
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
 };
@@ -178,4 +178,4 @@ export const resolveBundle = async (
 export const previewBundle = async (
   options: CachedResolveOptions,
   env: Record<string, string | undefined>,
-) => applyVersionEnvOverrides(await cachedResolve(options), env);
+) => validateRuntimeCompat(applyVersionEnvOverrides(await cachedResolve(options), env));

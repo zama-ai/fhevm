@@ -9,7 +9,7 @@ In practice, this usually means `latest-supported`, or another target the projec
 - startup assumptions
 - runtime config shape
 
-The compatibility layer lives in [`src/compat/compat.ts`](/Users/work/code/zama/fhevm/test-suite/fhevm/src/compat/compat.ts).
+The compatibility layer lives in [`src/compat/compat.ts`](src/compat/compat.ts).
 
 ## What "compat" means here
 
@@ -42,9 +42,9 @@ For that, targeted runtime QA is still needed.
 
 When a supported old target breaks, there are only three valid responses:
 
-1. **Add or update a shim** in [`src/compat/compat.ts`](/Users/work/code/zama/fhevm/test-suite/fhevm/src/compat/compat.ts)
-2. **Add or update an incompatibility rule** in [`src/compat/compat.ts`](/Users/work/code/zama/fhevm/test-suite/fhevm/src/compat/compat.ts)
-3. **Raise the support floor** in [`src/resolve/target.ts`](/Users/work/code/zama/fhevm/test-suite/fhevm/src/resolve/target.ts)
+1. **Add or update a shim** in [`src/compat/compat.ts`](src/compat/compat.ts)
+2. **Add or update an incompatibility rule** in [`src/compat/compat.ts`](src/compat/compat.ts)
+3. **Raise the support floor** in [`src/resolve/target.ts`](src/resolve/target.ts)
 
 Use a **shim** when the old supported bundle can still run with a small CLI-side adjustment.
 
@@ -55,7 +55,7 @@ Examples:
 
 Use an **incompatibility rule** when the combination should fail early with a clear message instead of reaching boot.
 
-Use a **support-floor increase** when the project no longer intends to support that bundle at all. Today that includes the simple-ACL floor and the later gw-listener drift-address floor in [`src/resolve/target.ts`](/Users/work/code/zama/fhevm/test-suite/fhevm/src/resolve/target.ts).
+Use a **support-floor increase** when the project no longer intends to support that bundle at all. Today that includes the simple-ACL floor and the later gw-listener drift-address floor in [`src/resolve/target.ts`](src/resolve/target.ts).
 
 ## When to think about compat
 

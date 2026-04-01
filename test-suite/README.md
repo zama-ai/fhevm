@@ -86,7 +86,7 @@ To run one local component on top of an otherwise versioned stack, use `--overri
 # Override an entire group (builds all services locally)
 ./fhevm-cli up --target latest-supported --override coprocessor
 
-Supported override groups are `coprocessor`, `kms-connector`, `gateway-contracts`, `host-contracts`, and `test-suite`.
+Supported override groups are `coprocessor`, `kms-connector`, `relayer`, `gateway-contracts`, `host-contracts`, and `test-suite`.
 Per-service override syntax is supported only for runtime groups: `coprocessor`, `kms-connector`, and `test-suite`.
 Local overrides always build release images.
 On `latest-supported`, per-service overrides for `coprocessor` and `kms-connector` are rejected by default when local DB migrations diverge from the tracked baseline profile. Use the full-group override, or pass `--allow-schema-mismatch` if you know the mixed stack remains compatible.
