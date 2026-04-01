@@ -124,10 +124,12 @@ import {
   inspectImageId,
   maybeBuild,
   multiChainComposeDown,
+  multiChainComposeTask,
   multiChainComposeUp,
   projectContainers,
   removeProjectResources,
   resetAfterStep,
+  stepComposeTask,
   stepComposeUp,
 } from "./runtime-compose";
 import { pause, runContractTask, unpause } from "./contracts";
@@ -494,9 +496,9 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "gateway-deploy":
-      await stepComposeUp("gateway-mocked-payment", state, ["gateway-deploy-mocked-zama-oft"]);
+      await stepComposeTask("gateway-mocked-payment", state, ["gateway-deploy-mocked-zama-oft"]);
       await waitForContainer("gateway-deploy-mocked-zama-oft", "complete");
-      await stepComposeUp("gateway-sc", state, ["gateway-sc-deploy"]);
+      await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
       await waitForContainer("gateway-sc-deploy", "complete");
       await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
@@ -507,14 +509,14 @@ export const runStep = async (state: State, step: StepName) => {
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
-      await stepComposeUp("gateway-mocked-payment", state, ["gateway-set-relayer-mocked-payment"], { noDeps: true });
+      await stepComposeTask("gateway-mocked-payment", state, ["gateway-set-relayer-mocked-payment"], { noDeps: true });
       await waitForContainer("gateway-set-relayer-mocked-payment", "complete");
       break;
     case "host-deploy":
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeUp("host-sc", state, ["host-sc-deploy"]);
+      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
       await waitForContainer("host-sc-deploy", "complete");
       await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
@@ -526,7 +528,7 @@ export const runStep = async (state: State, step: StepName) => {
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
-          await multiChainComposeUp(scKey, [`${scKey}-deploy`]);
+          await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
           await waitForContainer(`${scKey}-deploy`, "complete");
           await ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
             "ACL_CONTRACT_ADDRESS",
@@ -537,7 +539,7 @@ export const runStep = async (state: State, step: StepName) => {
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
-          await multiChainComposeUp(scKey, [`${scKey}-add-pausers`]);
+          await multiChainComposeTask(scKey, [`${scKey}-add-pausers`]);
           await waitForContainer(`${scKey}-add-pausers`, "complete");
         });
       }
@@ -609,7 +611,7 @@ export const runStep = async (state: State, step: StepName) => {
       ).every(Boolean);
       if (!hostChainsRegistered) {
         await timed("[bootstrap] add-network", () =>
-          stepComposeUp("gateway-sc", state, ["gateway-sc-add-network"], { noDeps: true }),
+          stepComposeTask("gateway-sc", state, ["gateway-sc-add-network"], { noDeps: true }),
         );
         await waitForContainer("gateway-sc-add-network", "complete");
       }
@@ -632,7 +634,7 @@ export const runStep = async (state: State, step: StepName) => {
       ).catch(() => false);
       if (!hostPauserRegistered) {
         await timed("[bootstrap] add-host-pausers", () =>
-          stepComposeUp("host-sc", state, ["host-sc-add-pausers"], { noDeps: true }),
+          stepComposeTask("host-sc", state, ["host-sc-add-pausers"], { noDeps: true }),
         );
         await waitForContainer("host-sc-add-pausers", "complete");
       }
@@ -644,16 +646,16 @@ export const runStep = async (state: State, step: StepName) => {
       ).catch(() => false);
       if (!gatewayPauserRegistered) {
         await timed("[bootstrap] add-gateway-pausers", () =>
-          stepComposeUp("gateway-sc", state, ["gateway-sc-add-pausers"], { noDeps: true }),
+          stepComposeTask("gateway-sc", state, ["gateway-sc-add-pausers"], { noDeps: true }),
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeUp("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
+        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
       );
       await waitForContainer("gateway-sc-trigger-keygen", "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeUp("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
+        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
       );
       await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));

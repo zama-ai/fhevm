@@ -96,11 +96,18 @@ const refsAlreadyBuilt = async (state: State, refs: string[]) =>
 export const composeUp = async (
   component: string,
   services: string[] = [],
-  options: { noDeps?: boolean; env?: Record<string, string> } = {},
+  options: { noDeps?: boolean; forceRecreate?: boolean; env?: Record<string, string> } = {},
 ) => {
   try {
     await runStreaming(
-      [...dockerArgs(component), "up", "-d", ...(options.noDeps ? ["--no-deps"] : []), ...services],
+      [
+        ...dockerArgs(component),
+        "up",
+        "-d",
+        ...(options.noDeps ? ["--no-deps"] : []),
+        ...(options.forceRecreate ? ["--force-recreate"] : []),
+        ...services,
+      ],
       { env: await composeEnv(component, options.env) },
     );
   } catch (error) {
@@ -254,6 +261,17 @@ export const stepComposeUp = async (
   await composeUp(component, services, options);
 };
 
+/** Builds then starts one-shot compose task services with fresh container semantics. */
+export const stepComposeTask = async (
+  component: string,
+  state: State,
+  services: string[],
+  options?: { noDeps?: boolean; env?: Record<string, string> },
+) => {
+  await maybeBuild(component, state);
+  await composeUp(component, services, { ...options, forceRecreate: true });
+};
+
 /** Maps a multi-chain compose name to the component whose env it needs. */
 const multiChainEnvComponent = (name: string) =>
   name.startsWith("coprocessor-") ? "coprocessor" : name;
@@ -262,18 +280,37 @@ const multiChainEnvComponent = (name: string) =>
 export const multiChainComposeUp = async (
   name: string,
   services?: string[],
+  options?: { forceRecreate?: boolean },
 ) => {
   const file = composePath(name);
   const component = multiChainEnvComponent(name);
   try {
     await runStreaming(
-      ["docker", "compose", "-p", PROJECT, "-f", file, "up", "-d", "--no-deps", ...(services ?? [])],
+      [
+        "docker",
+        "compose",
+        "-p",
+        PROJECT,
+        "-f",
+        file,
+        "up",
+        "-d",
+        "--no-deps",
+        ...(options?.forceRecreate ? ["--force-recreate"] : []),
+        ...(services ?? []),
+      ],
       { env: await composeEnv(component) },
     );
   } catch (error) {
     throw new ContainerStartError(name, error instanceof Error ? error.message : String(error));
   }
 };
+
+/** Starts one-shot services from a generated multi-chain compose file with fresh container semantics. */
+export const multiChainComposeTask = async (
+  name: string,
+  services: string[],
+) => multiChainComposeUp(name, services, { forceRecreate: true });
 
 /** Stops one generated multi-chain compose file. */
 export const multiChainComposeDown = async (name: string) => {

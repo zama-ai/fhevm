@@ -498,24 +498,25 @@ const runDbStateRevert = async (
   return runLogged("coprocessor-db-state-revert", started, async () => {
     await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert seed");
 
-    const before = await dbRevertSnapshot(chainId, postgres);
-    console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
-    if (before.computationsDone === 0) {
-      throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
-    }
-
-    const maxBlock = Number(
-      await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
-    );
-    const revertTo = Math.floor(maxBlock / 2);
-    if (revertTo <= 0) {
-      throw new PreflightError(`db-state-revert requires a positive midpoint block; got max block ${maxBlock}`);
-    }
-
+    let before;
     let stopped = false;
     try {
       await setContainersRunning(containers, "stop");
       stopped = true;
+
+      before = await dbRevertSnapshot(chainId, postgres);
+      console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
+      if (before.computationsDone === 0) {
+        throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
+      }
+
+      const maxBlock = Number(
+        await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
+      );
+      const revertTo = Math.floor(maxBlock / 2);
+      if (revertTo <= 0) {
+        throw new PreflightError(`db-state-revert requires a positive midpoint block; got max block ${maxBlock}`);
+      }
 
       const network = (
         await run([
