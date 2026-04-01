@@ -12,6 +12,7 @@ task("task:removeGatewayPauser")
   .addParam("pauserAddress", "Address of the pauser to remove", undefined, types.string)
   .setAction(async function ({ useInternalProxyAddress, pauserAddress }, hre) {
     const pauserSet = await getPauserSetContract(useInternalProxyAddress, hre);
-    await pauserSet.removePauser(pauserAddress);
+    const tx = await pauserSet.removePauser(pauserAddress);
+    await tx.wait();
     console.log("Removed pauser:", pauserAddress);
   });

@@ -19,7 +19,8 @@ task("task:addGatewayPausers")
 
     const pauserSet = await getPauserSetContract(useInternalProxyAddress, hre);
     for (const pauser of pausers) {
-      await pauserSet.addPauser(pauser);
+      const tx = await pauserSet.addPauser(pauser);
+      await tx.wait();
     }
 
     console.log("Added pausers:", pausers);

@@ -13,6 +13,7 @@ task("task:swapGatewayPauser")
   .addParam("newPauserAddress", "Address of the new pauser", undefined, types.string)
   .setAction(async function ({ useInternalProxyAddress, oldPauserAddress, newPauserAddress }, hre) {
     const pauserSet = await getPauserSetContract(useInternalProxyAddress, hre);
-    await pauserSet.swapPauser(oldPauserAddress, newPauserAddress);
+    const tx = await pauserSet.swapPauser(oldPauserAddress, newPauserAddress);
+    await tx.wait();
     console.log("Swapped pauser:", oldPauserAddress, "->", newPauserAddress);
   });
