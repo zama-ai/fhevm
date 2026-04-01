@@ -16,8 +16,8 @@ concurrency:
 jobs:
   resolve-baseline:
     name: resolve-baseline
-    if: &lock-trigger-condition |
-      (startsWith(github.head_ref, 'mergify/merge-queue/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')) && !startsWith(github.base_ref, 'release/')
+    if: &build-trigger-condition |
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -26,7 +26,7 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
-      lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
+      lock-artifact-name: ${{ steps.lock-output.outputs.lock-artifact-name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -48,6 +48,7 @@ jobs:
 
       - id: resolve-baseline
         name: Resolve base-sha baseline lock
+        if: ${{ !startsWith(github.base_ref, 'release/') }}
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
@@ -56,15 +57,21 @@ jobs:
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
 
+      - id: lock-output
+        name: Emit lock output
+        run: echo "lock-artifact-name=${ARTIFACT_NAME:-}" >> "$GITHUB_OUTPUT"
+        env:
+          ARTIFACT_NAME: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
+
       - name: Upload baseline lock
+        if: ${{ steps.resolve-baseline.outputs.lock-path != '' }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
           path: ${{ steps.resolve-baseline.outputs.lock-path }}
 
   coprocessor-docker-build:
-    if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
+    if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
