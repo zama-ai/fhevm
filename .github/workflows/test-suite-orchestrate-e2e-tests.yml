@@ -21,8 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GHCR package metadata during latest-main resolution
+      packages: 'read' # Required to read GHCR package metadata during base-sha resolution
     env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
@@ -46,12 +47,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - id: resolve-baseline
-        name: Resolve latest-main baseline lock
+        name: Resolve base-sha baseline lock
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target latest-main --reset | tail -n 1)"
-          artifact_name="fhevm-latest-main-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
+          artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
 
