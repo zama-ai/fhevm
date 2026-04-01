@@ -15,12 +15,13 @@ concurrency:
 
 jobs:
   resolve-baseline:
+    name: resolve-baseline
     if: &build-trigger-condition |
       startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GHCR package metadata during latest-main resolution
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
@@ -49,7 +50,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          lock_path="$(bun --eval 'const original = console.log; console.log = () => {}; const { resolveBundle } = await import("./src/resolve/bundle-store"); const { lockPath } = await resolveBundle({ target: "latest-main", requestedTarget: "latest-main", reset: true }, process.env); original(lockPath);')"
+          lock_path="$(./fhevm-cli resolve --target latest-main --reset | tail -n 1)"
           artifact_name="fhevm-latest-main-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"

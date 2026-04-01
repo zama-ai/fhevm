@@ -5,6 +5,7 @@ import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
 import { listTestProfiles, test } from "./commands/test";
+import { resolveBundle } from "./resolve/bundle-store";
 import { STEP_NAMES } from "./types";
 import {
   clean,
@@ -237,6 +238,23 @@ const root = defineCommand({
       },
       async run({ args }) {
         await upgrade(asString(args.group));
+      },
+    }),
+    resolve: defineCommand({
+      meta: { name: "resolve", description: "Resolve a version target and print the resulting lock path." },
+      args: {
+        target: { type: "string", description: "Bundle source to resolve." },
+        sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
+        "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
+        reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
+      },
+      async run({ args }) {
+        const parsed = parseUpInput(args);
+        if (parsed.resume || parsed.dryRun || parsed.fromStep || parsed.overrides.length || parsed.scenarioPath) {
+          throw new PreflightError("resolve only supports --target, --sha, --lock-file, and --reset");
+        }
+        const { lockPath } = await resolveBundle(parsed, process.env);
+        console.log(lockPath);
       },
     }),
     test: defineCommand({
