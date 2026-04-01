@@ -8,15 +8,72 @@ import type { HostChainScenario, OverrideGroup, StepName } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 export const REPO_ROOT = path.resolve(CLI_DIR, "../..");
-export const STATE_DIR = path.join(REPO_ROOT, ".fhevm");
-export const PERSISTED_STATE_DIR = path.join(STATE_DIR, "state");
-export const RUNTIME_DIR = path.join(STATE_DIR, "runtime");
-export const ENV_DIR = path.join(RUNTIME_DIR, "env");
-export const COMPOSE_OUT_DIR = path.join(RUNTIME_DIR, "compose");
-export const ADDRESS_DIR = path.join(RUNTIME_DIR, "addresses");
-export const LOCK_DIR = path.join(PERSISTED_STATE_DIR, "locks");
-export const GENERATED_CONFIG_DIR = path.join(RUNTIME_DIR, "config");
-export const STATE_FILE = path.join(PERSISTED_STATE_DIR, "state.json");
+export const DEFAULT_STATE_DIR = path.join(REPO_ROOT, ".fhevm");
+const statePaths = (root: string) => {
+  const stateDir = root || DEFAULT_STATE_DIR;
+  const persistedStateDir = path.join(stateDir, "state");
+  const runtimeDir = path.join(stateDir, "runtime");
+  const envDir = path.join(runtimeDir, "env");
+  const generatedConfigDir = path.join(runtimeDir, "config");
+  const addressDir = path.join(runtimeDir, "addresses");
+  return {
+    STATE_DIR: stateDir,
+    PERSISTED_STATE_DIR: persistedStateDir,
+    RUNTIME_DIR: runtimeDir,
+    ENV_DIR: envDir,
+    COMPOSE_OUT_DIR: path.join(runtimeDir, "compose"),
+    ADDRESS_DIR: addressDir,
+    LOCK_DIR: path.join(persistedStateDir, "locks"),
+    GENERATED_CONFIG_DIR: generatedConfigDir,
+    STATE_FILE: path.join(persistedStateDir, "state.json"),
+    versionsEnvPath: path.join(envDir, "versions.env"),
+    relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
+    kmsCoreConfigPath: path.join(generatedConfigDir, "kms-core.toml"),
+    gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
+  };
+};
+let currentStatePaths = statePaths(process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR);
+export let STATE_DIR = currentStatePaths.STATE_DIR;
+export let PERSISTED_STATE_DIR = currentStatePaths.PERSISTED_STATE_DIR;
+export let RUNTIME_DIR = currentStatePaths.RUNTIME_DIR;
+export let ENV_DIR = currentStatePaths.ENV_DIR;
+export let COMPOSE_OUT_DIR = currentStatePaths.COMPOSE_OUT_DIR;
+export let ADDRESS_DIR = currentStatePaths.ADDRESS_DIR;
+export let LOCK_DIR = currentStatePaths.LOCK_DIR;
+export let GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
+export let STATE_FILE = currentStatePaths.STATE_FILE;
+export let versionsEnvPath = currentStatePaths.versionsEnvPath;
+export let relayerConfigPath = currentStatePaths.relayerConfigPath;
+export let kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
+export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
+export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
+export let paymentBridgingAddressesSolidityPath = path.join(
+  currentStatePaths.ADDRESS_DIR,
+  "gateway",
+  "PaymentBridgingAddresses.sol",
+);
+export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR) => {
+  currentStatePaths = statePaths(root);
+  STATE_DIR = currentStatePaths.STATE_DIR;
+  PERSISTED_STATE_DIR = currentStatePaths.PERSISTED_STATE_DIR;
+  RUNTIME_DIR = currentStatePaths.RUNTIME_DIR;
+  ENV_DIR = currentStatePaths.ENV_DIR;
+  COMPOSE_OUT_DIR = currentStatePaths.COMPOSE_OUT_DIR;
+  ADDRESS_DIR = currentStatePaths.ADDRESS_DIR;
+  LOCK_DIR = currentStatePaths.LOCK_DIR;
+  GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
+  STATE_FILE = currentStatePaths.STATE_FILE;
+  versionsEnvPath = currentStatePaths.versionsEnvPath;
+  relayerConfigPath = currentStatePaths.relayerConfigPath;
+  kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
+  gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
+  gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
+  paymentBridgingAddressesSolidityPath = path.join(
+    currentStatePaths.ADDRESS_DIR,
+    "gateway",
+    "PaymentBridgingAddresses.sol",
+  );
+};
 const TEMPLATE_DIR = path.join(CLI_DIR, "templates");
 const PROFILE_DIR = path.join(CLI_DIR, "profiles");
 export const TEMPLATE_ENV_DIR = path.join(TEMPLATE_DIR, "env");
@@ -247,20 +304,6 @@ const composeFiles = (name: string) =>
   existsSync(composePath(name))
     ? [composeTemplatePath(name), composePath(name)]
     : [composeTemplatePath(name)];
-export const versionsEnvPath = path.join(ENV_DIR, "versions.env");
-export const relayerConfigPath = path.join(GENERATED_CONFIG_DIR, "relayer.yaml");
-export const kmsCoreConfigPath = path.join(GENERATED_CONFIG_DIR, "kms-core.toml");
-export const gatewayAddressesPath = path.join(ADDRESS_DIR, "gateway", ".env.gateway");
-export const gatewayAddressesSolidityPath = path.join(
-  ADDRESS_DIR,
-  "gateway",
-  "GatewayAddresses.sol",
-);
-export const paymentBridgingAddressesSolidityPath = path.join(
-  ADDRESS_DIR,
-  "gateway",
-  "PaymentBridgingAddresses.sol",
-);
 /** The implicit single-chain key used when hostChains is omitted. */
 export const DEFAULT_HOST_CHAIN_KEY = "host";
 export const hostChainAddressesPath = (key: string) =>

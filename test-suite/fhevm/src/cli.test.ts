@@ -1,23 +1,22 @@
 import path from "node:path";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
 import { buildTestContainerArgs, keyBootstrapLogArgs, waitForKeyBootstrap } from "./commands/test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import { resolveLogsFollow } from "./cli";
+import { withTempStateDir } from "./test-state";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
-const STATE_ROOT = path.resolve(CLI_DIR, "..", "..", ".fhevm");
-const STATE_FILE = path.join(STATE_ROOT, "state", "state.json");
 
-const execCli = async (args: string[]) => {
+const execCli = async (args: string[], env: Record<string, string> = {}) => {
   const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
     cwd: CLI_DIR,
     stdout: "pipe",
     stderr: "pipe",
-    env: process.env,
+    env: { ...process.env, ...env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -33,15 +32,13 @@ const normalizeCliOutput = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const withState = async (state: State, run: () => Promise<void>) => {
-  await mkdir(path.dirname(STATE_FILE), { recursive: true });
-  await writeFile(STATE_FILE, JSON.stringify(state, null, 2));
-  try {
-    await run();
-  } finally {
-    await rm(STATE_ROOT, { recursive: true, force: true });
-  }
-};
+const withState = (state: State, run: (env: Record<string, string>) => Promise<void>) =>
+  withTempStateDir(async (stateDir) => {
+    const stateFile = path.join(stateDir, "state", "state.json");
+    await mkdir(path.dirname(stateFile), { recursive: true });
+    await writeFile(stateFile, JSON.stringify(state, null, 2));
+    await run({ FHEVM_STATE_DIR: stateDir });
+  });
 
 const persistedState = (target: State["target"] = "latest-main"): State => ({
   target,
@@ -140,8 +137,8 @@ describe("cli", () => {
   });
 
   test("invalid sha does not print the resume hint", async () => {
-    await withState(persistedState(), async () => {
-      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex"]);
+    await withState(persistedState(), async (env) => {
+      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("Hint: run with --resume");
@@ -149,8 +146,8 @@ describe("cli", () => {
   });
 
   test("invalid sha with equals-form flags does not print the resume hint", async () => {
-    await withState(persistedState(), async () => {
-      const result = await execCli(["up", "--target=sha", "--sha=invalidhex"]);
+    await withState(persistedState(), async (env) => {
+      const result = await execCli(["up", "--target=sha", "--sha=invalidhex"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("Hint: run with --resume");
@@ -229,16 +226,16 @@ describe("cli", () => {
   });
 
   test("gates multi-chain isolation before launching tests on a single-chain stack", async () => {
-    await withState(bootstrappedState(), async () => {
-      const result = await execCli(["test", "multi-chain-isolation"]);
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "multi-chain-isolation"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("multi-chain-isolation requires a multi-chain topology");
     });
   });
 
   test("drift profile honors the requested network", async () => {
-    await withState(bootstrappedState(), async () => {
-      const result = await execCli(["test", "ciphertext-drift", "--network", "custom-net"]);
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "ciphertext-drift", "--network", "custom-net"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).not.toContain("staging");
     });
