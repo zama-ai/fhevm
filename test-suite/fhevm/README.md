@@ -198,7 +198,7 @@ This is how CI works. The merge queue workflow:
 2. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
 3. Leaves skipped components unset so they naturally stay on the `latest-main` baseline
 4. Fails if a required touched-component build reports a non-skipped failure
-5. Runs `./fhevm-cli up --target latest-main --scenario two-of-two`
+5. Runs `./fhevm-cli up --target latest-main --scenario two-of-two-multi-chain`
 6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
 The CLI resolves `latest-main` as the current mainline bundle, then overlays the
@@ -260,7 +260,7 @@ The matrix has three sections:
 | `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and explicitly keeps `build=false`.
+Merge-queue e2e always boots `latest-main` with the fixed `two-of-two-multi-chain` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and explicitly keeps `build=false`.
 
 ### How to update
 

@@ -636,10 +636,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresUser: postgres.postgresUser,
           postgresPassword: postgres.postgresPassword,
         });
-        await runWithHeartbeat(
+        const result = await runWithHeartbeat(
           buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
           "test ciphertext-drift",
         );
+        assertMatchedTests(result.stdout + result.stderr, "test ciphertext-drift");
         const injectedHandleHex = await injector;
         const warning = await waitForDriftWarning(injectedHandleHex, {
           since: logSince,

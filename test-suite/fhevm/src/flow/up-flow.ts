@@ -420,10 +420,13 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
     const dbName = driftDatabaseName(index);
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
-    await postgresExec(dbName, [
+    const result = await postgresExec(dbName, [
       "-c",
       `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO NOTHING;`,
     ]);
+    if (result.code !== 0) {
+      throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
+    }
     console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
     await run(["docker", "stop", `${prefix}zkproof-worker`]);
     await run(["docker", "start", `${prefix}zkproof-worker`]);
