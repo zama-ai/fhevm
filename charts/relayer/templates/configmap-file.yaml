@@ -1,0 +1,25 @@
+{{- if .Values.configmapFiles.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "relayer.fullname" . }}-files
+  namespace: {{ include "relayer.namespace" . }}
+  {{- with .Values.configmapFiles.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: configuration-files
+data:
+  {{- range $filename, $fileConfig := .Values.configmapFiles.files }}
+  {{- $content := "" }}
+  {{- if kindIs "map" $fileConfig }}
+      {{- $content = toYaml $fileConfig }}
+  {{- else }}
+    {{- $content = $fileConfig }}
+  {{- end }}
+  {{ $filename }}: |
+    {{- tpl (toString $content) $ | nindent 4 }}
+  {{- end }}
+{{- end }}

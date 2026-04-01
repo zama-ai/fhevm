@@ -1,0 +1,18 @@
+{{- if .Values.configmapEnv.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "relayer.fullname" . }}-env
+  namespace: {{ include "relayer.namespace" . }}
+  {{- with .Values.configmapEnv.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: environment
+data:
+  {{- range $key, $value := .Values.configmapEnv.data }}
+  {{ $key }}: {{ tpl (toString $value) $ | quote }}
+  {{- end }}
+{{- end }} 

@@ -1,0 +1,37 @@
+{{- if and .Values.statefulset.enabled .Values.service.enabled }}
+{{- $serviceName := .Values.statefulset.serviceName | default (printf "%s-headless" (include "relayer.fullname" .)) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $serviceName }}
+  namespace: {{ include "relayer.namespace" . }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: headless
+  {{- with .Values.service.headless.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # Headless service - no cluster IP assigned
+  clusterIP: None
+  # Optionally publish not ready addresses for StatefulSet pods
+  {{- if .Values.service.headless.publishNotReadyAddresses }}
+  publishNotReadyAddresses: {{ .Values.service.headless.publishNotReadyAddresses }}
+  {{- end }}
+  ports:
+    {{- if .Values.service.ports }}
+    {{- toYaml .Values.service.ports | nindent 4 }}
+    {{- end }}
+    {{- if .Values.service.portName }}
+    - name: {{ .Values.service.portName }}
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: {{ .Values.service.protocol }}
+    {{- end }}
+  selector:
+    {{- include "relayer.selectorLabels" . | nindent 4 }}
+    {{- with .Values.service.headless.selector }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }} 

@@ -1,0 +1,486 @@
+# Default values for relayer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This is the namespace for the deployment, by default it will use the release namespace
+# namespace: ""
+
+# This is to override the chart name.
+# fullnameOverride: ""
+# nameOverride: ""
+
+deployment:
+  enabled: true
+  # Additional annotations for the Deployment
+  annotations: {}
+
+# StatefulSet configuration
+# StatefulSets are suitable for applications that require:
+# - Stable, unique network identifiers
+# - Stable, persistent storage
+# - Ordered, graceful deployment and scaling
+# - Ordered, automated rolling updates
+statefulset:
+  # Enable StatefulSet instead of Deployment
+  enabled: false
+  # Additional annotations for the StatefulSet
+  annotations: {}
+  # Service name for the StatefulSet (required)
+  # If not specified, defaults to "<fullname>-headless"
+  serviceName: ""
+  # Update strategy for StatefulSet
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Maximum number of pods that can be unavailable during update
+      maxUnavailable: 1
+      # Partition for canary deployments (pods with ordinal >= partition won't be updated)
+      partition: 0
+  # Pod management policy - OrderedReady (default) or Parallel
+  podManagementPolicy: "OrderedReady"
+  # Ordinals configuration (Kubernetes 1.27+)
+  ordinals:
+    start: 0
+  # Persistent Volume Claim retention policy (Kubernetes 1.23+)
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: "Retain"
+    whenScaled: "Retain"
+  # Volume Claim Templates for persistent storage
+  volumeClaimTemplates: []
+
+command: ["/bin/server", "--config-file", "/app/config/local.yaml"]
+
+args: []
+
+# This will set the replicaset count
+replicaCount: 1
+
+# Container image configuration
+image:
+  repository: ghcr.io/zama-ai/fhevm-relayer
+  pullPolicy: Always
+  tag: ""
+
+# Secrets for pulling images from a private registry
+imagePullSecrets: []
+
+# Deprecated: This is configmap for the deployment
+configmap:
+  enabled: false
+  data:
+    # key1: value1
+
+# Environment variables ConfigMap - for envFrom reference
+configmapEnv:
+  enabled: false
+  annotations: {}
+  data: {}
+
+# File-based ConfigMap - for mounting configuration files
+configmapFiles:
+  enabled: true
+  annotations: {}
+  files:
+    local.yaml:
+      environment: devnet
+      gateway:
+        blockchain_rpc:
+          ws_health_check_timeout_secs: 5
+          http_health_check_timeout_secs: 5
+        listener_pool:
+          reconnect_config:
+            max_attempts: 20
+            retry_interval_ms: 500
+          polling_max_attempts: 40
+          recycle_interval_mins: 30
+          poll_interval_ms: 2000
+          dedup_ttl_seconds: 5
+          dedup_max_capacity: 100000
+        tx_engine:
+          max_concurrency: 50
+          retry:
+            max_attempts: 100
+            retry_interval_ms: 500
+          tx_throttlers:
+            input_proof:
+              per_seconds: 10
+              capacity: 11000
+              safety_margin: 1000
+            user_decrypt:
+              per_seconds: 10
+              capacity: 11000
+              safety_margin: 1000
+            public_decrypt:
+              per_seconds: 10
+              capacity: 11000
+              safety_margin: 1000
+        readiness_checker:
+          retry:
+            max_attempts: 150 # 5 minutes
+            retry_interval_ms: 2000
+          public_decrypt:
+            max_concurrency: 250
+            capacity: 11000
+            safety_margin: 1000
+          user_decrypt:
+            max_concurrency: 250
+            capacity: 11000
+            safety_margin: 1000
+          delegated_user_decrypt:
+            max_concurrency: 250
+            capacity: 11000
+            safety_margin: 1000
+        contracts:
+          user_decrypt_shares_threshold: 9
+        gw_event_not_found_retry:
+          max_retries: 5
+          retry_delay_ms: 1000
+      http:
+        endpoint: "0.0.0.0:3000"
+        api_retry_after_seconds: 4
+        enable_admin_endpoint: true
+        retry_after:
+          min_seconds: 1
+          max_seconds: 30
+          safety_margin: 0.2
+          nominal_times:
+            readiness_check_seconds: 4
+            input_proof_processing_seconds: 1
+            user_decrypt_processing_seconds: 1
+            public_decrypt_processing_seconds: 1
+            tx_confirmation_ms: 250
+          copro_kms_backoff_intervals:
+            - elapsed_threshold_secs: 0
+              retry_interval_secs: 1
+            - elapsed_threshold_secs: 3
+              retry_interval_secs: 2
+            - elapsed_threshold_secs: 10
+              retry_interval_secs: 10
+            - elapsed_threshold_secs: 60
+              retry_interval_secs: 15
+            - elapsed_threshold_secs: 180
+              retry_interval_secs: 30
+        rate_limit_post_endpoints:
+          requests_per_second: 50
+          burst_size: 50
+          retry_after_seconds: 5
+          jitter_max_ms: 2000
+        metrics:
+          histogram_buckets: [0, 0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 30]
+      log:
+        format: "json"
+        show_file_line: true
+        show_thread_ids: false
+        show_timestamp: true
+        show_target: true
+      metrics:
+        endpoint: "0.0.0.0:9898"
+        query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+        pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
+        request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
+        transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+        retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+      storage:
+        app_pool:
+          max_connections: 10
+          min_connections: 2
+          acquire_timeout_secs: 10
+          idle_timeout_secs: 300
+          max_lifetime_secs: 900
+        cron_pool:
+          max_connections: 5
+          min_connections: 1
+          acquire_timeout_secs: 30
+          idle_timeout_secs: 600
+          max_lifetime_secs: 1800
+        sql_health_check_timeout_secs: 5
+        cron:
+          timeout_cron_interval: "60s"
+          public_decrypt_timeout: "30m"
+          user_decrypt_timeout: "30m"
+          input_proof_timeout: "30m"
+          expiry_cron_interval: "5m"
+          public_decrypt_expiry: "365d" # 1 year
+          user_decrypt_expiry: "7d"
+          input_proof_expiry: "7d"
+          cron_startup_delay_after_recovery: "30s"
+      devnet:
+        verbose_errors: true
+  volumeMount:
+    mountPath: "/app/config"
+    subPath: ""
+    readOnly: true
+
+# Environment variables for the deployment
+env:
+  - name: DATABASE_PG_USERNAME
+    value: ""
+  - name: DATABASE_PG_PASSWORD
+    value: ""
+  - name: DATABASE_URL
+    value: "postgresql://$(DATABASE_PG_USERNAME):$(DATABASE_PG_PASSWORD)@relayer-database:5432/relayer"
+  - name: MAX_ATTEMPTS
+    value: "20"
+  - name: APP_STORAGE__SQL_DATABASE_URL
+    value: "postgresql://$(DATABASE_PG_USERNAME):$(DATABASE_PG_PASSWORD)@relayer-database:5432/relayer"
+  - name: RUST_LOG
+    value: warn,fhevm_relayer=debug
+  - name: NO_COLOR
+    value: "true"
+  # Wallet configuration
+  - name: APP_GATEWAY__TX_ENGINE__PRIVATE_KEY
+    value: ""
+  # KMS Configuration
+  - name: KMS_BUCKET_URL
+    value: ""
+  - name: KMS_KEY_ID
+    value: ""
+  - name: KMS_CRS_ID
+    value: ""
+  # Key URL configuration
+  - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
+    value: "fhe-public-key-data-id"
+  - name: APP_KEYURL__FHE_PUBLIC_KEY__URL
+    value: "$(KMS_BUCKET_URL)/PUB-p1/PublicKey/$(KMS_KEY_ID)"
+  - name: APP_KEYURL__CRS__DATA_ID
+    value: "crs-data-id"
+  - name: APP_KEYURL__CRS__URL
+    value: "$(KMS_BUCKET_URL)/PUB-p1/CRS/$(KMS_CRS_ID)"
+  # Gateway network configuration
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__0__URL
+    value: ""
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__0__TYPE
+    value: subscription
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__1__URL
+    value: ""
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__1__TYPE
+    value: subscription
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__2__URL
+    value: ""
+  - name: APP_GATEWAY__LISTENER_POOL__LISTENERS__2__TYPE
+    value: polling
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__HTTP_URL
+    value: ""
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__READ_HTTP_URL
+    value: ""
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__CHAIN_ID
+    value: "10900"
+  # Gateway contracts configuration
+  - name: APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS
+    value: ""
+  - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
+    value: ""
+
+# Environment variables from a configmap for the deployment
+envFrom: []
+
+# Init containers
+initContainers: []
+
+# Additional sidecar containers
+extraContainers: []
+
+# Service account configuration
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+# RBAC Configuration for Role and RoleBinding
+rbac:
+  create: false
+  role:
+    create: true
+    labels: {}
+    annotations: {}
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments"]
+        verbs: ["get", "list", "watch"]
+  roleBinding:
+    create: true
+    labels: {}
+    annotations: {}
+    roleRef:
+      kind: "Role"
+      name: ""
+    subjects: []
+
+# Pod Annotations
+podAnnotations:
+  reloader.stakater.com/auto: "true"
+
+# Pod Labels
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+
+securityContext: {}
+
+# Service configuration
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+    - name: metrics
+      port: 9898
+      targetPort: 9898
+
+  # Headless service configuration for StatefulSets
+  headless:
+    annotations: {}
+    publishNotReadyAddresses: true
+    selector: {}
+
+# Ingress configuration
+ingresses: []
+
+# Liveness probe
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# Readiness probe
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+resources:
+  requests:
+    cpu: 1
+    memory: 512Mi
+  limits:
+    cpu: 2
+    memory: 1Gi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget configuration
+pdb:
+  enabled: false
+  labels: {}
+  annotations: {}
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# ServiceMonitor configuration for Prometheus Operator
+serviceMonitor:
+  enabled: true
+  labels: {}
+  annotations: {}
+  endpoints:
+    - port: metrics
+
+# NetworkPolicy configuration
+networkPolicy:
+  enabled: false
+  labels: {}
+  annotations: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        - podSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - {}
+
+# Job configuration (database migration)
+job:
+  enabled: true
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-1"
+  ttlSecondsAfterFinished:
+  backoffLimit:
+  activeDeadlineSeconds:
+  restartPolicy: "Never"
+  command:
+    - "/bin/server"
+  args: []
+  envFrom: []
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: ""
+  resources: {}
+
+# CronJob configuration
+cronjob:
+  enabled: false
+  annotations: {}
+  schedule: "0 * * * *"
+  concurrencyPolicy: "Forbid"
+  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: 3
+  startingDeadlineSeconds:
+  suspend: false
+  ttlSecondsAfterFinished:
+  backoffLimit:
+  activeDeadlineSeconds:
+  restartPolicy: "Never"
+  command: []
+  args: []
+  envFrom: []
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: ""
+  resources: {}
+
+# Dynamic resources - define arbitrary Kubernetes resources
+additionalResources: []

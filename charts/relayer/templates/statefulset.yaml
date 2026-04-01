@@ -1,0 +1,250 @@
+{{- if .Values.statefulset.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "relayer.fullname" . }}
+  namespace: {{ include "relayer.namespace" . }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.configmap.enabled }}
+    checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    {{- end }}
+    {{- if .Values.configmapEnv.enabled }}
+    checksum/config-env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+    {{- end }}
+    {{- if .Values.configmapFiles.enabled }}
+    checksum/config-files: {{ include (print $.Template.BasePath "/configmap-file.yaml") . | sha256sum }}
+    {{- end }}
+    {{- with .Values.statefulset.annotations }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  serviceName: {{ .Values.statefulset.serviceName | default (printf "%s-headless" (include "relayer.fullname" .)) }}
+  selector:
+    matchLabels:
+      {{- include "relayer.selectorLabels" . | nindent 6 }}
+  {{- with .Values.statefulset.updateStrategy }}
+  updateStrategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.statefulset.podManagementPolicy }}
+  podManagementPolicy: {{ . }}
+  {{- end }}
+  {{- if .Values.statefulset.ordinals }}
+  ordinals:
+    {{- toYaml .Values.statefulset.ordinals | nindent 4 }}
+  {{- end }}
+  {{- if .Values.statefulset.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- toYaml .Values.statefulset.persistentVolumeClaimRetentionPolicy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.configmap.enabled }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.configmapEnv.enabled }}
+        checksum/config-env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.configmapFiles.enabled }}
+        checksum/config-files: {{ include (print $.Template.BasePath "/configmap-file.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.annotations}}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "relayer.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "relayer.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.initContainers }}
+      initContainers:
+        {{- range .Values.initContainers }}
+        - name: {{ .name }}
+          {{- if or .image $.Values.image }}
+          image: "{{ if .image }}{{ .image.repository | default $.Values.image.repository }}{{ else }}{{ $.Values.image.repository }}{{ end }}:{{ if .image }}{{ .image.tag | default "latest" }}{{ else }}{{ $.Values.image.tag | default "latest" }}{{ end }}"
+          imagePullPolicy: {{ if .image }}{{ .image.pullPolicy | default $.Values.image.pullPolicy }}{{ else }}{{ $.Values.image.pullPolicy }}{{ end }}
+          {{- end }}
+          {{- with .securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ include "relayer.name" . }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            {{- if .Values.configmap.enabled }}
+            - configMapRef:
+                name: {{ include "relayer.fullname" . }}-config
+            {{- end }}
+            {{- if .Values.configmapEnv.enabled }}
+            - configMapRef:
+                name: {{ include "relayer.fullname" . }}-env
+            {{- end }}
+          {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.service.enabled }}
+          ports:
+          {{- range .Values.service.ports }}
+          - name: {{ .name }}
+            containerPort: {{ .port }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.configmapFiles.enabled }}
+            - name: config-files
+              mountPath: {{ .Values.configmapFiles.volumeMount.mountPath }}
+              {{- if .Values.configmapFiles.volumeMount.subPath }}
+              subPath: {{ .Values.configmapFiles.volumeMount.subPath }}
+              {{- end }}
+              readOnly: {{ .Values.configmapFiles.volumeMount.readOnly }}
+            {{- end }}
+            {{- range .Values.statefulset.volumeClaimTemplates }}
+            - name: {{ .metadata.name }}
+              mountPath: {{ .mountPath }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
+              {{- end }}
+            {{- end }}
+          {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- if .Values.configmapFiles.enabled }}
+        - name: config-files
+          configMap:
+            name: {{ include "relayer.fullname" . }}-files
+            defaultMode: 0644
+        {{- end }}
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.statefulset.volumeClaimTemplates }}
+  volumeClaimTemplates:
+  {{- range .Values.statefulset.volumeClaimTemplates }}
+  - metadata:
+      name: {{ .metadata.name }}
+      {{- with .metadata.labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .metadata.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      accessModes:
+        {{- toYaml .spec.accessModes | nindent 8 }}
+      {{- with .spec.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .spec.resources.requests.storage }}
+      {{- with .spec.selector }}
+      selector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .spec.volumeMode }}
+      volumeMode: {{ . }}
+      {{- end }}
+      {{- with .spec.dataSource }}
+      dataSource:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .spec.dataSourceRef }}
+      dataSourceRef:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}

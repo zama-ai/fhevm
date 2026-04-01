@@ -1,0 +1,54 @@
+{{- if .Values.ingresses }}
+{{- range .Values.ingresses }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" .name (include "relayer.fullname" $) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ include "relayer.namespace" $ }}
+  labels:
+    {{- include "relayer.labels" $ | nindent 4 }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .tls }}
+  tls:
+    {{- range .tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- if .secretName }}
+      secretName: {{ .secretName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- if .rules }}
+    {{- toYaml .rules | nindent 4 }}
+    {{- end }}
+    {{- range .hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- if .pathType }}
+            pathType: {{ .pathType }}
+            {{- else }}
+            pathType: Prefix
+            {{- end }}
+            backend:
+              service:
+                name: {{ include "relayer.fullname" $ }}
+                port:
+                  number: {{ index $.Values.service.ports 0 "port" }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

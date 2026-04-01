@@ -1,0 +1,29 @@
+{{- if and .Values.rbac.create .Values.rbac.roleBinding.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "relayer.fullname" . }}
+  namespace: {{ include "relayer.namespace" . }}
+  {{- with .Values.rbac.roleBinding.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+    {{- with .Values.rbac.roleBinding.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: {{ .Values.rbac.roleBinding.roleRef.kind | default "Role" }}
+    name: {{ .Values.rbac.roleBinding.roleRef.name | default (include "relayer.fullname" .) }}
+  subjects:
+  {{- with .Values.rbac.roleBinding.subjects }}
+    {{- toYaml . | nindent 4 }}
+  {{- else }}
+    - kind: ServiceAccount
+      name: {{ include "relayer.serviceAccountName" . }}
+      namespace: {{ .Release.Namespace }}
+  {{- end }}
+{{- end }}

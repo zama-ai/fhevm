@@ -1,0 +1,38 @@
+{{- if .Values.additionalResources }}
+{{- range $resource := .Values.additionalResources }}
+{{- if $resource.enabled }}
+---
+{{- $resourceObj := deepCopy $resource.object }}
+
+{{- /* Apply common labels if specified */ -}}
+{{- if $resource.includeCommonLabels }}
+{{- if not $resourceObj.metadata }}
+{{- $_ := set $resourceObj "metadata" dict }}
+{{- end }}
+{{- if not $resourceObj.metadata.labels }}
+{{- $_ := set $resourceObj.metadata "labels" dict }}
+{{- end }}
+{{- $commonLabels := include "relayer.labels" $ | fromYaml }}
+{{- $_ := mergeOverwrite $resourceObj.metadata.labels $commonLabels }}
+{{- end }}
+
+{{- /* Apply selector labels to spec.selector.matchLabels if specified */ -}}
+{{- if $resource.includeSelectorLabels }}
+{{- if not $resourceObj.spec }}
+{{- $_ := set $resourceObj "spec" dict }}
+{{- end }}
+{{- if not $resourceObj.spec.selector }}
+{{- $_ := set $resourceObj.spec "selector" dict }}
+{{- end }}
+{{- if not $resourceObj.spec.selector.matchLabels }}
+{{- $_ := set $resourceObj.spec.selector "matchLabels" dict }}
+{{- end }}
+{{- $selectorLabels := include "relayer.selectorLabels" $ | fromYaml }}
+{{- $_ := mergeOverwrite $resourceObj.spec.selector.matchLabels $selectorLabels }}
+{{- end }}
+
+{{- $tpl := tpl (toYaml $resourceObj) $ }}
+{{ $tpl | nindent 0 }}
+{{- end }}
+{{- end }}
+{{- end }}

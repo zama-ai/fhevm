@@ -1,0 +1,8 @@
+apiVersion: v2
+name: relayer
+description: A Helm chart for the FHEVM Relayer
+type: application
+version: 0.1.0
+keywords:
+  - fhevm
+  - relayer

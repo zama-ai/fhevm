@@ -1,0 +1,29 @@
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "relayer.fullname" . }}
+  namespace: {{ include "relayer.namespace" . }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    {{- if .Values.service.ports }}
+    {{- toYaml .Values.service.ports | nindent 4 }}
+    {{- end }}
+    {{- if .Values.service.portName }}
+    - name: {{ .Values.service.portName }}
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: {{ .Values.service.protocol }}
+    {{- end }}
+  selector:
+    {{- if or .Values.deployment.enabled .Values.statefulset.enabled }}
+    {{- include "relayer.selectorLabels" . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.service.selector }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+{{- end }}

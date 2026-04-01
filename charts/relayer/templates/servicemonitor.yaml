@@ -1,0 +1,59 @@
+{{- if and .Values.serviceMonitor.enabled .Values.service.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "relayer.fullname" . }}
+  namespace: {{ include "relayer.namespace" . }}
+  {{- with .Values.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    {{- if .Values.serviceMonitor.endpoints }}
+    {{- range .Values.serviceMonitor.endpoints }}
+    - port: {{ .port }}
+      {{- if .path }}
+      path: {{ .path }}
+      {{- end }}
+      {{- if .interval }}
+      interval: {{ .interval }}
+      {{- end }}
+      {{- if .scrapeTimeout }}
+      scrapeTimeout: {{ .scrapeTimeout }}
+      {{- end }}
+      {{- if .honorLabels }}
+      honorLabels: {{ .honorLabels }}
+      {{- end }}
+      {{- if .relabelings }}
+      relabelings:
+        {{- toYaml .relabelings | nindent 8 }}
+      {{- end }}
+      {{- if .metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml .metricRelabelings | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- else }}
+    - port: metrics
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "relayer.selectorLabels" . | nindent 6 }}
+  {{- with .Values.serviceMonitor.namespaceSelector }}
+  namespaceSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.serviceMonitor.targetLabels }}
+  targetLabels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.serviceMonitor.sampleLimit }}
+  sampleLimit: {{ . }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,17 @@
+{{- if .Values.configmap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "relayer.fullname" . }}-config
+  namespace: {{ include "relayer.namespace" . }}
+  {{- with .Values.configmap.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "relayer.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.configmap.data }}
+  {{ $k }}: {{ tpl (toString $v) $ | quote }}
+  {{- end }}
+{{- end }}
