@@ -28,6 +28,13 @@ describe("resolve", () => {
     expect(next.sources.at(-1)).toBe("env=HOST_VERSION");
   });
 
+  test("resolves relayer images as repo-owned for latest-main presets", () => {
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
+    expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
+    expect(bundle.env.CORE_VERSION).not.toBe("abcdef0");
+  });
+
   test("reports missing repo packages for a tag", () => {
     const missing = missingRepoPackages(
       {

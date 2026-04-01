@@ -2,7 +2,12 @@ import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
-import { buildTestContainerArgs, keyBootstrapLogArgs, waitForKeyBootstrap } from "./commands/test";
+import {
+  buildTestContainerArgs,
+  keyBootstrapLogArgs,
+  validateNamedProfileGrep,
+  waitForKeyBootstrap,
+} from "./commands/test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import { resolveLogsFollow } from "./cli";
 import { withTempStateDir } from "./test-state";
@@ -241,10 +246,11 @@ describe("cli", () => {
     });
   });
 
-  test("operators profile accepts targeted grep narrowing", async () => {
-    const result = await execCli(["test", "operators", "--grep", "manual"]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).not.toContain("does not accept `--grep`");
+  test("operators profile accepts targeted grep narrowing", () => {
+    expect(() => validateNamedProfileGrep("operators", "manual")).not.toThrow();
+    expect(() => validateNamedProfileGrep("erc20", "manual")).toThrow(
+      "`fhevm-cli test erc20` does not accept `--grep`; use either a named profile or a custom grep",
+    );
   });
 
   test("rejects unknown flags on destructive commands", async () => {

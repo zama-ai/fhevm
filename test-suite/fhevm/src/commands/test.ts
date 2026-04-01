@@ -74,6 +74,13 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
 };
 
+/** Validates whether a named profile supports an extra grep narrowing expression. */
+export const validateNamedProfileGrep = (testName: string | undefined, grep: string | undefined) => {
+  if (testName && grep && testName !== "operators") {
+    throw new PreflightError(`\`fhevm-cli test ${testName}\` does not accept \`--grep\`; use either a named profile or a custom grep`);
+  }
+};
+
 /** Prints the supported named test profiles with short descriptions. */
 export const listTestProfiles = () => {
   for (const name of TEST_PROFILE_NAMES) {
@@ -570,9 +577,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   if (testName && !TEST_PROFILE_NAMES.includes(testName)) {
     throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
   }
-  if (testName && options.grep && testName !== "operators") {
-    throw new PreflightError(`\`fhevm-cli test ${testName}\` does not accept \`--grep\`; use either a named profile or a custom grep`);
-  }
+  validateNamedProfileGrep(testName, options.grep);
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");

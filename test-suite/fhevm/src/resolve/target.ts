@@ -70,6 +70,8 @@ const REPO_PACKAGES = {
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
   CONNECTOR_KMS_WORKER_VERSION: "fhevm%2Fkms-connector%2Fkms-worker",
   CONNECTOR_TX_SENDER_VERSION: "fhevm%2Fkms-connector%2Ftx-sender",
+  RELAYER_VERSION: "fhevm%2Frelayer",
+  RELAYER_MIGRATE_VERSION: "fhevm%2Frelayer-migrate",
   TEST_SUITE_VERSION: "fhevm%2Ftest-suite%2Fe2e",
 } as const;
 

@@ -246,7 +246,7 @@ If you already know the exact repo SHA you want and all fhevm images were publis
 ./fhevm-cli up --target sha --sha 9587546 --dry-run
 ```
 
-This resolves every repo-owned image to `9587546` and keeps companion services (`core`, `relayer`, `relayer-migrate`) on the maintained non-network companion set used by `latest-main`.
+This resolves every repo-owned image to `9587546` and keeps only external companions like `core` on the maintained non-network companion set used by `latest-main`.
 
 ## Compatibility Matrix
 
@@ -264,7 +264,7 @@ Merge-queue e2e always boots `latest-main` with the fixed `two-of-two` scenario,
 
 ### How to update
 
-**Bump the mainline relayer pin:**
+**Bump the mainline core pin:**
 Edit `MAINLINE_COMPANIONS` in `src/resolve/presets.ts`. `latest-main` and `sha` pick it up automatically.
 
 **Add a new incompatibility:**
@@ -282,7 +282,7 @@ When the minimum supported version passes the threshold, delete the `legacyShims
 
 The CLI is leaner than the old bash path, but a few files still carry most of the maintenance burden:
 
-- `src/resolve/presets.ts`: maintained companion pins for `latest-main` and `sha`
+- `src/resolve/presets.ts`: maintained non-repo companion pins for `latest-main` and `sha`
 - `src/resolve/target.ts`: support floors and target-resolution policy
 - `src/compat/compat.ts`: legacy shims and explicit incompatibility rules
 - `src/generate/env.ts`: runtime env projection from templates, discovery, topology, and compat
