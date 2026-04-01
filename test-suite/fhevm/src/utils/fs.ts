@@ -121,9 +121,18 @@ export const predictedCrsId = () => uint256ToId((5n << 248n) + 1n);
 export const mergeArgs = (base: unknown, extras: string[]) => {
   const next = Array.isArray(base) ? [...base.map(String)] : [];
   for (const extra of extras) {
-    const prefix = extra.startsWith("--") && extra.includes("=") ? `${extra.split("=")[0]}=` : undefined;
+    const flag = extra.startsWith("--") ? extra.split("=")[0] : undefined;
     for (let i = next.length - 1; i >= 0; i -= 1) {
-      if (next[i] === extra || (prefix && next[i].startsWith(prefix))) {
+      if (flag && next[i] === flag) {
+        const takesValue = typeof next[i + 1] === "string" && !next[i + 1].startsWith("--");
+        next.splice(i, takesValue ? 2 : 1);
+        continue;
+      }
+      if (flag && next[i].startsWith(`${flag}=`)) {
+        next.splice(i, 1);
+        continue;
+      }
+      if (next[i] === extra) {
         next.splice(i, 1);
       }
     }

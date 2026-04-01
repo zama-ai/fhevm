@@ -16,8 +16,8 @@ concurrency:
 jobs:
   resolve-baseline:
     name: resolve-baseline
-    if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
+    if: &lock-trigger-condition |
+      (startsWith(github.head_ref, 'mergify/merge-queue/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')) && !startsWith(github.base_ref, 'release/')
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -63,7 +63,8 @@ jobs:
           path: ${{ steps.resolve-baseline.outputs.lock-path }}
 
   coprocessor-docker-build:
-    if: *build-trigger-condition
+    if: &build-trigger-condition |
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -117,6 +118,7 @@ jobs:
       - test-suite-docker-build
     if: *build-trigger-condition
     env:
+      BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
@@ -142,6 +144,7 @@ jobs:
       - id: create-e2e-tests-input
         run: |
           set -euo pipefail
+          base_short_tag="${BASE_COMMIT_HASH:0:7}"
           short_tag="${NEW_COMMIT_HASH:0:7}"
           needs_file="$RUNNER_TEMP/docker-build-results.json"
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
@@ -176,6 +179,7 @@ jobs:
                 echo "$output_key=$short_tag" >> "$GITHUB_OUTPUT"
                 ;;
               skipped)
+                echo "$output_key=$base_short_tag" >> "$GITHUB_OUTPUT"
                 ;;
               *)
                 failures+=("$job.$result_key=$result")

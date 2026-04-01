@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { hostReachableMaterialUrl, hostReachableRpcUrl } from "./utils/fs";
+import { hostReachableMaterialUrl, hostReachableRpcUrl, mergeArgs } from "./utils/fs";
 import { run } from "./utils/process";
 
 describe("utils/fs", () => {
@@ -19,5 +19,13 @@ describe("utils/fs", () => {
   test("times out bounded process execution", async () => {
     await expect(run(["bun", "-e", "await new Promise((resolve) => setTimeout(resolve, 1000))"], { timeoutMs: 10 }))
       .rejects.toThrow(/timed out after 10ms/);
+  });
+
+  test("replaces split-form flags without leaving orphaned values", () => {
+    expect(mergeArgs(["cmd", "--log-level", "info"], ["--log-level", "debug"])).toEqual([
+      "cmd",
+      "--log-level",
+      "debug",
+    ]);
   });
 });

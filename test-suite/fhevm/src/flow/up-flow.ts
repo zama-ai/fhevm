@@ -1143,10 +1143,10 @@ export const upgrade = async (groupValue: string | undefined) => {
       await waitForStableChainListeners(state, target.chainKey);
     }
     await waitForCoprocessor(state);
-    await postBootHealthGate([...runtimeServices, ...extraTargets.flatMap((target) => target.services)]);
+    await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
   } else if (group === "kms-connector") {
     await waitForKmsConnector();
-    await postBootHealthGate(runtimeServices);
+    await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
   } else {
     await waitForContainer(TEST_SUITE_CONTAINER, "running");
   }
