@@ -74,8 +74,16 @@ on:
         description: "Test suite version"
         default: ""
         type: string
+      relayer-migrate-version:
+        description: "Relayer migrate version"
+        default: ""
+        type: string
       relayer-version:
         description: "Relayer version"
+        default: ""
+        type: string
+      lock-artifact-name:
+        description: "Uploaded lock artifact name used to freeze the baseline bundle"
         default: ""
         type: string
       kms-core-version:
@@ -128,6 +136,7 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
+      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
@@ -183,10 +192,33 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun run compat-smoke
 
+      - name: Download frozen baseline lock
+        if: ${{ inputs.lock-artifact-name != '' }}
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ inputs.lock-artifact-name }}
+          path: ${{ runner.temp }}/baseline-lock
+
+      - name: Resolve frozen lock path
+        if: ${{ inputs.lock-artifact-name != '' }}
+        run: |
+          set -euo pipefail
+          lock_file="$(find "${RUNNER_TEMP}/baseline-lock" -maxdepth 1 -name '*.json' -print -quit)"
+          if [ -z "$lock_file" ]; then
+            echo "Could not locate downloaded baseline lock artifact" >&2
+            exit 1
+          fi
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
         run: |
-          args=(--target latest-main --scenario "$SCENARIO")
+          args=(--scenario "$SCENARIO")
+          if [ -n "${LOCK_FILE:-}" ]; then
+            args+=(--lock-file "$LOCK_FILE")
+          else
+            args+=(--target latest-main)
+          fi
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
@@ -195,7 +227,12 @@ jobs:
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
-          args=(--target latest-main --scenario "$SCENARIO")
+          args=(--scenario "$SCENARIO")
+          if [ -n "${LOCK_FILE:-}" ]; then
+            args+=(--lock-file "$LOCK_FILE")
+          else
+            args+=(--target latest-main)
+          fi
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi

@@ -14,9 +14,54 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  coprocessor-docker-build:
+  resolve-baseline:
     if: &build-trigger-condition |
       startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      packages: 'read'
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+    outputs:
+      lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - id: resolve-baseline
+        name: Resolve latest-main baseline lock
+        working-directory: test-suite/fhevm
+        run: |
+          set -euo pipefail
+          lock_path="$(bun --eval 'const original = console.log; console.log = () => {}; const { resolveBundle } = await import("./src/resolve/bundle-store"); const { lockPath } = await resolveBundle({ target: "latest-main", requestedTarget: "latest-main", reset: true }, process.env); original(lockPath);')"
+          artifact_name="fhevm-latest-main-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
+          echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload baseline lock
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
+          path: ${{ steps.resolve-baseline.outputs.lock-path }}
+
+  coprocessor-docker-build:
+    if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -47,6 +92,11 @@ jobs:
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+  relayer-docker-build:
+    if: *build-trigger-condition
+    uses: ./.github/workflows/relayer-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
@@ -56,10 +106,12 @@ jobs:
   create-e2e-tests-input:
     name: create-e2e-tests-input
     needs:
+      - resolve-baseline
       - coprocessor-docker-build
       - gateway-contracts-docker-build
       - host-contracts-docker-build
       - kms-connector-docker-build
+      - relayer-docker-build
       - test-suite-docker-build
     if: *build-trigger-condition
     env:
@@ -80,6 +132,9 @@ jobs:
       connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
+      lock-artifact-name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - id: create-e2e-tests-input
@@ -103,6 +158,8 @@ jobs:
             connector-tx-sender-version
             gateway-version
             host-version
+            relayer-migrate-version
+            relayer-version
             test-suite-version
           )
           for key in "${outputs[@]}"; do
@@ -136,6 +193,8 @@ jobs:
           kms-connector-docker-build|tx_sender_build_result|connector-tx-sender-version
           gateway-contracts-docker-build|build_result|gateway-version
           host-contracts-docker-build|build_result|host-version
+          relayer-docker-build|relayer_migrate_build_result|relayer-migrate-version
+          relayer-docker-build|relayer_build_result|relayer-version
           test-suite-docker-build|build_result|test-suite-version
           EOF
 
@@ -174,5 +233,7 @@ jobs:
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ""
-      relayer-version: ""
+      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

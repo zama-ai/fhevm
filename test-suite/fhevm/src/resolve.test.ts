@@ -45,8 +45,12 @@ describe("resolve", () => {
     expect(missing).toContain("fhevm/host-contracts");
   });
 
-  test("does not reuse the cache for latest-supported", () => {
+  test("only caches immutable sha targets", () => {
     expect(targetUsesCache("latest-supported")).toBe(false);
-    expect(targetUsesCache("latest-main")).toBe(true);
+    expect(targetUsesCache("latest-main")).toBe(false);
+    expect(targetUsesCache("devnet")).toBe(false);
+    expect(targetUsesCache("testnet")).toBe(false);
+    expect(targetUsesCache("mainnet")).toBe(false);
+    expect(targetUsesCache("sha")).toBe(true);
   });
 });

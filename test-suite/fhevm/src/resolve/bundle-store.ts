@@ -112,7 +112,7 @@ const withProgressLogs = async <T>(task: Promise<T>, label: string) => {
 };
 
 /** Returns whether a target should reuse the on-disk resolve cache. */
-export const targetUsesCache = (target: VersionTarget) => target !== "latest-supported";
+export const targetUsesCache = (target: VersionTarget) => target === "sha";
 
 /** Resolves a bundle through lock-file, cache, or live metadata lookup. */
 const cachedResolve = async (options: CachedResolveOptions) => {
