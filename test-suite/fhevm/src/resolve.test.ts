@@ -6,6 +6,7 @@ import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
+  assertSupportedShaBundle,
   missingRepoPackages,
   presetBundle,
   shaRuntimeCompatFloor,
@@ -46,6 +47,32 @@ describe("resolve", () => {
       "1234567",
     );
     expect(missing).toContain("fhevm/host-contracts");
+  });
+
+  test("rejects locked sha bundles that predate the compat floor", () => {
+    const commits = [
+      "head0000000000000000000000000000000000000",
+      SHA_RUNTIME_COMPAT_MIN_SHA,
+      SIMPLE_ACL_MIN_SHA,
+      "0000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ];
+    expect(() => assertSupportedShaBundle(presetBundle("sha", "0000000", "sha-0000000.json"), commits)).toThrow(
+      "unsupported",
+    );
+  });
+
+  test("accepts locked sha bundles at the compat floor", () => {
+    const commits = [
+      "head0000000000000000000000000000000000000",
+      SHA_RUNTIME_COMPAT_MIN_SHA,
+      SIMPLE_ACL_MIN_SHA,
+    ];
+    expect(() =>
+      assertSupportedShaBundle(
+        presetBundle("sha", SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7), "sha-floor.json"),
+        commits,
+      ),
+    ).not.toThrow();
   });
 
   test("only caches immutable sha targets", () => {

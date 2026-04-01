@@ -17,7 +17,7 @@ import {
   dockerArgs,
   envPath,
 } from "../layout";
-import { generateComposeOverrides, type ComposeDoc } from "../generate/compose";
+import { generateComposeOverrides } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
 import { composeEnv, run } from "../utils/process";
@@ -30,7 +30,7 @@ const LEGACY_START_TIMEOUT_MS = 3_000;
 const PARSE_ERROR = /(unexpected argument|unexpected value|required arguments were not provided|unrecognized option|missing .*argument)/i;
 const CONFIG_ERROR = /(environment variable .* not set|missing .*env|missing required .*config|required .* not provided)/i;
 const STARTUP_ERROR =
-  /(connection refused|timed out|dns|network|database|postgres|tcp|websocket|transport|provider|rpc|lookup address information|name or service not known)/i;
+  /(connection refused|timed out|dns|network|database|postgres|tcp|websocket|transport|provider|rpc|lookup address information|name or service not known|no tenant found for the provided api key|failed to fetch chain id|failed to get chain id)/i;
 const COMPAT_COMPONENTS = ["coprocessor", "kms-connector"] as const;
 const COMPAT_SERVICES = {
   "coprocessor": GROUP_BUILD_SERVICES.coprocessor.filter((name) => !name.endsWith("db-migration")),
@@ -96,8 +96,8 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
   },
 };
 
-/** Renders and resolves the compose config used by one compatibility-smoke component. */
-const loadResolvedCompose = async (component: (typeof COMPAT_COMPONENTS)[number]) => {
+/** Materializes the rendered runtime env/config used by one compatibility-smoke component. */
+const prepareCompatRuntime = async () => {
   await rm(STATE_DIR, { recursive: true, force: true });
   await mkdir(path.dirname(versionsEnvPath), { recursive: true });
   const runtimeState = { ...state, discovery: fakeDiscovery };
@@ -122,16 +122,16 @@ const loadResolvedCompose = async (component: (typeof COMPAT_COMPONENTS)[number]
     writeEnvFile(versionsEnvPath, rendered.versionsEnv),
   ]);
   await generateComposeOverrides(runtimeState, plan);
-  const { stdout } = await run([...dockerArgs(component), "config", "--format", "json"], {
-    env: await composeEnv(component),
-  });
-  return JSON.parse(stdout) as ComposeDoc;
 };
 
-/** Runs one legacy service definition and classifies failures as compat or runtime noise. */
-const runLegacyService = async (name: string, image: string, command: string[] = []) => {
-  const argv = ["docker", "run", "--rm", image, ...command];
-  const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+/** Runs one rendered legacy service and classifies failures as compat or runtime noise. */
+const runLegacyService = async (component: (typeof COMPAT_COMPONENTS)[number], serviceName: string) => {
+  const argv = [...dockerArgs(component), "run", "--rm", "--no-deps", serviceName];
+  const proc = Bun.spawn(argv, {
+    env: { ...process.env, ...(await composeEnv(component)) },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const deadline = new Promise<"timeout">((resolve) =>
     setTimeout(() => {
       proc.kill("SIGKILL");
@@ -149,41 +149,36 @@ const runLegacyService = async (name: string, image: string, command: string[] =
   }
   if (PARSE_ERROR.test(output)) {
     throw new Error(
-      compatFailure(`${name} rejected the rendered legacy command.\n${argv.join(" ")}\n${output}`),
+      compatFailure(`${serviceName} rejected the rendered legacy command.\n${argv.join(" ")}\n${output}`),
     );
   }
   if (CONFIG_ERROR.test(output)) {
     throw new Error(
-      compatFailure(`${name} rejected the rendered legacy runtime config.\n${argv.join(" ")}\n${output}`),
+      compatFailure(`${serviceName} rejected the rendered legacy runtime config.\n${argv.join(" ")}\n${output}`),
     );
   }
   if (Number(result) !== 0 && STARTUP_ERROR.test(output)) {
     return;
   }
-  if (Number(result) === 0) {
-    return;
+  if (Number(result) !== 0) {
+    throw new Error(compatFailure(`${serviceName} exited unexpectedly.\n${argv.join(" ")}\n${output}`));
   }
-  return;
 };
 
 /** Executes the full compatibility smoke suite against legacy runtime services. */
 const main = async () => {
   try {
+    await prepareCompatRuntime();
     for (const component of COMPAT_COMPONENTS) {
-      const doc = await loadResolvedCompose(component);
-      for (const serviceName of COMPAT_SERVICES[component]) {
-        const service = doc.services[serviceName] as { image?: string; command?: unknown } | undefined;
-        if (!service?.image) {
-          throw new Error(compatFailure(`Missing rendered legacy service definition for ${serviceName}.`));
+      try {
+        for (const serviceName of COMPAT_SERVICES[component]) {
+          await runLegacyService(component, serviceName);
         }
-        const command = Array.isArray(service.command)
-          ? service.command.map((value) => String(value))
-          : undefined;
-        await runLegacyService(
-          serviceName,
-          String(service.image),
-          command,
-        );
+      } finally {
+        await run([...dockerArgs(component), "down", "-v", "--remove-orphans"], {
+          env: await composeEnv(component),
+          allowFailure: true,
+        });
       }
     }
     console.log("compat smoke passed");

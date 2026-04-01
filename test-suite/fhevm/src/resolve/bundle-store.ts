@@ -3,6 +3,7 @@
  */
 import path from "node:path";
 
+import { validateBundleCompatibility } from "../compat/compat";
 import { LOCK_DIR } from "../layout";
 import type { UpOptions, VersionBundle, VersionTarget } from "../types";
 import { exists, readJson, writeJson } from "../utils/fs";
@@ -10,8 +11,10 @@ import { GitHubApiError } from "../errors";
 import {
   PACKAGE_TO_REPOSITORY,
   applyVersionEnvOverrides,
+  assertSupportedShaBundle,
   resolveTarget,
 } from "./target";
+import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
@@ -55,8 +58,18 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   return candidate as VersionBundle;
 };
 
-/** Placeholder for lock-file runtime compatibility validation. */
 const validateLockedRuntimeCompat = async (bundle: VersionBundle) => {
+  const incompatibilities = validateBundleCompatibility({ versions: bundle });
+  if (incompatibilities.length) {
+    throw new GitHubApiError(incompatibilities.map((item) => item.message).join("\n"));
+  }
+  if (bundle.target === "sha") {
+    try {
+      assertSupportedShaBundle(bundle, await mainCommits(5000));
+    } catch (error) {
+      throw new GitHubApiError(error instanceof Error ? error.message : String(error));
+    }
+  }
   return bundle;
 };
 
