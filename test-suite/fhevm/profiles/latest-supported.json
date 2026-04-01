@@ -1,0 +1,26 @@
+{
+  "target": "latest-supported",
+  "lockName": "latest-supported.json",
+  "sources": [
+    "profile=latest-supported"
+  ],
+  "env": {
+    "GATEWAY_VERSION": "v0.11.0",
+    "HOST_VERSION": "v0.11.0",
+    "COPROCESSOR_DB_MIGRATION_VERSION": "v0.11.0",
+    "COPROCESSOR_HOST_LISTENER_VERSION": "v0.11.0",
+    "COPROCESSOR_GW_LISTENER_VERSION": "v0.11.0",
+    "COPROCESSOR_TX_SENDER_VERSION": "v0.11.0",
+    "COPROCESSOR_TFHE_WORKER_VERSION": "v0.11.0",
+    "COPROCESSOR_ZKPROOF_WORKER_VERSION": "v0.11.0",
+    "COPROCESSOR_SNS_WORKER_VERSION": "v0.11.0",
+    "CONNECTOR_DB_MIGRATION_VERSION": "v0.11.0",
+    "CONNECTOR_GW_LISTENER_VERSION": "v0.11.0",
+    "CONNECTOR_KMS_WORKER_VERSION": "v0.11.0",
+    "CONNECTOR_TX_SENDER_VERSION": "v0.11.0",
+    "CORE_VERSION": "v0.13.0",
+    "RELAYER_VERSION": "v0.10.0-rc.1",
+    "RELAYER_MIGRATE_VERSION": "v0.10.0-rc.1",
+    "TEST_SUITE_VERSION": "v0.11.0"
+  }
+}

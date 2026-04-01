@@ -11,6 +11,6 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_TEST_SUITE_E2E_DEBUG:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.test-suite.local
+      - ../../../.fhevm/runtime/env/test-suite.env
     command:
       - tail -f /dev/null

@@ -23,12 +23,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: db-migration
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
@@ -44,12 +42,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -69,12 +65,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
@@ -93,17 +87,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: gw-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -127,14 +114,12 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: tfhe-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
       cache_to:
         - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -156,12 +141,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: zkproof-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -181,12 +164,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: sns-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -218,12 +199,10 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
       target: transaction-sender
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../../../.fhevm/runtime/env/coprocessor.env
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
