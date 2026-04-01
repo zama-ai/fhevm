@@ -1,25 +1,18 @@
 import { expect } from 'chai';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import { ethers, run } from 'hardhat';
+import { Wallet } from 'ethers';
+import hre, { run } from 'hardhat';
 
-import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import { PauserSet } from '../../types';
+import { getPauserSetContract } from '../../tasks/utils/loadVariables';
 
 describe('Pauser tasks', function () {
-  let pauserSet: PauserSet;
-
-  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
+  let pauserSet: Awaited<ReturnType<typeof getPauserSetContract>>;
 
   before(async function () {
-    const pauserSetFactory = await ethers.getContractFactory('PauserSet');
-    const pauserSetAddress = dotenv.parse(fs.readFileSync('addresses/.env.host')).PAUSER_SET_CONTRACT_ADDRESS;
-    pauserSet = (await pauserSetFactory.attach(pauserSetAddress)) as PauserSet;
+    pauserSet = await getPauserSetContract(true, hre);
   });
 
   it('Should add pausers through the task', async function () {
-    const newPauser = '0x0000000000000000000000000000000000000011';
+    const newPauser = Wallet.createRandom().address;
 
     expect(await pauserSet.isPauser(newPauser)).to.eq(false);
 
@@ -32,8 +25,8 @@ describe('Pauser tasks', function () {
   });
 
   it('Should remove a pauser through the task', async function () {
-    const pauserToRemove = '0x0000000000000000000000000000000000000012';
-    await pauserSet.connect(deployer).addPauser(pauserToRemove);
+    const pauserToRemove = Wallet.createRandom().address;
+    await pauserSet.addPauser(pauserToRemove);
 
     expect(await pauserSet.isPauser(pauserToRemove)).to.eq(true);
 
@@ -46,9 +39,9 @@ describe('Pauser tasks', function () {
   });
 
   it('Should swap a pauser through the task', async function () {
-    const oldPauser = '0x0000000000000000000000000000000000000013';
-    const newPauser = '0x0000000000000000000000000000000000000014';
-    await pauserSet.connect(deployer).addPauser(oldPauser);
+    const oldPauser = Wallet.createRandom().address;
+    const newPauser = Wallet.createRandom().address;
+    await pauserSet.addPauser(oldPauser);
 
     expect(await pauserSet.isPauser(oldPauser)).to.eq(true);
     expect(await pauserSet.isPauser(newPauser)).to.eq(false);
