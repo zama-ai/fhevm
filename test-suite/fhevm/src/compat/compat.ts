@@ -111,6 +111,11 @@ const parseCompatVersion = (version: string) => {
 
 const usesModernRelayerRepository = (version: string) => !parseCompatVersion(version);
 
+const sameCompatBase = (version: string, target: CompatSemver) => {
+  const parsed = parseCompatVersion(version);
+  return !!parsed && parsed.parts.every((part, index) => part === target[index]);
+};
+
 export const relayerImageRepository = (version: string) =>
   usesModernRelayerRepository(version) ? MODERN_RELAYER_IMAGE_REPOSITORY : LEGACY_RELAYER_IMAGE_REPOSITORY;
 
@@ -159,7 +164,8 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "v
 
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
+  versionLt(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]) &&
+  !sameCompatBase(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
 
 /** Detects when test-suite should use the legacy relayer base URL. */
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>

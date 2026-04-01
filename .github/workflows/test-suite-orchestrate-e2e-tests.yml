@@ -64,12 +64,16 @@ jobs:
           set -euo pipefail
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           lock_path="$RUNNER_TEMP/release-base-lock.json"
+          profile_path="$RUNNER_TEMP/latest-supported.json"
           base_short_tag="${BASE_SHA:0:7}"
-          git show "${BASE_SHA}:test-suite/fhevm/profiles/latest-supported.json" | BASE_SHORT_TAG="$base_short_tag" LOCK_PATH="$lock_path" python3 - <<'PY'
+          git show "${BASE_SHA}:test-suite/fhevm/profiles/latest-supported.json" > "$profile_path"
+          BASE_SHORT_TAG="$base_short_tag" LOCK_PATH="$lock_path" python3 - "$profile_path" <<'PY'
           import json
           import os
+          import sys
 
-          bundle = json.load(__import__("sys").stdin)
+          with open(sys.argv[1], encoding="utf8") as fh:
+              bundle = json.load(fh)
           base_short_tag = os.environ["BASE_SHORT_TAG"]
           bundle["target"] = "latest-supported"
           bundle["lockName"] = f"release-base-{base_short_tag}.json"

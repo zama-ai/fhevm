@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
+  requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   validateBundleCompatibility,
 } from "./compat/compat";
@@ -69,6 +70,19 @@ describe("compat", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  test("treats kms-core v0.13.10 prereleases as modern config schema", () => {
+    expect(
+      requiresLegacyKmsCoreConfig({
+        versions: {
+          target: "sha",
+          lockName: "sha.json",
+          env: { CORE_VERSION: "v0.13.10-rc.3" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   test("renders legacy pauser flags for old contract tags", () => {
