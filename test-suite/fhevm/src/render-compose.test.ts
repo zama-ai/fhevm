@@ -75,12 +75,15 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(state, stackSpecForState(state));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
-        services: Record<string, { image?: string }>;
+        services: Record<string, { image?: string; command?: string[] }>;
       };
       expect(Object.keys(doc.services)).toContain("coprocessor1-host-listener");
       expect(Object.keys(doc.services)).toContain("coprocessor1-host-listener-poller");
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor1-host-listener-poller"]?.image).toContain(":fhevm-local-i1");
+      expect(String((doc.services["coprocessor-db-migration"]?.command as string[] | undefined)?.[0] ?? "")).toContain(
+        "/initialize_db.sh && ( [ ! -x /insert_test_host_chain.sh ] || /insert_test_host_chain.sh )",
+      );
     });
   });
 

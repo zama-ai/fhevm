@@ -106,7 +106,7 @@ const rewriteComposePaths = (doc: ComposeDoc) => {
 };
 
 /** Interpolates `${VAR}` placeholders inside a string using env vars. */
-export const interpolateString = (value: string, vars: Record<string, string>) =>
+const interpolateString = (value: string, vars: Record<string, string>) =>
   value.replace(/(?<!\$)\$\{([A-Z0-9_]+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 
 /** Recursively interpolates compose values using a flat env map. */

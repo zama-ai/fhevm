@@ -12,7 +12,7 @@ import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
 import { exists } from "../utils/fs";
-import { defaultHostChain, hostChainsForState } from "./topology";
+import { hostChainsForState } from "./topology";
 
 /** Resolves the MinIO container IP used for host-reachable material URLs. */
 export const minioIp = async () => {
@@ -129,10 +129,4 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
       }
     }
   }
-};
-
-/** Returns the default chain endpoint used for single-target runtime operations. */
-export const defaultHostEndpoint = (state: Pick<State, "scenario" | "discovery">) => {
-  const chain = defaultHostChain(state);
-  return chain ? state.discovery?.endpoints.hosts[chain.key] : undefined;
 };

@@ -183,7 +183,7 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
 export const waitForCoprocessor = async (state: State) => waitForCoprocessorServices(state, false);
 
 /** Waits for extra-chain host listeners to reach running state. */
-export const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenario">, chainKey: string) => {
+const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenario">, chainKey: string) => {
   const suffix = hostChainSuffix(chainKey, defaultHostChainKey(state.scenario.hostChains));
   const topology = topologyForState(state);
   for (let index = 0; index < topology.count; index += 1) {
