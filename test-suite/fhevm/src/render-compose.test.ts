@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import YAML from "yaml";
 
-import { composePath, envPath } from "./layout";
+import { composePath, envPath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { generateComposeOverrides } from "./generate/compose";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
@@ -139,7 +139,7 @@ describe("render-compose", () => {
       const hostAddressDir = (env as Record<string, string>).HOST_ADDRESS_DIR ?? "host";
       const template = YAML.parse(
         await readFile(
-          path.join("/Users/work/code/zama/fhevm/test-suite/fhevm/docker-compose", "host-sc-docker-compose.yml"),
+          path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"),
           "utf8",
         ),
       ) as { services: Record<string, { volumes?: string[] }> };
