@@ -12,7 +12,7 @@ use alloy::{
 };
 use anyhow::Context;
 use aws_config::BehaviorVersion;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -25,15 +25,10 @@ use transaction_sender::{
 use fhevm_engine_common::{
     metrics_server,
     telemetry::{self, MetricsConfig},
+    types::SignerType,
     utils::DatabaseURL,
 };
 use humantime::parse_duration;
-
-#[derive(Parser, Debug, Clone, ValueEnum)]
-enum SignerType {
-    PrivateKey,
-    AwsKms,
-}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
