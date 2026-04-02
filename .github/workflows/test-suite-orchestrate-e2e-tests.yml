@@ -104,7 +104,6 @@ jobs:
       - id: create-e2e-tests-input
         run: |
           set -euo pipefail
-          base_short_tag="$(git rev-parse --short "$BASE_COMMIT_HASH")"
           short_tag="$(git rev-parse --short "$NEW_COMMIT_HASH")"
           needs_file="$RUNNER_TEMP/docker-build-results.json"
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
@@ -148,36 +147,41 @@ jobs:
           fi
 
           failures=()
-          while IFS='|' read -r job result_key output_key; do
+          while IFS='|' read -r job result_key base_commit_key output_key; do
             result="$(jq -r --arg job "$job" --arg key "$result_key" '.[$job].outputs[$key] // "missing"' "$needs_file")"
             case "$result" in
               success)
                 echo "$output_key=$short_tag" >> "$GITHUB_OUTPUT"
                 ;;
               skipped)
-                echo "$output_key=$base_short_tag" >> "$GITHUB_OUTPUT"
+                base_commit="$(jq -r --arg job "$job" --arg key "$base_commit_key" '.[$job].outputs[$key] // empty' "$needs_file")"
+                if [ -z "$base_commit" ]; then
+                  failures+=("$job.$base_commit_key=missing")
+                else
+                  echo "$output_key=$(git rev-parse --short "$base_commit")" >> "$GITHUB_OUTPUT"
+                fi
                 ;;
               *)
                 failures+=("$job.$result_key=$result")
                 ;;
             esac
           done <<'EOF'
-          coprocessor-docker-build|db_migration_build_result|coprocessor-db-migration-version
-          coprocessor-docker-build|gw_listener_build_result|coprocessor-gw-listener-version
-          coprocessor-docker-build|host_listener_build_result|coprocessor-host-listener-version
-          coprocessor-docker-build|sns_worker_build_result|coprocessor-sns-worker-version
-          coprocessor-docker-build|tfhe_worker_build_result|coprocessor-tfhe-worker-version
-          coprocessor-docker-build|tx_sender_build_result|coprocessor-tx-sender-version
-          coprocessor-docker-build|zkproof_worker_build_result|coprocessor-zkproof-worker-version
-          kms-connector-docker-build|db_migration_build_result|connector-db-migration-version
-          kms-connector-docker-build|gw_listener_build_result|connector-gw-listener-version
-          kms-connector-docker-build|kms_worker_build_result|connector-kms-worker-version
-          kms-connector-docker-build|tx_sender_build_result|connector-tx-sender-version
-          gateway-contracts-docker-build|build_result|gateway-version
-          host-contracts-docker-build|build_result|host-version
-          relayer-docker-build|relayer_migrate_build_result|relayer-migrate-version
-          relayer-docker-build|relayer_build_result|relayer-version
-          test-suite-docker-build|build_result|test-suite-version
+          coprocessor-docker-build|db_migration_build_result|db_migration_base_commit|coprocessor-db-migration-version
+          coprocessor-docker-build|gw_listener_build_result|gw_listener_base_commit|coprocessor-gw-listener-version
+          coprocessor-docker-build|host_listener_build_result|host_listener_base_commit|coprocessor-host-listener-version
+          coprocessor-docker-build|sns_worker_build_result|sns_worker_base_commit|coprocessor-sns-worker-version
+          coprocessor-docker-build|tfhe_worker_build_result|tfhe_worker_base_commit|coprocessor-tfhe-worker-version
+          coprocessor-docker-build|tx_sender_build_result|tx_sender_base_commit|coprocessor-tx-sender-version
+          coprocessor-docker-build|zkproof_worker_build_result|zkproof_worker_base_commit|coprocessor-zkproof-worker-version
+          kms-connector-docker-build|db_migration_build_result|db_migration_base_commit|connector-db-migration-version
+          kms-connector-docker-build|gw_listener_build_result|gw_listener_base_commit|connector-gw-listener-version
+          kms-connector-docker-build|kms_worker_build_result|kms_worker_base_commit|connector-kms-worker-version
+          kms-connector-docker-build|tx_sender_build_result|tx_sender_base_commit|connector-tx-sender-version
+          gateway-contracts-docker-build|build_result|base_commit|gateway-version
+          host-contracts-docker-build|build_result|base_commit|host-version
+          relayer-docker-build|relayer_migrate_build_result|relayer_migrate_base_commit|relayer-migrate-version
+          relayer-docker-build|relayer_build_result|relayer_base_commit|relayer-version
+          test-suite-docker-build|build_result|base_commit|test-suite-version
           EOF
 
           if [ "${#failures[@]}" -gt 0 ]; then

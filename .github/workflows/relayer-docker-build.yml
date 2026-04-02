@@ -25,9 +25,15 @@ on:
       relayer_migrate_build_result:
         description: "Result of the build-relayer-migrate job"
         value: ${{ jobs.build-relayer-migrate.result }}
+      relayer_migrate_base_commit:
+        description: "Resolved published base commit for relayer-migrate"
+        value: ${{ jobs.check-changes-relayer-migrate.outputs.base-commit }}
       relayer_build_result:
         description: "Result of the build-relayer job"
         value: ${{ jobs.build-relayer.result }}
+      relayer_base_commit:
+        description: "Resolved published base commit for relayer"
+        value: ${{ jobs.check-changes-relayer.outputs.base-commit }}
   release:
     types:
       - published

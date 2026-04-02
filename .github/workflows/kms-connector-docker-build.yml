@@ -25,15 +25,27 @@ on:
       db_migration_build_result:
         description: "Result of the build-db-migration job"
         value: ${{ jobs.build-db-migration.result }}
+      db_migration_base_commit:
+        description: "Resolved published base commit for db-migration"
+        value: ${{ jobs.check-changes-db-migration.outputs.base-commit }}
       gw_listener_build_result:
         description: "Result of the build-gw-listener job"
         value: ${{ jobs.build-gw-listener.result }}
+      gw_listener_base_commit:
+        description: "Resolved published base commit for gw-listener"
+        value: ${{ jobs.check-changes-gw-listener.outputs.base-commit }}
       kms_worker_build_result:
         description: "Result of the build-kms-worker job"
         value: ${{ jobs.build-kms-worker.result }}
+      kms_worker_base_commit:
+        description: "Resolved published base commit for kms-worker"
+        value: ${{ jobs.check-changes-kms-worker.outputs.base-commit }}
       tx_sender_build_result:
         description: "Result of the build-tx-sender job"
         value: ${{ jobs.build-tx-sender.result }}
+      tx_sender_base_commit:
+        description: "Resolved published base commit for tx-sender"
+        value: ${{ jobs.check-changes-tx-sender.outputs.base-commit }}
   release:
     types:
       - published
