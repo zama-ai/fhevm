@@ -818,6 +818,64 @@ run_additional_coprocessor_instance() {
     rm -f "$temp_compose"
 }
 
+seed_solana_host_chain_metadata() {
+    load_solana_addresses_env
+
+    local solana_acl_identity
+    solana_acl_identity="${SOLANA_HOST_ACL_PROGRAM_ID:-$SOLANA_HOST_PROGRAM_ID}"
+    if [[ -z "$solana_acl_identity" ]]; then
+        log_error "Missing SOLANA_HOST_ACL_PROGRAM_ID / SOLANA_HOST_PROGRAM_ID in Solana addresses env"
+        exit 1
+    fi
+
+    docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -v ON_ERROR_STOP=1 -c \
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address)
+         VALUES (${SOLANA_HOST_CHAIN_ID}, 'solana-localnet', '${solana_acl_identity}')
+         ON CONFLICT (chain_id) DO UPDATE
+         SET name = EXCLUDED.name,
+             acl_contract_address = EXCLUDED.acl_contract_address;" >/dev/null
+
+    log_info "Seeded Solana host chain metadata in coprocessor DB"
+}
+
+run_solana_coprocessor_instance() {
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor-solana.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/coprocessor-solana-docker-compose.yml"
+    local db_migration_service="coprocessor-db-migration"
+    local runtime_services=(
+        "coprocessor-host-listener"
+        "coprocessor-gw-listener"
+        "coprocessor-tfhe-worker"
+        "coprocessor-zkproof-worker"
+        "coprocessor-sns-worker"
+        "coprocessor-transaction-sender"
+    )
+
+    log_info "Starting Solana coprocessor (db migration phase)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up --build -d "$db_migration_service"
+    else
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up -d "$db_migration_service"
+    fi
+
+    wait_for_service "$compose_file" "$db_migration_service" "false"
+    seed_solana_host_chain_metadata
+
+    log_info "Starting Solana coprocessor (runtime phase)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up --build --no-deps -d "${runtime_services[@]}"
+    else
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up --no-deps -d "${runtime_services[@]}"
+    fi
+
+    wait_for_service "$compose_file" "coprocessor-host-listener" "true"
+    wait_for_service "$compose_file" "coprocessor-gw-listener" "true"
+    wait_for_service "$compose_file" "coprocessor-tfhe-worker" "true"
+    wait_for_service "$compose_file" "coprocessor-zkproof-worker" "true"
+    wait_for_service "$compose_file" "coprocessor-sns-worker" "true"
+    wait_for_service "$compose_file" "coprocessor-transaction-sender" "true"
+}
+
 # Function to start an entire docker-compose file and wait for specified services
 run_compose() {
     local component=$1
@@ -1154,15 +1212,7 @@ fi
 # Step 7: coprocessor
 if ! should_skip_step "coprocessor"; then
     if [[ "$SOLANA_MODE" == true ]]; then
-        ${RUN_COMPOSE} "coprocessor-solana" "Coprocessor Services (Solana host listener)" \
-            "coprocessor-and-kms-db:running" \
-            "coprocessor-db-migration:complete" \
-            "coprocessor-host-listener:running" \
-            "coprocessor-gw-listener:running" \
-            "coprocessor-tfhe-worker:running" \
-            "coprocessor-zkproof-worker:running" \
-            "coprocessor-sns-worker:running" \
-            "coprocessor-transaction-sender:running"
+        run_solana_coprocessor_instance
     else
         ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
             "coprocessor-and-kms-db:running" \
