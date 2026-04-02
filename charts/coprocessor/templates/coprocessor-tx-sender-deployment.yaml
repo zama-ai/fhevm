@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.txSender.affinity "enabled") | indent 8 }}
+      {{- with .Values.txSender.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.txSender.tolerations .Values.txSender.tolerations.enabled }}
+      {{- with .Values.txSender.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.txSender.tolerations }}
       tolerations:
-{{ toYaml .Values.txSender.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.txSender.serviceAccountName }}
       serviceAccountName: {{ .Values.txSender.serviceAccountName }}
@@ -47,9 +51,93 @@ spec:
           image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}
           command: ["transaction_sender"]
           args:
-{{ toYaml .Values.txSender.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --gateway-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            {{- if .Values.txSender.wallet.awsKms.enabled }}
+            - --signer-type=aws-kms
+            - --aws-kms-key-id=$(TX_SENDER_AWS_KMS_KEY_ID)
+            {{- else }}
+            - --signer-type=private-key
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            {{- end }}
+            - --health-check-port={{ .Values.txSender.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ .Values.txSender.ports.metrics }}
+            - --log-level={{ .Values.txSender.args.logLevel }}
+            - --service-name={{ .Values.txSender.args.serviceName }}
+            - --database-pool-size={{ .Values.txSender.args.databasePoolSize }}
+            - --database-polling-interval-secs={{ .Values.txSender.args.databasePollingIntervalSecs }}
+            - --verify-proof-resp-database-channel={{ .Values.txSender.args.verifyProofRespDatabaseChannel }}
+            - --add-ciphertexts-database-channel={{ .Values.txSender.args.addCiphertextsDatabaseChannel }}
+            - --allow-handle-database-channel={{ .Values.txSender.args.allowHandleDatabaseChannel }}
+            - --verify-proof-resp-batch-limit={{ .Values.txSender.args.verifyProofRespBatchLimit }}
+            - --verify-proof-resp-max-retries={{ .Values.txSender.args.verifyProofRespMaxRetries }}
+            {{- if .Values.txSender.args.verifyProofRemoveAfterMaxRetries }}
+            - --verify-proof-remove-after-max-retries
+            {{- end }}
+            - --add-ciphertexts-batch-limit={{ .Values.txSender.args.addCiphertextsBatchLimit }}
+            - --allow-handle-batch-limit={{ .Values.txSender.args.allowHandleBatchLimit }}
+            - --allow-handle-max-retries={{ .Values.txSender.args.allowHandleMaxRetries }}
+            - --add-ciphertexts-max-retries={{ .Values.txSender.args.addCiphertextsMaxRetries }}
+            - --error-sleep-initial-secs={{ .Values.txSender.args.errorSleepInitialSecs }}
+            - --error-sleep-max-secs={{ .Values.txSender.args.errorSleepMaxSecs }}
+            - --txn-receipt-timeout-secs={{ .Values.txSender.args.txnReceiptTimeoutSecs }}
+            - --review-after-unlimited-retries={{ .Values.txSender.args.reviewAfterUnlimitedRetries }}
+            - --provider-max-retries={{ .Values.txSender.args.providerMaxRetries }}
+            - --provider-retry-interval={{ .Values.txSender.args.providerRetryInterval }}
+            - --health-check-timeout={{ .Values.txSender.args.healthCheckTimeout }}
+            - --gas-limit-overprovision-percent={{ .Values.txSender.args.gasLimitOverprovisionPercent }}
+            - --graceful-shutdown-timeout={{ .Values.txSender.args.gracefulShutdownTimeout }}
+            - --metric-host-txn-latency={{ .Values.txSender.args.metricHostTxnLatency }}
+            - --metric-zkproof-txn-latency={{ .Values.txSender.args.metricZkproofTxnLatency }}
+            - --gauge-update-interval-secs={{ .Values.txSender.args.gaugeUpdateIntervalSecs }}
+            - --delegation-block-delay={{ .Values.txSender.args.delegationBlockDelay }}
+            {{- with .Values.txSender.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.txSender.env | nindent 12 }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: GATEWAY_URL
+              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: {{ required "commonConfig.gatewayContractAddresses.inputVerification is required" .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: {{ required "commonConfig.gatewayContractAddresses.ciphertextCommits is required" .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+            - name: MULTICHAIN_ACL_ADDRESS
+              value: {{ required "commonConfig.gatewayContractAddresses.multichainAcl is required" .Values.commonConfig.gatewayContractAddresses.multichainAcl | quote }}
+            {{- if .Values.txSender.wallet.awsKms.enabled }}
+            - name: TX_SENDER_AWS_KMS_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.txSender.wallet.awsKms.configmap.name | quote }}
+                  key: {{ .Values.txSender.wallet.awsKms.configmap.key | quote }}
+            {{- else if .Values.txSender.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ .Values.txSender.wallet.secret.value | quote }}
+            {{- else }}
+            - name: TX_SENDER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.txSender.wallet.secret.name | quote }}
+                  key: {{ .Values.txSender.wallet.secret.key | quote }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.txSender.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.txSender.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.txSender.ports }}
             - name: {{ $portName }}
@@ -65,10 +153,10 @@ spec:
               memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.txSender.probes .Values.txSender.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.txSender.probes .Values.txSender.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

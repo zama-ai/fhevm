@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.hostListenerCatchupOnly.affinity .Values.hostListenerCatchupOnly.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.hostListenerCatchupOnly.affinity "enabled") | indent 8 }}
+      {{- with .Values.hostListenerCatchupOnly.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.hostListenerCatchupOnly.tolerations .Values.hostListenerCatchupOnly.tolerations.enabled }}
+      {{- with .Values.hostListenerCatchupOnly.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hostListenerCatchupOnly.tolerations }}
       tolerations:
-{{ toYaml .Values.hostListenerCatchupOnly.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.hostListenerCatchupOnly.serviceAccountName }}
       serviceAccountName: {{ .Values.hostListenerCatchupOnly.serviceAccountName }}
@@ -47,14 +51,50 @@ spec:
           image: {{ .Values.hostListenerCatchupOnly.image.name }}:{{ .Values.hostListenerCatchupOnly.image.tag }}
           command: ["host_listener"]
           args:
-            {{- range $arg := .Values.hostListenerCatchupOnly.args }}
-            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
-            - {{ $arg | quote }}
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port={{ .Values.hostListenerCatchupOnly.ports.healthcheck }}
+            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ .Values.hostListenerCatchupOnly.args.logLevel }}
+            - --initial-block-time={{ .Values.hostListenerCatchupOnly.args.initialBlockTime }}
+            - --dependence-cache-size={{ .Values.hostListenerCatchupOnly.args.dependenceCacheSize }}
+            - --reorg-maximum-duration-in-blocks={{ .Values.hostListenerCatchupOnly.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ .Values.hostListenerCatchupOnly.args.serviceName }}
+            - --catchup-finalization-in-blocks={{ .Values.hostListenerCatchupOnly.args.catchupFinalizationInBlocks }}
+            {{- if .Values.hostListenerCatchupOnly.args.onlyCatchupLoop }}
+            - --only-catchup-loop
             {{- end }}
+            - --end-at-block={{ .Values.hostListenerCatchupOnly.args.endAtBlock }}
+            - --catchup-loop-sleep-secs={{ .Values.hostListenerCatchupOnly.args.catchupLoopSleepSecs }}
+            - --coprocessor-api-key=$(TENANT_API_KEY)
+            {{- with .Values.hostListenerCatchupOnly.extraArgs }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
-            - --dependent-ops-max-per-chain={{ int .Values.dependentOps.maxPerChain }}
           env:
-{{ toYaml .Values.hostListenerCatchupOnly.env | nindent 12 }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: ETHEREUM_RPC_URL
+              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
+            - name: ACL_CONTRACT_ADDRESS
+              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListenerCatchupOnly.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.hostListenerCatchupOnly.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.hostListenerCatchupOnly.ports }}
             - name: {{ $portName }}
@@ -70,10 +110,10 @@ spec:
               memory: {{ .Values.hostListenerCatchupOnly.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.hostListenerCatchupOnly.probes .Values.hostListenerCatchupOnly.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.hostListenerCatchupOnly.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListenerCatchupOnly.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.hostListenerCatchupOnly.probes .Values.hostListenerCatchupOnly.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.hostListenerCatchupOnly.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListenerCatchupOnly.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}
