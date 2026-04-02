@@ -1,6 +1,9 @@
 {
   "name": "fhevm",
   "private": true,
+  "scripts": {
+    "test": "cd test-suite/fhevm && bun run test"
+  },
   "workspaces": [
     "host-contracts",
     "library-solidity",
