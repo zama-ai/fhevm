@@ -21,6 +21,14 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f /prepare_database_url.sh ]]; then
+  source /prepare_database_url.sh
+else
+  source "${script_dir}/prepare_database_url.sh"
+fi
+
 if [ -z "${DATABASE_URL:-}" ]; then
   echo "ERROR: DATABASE_URL is required"
   exit 1
@@ -34,9 +42,15 @@ if [ -z "${TO_BLOCK_NUMBER:-}" ]; then
   exit 1
 fi
 
+if [[ -f /db-scripts/revert_coprocessor_db_state.sql ]]; then
+  SQL_SCRIPT_PATH="/db-scripts/revert_coprocessor_db_state.sql"
+else
+  SQL_SCRIPT_PATH="${script_dir}/db-scripts/revert_coprocessor_db_state.sql"
+fi
+
 echo "Reverting chain_id=$CHAIN_ID to block $TO_BLOCK_NUMBER"
 psql "$DATABASE_URL" \
   -v chain_id="$CHAIN_ID" \
   -v to_block_number="$TO_BLOCK_NUMBER" \
-  -f /db-scripts/revert_coprocessor_db_state.sql
+  -f "$SQL_SCRIPT_PATH"
 echo "Revert complete"

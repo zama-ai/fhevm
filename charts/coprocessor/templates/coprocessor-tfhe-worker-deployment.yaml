@@ -74,8 +74,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" . | nindent 12 }}
             - name: ACL_CONTRACT_ADDRESS
               value: {{ .Values.commonConfig.aclContractAddress | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.tfheWorker.tracing.enabled }}

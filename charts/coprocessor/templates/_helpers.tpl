@@ -89,3 +89,25 @@
 {{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
 {{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{- define "coprocessorDatabaseAuthMode" -}}
+{{- $authMode := default "password" .Values.commonConfig.database.authMode -}}
+{{- if not (or (eq $authMode "password") (eq $authMode "iam")) -}}
+{{- fail (printf "commonConfig.database.authMode must be either \"password\" or \"iam\", got %q" $authMode) -}}
+{{- end -}}
+{{- $authMode -}}
+{{- end -}}
+
+{{- define "coprocessorDatabaseEnv" -}}
+{{- $authMode := include "coprocessorDatabaseAuthMode" . -}}
+- name: DATABASE_URL
+  value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- if eq $authMode "iam" }}
+- name: DATABASE_IAM_AUTH_ENABLED
+  value: "true"
+- name: DATABASE_IAM_REGION
+  value: {{ required "commonConfig.database.iam.region is required when authMode=iam" .Values.commonConfig.database.iam.region | quote }}
+- name: DATABASE_SSL_ROOT_CERT_PATH
+  value: {{ required "commonConfig.database.iam.sslRootCertPath is required when authMode=iam" .Values.commonConfig.database.iam.sslRootCertPath | quote }}
+{{- end }}
+{{- end -}}

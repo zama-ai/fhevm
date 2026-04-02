@@ -21,6 +21,18 @@ commonConfig:
   # Can use $(VAR_NAME) syntax to reference variables from commonConfig.env
   databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
 
+  # Database authentication mode
+  database:
+    # `password` uses databaseUrl as-is (credentials embedded or via env).
+    # `iam` keeps databaseUrl passwordless and resolves short-lived IAM tokens
+    # at runtime using the pod's AWS identity.
+    authMode: password
+    iam:
+      # Required when authMode=iam.
+      region: ""
+      # Required when authMode=iam. The runtime enforces verify-full TLS.
+      sslRootCertPath: ""
+
   # Host chain configuration
   hostChainWsUrl: "ws://ethereum-node:8546"
   hostChainHttpUrl: "http://ethereum-node:8545"
@@ -88,10 +100,24 @@ config:
 
   # Database connection configuration
   database:
+    # `password` keeps the historical secret-backed DATABASE_URL.
+    # `iam` expects a passwordless PostgreSQL URL and resolves short-lived
+    # IAM tokens at runtime using the pod's AWS identity.
+    authMode: password
+
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
       value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+
+    iam:
+      # Example:
+      # postgresql://coprocessor@my-db.cluster-xyz.eu-west-2.rds.amazonaws.com:5432/coprocessor
+      url: ""
+      # Required when authMode=iam.
+      region: ""
+      # Required when authMode=iam. The runtime enforces verify-full TLS.
+      sslRootCertPath: ""
 
   # Helm hook annotations for deployment ordering
   annotations:
