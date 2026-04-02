@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import { validateBundleCompatibility } from "./compat/compat";
+import { shouldRetryGitHubCliError } from "./resolve/github";
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
@@ -143,6 +144,13 @@ describe("resolve", () => {
         ],
       ),
     ).toThrow("sha target deadbee is unsupported");
+  });
+
+  test("retries transient GitHub 5xx responses", () => {
+    expect(shouldRetryGitHubCliError("gh: HTTP 503")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: HTTP 502 Bad Gateway")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: HTTP 504 Gateway Timeout")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: HTTP 404")).toBe(false);
   });
 
 });

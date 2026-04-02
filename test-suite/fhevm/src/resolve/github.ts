@@ -30,7 +30,7 @@ const explainGitHubCliError = (message: string): string => {
 };
 
 /** Runs `gh api` and parses its JSON payload with CLI-specific error handling. */
-const shouldRetryGitHubCliError = (message: string) => {
+export const shouldRetryGitHubCliError = (message: string) => {
   const lower = message.toLowerCase();
   return (
     lower.includes("connection refused") ||
@@ -38,7 +38,11 @@ const shouldRetryGitHubCliError = (message: string) => {
     lower.includes("tls handshake timeout") ||
     lower.includes("temporary failure") ||
     lower.includes("connection reset") ||
-    lower.includes("econnreset")
+    lower.includes("econnreset") ||
+    /\bhttp 5\d\d\b/.test(lower) ||
+    lower.includes("service unavailable") ||
+    lower.includes("bad gateway") ||
+    lower.includes("gateway timeout")
   );
 };
 
