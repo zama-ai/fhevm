@@ -3,14 +3,7 @@ services:
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
-    build:
-      context: ../../.. # root directory of the repository
-      dockerfile: test-suite/e2e/Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_TEST_SUITE_E2E_DEBUG:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_TEST_SUITE_E2E_DEBUG:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.test-suite.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
     command:
       - tail -f /dev/null
