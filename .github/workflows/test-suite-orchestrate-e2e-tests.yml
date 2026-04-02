@@ -14,70 +14,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  resolve-baseline:
-    name: resolve-baseline
+  coprocessor-docker-build:
     if: &build-trigger-condition |
       startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GHCR package metadata during base-sha resolution
-    env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
-    outputs:
-      lock-artifact-name: ${{ steps.lock-output.outputs.lock-artifact-name }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-          fetch-depth: 0
-
-      - name: Setup Bun
-        if: ${{ !startsWith(github.base_ref, 'release/') }}
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
-      - name: Install GitHub CLI
-        if: ${{ !startsWith(github.base_ref, 'release/') }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-
-      - name: Install CLI deps
-        if: ${{ !startsWith(github.base_ref, 'release/') }}
-        working-directory: test-suite/fhevm
-        run: bun install --frozen-lockfile
-
-      - id: resolve-baseline
-        name: Resolve base-sha baseline lock
-        if: ${{ !startsWith(github.base_ref, 'release/') }}
-        working-directory: test-suite/fhevm
-        run: |
-          set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
-          artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
-          echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
-
-      - id: lock-output
-        name: Emit lock output
-        run: |
-          echo "lock-artifact-name=${ARTIFACT_NAME:-}" >> "$GITHUB_OUTPUT"
-          echo "lock-path=${LOCK_PATH:-}" >> "$GITHUB_OUTPUT"
-        env:
-          ARTIFACT_NAME: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
-          LOCK_PATH: ${{ steps.resolve-baseline.outputs.lock-path }}
-
-      - name: Upload baseline lock
-        if: ${{ steps.lock-output.outputs.lock-path != '' }}
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-        with:
-          name: ${{ steps.lock-output.outputs.lock-artifact-name }}
-          path: ${{ steps.lock-output.outputs.lock-path }}
-
-  coprocessor-docker-build:
-    if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -122,16 +61,15 @@ jobs:
   create-e2e-tests-input:
     name: create-e2e-tests-input
     needs:
-      - resolve-baseline
       - coprocessor-docker-build
       - gateway-contracts-docker-build
       - host-contracts-docker-build
       - kms-connector-docker-build
       - relayer-docker-build
       - test-suite-docker-build
-    if: *build-trigger-condition
+    if: ${{ (success() || failure()) && (startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')) }}
     permissions:
-      contents: 'read' # Required to read the checked-in release baseline profile
+      contents: 'read' # Required to read the checked-in release baseline defaults
     env:
       BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
@@ -153,7 +91,6 @@ jobs:
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
-      lock-artifact-name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
       relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
@@ -167,8 +104,8 @@ jobs:
       - id: create-e2e-tests-input
         run: |
           set -euo pipefail
-          base_short_tag="${BASE_COMMIT_HASH:0:7}"
-          short_tag="${NEW_COMMIT_HASH:0:7}"
+          base_short_tag="$(git rev-parse --short "$BASE_COMMIT_HASH")"
+          short_tag="$(git rev-parse --short "$NEW_COMMIT_HASH")"
           needs_file="$RUNNER_TEMP/docker-build-results.json"
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
 
@@ -196,7 +133,13 @@ jobs:
           done
 
           if [ "$IS_RELEASE_PR" = "true" ]; then
-            core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
+            if git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json" 2>/dev/null; then
+              core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["CORE_VERSION"])')"
+            elif git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" 2>/dev/null; then
+              core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
+            else
+              core_version=""
+            fi
             if [ -z "$core_version" ]; then
               echo "Could not extract CORE_VERSION from release base ${BASE_COMMIT_HASH}" >&2
               exit 1
@@ -244,7 +187,7 @@ jobs:
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]
-    if: *build-trigger-condition
+    if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test') }}
     uses:
       ./.github/workflows/test-suite-e2e-tests.yml
     permissions:
@@ -272,7 +215,6 @@ jobs:
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
-      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       scenario: ${{ startsWith(github.base_ref, 'release/') && 'two-of-two' || 'two-of-two-multi-chain' }}

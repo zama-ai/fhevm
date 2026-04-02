@@ -197,13 +197,12 @@ This is how CI works. The merge queue workflow:
 1. Builds repo-owned Docker images for touched components
 2. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
 3. Falls back to the PR base short SHA for skipped repo-owned components
-4. Uses a downloaded base lock only for non-release orchestrate runs
-5. Pins `CORE_VERSION` from the release base branch when the PR targets `release/*`
-6. Runs `./fhevm-cli up` with `two-of-two-multi-chain` for non-release orchestrate and `two-of-two` for `release/*`
-7. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
+4. Pins `CORE_VERSION` from the release base branch when the PR targets `release/*`
+5. Runs `./fhevm-cli up` with `two-of-two-multi-chain` for non-release orchestrate and `two-of-two` for `release/*`
+6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
-Non-release orchestrate resolves a frozen base lock, then overlays merge-candidate SHA-tagged env vars for repo-owned components.
-Release orchestrate follows the older base/head per-service selection path and explicitly carries over the base branch `CORE_VERSION`.
+Orchestrate does not resolve a new bundle in workflow YAML. It follows the historical base/head per-service image selection model, then passes those explicit versions into the reusable e2e workflow.
+Release orchestrate keeps one extra compatibility bridge: it carries over the base branch `CORE_VERSION` from the release branch’s own checked-in defaults.
 The reusable workflow now runs on `pull_request` directly and treats PR e2e as source validation with `build=true`.
 Orchestrate passes `build=false` explicitly because it is validating selected registry images rather than rebuilding from source.
 
@@ -261,7 +260,7 @@ The matrix has three sections:
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
 Merge-queue e2e explicitly keeps `build=false`.
-For non-release PRs it boots `two-of-two-multi-chain`, uses a frozen base lock, and overlays selected repo-owned head-tag overrides.
+For non-release PRs it boots `two-of-two-multi-chain` and uses the historical base/head per-service version selection.
 For `release/*` PRs it boots `two-of-two`, restores the old base/head per-service version selection, and carries forward the base branch `CORE_VERSION`.
 
 ### How to update
