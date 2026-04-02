@@ -8,8 +8,8 @@ const FHEVM_REPO = "zama-ai/fhevm";
 const GITOPS_REPO = "zama-zws/gitops";
 const GH_OWNER = "zama-ai";
 const GH_API_TIMEOUT_MS = 20_000;
-const GH_API_RETRIES = 3;
-const GH_API_RETRY_DELAY_MS = 500;
+const GH_API_RETRIES = 5;
+const GH_API_RETRY_DELAY_MS = 1_000;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
 const explainGitHubCliError = (message: string): string => {
@@ -41,6 +41,7 @@ export const shouldRetryGitHubCliError = (message: string) => {
     lower.includes("econnreset") ||
     /\bhttp 5\d\d\b/.test(lower) ||
     lower.includes("service unavailable") ||
+    lower.includes("no server is currently available to service your request") ||
     lower.includes("bad gateway") ||
     lower.includes("gateway timeout")
   );
@@ -54,7 +55,7 @@ const runGhApi = async <T>(apiPath: string): Promise<T> => {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
-        await Bun.sleep(GH_API_RETRY_DELAY_MS * attempt);
+        await Bun.sleep(GH_API_RETRY_DELAY_MS * 2 ** (attempt - 1));
         continue;
       }
       throw new GitHubApiError(explainGitHubCliError(raw));

@@ -150,6 +150,11 @@ describe("resolve", () => {
     expect(shouldRetryGitHubCliError("gh: HTTP 503")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 502 Bad Gateway")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 504 Gateway Timeout")).toBe(true);
+    expect(
+      shouldRetryGitHubCliError(
+        "gh: No server is currently available to service your request. Sorry about that. Please try resubmitting your request and contact us if the problem persists. (HTTP 503)",
+      ),
+    ).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 404")).toBe(false);
   });
 
