@@ -1,11 +1,11 @@
 use crate::{
     core::{
         KmsResponsePublisher,
-        config::Config,
+        config::{Config, HostChainKind},
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             DbContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
-            KMSGenerationProcessor, KmsClient, s3::S3Service,
+            HostAclBackend, KMSGenerationProcessor, KmsClient, s3::S3Service,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -14,6 +14,7 @@ use crate::{
         metrics::register_event_latency,
     },
 };
+use alloy::primitives::Address;
 use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
@@ -125,10 +126,36 @@ impl
 
         let mut acl_contracts = HashMap::new();
         for host_chain in &config.host_chains {
-            let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
-            let acl_contract = ACL::new(host_chain.acl_address, provider);
             let host_chain_id = host_chain.chain_id;
-            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+            let backend = match host_chain.chain_kind {
+                HostChainKind::Evm => {
+                    let provider =
+                        connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+                    let acl_address = host_chain.acl_address.parse::<Address>().map_err(|e| {
+                        anyhow!(
+                            "Invalid EVM acl_address for host chain {}: {} ({e})",
+                            host_chain.chain_id,
+                            host_chain.acl_address
+                        )
+                    })?;
+                    HostAclBackend::Evm(ACL::new(acl_address, provider))
+                }
+                HostChainKind::Solana => {
+                    let state_pda = host_chain.state_pda.clone().unwrap_or_default();
+                    if state_pda.is_empty() {
+                        return Err(anyhow!(
+                            "Missing state_pda for Solana host chain {host_chain_id}"
+                        ));
+                    }
+                    HostAclBackend::Solana {
+                        client: crate::core::solana_state::SolanaStateClient::new(
+                            host_chain.url.to_string(),
+                            state_pda,
+                        ),
+                    }
+                }
+            };
+            if acl_contracts.insert(host_chain_id, backend).is_some() {
                 return Err(anyhow!(
                     "Duplicate host chain in config for chain ID {host_chain_id}"
                 ));

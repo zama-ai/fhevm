@@ -8,7 +8,7 @@ wallet = "tests/fixtures/anchor-authority.json"
 [programs.localnet]
 solana_host_contracts = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
 solana_test_input_program = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv"
-solana_encrypted_erc20_program = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
+solana_confidential_token_program = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
 
 [test]
 startup_wait = 10000
@@ -32,11 +32,11 @@ upgradeable = true
 
 [[test.genesis]]
 address = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
-program = "target/deploy/solana_encrypted_erc20_program.so"
+program = "target/deploy/solana_confidential_token_program.so"
 upgradeable = true
 
 [hooks]
 pre-test = "make build-sbf"
 
 [scripts]
-test = "node tests/anchor-localnet.mjs"
+test = "node tests/anchor-localnet.js"

@@ -6,9 +6,9 @@ use sha3::{Digest, Keccak256};
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
-use solana_encrypted_erc20_core::{
-    find_state_pda as find_encrypted_erc20_state_pda, EncryptedErc20ExecutionResult,
-    EncryptedErc20Instruction,
+use solana_confidential_token_core::{
+    find_state_pda as find_confidential_token_state_pda, ConfidentialTokenExecutionResult,
+    ConfidentialTokenInstruction,
 };
 use solana_host_contracts_core::{
     find_session_pda, find_state_pda, BinaryOperand, ContextUserInputs, EvmAddress, FheType,
@@ -40,12 +40,12 @@ use std::{
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 const DEFAULT_ADDRESSES_ENV_PATH: &str = "../addresses/.env.host";
-const LOCAL_TRANSACTION_COMPUTE_UNIT_LIMIT: u32 = 1_000_000;
+const LOCAL_TRANSACTION_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const LOCAL_TRANSACTION_HEAP_FRAME_BYTES: u32 = 256 * 1024;
-const DEFAULT_ERC20_NAME: &str = "Naraggara";
-const DEFAULT_ERC20_SYMBOL: &str = "NARA";
-const DEFAULT_ERC20_MINT_AMOUNT: u64 = 10_000;
-const DEFAULT_ERC20_TRANSFER_AMOUNT: u64 = 1_337;
+const DEFAULT_TOKEN_NAME: &str = "Naraggara";
+const DEFAULT_TOKEN_SYMBOL: &str = "NARA";
+const DEFAULT_TOKEN_MINT_AMOUNT: u64 = 10_000;
+const DEFAULT_TOKEN_TRANSFER_AMOUNT: u64 = 1_337;
 
 fn main() -> DynResult<()> {
     let mut args = env::args().skip(1);
@@ -68,9 +68,19 @@ fn main() -> DynResult<()> {
         "scenario-batch" => scenario_batch(parse_options(&rest)?),
         "scenario-public-ebool" => scenario_public_ebool(parse_options(&rest)?),
         "scenario-public-mixed" => scenario_public_mixed(parse_options(&rest)?),
+        "scenario-user-decrypt" => scenario_user_decrypt(parse_options(&rest)?),
+        "runtime-identities" => runtime_identities(parse_options(&rest)?),
         "scenario-input-proof" => scenario_input_proof(parse_options(&rest)?),
         "scenario-test-input-add42" => scenario_test_input_add42(parse_options(&rest)?),
-        "scenario-erc20" => scenario_erc20(parse_options(&rest)?),
+        "scenario-confidential-token" => scenario_confidential_token(parse_options(&rest)?),
+        "token-reset" => token_reset_cmd(parse_options(&rest)?),
+        "token-mint-to" => token_mint_to_cmd(parse_options(&rest)?),
+        "token-transfer" => token_transfer_cmd(parse_options(&rest)?),
+        "token-approve-delegate" => token_approve_delegate_cmd(parse_options(&rest)?),
+        "token-transfer-as-delegate" => token_transfer_as_delegate_cmd(parse_options(&rest)?),
+        "token-balance" => token_balance_cmd(parse_options(&rest)?),
+        "token-delegate-allowance" => token_delegate_allowance_cmd(parse_options(&rest)?),
+        "token-supply" => token_supply_cmd(parse_options(&rest)?),
         "help" | "--help" | "-h" => {
             print_usage();
             Ok(())
@@ -93,8 +103,8 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
     let payer_keypair_path = required_option(&options, "payer-keypair")?;
     let program_id = parse_pubkey(required_option(&options, "program-id")?)?;
     let test_input_program_id = parse_pubkey(required_option(&options, "test-input-program-id")?)?;
-    let encrypted_erc20_program_id =
-        parse_pubkey(required_option(&options, "encrypted-erc20-program-id")?)?;
+    let confidential_token_program_id =
+        parse_pubkey(required_option(&options, "confidential-token-program-id")?)?;
     let addresses_env = PathBuf::from(required_option(&options, "addresses-env")?);
     let addresses_json = PathBuf::from(required_option(&options, "addresses-json")?);
 
@@ -104,10 +114,10 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
     let config = local_host_config(program_id, payer.pubkey())?;
     let test_input_state_pda =
         maybe_initialize_test_input_state(&client, &payer, test_input_program_id, program_id)?;
-    let encrypted_erc20_state_pda = maybe_initialize_encrypted_erc20_state(
+    let confidential_token_state_pda = maybe_initialize_confidential_token_state(
         &client,
         &payer,
-        encrypted_erc20_program_id,
+        confidential_token_program_id,
         program_id,
     )?;
 
@@ -122,10 +132,10 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
             session_pda: find_session_pda(&program_id, &payer.pubkey()).0,
             test_input_program_id,
             test_input_state_pda,
-            encrypted_erc20_program_id,
-            encrypted_erc20_state_pda,
+            confidential_token_program_id,
+            confidential_token_state_pda,
             authority: payer.pubkey(),
-            erc20_bob: erc20_bob_pubkey()?,
+            token_recipient: token_recipient_pubkey()?,
             host_chain_id: config.host_chain_id,
             gateway_chain_id: config.input_verifier.source_chain_id,
             input_verification_address: config.input_verifier.source_contract,
@@ -142,8 +152,8 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
     println!("host_state_pda={state_pda}");
     println!("test_input_program_id={test_input_program_id}");
     println!("test_input_state_pda={test_input_state_pda}");
-    println!("encrypted_erc20_program_id={encrypted_erc20_program_id}");
-    println!("encrypted_erc20_state_pda={encrypted_erc20_state_pda}");
+    println!("confidential_token_program_id={confidential_token_program_id}");
+    println!("confidential_token_state_pda={confidential_token_state_pda}");
     println!("addresses_env={}", addresses_env.display());
     println!("addresses_json={}", addresses_json.display());
 
@@ -634,15 +644,105 @@ fn scenario_public_mixed(options: HashMap<String, String>) -> DynResult<()> {
     )
 }
 
+fn scenario_user_decrypt(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
+    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let mut signatures = Vec::new();
+    let mut handles = Vec::new();
+    for (start_fixture_index, fixture_count) in
+        [(0_u8, 2_u8), (2, 2), (4, 1), (5, 1), (6, 1), (7, 1)]
+    {
+        let receipt = send_test_input_instruction(
+            &runtime,
+            TestInputInstruction::CreateUserDecryptFixturesChunk {
+                start_fixture_index,
+                fixture_count,
+                user_evm_address,
+            },
+        )?;
+        signatures.push(receipt.signature);
+        handles.extend(receipt.returned_handles);
+    }
+    if handles.len() != 8 {
+        return Err(format!(
+            "expected 8 returned handles for user decrypt fixtures, got {}",
+            handles.len()
+        )
+        .into());
+    }
+
+    print_json(&json!({
+        "scenario": "user-decrypt",
+        "signatures": signatures,
+        "produced_handles": handles_to_hex(&handles),
+        "final_handles": handles_to_hex(&handles),
+        "x_bool_handle": handle_to_hex(handles[0]),
+        "x_uint8_handle": handle_to_hex(handles[1]),
+        "x_uint16_handle": handle_to_hex(handles[2]),
+        "x_uint32_handle": handle_to_hex(handles[3]),
+        "x_uint64_handle": handle_to_hex(handles[4]),
+        "x_uint128_handle": handle_to_hex(handles[5]),
+        "x_address_handle": handle_to_hex(handles[6]),
+        "x_uint256_handle": handle_to_hex(handles[7]),
+        "expected": [
+            { "name": "xBool", "value": "true", "output_type": "bool" },
+            { "name": "xUint8", "value": "42", "output_type": "uint8" },
+            { "name": "xUint16", "value": "16", "output_type": "uint16" },
+            { "name": "xUint32", "value": "32", "output_type": "uint32" },
+            { "name": "xUint64", "value": "18446744073709551600", "output_type": "uint64" },
+            { "name": "xUint128", "value": "145275933516363203950142179850024740765", "output_type": "uint128" },
+            { "name": "xAddress", "value": "0x8ba1f109551bd432803012645ac136ddd64dba72", "output_type": "address" },
+            { "name": "xUint256", "value": "74285495974541385002137713624115238327312291047062397922780925695323480915729", "output_type": "uint256" }
+        ],
+        "incompatibilities": [],
+        "user_evm_address": evm_address_string(user_evm_address),
+        "contract_evm_address": evm_address_string(contract_evm_address),
+    }))
+}
+
+fn runtime_identities(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let recipient = read_keypair(&default_token_recipient_keypair_path()?)?;
+
+    print_json(&json!({
+        "payer_pubkey": runtime.payer.pubkey().to_string(),
+        "payer_pubkey_hex": pubkey_hex_string(runtime.payer.pubkey()),
+        "host_program_id": runtime.program_id.to_string(),
+        "host_program_id_hex": pubkey_hex_string(runtime.program_id),
+        "host_state_pda": runtime.state_pda.to_string(),
+        "host_state_pda_hex": pubkey_hex_string(runtime.state_pda),
+        "host_session_pda": runtime.session_pda.to_string(),
+        "host_session_pda_hex": pubkey_hex_string(runtime.session_pda),
+        "test_input_program_id": runtime.test_input_program_id.to_string(),
+        "test_input_program_id_hex": pubkey_hex_string(runtime.test_input_program_id),
+        "test_input_state_pda": runtime.test_input_state_pda.to_string(),
+        "test_input_state_pda_hex": pubkey_hex_string(runtime.test_input_state_pda),
+        "confidential_token_program_id": runtime.confidential_token_program_id.to_string(),
+        "confidential_token_program_id_hex": pubkey_hex_string(runtime.confidential_token_program_id),
+        "confidential_token_state_pda": runtime.confidential_token_state_pda.to_string(),
+        "confidential_token_state_pda_hex": pubkey_hex_string(runtime.confidential_token_state_pda),
+        "user_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.payer.pubkey())),
+        "test_input_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.test_input_state_pda)),
+        "confidential_token_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda)),
+        "token_recipient_pubkey": recipient.pubkey().to_string(),
+        "token_recipient_pubkey_hex": pubkey_hex_string(recipient.pubkey()),
+        "token_recipient_evm_address": evm_address_string(evm_address_from_solana_pubkey(&recipient.pubkey())),
+    }))
+}
+
 fn scenario_input_proof(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
-    let bundle = build_input_verification_bundle(
+    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
+    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let bundle = input_verification_bundle_from_options_or_default(
+        &options,
         &runtime,
         b"solana-input-proof",
         FheType::Uint64,
         ContextUserInputs {
-            user_address: evm_address_from_solana_pubkey(&runtime.payer.pubkey()),
-            contract_address: evm_address_from_solana_pubkey(&runtime.test_input_state_pda),
+            user_address: user_evm_address,
+            contract_address: contract_evm_address,
         },
         vec![0xAA, 0xBB, 0xCC],
     )?;
@@ -652,30 +752,39 @@ fn scenario_input_proof(options: HashMap<String, String>) -> DynResult<()> {
         TestInputInstruction::RequestUint64NonTrivial {
             input_handle: bundle.selected_handle,
             input_proof: bundle.input_proof,
+            user_evm_address,
         },
     )?;
 
-    print_scenario_result(
-        "input-proof",
-        vec![receipt.signature],
-        bundle.handles,
-        vec![bundle.selected_handle],
-        vec![("verified", fhe_type_label(FheType::Uint64))],
-        vec![String::from(
-            "This mirrors the EVM requestUint64NonTrivial shape: VerifyInput plus a durable Allow event on the verified handle. The Solana listener still skips VerifyInput itself, but it does ingest the follow-up ACL event.",
-        )],
-    )
+    print_json(&json!({
+        "scenario": "input-proof",
+        "signatures": [receipt.signature],
+        "produced_handles": handles_to_hex(&bundle.handles),
+        "final_handles": [handle_to_hex(bundle.selected_handle)],
+        "expected": [{
+            "value": "verified",
+            "output_type": fhe_type_label(FheType::Uint64),
+        }],
+        "notes": [
+            "This mirrors the EVM requestUint64NonTrivial shape: VerifyInput plus a durable Allow event on the verified handle. The gateway InputVerification flow materializes the proof outputs, while the Solana host listener ingests the host-side ACL follow-up events."
+        ],
+        "user_evm_address": evm_address_string(user_evm_address),
+        "contract_evm_address": evm_address_string(contract_evm_address),
+    }))
 }
 
 fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
-    let bundle = build_input_verification_bundle(
+    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
+    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let bundle = input_verification_bundle_from_options_or_default(
+        &options,
         &runtime,
         b"solana-test-input-add42",
         FheType::Uint64,
         ContextUserInputs {
-            user_address: evm_address_from_solana_pubkey(&runtime.payer.pubkey()),
-            contract_address: evm_address_from_solana_pubkey(&runtime.test_input_state_pda),
+            user_address: user_evm_address,
+            contract_address: contract_evm_address,
         },
         vec![0xAA, 0x42, 0xCC],
     )?;
@@ -685,6 +794,7 @@ fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> 
         TestInputInstruction::Add42ToInput64 {
             input_handle: bundle.selected_handle,
             input_proof: bundle.input_proof,
+            user_evm_address,
         },
     )?;
 
@@ -694,88 +804,294 @@ fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> 
         .copied()
         .ok_or("missing add42 result handle")?;
 
-    print_scenario_result(
-        "test-input-add42",
-        vec![receipt.signature],
-        vec![bundle.selected_handle, result_handle],
-        vec![result_handle],
-        vec![("49", "uint64")],
-        vec![],
-    )
+    print_json(&json!({
+        "scenario": "test-input-add42",
+        "signatures": [receipt.signature],
+        "produced_handles": handles_to_hex(&[bundle.selected_handle, result_handle]),
+        "final_handles": [handle_to_hex(result_handle)],
+        "expected": [{
+            "value": "49",
+            "output_type": "uint64",
+        }],
+        "incompatibilities": [],
+        "user_evm_address": evm_address_string(user_evm_address),
+        "contract_evm_address": evm_address_string(contract_evm_address),
+    }))
 }
 
-fn scenario_erc20(options: HashMap<String, String>) -> DynResult<()> {
-    let runtime = runtime_from_options(&options)?;
-    let bob = read_keypair(&default_erc20_bob_keypair_path()?)?;
-    let bob_pubkey = bob.pubkey();
+fn scenario_user_evm_address(
+    options: &HashMap<String, String>,
+    default_user: &solana_sdk::pubkey::Pubkey,
+) -> DynResult<EvmAddress> {
+    options
+        .get("user-evm-address")
+        .map(|value| parse_evm_address(value))
+        .transpose()?
+        .map(Ok)
+        .unwrap_or_else(|| Ok(evm_address_from_solana_pubkey(default_user)))
+}
 
-    let mint_receipt = send_encrypted_erc20_instruction(
+fn scenario_confidential_token(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let recipient = read_keypair(&default_token_recipient_keypair_path()?)?;
+    let recipient_pubkey = recipient.pubkey();
+    let proof_user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
+
+    let mint_receipt = send_confidential_token_instruction(
         &runtime,
         &runtime.payer,
-        EncryptedErc20Instruction::Mint {
-            minted_amount: DEFAULT_ERC20_MINT_AMOUNT,
+        ConfidentialTokenInstruction::MintTo {
+            recipient: HostPubkey::from(runtime.payer.pubkey().to_bytes()),
+            amount: DEFAULT_TOKEN_MINT_AMOUNT,
         },
     )?;
-    let mint_balance_handle = mint_receipt
+    let mint_balance_query_receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::Balance {
+            owner: HostPubkey::from(runtime.payer.pubkey().to_bytes()),
+        },
+    )?;
+    let mint_balance_handle = mint_balance_query_receipt
         .returned_handles
         .first()
         .copied()
         .ok_or("missing mint balance handle")?;
 
-    let transfer_bundle = build_input_verification_bundle(
+    let transfer_bundle = input_verification_bundle_from_options_or_default(
+        &options,
         &runtime,
-        format!("solana-erc20-transfer:{DEFAULT_ERC20_TRANSFER_AMOUNT}").as_bytes(),
+        format!("solana-confidential-token-transfer:{DEFAULT_TOKEN_TRANSFER_AMOUNT}").as_bytes(),
         FheType::Uint64,
         ContextUserInputs {
-            user_address: evm_address_from_solana_pubkey(&runtime.payer.pubkey()),
-            contract_address: evm_address_from_solana_pubkey(&runtime.encrypted_erc20_state_pda),
+            user_address: proof_user_evm_address,
+            contract_address: evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda),
         },
         vec![0xE2, 0xC2, 0x00, 0x01],
     )?;
 
-    let transfer_receipt = send_encrypted_erc20_instruction(
+    let transfer_receipt = send_confidential_token_instruction(
         &runtime,
         &runtime.payer,
-        EncryptedErc20Instruction::Transfer {
-            to: HostPubkey::from(bob_pubkey.to_bytes()),
+        ConfidentialTokenInstruction::Transfer {
+            recipient: HostPubkey::from(recipient_pubkey.to_bytes()),
             input_handle: transfer_bundle.selected_handle,
             input_proof: transfer_bundle.input_proof.clone(),
         },
     )?;
-    let alice_balance_after_transfer = transfer_receipt
+    let alice_balance_query_receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::Balance {
+            owner: HostPubkey::from(runtime.payer.pubkey().to_bytes()),
+        },
+    )?;
+    let bob_balance_query_receipt = send_confidential_token_instruction(
+        &runtime,
+        &recipient,
+        ConfidentialTokenInstruction::Balance {
+            owner: HostPubkey::from(recipient_pubkey.to_bytes()),
+        },
+    )?;
+    let alice_balance_after_transfer = alice_balance_query_receipt
         .returned_handles
         .first()
         .copied()
         .ok_or("missing alice transfer balance handle")?;
-    let bob_balance_after_transfer = transfer_receipt
+    let bob_balance_after_transfer = bob_balance_query_receipt
         .returned_handles
-        .get(1)
+        .first()
         .copied()
         .ok_or("missing bob transfer balance handle")?;
 
     print_json(&json!({
-        "scenario": "erc20",
-        "signatures": [mint_receipt.signature, transfer_receipt.signature],
+        "scenario": "confidential-token",
+        "signatures": [
+            mint_receipt.signature,
+            mint_balance_query_receipt.signature,
+            transfer_receipt.signature,
+            alice_balance_query_receipt.signature,
+            bob_balance_query_receipt.signature,
+        ],
         "mint_balance_handle": handle_to_hex(mint_balance_handle),
         "transfer_input_handle": handle_to_hex(transfer_bundle.selected_handle),
         "alice_balance_handle_after_transfer": handle_to_hex(alice_balance_after_transfer),
-        "bob_balance_handle_after_transfer": handle_to_hex(bob_balance_after_transfer),
-        "erc20_state_pda": runtime.encrypted_erc20_state_pda.to_string(),
-        "erc20_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.encrypted_erc20_state_pda)),
+        "recipient_balance_handle_after_transfer": handle_to_hex(bob_balance_after_transfer),
+        "confidential_token_state_pda": runtime.confidential_token_state_pda.to_string(),
+        "confidential_token_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda)),
         "alice_pubkey": runtime.payer.pubkey().to_string(),
-        "alice_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.payer.pubkey())),
-        "bob_pubkey": bob_pubkey.to_string(),
-        "bob_evm_address": evm_address_string(evm_address_from_solana_pubkey(&bob_pubkey)),
+        "recipient_pubkey": recipient_pubkey.to_string(),
         "total_supply": mint_receipt.total_supply.unwrap_or_default().to_string(),
         "expected": {
-            "mint_balance": DEFAULT_ERC20_MINT_AMOUNT.to_string(),
-            "transfer_amount": DEFAULT_ERC20_TRANSFER_AMOUNT.to_string(),
-            "alice_after_transfer": (DEFAULT_ERC20_MINT_AMOUNT - DEFAULT_ERC20_TRANSFER_AMOUNT).to_string(),
-            "bob_after_transfer": DEFAULT_ERC20_TRANSFER_AMOUNT.to_string(),
+            "mint_balance": DEFAULT_TOKEN_MINT_AMOUNT.to_string(),
+            "transfer_amount": DEFAULT_TOKEN_TRANSFER_AMOUNT.to_string(),
+            "alice_after_transfer": (DEFAULT_TOKEN_MINT_AMOUNT - DEFAULT_TOKEN_TRANSFER_AMOUNT).to_string(),
+            "recipient_after_transfer": DEFAULT_TOKEN_TRANSFER_AMOUNT.to_string(),
         },
-        "incompatibilities": [
-            "The transfer path still depends on a Solana-native gateway/input-proof producer. This local bundle only creates host-side handles/signatures and a placeholder ciphertext label, so the coprocessor never receives the ciphertext-with-ZK-proof blob needed for the selected input handle."
-        ],
+        "incompatibilities": [],
+    }))
+}
+
+fn token_reset_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let session_nonce = optional_u64(&options, "session-nonce", 1)?;
+    send_host_instruction(&runtime, HostInstruction::ResetAclState, session_nonce)?;
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::ResetState,
+    )?;
+    print_json(&json!({
+        "command": "token-reset",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_mint_to_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let amount = parse_u64(required_option(&options, "amount")?)?;
+    let recipient = HostPubkey::from(
+        options
+            .get("recipient")
+            .map(String::as_str)
+            .map(parse_pubkey)
+            .transpose()?
+            .unwrap_or_else(|| runtime.payer.pubkey())
+            .to_bytes(),
+    );
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::MintTo {
+            recipient,
+            amount,
+        },
+    )?;
+    print_json(&json!({
+        "command": "token-mint-to",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_transfer_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let recipient = HostPubkey::from(parse_pubkey(required_option(&options, "recipient")?)?.to_bytes());
+    let input_handle = parse_handle(required_option(&options, "input-handle")?)?;
+    let input_proof = parse_hex_bytes(required_option(&options, "input-proof")?)?;
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::Transfer {
+            recipient,
+            input_handle,
+            input_proof,
+        },
+    )?;
+    print_json(&json!({
+        "command": "token-transfer",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_approve_delegate_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let delegate = HostPubkey::from(parse_pubkey(required_option(&options, "delegate")?)?.to_bytes());
+    let input_handle = parse_handle(required_option(&options, "input-handle")?)?;
+    let input_proof = parse_hex_bytes(required_option(&options, "input-proof")?)?;
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::ApproveDelegate {
+            delegate,
+            input_handle,
+            input_proof,
+        },
+    )?;
+    print_json(&json!({
+        "command": "token-approve-delegate",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_transfer_as_delegate_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let source = HostPubkey::from(parse_pubkey(required_option(&options, "source")?)?.to_bytes());
+    let recipient = HostPubkey::from(parse_pubkey(required_option(&options, "recipient")?)?.to_bytes());
+    let input_handle = parse_handle(required_option(&options, "input-handle")?)?;
+    let input_proof = parse_hex_bytes(required_option(&options, "input-proof")?)?;
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::TransferAsDelegate {
+            source,
+            recipient,
+            input_handle,
+            input_proof,
+        },
+    )?;
+    print_json(&json!({
+        "command": "token-transfer-as-delegate",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_balance_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let owner = HostPubkey::from(parse_pubkey(required_option(&options, "owner")?)?.to_bytes());
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::Balance {
+            owner,
+        },
+    )?;
+    print_json(&json!({
+        "command": "token-balance",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_delegate_allowance_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let owner = HostPubkey::from(parse_pubkey(required_option(&options, "owner")?)?.to_bytes());
+    let delegate = HostPubkey::from(parse_pubkey(required_option(&options, "delegate")?)?.to_bytes());
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::DelegateAllowance { owner, delegate },
+    )?;
+    print_json(&json!({
+        "command": "token-delegate-allowance",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
+    }))
+}
+
+fn token_supply_cmd(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let receipt = send_confidential_token_instruction(
+        &runtime,
+        &runtime.payer,
+        ConfidentialTokenInstruction::Supply,
+    )?;
+    print_json(&json!({
+        "command": "token-supply",
+        "signature": receipt.signature,
+        "returned_handles": handles_to_hex(&receipt.returned_handles),
+        "total_supply": receipt.total_supply.unwrap_or_default().to_string(),
     }))
 }
 
@@ -890,6 +1206,87 @@ fn build_input_verification_bundle(
     })
 }
 
+fn input_verification_bundle_from_options_or_default(
+    options: &HashMap<String, String>,
+    runtime: &LocalRuntime,
+    ciphertext: &[u8],
+    fhe_type: FheType,
+    context: ContextUserInputs,
+    extra_data: Vec<u8>,
+) -> DynResult<InputVerificationBundle> {
+    let maybe_input_proof =
+        parse_optional_hex_bytes(options.get("input-proof").map(String::as_str))?;
+    let Some(input_proof) = maybe_input_proof else {
+        return build_input_verification_bundle(runtime, ciphertext, fhe_type, context, extra_data);
+    };
+
+    let handles = parse_input_proof_handles(&input_proof)?;
+    let selected_handle = options
+        .get("input-handle")
+        .map(|value| parse_handle(value))
+        .transpose()?
+        .unwrap_or_else(|| handles[0]);
+
+    if !handles.contains(&selected_handle) {
+        return Err(format!(
+            "selected input handle {} is not present in the provided input proof",
+            handle_to_hex(selected_handle)
+        )
+        .into());
+    }
+
+    Ok(InputVerificationBundle {
+        context,
+        handles,
+        selected_handle,
+        input_proof,
+    })
+}
+
+fn parse_input_proof_handles(
+    input_proof: &[u8],
+) -> DynResult<Vec<solana_host_contracts_core::Handle>> {
+    if input_proof.len() < 2 {
+        return Err("input proof is too short to contain a header".into());
+    }
+
+    let handle_count = input_proof[0] as usize;
+    let signer_count = input_proof[1] as usize;
+    let handles_bytes = handle_count
+        .checked_mul(32)
+        .ok_or("input proof handle count overflow")?;
+    let signatures_bytes = signer_count
+        .checked_mul(65)
+        .ok_or("input proof signer count overflow")?;
+    let minimum_len = 2usize
+        .checked_add(handles_bytes)
+        .and_then(|value| value.checked_add(signatures_bytes))
+        .ok_or("input proof length overflow")?;
+
+    if input_proof.len() < minimum_len {
+        return Err(format!(
+            "input proof is truncated: expected at least {minimum_len} bytes, got {}",
+            input_proof.len()
+        )
+        .into());
+    }
+
+    let handles_slice = &input_proof[2..(2 + handles_bytes)];
+    let mut handles = Vec::with_capacity(handle_count);
+    for raw_handle in handles_slice.chunks(32) {
+        let handle_bytes: [u8; 32] = raw_handle
+            .try_into()
+            .map_err(|_| "failed to decode 32-byte handle from input proof")?;
+        handles.push(solana_host_contracts_core::Handle::from(handle_bytes));
+    }
+
+    if handles.is_empty() {
+        return Err("input proof does not contain any handles".into());
+    }
+
+    Ok(handles)
+}
+
 fn runtime_from_options(options: &HashMap<String, String>) -> DynResult<LocalRuntime> {
     let addresses_env = PathBuf::from(
         options
@@ -931,17 +1328,17 @@ fn runtime_from_options(options: &HashMap<String, String>) -> DynResult<LocalRun
         })
         .ok_or("missing test-input-program-id and SOLANA_TEST_INPUT_PROGRAM_ID")?;
     let test_input_state_pda = find_test_input_state_pda(&test_input_program_id).0;
-    let encrypted_erc20_program_id = options
-        .get("encrypted-erc20-program-id")
+    let confidential_token_program_id = options
+        .get("confidential-token-program-id")
         .map(|value| parse_pubkey(value))
         .transpose()?
         .or_else(|| {
             addresses
-                .get("SOLANA_ENCRYPTED_ERC20_PROGRAM_ID")
+                .get("SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID")
                 .and_then(|value| Pubkey::from_str(value).ok())
         })
-        .ok_or("missing encrypted-erc20-program-id and SOLANA_ENCRYPTED_ERC20_PROGRAM_ID")?;
-    let encrypted_erc20_state_pda = find_encrypted_erc20_state_pda(&encrypted_erc20_program_id).0;
+        .ok_or("missing confidential-token-program-id and SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID")?;
+    let confidential_token_state_pda = find_confidential_token_state_pda(&confidential_token_program_id).0;
     Ok(LocalRuntime {
         rpc_url,
         program_id,
@@ -950,8 +1347,8 @@ fn runtime_from_options(options: &HashMap<String, String>) -> DynResult<LocalRun
         session_pda,
         test_input_program_id,
         test_input_state_pda,
-        encrypted_erc20_program_id,
-        encrypted_erc20_state_pda,
+        confidential_token_program_id,
+        confidential_token_state_pda,
         addresses_env,
     })
 }
@@ -975,8 +1372,16 @@ fn maybe_initialize_state(
         find_session_pda(&program_id, &payer.pubkey()).0,
         instruction,
     )?;
-    let signature = send_transaction(client, payer, &[ix])?;
-    println!("State PDA initialized with signature={signature}");
+    match send_transaction(client, payer, &[ix]) {
+        Ok(signature) => println!("State PDA initialized with signature={signature}"),
+        Err(error) => {
+            if client.get_account(&state_pda).is_ok() {
+                println!("State PDA already initialized; reusing existing account");
+                return Ok(state_pda);
+            }
+            return Err(error);
+        }
+    }
     Ok(state_pda)
 }
 
@@ -1001,38 +1406,56 @@ fn maybe_initialize_test_input_state(
             host_program: HostPubkey::from(host_program_id.to_bytes()),
         },
     )?;
-    let signature = send_transaction(client, payer, &[ix])?;
-    println!("TestInput state PDA initialized with signature={signature}");
+    match send_transaction(client, payer, &[ix]) {
+        Ok(signature) => println!("TestInput state PDA initialized with signature={signature}"),
+        Err(error) => {
+            if client.get_account(&state_pda).is_ok() {
+                println!("TestInput state PDA already initialized; reusing existing account");
+                return Ok(state_pda);
+            }
+            return Err(error);
+        }
+    }
     Ok(state_pda)
 }
 
-fn maybe_initialize_encrypted_erc20_state(
+fn maybe_initialize_confidential_token_state(
     client: &RpcClient,
     payer: &Keypair,
-    encrypted_erc20_program_id: Pubkey,
+    confidential_token_program_id: Pubkey,
     host_program_id: Pubkey,
 ) -> DynResult<Pubkey> {
-    let state_pda = find_encrypted_erc20_state_pda(&encrypted_erc20_program_id).0;
+    let state_pda = find_confidential_token_state_pda(&confidential_token_program_id).0;
     if client.get_account(&state_pda).is_ok() {
         return Ok(state_pda);
     }
 
-    let ix = encrypted_erc20_program_instruction(
-        encrypted_erc20_program_id,
+    let ix = confidential_token_program_instruction(
+        confidential_token_program_id,
         payer.pubkey(),
         state_pda,
         host_program_id,
-        EncryptedErc20Instruction::InitializePda {
+        ConfidentialTokenInstruction::InitializePda {
             owner: HostPubkey::from(payer.pubkey().to_bytes()),
             host_program: HostPubkey::from(host_program_id.to_bytes()),
-            name: DEFAULT_ERC20_NAME.to_owned(),
-            symbol: DEFAULT_ERC20_SYMBOL.to_owned(),
+            name: DEFAULT_TOKEN_NAME.to_owned(),
+            symbol: DEFAULT_TOKEN_SYMBOL.to_owned(),
             max_balance_entries: 16,
             max_allowance_entries: 16,
         },
     )?;
-    let signature = send_transaction(client, payer, &[ix])?;
-    println!("EncryptedERC20 state PDA initialized with signature={signature}");
+    match send_transaction(client, payer, &[ix]) {
+        Ok(signature) => {
+            println!("ConfidentialToken state PDA initialized with signature={signature}")
+        }
+        Err(error) => {
+            if client.get_account(&state_pda).is_ok() {
+                println!("ConfidentialToken state PDA already initialized; reusing existing account");
+                return Ok(state_pda);
+            }
+            return Err(error);
+        }
+    }
     Ok(state_pda)
 }
 
@@ -1109,24 +1532,24 @@ fn send_test_input_instruction(
     })
 }
 
-fn send_encrypted_erc20_instruction(
+fn send_confidential_token_instruction(
     runtime: &LocalRuntime,
     payer: &Keypair,
-    instruction: EncryptedErc20Instruction,
-) -> DynResult<Erc20ExecutionReceipt> {
+    instruction: ConfidentialTokenInstruction,
+) -> DynResult<TokenExecutionReceipt> {
     let client = rpc_client(&runtime.rpc_url);
     ensure_state_exists(&client, runtime.state_pda)?;
-    ensure_state_exists(&client, runtime.encrypted_erc20_state_pda)?;
-    let ix = encrypted_erc20_program_instruction(
-        runtime.encrypted_erc20_program_id,
+    ensure_state_exists(&client, runtime.confidential_token_state_pda)?;
+    let ix = confidential_token_program_instruction(
+        runtime.confidential_token_program_id,
         payer.pubkey(),
-        runtime.encrypted_erc20_state_pda,
+        runtime.confidential_token_state_pda,
         runtime.program_id,
         instruction,
     )?;
     let signature = send_transaction(&client, payer, &[ix])?;
-    let result = fetch_encrypted_erc20_result(&runtime.rpc_url, &signature)?;
-    Ok(Erc20ExecutionReceipt {
+    let result = fetch_confidential_token_result(&runtime.rpc_url, &signature)?;
+    Ok(TokenExecutionReceipt {
         signature,
         returned_handles: result.returned_handles,
         total_supply: result.total_supply,
@@ -1185,6 +1608,9 @@ fn test_input_program_instruction(
         ],
         TestInputInstruction::RequestUint64NonTrivial { .. }
         | TestInputInstruction::Add42ToInput64 { .. }
+        | TestInputInstruction::CreateUserDecryptFixture { .. }
+        | TestInputInstruction::CreateUserDecryptFixtures { .. }
+        | TestInputInstruction::CreateUserDecryptFixturesChunk { .. }
         | TestInputInstruction::CreatePublicEbool
         | TestInputInstruction::CreatePublicMixed => vec![
             AccountMeta::new(authority, true),
@@ -1206,27 +1632,28 @@ fn test_input_program_instruction(
     })
 }
 
-fn encrypted_erc20_program_instruction(
+fn confidential_token_program_instruction(
     program_id: Pubkey,
     authority: Pubkey,
     state_pda: Pubkey,
     host_program_id: Pubkey,
-    instruction: EncryptedErc20Instruction,
+    instruction: ConfidentialTokenInstruction,
 ) -> DynResult<Instruction> {
     let accounts = match &instruction {
-        EncryptedErc20Instruction::InitializePda { .. } => vec![
+        ConfidentialTokenInstruction::InitializePda { .. } => vec![
             AccountMeta::new(authority, true),
             AccountMeta::new(state_pda, false),
             AccountMeta::new_readonly(system_program::id(), false),
             AccountMeta::new_readonly(sysvar::rent::id(), false),
         ],
-        EncryptedErc20Instruction::Mint { .. }
-        | EncryptedErc20Instruction::Transfer { .. }
-        | EncryptedErc20Instruction::Approve { .. }
-        | EncryptedErc20Instruction::TransferFrom { .. }
-        | EncryptedErc20Instruction::BalanceOf { .. }
-        | EncryptedErc20Instruction::Allowance { .. }
-        | EncryptedErc20Instruction::TotalSupply => vec![
+        ConfidentialTokenInstruction::ResetState
+        | ConfidentialTokenInstruction::MintTo { .. }
+        | ConfidentialTokenInstruction::Transfer { .. }
+        | ConfidentialTokenInstruction::ApproveDelegate { .. }
+        | ConfidentialTokenInstruction::TransferAsDelegate { .. }
+        | ConfidentialTokenInstruction::Balance { .. }
+        | ConfidentialTokenInstruction::DelegateAllowance { .. }
+        | ConfidentialTokenInstruction::Supply => vec![
             AccountMeta::new(authority, true),
             AccountMeta::new(state_pda, false),
             AccountMeta::new_readonly(host_program_id, false),
@@ -1297,10 +1724,10 @@ fn fetch_test_input_returned_handles(
     Ok(result.returned_handles)
 }
 
-fn fetch_encrypted_erc20_result(
+fn fetch_confidential_token_result(
     rpc_url: &str,
     signature: &str,
-) -> DynResult<EncryptedErc20ExecutionResult> {
+) -> DynResult<ConfidentialTokenExecutionResult> {
     let payload = rpc_call(
         rpc_url,
         "getTransaction",
@@ -1317,7 +1744,7 @@ fn fetch_encrypted_erc20_result(
         .as_str()
         .ok_or("missing returnData in transaction response")?;
     let bytes = BASE64_STANDARD.decode(data_b64)?;
-    Ok(EncryptedErc20ExecutionResult::try_from_slice(&bytes)?)
+    Ok(ConfidentialTokenExecutionResult::try_from_slice(&bytes)?)
 }
 
 fn rpc_call(rpc_url: &str, method: &str, params: Value) -> DynResult<Value> {
@@ -1466,10 +1893,10 @@ SOLANA_HOST_SESSION_PDA={session_pda}\n\
 SOLANA_HOST_ACL_PROGRAM_ID={program_id}\n\
 SOLANA_TEST_INPUT_PROGRAM_ID={test_input_program_id}\n\
 SOLANA_TEST_INPUT_STATE_PDA={test_input_state_pda}\n\
-SOLANA_ENCRYPTED_ERC20_PROGRAM_ID={encrypted_erc20_program_id}\n\
-SOLANA_ENCRYPTED_ERC20_STATE_PDA={encrypted_erc20_state_pda}\n\
+SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID={confidential_token_program_id}\n\
+SOLANA_CONFIDENTIAL_TOKEN_STATE_PDA={confidential_token_state_pda}\n\
 SOLANA_HOST_AUTHORITY={authority}\n\
-SOLANA_ERC20_BOB={erc20_bob}\n\
+SOLANA_TOKEN_RECIPIENT={token_recipient}\n\
 SOLANA_HOST_CHAIN_ID={host_chain_id}\n\
 CHAIN_ID_GATEWAY={gateway_chain_id}\n\
 INPUT_VERIFICATION_ADDRESS={input_verification_address}\n\
@@ -1485,10 +1912,10 @@ PUBLIC_DECRYPTION_THRESHOLD={public_decryption_threshold}\n{coprocessor_signers}
             session_pda = addresses.session_pda,
             test_input_program_id = addresses.test_input_program_id,
             test_input_state_pda = addresses.test_input_state_pda,
-            encrypted_erc20_program_id = addresses.encrypted_erc20_program_id,
-            encrypted_erc20_state_pda = addresses.encrypted_erc20_state_pda,
+            confidential_token_program_id = addresses.confidential_token_program_id,
+            confidential_token_state_pda = addresses.confidential_token_state_pda,
             authority = addresses.authority,
-            erc20_bob = addresses.erc20_bob,
+            token_recipient = addresses.token_recipient,
             host_chain_id = addresses.host_chain_id,
             gateway_chain_id = addresses.gateway_chain_id,
             input_verification_address = evm_address_string(addresses.input_verification_address),
@@ -1508,7 +1935,7 @@ PUBLIC_DECRYPTION_THRESHOLD={public_decryption_threshold}\n{coprocessor_signers}
     fs::write(
         json_path,
         format!(
-            "{{\n  \"rpc_url\": \"{rpc_url}\",\n  \"ws_url\": \"{ws_url}\",\n  \"host_kind\": \"solana\",\n  \"program_id\": \"{program_id}\",\n  \"state_pda\": \"{state_pda}\",\n  \"session_pda\": \"{session_pda}\",\n  \"acl_program_id\": \"{program_id}\",\n  \"test_input_program_id\": \"{test_input_program_id}\",\n  \"test_input_state_pda\": \"{test_input_state_pda}\",\n  \"encrypted_erc20_program_id\": \"{encrypted_erc20_program_id}\",\n  \"encrypted_erc20_state_pda\": \"{encrypted_erc20_state_pda}\",\n  \"authority\": \"{authority}\",\n  \"erc20_bob\": \"{erc20_bob}\",\n  \"host_chain_id\": {host_chain_id},\n  \"gateway_chain_id\": {gateway_chain_id},\n  \"input_verification_address\": \"{input_verification_address}\",\n  \"decryption_address\": \"{decryption_address}\",\n  \"coprocessor_threshold\": {coprocessor_threshold},\n  \"public_decryption_threshold\": {public_decryption_threshold},\n  \"coprocessor_signers\": [{coprocessor_signers}],\n  \"kms_signers\": [{kms_signers}]\n}}\n",
+            "{{\n  \"rpc_url\": \"{rpc_url}\",\n  \"ws_url\": \"{ws_url}\",\n  \"host_kind\": \"solana\",\n  \"program_id\": \"{program_id}\",\n  \"state_pda\": \"{state_pda}\",\n  \"session_pda\": \"{session_pda}\",\n  \"acl_program_id\": \"{program_id}\",\n  \"test_input_program_id\": \"{test_input_program_id}\",\n  \"test_input_state_pda\": \"{test_input_state_pda}\",\n  \"confidential_token_program_id\": \"{confidential_token_program_id}\",\n  \"confidential_token_state_pda\": \"{confidential_token_state_pda}\",\n  \"authority\": \"{authority}\",\n  \"token_recipient\": \"{token_recipient}\",\n  \"host_chain_id\": {host_chain_id},\n  \"gateway_chain_id\": {gateway_chain_id},\n  \"input_verification_address\": \"{input_verification_address}\",\n  \"decryption_address\": \"{decryption_address}\",\n  \"coprocessor_threshold\": {coprocessor_threshold},\n  \"public_decryption_threshold\": {public_decryption_threshold},\n  \"coprocessor_signers\": [{coprocessor_signers}],\n  \"kms_signers\": [{kms_signers}]\n}}\n",
             rpc_url = addresses.rpc_url,
             ws_url = addresses.ws_url,
             program_id = addresses.program_id,
@@ -1516,10 +1943,10 @@ PUBLIC_DECRYPTION_THRESHOLD={public_decryption_threshold}\n{coprocessor_signers}
             session_pda = addresses.session_pda,
             test_input_program_id = addresses.test_input_program_id,
             test_input_state_pda = addresses.test_input_state_pda,
-            encrypted_erc20_program_id = addresses.encrypted_erc20_program_id,
-            encrypted_erc20_state_pda = addresses.encrypted_erc20_state_pda,
+            confidential_token_program_id = addresses.confidential_token_program_id,
+            confidential_token_state_pda = addresses.confidential_token_state_pda,
             authority = addresses.authority,
-            erc20_bob = addresses.erc20_bob,
+            token_recipient = addresses.token_recipient,
             host_chain_id = addresses.host_chain_id,
             gateway_chain_id = addresses.gateway_chain_id,
             input_verification_address = evm_address_string(addresses.input_verification_address),
@@ -1557,6 +1984,14 @@ fn json_signer_list(signers: &[EvmAddress]) -> String {
 fn evm_address_string(address: EvmAddress) -> String {
     let mut output = String::from("0x");
     for byte in address.as_bytes() {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
+}
+
+fn pubkey_hex_string(pubkey: Pubkey) -> String {
+    let mut output = String::from("0x");
+    for byte in pubkey.to_bytes() {
         let _ = write!(output, "{byte:02x}");
     }
     output
@@ -1717,6 +2152,11 @@ fn parse_optional_hex_bytes(value: Option<&str>) -> DynResult<Option<Vec<u8>>> {
     Ok(Some(hex::decode(clean)?))
 }
 
+fn parse_hex_bytes(value: &str) -> DynResult<Vec<u8>> {
+    let clean = value.strip_prefix("0x").unwrap_or(value);
+    Ok(hex::decode(clean)?)
+}
+
 fn load_private_signing_keys(count: usize, prefix: &str) -> DynResult<Vec<SigningKey>> {
     let mut signing_keys = Vec::with_capacity(count);
     for index in 0..count {
@@ -1822,20 +2262,20 @@ fn default_payer_keypair_path() -> DynResult<String> {
     Ok(format!("{home}/.config/solana/id.json"))
 }
 
-fn default_erc20_bob_keypair_path() -> DynResult<String> {
-    if let Ok(path) = env::var("SOLANA_ERC20_BOB_KEYPAIR") {
+fn default_token_recipient_keypair_path() -> DynResult<String> {
+    if let Ok(path) = env::var("SOLANA_TOKEN_RECIPIENT_KEYPAIR") {
         return Ok(path);
     }
-    let bob_fixture =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/erc20-bob.json");
-    if bob_fixture.exists() {
-        return Ok(bob_fixture.display().to_string());
+    let recipient_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/fixtures/confidential-token-recipient.json");
+    if recipient_fixture.exists() {
+        return Ok(recipient_fixture.display().to_string());
     }
-    Err("missing ERC20 bob keypair fixture".into())
+    Err("missing confidential token recipient keypair fixture".into())
 }
 
-fn erc20_bob_pubkey() -> DynResult<Pubkey> {
-    Ok(read_keypair(&default_erc20_bob_keypair_path()?)?.pubkey())
+fn token_recipient_pubkey() -> DynResult<Pubkey> {
+    Ok(read_keypair(&default_token_recipient_keypair_path()?)?.pubkey())
 }
 
 fn handles_to_hex(handles: &[solana_host_contracts_core::Handle]) -> Vec<String> {
@@ -1885,7 +2325,7 @@ fn print_json(value: &Value) -> DynResult<()> {
 fn print_usage() {
     eprintln!(
         "Usage:\n\
-  local-cli init-local --rpc-url <url> --ws-url <url> [--output-rpc-url <url>] [--output-ws-url <url>] --payer-keypair <path> --program-id <pubkey> --test-input-program-id <pubkey> --encrypted-erc20-program-id <pubkey> --addresses-env <path> --addresses-json <path>\n\
+  local-cli init-local --rpc-url <url> --ws-url <url> [--output-rpc-url <url>] [--output-ws-url <url>] --payer-keypair <path> --program-id <pubkey> --test-input-program-id <pubkey> --confidential-token-program-id <pubkey> --addresses-env <path> --addresses-json <path>\n\
   local-cli smoke-rand [--addresses-env ../addresses/.env.host] [--payer-keypair <path>] [--rpc-url <url>] [--program-id <pubkey>] [--rand-type uint8] [--session-nonce 1]\n\
   local-cli trivial-encrypt --value <n> --to-type <type> [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli binary-op --op <add|sub|mul> --lhs <0xhandle> (--rhs-handle <0xhandle> | --rhs-scalar <n>) --result-type <type> [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
@@ -1899,9 +2339,19 @@ fn print_usage() {
   local-cli scenario-batch [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli scenario-public-ebool [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli scenario-public-mixed [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
-  local-cli scenario-input-proof [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
-  local-cli scenario-test-input-add42 [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
-  local-cli scenario-erc20 [--addresses-env ../addresses/.env.host]\n\
+  local-cli scenario-user-decrypt [--addresses-env ../addresses/.env.host] [--user-evm-address <0x...>]\n\
+  local-cli runtime-identities [--addresses-env ../addresses/.env.host]\n\
+  local-cli scenario-input-proof [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--session-nonce 1]\n\
+  local-cli scenario-test-input-add42 [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--session-nonce 1]\n\
+  local-cli scenario-confidential-token [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>]\n\
+  local-cli token-reset [--addresses-env ../addresses/.env.host]\n\
+  local-cli token-mint-to --amount <n> [--recipient <pubkey>] [--addresses-env ../addresses/.env.host]\n\
+  local-cli token-transfer --recipient <pubkey> --input-handle <0x...> --input-proof <0x...> [--addresses-env ../addresses/.env.host]\n\
+  local-cli token-approve-delegate --delegate <pubkey> --input-handle <0x...> --input-proof <0x...> [--addresses-env ../addresses/.env.host]\n\
+  local-cli token-transfer-as-delegate --source <pubkey> --recipient <pubkey> --input-handle <0x...> --input-proof <0x...> [--addresses-env ../addresses/.env.host] [--payer-keypair <path>]\n\
+  local-cli token-balance --owner <pubkey> [--addresses-env ../addresses/.env.host] [--payer-keypair <path>]\n\
+  local-cli token-delegate-allowance --owner <pubkey> --delegate <pubkey> [--addresses-env ../addresses/.env.host] [--payer-keypair <path>]\n\
+  local-cli token-supply [--addresses-env ../addresses/.env.host] [--payer-keypair <path>]\n\
   local-cli show-pdas --program-id <pubkey> --authority <pubkey>\n\
 \n\
 Environment variables for init-local are read from the current process environment.\n\
@@ -1923,10 +2373,10 @@ struct LocalAddresses {
     session_pda: Pubkey,
     test_input_program_id: Pubkey,
     test_input_state_pda: Pubkey,
-    encrypted_erc20_program_id: Pubkey,
-    encrypted_erc20_state_pda: Pubkey,
+    confidential_token_program_id: Pubkey,
+    confidential_token_state_pda: Pubkey,
     authority: Pubkey,
-    erc20_bob: Pubkey,
+    token_recipient: Pubkey,
     host_chain_id: u64,
     gateway_chain_id: u64,
     input_verification_address: EvmAddress,
@@ -1945,8 +2395,8 @@ struct LocalRuntime {
     session_pda: Pubkey,
     test_input_program_id: Pubkey,
     test_input_state_pda: Pubkey,
-    encrypted_erc20_program_id: Pubkey,
-    encrypted_erc20_state_pda: Pubkey,
+    confidential_token_program_id: Pubkey,
+    confidential_token_state_pda: Pubkey,
     #[allow(dead_code)]
     addresses_env: PathBuf,
 }
@@ -1956,7 +2406,7 @@ struct ExecutionReceipt {
     returned_handles: Vec<solana_host_contracts_core::Handle>,
 }
 
-struct Erc20ExecutionReceipt {
+struct TokenExecutionReceipt {
     signature: String,
     returned_handles: Vec<solana_host_contracts_core::Handle>,
     total_supply: Option<u64>,

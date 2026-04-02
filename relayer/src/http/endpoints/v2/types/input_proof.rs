@@ -15,12 +15,30 @@ pub struct InputProofRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contract_chain_id: String,
-    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub contract_address: String,
-    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub user_address: String,
+    #[serde(default)]
+    #[schema(
+        example = "0x1234567890123456789012345678901234567890",
+        nullable = true
+    )]
+    pub contract_address: Option<String>,
+    #[serde(default)]
+    #[schema(
+        example = "0x1234567890123456789012345678901234567890",
+        nullable = true
+    )]
+    pub user_address: Option<String>,
+    #[serde(default)]
+    #[schema(
+        example = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        nullable = true
+    )]
+    pub contract_id: Option<String>,
+    #[serde(default)]
+    #[schema(
+        example = "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        nullable = true
+    )]
+    pub user_id: Option<String>,
     /// ABI-encoded ciphertext with its ZKPoK input verification data. Raw hex, no `0x` prefix.
     #[validate(
         length(min = 1, message = "Must not be empty"),
@@ -31,7 +49,7 @@ pub struct InputProofRequestJson {
         example = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"
     )]
     pub ciphertext_with_input_verification: String,
-    /// Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+    /// Extra data forwarded to the gateway contract. `"0x00"` for the legacy address flow, or versioned payloads for native host identities.
     #[validate(custom(function = "crate::http::validate_extra_data_field_input_proof"))]
     #[schema(example = "0x00")]
     pub extra_data: String,

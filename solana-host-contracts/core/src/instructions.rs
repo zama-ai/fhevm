@@ -59,8 +59,13 @@ pub enum HostInstruction {
     },
     Pause,
     Unpause,
+    ResetAclState,
     Allow {
         handle: Handle,
+        account: Pubkey,
+    },
+    AllowMany {
+        handles: Vec<Handle>,
         account: Pubkey,
     },
     AllowForDecryption {

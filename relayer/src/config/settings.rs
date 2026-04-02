@@ -565,10 +565,26 @@ pub struct KeyData {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum HostChainKind {
+    Evm,
+    Solana,
+}
+
+impl Default for HostChainKind {
+    fn default() -> Self {
+        Self::Evm
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
     pub chain_id: u64,
     pub url: String,
+    #[serde(default)]
+    pub chain_kind: HostChainKind,
     pub acl_address: String,
+    pub state_pda: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -705,11 +721,29 @@ impl Settings {
                     i, hc.url
                 )));
             }
-            if Address::from_str(&hc.acl_address).is_err() {
-                return Err(AppConfigError::InvalidAddress(format!(
-                    "host_chains[{}].acl_address is invalid: {}",
-                    i, hc.acl_address
-                )));
+            match hc.chain_kind {
+                HostChainKind::Evm => {
+                    if Address::from_str(&hc.acl_address).is_err() {
+                        return Err(AppConfigError::InvalidAddress(format!(
+                            "host_chains[{}].acl_address is invalid: {}",
+                            i, hc.acl_address
+                        )));
+                    }
+                }
+                HostChainKind::Solana => {
+                    if hc.acl_address.trim().is_empty() {
+                        return Err(AppConfigError::InvalidAddress(format!(
+                            "host_chains[{}].acl_address must not be empty for Solana chains",
+                            i
+                        )));
+                    }
+                    if hc.state_pda.as_deref().map_or(true, str::is_empty) {
+                        return Err(AppConfigError::Config(format!(
+                            "host_chains[{}].state_pda is required for Solana chains",
+                            i
+                        )));
+                    }
+                }
             }
         }
 

@@ -9,8 +9,9 @@ description = "Deployable Solana TestInput app program for local FHEVM parity te
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["custom-heap"]
 no-entrypoint = []
+custom-heap = []
 
 [dependencies]
 borsh = { version = "1.6.0", features = ["derive"] }

@@ -2,6 +2,7 @@ pub mod acl_checker;
 pub mod chain_id_validator;
 pub mod error_redact;
 pub mod handle_chain_id;
+pub mod solana_state;
 
 pub use acl_checker::{HostAclChecker, HostAclError};
 pub use chain_id_validator::HostChainIdChecker;

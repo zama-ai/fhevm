@@ -2,6 +2,12 @@ use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
+pub struct BlockInfo {
+    pub slot: u64,
+    pub blockhash: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
 pub struct SignatureInfo {
     pub signature: String,
     pub slot: u64,
@@ -11,7 +17,7 @@ pub struct SignatureInfo {
 pub struct ConfirmedTransaction {
     pub signature: String,
     pub slot: u64,
-    pub recent_blockhash: Vec<u8>,
+    pub blockhash: Vec<u8>,
     pub log_messages: Vec<String>,
 }
 
@@ -67,6 +73,80 @@ impl SolanaRpcClient {
         Ok(signatures)
     }
 
+    pub async fn get_slot(&self, commitment: &str) -> Result<u64> {
+        let result = self
+            .rpc_call("getSlot", json!([{ "commitment": commitment }]))
+            .await?;
+
+        result.as_u64().context("missing slot in getSlot result")
+    }
+
+    pub async fn get_blocks(
+        &self,
+        start_slot: u64,
+        end_slot: u64,
+        commitment: &str,
+    ) -> Result<Vec<u64>> {
+        let result = self
+            .rpc_call(
+                "getBlocks",
+                json!([
+                    start_slot,
+                    end_slot,
+                    {
+                        "commitment": commitment
+                    }
+                ]),
+            )
+            .await?;
+
+        let Some(entries) = result.as_array() else {
+            bail!("getBlocks returned non-array payload");
+        };
+
+        entries
+            .iter()
+            .map(|value| value.as_u64().context("block slot is not a u64"))
+            .collect()
+    }
+
+    pub async fn get_block(
+        &self,
+        slot: u64,
+        commitment: &str,
+    ) -> Result<Option<BlockInfo>> {
+        let result = self
+            .rpc_call(
+                "getBlock",
+                json!([
+                    slot,
+                    {
+                        "encoding": "json",
+                        "transactionDetails": "none",
+                        "rewards": false,
+                        "commitment": commitment,
+                        "maxSupportedTransactionVersion": 0
+                    }
+                ]),
+            )
+            .await?;
+
+        if result.is_null() {
+            return Ok(None);
+        }
+
+        let blockhash = result["blockhash"]
+            .as_str()
+            .context("missing blockhash in getBlock result")?;
+
+        Ok(Some(BlockInfo {
+            slot,
+            blockhash: bs58::decode(blockhash)
+                .into_vec()
+                .context("decode blockhash from base58")?,
+        }))
+    }
+
     pub async fn get_transaction(
         &self,
         signature: &str,
@@ -93,9 +173,9 @@ impl SolanaRpcClient {
         let slot = result["slot"]
             .as_u64()
             .context("missing transaction slot")?;
-        let recent_blockhash = result["transaction"]["message"]["recentBlockhash"]
-            .as_str()
-            .context("missing transaction recentBlockhash")?;
+        let Some(block) = self.get_block(slot, commitment).await? else {
+            return Ok(None);
+        };
         let log_messages = result["meta"]["logMessages"]
             .as_array()
             .context("missing transaction logMessages")?
@@ -111,9 +191,7 @@ impl SolanaRpcClient {
         Ok(Some(ConfirmedTransaction {
             signature: signature.to_owned(),
             slot,
-            recent_blockhash: bs58::decode(recent_blockhash)
-                .into_vec()
-                .context("decode recent blockhash from base58")?,
+            blockhash: block.blockhash,
             log_messages,
         }))
     }

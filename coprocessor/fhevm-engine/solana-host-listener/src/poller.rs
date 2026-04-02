@@ -9,22 +9,39 @@ use anyhow::{bail, Result};
 use fhevm_engine_common::types::{AllowEvents, SupportedFheOperations};
 use sha3::{Digest, Keccak256};
 use solana_host_contracts_core::{FheType, HostEvent, Operator};
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
+
+const MAX_LIVE_EMPTY_BLOCK_RANGE: u64 = 8;
 
 #[derive(Debug)]
 pub struct SolanaHostPoller {
     config: ResolvedPollerConfig,
     rpc: SolanaRpcClient,
     db: Database,
+    caught_up_once: AtomicBool,
+}
+
+#[derive(Debug, Default)]
+struct EventInsertResult {
+    inserted: usize,
+    dependency_candidates: Vec<Vec<u8>>,
+    created_computation: bool,
 }
 
 impl SolanaHostPoller {
     pub async fn new(config: ResolvedPollerConfig) -> Result<Self> {
         let rpc = SolanaRpcClient::new(config.rpc_url.clone());
         let db = Database::new(&config.database_url, config.host_chain_id).await?;
-        Ok(Self { config, rpc, db })
+        Ok(Self {
+            config,
+            rpc,
+            db,
+            caught_up_once: AtomicBool::new(false),
+        })
     }
 
     pub async fn run(self) -> Result<()> {
@@ -45,9 +62,24 @@ impl SolanaHostPoller {
         }
 
         let _health_handle = spawn_health_server(self.config.health_port);
+        let mut last_observed_slot = None;
 
         loop {
-            match self.poll_once().await {
+            let poll_result = async {
+                let current_slot = self.rpc.get_slot(&self.config.commitment).await?;
+                if last_observed_slot != Some(current_slot) {
+                    info!(
+                        current_slot,
+                        commitment = %self.config.commitment,
+                        "solana host listener observed new slot"
+                    );
+                    last_observed_slot = Some(current_slot);
+                }
+                self.poll_once().await
+            }
+            .await;
+
+            match poll_result {
                 Ok(inserted) => {
                     if inserted > 0 {
                         info!(inserted, "solana host listener ingested new rows");
@@ -70,6 +102,69 @@ impl SolanaHostPoller {
 
     pub async fn poll_once(&self) -> Result<usize> {
         let last_caught_up_block = self.db.get_last_caught_up_block().await?.unwrap_or(0);
+        let current_slot = self.rpc.get_slot(&self.config.commitment).await?;
+        let from_slot = (last_caught_up_block + 1).max(0) as u64;
+        let batch_upper_bound = from_slot
+            .saturating_add(self.config.batch_size_slots.saturating_sub(1));
+        let to_slot = current_slot.min(batch_upper_bound);
+        let reaches_tip = from_slot <= to_slot && to_slot == current_slot;
+        let slot_gap = to_slot.saturating_sub(from_slot);
+        let finalized_slot = if self.config.commitment != "finalized" {
+            Some(self.rpc.get_slot("finalized").await?)
+        } else {
+            None
+        };
+
+        if from_slot <= to_slot {
+            let live_blocks_finalized = self.config.commitment == "finalized";
+            // Mirror the EVM listener semantics:
+            // - historical catch-up remains sparse
+            // - empty blocks are recorded only once the listener is already at tip
+            // A small near-tip gap is treated as live mode; larger gaps remain catch-up even
+            // if the process itself has already caught up before.
+            if self.caught_up_once.load(Ordering::Relaxed)
+                && reaches_tip
+                && slot_gap <= MAX_LIVE_EMPTY_BLOCK_RANGE
+            {
+                self.record_block_range(
+                    from_slot,
+                    to_slot,
+                    &self.config.commitment,
+                    live_blocks_finalized,
+                )
+                .await?;
+            }
+
+            if let Some(finalized_slot) = finalized_slot {
+                let finalize_to = finalized_slot.min(to_slot);
+                if from_slot <= finalize_to {
+                    let block_numbers = self
+                        .db
+                        .get_pending_blocks_to_finalize(finalize_to)
+                        .await?;
+                    for block_number in block_numbers {
+                        let Some(block_info) = self
+                            .rpc
+                            .get_block(block_number as u64, "finalized")
+                            .await?
+                        else {
+                            continue;
+                        };
+                        let mut tx = self.db.begin().await?;
+                        self.db
+                            .mark_block_as_valid(
+                                &mut tx,
+                                block_info.slot,
+                                &block_info.blockhash,
+                                true,
+                            )
+                            .await?;
+                        tx.commit().await?;
+                    }
+                }
+            }
+        }
+
         let mut signatures = self
             .rpc
             .get_signatures_for_address(
@@ -78,10 +173,15 @@ impl SolanaHostPoller {
                 &self.config.commitment,
             )
             .await?;
-        signatures.retain(|entry| entry.slot as i64 > last_caught_up_block);
+        signatures.retain(|entry| {
+            entry.slot as i64 > last_caught_up_block && entry.slot <= to_slot
+        });
         signatures.sort_by_key(|entry| (entry.slot, entry.signature.clone()));
 
         if signatures.is_empty() {
+            if from_slot <= to_slot {
+                self.db.set_last_caught_up_block(to_slot).await?;
+            }
             return Ok(0);
         }
 
@@ -90,14 +190,33 @@ impl SolanaHostPoller {
             .into_iter()
             .map(|entry| entry.signature)
             .collect::<Vec<_>>();
-        let inserted = self.ingest_signatures(&signature_strings).await?;
         if let Some(max_slot) = max_slot {
+            info!(
+                from_slot = last_caught_up_block + 1,
+                to_slot = max_slot as i64,
+                signatures = signature_strings.len(),
+                "solana host listener observed new host-program activity"
+            );
+        }
+        let inserted = self
+            .ingest_signatures(&signature_strings, finalized_slot)
+            .await?;
+        if from_slot <= to_slot {
+            self.db.set_last_caught_up_block(to_slot).await?;
+        } else if let Some(max_slot) = max_slot {
             self.db.set_last_caught_up_block(max_slot).await?;
+        }
+        if reaches_tip {
+            self.caught_up_once.store(true, Ordering::Relaxed);
         }
         Ok(inserted)
     }
 
-    pub async fn ingest_signatures(&self, signatures: &[String]) -> Result<usize> {
+    pub async fn ingest_signatures(
+        &self,
+        signatures: &[String],
+        finalized_slot: Option<u64>,
+    ) -> Result<usize> {
         let mut inserted = 0usize;
         let mut max_slot = None;
 
@@ -110,7 +229,10 @@ impl SolanaHostPoller {
                 continue;
             };
             max_slot = Some(max_slot.unwrap_or(transaction.slot).max(transaction.slot));
-            inserted += self.ingest_transaction(transaction, tx_index).await?;
+            let finalized = finalized_slot.is_none_or(|slot| transaction.slot <= slot);
+            inserted += self
+                .ingest_transaction(transaction, tx_index, finalized)
+                .await?;
         }
 
         if let Some(slot) = max_slot {
@@ -124,38 +246,106 @@ impl SolanaHostPoller {
         &self,
         transaction: ConfirmedTransaction,
         tx_index: usize,
+        finalized: bool,
     ) -> Result<usize> {
         let decoded = decode_host_event_logs(transaction.log_messages.iter().map(String::as_str))?;
         if decoded.is_empty() {
             return Ok(0);
         }
 
+        info!(
+            signature = %transaction.signature,
+            slot = transaction.slot,
+            event_count = decoded.len(),
+            "solana host listener decoding host-program transaction"
+        );
+
         let transaction_id = bs58::decode(&transaction.signature).into_vec()?;
         let dependence_chain_id = keccak_bytes(&transaction_id);
         let mut tx = self.db.begin().await?;
         self.db
-            .mark_block_finalized(&mut tx, transaction.slot, &transaction.recent_blockhash)
+            .mark_block_as_valid(&mut tx, transaction.slot, &transaction.blockhash, finalized)
             .await?;
 
         let mut inserted = 0usize;
+        let mut dependency_candidates = BTreeSet::new();
+        let mut created_computation = false;
         for decoded_event in decoded {
             let schedule_order =
                 schedule_order_for(transaction.slot, tx_index, decoded_event.log_index);
-            inserted += self
+            let event_result = self
                 .ingest_event(
                     &mut tx,
                     decoded_event.event,
                     &transaction_id,
                     &dependence_chain_id,
-                    &transaction.recent_blockhash,
+                    &transaction.blockhash,
                     transaction.slot,
                     schedule_order,
                 )
                 .await?;
+            inserted += event_result.inserted;
+            created_computation |= event_result.created_computation;
+            for dependency in event_result.dependency_candidates {
+                dependency_candidates.insert(dependency);
+            }
+        }
+
+        if created_computation {
+            let dependency_candidates = dependency_candidates.into_iter().collect::<Vec<_>>();
+            let dependency_chain_ids = self
+                .db
+                .lookup_dependency_chain_ids(&mut tx, &dependency_candidates, &dependence_chain_id)
+                .await?;
+            let dependence_chain_schedule = schedule_order_for(transaction.slot, tx_index, 0);
+            self.db
+                .upsert_dependence_chain(
+                    &mut tx,
+                    &dependence_chain_id,
+                    dependence_chain_schedule,
+                    dependency_chain_ids.len(),
+                    &transaction.blockhash,
+                    transaction.slot,
+                )
+                .await?;
+            self.db
+                .append_dependents(&mut tx, &dependency_chain_ids, &dependence_chain_id)
+                .await?;
         }
 
         tx.commit().await?;
+        info!(
+            signature = %transaction.signature,
+            slot = transaction.slot,
+            inserted_rows = inserted,
+            "solana host listener committed host-program transaction"
+        );
         Ok(inserted)
+    }
+
+    async fn record_block_range(
+        &self,
+        from_slot: u64,
+        to_slot: u64,
+        commitment: &str,
+        finalized: bool,
+    ) -> Result<()> {
+        let block_slots = self.rpc.get_blocks(from_slot, to_slot, commitment).await?;
+        if block_slots.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.db.begin().await?;
+        for slot in block_slots {
+            let Some(block) = self.rpc.get_block(slot, commitment).await? else {
+                continue;
+            };
+            self.db
+                .mark_block_as_valid(&mut tx, block.slot, &block.blockhash, finalized)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 
     async fn ingest_event(
@@ -167,7 +357,7 @@ impl SolanaHostPoller {
         block_hash: &[u8],
         block_number: u64,
         schedule_order: PrimitiveDateTime,
-    ) -> Result<usize> {
+    ) -> Result<EventInsertResult> {
         match event {
             HostEvent::Operation {
                 op,
@@ -182,17 +372,17 @@ impl SolanaHostPoller {
                         ?op,
                         "skipping unsupported Solana operation for current coprocessor milestone"
                     );
-                    return Ok(0);
+                    return Ok(EventInsertResult::default());
                 };
                 let (dependencies, is_scalar) =
                     map_dependencies(op, operands, scalar_flag, result_type)?;
-                Ok(self
+                let inserted = self
                     .db
                     .insert_computation(
                         tx,
                         &ComputationRow {
                             output_handle: result.as_bytes().to_vec(),
-                            dependencies,
+                            dependencies: dependencies.clone(),
                             fhe_operation,
                             is_scalar,
                             transaction_id: transaction_id.to_vec(),
@@ -202,7 +392,12 @@ impl SolanaHostPoller {
                             block_number,
                         },
                     )
-                    .await? as usize)
+                    .await? as usize;
+                Ok(EventInsertResult {
+                    inserted,
+                    dependency_candidates: dependencies,
+                    created_computation: true,
+                })
             }
             HostEvent::Allowed {
                 account, handle, ..
@@ -224,7 +419,37 @@ impl SolanaHostPoller {
                     .db
                     .insert_pbs_computation(tx, handle.as_bytes(), transaction_id, block_number)
                     .await? as usize;
-                Ok(inserted)
+                Ok(EventInsertResult {
+                    inserted,
+                    ..EventInsertResult::default()
+                })
+            }
+            HostEvent::AllowedMany {
+                account, handles, ..
+            } => {
+                let account_address = bs58::encode(account.as_bytes()).into_string();
+                let mut inserted = 0usize;
+                for handle in handles {
+                    inserted += self
+                        .db
+                        .insert_allowed_handle(
+                            tx,
+                            handle.as_bytes(),
+                            &account_address,
+                            AllowEvents::AllowedAccount,
+                            transaction_id,
+                            block_number,
+                        )
+                        .await? as usize;
+                    inserted += self
+                        .db
+                        .insert_pbs_computation(tx, handle.as_bytes(), transaction_id, block_number)
+                        .await? as usize;
+                }
+                Ok(EventInsertResult {
+                    inserted,
+                    ..EventInsertResult::default()
+                })
             }
             HostEvent::AllowedForDecryption { handles, .. } => {
                 let mut inserted = 0usize;
@@ -245,7 +470,10 @@ impl SolanaHostPoller {
                         .insert_pbs_computation(tx, handle.as_bytes(), transaction_id, block_number)
                         .await? as usize;
                 }
-                Ok(inserted)
+                Ok(EventInsertResult {
+                    inserted,
+                    ..EventInsertResult::default()
+                })
             }
             HostEvent::DelegatedForUserDecryption {
                 delegator,
@@ -254,49 +482,57 @@ impl SolanaHostPoller {
                 delegation_counter,
                 old_expiration_date,
                 new_expiration_date,
-            } => Ok(self
-                .db
-                .insert_delegation(
-                    tx,
-                    &DelegationRow {
-                        delegator: delegator.as_bytes().to_vec(),
-                        delegate: delegate.as_bytes().to_vec(),
-                        contract_address: contract_address.as_bytes().to_vec(),
-                        delegation_counter,
-                        old_expiration_date,
-                        new_expiration_date,
-                        block_number,
-                        block_hash: block_hash.to_vec(),
-                        transaction_id: transaction_id.to_vec(),
-                    },
-                )
-                .await? as usize),
+            } => {
+                let inserted = self
+                    .db
+                    .insert_delegation(
+                        tx,
+                        &DelegationRow {
+                            delegator: delegator.as_bytes().to_vec(),
+                            delegate: delegate.as_bytes().to_vec(),
+                            contract_address: contract_address.as_bytes().to_vec(),
+                            delegation_counter,
+                            old_expiration_date,
+                            new_expiration_date,
+                            block_number,
+                            block_hash: block_hash.to_vec(),
+                            transaction_id: transaction_id.to_vec(),
+                        },
+                    )
+                    .await? as usize;
+                Ok(inserted.into())
+            }
             HostEvent::RevokedDelegationForUserDecryption {
                 delegator,
                 delegate,
                 contract_address,
                 delegation_counter,
                 old_expiration_date,
-            } => Ok(self
-                .db
-                .insert_delegation(
-                    tx,
-                    &DelegationRow {
-                        delegator: delegator.as_bytes().to_vec(),
-                        delegate: delegate.as_bytes().to_vec(),
-                        contract_address: contract_address.as_bytes().to_vec(),
-                        delegation_counter,
-                        old_expiration_date,
-                        new_expiration_date: 0,
-                        block_number,
-                        block_hash: block_hash.to_vec(),
-                        transaction_id: transaction_id.to_vec(),
-                    },
-                )
-                .await? as usize),
+            } => {
+                let inserted = self
+                    .db
+                    .insert_delegation(
+                        tx,
+                        &DelegationRow {
+                            delegator: delegator.as_bytes().to_vec(),
+                            delegate: delegate.as_bytes().to_vec(),
+                            contract_address: contract_address.as_bytes().to_vec(),
+                            delegation_counter,
+                            old_expiration_date,
+                            new_expiration_date: 0,
+                            block_number,
+                            block_hash: block_hash.to_vec(),
+                            transaction_id: transaction_id.to_vec(),
+                        },
+                    )
+                    .await? as usize;
+                Ok(inserted.into())
+            }
             HostEvent::VerifyInput { .. } => {
-                warn!("VerifyInput remains unsupported in the Solana coprocessor e2e milestone");
-                Ok(0)
+                info!(
+                    "ignoring Solana host VerifyInput event because input-proof materialization is sourced from the gateway InputVerification flow"
+                );
+                Ok(EventInsertResult::default())
             }
             HostEvent::BlockedAccount { .. }
             | HostEvent::UnblockedAccount { .. }
@@ -307,7 +543,16 @@ impl SolanaHostPoller {
             | HostEvent::MaxHcuDepthPerTxSet { .. }
             | HostEvent::MaxHcuPerTxSet { .. }
             | HostEvent::BlockHcuWhitelistAdded { .. }
-            | HostEvent::BlockHcuWhitelistRemoved { .. } => Ok(0),
+            | HostEvent::BlockHcuWhitelistRemoved { .. } => Ok(EventInsertResult::default()),
+        }
+    }
+}
+
+impl From<usize> for EventInsertResult {
+    fn from(inserted: usize) -> Self {
+        Self {
+            inserted,
+            ..Self::default()
         }
     }
 }

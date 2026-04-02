@@ -5038,6 +5038,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-confidential-token-core"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "sha3",
+ "solana-host-contracts-core",
+ "solana-program",
+]
+
+[[package]]
+name = "solana-confidential-token-program"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "solana-confidential-token-core",
+ "solana-host-contracts-core",
+ "solana-program",
+ "solana-system-interface 3.1.0",
+]
+
+[[package]]
 name = "solana-config-interface"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5186,27 +5207,6 @@ dependencies = [
  "bytemuck_derive",
  "solana-instruction",
  "solana-sdk-ids",
-]
-
-[[package]]
-name = "solana-encrypted-erc20-core"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "sha3",
- "solana-host-contracts-core",
- "solana-program",
-]
-
-[[package]]
-name = "solana-encrypted-erc20-program"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "solana-encrypted-erc20-core",
- "solana-host-contracts-core",
- "solana-program",
- "solana-system-interface 3.1.0",
 ]
 
 [[package]]
@@ -5480,7 +5480,7 @@ dependencies = [
  "solana-client",
  "solana-commitment-config",
  "solana-compute-budget-interface",
- "solana-encrypted-erc20-core",
+ "solana-confidential-token-core",
  "solana-host-contracts-core",
  "solana-instruction",
  "solana-keypair",

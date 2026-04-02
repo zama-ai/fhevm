@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha3::{Digest, Keccak256};
-use solana_host_contracts_core::{EvmAddress, Handle, Pubkey};
+use solana_host_contracts_core::{host_identity_from_evm_address, EvmAddress, Handle, Pubkey};
 use solana_program::pubkey::Pubkey as SolanaPubkey;
 
 pub const TEST_INPUT_STATE_PDA_SEED: &[u8] = b"test-input-state";
@@ -14,10 +14,24 @@ pub enum TestInputInstruction {
     RequestUint64NonTrivial {
         input_handle: Handle,
         input_proof: Vec<u8>,
+        user_evm_address: EvmAddress,
     },
     Add42ToInput64 {
         input_handle: Handle,
         input_proof: Vec<u8>,
+        user_evm_address: EvmAddress,
+    },
+    CreateUserDecryptFixture {
+        fixture_index: u8,
+        user_evm_address: EvmAddress,
+    },
+    CreateUserDecryptFixtures {
+        user_evm_address: EvmAddress,
+    },
+    CreateUserDecryptFixturesChunk {
+        start_fixture_index: u8,
+        fixture_count: u8,
+        user_evm_address: EvmAddress,
     },
     CreatePublicEbool,
     CreatePublicMixed,
@@ -28,6 +42,7 @@ pub struct TestInputState {
     pub owner: Pubkey,
     pub host_program: Pubkey,
     pub res_uint64: Option<Handle>,
+    pub next_session_nonce: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -44,4 +59,8 @@ pub fn evm_address_from_solana_pubkey(pubkey: &SolanaPubkey) -> EvmAddress {
     let mut bytes = [0_u8; 20];
     bytes.copy_from_slice(&digest[12..]);
     EvmAddress::new(bytes)
+}
+
+pub fn evm_host_identity_from_solana_pubkey(pubkey: &SolanaPubkey) -> Pubkey {
+    host_identity_from_evm_address(evm_address_from_solana_pubkey(pubkey))
 }

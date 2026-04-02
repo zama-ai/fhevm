@@ -28,7 +28,18 @@ sol! {
         uint256 contractChainId;
         bytes extraData;
     }
+
+    struct CiphertextVerificationV1 {
+        bytes32[] ctHandles;
+        bytes32 contractId;
+        bytes32 userId;
+        uint256 contractChainId;
+        bytes extraData;
+    }
 }
+
+const INPUT_PROOF_IDENTITIES_VERSION_1: u8 = 0x01;
+const INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH: usize = 65;
 
 #[derive(Clone)]
 pub(crate) struct VerifyProofOperation<P>
@@ -334,17 +345,30 @@ where
                         chain_id: self.gw_chain_id,
                         verifying_contract: self.input_verification_address,
                     };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
+                    let signing_hash = if let Some((contract_id, user_id)) =
+                        parse_versioned_input_proof_identities(&row.extra_data)
+                    {
+                        CiphertextVerificationV1 {
+                            ctHandles: handles.clone(),
+                            contractId: FixedBytes(contract_id),
+                            userId: FixedBytes(user_id),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain)
+                    } else {
+                        CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row.user_address.parse().expect("invalid user address"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid contract address"),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain)
+                    };
                     let signature = self
                         .signer
                         .sign_hash(&signing_hash)
@@ -425,4 +449,17 @@ where
         }
         Ok(maybe_has_more_work)
     }
+}
+
+fn parse_versioned_input_proof_identities(extra_data: &[u8]) -> Option<([u8; 32], [u8; 32])> {
+    if extra_data.len() != INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH {
+        return None;
+    }
+    if extra_data.first().copied() != Some(INPUT_PROOF_IDENTITIES_VERSION_1) {
+        return None;
+    }
+
+    let contract_id = extra_data.get(1..33)?.try_into().ok()?;
+    let user_id = extra_data.get(33..65)?.try_into().ok()?;
+    Some((contract_id, user_id))
 }

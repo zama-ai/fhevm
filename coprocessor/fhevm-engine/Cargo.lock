@@ -9624,6 +9624,7 @@ version = "0.7.0"
 dependencies = [
  "alloy-primitives 1.5.2",
  "anyhow",
+ "bs58",
  "clap",
  "fhevm-engine-common",
  "hex",

@@ -1,14 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha3::{Digest, Keccak256};
-use solana_host_contracts_core::{EvmAddress, Handle, Pubkey};
+use solana_host_contracts_core::{host_identity_from_evm_address, EvmAddress, Handle, Pubkey};
 use solana_program::pubkey::Pubkey as SolanaPubkey;
 
-pub const ENCRYPTED_ERC20_STATE_PDA_SEED: &[u8] = b"encrypted-erc20-state";
+pub const CONFIDENTIAL_TOKEN_STATE_PDA_SEED: &[u8] = b"confidential-token-state";
 pub const DEFAULT_MAX_BALANCE_ENTRIES: u16 = 16;
 pub const DEFAULT_MAX_ALLOWANCE_ENTRIES: u16 = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum EncryptedErc20Instruction {
+pub enum ConfidentialTokenInstruction {
     InitializePda {
         owner: Pubkey,
         host_program: Pubkey,
@@ -17,33 +17,35 @@ pub enum EncryptedErc20Instruction {
         max_balance_entries: u16,
         max_allowance_entries: u16,
     },
-    Mint {
-        minted_amount: u64,
+    ResetState,
+    MintTo {
+        recipient: Pubkey,
+        amount: u64,
     },
     Transfer {
-        to: Pubkey,
+        recipient: Pubkey,
         input_handle: Handle,
         input_proof: Vec<u8>,
     },
-    Approve {
-        spender: Pubkey,
+    ApproveDelegate {
+        delegate: Pubkey,
         input_handle: Handle,
         input_proof: Vec<u8>,
     },
-    TransferFrom {
-        from: Pubkey,
-        to: Pubkey,
+    TransferAsDelegate {
+        source: Pubkey,
+        recipient: Pubkey,
         input_handle: Handle,
         input_proof: Vec<u8>,
     },
-    BalanceOf {
-        wallet: Pubkey,
-    },
-    Allowance {
+    Balance {
         owner: Pubkey,
-        spender: Pubkey,
     },
-    TotalSupply,
+    DelegateAllowance {
+        owner: Pubkey,
+        delegate: Pubkey,
+    },
+    Supply,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -60,12 +62,13 @@ pub struct AllowanceEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct EncryptedErc20State {
+pub struct ConfidentialTokenState {
     pub owner: Pubkey,
     pub host_program: Pubkey,
     pub name: String,
     pub symbol: String,
     pub total_supply: u64,
+    pub zero_handle: Option<Handle>,
     pub max_balance_entries: u16,
     pub max_allowance_entries: u16,
     pub balances: Vec<BalanceEntry>,
@@ -73,13 +76,13 @@ pub struct EncryptedErc20State {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct EncryptedErc20ExecutionResult {
+pub struct ConfidentialTokenExecutionResult {
     pub returned_handles: Vec<Handle>,
     pub total_supply: Option<u64>,
 }
 
 pub fn find_state_pda(program_id: &SolanaPubkey) -> (SolanaPubkey, u8) {
-    SolanaPubkey::find_program_address(&[ENCRYPTED_ERC20_STATE_PDA_SEED], program_id)
+    SolanaPubkey::find_program_address(&[CONFIDENTIAL_TOKEN_STATE_PDA_SEED], program_id)
 }
 
 pub fn evm_address_from_solana_pubkey(pubkey: &SolanaPubkey) -> EvmAddress {
@@ -87,4 +90,8 @@ pub fn evm_address_from_solana_pubkey(pubkey: &SolanaPubkey) -> EvmAddress {
     let mut bytes = [0_u8; 20];
     bytes.copy_from_slice(&digest[12..]);
     EvmAddress::new(bytes)
+}
+
+pub fn evm_host_identity_from_solana_pubkey(pubkey: &SolanaPubkey) -> Pubkey {
+    host_identity_from_evm_address(evm_address_from_solana_pubkey(pubkey))
 }

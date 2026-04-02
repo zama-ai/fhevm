@@ -565,7 +565,9 @@ pub struct UserDecryptRequest {
     pub request_validity: RequestValidity,
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
+    pub contract_ids: Option<Vec<FixedBytes<32>>>,
     pub user_address: Address,
+    pub user_id: Option<FixedBytes<32>>,
     pub signature: Bytes,
     pub public_key: Bytes,
     pub extra_data: Bytes,
@@ -576,8 +578,11 @@ pub struct DelegatedUserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
+    pub contract_ids: Option<Vec<FixedBytes<32>>>,
     pub delegator_address: Address,
+    pub delegator_id: Option<FixedBytes<32>>,
     pub delegate_address: Address,
+    pub delegate_id: Option<FixedBytes<32>>,
     #[serde(rename = "startTimestamp")]
     pub start_timestamp: U256,
     #[serde(rename = "durationDays")]
@@ -682,13 +687,44 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
+        let (extra_user_id, extra_contract_ids) = parse_user_decrypt_extra_data_identities(
+            extra_data.as_ref(),
+            contract_addresses.len(),
+        )?;
+        let explicit_user_id = value
+            .user_id
+            .as_deref()
+            .map(parse_fixed_bytes_32)
+            .transpose()?;
+        let explicit_contract_ids = value
+            .contract_ids
+            .as_ref()
+            .map(parse_fixed_bytes_32_vec)
+            .transpose()?;
+
+        if let Some(contract_ids) = explicit_contract_ids.as_ref() {
+            if contract_ids.len() != contract_addresses.len() {
+                anyhow::bail!(
+                    "contractIds length must match contractAddresses length for user decryption"
+                );
+            }
+        }
+
+        let user_id = resolve_optional_identity("userId", explicit_user_id, extra_user_id)?;
+        let contract_ids = resolve_optional_identity_vec(
+            "contractIds",
+            explicit_contract_ids,
+            extra_contract_ids,
+        )?;
 
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
+            contract_ids,
             user_address: Address::from_str(&value.user_address)?,
+            user_id,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
@@ -746,13 +782,54 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
+        let (extra_delegator_id, extra_delegate_id, extra_contract_ids) =
+            parse_delegated_user_decrypt_extra_data_identities(
+                extra_data.as_ref(),
+                contract_addresses.len(),
+            )?;
+        let explicit_delegator_id = value
+            .delegator_id
+            .as_deref()
+            .map(parse_fixed_bytes_32)
+            .transpose()?;
+        let explicit_delegate_id = value
+            .delegate_id
+            .as_deref()
+            .map(parse_fixed_bytes_32)
+            .transpose()?;
+        let explicit_contract_ids = value
+            .contract_ids
+            .as_ref()
+            .map(parse_fixed_bytes_32_vec)
+            .transpose()?;
+
+        if let Some(contract_ids) = explicit_contract_ids.as_ref() {
+            if contract_ids.len() != contract_addresses.len() {
+                anyhow::bail!(
+                    "contractIds length must match contractAddresses length for delegated user decryption"
+                );
+            }
+        }
+
+        let delegator_id =
+            resolve_optional_identity("delegatorId", explicit_delegator_id, extra_delegator_id)?;
+        let delegate_id =
+            resolve_optional_identity("delegateId", explicit_delegate_id, extra_delegate_id)?;
+        let contract_ids = resolve_optional_identity_vec(
+            "contractIds",
+            explicit_contract_ids,
+            extra_contract_ids,
+        )?;
 
         Ok(DelegatedUserDecryptRequest {
             ct_handle_contract_pairs,
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
+            contract_ids,
             delegator_address: Address::from_str(&value.delegator_address)?,
+            delegator_id,
             delegate_address: Address::from_str(&value.delegate_address)?,
+            delegate_id,
             start_timestamp: U256::from_str(&value.start_timestamp)?,
             duration_days,
             signature: Bytes::from_str(&value.signature)?,
@@ -883,8 +960,10 @@ pub struct KeyData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputProofRequest {
     pub contract_chain_id: u64,
-    pub contract_address: Address,
-    pub user_address: Address,
+    pub contract_address: Option<Address>,
+    pub user_address: Option<Address>,
+    pub contract_id: Option<FixedBytes<32>>,
+    pub user_id: Option<FixedBytes<32>>,
     pub ciphetext_with_zk_proof: Bytes,
     pub extra_data: Bytes,
 }
@@ -892,8 +971,10 @@ pub struct InputProofRequest {
 impl InputProofRequest {
     pub fn new(
         contract_chain_id: u64,
-        contract_address: Address,
-        user_address: Address,
+        contract_address: Option<Address>,
+        user_address: Option<Address>,
+        contract_id: Option<FixedBytes<32>>,
+        user_id: Option<FixedBytes<32>>,
         ciphetext_with_zk_proof: Bytes,
         extra_data: Bytes,
     ) -> InputProofRequest {
@@ -901,6 +982,8 @@ impl InputProofRequest {
             contract_chain_id,
             contract_address,
             user_address,
+            contract_id,
+            user_id,
             ciphetext_with_zk_proof,
             extra_data,
         }
@@ -931,12 +1014,6 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             .map_err(|e| anyhow::anyhow!("Error parsing contractChainId: {:?}", e))?;
         info!("contract_chain_id decoded: {:?}", contract_chain_id);
 
-        let contract_address = Address::from_str(&json.contract_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
-
-        let user_address = Address::from_str(&json.user_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
-
         // Should be hex string without a "0x" prefix.
         let proof_bytes = hex::decode(&json.ciphertext_with_input_verification).map_err(|e| {
             anyhow::anyhow!("Error decoding ciphertextWithInputVerification: {}", e)
@@ -946,10 +1023,53 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&json.extra_data)?;
 
+        let is_versioned = extra_data.len() == 65 && extra_data.first().copied() == Some(0x01);
+
+        let contract_address = json
+            .contract_address
+            .as_deref()
+            .map(Address::from_str)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
+
+        let user_address = json
+            .user_address
+            .as_deref()
+            .map(Address::from_str)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
+
+        let contract_id = json
+            .contract_id
+            .as_deref()
+            .map(parse_fixed_bytes_32)
+            .transpose()?;
+
+        let user_id = json
+            .user_id
+            .as_deref()
+            .map(parse_fixed_bytes_32)
+            .transpose()?;
+
+        if is_versioned {
+            if contract_id.is_none() || user_id.is_none() {
+                anyhow::bail!("Versioned input proof requests require contractId and userId");
+            }
+            if contract_address.is_some() || user_address.is_some() {
+                anyhow::bail!(
+                    "Versioned input proof requests must not include contractAddress or userAddress"
+                );
+            }
+        } else if contract_address.is_none() || user_address.is_none() {
+            anyhow::bail!("Legacy input proof requests require contractAddress and userAddress");
+        }
+
         Ok(InputProofRequest {
             contract_chain_id,
             contract_address,
             user_address,
+            contract_id,
+            user_id,
             ciphetext_with_zk_proof,
             extra_data,
         })
@@ -963,6 +1083,145 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
     } else {
         // Parse as decimal otherwise
         chain_id.parse::<u64>()
+    }
+}
+
+fn parse_decryption_extra_data_identity_sequence(
+    extra_data: &[u8],
+) -> anyhow::Result<Option<Vec<FixedBytes<32>>>> {
+    if extra_data.is_empty() || extra_data == [0x00] || extra_data[0] != 0x02 {
+        return Ok(None);
+    }
+
+    if extra_data.len() < 34 {
+        anyhow::bail!(
+            "invalid v2 decryption extra_data: expected at least 34 bytes, got {}",
+            extra_data.len()
+        );
+    }
+
+    let count = extra_data[33] as usize;
+    let expected_len = 34 + count * 32;
+    if extra_data.len() != expected_len {
+        anyhow::bail!(
+            "invalid v2 decryption extra_data length: expected {} bytes, got {}",
+            expected_len,
+            extra_data.len()
+        );
+    }
+
+    let mut identities = Vec::with_capacity(count);
+    for index in 0..count {
+        let start = 34 + index * 32;
+        let end = start + 32;
+        let identity: [u8; 32] = extra_data[start..end].try_into().map_err(|_| {
+            anyhow::anyhow!("failed to extract v2 decryption identity at index {index}")
+        })?;
+        identities.push(FixedBytes::from(identity));
+    }
+
+    Ok(Some(identities))
+}
+
+fn parse_user_decrypt_extra_data_identities(
+    extra_data: &[u8],
+    contract_count: usize,
+) -> anyhow::Result<(Option<FixedBytes<32>>, Option<Vec<FixedBytes<32>>>)> {
+    let Some(identities) = parse_decryption_extra_data_identity_sequence(extra_data)? else {
+        return Ok((None, None));
+    };
+
+    if identities.len() == contract_count {
+        return Ok((None, Some(identities)));
+    }
+    if identities.len() == contract_count + 1 {
+        return Ok((identities.first().copied(), Some(identities[1..].to_vec())));
+    }
+
+    anyhow::bail!(
+        "invalid v2 decryption identity count: expected {} or {}, got {}",
+        contract_count,
+        contract_count + 1,
+        identities.len()
+    );
+}
+
+fn parse_delegated_user_decrypt_extra_data_identities(
+    extra_data: &[u8],
+    contract_count: usize,
+) -> anyhow::Result<(
+    Option<FixedBytes<32>>,
+    Option<FixedBytes<32>>,
+    Option<Vec<FixedBytes<32>>>,
+)> {
+    let Some(identities) = parse_decryption_extra_data_identity_sequence(extra_data)? else {
+        return Ok((None, None, None));
+    };
+
+    if identities.len() == contract_count {
+        return Ok((None, None, Some(identities)));
+    }
+    if identities.len() == contract_count + 2 {
+        return Ok((
+            identities.first().copied(),
+            identities.get(1).copied(),
+            Some(identities[2..].to_vec()),
+        ));
+    }
+
+    anyhow::bail!(
+        "invalid delegated v2 decryption identity count: expected {} or {}, got {}",
+        contract_count,
+        contract_count + 2,
+        identities.len()
+    );
+}
+
+fn parse_fixed_bytes_32(value: &str) -> Result<FixedBytes<32>, anyhow::Error> {
+    let hex_value = value
+        .strip_prefix("0x")
+        .ok_or_else(|| anyhow::anyhow!("bytes32 identities must start with 0x"))?;
+    if hex_value.len() != 64 {
+        anyhow::bail!("bytes32 identities must be 32 bytes");
+    }
+    let decoded = hex::decode(hex_value)?;
+    Ok(FixedBytes::from_slice(&decoded))
+}
+
+fn parse_fixed_bytes_32_vec(values: &Vec<String>) -> Result<Vec<FixedBytes<32>>, anyhow::Error> {
+    values
+        .iter()
+        .map(|value| parse_fixed_bytes_32(value))
+        .collect()
+}
+
+fn resolve_optional_identity(
+    field_name: &str,
+    explicit: Option<FixedBytes<32>>,
+    inferred: Option<FixedBytes<32>>,
+) -> Result<Option<FixedBytes<32>>, anyhow::Error> {
+    match (explicit, inferred) {
+        (Some(explicit), Some(inferred)) if explicit != inferred => {
+            anyhow::bail!("{field_name} does not match extraData")
+        }
+        (Some(explicit), _) => Ok(Some(explicit)),
+        (None, Some(inferred)) => Ok(Some(inferred)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn resolve_optional_identity_vec(
+    field_name: &str,
+    explicit: Option<Vec<FixedBytes<32>>>,
+    inferred: Option<Vec<FixedBytes<32>>>,
+) -> Result<Option<Vec<FixedBytes<32>>>, anyhow::Error> {
+    match (explicit, inferred) {
+        (Some(explicit), Some(inferred)) if explicit != inferred => {
+            anyhow::bail!("{field_name} does not match extraData")
+        }
+        (Some(explicit), _) => Ok(Some(explicit)),
+        (None, Some(inferred)) => Ok(Some(inferred)),
+        (None, None) => Ok(None),
     }
 }
 
@@ -985,8 +1244,10 @@ mod tests {
     fn test_input_proof_request_conversion_() -> Result<(), Box<dyn std::error::Error>> {
         let json = InputProofRequestJson {
             contract_chain_id: CHAIN_ID.to_string(),
-            contract_address: CONTRACT_ADDRESS.to_string(),
-            user_address: USER_ADDRESS.to_string(),
+            contract_address: Some(CONTRACT_ADDRESS.to_string()),
+            user_address: Some(USER_ADDRESS.to_string()),
+            contract_id: None,
+            user_id: None,
             ciphertext_with_input_verification: CIPHERTEXT.to_string(),
             extra_data: EXTRA_DATA.to_string(),
         };
@@ -996,9 +1257,9 @@ mod tests {
         assert_eq!(request.contract_chain_id, CHAIN_ID.parse::<u64>()?);
         assert_eq!(
             request.contract_address,
-            Address::from_str(CONTRACT_ADDRESS)?
+            Some(Address::from_str(CONTRACT_ADDRESS)?)
         );
-        assert_eq!(request.user_address, Address::from_str(USER_ADDRESS)?);
+        assert_eq!(request.user_address, Some(Address::from_str(USER_ADDRESS)?));
 
         let expected_bytes = hex::decode(CIPHERTEXT)?;
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));

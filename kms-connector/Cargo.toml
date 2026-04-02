@@ -54,9 +54,12 @@ opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
 prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
+reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "=0.23.31", default-features = false, features = [
     "aws-lc-rs",
 ] }
+base64 = { version = "=0.22.1", default-features = false, features = ["alloc"] }
+borsh = { version = "=1.6.0", default-features = false, features = ["derive"] }
 serde = { version = "=1.0.228", default-features = false, features = [
     "derive",
     "std",

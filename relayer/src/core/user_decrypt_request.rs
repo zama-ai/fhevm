@@ -12,6 +12,13 @@ impl ContentHasher for UserDecryptRequest {
             hasher.update(address.as_slice());
         }
 
+        hasher.update(b"contract_ids:");
+        if let Some(contract_ids) = &self.contract_ids {
+            for contract_id in contract_ids {
+                hasher.update(contract_id.as_slice());
+            }
+        }
+
         hasher.update(b"contracts_chain_id:"); // 2
         hasher.update(self.contracts_chain_id.to_be_bytes());
 
@@ -30,6 +37,11 @@ impl ContentHasher for UserDecryptRequest {
         hasher.update(b"user_address:"); // 6
         hasher.update(self.user_address.as_slice());
 
+        hasher.update(b"user_id:");
+        if let Some(user_id) = self.user_id {
+            hasher.update(user_id.as_slice());
+        }
+
         // NOTE: signature and request_validity are excluded from content hash
         // because these are only used on-chain prior to receiving a decryption-id.
 
@@ -45,6 +57,13 @@ impl ContentHasher for DelegatedUserDecryptRequest {
         hasher.update(b"contract_addresses:"); // 1
         for address in &self.contract_addresses {
             hasher.update(address.as_slice());
+        }
+
+        hasher.update(b"contract_ids:");
+        if let Some(contract_ids) = &self.contract_ids {
+            for contract_id in contract_ids {
+                hasher.update(contract_id.as_slice());
+            }
         }
 
         hasher.update(b"contracts_chain_id:"); // 2
@@ -65,8 +84,18 @@ impl ContentHasher for DelegatedUserDecryptRequest {
         hasher.update(b"delegator_address:"); // 6
         hasher.update(self.delegator_address.as_slice());
 
+        hasher.update(b"delegator_id:");
+        if let Some(delegator_id) = self.delegator_id {
+            hasher.update(delegator_id.as_slice());
+        }
+
         hasher.update(b"delegate_address:"); // 7
         hasher.update(self.delegate_address.as_slice());
+
+        hasher.update(b"delegate_id:");
+        if let Some(delegate_id) = self.delegate_id {
+            hasher.update(delegate_id.as_slice());
+        }
 
         // NOTE: signature, startTimestamp and durationDays are excluded from content hash
         // because these are only used on-chain prior to receiving a decryption-id.
@@ -94,7 +123,9 @@ mod tests {
             },
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             user_address: Address::from([2; 20]),
+            user_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
@@ -120,7 +151,9 @@ mod tests {
             },
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             user_address: Address::from([2; 20]),
+            user_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
@@ -151,7 +184,9 @@ mod tests {
             },
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             user_address: Address::from([2; 20]),
+            user_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
@@ -195,8 +230,11 @@ mod tests {
             duration_days: U256::from(30),
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             delegator_address: Address::from([2; 20]),
+            delegator_id: None,
             delegate_address: Address::from([3; 20]),
+            delegate_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
@@ -220,8 +258,11 @@ mod tests {
             duration_days: U256::from(30),
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             delegator_address: Address::from([2; 20]),
+            delegator_id: None,
             delegate_address: Address::from([3; 20]),
+            delegate_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
@@ -250,8 +291,11 @@ mod tests {
             duration_days: U256::from(30),
             contracts_chain_id: 1337,
             contract_addresses: vec![Address::from([1; 20])],
+            contract_ids: None,
             delegator_address: Address::from([2; 20]),
+            delegator_id: None,
             delegate_address: Address::from([3; 20]),
+            delegate_id: None,
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),

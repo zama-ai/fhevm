@@ -1,4 +1,4 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::transports::http::reqwest::Url;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -12,7 +12,9 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
+#[cfg(debug_assertions)]
+use serde::Serialize;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
@@ -86,15 +88,35 @@ pub struct Config {
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
+#[serde(rename_all = "lowercase")]
+pub enum HostChainKind {
+    Evm,
+    Solana,
+}
+
+impl Default for HostChainKind {
+    fn default() -> Self {
+        Self::Evm
+    }
+}
+
+/// Configuration of a single Host Chain.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
     pub url: Url,
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]
     pub chain_id: u64,
-    /// The `ACL` contract address on the Host Chain.
+    #[serde(default)]
+    pub chain_kind: HostChainKind,
+    /// The host ACL/program identity. For EVM this is the ACL contract address.
+    /// For non-EVM chains this remains an opaque chain-native identifier.
     #[serde(alias = "aclAddress")]
-    pub acl_address: Address,
+    pub acl_address: String,
+    #[serde(alias = "statePda")]
+    pub state_pda: Option<String>,
 }
 
 fn deserialize_host_chains<'de, D>(d: D) -> Result<Vec<HostChainConfig>, D::Error>
@@ -181,7 +203,9 @@ impl Default for Config {
             host_chains: vec![HostChainConfig {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
-                acl_address: Address::default(),
+                chain_kind: HostChainKind::Evm,
+                acl_address: "0x0000000000000000000000000000000000000000".to_string(),
+                state_pda: None,
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
@@ -307,8 +331,9 @@ mod tests {
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
-                acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap()
+                chain_kind: HostChainKind::Evm,
+                acl_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+                state_pda: None,
             }]
         );
         assert_eq!(
@@ -385,8 +410,9 @@ mod tests {
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
-                acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap()
+                chain_kind: HostChainKind::Evm,
+                acl_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+                state_pda: None,
             }]
         );
         cleanup_env_vars();

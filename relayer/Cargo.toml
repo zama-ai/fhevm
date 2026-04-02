@@ -27,6 +27,8 @@ aws-sdk-kms = { version = "1.104.0", default-features = false, features = [
   "default-https-client",
   "rt-tokio",
 ] }
+base64 = "0.22.1"
+borsh = { version = "1.6.0", features = ["derive"] }
 dashmap = "6.1.0"
 derivative = "2.2"
 futures = "0.3.32"
@@ -71,6 +73,7 @@ governor = "0.10.4"
 indexmap = "2.13.0"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 serde_yaml = "0.9"
+solana-host-contracts-core = { path = "../solana-host-contracts/core" }
 
 [build-dependencies]
 built = { version = "0.8", features = [

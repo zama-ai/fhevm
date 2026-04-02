@@ -35,10 +35,22 @@ use std::time::Duration;
 
 use alloy::primitives::{Address, FixedBytes, TxHash};
 
+use alloy::sol;
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
+
+sol! {
+    event VerifyProofRequestV2(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+}
 
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
@@ -142,6 +154,30 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
 }
 
 impl InputProofGatewayHandler {
+    fn extract_input_proof_request_id_from_receipt(
+        receipt: &TxResult,
+    ) -> Result<alloy::primitives::U256, EventProcessingError> {
+        match TransactionHelper::extract_gateway_id_from_receipt::<
+            InputVerification::VerifyProofRequest,
+        >(
+            receipt,
+            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
+            |event| event.zkProofId,
+        ) {
+            Ok(id) => Ok(id),
+            Err(EventProcessingError::ValidationFailed { field, .. })
+                if field == "transaction_logs" =>
+            {
+                TransactionHelper::extract_gateway_id_from_receipt::<VerifyProofRequestV2>(
+                    receipt,
+                    VerifyProofRequestV2::SIGNATURE_HASH,
+                    |event| event.zkProofId,
+                )
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     /// Processes user input proof request by sending it to the Gateway blockchain.
     ///
     /// Steps:
@@ -180,13 +216,7 @@ impl InputProofGatewayHandler {
             })?;
 
         // PRE-CALCULATE CALLDATA
-        let calldata_bytes = ComputeCalldata::verify_proof_req(
-            input_proof_request.contract_chain_id,
-            input_proof_request.contract_address,
-            input_proof_request.user_address,
-            input_proof_request.ciphetext_with_zk_proof.clone(),
-            input_proof_request.extra_data.clone(),
-        )?;
+        let calldata_bytes = ComputeCalldata::verify_proof_req(input_proof_request)?;
 
         // CONSTRUCT TASK
         let task = GatewayTxTask {
@@ -705,13 +735,7 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            InputVerification::VerifyProofRequest,
-        >(
-            receipt,
-            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
-            |event| event.zkProofId,
-        )?;
+        let gw_reference_id = Self::extract_input_proof_request_id_from_receipt(receipt)?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

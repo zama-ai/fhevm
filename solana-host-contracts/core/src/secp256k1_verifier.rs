@@ -12,10 +12,14 @@ const INPUT_NAME: &str = "InputVerification";
 const INPUT_VERSION: &str = "1";
 const INPUT_TYPE: &str =
     "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+const INPUT_TYPE_V1: &str =
+    "CiphertextVerificationV1(bytes32[] ctHandles,bytes32 contractId,bytes32 userId,uint256 contractChainId,bytes extraData)";
 const KMS_NAME: &str = "Decryption";
 const KMS_VERSION: &str = "1";
 const KMS_TYPE: &str =
     "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
+const INPUT_PROOF_IDENTITIES_VERSION_1: u8 = 0x01;
+const INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH: usize = 65;
 const SECP256K1_HALF_ORDER: [u8; 32] = [
     0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d, 0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
@@ -157,6 +161,17 @@ fn ethereum_address_from_pubkey(pubkey: [u8; 64]) -> EvmAddress {
 }
 
 fn input_struct_hash(payload: &CiphertextVerification) -> [u8; 32] {
+    if let Some((contract_id, user_id)) = parse_versioned_identities(&payload.extra_data) {
+        let mut encoded = Vec::with_capacity(32 * 6);
+        encoded.extend_from_slice(&keccak(INPUT_TYPE_V1.as_bytes()));
+        encoded.extend_from_slice(&handles_hash(&payload.ct_handles));
+        encoded.extend_from_slice(&contract_id);
+        encoded.extend_from_slice(&user_id);
+        encoded.extend_from_slice(&u256_word_from_u64(payload.contract_chain_id));
+        encoded.extend_from_slice(&keccak(&payload.extra_data));
+        return keccak(encoded);
+    }
+
     let mut encoded = Vec::with_capacity(32 * 6);
     encoded.extend_from_slice(&keccak(INPUT_TYPE.as_bytes()));
     encoded.extend_from_slice(&handles_hash(&payload.ct_handles));
@@ -217,6 +232,19 @@ fn u256_word_from_u64(value: u64) -> [u8; 32] {
     let mut word = [0_u8; 32];
     word[24..].copy_from_slice(&value.to_be_bytes());
     word
+}
+
+fn parse_versioned_identities(extra_data: &[u8]) -> Option<([u8; 32], [u8; 32])> {
+    if extra_data.len() != INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH {
+        return None;
+    }
+    if extra_data.first().copied() != Some(INPUT_PROOF_IDENTITIES_VERSION_1) {
+        return None;
+    }
+
+    let contract_id = extra_data.get(1..33)?.try_into().ok()?;
+    let user_id = extra_data.get(33..65)?.try_into().ok()?;
+    Some((contract_id, user_id))
 }
 
 fn invalid_signer_error(is_kms: bool) -> HostContractError {

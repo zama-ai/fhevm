@@ -89,6 +89,12 @@ impl EvmAddress {
     }
 }
 
+pub fn host_identity_from_evm_address(address: EvmAddress) -> Pubkey {
+    let mut bytes = [0_u8; 32];
+    bytes[12..].copy_from_slice(address.as_bytes());
+    Pubkey::new(bytes)
+}
+
 impl From<[u8; 20]> for EvmAddress {
     fn from(value: [u8; 20]) -> Self {
         Self(value)

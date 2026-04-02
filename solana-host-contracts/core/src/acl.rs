@@ -2,7 +2,7 @@ use crate::error::{HostContractError, Result};
 use crate::events::HostEvent;
 use crate::types::{Handle, Pubkey};
 use borsh::{BorshDeserialize, BorshSerialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct UserDecryptionDelegation {
@@ -13,7 +13,7 @@ pub struct UserDecryptionDelegation {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct AclSession {
-    transient_allowed_pairs: HashSet<(Handle, Pubkey)>,
+    transient_allowed_pairs: BTreeSet<(Handle, Pubkey)>,
 }
 
 impl AclSession {
@@ -35,11 +35,11 @@ pub struct AclState {
     owner: Pubkey,
     executor_program: Pubkey,
     paused: bool,
-    pausers: HashSet<Pubkey>,
-    persisted_allowed_pairs: HashSet<(Handle, Pubkey)>,
-    allowed_for_decryption: HashSet<Handle>,
-    user_decryption_delegations: HashMap<(Pubkey, Pubkey, Pubkey), UserDecryptionDelegation>,
-    deny_list: HashSet<Pubkey>,
+    pausers: BTreeSet<Pubkey>,
+    persisted_allowed_pairs: BTreeSet<(Handle, Pubkey)>,
+    allowed_for_decryption: BTreeSet<Handle>,
+    user_decryption_delegations: BTreeMap<(Pubkey, Pubkey, Pubkey), UserDecryptionDelegation>,
+    deny_list: BTreeSet<Pubkey>,
 }
 
 impl AclState {
@@ -48,16 +48,25 @@ impl AclState {
             owner,
             executor_program,
             paused: false,
-            pausers: HashSet::new(),
-            persisted_allowed_pairs: HashSet::new(),
-            allowed_for_decryption: HashSet::new(),
-            user_decryption_delegations: HashMap::new(),
-            deny_list: HashSet::new(),
+            pausers: BTreeSet::new(),
+            persisted_allowed_pairs: BTreeSet::new(),
+            allowed_for_decryption: BTreeSet::new(),
+            user_decryption_delegations: BTreeMap::new(),
+            deny_list: BTreeSet::new(),
         }
     }
 
     pub fn owner(&self) -> Pubkey {
         self.owner
+    }
+
+    pub fn reset_runtime_state(&mut self) {
+        self.paused = false;
+        self.pausers.clear();
+        self.persisted_allowed_pairs.clear();
+        self.allowed_for_decryption.clear();
+        self.user_decryption_delegations.clear();
+        self.deny_list.clear();
     }
 
     pub fn is_paused(&self) -> bool {
@@ -106,6 +115,32 @@ impl AclState {
             caller,
             account,
             handle,
+        })
+    }
+
+    pub fn allow_many<H>(
+        &mut self,
+        caller: Pubkey,
+        handles: H,
+        account: Pubkey,
+        session: &AclSession,
+    ) -> Result<HostEvent>
+    where
+        H: AsRef<[Handle]>,
+    {
+        let handles = handles.as_ref();
+        self.ensure_not_paused()?;
+        if handles.is_empty() {
+            return Err(HostContractError::HandlesListIsEmpty);
+        }
+        for handle in handles {
+            self.ensure_sender_can_allow(caller, *handle, session)?;
+            self.persisted_allowed_pairs.insert((*handle, account));
+        }
+        Ok(HostEvent::AllowedMany {
+            caller,
+            account,
+            handles: handles.to_vec(),
         })
     }
 

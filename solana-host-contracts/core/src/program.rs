@@ -159,6 +159,11 @@ impl HostProgramState {
                 self.acl.add_pauser(context.caller, *account)?;
                 Ok(InstructionResult::default())
             }
+            HostInstruction::ResetAclState => {
+                self.ensure_owner(context.caller)?;
+                self.acl.reset_runtime_state();
+                Ok(InstructionResult::default())
+            }
             HostInstruction::Pause => {
                 self.acl.pause(context.caller)?;
                 Ok(InstructionResult::default())
@@ -172,6 +177,12 @@ impl HostProgramState {
                 let event =
                     self.acl
                         .allow(context.caller, *handle, *account, &session.acl_session)?;
+                Ok(InstructionResult::from_event(event))
+            }
+            HostInstruction::AllowMany { handles, account } => {
+                let event =
+                    self.acl
+                        .allow_many(context.caller, handles, *account, &session.acl_session)?;
                 Ok(InstructionResult::from_event(event))
             }
             HostInstruction::AllowForDecryption { handles } => {
