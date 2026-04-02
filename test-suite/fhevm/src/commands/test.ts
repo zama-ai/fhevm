@@ -432,15 +432,35 @@ const dbRevertSnapshot = async (
 const formatDbRevertSnapshot = (snapshot: DbRevertSnapshot) =>
   `comp=${snapshot.computationsDone}/${snapshot.computationsTotal} acl=${snapshot.allowedHandles} pbs=${snapshot.pbsComputations} digest=${snapshot.ciphertextDigest} ct=${snapshot.ciphertexts} ct128=${snapshot.ciphertexts128} err=${snapshot.erroredComputations ?? 0}`;
 
-/** Ensures the revert step actually deleted some chain-scoped coprocessor data. */
-const assertRevertDeletedData = (before: DbRevertSnapshot, after: DbRevertSnapshot) => {
+type DbRevertMetric = Exclude<keyof DbRevertSnapshot, "erroredComputations">;
+
+/** Lists seed-generated tables that should shrink after the revert. */
+export const dbRevertDeleteExpectations = (baseline: DbRevertSnapshot, seeded: DbRevertSnapshot) => {
+  const metrics: DbRevertMetric[] = [
+    "computationsDone",
+    "computationsTotal",
+    "allowedHandles",
+    "pbsComputations",
+    "ciphertextDigest",
+    "ciphertexts",
+    "ciphertexts128",
+  ];
+  return metrics.filter((metric) => seeded[metric] > baseline[metric]);
+};
+
+/** Ensures the revert step actually deleted seed-generated coprocessor data. */
+const assertRevertDeletedData = (baseline: DbRevertSnapshot, seeded: DbRevertSnapshot, after: DbRevertSnapshot) => {
+  const expected = dbRevertDeleteExpectations(baseline, seeded);
+  if (!expected.length) {
+    throw new PreflightError("db-state-revert seed did not create any revert-sensitive data");
+  }
   const unchanged = [
-    after.computationsTotal >= before.computationsTotal ? "computations" : "",
-    before.allowedHandles > 0 && after.allowedHandles >= before.allowedHandles ? "allowed_handles" : "",
-    before.pbsComputations > 0 && after.pbsComputations >= before.pbsComputations ? "pbs_computations" : "",
-    before.ciphertextDigest > 0 && after.ciphertextDigest >= before.ciphertextDigest ? "ciphertext_digest" : "",
-    before.ciphertexts > 0 && after.ciphertexts >= before.ciphertexts ? "ciphertexts" : "",
-    before.ciphertexts128 > 0 && after.ciphertexts128 >= before.ciphertexts128 ? "ciphertexts128" : "",
+    expected.includes("computationsTotal") && after.computationsTotal >= seeded.computationsTotal ? "computations" : "",
+    expected.includes("allowedHandles") && after.allowedHandles >= seeded.allowedHandles ? "allowed_handles" : "",
+    expected.includes("pbsComputations") && after.pbsComputations >= seeded.pbsComputations ? "pbs_computations" : "",
+    expected.includes("ciphertextDigest") && after.ciphertextDigest >= seeded.ciphertextDigest ? "ciphertext_digest" : "",
+    expected.includes("ciphertexts") && after.ciphertexts >= seeded.ciphertexts ? "ciphertexts" : "",
+    expected.includes("ciphertexts128") && after.ciphertexts128 >= seeded.ciphertexts128 ? "ciphertexts128" : "",
   ].filter(Boolean);
   if (unchanged.length) {
     throw new PreflightError(`db-state-revert did not delete expected data for: ${unchanged.join(", ")}`);
@@ -519,6 +539,8 @@ const runDbStateRevert = async (
     const maxBlockBeforeSeed = Number(
       await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
     );
+    const baseline = await dbRevertSnapshot(chainId, postgres);
+    console.log(`[revert] baseline ${formatDbRevertSnapshot(baseline)}`);
     await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert seed");
 
     let before;
@@ -576,7 +598,7 @@ const runDbStateRevert = async (
 
       const after = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] after ${formatDbRevertSnapshot(after)}`);
-      assertRevertDeletedData(before, after);
+      assertRevertDeletedData(baseline, before, after);
     } finally {
       if (stopped) {
         await setContainersRunning(containers, "start");

@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
 import {
   buildTestContainerArgs,
+  dbRevertDeleteExpectations,
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
   validateNamedProfileGrep,
@@ -215,6 +216,31 @@ describe("cli", () => {
   test("db-state-revert targets the block before the seed range", () => {
     expect(dbRevertTargetBlock(370)).toBe(369);
     expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");
+  });
+
+  test("db-state-revert only expects seeded tables to shrink", () => {
+    expect(
+      dbRevertDeleteExpectations(
+        {
+          computationsDone: 11,
+          computationsTotal: 11,
+          allowedHandles: 19,
+          pbsComputations: 11,
+          ciphertextDigest: 11,
+          ciphertexts: 11,
+          ciphertexts128: 2,
+        },
+        {
+          computationsDone: 13,
+          computationsTotal: 13,
+          allowedHandles: 22,
+          pbsComputations: 12,
+          ciphertextDigest: 12,
+          ciphertexts: 12,
+          ciphertexts128: 2,
+        },
+      ),
+    ).toEqual(["computationsDone", "computationsTotal", "allowedHandles", "pbsComputations", "ciphertextDigest", "ciphertexts"]);
   });
 
   test("resume rejects any explicit target override", () => {
