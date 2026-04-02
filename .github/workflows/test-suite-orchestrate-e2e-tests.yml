@@ -35,14 +35,17 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Bun
+        if: ${{ !startsWith(github.base_ref, 'release/') }}
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
       - name: Install GitHub CLI
+        if: ${{ !startsWith(github.base_ref, 'release/') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
 
       - name: Install CLI deps
+        if: ${{ !startsWith(github.base_ref, 'release/') }}
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
 
@@ -57,61 +60,14 @@ jobs:
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
 
-      - id: release-baseline
-        name: Synthesize release baseline lock
-        if: ${{ startsWith(github.base_ref, 'release/') }}
-        run: |
-          set -euo pipefail
-          artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          lock_path="$RUNNER_TEMP/release-base-lock.json"
-          profile_path="$RUNNER_TEMP/latest-supported.json"
-          base_short_tag="${BASE_SHA:0:7}"
-          git show "${BASE_SHA}:test-suite/fhevm/profiles/latest-supported.json" > "$profile_path"
-          BASE_SHORT_TAG="$base_short_tag" LOCK_PATH="$lock_path" python3 - "$profile_path" <<'PY'
-          import json
-          import os
-          import sys
-
-          with open(sys.argv[1], encoding="utf8") as fh:
-              bundle = json.load(fh)
-          base_short_tag = os.environ["BASE_SHORT_TAG"]
-          bundle["target"] = "latest-supported"
-          bundle["lockName"] = f"release-base-{base_short_tag}.json"
-          for key in [
-              "GATEWAY_VERSION",
-              "HOST_VERSION",
-              "COPROCESSOR_DB_MIGRATION_VERSION",
-              "COPROCESSOR_HOST_LISTENER_VERSION",
-              "COPROCESSOR_GW_LISTENER_VERSION",
-              "COPROCESSOR_TX_SENDER_VERSION",
-              "COPROCESSOR_TFHE_WORKER_VERSION",
-              "COPROCESSOR_ZKPROOF_WORKER_VERSION",
-              "COPROCESSOR_SNS_WORKER_VERSION",
-              "CONNECTOR_DB_MIGRATION_VERSION",
-              "CONNECTOR_GW_LISTENER_VERSION",
-              "CONNECTOR_KMS_WORKER_VERSION",
-              "CONNECTOR_TX_SENDER_VERSION",
-              "RELAYER_VERSION",
-              "RELAYER_MIGRATE_VERSION",
-              "TEST_SUITE_VERSION",
-          ]:
-              bundle["env"][key] = base_short_tag
-          bundle["sources"] = ["profile=latest-supported", f"release-base-sha={base_short_tag}"]
-          with open(os.environ["LOCK_PATH"], "w", encoding="utf8") as fh:
-              json.dump(bundle, fh, indent=2)
-              fh.write("\n")
-          PY
-          echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
-          echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
-
       - id: lock-output
         name: Emit lock output
         run: |
           echo "lock-artifact-name=${ARTIFACT_NAME:-}" >> "$GITHUB_OUTPUT"
           echo "lock-path=${LOCK_PATH:-}" >> "$GITHUB_OUTPUT"
         env:
-          ARTIFACT_NAME: ${{ steps.resolve-baseline.outputs.lock-artifact-name || steps.release-baseline.outputs.lock-artifact-name }}
-          LOCK_PATH: ${{ steps.resolve-baseline.outputs.lock-path || steps.release-baseline.outputs.lock-path }}
+          ARTIFACT_NAME: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
+          LOCK_PATH: ${{ steps.resolve-baseline.outputs.lock-path }}
 
       - name: Upload baseline lock
         if: ${{ steps.lock-output.outputs.lock-path != '' }}
@@ -179,6 +135,7 @@ jobs:
     env:
       BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
+      IS_RELEASE_PR: ${{ startsWith(github.base_ref, 'release/') }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
     outputs:
@@ -237,6 +194,15 @@ jobs:
           for key in "${outputs[@]}"; do
             echo "$key=" >> "$GITHUB_OUTPUT"
           done
+
+          if [ "$IS_RELEASE_PR" = "true" ]; then
+            core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
+            if [ -z "$core_version" ]; then
+              echo "Could not extract CORE_VERSION from release base ${BASE_COMMIT_HASH}" >&2
+              exit 1
+            fi
+            echo "kms-core-version=$core_version" >> "$GITHUB_OUTPUT"
+          fi
 
           failures=()
           while IFS='|' read -r job result_key output_key; do

@@ -196,16 +196,16 @@ This is how CI works. The merge queue workflow:
 
 1. Builds repo-owned Docker images for touched components
 2. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
-3. Leaves skipped components unset so they naturally stay on the `latest-main` baseline
-4. Fails if a required touched-component build reports a non-skipped failure
-5. Runs `./fhevm-cli up --target latest-main --scenario two-of-two-multi-chain`
-6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
+3. Falls back to the PR base short SHA for skipped repo-owned components
+4. Uses a downloaded base lock only for non-release orchestrate runs
+5. Pins `CORE_VERSION` from the release base branch when the PR targets `release/*`
+6. Runs `./fhevm-cli up --scenario two-of-two-multi-chain`
+7. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
-The CLI resolves `latest-main` as the current mainline bundle, then overlays the
-merge-candidate SHA-tagged env vars for every repo-owned component.
-For non-workspace companions, `latest-main` uses the maintained mainline baseline from `src/resolve/presets.ts`.
+Non-release orchestrate resolves a frozen base lock, then overlays merge-candidate SHA-tagged env vars for repo-owned components.
+Release orchestrate follows the older base/head per-service selection path and explicitly carries over the base branch `CORE_VERSION`.
 The reusable workflow now runs on `pull_request` directly and treats PR e2e as source validation with `build=true`.
-Orchestrate passes `build=false` explicitly because it is validating selected registry images on top of the `latest-main` baseline rather than rebuilding from source.
+Orchestrate passes `build=false` explicitly because it is validating selected registry images rather than rebuilding from source.
 
 Supported override keys (any subset):
 
@@ -260,7 +260,9 @@ The matrix has three sections:
 | `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-Merge-queue e2e always boots `latest-main` with the fixed `two-of-two-multi-chain` scenario, injects the PR head tag only for repo-owned images whose build succeeded, leaves skipped components on the `latest-main` baseline, and explicitly keeps `build=false`.
+Merge-queue e2e always boots the fixed `two-of-two-multi-chain` scenario and explicitly keeps `build=false`.
+For non-release PRs it uses a frozen base lock plus selected repo-owned head-tag overrides.
+For `release/*` PRs it restores the old base/head per-service version selection and carries forward the base branch `CORE_VERSION`.
 
 ### How to update
 
