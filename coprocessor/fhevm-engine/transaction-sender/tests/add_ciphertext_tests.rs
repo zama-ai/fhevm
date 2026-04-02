@@ -252,7 +252,7 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     let _ = provider.get_transaction_count(env.signer.address()).await?;
 
     // Simulate a transport error by recreating the anvil instance.
-    env.recreate_anvil()?;
+    env.recreate_anvil().await?;
 
     // Insert a ciphertext digest into the database.
     let handle = random::<[u8; 32]>();
@@ -308,9 +308,9 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         ..Default::default()
     };
 
-    let force_per_test_localstack = false;
+    let force_per_test_local_kms = false;
     let mut env =
-        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
@@ -416,9 +416,8 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
         ..Default::default()
     };
 
-    let force_per_test_localstack = false;
-    let env =
-        TestEnvironment::new_with_config(signer_type, conf, force_per_test_localstack).await?;
+    let force_per_test_local_kms = false;
+    let env = TestEnvironment::new_with_config(signer_type, conf, force_per_test_local_kms).await?;
 
     // Create a provider with a random wallet without funds.
     let wallet: EthereumWallet = PrivateKeySigner::random().into();
@@ -515,9 +514,9 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         ..Default::default()
     };
 
-    let force_per_test_localstack = true;
+    let force_per_test_local_kms = true;
     let mut env =
-        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
@@ -551,8 +550,8 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 
     let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
 
-    // Simulate an AWS KMS error by stopping the localstack instance.
-    env.stop_localstack().await;
+    // Simulate an AWS KMS error by stopping the local-kms instance.
+    env.stop_local_kms().await;
 
     // Insert a ciphertext digest into the database.
     let handle = random::<[u8; 32]>();
@@ -611,10 +610,9 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
         add_ciphertexts_max_retries: 3,
         ..Default::default()
     };
-    let force_per_test_localstack = false;
-    let env =
-        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
-            .await?;
+    let force_per_test_local_kms = false;
+    let env = TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_local_kms)
+        .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))

@@ -68,7 +68,7 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
 }
 
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
-    let health_check_port = test_harness::localstack::pick_free_port();
+    let health_check_port = test_harness::containers::pick_free_port();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
