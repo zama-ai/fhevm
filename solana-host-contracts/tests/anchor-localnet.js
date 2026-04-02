@@ -10,7 +10,8 @@ const GATEWAY_STACK_ENV = join(TEST_SUITE_STAGING_ENV_DIR, ".env.gateway-sc.loca
 const HOST_PROGRAM_ID = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
 const TEST_INPUT_PROGRAM_ID = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv";
 const CONFIDENTIAL_TOKEN_PROGRAM_ID = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx";
-const DOCKER_HOST_NODE_CONTAINER = "host-node";
+const DOCKER_HOST_NODE_CONTAINER =
+  process.env.SOLANA_DOCKER_HOST_NODE_CONTAINER || "host-node";
 const DEFAULT_RPC_URL = "http://127.0.0.1:18999";
 const DEFAULT_WS_URL = "ws://127.0.0.1:19000";
 const ENV_OVERRIDE_KEYS = new Set([
