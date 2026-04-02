@@ -211,6 +211,17 @@ jobs:
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
+      - name: Resolve latest-main lock once
+        if: ${{ inputs.lock-artifact-name == '' && !inputs.orchestrated }}
+        working-directory: test-suite/fhevm
+        run: |
+          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          if [ ! -f "$lock_file" ]; then
+            echo "Could not locate resolved lock file: $lock_file" >&2
+            exit 1
+          fi
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
         run: |
@@ -239,6 +250,20 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
+      - name: Detect resolved topology
+        working-directory: test-suite/fhevm
+        run: |
+          state_file="${FHEVM_STATE_DIR:-${GITHUB_WORKSPACE}/.fhevm}/state/state.json"
+          if [ ! -f "$state_file" ]; then
+            echo "Missing state file at $state_file" >&2
+            exit 1
+          fi
+          if jq -e '.scenario.hostChains | length > 1' "$state_file" >/dev/null; then
+            echo "IS_MULTI_CHAIN=true" >> "$GITHUB_ENV"
+          else
+            echo "IS_MULTI_CHAIN=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Standard e2e suite
         working-directory: test-suite/fhevm
         run: |
@@ -252,7 +277,7 @@ jobs:
           docker start coprocessor-host-listener
 
       - name: Multi-chain isolation test
-        if: ${{ contains(inputs.scenario, 'multi-chain') }}
+        if: ${{ env.IS_MULTI_CHAIN == 'true' }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test multi-chain-isolation

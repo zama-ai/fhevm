@@ -117,6 +117,12 @@ describe("render-compose", () => {
     });
   });
 
+  test("exports the active state dir to compose env", async () => {
+    await withTempStateDir(async (stateDir) => {
+      expect((await composeEnv("coprocessor")).FHEVM_STATE_DIR).toBe(stateDir);
+    });
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

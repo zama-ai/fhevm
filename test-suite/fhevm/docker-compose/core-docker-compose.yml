@@ -4,7 +4,7 @@ services:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/core.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/core.env
     entrypoint:
       - /bin/sh
       - -c
@@ -18,7 +18,7 @@ services:
         kms-server --config-file config/config.toml
     volumes:
       - fhevm_minio_secrets:/minio_secrets
-      - ../../../.fhevm/runtime/config/kms-core.toml:/app/kms/core/service/config/config.toml
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/kms-core.toml:/app/kms/core/service/config/config.toml
     ports:
       - "50051:50051"
     healthcheck:

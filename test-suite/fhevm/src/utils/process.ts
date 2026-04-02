@@ -1,7 +1,7 @@
 /**
  * Wraps process execution, streaming output, compose env loading, and heartbeat reporting for external commands.
  */
-import { envPath, versionsEnvPath } from "../layout";
+import { STATE_DIR, envPath, versionsEnvPath } from "../layout";
 import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "./fs";
 import { CommandError } from "../errors";
 
@@ -173,7 +173,7 @@ export const runWithHeartbeat = async (
 /** Assembles the environment used for docker compose commands for one component. */
 export const composeEnv = async (component: string, extra?: Record<string, string>) => {
   const env = (await exists(versionsEnvPath))
-    ? { ...(await readEnvFileIfExists(versionsEnvPath)), COMPOSE_IGNORE_ORPHANS: "true" }
-    : { COMPOSE_IGNORE_ORPHANS: "true" };
+    ? { ...(await readEnvFileIfExists(versionsEnvPath)), COMPOSE_IGNORE_ORPHANS: "true", FHEVM_STATE_DIR: STATE_DIR }
+    : { COMPOSE_IGNORE_ORPHANS: "true", FHEVM_STATE_DIR: STATE_DIR };
   return { ...env, ...(await readEnvFileIfExists(envPath(component))), ...extra };
 };

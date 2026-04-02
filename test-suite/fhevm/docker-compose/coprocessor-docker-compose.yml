@@ -20,7 +20,7 @@ services:
     container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
@@ -33,7 +33,7 @@ services:
     container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -50,7 +50,7 @@ services:
     container_name: coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
@@ -66,7 +66,7 @@ services:
     container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -87,7 +87,7 @@ services:
     container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -106,7 +106,7 @@ services:
     container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -123,7 +123,7 @@ services:
     container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -152,7 +152,7 @@ services:
     container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}

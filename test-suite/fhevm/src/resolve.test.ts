@@ -146,6 +146,25 @@ describe("resolve", () => {
     ).toThrow("sha target deadbee is unsupported");
   });
 
+  test("rejects unsupported full-sha repo overrides", () => {
+    const sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    expect(() =>
+      assertSupportedRepoOverrideFloors(
+        applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
+          GATEWAY_VERSION: sha,
+        }),
+        {
+          GATEWAY_VERSION: sha,
+        },
+        [
+          "abcdef0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          SIMPLE_ACL_MIN_SHA,
+        ],
+      ),
+    ).toThrow(`sha target ${sha} is unsupported`);
+  });
+
   test("retries transient GitHub 5xx responses", () => {
     expect(shouldRetryGitHubCliError("gh: HTTP 503")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 502 Bad Gateway")).toBe(true);

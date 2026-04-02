@@ -19,13 +19,13 @@ services:
     container_name: kms-connector-db-migration
     image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/kms-connector.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
     image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/kms-connector.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -34,7 +34,7 @@ services:
     container_name: kms-connector-kms-worker
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/kms-connector.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -43,7 +43,7 @@ services:
     container_name: kms-connector-tx-sender
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/kms-connector.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully

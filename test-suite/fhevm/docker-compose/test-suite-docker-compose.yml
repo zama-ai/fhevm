@@ -4,6 +4,6 @@ services:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/test-suite.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
     command:
       - tail -f /dev/null

@@ -3,7 +3,7 @@ services:
     container_name: gateway-node
     image: ghcr.io/foundry-rs/foundry:v1.3.5
     env_file:
-      - ../../../.fhevm/runtime/env/gateway-node.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-node.env
     entrypoint:
       - anvil
       - --block-time

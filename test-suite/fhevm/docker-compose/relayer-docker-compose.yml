@@ -22,7 +22,7 @@ services:
     platform: linux/amd64
     image: ${RELAYER_MIGRATE_IMAGE_REPOSITORY}:${RELAYER_MIGRATE_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/relayer.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
     command:
     - /bin/server
     ports:
@@ -36,12 +36,12 @@ services:
     platform: linux/amd64
     image: ${RELAYER_IMAGE_REPOSITORY}:${RELAYER_VERSION}
     env_file:
-      - ../../../.fhevm/runtime/env/relayer.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
     volumes:
-      - ../../../.fhevm/runtime/config/relayer.yaml:/app/config/local.yaml
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
     depends_on:

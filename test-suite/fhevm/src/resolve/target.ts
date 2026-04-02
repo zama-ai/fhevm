@@ -103,7 +103,7 @@ const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPO
 };
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
-const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
+export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
 
@@ -191,18 +191,19 @@ export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[
   }
   const floor = simpleAclFloor(commits);
   const compatFloor = shaRuntimeCompatFloor(commits);
-  const tags = [
+  const refs = [
     ...new Set(
       Object.entries(bundle.env)
-        .filter(([key, value]) => REPO_KEYS.has(key) && REPO_TAG.test(value))
+        .filter(([key, value]) => REPO_KEYS.has(key) && SHA_REF.test(value))
         .map(([, value]) => value.toLowerCase()),
     ),
   ];
-  for (const tag of tags) {
-    const index = commits.findIndex((sha) => sha.startsWith(tag));
+  for (const ref of refs) {
+    const tag = ref.slice(0, 7);
+    const index = commits.findIndex((sha) => ref.length === 40 ? sha.toLowerCase() === ref : sha.startsWith(tag));
     if (index < 0) {
       throw new Error(
-        `sha target ${tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
+        `sha target ${ref.length === 40 ? ref : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
       );
     }
     if (index > floor) {

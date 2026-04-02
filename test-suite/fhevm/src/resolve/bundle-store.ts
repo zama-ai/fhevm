@@ -11,7 +11,7 @@ import { GitHubApiError } from "../errors";
 import {
   PACKAGE_TO_REPOSITORY,
   REPO_KEYS,
-  REPO_TAG,
+  SHA_REF,
   applyVersionEnvOverrides,
   assertSupportedShaBundle,
   resolveTarget,
@@ -82,7 +82,7 @@ const validateRuntimeCompat = async (bundle: VersionBundle) => {
 };
 
 const hasShaLikeRepoOverride = (env: Record<string, string | undefined>) =>
-  Object.entries(env).some(([key, value]) => REPO_KEYS.has(key) && REPO_TAG.test(value ?? ""));
+  Object.entries(env).some(([key, value]) => REPO_KEYS.has(key) && SHA_REF.test(value ?? ""));
 
 export const assertSupportedRepoOverrideFloors = (
   bundle: VersionBundle,
