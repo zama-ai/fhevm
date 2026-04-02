@@ -86,7 +86,7 @@ bun test
 - `up --scenario <name-or-file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
 - `up --override coprocessor` is the fast local-dev shorthand for a one-instance local coprocessor scenario
 - `scenario list` prints the bundled scenario presets with their intent
-- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test light` is the tiny smoke lane (`input-proof` + `erc20`), `test standard` runs the default CI lane including db revert and drift, and `test heavy` is the operators lane
+- `test` runs against the current stack; it does not recompile contracts. `--parallel` runs tests in parallel (auto for `operators`). `test light` is the tiny smoke lane (`input-proof` + `erc20`), `test standard` runs the default CI lane including db revert and drift, `test multi-chain-isolation` is the dedicated multi-chain coverage lane, and `test heavy` is the operators lane
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
 - `down` stops the stack, prunes `.fhevm/runtime`, and keeps resumable `.fhevm/state`

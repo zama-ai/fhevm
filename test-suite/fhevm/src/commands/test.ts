@@ -740,10 +740,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         }
         await runProfile(profile);
       }
-
-      if (state.scenario.hostChains.length > 1) {
-        await runProfile("multi-chain-isolation");
-      }
     });
   };
 
