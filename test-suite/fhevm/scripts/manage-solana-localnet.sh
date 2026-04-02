@@ -19,6 +19,7 @@ CONFIDENTIAL_TOKEN_PROGRAM_SO="$SOLANA_ROOT/target/deploy/solana_confidential_to
 HOST_PROGRAM_ID="5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
 TEST_INPUT_PROGRAM_ID="5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv"
 CONFIDENTIAL_TOKEN_PROGRAM_ID="Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
+DOCKER_HOST_NODE_CONTAINER="${SOLANA_DOCKER_HOST_NODE_CONTAINER:-host-node}"
 
 mkdir -p "$STATE_DIR"
 
@@ -31,7 +32,7 @@ rpc_healthy() {
 
 docker_host_node_running() {
   local result
-  result=$(docker inspect -f '{{.State.Running}}' host-node 2>/dev/null || true)
+  result=$(docker inspect -f '{{.State.Running}}' "$DOCKER_HOST_NODE_CONTAINER" 2>/dev/null || true)
   [[ "$result" == "true" ]]
 }
 

@@ -26,6 +26,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 STACK_MODE_FILE="$SCRIPT_DIR/../env/staging/.stack-mode.local"
 SOLANA_LOCALNET_SCRIPT="$SCRIPT_DIR/manage-solana-localnet.sh"
 SOLANA_MODE=false
+MIXED_MODE=false
 
 # Deployment steps registry - defines all steps in execution order
 # These names are used for --resume functionality
@@ -135,6 +136,9 @@ for arg in "$@"; do
   elif [[ "$arg" == "--solana" ]]; then
     SOLANA_MODE=true
     log_info "Solana host mode detected."
+  elif [[ "$arg" == "--multi-chain" ]]; then
+    MIXED_MODE=true
+    log_info "Mixed host mode detected (EVM + Solana)."
   elif [[ "$arg" == "--resume" ]]; then
     RESUME_FLAG_DETECTED=true
   elif [[ "$arg" == "--only" ]]; then
@@ -211,8 +215,18 @@ if [[ -n "$RESUME_STEP" && -n "$ONLY_STEP" ]]; then
   exit 1
 fi
 
+if [[ "$SOLANA_MODE" == true && "$MIXED_MODE" == true ]]; then
+  log_error "Cannot use --solana and --multi-chain together"
+  exit 1
+fi
+
 if [[ "$SOLANA_MODE" == true && ( -n "$RESUME_STEP" || -n "$ONLY_STEP" ) ]]; then
   log_error "Solana host mode currently does not support --resume or --only"
+  exit 1
+fi
+
+if [[ "$MIXED_MODE" == true && ( -n "$RESUME_STEP" || -n "$ONLY_STEP" ) ]]; then
+  log_error "Mixed host mode currently does not support --resume or --only"
   exit 1
 fi
 
@@ -231,9 +245,14 @@ if [[ "$SOLANA_MODE" == true && "$COPROCESSOR_COUNT" -ne 1 ]]; then
   exit 1
 fi
 
-if [[ "$SOLANA_MODE" == true && "$LOCAL_BUILD" == true && "$FORCE_BUILD" != true ]]; then
+if [[ "$MIXED_MODE" == true && "$COPROCESSOR_COUNT" -ne 1 ]]; then
+  log_error "Mixed host mode currently supports only a single coprocessor instance"
+  exit 1
+fi
+
+if [[ ( "$SOLANA_MODE" == true || "$MIXED_MODE" == true ) && "$LOCAL_BUILD" == true && "$FORCE_BUILD" != true ]]; then
   FORCE_BUILD=true
-  log_info "Solana local mode implies --build so the deployed stack matches local code changes."
+  log_info "Solana-enabled local mode implies --build so the deployed stack matches local code changes."
 fi
 
 # Overwrite original arguments with the filtered list (removes local flags from $@)
@@ -550,7 +569,7 @@ prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
     local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
-    if [[ "$SOLANA_MODE" == true ]]; then
+    if [[ "$SOLANA_MODE" == true || "$MIXED_MODE" == true ]]; then
         components+=("coprocessor-solana" "host-node-solana")
     fi
 
@@ -693,6 +712,73 @@ configure_solana_stack_files() {
     set_env_value "$test_env" "CHAIN_ID_HOST" "$SOLANA_HOST_CHAIN_ID"
     set_env_value "$test_env" "RPC_URL" "$host_rpc_url"
     set_env_value "$test_env" "ACL_CONTRACT_ADDRESS" "$solana_acl_identity"
+}
+
+configure_mixed_host_stack_files() {
+    load_solana_addresses_env
+
+    local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor-solana.local"
+    local kms_env="$SCRIPT_DIR/../env/staging/.env.kms-connector.local"
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
+    local test_env="$SCRIPT_DIR/../env/staging/.env.test-suite.local"
+    local relayer_config="$SCRIPT_DIR/../config/relayer/local.yaml.local"
+
+    local rpc_port
+    rpc_port=$(printf '%s' "${SOLANA_HOST_RPC_URL:-http://127.0.0.1:18999}" | sed -E 's#.*:([0-9]+)/?$#\1#')
+    local ws_port
+    ws_port=$(printf '%s' "${SOLANA_HOST_WS_URL:-ws://127.0.0.1:19000}" | sed -E 's#.*:([0-9]+)/?$#\1#')
+    local docker_rpc_url="http://host-node-solana:${rpc_port}"
+    local docker_ws_url="ws://host-node-solana:${ws_port}"
+    local host_rpc_url="${SOLANA_HOST_RPC_URL:-http://127.0.0.1:${rpc_port}}"
+
+    local solana_acl_identity
+    solana_acl_identity="${SOLANA_HOST_ACL_PROGRAM_ID:-$SOLANA_HOST_PROGRAM_ID}"
+    if [[ -z "$solana_acl_identity" ]]; then
+        log_error "Missing SOLANA_HOST_ACL_PROGRAM_ID / SOLANA_HOST_PROGRAM_ID in Solana addresses env"
+        exit 1
+    fi
+
+    local evm_acl_address
+    evm_acl_address=$(get_env_value "$host_env" "ACL_CONTRACT_ADDRESS")
+    if [[ -z "$evm_acl_address" ]]; then
+        evm_acl_address=$(get_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_0")
+    fi
+    if [[ -z "$evm_acl_address" ]]; then
+        evm_acl_address="0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    fi
+
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_RPC_URL" "$docker_rpc_url"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_PROGRAM_ID" "$SOLANA_HOST_PROGRAM_ID"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_HOST_CHAIN_ID" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_COMMITMENT" "confirmed"
+    set_env_value "$coprocessor_env" "RPC_HTTP_URL" "$docker_rpc_url"
+    set_env_value "$coprocessor_env" "RPC_WS_URL" "$docker_ws_url"
+    set_env_value "$coprocessor_env" "CHAIN_ID" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$coprocessor_env" "ACL_CONTRACT_ADDRESS" "$solana_acl_identity"
+
+    set_env_value "$kms_env" "KMS_CONNECTOR_HOST_CHAINS" "'[{\"url\":\"http://host-node:8545\",\"chain_id\":12345,\"acl_address\":\"${evm_acl_address}\"},{\"url\":\"${docker_rpc_url}\",\"chain_id\":${SOLANA_HOST_CHAIN_ID},\"chain_kind\":\"solana\",\"acl_address\":\"${solana_acl_identity}\",\"state_pda\":\"${SOLANA_HOST_STATE_PDA}\"}]'"
+
+    if ! grep -q "chain_id: ${SOLANA_HOST_CHAIN_ID}" "$relayer_config" 2>/dev/null; then
+        sed -i.bak "/^gateway:/i\\
+  - chain_id: ${SOLANA_HOST_CHAIN_ID}\\
+    chain_kind: solana\\
+    url: \\\"${docker_rpc_url}\\\"\\
+    acl_address: \\\"${solana_acl_identity}\\\"\\
+    state_pda: \\\"${SOLANA_HOST_STATE_PDA}\\\"\\
+" "$relayer_config"
+    fi
+
+    set_env_value "$gateway_env" "NUM_HOST_CHAINS" "2"
+    set_env_value "$gateway_env" "HOST_CHAIN_CHAIN_ID_1" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$gateway_env" "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_1" "$evm_acl_address"
+    set_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_1" "$evm_acl_address"
+    set_env_value "$gateway_env" "HOST_CHAIN_NAME_1" "Solana Localnet"
+    set_env_value "$gateway_env" "HOST_CHAIN_WEBSITE_1" "https://solana.local"
+
+    set_env_value "$test_env" "CHAIN_ID_HOST_SOLANA" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$test_env" "SOLANA_DOCKER_HOST_NODE_CONTAINER" "host-node-solana"
+    set_env_value "$test_env" "SOLANA_HOST_RPC_URL" "$host_rpc_url"
 }
 
 # Build effective n/t topology config and per-instance coprocessor env files.
@@ -838,6 +924,16 @@ seed_solana_host_chain_metadata() {
     log_info "Seeded Solana host chain metadata in coprocessor DB"
 }
 
+restart_container_if_present() {
+    local container_name=$1
+
+    if docker ps -a --format '{{.Names}}' | grep -qx "$container_name"; then
+        log_info "Restarting $container_name to reload updated configuration..."
+        docker restart "$container_name" >/dev/null
+        wait_for_service "" "$container_name" "true"
+    fi
+}
+
 run_solana_coprocessor_instance() {
     local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor-solana.local"
     local compose_file="$SCRIPT_DIR/../docker-compose/coprocessor-solana-docker-compose.yml"
@@ -874,6 +970,32 @@ run_solana_coprocessor_instance() {
     wait_for_service "$compose_file" "coprocessor-zkproof-worker" "true"
     wait_for_service "$compose_file" "coprocessor-sns-worker" "true"
     wait_for_service "$compose_file" "coprocessor-transaction-sender" "true"
+}
+
+run_mixed_solana_host_node() {
+    local env_file="$SCRIPT_DIR/../env/staging/.env.host-node-solana.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/host-node-solana-mixed-docker-compose.yml"
+
+    log_info "Starting Dockerized Solana host node (mixed host mode)"
+    run_docker_compose_with_file_env "$env_file" "$compose_file" up -d
+    wait_for_service "$compose_file" "host-node-solana" "true"
+}
+
+run_mixed_solana_host_listener() {
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor-solana.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/coprocessor-solana-host-listener-docker-compose.yml"
+
+    seed_solana_host_chain_metadata
+    restart_container_if_present "coprocessor-zkproof-worker"
+
+    log_info "Starting Solana host listener (mixed host mode)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up --build -d "coprocessor-host-listener-solana"
+    else
+        run_docker_compose_with_file_env "$env_file" "$compose_file" up -d "coprocessor-host-listener-solana"
+    fi
+
+    wait_for_service "$compose_file" "coprocessor-host-listener-solana" "true"
 }
 
 # Function to start an entire docker-compose file and wait for specified services
@@ -1102,6 +1224,8 @@ log_info "Deploying FHEVM Stack..."
 log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
 if [[ "$SOLANA_MODE" == true ]]; then
     log_info "Host mode: Solana"
+elif [[ "$MIXED_MODE" == true ]]; then
+    log_info "Host mode: Mixed (EVM + Solana)"
 else
     log_info "Host mode: EVM"
 fi
@@ -1119,6 +1243,10 @@ log_info "FHEVM Coprocessor Services:"
 log_info "  coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
 log_info "  coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}${BUILD_TAG}"
 if [[ "$SOLANA_MODE" == true ]]; then
+    log_info "  coprocessor/solana-host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+elif [[ "$MIXED_MODE" == true ]]; then
+    log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+    log_info "  coprocessor/poller:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
     log_info "  coprocessor/solana-host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
 else
     log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
@@ -1192,6 +1320,14 @@ if ! should_skip_step "host-node"; then
         log_info "Bootstrapping Solana host programs against Dockerized host-node..."
         "${SOLANA_LOCALNET_SCRIPT}" bootstrap
         configure_solana_stack_files
+    elif [[ "$MIXED_MODE" == true ]]; then
+        ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+        log_info "Building Solana host programs for Dockerized mixed host-node..."
+        "${SHELL:-/bin/zsh}" -lic "cd '$REPO_ROOT/solana-host-contracts' && make build-sbf >/dev/null"
+        run_mixed_solana_host_node
+        log_info "Bootstrapping Solana host programs against Dockerized host-node-solana..."
+        SOLANA_DOCKER_HOST_NODE_CONTAINER=host-node-solana "${SOLANA_LOCALNET_SCRIPT}" bootstrap
+        configure_mixed_host_stack_files
     else
         ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
     fi
@@ -1199,6 +1335,8 @@ else
     log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
     if [[ "$SOLANA_MODE" == true ]]; then
         configure_solana_stack_files
+    elif [[ "$MIXED_MODE" == true ]]; then
+        configure_mixed_host_stack_files
     fi
 fi
 
@@ -1213,6 +1351,17 @@ fi
 if ! should_skip_step "coprocessor"; then
     if [[ "$SOLANA_MODE" == true ]]; then
         run_solana_coprocessor_instance
+    elif [[ "$MIXED_MODE" == true ]]; then
+        ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
+            "coprocessor-and-kms-db:running" \
+            "coprocessor-db-migration:complete" \
+            "coprocessor-host-listener:running" \
+            "coprocessor-gw-listener:running" \
+            "coprocessor-tfhe-worker:running" \
+            "coprocessor-zkproof-worker:running" \
+            "coprocessor-sns-worker:running" \
+            "coprocessor-transaction-sender:running"
+        run_mixed_solana_host_listener
     else
         ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
             "coprocessor-and-kms-db:running" \
@@ -1298,6 +1447,8 @@ fi
 
 if [[ "$SOLANA_MODE" == true ]]; then
     write_stack_mode_file "solana"
+elif [[ "$MIXED_MODE" == true ]]; then
+    write_stack_mode_file "mixed"
 else
     write_stack_mode_file "evm"
 fi

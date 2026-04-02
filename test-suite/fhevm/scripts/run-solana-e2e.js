@@ -44,6 +44,10 @@ const solanaHostNodeComposePath = path.join(
   repoRoot,
   'test-suite/fhevm/docker-compose/host-node-solana-docker-compose.yml',
 );
+const mixedSolanaHostNodeComposePath = path.join(
+  repoRoot,
+  'test-suite/fhevm/docker-compose/host-node-solana-mixed-docker-compose.yml',
+);
 const solanaHostNodeEnvPath = path.join(
   repoRoot,
   'test-suite/fhevm/env/staging/.env.host-node-solana.local',
@@ -115,8 +119,21 @@ const REQUIRED_SOLANA_STACK_CONTAINERS = [
   'coprocessor-sns-worker',
   'coprocessor-transaction-sender',
 ];
+const REQUIRED_MIXED_SOLANA_STACK_CONTAINERS = [
+  'host-node-solana',
+  'gateway-node',
+  'coprocessor-and-kms-db',
+  'coprocessor-host-listener-solana',
+  'coprocessor-gw-listener',
+  'coprocessor-tfhe-worker',
+  'coprocessor-zkproof-worker',
+  'coprocessor-sns-worker',
+  'coprocessor-transaction-sender',
+];
 const HOST_LISTENER_CONTAINER_PATTERN = /^coprocessor\d*-host-listener(?:-poller)?$/;
 const EVM_HOST_NODE_CONTAINER = 'host-node';
+const MIXED_SOLANA_HOST_NODE_CONTAINER = 'host-node-solana';
+const MIXED_SOLANA_HOST_LISTENER_CONTAINER = 'coprocessor-host-listener-solana';
 
 const verbose = process.argv.includes('--verbose');
 const testType = process.argv
@@ -134,6 +151,7 @@ let solanaListenerLogs = '';
 let stoppedHostListenerContainers = [];
 let stoppedHostNode = false;
 let deployedSolanaStackMode = false;
+let deployedStackModeValue = 'evm';
 
 process.on('SIGINT', () => {
   cleanup();
@@ -163,8 +181,10 @@ async function main() {
     : {};
   const localnetEnv = buildSolanaBootstrapEnv(solanaEnv, testSuiteEnv);
   const deployedStackMode = readStackMode();
-  const deployedSolanaStack = deployedStackMode === 'solana';
+  const deployedSolanaStack =
+    deployedStackMode === 'solana' || deployedStackMode === 'mixed';
   deployedSolanaStackMode = deployedSolanaStack;
+  deployedStackModeValue = deployedStackMode;
   await ensureDockerDbReady();
   if (deployedSolanaStack) {
     await ensureDeployedSolanaStack();
@@ -2331,7 +2351,8 @@ function normalizeStackHttpUrl(url) {
     parsed.hostname === '0.0.0.0' ||
     parsed.hostname === 'minio' ||
     parsed.hostname === 'gateway-node' ||
-    parsed.hostname === 'host-node'
+    parsed.hostname === 'host-node' ||
+    parsed.hostname === 'host-node-solana'
   ) {
     parsed.hostname = '127.0.0.1';
   }
@@ -2379,10 +2400,12 @@ function encodeSingleByte(value) {
 }
 
 function buildSolanaBootstrapEnv(solanaEnv, testSuiteEnv) {
+  const solanaHostChainId =
+    testSuiteEnv.CHAIN_ID_HOST_SOLANA || testSuiteEnv.CHAIN_ID_HOST;
   return {
     ...solanaEnv,
-    ...(testSuiteEnv.CHAIN_ID_HOST
-      ? { SOLANA_HOST_CHAIN_ID: testSuiteEnv.CHAIN_ID_HOST }
+    ...(solanaHostChainId
+      ? { SOLANA_HOST_CHAIN_ID: solanaHostChainId }
       : {}),
     ...(testSuiteEnv.CHAIN_ID_GATEWAY
       ? { CHAIN_ID_GATEWAY: testSuiteEnv.CHAIN_ID_GATEWAY }
@@ -2392,6 +2415,12 @@ function buildSolanaBootstrapEnv(solanaEnv, testSuiteEnv) {
       : {}),
     ...(testSuiteEnv.DECRYPTION_ADDRESS
       ? { DECRYPTION_ADDRESS: testSuiteEnv.DECRYPTION_ADDRESS }
+      : {}),
+    ...(testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER
+      ? {
+          SOLANA_DOCKER_HOST_NODE_CONTAINER:
+            testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER,
+        }
       : {}),
   };
 }
@@ -2414,7 +2443,7 @@ async function ensureLocalnet(solanaEnv) {
 
   if (deployedSolanaStackMode) {
     throw new Error(
-      `Solana stack mode is active but ${SOLANA_RPC_URL} is not healthy; inspect the Dockerized host-node with 'docker logs host-node'`,
+      `Solana stack mode is active but ${SOLANA_RPC_URL} is not healthy; inspect the Dockerized ${deployedSolanaHostNodeContainer()} with 'docker logs ${deployedSolanaHostNodeContainer()}'`,
     );
   }
 
@@ -2458,9 +2487,15 @@ async function ensureDeployedSolanaBootstrap(solanaEnv) {
     return;
   }
 
+  const bootstrapEnv = { ...process.env, ...solanaEnv };
+  if (deployedStackModeValue === 'mixed') {
+    bootstrapEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER =
+      MIXED_SOLANA_HOST_NODE_CONTAINER;
+  }
+
   runCommand(solanaLocalnetScriptPath, ['bootstrap'], {
     cwd: repoRoot,
-    env: { ...process.env, ...solanaEnv },
+    env: bootstrapEnv,
     capture: !verbose,
   });
 
@@ -2502,6 +2537,13 @@ async function deployedSolanaBootstrapReady() {
 }
 
 async function resetDeployedSolanaHostNode(solanaEnv) {
+  const hostNodeComposePath =
+    deployedStackModeValue === 'mixed'
+      ? mixedSolanaHostNodeComposePath
+      : solanaHostNodeComposePath;
+  const hostNodeService =
+    deployedStackModeValue === 'mixed' ? 'host-node-solana' : 'host-node';
+
   runCommandAllowFailure(
     'docker',
     [
@@ -2511,10 +2553,10 @@ async function resetDeployedSolanaHostNode(solanaEnv) {
       '--env-file',
       solanaHostNodeEnvPath,
       '-f',
-      solanaHostNodeComposePath,
+      hostNodeComposePath,
       'rm',
       '-sf',
-      'host-node',
+      hostNodeService,
     ],
     {
       cwd: repoRoot,
@@ -2532,11 +2574,11 @@ async function resetDeployedSolanaHostNode(solanaEnv) {
       '--env-file',
       solanaHostNodeEnvPath,
       '-f',
-      solanaHostNodeComposePath,
+      hostNodeComposePath,
       'up',
       '-d',
       '--force-recreate',
-      'host-node',
+      hostNodeService,
     ],
     {
       cwd: repoRoot,
@@ -2554,7 +2596,7 @@ async function resetDeployedSolanaHostNode(solanaEnv) {
   }
 
   throw new Error(
-    `timed out waiting for Dockerized Solana host-node to become healthy on ${SOLANA_RPC_URL}`,
+    `timed out waiting for Dockerized Solana ${hostNodeService} to become healthy on ${SOLANA_RPC_URL}`,
   );
 }
 
@@ -2569,16 +2611,16 @@ async function ensureFullCoprocessorStack() {
 }
 
 async function ensureDeployedSolanaStack() {
-  for (const container of REQUIRED_SOLANA_STACK_CONTAINERS) {
+  for (const container of deployedSolanaRequiredContainers()) {
     if (!dockerContainerRunning(container)) {
       throw new Error(
-        `required Solana stack container ${container} is not running; deploy the Solana stack first with ./test-suite/fhevm/fhevm-cli deploy --local --solana`,
+        `required Solana stack container ${container} is not running; deploy the Solana stack first with ${deployedSolanaDeployCommandHint()}`,
       );
     }
   }
   if (!(await solanaRpcHealthy())) {
     throw new Error(
-      `Solana RPC ${SOLANA_RPC_URL} is not healthy; deploy the Solana stack first with ./test-suite/fhevm/fhevm-cli deploy --local --solana`,
+      `Solana RPC ${SOLANA_RPC_URL} is not healthy; deploy the Solana stack first with ${deployedSolanaDeployCommandHint()}`,
     );
   }
 }
@@ -2751,12 +2793,13 @@ async function solanaListenerHealthy() {
 
 function ensureSolanaListenerAlive() {
   if (deployedSolanaStackMode) {
-    if (dockerContainerRunning('coprocessor-host-listener')) {
+    const listenerContainer = deployedSolanaHostListenerContainer();
+    if (dockerContainerRunning(listenerContainer)) {
       return;
     }
     const logs = runCommandAllowFailure(
       'docker',
-      ['logs', '--tail', '120', 'coprocessor-host-listener'],
+      ['logs', '--tail', '120', listenerContainer],
       {
         cwd: repoRoot,
         capture: true,
@@ -2766,7 +2809,7 @@ function ensureSolanaListenerAlive() {
     const logOutput =
       logs.status === 0 ? logs.stdout.trim() || logs.stderr.trim() : '';
     throw new Error(
-      `deployed solana host listener is not running${logOutput ? `\n${logOutput}` : ''}`,
+      `deployed solana host listener ${listenerContainer} is not running${logOutput ? `\n${logOutput}` : ''}`,
     );
   }
   if (solanaListenerChild && solanaListenerChild.exitCode === null) {
@@ -3565,6 +3608,30 @@ function readStackMode() {
   }
   const parsed = parseEnvFile(stackModePath);
   return parsed.HOST_MODE ?? 'evm';
+}
+
+function deployedSolanaRequiredContainers() {
+  return deployedStackModeValue === 'mixed'
+    ? REQUIRED_MIXED_SOLANA_STACK_CONTAINERS
+    : REQUIRED_SOLANA_STACK_CONTAINERS;
+}
+
+function deployedSolanaDeployCommandHint() {
+  return deployedStackModeValue === 'mixed'
+    ? './test-suite/fhevm/fhevm-cli deploy --local --multi-chain'
+    : './test-suite/fhevm/fhevm-cli deploy --local --solana';
+}
+
+function deployedSolanaHostNodeContainer() {
+  return deployedStackModeValue === 'mixed'
+    ? MIXED_SOLANA_HOST_NODE_CONTAINER
+    : 'host-node';
+}
+
+function deployedSolanaHostListenerContainer() {
+  return deployedStackModeValue === 'mixed'
+    ? MIXED_SOLANA_HOST_LISTENER_CONTAINER
+    : 'coprocessor-host-listener';
 }
 
 function runZsh(command, options = {}) {

@@ -76,7 +76,7 @@ function usage {
 	echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
 	echo
 	echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--solana] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
+	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--solana|--multi-chain] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
 	echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|coprocessor-db-state-revert|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|solana-input-proof|solana-user-decryption|solana-public-decrypt-http-ebool|solana-public-decrypt-http-mixed|solana-confidential-token|debug)"
@@ -98,6 +98,7 @@ function usage {
 	echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --local --solana${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli deploy --local --multi-chain${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli deploy --coprocessors 2 --coprocessor-threshold 2${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli smoke multi-2-2${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli smoke multi-3-5${RESET}"
@@ -214,6 +215,10 @@ deploy)
 			;;
 		--solana)
 			DEPLOY_ARGS+=("--solana")
+			shift
+			;;
+		--multi-chain)
+			DEPLOY_ARGS+=("--multi-chain")
 			shift
 			;;
 		--coprocessors)

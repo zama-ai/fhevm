@@ -1,0 +1,27 @@
+services:
+  coprocessor-host-listener-solana:
+    container_name: coprocessor-host-listener-solana
+    image: ghcr.io/zama-ai/fhevm/coprocessor/solana-host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: solana-host-listener
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - solana_host_listener_poller
+      - --database-url=${DATABASE_URL}
+      - --rpc-url=${SOLANA_HOST_LISTENER_RPC_URL}
+      - --program-id=${SOLANA_HOST_LISTENER_PROGRAM_ID}
+      - --host-chain-id=${SOLANA_HOST_LISTENER_HOST_CHAIN_ID}
+      - --batch-size-slots=512
+      - --poll-interval-ms=500
+      - --retry-interval-ms=1000
+      - --health-port=8080
+      - --commitment=${SOLANA_HOST_LISTENER_COMMITMENT}
