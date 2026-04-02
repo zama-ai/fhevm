@@ -285,6 +285,7 @@ export const STANDARD_TEST_PROFILES = [
   "public-decrypt-http-mixed",
   "negative-acl",
   "random-subset",
+  "multi-chain-isolation",
   "hcu-block-cap",
   "ciphertext-drift",
 ] as const;

@@ -104,7 +104,7 @@ jobs:
       - id: create-e2e-tests-input
         run: |
           set -euo pipefail
-          short_tag="$(git rev-parse --short "$NEW_COMMIT_HASH")"
+          short_tag="$(git rev-parse --short=7 "$NEW_COMMIT_HASH")"
           needs_file="$RUNNER_TEMP/docker-build-results.json"
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
 
@@ -158,7 +158,7 @@ jobs:
                 if [ -z "$base_commit" ]; then
                   failures+=("$job.$base_commit_key=missing")
                 else
-                  echo "$output_key=$(git rev-parse --short "$base_commit")" >> "$GITHUB_OUTPUT"
+                  echo "$output_key=$(git rev-parse --short=7 "$base_commit")" >> "$GITHUB_OUTPUT"
                 fi
                 ;;
               *)

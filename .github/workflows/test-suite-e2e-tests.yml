@@ -262,11 +262,6 @@ jobs:
           ./fhevm-cli test erc20
           docker start coprocessor-host-listener
 
-      - name: Multi-chain isolation test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test multi-chain-isolation
-
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()

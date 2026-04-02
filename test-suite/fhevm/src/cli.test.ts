@@ -1,7 +1,7 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
+import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
 import {
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
@@ -117,6 +117,10 @@ describe("cli", () => {
     expect(result.stdout).toContain("standard");
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - standard, 2+ coprocessors");
+  });
+
+  test("standard suite includes multi-chain isolation coverage", () => {
+    expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
   });
 
   test("lists bundled scenarios", async () => {

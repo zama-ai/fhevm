@@ -655,6 +655,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
+  const multiChainIsolationSkipReason = () =>
+    state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
+
   const runProfile = async (name: string) => {
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
@@ -767,6 +770,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("standard", started, async () => {
       for (const profile of STANDARD_TEST_PROFILES) {
+        if (profile === "multi-chain-isolation") {
+          const skipReason = multiChainIsolationSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
+            continue;
+          }
+        }
         if (profile === "ciphertext-drift") {
           const skipReason = ciphertextDriftSkipReason();
           if (skipReason) {
