@@ -2,6 +2,7 @@ import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
+import { validateBundleCompatibility } from "./compat/compat";
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
@@ -12,7 +13,12 @@ import {
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
-import { previewBundle, resolveBundle, targetUsesCache } from "./resolve/bundle-store";
+import {
+  assertSupportedRepoOverrideFloors,
+  previewBundle,
+  resolveBundle,
+  targetUsesCache,
+} from "./resolve/bundle-store";
 import { withTempStateDir } from "./test-state";
 
 describe("resolve", () => {
@@ -111,22 +117,32 @@ describe("resolve", () => {
     });
   });
 
-  test("rejects incompatible env-overridden bundles during preview", async () => {
-    await expect(
-      previewBundle(
+  test("rejects incompatible env-overridden bundles during preview", () => {
+    const issues = validateBundleCompatibility({
+      versions: applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
+        RELAYER_VERSION: "v0.9.0",
+        TEST_SUITE_VERSION: "v0.11.0",
+      }),
+    });
+    expect(issues.map((issue) => issue.message).join("\n")).toContain("Relayer only serves /v1 API");
+  });
+
+  test("rejects unsupported sha-like repo overrides", () => {
+    expect(() =>
+      assertSupportedRepoOverrideFloors(
+        applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
+          GATEWAY_VERSION: "deadbee",
+        }),
         {
-          target: "latest-supported",
-          requestedTarget: undefined,
-          sha: undefined,
-          lockFile: undefined,
-          reset: false,
+          GATEWAY_VERSION: "deadbee",
         },
-        {
-          RELAYER_VERSION: "v0.9.0",
-          TEST_SUITE_VERSION: "v0.11.0",
-        },
+        [
+          "abcdef0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          SHA_RUNTIME_COMPAT_MIN_SHA,
+          SIMPLE_ACL_MIN_SHA,
+        ],
       ),
-    ).rejects.toThrow("Relayer only serves /v1 API");
+    ).toThrow("sha target deadbee is unsupported");
   });
 
 });
