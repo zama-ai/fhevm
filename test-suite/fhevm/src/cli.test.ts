@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, TEST_SUITE_CONTAINER } from "./layout";
 import {
   buildTestContainerArgs,
+  dbRevertTargetBlock,
   keyBootstrapLogArgs,
   validateNamedProfileGrep,
   waitForKeyBootstrap,
@@ -209,6 +210,11 @@ describe("cli", () => {
       TEST_SUITE_CONTAINER,
       "./run-tests.sh",
     ]);
+  });
+
+  test("db-state-revert targets the block before the seed range", () => {
+    expect(dbRevertTargetBlock(370)).toBe(369);
+    expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");
   });
 
   test("resume rejects any explicit target override", () => {

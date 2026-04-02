@@ -385,6 +385,15 @@ const postgresRuntime = () => ({
   postgresHost: process.env.POSTGRES_HOST,
 });
 
+/** Chooses the revert anchor just before the seed-generated block range. */
+export const dbRevertTargetBlock = (seedStartBlock: number) => {
+  const revertTo = seedStartBlock - 1;
+  if (revertTo <= 0) {
+    throw new PreflightError(`db-state-revert requires a positive seed boundary; got first seed block ${seedStartBlock}`);
+  }
+  return revertTo;
+};
+
 type DbRevertSnapshot = {
   computationsDone: number;
   computationsTotal: number;
@@ -507,6 +516,9 @@ const runDbStateRevert = async (
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
+    const maxBlockBeforeSeed = Number(
+      await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
+    );
     await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert seed");
 
     let before;
@@ -521,13 +533,14 @@ const runDbStateRevert = async (
         throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
       }
 
-      const maxBlock = Number(
-        await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
+      const seedStartBlock = Number(
+        await scalarQuery(
+          postgres.postgresDb,
+          `SELECT COALESCE(MIN(block_number), 0) FROM transactions WHERE chain_id = ${chainId} AND block_number > ${maxBlockBeforeSeed}`,
+          postgres,
+        ),
       );
-      const revertTo = Math.floor(maxBlock / 2);
-      if (revertTo <= 0) {
-        throw new PreflightError(`db-state-revert requires a positive midpoint block; got max block ${maxBlock}`);
-      }
+      const revertTo = dbRevertTargetBlock(seedStartBlock);
 
       const network = (
         await run([
