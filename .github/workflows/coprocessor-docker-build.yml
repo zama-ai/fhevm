@@ -166,11 +166,7 @@ jobs:
       filters: |
         tfhe-worker:
           - .github/workflows/coprocessor-docker-build.yml
-          - coprocessor/fhevm-engine/Dockerfile.workspace
-          - coprocessor/fhevm-engine/tfhe-worker/Cargo.toml
-          - coprocessor/fhevm-engine/tfhe-worker/Dockerfile
-          - coprocessor/fhevm-engine/tfhe-worker/build.rs
-          - coprocessor/fhevm-engine/tfhe-worker/src/**
+          - coprocessor/fhevm-engine/tfhe-worker/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-tx-sender:
