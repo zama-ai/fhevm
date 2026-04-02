@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import { validateBundleCompatibility } from "./compat/compat";
-import { shouldRetryGitHubCliError } from "./resolve/github";
+import { shouldRetryGitHubCliError, shouldStopPackageTagScan } from "./resolve/github";
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
@@ -175,6 +175,30 @@ describe("resolve", () => {
       ),
     ).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 404")).toBe(false);
+  });
+
+  test("stops package tag scans when the requested tag is found", () => {
+    expect(
+      shouldStopPackageTagScan(
+        new Set(["target22"]),
+        new Array(100).fill({ metadata: { container: { tags: ["target22"] } } }),
+        "target22",
+      ),
+    ).toBe(true);
+    expect(
+      shouldStopPackageTagScan(
+        new Set(["other111"]),
+        new Array(100).fill({ metadata: { container: { tags: ["other111"] } } }),
+        "target22",
+      ),
+    ).toBe(false);
+    expect(
+      shouldStopPackageTagScan(
+        new Set(["other111"]),
+        [{ metadata: { container: { tags: ["other111"] } } }],
+        "target22",
+      ),
+    ).toBe(true);
   });
 
 });

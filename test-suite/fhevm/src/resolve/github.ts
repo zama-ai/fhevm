@@ -10,6 +10,7 @@ const GH_OWNER = "zama-ai";
 const GH_API_TIMEOUT_MS = 20_000;
 const GH_API_RETRIES = 5;
 const GH_API_RETRY_DELAY_MS = 1_000;
+const GH_PACKAGE_VERSION_LIMIT = 5_000;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
 const explainGitHubCliError = (message: string): string => {
@@ -83,6 +84,19 @@ const ghPages = async <T>(apiPath: string, limit = 1000): Promise<T[]> => {
   return items.slice(0, limit);
 };
 
+type PackageVersion = {
+  metadata?: { container?: { tags?: string[] } };
+};
+
+const packageVersionTags = (versions: PackageVersion[]) =>
+  versions.flatMap((item) => item.metadata?.container?.tags ?? []).filter(Boolean);
+
+export const shouldStopPackageTagScan = (
+  tags: Set<string>,
+  payload: PackageVersion[],
+  targetTag?: string,
+) => (targetTag && tags.has(targetTag)) || payload.length < 100;
+
 /** Returns recent main-branch commit SHAs for fhevm. */
 export const mainCommits = async (limit = 200) => {
   const commits = await ghPages<{ sha: string }>(`repos/${FHEVM_REPO}/commits?sha=main`, limit);
@@ -90,13 +104,25 @@ export const mainCommits = async (limit = 200) => {
 };
 
 /** Returns the published tag set for one GHCR package. */
-export const packageTags = async (pkg: string) => {
-  const versions = await ghPages<{
-    metadata?: { container?: { tags?: string[] } };
-  }>(`/orgs/${GH_OWNER}/packages/container/${pkg}/versions`, 1000);
-  return new Set(
-    versions.flatMap((item) => item.metadata?.container?.tags ?? []).filter(Boolean),
-  );
+export const packageTags = async (pkg: string, targetTag?: string) => {
+  const tags = new Set<string>();
+  let page = 1;
+  while (tags.size < GH_PACKAGE_VERSION_LIMIT) {
+    const payload = await runGhApi<PackageVersion[]>(
+      `/orgs/${GH_OWNER}/packages/container/${pkg}/versions?per_page=100&page=${page}`,
+    );
+    if (!Array.isArray(payload) || payload.length === 0) {
+      break;
+    }
+    for (const tag of packageVersionTags(payload)) {
+      tags.add(tag);
+    }
+    if (shouldStopPackageTagScan(tags, payload, targetTag)) {
+      break;
+    }
+    page += 1;
+  }
+  return tags;
 };
 
 /** Fetches and decodes a GitOps file from the main branch. */

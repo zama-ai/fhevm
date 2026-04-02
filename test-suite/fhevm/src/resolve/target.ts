@@ -314,10 +314,10 @@ const bundleFromFiles = async (
 };
 
 /** Fetches the available tag sets for all repo-owned packages. */
-const repoPackageTags = async () =>
+const repoPackageTags = async (targetTag?: string) =>
   Object.fromEntries(
     await Promise.all(
-      Object.entries(REPO_PACKAGES).map(async ([key, pkg]) => [key, await packageTags(pkg)] as const),
+      Object.entries(REPO_PACKAGES).map(async ([key, pkg]) => [key, await packageTags(pkg, targetTag)] as const),
     ),
   ) as Record<string, Set<string>>;
 
@@ -352,7 +352,7 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
+    const [packageTagsMap, commits] = await Promise.all([repoPackageTags(tag), mainCommits(5000)]);
     const missing = missingRepoPackages(packageTagsMap, tag);
     if (missing.length) {
       throw new GitHubApiError(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
