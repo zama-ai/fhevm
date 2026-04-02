@@ -286,6 +286,25 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
   ...tail,
 ];
 
+/** Builds the run-tests.sh argv for the current CLI options. */
+const runTestsArgs = (
+  options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile"> & { grep: string },
+) => [
+  "./run-tests.sh",
+  options.verbose ? "-v" : "",
+  options.parallel ? "--parallel" : "",
+  options.noHardhatCompile ? "--no-hardhat-compile" : "",
+  "-n",
+  options.network,
+  "-g",
+  options.grep,
+].filter(Boolean);
+
+/** Builds a shell-safe run-tests.sh command string. */
+const runTestsCommand = (
+  options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile"> & { grep: string },
+) => runTestsArgs(options).map(shellEscape).join(" ");
+
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
   if (ZERO_TESTS_RE.test(output)) {
@@ -294,8 +313,15 @@ const assertMatchedTests = (output: string, label: string) => {
 };
 
 /** Runs a narrow e2e grep inside the test-suite container. */
-const runNamedE2e = async (network: string, grep: string, label: string) => {
-  const result = await runWithHeartbeat(buildTestContainerArgs(["./run-tests.sh", "-n", network, "-g", grep]), label);
+const runNamedE2e = async (
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  grep: string,
+  label: string,
+) => {
+  const result = await runWithHeartbeat(
+    buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep })),
+    label,
+  );
   assertMatchedTests(result.stdout + result.stderr, label);
 };
 
@@ -542,7 +568,7 @@ const runDbStateRevert = async (
     );
     const baseline = await dbRevertSnapshot(chainId, postgres);
     console.log(`[revert] baseline ${formatDbRevertSnapshot(baseline)}`);
-    await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert seed");
+    await runNamedE2e(options, testsToRun, "test coprocessor-db-state-revert seed");
 
     let before;
     let stopped = false;
@@ -612,7 +638,7 @@ const runDbStateRevert = async (
       pollIntervalSeconds,
     });
 
-    await runNamedE2e(options.network, testsToRun, "test coprocessor-db-state-revert verify");
+    await runNamedE2e(options, testsToRun, "test coprocessor-db-state-revert verify");
   });
 };
 
@@ -687,7 +713,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         });
         const result = await runWithHeartbeat(
-          buildTestContainerArgs(["./run-tests.sh", "-n", options.network, "-g", grepPattern], ["-e", "GATEWAY_RPC_URL="]),
+          buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
+            ["-e", "GATEWAY_RPC_URL="],
+          ),
           "test ciphertext-drift",
         );
         assertMatchedTests(result.stdout + result.stderr, "test ciphertext-drift");
@@ -724,17 +753,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         : filter;
       console.log(`[test] ${name} (${options.network})`);
       const started = Date.now();
-      const command = [
-        "./run-tests.sh",
-        options.verbose ? "-v" : "",
-        shouldParallel ? "--parallel" : "",
-        "-n",
-        shellEscape(options.network),
-        "-g",
-        shellEscape(grep),
-      ]
-        .filter(Boolean)
-        .join(" ");
+      const command = runTestsCommand({ ...options, parallel: shouldParallel, grep });
       return runLogged(name, started, async () => {
         if (KEY_BOOTSTRAP_PROFILES.has(name)) {
           await waitForKeyBootstrap(state);
@@ -831,17 +850,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   if (options.grep) {
     console.log(`[test] custom (${options.network})`);
     const started = Date.now();
-    const command = [
-      "./run-tests.sh",
-      options.verbose ? "-v" : "",
-      options.parallel ? "--parallel" : "",
-      "-n",
-      shellEscape(options.network),
-      "-g",
-      shellEscape(options.grep),
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const command = runTestsCommand({ ...options, grep: options.grep });
     await runLogged("custom", started, async () => {
       const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom");
       assertMatchedTests(result.stdout + result.stderr, "test custom");

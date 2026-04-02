@@ -264,6 +264,7 @@ const root = defineCommand({
         grep: { type: "string", description: "Custom grep pattern passed through to the e2e runner." },
         network: { type: "string", description: "Hardhat network passed to the test suite.", default: "staging" },
         verbose: { type: "boolean", description: "Enable verbose output from the test command." },
+        "no-hardhat-compile": { type: "boolean", description: "Skip the Hardhat compilation step inside the test runner." },
         parallel: { type: "boolean", description: "Run supported test suites in parallel." },
       },
       async run({ args }) {
@@ -276,6 +277,7 @@ const root = defineCommand({
           grep: asString(args.grep),
           network: asString(args.network) ?? "staging",
           verbose: asBool(args.verbose),
+          noHardhatCompile: asBool(args["no-hardhat-compile"]),
           parallel: args.parallel === undefined ? undefined : asBool(args.parallel),
         });
       },

@@ -8,6 +8,7 @@ import {
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
+  kmsCoreConfigPath,
   relayerConfigPath,
   versionsEnvPath,
   envPath,
@@ -39,6 +40,7 @@ export const runtimeArtifactPaths = (state: State) => {
   return [
     versionsEnvPath,
     relayerConfigPath,
+    kmsCoreConfigPath,
     ...COMPONENTS.map(envPath),
     ...[...generatedComposeComponents(stackSpecForState(state))].map(composePath),
     ...Array.from({ length: Math.max(0, topology.count - 1) }, (_, index) => envPath(`coprocessor.${index + 1}`)),

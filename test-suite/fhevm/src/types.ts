@@ -175,5 +175,6 @@ export type TestOptions = {
   grep?: string;
   network: string;
   verbose: boolean;
+  noHardhatCompile: boolean;
   parallel?: boolean;
 };

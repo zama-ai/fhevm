@@ -8,7 +8,7 @@ import {
   shouldShowResumeHint,
 } from "./flow/up-flow";
 import { assertContractTaskStackRunning } from "./flow/contracts";
-import { envPath, hostChainAddressesPath } from "./layout";
+import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
 import type { State } from "./types";
 
 const completeState = (): State => ({
@@ -243,6 +243,10 @@ describe("runtime helpers", () => {
     const paths = runtimeArtifactPaths(state);
     expect(paths).toContain(envPath("host-node-chain-b"));
     expect(paths).toContain(envPath("host-sc-chain-b"));
+  });
+
+  test("runtime artifacts include the generated kms-core config", () => {
+    expect(runtimeArtifactPaths(completeState())).toContain(kmsCoreConfigPath);
   });
 
   test("runtime artifacts use the first explicit chain key for default host addresses", () => {
