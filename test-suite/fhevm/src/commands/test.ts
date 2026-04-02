@@ -455,6 +455,7 @@ const assertRevertDeletedData = (baseline: DbRevertSnapshot, seeded: DbRevertSna
     throw new PreflightError("db-state-revert seed did not create any revert-sensitive data");
   }
   const unchanged = [
+    expected.includes("computationsDone") && after.computationsDone >= seeded.computationsDone ? "completed computations" : "",
     expected.includes("computationsTotal") && after.computationsTotal >= seeded.computationsTotal ? "computations" : "",
     expected.includes("allowedHandles") && after.allowedHandles >= seeded.allowedHandles ? "allowed_handles" : "",
     expected.includes("pbsComputations") && after.pbsComputations >= seeded.pbsComputations ? "pbs_computations" : "",
