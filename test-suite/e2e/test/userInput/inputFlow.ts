@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { encryptAndLog, publicDecryptAndLog, userDecryptSingleHandle } from '../utils';
 
 describe('Input Flow', function () {
   before(async function () {
@@ -28,12 +28,7 @@ describe('Input Flow', function () {
   it('test user input uint64 (non-trivial)', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
-    const encryptedAmount = await inputAlice.encrypt();
-    encryptedAmount.handles.forEach((handle: any, index: any) => {
-      // Assuming handle is a Uint8Array or Buffer
-      console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
-    });
-    console.log('InputProof: 0x' + Buffer.from(encryptedAmount.inputProof).toString('hex'));
+    const encryptedAmount = await encryptAndLog(inputAlice, 'inputFlow.nonTrivial.input', this.contractAddress);
     const tx = await this.contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
     const receipt = await tx.wait();
     expect(receipt.status).to.equal(1);
@@ -42,12 +37,7 @@ describe('Input Flow', function () {
   it('test add 42 to uint64 input and decrypt', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(7n);
-    const encryptedInput = await input.encrypt();
-    encryptedInput.handles.forEach((handle: any, index: any) => {
-      // Assuming handle is a Uint8Array or Buffer
-      console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
-    });
-    console.log('InputProof: 0x' + Buffer.from(encryptedInput.inputProof).toString('hex'));
+    const encryptedInput = await encryptAndLog(input, 'inputFlow.add42.input', this.contractAddress);
     const tx = await this.contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof);
     const receipt = await tx.wait();
     expect(receipt.status).to.equal(1);
@@ -63,11 +53,12 @@ describe('Input Flow', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'inputFlow.add42.alice',
     );
     expect(decryptedValue).to.equal(49n);
 
     // Public decrypt the result - should be 49.
-    const res = await this.instances.alice.publicDecrypt([handle]);
+    const res = await publicDecryptAndLog(this.instances.alice, [handle], 'inputFlow.add42.publicDecrypt', this.contractAddress);
     const expectedRes = {
       [handle]: 49n,
     };
