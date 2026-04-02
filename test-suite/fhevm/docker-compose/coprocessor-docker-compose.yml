@@ -19,12 +19,6 @@ services:
   coprocessor-db-migration:
     container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: db-migration
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     environment:
@@ -38,12 +32,6 @@ services:
   coprocessor-host-listener:
     container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: host-listener
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -61,12 +49,6 @@ services:
   coprocessor-host-listener-poller:
     container_name: coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: host-listener
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -83,12 +65,6 @@ services:
   coprocessor-gw-listener:
     container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: gw-listener
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -110,14 +86,6 @@ services:
   coprocessor-tfhe-worker:
     container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: tfhe-worker
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -137,12 +105,6 @@ services:
   coprocessor-zkproof-worker:
     container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: zkproof-worker
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -160,12 +122,6 @@ services:
   coprocessor-sns-worker:
     container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: sns-worker
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:
@@ -195,12 +151,6 @@ services:
   coprocessor-transaction-sender:
     container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: transaction-sender
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
       - ../../../.fhevm/runtime/env/coprocessor.env
     command:

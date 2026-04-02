@@ -2,13 +2,6 @@ services:
   gateway-sc-deploy:
     container_name: gateway-sc-deploy
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SC_DEPLOY:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SC_DEPLOY:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     command:
@@ -19,13 +12,6 @@ services:
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SC_ADD_NETWORK:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SC_ADD_NETWORK:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     command:
@@ -41,13 +27,6 @@ services:
   gateway-sc-add-pausers:
     container_name: gateway-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SC_ADD_PAUSERS:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SC_ADD_PAUSERS:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     command:
@@ -63,13 +42,6 @@ services:
   gateway-sc-trigger-keygen:
     container_name: gateway-sc-trigger-keygen
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SC_TRIGGER_KEYGEN:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SC_TRIGGER_KEYGEN:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     # Using test parameters (--params-type 1) is currently not possible at it can make the random
@@ -88,13 +60,6 @@ services:
   gateway-sc-trigger-crsgen:
     container_name: gateway-sc-trigger-crsgen
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SC_TRIGGER_CRSGEN:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SC_TRIGGER_CRSGEN:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-sc.env
     # Using test parameters (--params-type 1) is currently not possible for keygen (see above), and

@@ -2,13 +2,6 @@ services:
   gateway-deploy-mocked-zama-oft:
     container_name: gateway-deploy-mocked-zama-oft
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_DEPLOY_MOCKED_ZAMA_OFT:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_DEPLOY_MOCKED_ZAMA_OFT:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-mocked-payment.env
     command:
@@ -18,13 +11,6 @@ services:
   gateway-set-relayer-mocked-payment:
     container_name: gateway-set-relayer-mocked-payment
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
-    build:
-      context: ../../../gateway-contracts
-      dockerfile: Dockerfile
-      cache_from:
-        - ${FHEVM_CACHE_FROM_GATEWAY_SET_RELAYER_MOCKED_PAYMENT:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_GATEWAY_SET_RELAYER_MOCKED_PAYMENT:-type=gha,mode=max}
     env_file:
       - ../../../.fhevm/runtime/env/gateway-mocked-payment.env
     command:

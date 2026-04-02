@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import YAML from "yaml";
 
 import { composePath, envPath, TEMPLATE_COMPOSE_DIR } from "./layout";
-import { generateComposeOverrides } from "./generate/compose";
+import { generateComposeOverrides, loadMergedComposeDoc } from "./generate/compose";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
@@ -98,6 +98,25 @@ instances:
 };
 
 describe("render-compose", () => {
+  test("keeps pinned base services image-only until a local override is requested", async () => {
+    await withTempStateDir(async () => {
+      const coprocessor = await loadMergedComposeDoc("coprocessor");
+      const connector = await loadMergedComposeDoc("kms-connector");
+      const hostSc = await loadMergedComposeDoc("host-sc");
+      const gatewaySc = await loadMergedComposeDoc("gateway-sc");
+      const gatewayMockedPayment = await loadMergedComposeDoc("gateway-mocked-payment");
+      const relayer = await loadMergedComposeDoc("relayer");
+      const testSuite = await loadMergedComposeDoc("test-suite");
+      expect(coprocessor.services["coprocessor-host-listener"]?.build).toBeUndefined();
+      expect(connector.services["kms-connector-gw-listener"]?.build).toBeUndefined();
+      expect(hostSc.services["host-sc-deploy"]?.build).toBeUndefined();
+      expect(gatewaySc.services["gateway-sc-deploy"]?.build).toBeUndefined();
+      expect(gatewayMockedPayment.services["gateway-deploy-mocked-zama-oft"]?.build).toBeUndefined();
+      expect(relayer.services.relayer?.build).toBeUndefined();
+      expect(testSuite.services["test-suite-e2e-debug"]?.build).toBeUndefined();
+    });
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

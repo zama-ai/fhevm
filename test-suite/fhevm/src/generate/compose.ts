@@ -72,16 +72,52 @@ const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolea
 /** Resolves relative compose paths against the template compose directory. */
 const resolveComposePath = (value: string) =>
   value.startsWith(".") ? path.resolve(TEMPLATE_COMPOSE_DIR, value) : value;
-const RELAYER_BUILD_SPECS: Record<string, { context: string; dockerfile: string }> = {
-  "relayer-db-migration": {
-    context: resolveComposePath("../../.."),
-    dockerfile: resolveComposePath("relayer/docker/relayer-migrate/Dockerfile"),
+const buildSpec = (context: string, dockerfile: string, extra: Record<string, unknown> = {}) => ({
+  context: resolveComposePath(context),
+  dockerfile: resolveComposePath(dockerfile),
+  ...extra,
+});
+const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
+  coprocessor: {
+    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "db-migration" }),
+    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
+    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
+    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "gw-listener" }),
+    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "tfhe-worker" }),
+    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "zkproof-worker" }),
+    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "sns-worker" }),
+    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "transaction-sender" }),
+  },
+  "kms-connector": {
+    "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", { args: { RUST_IMAGE_VERSION: "1.91.0" } }),
+    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "gw-listener", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
+    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "kms-worker", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
+    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "tx-sender", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
   },
   relayer: {
-    context: resolveComposePath("../../.."),
-    dockerfile: resolveComposePath("relayer/docker/relayer/Dockerfile"),
+    "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
+    relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
+  },
+  "gateway-mocked-payment": {
+    "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-set-relayer-mocked-payment": buildSpec("../../../gateway-contracts", "Dockerfile"),
+  },
+  "gateway-sc": {
+    "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
+  },
+  "host-sc": {
+    "host-sc-deploy": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-add-pausers": buildSpec("../../..", "host-contracts/Dockerfile"),
+  },
+  "test-suite": {
+    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile"),
   },
 };
+const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
 
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {
@@ -277,11 +313,13 @@ const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
 /** Applies scenario image sourcing rules to one coprocessor service clone. */
 const applyCoprocessorSource = (
   service: Record<string, unknown>,
+  serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
   locallyBuilt: boolean,
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
+    service.build = localBuildSpecFor("coprocessor", serviceName);
     return;
   }
   if (instance.source.mode === "registry") {
@@ -323,7 +361,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : compat.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, name, instance, locallyBuilt);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -352,8 +390,9 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    if (component === "relayer") {
-      next.build = RELAYER_BUILD_SPECS[name];
+    const build = localBuildSpecFor(component, name);
+    if (build) {
+      next.build = build;
     }
     services[name] = next;
   }
@@ -399,6 +438,9 @@ const buildExtraHostScOverride = async (
     cloneService.container_name = cloneName;
     cloneService.env_file = [envPath(scPrefix)];
     applyBuildPolicy(cloneService, localHostContracts);
+    if (localHostContracts) {
+      cloneService.build = localBuildSpecFor("host-sc", name);
+    }
     if (cloneService.depends_on && typeof cloneService.depends_on === "object") {
       cloneService.depends_on = Object.fromEntries(
         Object.entries(cloneService.depends_on as Record<string, unknown>).map(([dep, value]) => [
@@ -456,7 +498,7 @@ const buildExtraCoprocessorListenerOverride = async (
         locallyBuilt ? {} : compat.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
-      applyCoprocessorSource(adjusted, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
