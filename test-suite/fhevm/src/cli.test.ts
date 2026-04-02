@@ -282,11 +282,18 @@ describe("cli", () => {
     });
   });
 
-  test("operators profile accepts targeted grep narrowing", () => {
+  test("grep-backed named profiles accept targeted grep narrowing", () => {
     expect(() => validateNamedProfileGrep("operators", "manual")).not.toThrow();
-    expect(() => validateNamedProfileGrep("erc20", "manual")).toThrow(
-      "`fhevm-cli test erc20` does not accept `--grep`; use either a named profile or a custom grep",
+    expect(() => validateNamedProfileGrep("erc20", "manual")).not.toThrow();
+    expect(() => validateNamedProfileGrep("ciphertext-drift", "manual")).toThrow(
+      "`fhevm-cli test ciphertext-drift` does not accept `--grep`; use either a named profile or a custom grep",
     );
+  });
+
+  test("named profile grep narrowing preserves both the profile and custom filters", async () => {
+    const { narrowedProfileGrep } = await import("./commands/test");
+    expect(narrowedProfileGrep("erc20", "manual")).toBe("(?=.*(?:erc20))(?=.*(?:manual))");
+    expect(narrowedProfileGrep("erc20")).toBe("erc20");
   });
 
   test("rejects unknown flags on destructive commands", async () => {

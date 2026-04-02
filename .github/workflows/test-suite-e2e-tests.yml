@@ -140,7 +140,6 @@ jobs:
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
-      FHEVM_TRUST_REPO_VERSION_OVERRIDES: ${{ inputs.orchestrated && '1' || '' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code

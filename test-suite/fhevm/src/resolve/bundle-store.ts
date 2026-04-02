@@ -10,8 +10,6 @@ import { exists, readJson, writeJson } from "../utils/fs";
 import { GitHubApiError } from "../errors";
 import {
   PACKAGE_TO_REPOSITORY,
-  REPO_KEYS,
-  SHA_REF,
   applyVersionEnvOverrides,
   assertSupportedShaBundle,
   resolveTarget,
@@ -20,7 +18,6 @@ import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
-const TRUST_REPO_VERSION_OVERRIDES = "FHEVM_TRUST_REPO_VERSION_OVERRIDES";
 
 /** Computes the cache file path for a resolved bundle target. */
 const resolveCachePath = (target: string, sha?: string) => {
@@ -79,29 +76,6 @@ const validateRuntimeCompat = async (bundle: VersionBundle) => {
     }
   }
   return bundle;
-};
-
-const hasShaLikeRepoOverride = (env: Record<string, string | undefined>) =>
-  Object.entries(env).some(([key, value]) => REPO_KEYS.has(key) && SHA_REF.test(value ?? ""));
-
-export const assertSupportedRepoOverrideFloors = (
-  bundle: VersionBundle,
-  env: Record<string, string | undefined>,
-  commits: string[],
-) => {
-  if (env[TRUST_REPO_VERSION_OVERRIDES] === "1" || !hasShaLikeRepoOverride(env)) {
-    return bundle;
-  }
-  assertSupportedShaBundle({ ...bundle, target: "sha" }, commits);
-  return bundle;
-};
-
-const validateRepoOverrideFloors = async (bundle: VersionBundle, env: Record<string, string | undefined>) => {
-  try {
-    return assertSupportedRepoOverrideFloors(bundle, env, await mainCommits(5000));
-  } catch (error) {
-    throw new GitHubApiError(error instanceof Error ? error.message : String(error));
-  }
 };
 
 /** Writes a resolved bundle into the persistent lock directory. */
@@ -201,7 +175,6 @@ export const resolveBundle = async (
 ) => {
   const bundle = await cachedResolve(options);
   const resolved = applyVersionEnvOverrides(bundle, env);
-  await validateRepoOverrideFloors(resolved, env);
   await validateBundleCompat(resolved);
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
@@ -213,6 +186,5 @@ export const previewBundle = async (
   env: Record<string, string | undefined>,
 ) => {
   const bundle = applyVersionEnvOverrides(await cachedResolve(options), env);
-  await validateRepoOverrideFloors(bundle, env);
   return validateBundleCompat(bundle);
 };

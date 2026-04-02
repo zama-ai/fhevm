@@ -15,7 +15,6 @@ import {
   simpleAclFloor,
 } from "./resolve/target";
 import {
-  assertSupportedRepoOverrideFloors,
   previewBundle,
   resolveBundle,
   targetUsesCache,
@@ -128,41 +127,19 @@ describe("resolve", () => {
     expect(issues.map((issue) => issue.message).join("\n")).toContain("Relayer only serves /v1 API");
   });
 
-  test("rejects unsupported sha-like repo overrides", () => {
-    expect(() =>
-      assertSupportedRepoOverrideFloors(
-        applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
-          GATEWAY_VERSION: "deadbee",
-        }),
-        {
-          GATEWAY_VERSION: "deadbee",
-        },
-        [
-          "abcdef0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          SHA_RUNTIME_COMPAT_MIN_SHA,
-          SIMPLE_ACL_MIN_SHA,
-        ],
-      ),
-    ).toThrow("sha target deadbee is unsupported");
-  });
+  test("accepts explicit sha-like repo overrides without main-floor validation", () => {
+    expect(
+      applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
+        GATEWAY_VERSION: "deadbee",
+      }).env.GATEWAY_VERSION,
+    ).toBe("deadbee");
 
-  test("rejects unsupported full-sha repo overrides", () => {
     const sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-    expect(() =>
-      assertSupportedRepoOverrideFloors(
-        applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
-          GATEWAY_VERSION: sha,
-        }),
-        {
-          GATEWAY_VERSION: sha,
-        },
-        [
-          "abcdef0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          SHA_RUNTIME_COMPAT_MIN_SHA,
-          SIMPLE_ACL_MIN_SHA,
-        ],
-      ),
-    ).toThrow(`sha target ${sha} is unsupported`);
+    expect(
+      applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
+        GATEWAY_VERSION: sha,
+      }).env.GATEWAY_VERSION,
+    ).toBe(sha);
   });
 
   test("retries transient GitHub 5xx responses", () => {

@@ -3,11 +3,6 @@ name: relayer-docker-build
 on:
   workflow_call:
     inputs:
-      caller-base-commit:
-        description: "Explicit base commit for change detection when called from another workflow"
-        type: string
-        default: ""
-        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -76,7 +71,7 @@ jobs:
       pull-requests: 'read' # Required to read pull request information
     with:
       caller-workflow-event-name: ${{ github.event_name }}
-      caller-base-commit: ${{ inputs.caller-base-commit || github.event.before }}
+      caller-workflow-event-before: ${{ github.event.before }}
       docker-image: fhevm/relayer-migrate
       filters: |
         relayer-migrate:
@@ -91,7 +86,7 @@ jobs:
     permissions: *check_changes_permissions
     with:
       caller-workflow-event-name: ${{ github.event_name }}
-      caller-base-commit: ${{ inputs.caller-base-commit || github.event.before }}
+      caller-workflow-event-before: ${{ github.event.before }}
       docker-image: fhevm/relayer
       filters: |
         relayer:

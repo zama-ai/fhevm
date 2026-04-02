@@ -77,10 +77,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
 export const validateNamedProfileGrep = (testName: string | undefined, grep: string | undefined) => {
-  if (testName && grep && testName !== "operators") {
+  if (testName && grep && !(testName in TEST_GREP)) {
     throw new PreflightError(`\`fhevm-cli test ${testName}\` does not accept \`--grep\`; use either a named profile or a custom grep`);
   }
 };
+
+/** Combines a named profile grep with an extra narrowing grep expression. */
+export const narrowedProfileGrep = (filter: string, grep?: string) =>
+  grep ? `(?=.*(?:${filter}))(?=.*(?:${grep}))` : filter;
 
 /** Prints the supported named test profiles with short descriptions. */
 export const listTestProfiles = () => {
@@ -748,9 +752,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
     const runGrep = async () => {
       const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
-      const grep = name === "operators" && options.grep
-        ? `(?=.*(?:${filter}))(?=.*(?:${options.grep}))`
-        : filter;
+      const grep = narrowedProfileGrep(filter, options.grep);
       console.log(`[test] ${name} (${options.network})`);
       const started = Date.now();
       const command = runTestsCommand({ ...options, parallel: shouldParallel, grep });

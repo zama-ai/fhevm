@@ -10,8 +10,8 @@ on:
         description: "The github.name of the caller workflow"
         type: string
         required: true
-      caller-base-commit:
-        description: "The explicit base commit sha to diff against or reuse when builds are skipped"
+      caller-workflow-event-before:
+        description: "The github.event.before sha of the caller workflow"
         type: string
         required: true
       docker-image:
@@ -71,7 +71,7 @@ jobs:
         if: inputs.caller-workflow-event-name == 'push'
         shell: bash
         env:
-          BASE_BRANCH_COMMIT: ${{ inputs.caller-base-commit }}
+          BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
           IMAGE: ghcr.io/zama-ai/${{ inputs.docker-image }}
           MAX_COMMIT_COUNT: ${{ inputs.max-commit-count }}
         run: |
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         env:
           LATEST_IMAGE_COMMIT: ${{ steps.find-latest-image-commit.outputs.latest-image-commit }}
-          BASE_BRANCH_COMMIT: ${{ inputs.caller-base-commit }}
+          BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
         run: |
           echo "base-commit=${LATEST_IMAGE_COMMIT:-$BASE_BRANCH_COMMIT}" >> "$GITHUB_OUTPUT"
 
