@@ -25,9 +25,6 @@ on:
       build_result:
         description: "Result of the build job of this workflow"
         value: ${{ jobs.build.result }}
-      base_commit:
-        description: "Resolved published base commit for this image"
-        value: ${{ jobs.check-changes.outputs.base-commit }}
   release:
     types:
       - published
