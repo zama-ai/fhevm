@@ -114,8 +114,8 @@ The merge queue workflow (`test-suite-orchestrate-e2e-tests.yml`) builds repo-ow
 for touched components, injects the PR head short SHA only for successful build outputs, then calls
 `./fhevm-cli up`.
 For non-release PRs it first resolves a frozen base lock, so skipped components stay on the base bundle while rebuilt repo-owned services are overlaid from PR head tags.
-For `release/*` PRs it follows the older base/head per-service selection path and explicitly carries over the base branch `CORE_VERSION`.
-CI keeps the launch shape fixed at the `two-of-two-multi-chain` scenario. If a required build output failed, merge queue fails before dispatching e2e.
+For `release/*` PRs it follows the older base/head per-service selection path, explicitly carries over the base branch `CORE_VERSION`, and degrades the scenario to `two-of-two`.
+Non-release orchestrate keeps the `two-of-two-multi-chain` scenario. If a required build output failed, merge queue fails before dispatching e2e.
 
 ## Notes
 
@@ -138,6 +138,6 @@ CI keeps the launch shape fixed at the `two-of-two-multi-chain` scenario. If a r
 - Discovery is not terminal output only. It feeds env regeneration before dependent services start.
 - Resume is step-based via `state.json`; `down` stops containers, prunes `.fhevm/runtime`, keeps `.fhevm/state`, and `clean` removes both.
 - Tracked compose files are the default runtime truth. `.fhevm/runtime/compose` only contains generated overrides for coprocessor topology and active local-override components.
-- CI follows the same contract: direct PR e2e boots `latest-main --build` with the checked-in `two-of-two` scenario and runs `test standard`, while orchestrated e2e boots `two-of-two-multi-chain` with `build=false`, resolves either a non-release base lock or a release base/head matrix, overlays selected `*_VERSION` image refs, runs `test standard`, then runs `test multi-chain-isolation` as a dedicated final check.
+- CI follows the same contract: direct PR e2e boots `latest-main --build` with the checked-in `two-of-two` scenario and runs `test standard`, while orchestrated e2e keeps `build=false`, resolves either a non-release base lock or a release base/head matrix, boots `two-of-two-multi-chain` on non-release PRs and `two-of-two` on `release/*`, overlays selected `*_VERSION` image refs, runs `test standard`, then runs `test multi-chain-isolation` only when the chosen scenario is multichain.
 - `upgrade` is intentionally narrow: it only rebuilds and restarts active runtime override groups or local coprocessor scenario instances.
 - `up --dry-run` exercises the same target-aware resolve and preflight path without mutating runtime state.

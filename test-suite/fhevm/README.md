@@ -199,7 +199,7 @@ This is how CI works. The merge queue workflow:
 3. Falls back to the PR base short SHA for skipped repo-owned components
 4. Uses a downloaded base lock only for non-release orchestrate runs
 5. Pins `CORE_VERSION` from the release base branch when the PR targets `release/*`
-6. Runs `./fhevm-cli up --scenario two-of-two-multi-chain`
+6. Runs `./fhevm-cli up` with `two-of-two-multi-chain` for non-release orchestrate and `two-of-two` for `release/*`
 7. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
 Non-release orchestrate resolves a frozen base lock, then overlays merge-candidate SHA-tagged env vars for repo-owned components.
@@ -260,9 +260,9 @@ The matrix has three sections:
 | `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
-Merge-queue e2e always boots the fixed `two-of-two-multi-chain` scenario and explicitly keeps `build=false`.
-For non-release PRs it uses a frozen base lock plus selected repo-owned head-tag overrides.
-For `release/*` PRs it restores the old base/head per-service version selection and carries forward the base branch `CORE_VERSION`.
+Merge-queue e2e explicitly keeps `build=false`.
+For non-release PRs it boots `two-of-two-multi-chain`, uses a frozen base lock, and overlays selected repo-owned head-tag overrides.
+For `release/*` PRs it boots `two-of-two`, restores the old base/head per-service version selection, and carries forward the base branch `CORE_VERSION`.
 
 ### How to update
 
