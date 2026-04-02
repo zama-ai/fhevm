@@ -22,6 +22,7 @@ log_error() {
 # Global project vars
 PROJECT="fhevm"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 STACK_MODE_FILE="$SCRIPT_DIR/../env/staging/.stack-mode.local"
 SOLANA_LOCALNET_SCRIPT="$SCRIPT_DIR/manage-solana-localnet.sh"
 SOLANA_MODE=false
@@ -50,11 +51,15 @@ get_compose_for_step() {
     local step=$1
     if [[ "$SOLANA_MODE" == true ]]; then
         case "$step" in
+            host-node)
+                echo "host-node-solana"
+                return
+                ;;
             coprocessor)
                 echo "coprocessor-solana"
                 return
                 ;;
-            host-node|host-sc|kms-connector)
+            host-sc)
                 echo ""
                 return
                 ;;
@@ -226,6 +231,11 @@ if [[ "$SOLANA_MODE" == true && "$COPROCESSOR_COUNT" -ne 1 ]]; then
   exit 1
 fi
 
+if [[ "$SOLANA_MODE" == true && "$LOCAL_BUILD" == true && "$FORCE_BUILD" != true ]]; then
+  FORCE_BUILD=true
+  log_info "Solana local mode implies --build so the deployed stack matches local code changes."
+fi
+
 # Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
 
@@ -321,9 +331,19 @@ wait_for_service() {
         local exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
 
         # Some one-shot jobs may complete their work but keep a process alive.
-        # For host-sc-deploy, treat the deployment completion log as success and stop it.
-        if [[ "$expect_running" == "false" && "$service_name" == "host-sc-deploy" && "$status" == "running" ]]; then
-            if docker logs "$container_id" 2>&1 | log_contains "Contract deployment done!"; then
+        # Treat known completion markers as success and stop the container to unblock flow.
+        if [[ "$expect_running" == "false" && "$status" == "running" ]]; then
+            local completion_marker=""
+            case "$service_name" in
+                host-sc-deploy)
+                    completion_marker="Contract deployment done!"
+                    ;;
+                gateway-sc-deploy)
+                    completion_marker="Payment bridging contract addresses set successfully!"
+                    ;;
+            esac
+
+            if [[ -n "$completion_marker" ]] && docker logs "$container_id" 2>&1 | log_contains "$completion_marker"; then
                 log_warn "$service_name reported completion marker while still running; stopping container to unblock flow"
                 docker stop "$container_id" >/dev/null 2>&1 || true
                 status=$(docker inspect --format "{{.State.Status}}" "$container_id")
@@ -379,6 +399,96 @@ wait_for_relayer_ready() {
         fi
     done
 }
+
+wait_for_coprocessor_key_material_ready() {
+    local max_retries=24
+    local retry_interval=5
+    local db_container="coprocessor-and-kms-db"
+
+    log_info "Waiting for coprocessor proof materials (keys + CRS) to be available..."
+
+    for ((i=1; i<=max_retries; i++)); do
+        local counts
+        counts=$(docker exec "$db_container" psql -U postgres -d coprocessor -t -A -F, \
+            -c "SELECT (SELECT COUNT(*) FROM keys), (SELECT COUNT(*) FROM crs);" 2>/dev/null || true)
+
+        local keys_count
+        local crs_count
+        keys_count=$(echo "$counts" | awk -F, 'NF {gsub(/ /,"",$1); print $1; exit}')
+        crs_count=$(echo "$counts" | awk -F, 'NF {gsub(/ /,"",$2); print $2; exit}')
+
+        if [[ -n "$keys_count" && -n "$crs_count" && "$keys_count" -gt 0 && "$crs_count" -gt 0 ]]; then
+            log_info "Coprocessor proof materials are ready (keys=$keys_count, crs=$crs_count)"
+            return 0
+        fi
+
+        if [ "$i" -lt "$max_retries" ]; then
+            log_warn "Proof materials not ready yet (keys=${keys_count:-0}, crs=${crs_count:-0}), waiting ${retry_interval}s... (${i}/${max_retries})"
+            sleep "$retry_interval"
+        else
+            log_error "Coprocessor proof materials were not populated in time"
+            docker logs --tail 200 coprocessor-zkproof-worker || true
+            return 1
+        fi
+    done
+}
+
+run_docker_compose_with_file_env() {
+    local env_file=$1
+    local compose_file=$2
+    shift 2
+
+    (
+        set -a
+        # shellcheck disable=SC1090
+        source "$env_file"
+        set +a
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" "$@"
+    )
+}
+
+format_env_assignment_value() {
+    local value=$1
+
+    if [[ "$value" =~ ^\".*\"$ || "$value" =~ ^\'.*\'$ ]]; then
+        printf '%s' "$value"
+        return
+    fi
+
+    if [[ "$value" =~ [[:space:]] ]]; then
+        value=${value//\\/\\\\}
+        value=${value//\"/\\\"}
+        printf '"%s"' "$value"
+        return
+    fi
+
+    printf '%s' "$value"
+}
+
+normalize_env_file_values() {
+    local file=$1
+    local tmp_file
+    tmp_file="$(mktemp "${file}.XXXXXX")"
+
+    awk '
+        /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            key = substr($0, 1, index($0, "=") - 1)
+            value = substr($0, index($0, "=") + 1)
+
+            if (value !~ /^".*"$/ && value !~ /^'\''.*'\''$/ && value ~ /[[:space:]]/) {
+                gsub(/\\/, "\\\\", value)
+                gsub(/"/, "\\\"", value)
+                print key "=\"" value "\""
+                next
+            }
+        }
+
+        { print }
+    ' "$file" > "$tmp_file"
+
+    mv "$tmp_file" "$file"
+}
+
 # Function to prepare the local environment file for a component
 prepare_local_env_file() {
     local component=$1
@@ -399,6 +509,10 @@ prepare_local_env_file() {
         cp "$base_env_file" "$local_env_file"
     fi
 
+    # Some deploy paths source local env files with shell semantics, so values that contain
+    # whitespace must be quoted at generation time.
+    normalize_env_file_values "$local_env_file"
+
     if [[ "$component" == "coprocessor" ]]; then
         local otlp_endpoint="${preserved_otlp_endpoint:-http://jaeger:4317}"
         if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' "$local_env_file"; then
@@ -414,6 +528,10 @@ prepare_local_env_file() {
 prepare_local_config_relayer() {
     local base_config_file="$SCRIPT_DIR/../config/relayer/local.yaml"
     local local_config_file="$SCRIPT_DIR/../config/relayer/local.yaml.local"
+
+    if [[ "$SOLANA_MODE" == true ]]; then
+        base_config_file="$SCRIPT_DIR/../config/relayer/local.solana.yaml"
+    fi
 
     if [[ ! -f "$base_config_file" ]]; then
         echo -e "${RED}[ERROR]${NC} Base configuration file for relayer not found: $base_config_file" >&2
@@ -433,7 +551,7 @@ prepare_all_env_files() {
 
     local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
     if [[ "$SOLANA_MODE" == true ]]; then
-        components+=("coprocessor-solana")
+        components+=("coprocessor-solana" "host-node-solana")
     fi
 
     for component in "${components[@]}"; do
@@ -446,20 +564,135 @@ prepare_all_env_files() {
 get_env_value() {
     local file=$1
     local key=$2
-    awk -F= -v k="$key" '$1 == k {print substr($0, index($0, "=") + 1); exit}' "$file"
+    awk -F= -v k="$key" '
+        $1 == k {
+            value = substr($0, index($0, "=") + 1)
+            if (value ~ /^".*"$/ || value ~ /^'\''.*'\''$/) {
+                value = substr(value, 2, length(value) - 2)
+            }
+            print value
+            exit
+        }
+    ' "$file"
 }
 
 set_env_value() {
     local file=$1
     local key=$2
     local value=$3
-    local escaped_value
-    escaped_value=$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')
-    if grep -q "^${key}=" "$file"; then
-        sed -i.bak "s|^${key}=.*|${key}=${escaped_value}|" "$file"
-    else
-        printf '%s=%s\n' "$key" "$value" >> "$file"
+    local formatted_value
+    local tmp_file
+    tmp_file="$(mktemp "${file}.XXXXXX")"
+    formatted_value=$(format_env_assignment_value "$value")
+
+    awk -v k="$key" -v replacement="${key}=${formatted_value}" '
+        BEGIN {
+            updated = 0
+            skipping = 0
+        }
+
+        skipping {
+            if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+                skipping = 0
+            } else {
+                next
+            }
+        }
+
+        $0 ~ ("^" k "=") {
+            if (!updated) {
+                print replacement
+                updated = 1
+            }
+            skipping = 1
+            next
+        }
+
+        { print }
+
+        END {
+            if (!updated) {
+                print replacement
+            }
+        }
+    ' "$file" > "$tmp_file"
+
+    mv "$tmp_file" "$file"
+}
+
+load_solana_addresses_env() {
+    local addresses_file="$REPO_ROOT/solana-host-contracts/addresses/.env.host"
+    if [[ ! -f "$addresses_file" ]]; then
+        log_error "Missing Solana addresses file: $addresses_file"
+        exit 1
     fi
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$addresses_file"
+    set +a
+}
+
+configure_solana_stack_files() {
+    load_solana_addresses_env
+
+    local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor-solana.local"
+    local kms_env="$SCRIPT_DIR/../env/staging/.env.kms-connector.local"
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    local test_env="$SCRIPT_DIR/../env/staging/.env.test-suite.local"
+    local relayer_config="$SCRIPT_DIR/../config/relayer/local.yaml.local"
+    local relayer_template="$SCRIPT_DIR/../config/relayer/local.solana.yaml"
+
+    local rpc_port
+    rpc_port=$(printf '%s' "${SOLANA_HOST_RPC_URL:-http://127.0.0.1:18999}" | sed -E 's#.*:([0-9]+)/?$#\1#')
+    local ws_port
+    ws_port=$(printf '%s' "${SOLANA_HOST_WS_URL:-ws://127.0.0.1:19000}" | sed -E 's#.*:([0-9]+)/?$#\1#')
+    local docker_rpc_url="http://host-node:${rpc_port}"
+    local docker_ws_url="ws://host-node:${ws_port}"
+    local host_rpc_url="${SOLANA_HOST_RPC_URL:-http://127.0.0.1:${rpc_port}}"
+    local solana_acl_identity
+    solana_acl_identity="${SOLANA_HOST_ACL_PROGRAM_ID:-$SOLANA_HOST_PROGRAM_ID}"
+    if [[ -z "$solana_acl_identity" ]]; then
+        log_error "Missing SOLANA_HOST_ACL_PROGRAM_ID / SOLANA_HOST_PROGRAM_ID in Solana addresses env"
+        exit 1
+    fi
+    local solana_gateway_acl_address
+    solana_gateway_acl_address=$(get_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_0")
+    if [[ -z "$solana_gateway_acl_address" ]]; then
+        solana_gateway_acl_address="0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+    fi
+
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_RPC_URL" "$docker_rpc_url"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_PROGRAM_ID" "$SOLANA_HOST_PROGRAM_ID"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_HOST_CHAIN_ID" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$coprocessor_env" "SOLANA_HOST_LISTENER_COMMITMENT" "confirmed"
+    set_env_value "$coprocessor_env" "RPC_HTTP_URL" "$docker_rpc_url"
+    set_env_value "$coprocessor_env" "RPC_WS_URL" "$docker_ws_url"
+    set_env_value "$coprocessor_env" "CHAIN_ID" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$coprocessor_env" "ACL_CONTRACT_ADDRESS" "$solana_acl_identity"
+
+    set_env_value "$kms_env" "KMS_CONNECTOR_ETHEREUM_URL" "http://gateway-node:8546"
+    set_env_value "$kms_env" "KMS_CONNECTOR_ETHEREUM_CHAIN_ID" "$CHAIN_ID_GATEWAY"
+    set_env_value "$kms_env" "KMS_CONNECTOR_SKIP_ETHEREUM_CONTEXT_BOOTSTRAP" "false"
+    set_env_value "$kms_env" "KMS_CONNECTOR_HOST_CHAINS" "'[{\"url\":\"${docker_rpc_url}\",\"chain_id\":${SOLANA_HOST_CHAIN_ID},\"chain_kind\":\"solana\",\"acl_address\":\"${solana_acl_identity}\",\"state_pda\":\"${SOLANA_HOST_STATE_PDA}\"}]'"
+
+    cp "$relayer_template" "$relayer_config"
+    sed -i.bak \
+        -e "s#__SOLANA_HOST_RPC_URL__#${docker_rpc_url}#g" \
+        -e "s/__SOLANA_HOST_CHAIN_ID__/${SOLANA_HOST_CHAIN_ID}/g" \
+        -e "s/__SOLANA_HOST_ACL_ADDRESS__/${solana_acl_identity}/g" \
+        -e "s/__SOLANA_HOST_STATE_PDA__/${SOLANA_HOST_STATE_PDA}/g" \
+        "$relayer_config"
+
+    set_env_value "$gateway_env" "HOST_CHAIN_CHAIN_ID_0" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$gateway_env" "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0" "$solana_gateway_acl_address"
+    set_env_value "$gateway_env" "HOST_CHAIN_ACL_ADDRESS_0" "$solana_gateway_acl_address"
+    set_env_value "$gateway_env" "HOST_CHAIN_NAME_0" "Solana Localnet"
+    set_env_value "$gateway_env" "HOST_CHAIN_WEBSITE_0" "https://solana.local"
+
+    set_env_value "$test_env" "CHAIN_ID_HOST" "$SOLANA_HOST_CHAIN_ID"
+    set_env_value "$test_env" "RPC_URL" "$host_rpc_url"
+    set_env_value "$test_env" "ACL_CONTRACT_ADDRESS" "$solana_acl_identity"
 }
 
 # Build effective n/t topology config and per-instance coprocessor env files.
@@ -561,18 +794,18 @@ run_additional_coprocessor_instance() {
 
     log_info "Starting additional coprocessor instance #$instance_idx (db migration phase)"
     if [[ "$FORCE_BUILD" == true ]]; then
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d "$db_migration_service"
+        run_docker_compose_with_file_env "$env_file" "$temp_compose" up --build -d "$db_migration_service"
     else
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d "$db_migration_service"
+        run_docker_compose_with_file_env "$env_file" "$temp_compose" up -d "$db_migration_service"
     fi
 
     wait_for_service "$temp_compose" "$db_migration_service" "false"
 
     log_info "Starting additional coprocessor instance #$instance_idx (runtime phase)"
     if [[ "$FORCE_BUILD" == true ]]; then
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build --no-deps -d "${runtime_services[@]}"
+        run_docker_compose_with_file_env "$env_file" "$temp_compose" up --build --no-deps -d "${runtime_services[@]}"
     else
-        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --no-deps -d "${runtime_services[@]}"
+        run_docker_compose_with_file_env "$env_file" "$temp_compose" up --no-deps -d "${runtime_services[@]}"
     fi
 
     wait_for_service "$temp_compose" "coprocessor${instance_idx}-host-listener" "true"
@@ -608,7 +841,7 @@ run_compose() {
     log_info "Using environment file: $env_file"
 
     # Start all services
-    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up -d; then
+    if ! run_docker_compose_with_file_env "$env_file" "$compose_file" up -d; then
         log_error "Failed to start $service_desc"
         return 1
     fi
@@ -652,7 +885,7 @@ run_compose_with_build() {
     log_info "Using environment file: $env_file"
 
     # Start all services with --build
-    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up --build -d; then
+    if ! run_docker_compose_with_file_env "$env_file" "$compose_file" up --build -d; then
         log_error "Failed to build and start $service_desc"
         return 1
     fi
@@ -747,7 +980,7 @@ cleanup_from_step() {
             fi
             if [[ -f "$env_file" ]]; then
                 log_info "Stopping $component services..."
-                docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+                run_docker_compose_with_file_env "$env_file" "$compose_file" down -v --remove-orphans 2>/dev/null || true
             fi
         fi
     done
@@ -781,7 +1014,7 @@ cleanup_single_step() {
         fi
         if [[ -f "$env_file" ]]; then
             log_info "Stopping $compose services..."
-            docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+            run_docker_compose_with_file_env "$env_file" "$compose_file" down -v --remove-orphans 2>/dev/null || true
         fi
     fi
 
@@ -895,13 +1128,20 @@ fi
 # Step 5: host-node
 if ! should_skip_step "host-node"; then
     if [[ "$SOLANA_MODE" == true ]]; then
-        log_info "Starting Solana host node and deploying Solana host programs..."
-        "${SOLANA_LOCALNET_SCRIPT}" start
+        log_info "Building Solana host programs for Dockerized host-node..."
+        "${SHELL:-/bin/zsh}" -lic "cd '$REPO_ROOT/solana-host-contracts' && make build-sbf >/dev/null"
+        ${RUN_COMPOSE} "host-node-solana" "Solana host node service" "host-node:running"
+        log_info "Bootstrapping Solana host programs against Dockerized host-node..."
+        "${SOLANA_LOCALNET_SCRIPT}" bootstrap
+        configure_solana_stack_files
     else
         ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
     fi
 else
     log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
+    if [[ "$SOLANA_MODE" == true ]]; then
+        configure_solana_stack_files
+    fi
 fi
 
 # Step 6: gateway-node
@@ -963,16 +1203,12 @@ fi
 
 # Step 10: kms-connector
 if ! should_skip_step "kms-connector"; then
-    if [[ "$SOLANA_MODE" == true ]]; then
-        log_warn "Skipping kms-connector in Solana host mode; the current connector path still hard-depends on an EVM host chain and KMSVerifier/ACL contracts."
-    else
-        ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
-            "coprocessor-and-kms-db:running" \
-            "kms-connector-db-migration:complete" \
-            "kms-connector-gw-listener:running" \
-            "kms-connector-kms-worker:running" \
-            "kms-connector-tx-sender:running"
-    fi
+    ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
+        "coprocessor-and-kms-db:running" \
+        "kms-connector-db-migration:complete" \
+        "kms-connector-gw-listener:running" \
+        "kms-connector-kms-worker:running" \
+        "kms-connector-tx-sender:running"
 else
     log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
 fi
@@ -989,6 +1225,7 @@ if ! should_skip_step "gateway-sc"; then
         "gateway-sc-trigger-keygen:complete" \
         "gateway-sc-trigger-crsgen:complete" \
         "gateway-sc-add-pausers:complete"
+    wait_for_coprocessor_key_material_ready
 else
     log_info "Skipping step: gateway-sc (resuming from $RESUME_STEP)"
 fi

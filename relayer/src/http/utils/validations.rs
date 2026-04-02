@@ -102,6 +102,7 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
 /// Accepted formats:
 /// - `"0x00"`: Legacy format (version 0)
 /// - `"0x01" + 64 hex chars`: Versioned format (version 1: 1 byte version + 32 bytes payload)
+/// - `"0x02" + contextId(32B) + identityCount(1B) + identities(count * 32B)`: Versioned format
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
     match extra_data {
         "0x00" => Ok(()),
@@ -113,6 +114,23 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             })?;
             Ok(())
         }
+        s if s.starts_with("0x02") => {
+            let bytes = hex::decode(&s[2..]).map_err(|_| {
+                ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+            })?;
+            if bytes.len() < 34 {
+                return Err(ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+            }
+            let contract_count = bytes[33] as usize;
+            let expected_len = 34 + contract_count * 32;
+            if contract_count == 0 || bytes.len() != expected_len {
+                return Err(ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+            }
+            Ok(())
+        }
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
     }
@@ -120,13 +138,22 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
 
 /// Validates the extraData field for input proof requests.
 ///
-/// Only accepts `"0x00"` for now. Versioned extraData for input proofs will come in a future release.
+/// Accepted formats:
+/// - `"0x00"`: legacy format
+/// - `"0x01" + 128 hex chars`: version 1 native host identities
 pub fn validate_extra_data_field_input_proof(extra_data: &str) -> Result<(), ValidationError> {
-    if extra_data != "0x00" {
-        return Err(ValidationError::new("validation_error")
-            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+    match extra_data {
+        "0x00" => Ok(()),
+        s if s.len() == 132 && s.starts_with("0x01") => {
+            hex::decode(&s[2..]).map_err(|_| {
+                ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+            })?;
+            Ok(())
+        }
+        _ => Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
     }
-    Ok(())
 }
 
 pub fn validate_u32_string(value: &str) -> Result<(), ValidationError> {

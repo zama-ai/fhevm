@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_host_contracts_core::{
     find_session_pda as find_host_session_pda, find_state_pda as find_host_state_pda,
-    BinaryOperand, ContextUserInputs, FheType, Handle, HostInstruction,
-    InstructionResult as HostInstructionResult, OnchainInstruction as HostOnchainInstruction,
-    Pubkey as HostPubkey,
+    host_identity_from_evm_address, BinaryOperand, ContextUserInputs, EvmAddress, FheType, Handle,
+    HostInstruction, InstructionResult as HostInstructionResult,
+    OnchainInstruction as HostOnchainInstruction, Pubkey as HostPubkey,
 };
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -18,16 +18,23 @@ use solana_program::{
 };
 use solana_system_interface::{instruction as system_instruction, program as system_program};
 use solana_test_input_core::{
-    evm_address_from_solana_pubkey, find_state_pda, TestInputExecutionResult, TestInputInstruction,
-    TestInputState, TEST_INPUT_STATE_PDA_SEED,
+    evm_address_from_solana_pubkey, evm_host_identity_from_solana_pubkey, find_state_pda,
+    TestInputExecutionResult, TestInputInstruction, TestInputState, TEST_INPUT_STATE_PDA_SEED,
 };
 
 const STATE_ACCOUNT_DISCRIMINATOR: [u8; 8] = *b"TINPUT00";
 const STATE_ACCOUNT_LAYOUT_VERSION: u32 = 1;
-const SESSION_NONCE: u64 = 1;
 const MIXED_PUBLIC_ADDRESS: [u8; 20] = [
-    0xfc, 0x43, 0x82, 0xc0, 0x84, 0xfc, 0xa3, 0xf4, 0xfb, 0x07, 0xc3, 0xbc, 0xda, 0x90, 0x6c,
-    0x01, 0x79, 0x75, 0x95, 0xa8,
+    0xfc, 0x43, 0x82, 0xc0, 0x84, 0xfc, 0xa3, 0xf4, 0xfb, 0x07, 0xc3, 0xbc, 0xda, 0x90, 0x6c, 0x01,
+    0x79, 0x75, 0x95, 0xa8,
+];
+const USER_DECRYPT_ADDRESS: [u8; 20] = [
+    0x8b, 0xa1, 0xf1, 0x09, 0x55, 0x1b, 0xd4, 0x32, 0x80, 0x30, 0x12, 0x64, 0x5a, 0xc1, 0x36, 0xdd,
+    0xd6, 0x4d, 0xba, 0x72,
+];
+const USER_DECRYPT_UINT256: [u8; 32] = [
+    0xa4, 0x3c, 0x19, 0xc9, 0xc1, 0x9f, 0xe2, 0x13, 0x5e, 0x77, 0x13, 0x3e, 0x55, 0x17, 0x4f, 0xcb,
+    0x10, 0x05, 0x21, 0x11, 0x6f, 0xca, 0xd4, 0xe3, 0xa2, 0xe9, 0x77, 0xa6, 0x6c, 0x41, 0xff, 0x11,
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -94,27 +101,64 @@ pub fn process_instruction<'a>(
         .map_err(|_| ProgramError::from(TestInputProgramError::InvalidInstructionData))?;
 
     match instruction {
-        TestInputInstruction::InitializePda { owner, host_program } => {
-            initialize_pda(program_id, accounts, owner, host_program)
-        }
+        TestInputInstruction::InitializePda {
+            owner,
+            host_program,
+        } => initialize_pda(program_id, accounts, owner, host_program),
         TestInputInstruction::RequestUint64NonTrivial {
             input_handle,
             input_proof,
-        } => request_uint64_non_trivial(program_id, accounts, input_handle, input_proof),
+            user_evm_address,
+        } => request_uint64_non_trivial(
+            program_id,
+            accounts,
+            input_handle,
+            input_proof,
+            user_evm_address,
+        ),
         TestInputInstruction::Add42ToInput64 {
             input_handle,
             input_proof,
-        } => add_42_to_input_64(program_id, accounts, input_handle, input_proof),
+            user_evm_address,
+        } => add_42_to_input_64(
+            program_id,
+            accounts,
+            input_handle,
+            input_proof,
+            user_evm_address,
+        ),
+        TestInputInstruction::CreateUserDecryptFixture {
+            fixture_index,
+            user_evm_address,
+        } => create_user_decrypt_fixture(program_id, accounts, fixture_index, user_evm_address),
+        TestInputInstruction::CreateUserDecryptFixtures { user_evm_address } => {
+            create_user_decrypt_fixtures(program_id, accounts, user_evm_address)
+        }
+        TestInputInstruction::CreateUserDecryptFixturesChunk {
+            start_fixture_index,
+            fixture_count,
+            user_evm_address,
+        } => create_user_decrypt_fixtures_chunk(
+            program_id,
+            accounts,
+            start_fixture_index,
+            fixture_count,
+            user_evm_address,
+        ),
         TestInputInstruction::CreatePublicEbool => create_public_ebool(program_id, accounts),
         TestInputInstruction::CreatePublicMixed => create_public_mixed(program_id, accounts),
     }
 }
 
-pub fn required_state_account_len(owner: HostPubkey, host_program: HostPubkey) -> Result<usize, ProgramError> {
+pub fn required_state_account_len(
+    owner: HostPubkey,
+    host_program: HostPubkey,
+) -> Result<usize, ProgramError> {
     let state = TestInputState {
         owner,
         host_program,
         res_uint64: Some(Handle::from([0_u8; 32])),
+        next_session_nonce: u64::MAX,
     };
     borsh::to_vec(&StoredTestInputState::new(state))
         .map(|bytes| bytes.len())
@@ -173,6 +217,7 @@ fn initialize_pda<'a>(
             owner,
             host_program,
             res_uint64: None,
+            next_session_nonce: 1,
         }),
     )?;
     set_return_data(&[]);
@@ -184,17 +229,21 @@ fn request_uint64_non_trivial<'a>(
     accounts: &'a [AccountInfo<'a>],
     input_handle: Handle,
     input_proof: Vec<u8>,
+    user_evm_address: EvmAddress,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
 
     invoke_host_batch(
         &execution,
+        session_nonce,
         vec![
             HostInstruction::VerifyInput {
                 context: ContextUserInputs {
-                    user_address: evm_address_from_solana_pubkey(execution.authority.key),
+                    user_address: user_evm_address,
                     contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
                 },
                 input_handle,
@@ -203,6 +252,10 @@ fn request_uint64_non_trivial<'a>(
             HostInstruction::Allow {
                 handle: input_handle,
                 account: app_contract,
+            },
+            HostInstruction::Allow {
+                handle: input_handle,
+                account: app_contract_evm_identity,
             },
             HostInstruction::CleanTransientStorage,
         ],
@@ -218,17 +271,22 @@ fn add_42_to_input_64<'a>(
     accounts: &'a [AccountInfo<'a>],
     input_handle: Handle,
     input_proof: Vec<u8>,
+    user_evm_address: EvmAddress,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
     let user_account = HostPubkey::from(execution.authority.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
+    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
 
     invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::VerifyInput {
             context: ContextUserInputs {
-                user_address: evm_address_from_solana_pubkey(execution.authority.key),
+                user_address: user_evm_address,
                 contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
             },
             input_handle,
@@ -238,6 +296,7 @@ fn add_42_to_input_64<'a>(
 
     let trivial_42 = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::TrivialEncrypt {
             plaintext: scalar_word_from_u64(42),
             to_type: FheType::Uint64,
@@ -247,6 +306,7 @@ fn add_42_to_input_64<'a>(
 
     let result = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::BinaryOp {
             op: solana_host_contracts_core::Operator::FheAdd,
             lhs: input_handle,
@@ -256,17 +316,21 @@ fn add_42_to_input_64<'a>(
         }],
     )?)?;
 
+    persist_allow_pairs(
+        &execution,
+        session_nonce,
+        result,
+        &[
+            app_contract,
+            app_contract_evm_identity,
+            user_account,
+            user_account_evm_identity,
+        ],
+    )?;
     invoke_host_batch(
         &execution,
+        session_nonce,
         vec![
-            HostInstruction::Allow {
-                handle: result,
-                account: app_contract,
-            },
-            HostInstruction::Allow {
-                handle: result,
-                account: user_account,
-            },
             HostInstruction::AllowForDecryption {
                 handles: vec![result],
             },
@@ -284,9 +348,13 @@ fn create_public_ebool<'a>(
     accounts: &'a [AccountInfo<'a>],
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
     let handle = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::TrivialEncrypt {
             plaintext: scalar_word_from_u64(1),
             to_type: FheType::Bool,
@@ -294,13 +362,16 @@ fn create_public_ebool<'a>(
         }],
     )?)?;
 
+    persist_allow_pairs(
+        &execution,
+        session_nonce,
+        handle,
+        &[app_contract, app_contract_evm_identity],
+    )?;
     invoke_host_batch(
         &execution,
+        session_nonce,
         vec![
-            HostInstruction::Allow {
-                handle,
-                account: app_contract,
-            },
             HostInstruction::AllowForDecryption {
                 handles: vec![handle],
             },
@@ -308,6 +379,193 @@ fn create_public_ebool<'a>(
         ],
     )?;
 
+    execution.save_state(&state)?;
+    write_result_data(vec![handle])
+}
+
+fn create_user_decrypt_fixtures<'a>(
+    program_id: &SolanaPubkey,
+    accounts: &'a [AccountInfo<'a>],
+    user_evm_address: EvmAddress,
+) -> ProgramResult {
+    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
+    let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
+    let user_account = HostPubkey::from(execution.authority.key);
+    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
+
+    let trivial_encrypts = [
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(1),
+            to_type: FheType::Bool,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(42),
+            to_type: FheType::Uint8,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(16),
+            to_type: FheType::Uint16,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(32),
+            to_type: FheType::Uint32,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(18_446_744_073_709_551_600),
+            to_type: FheType::Uint64,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u128(145_275_933_516_363_203_950_142_179_850_024_740_765),
+            to_type: FheType::Uint128,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_evm_address(USER_DECRYPT_ADDRESS),
+            to_type: FheType::Uint160,
+            charge_hcu: false,
+        },
+        HostInstruction::TrivialEncrypt {
+            plaintext: USER_DECRYPT_UINT256,
+            to_type: FheType::Uint256,
+            charge_hcu: false,
+        },
+    ];
+
+    let mut handles = Vec::with_capacity(trivial_encrypts.len());
+    for instruction in trivial_encrypts {
+        handles.push(single_returned_handle(invoke_host_batch(
+            &execution,
+            session_nonce,
+            vec![instruction],
+        )?)?);
+    }
+
+    for handle in &handles {
+        persist_allow_pairs(
+            &execution,
+            session_nonce,
+            *handle,
+            &[
+                app_contract,
+                app_contract_evm_identity,
+                user_account,
+                user_account_evm_identity,
+            ],
+        )?;
+    }
+    invoke_host_batch(
+        &execution,
+        session_nonce,
+        vec![HostInstruction::CleanTransientStorage],
+    )?;
+
+    execution.save_state(&state)?;
+    write_result_data(handles)
+}
+
+fn create_user_decrypt_fixtures_chunk<'a>(
+    program_id: &SolanaPubkey,
+    accounts: &'a [AccountInfo<'a>],
+    start_fixture_index: u8,
+    fixture_count: u8,
+    user_evm_address: EvmAddress,
+) -> ProgramResult {
+    if fixture_count == 0 {
+        return write_result_data(Vec::new());
+    }
+
+    let end_fixture_index = start_fixture_index
+        .checked_add(fixture_count)
+        .ok_or(ProgramError::InvalidInstructionData)?;
+    if end_fixture_index > 8 {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+
+    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
+    let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
+    let user_account = HostPubkey::from(execution.authority.key);
+    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
+
+    let mut handles = Vec::with_capacity(fixture_count as usize);
+    for fixture_index in start_fixture_index..end_fixture_index {
+        handles.push(single_returned_handle(invoke_host_batch(
+            &execution,
+            session_nonce,
+            vec![user_decrypt_fixture_instruction(fixture_index)?],
+        )?)?);
+    }
+
+    for handle in &handles {
+        persist_allow_pairs(
+            &execution,
+            session_nonce,
+            *handle,
+            &[
+                app_contract,
+                app_contract_evm_identity,
+                user_account,
+                user_account_evm_identity,
+            ],
+        )?;
+    }
+    invoke_host_batch(
+        &execution,
+        session_nonce,
+        vec![HostInstruction::CleanTransientStorage],
+    )?;
+
+    execution.save_state(&state)?;
+    write_result_data(handles)
+}
+
+fn create_user_decrypt_fixture<'a>(
+    program_id: &SolanaPubkey,
+    accounts: &'a [AccountInfo<'a>],
+    fixture_index: u8,
+    user_evm_address: EvmAddress,
+) -> ProgramResult {
+    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
+    let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
+    let user_account = HostPubkey::from(execution.authority.key);
+    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
+    let handle = single_returned_handle(invoke_host_batch(
+        &execution,
+        session_nonce,
+        vec![user_decrypt_fixture_instruction(fixture_index)?],
+    )?)?;
+
+    persist_allow_pairs(
+        &execution,
+        session_nonce,
+        handle,
+        &[
+            app_contract,
+            app_contract_evm_identity,
+            user_account,
+            user_account_evm_identity,
+        ],
+    )?;
+    invoke_host_batch(
+        &execution,
+        session_nonce,
+        vec![HostInstruction::CleanTransientStorage],
+    )?;
+
+    execution.save_state(&state)?;
     write_result_data(vec![handle])
 }
 
@@ -316,9 +574,13 @@ fn create_public_mixed<'a>(
     accounts: &'a [AccountInfo<'a>],
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
+    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
     let bool_handle = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::TrivialEncrypt {
             plaintext: scalar_word_from_u64(1),
             to_type: FheType::Bool,
@@ -327,6 +589,7 @@ fn create_public_mixed<'a>(
     )?)?;
     let uint32_handle = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::TrivialEncrypt {
             plaintext: scalar_word_from_u64(242),
             to_type: FheType::Uint32,
@@ -335,6 +598,7 @@ fn create_public_mixed<'a>(
     )?)?;
     let address_handle = single_returned_handle(invoke_host_batch(
         &execution,
+        session_nonce,
         vec![HostInstruction::TrivialEncrypt {
             plaintext: scalar_word_from_evm_address(MIXED_PUBLIC_ADDRESS),
             to_type: FheType::Uint160,
@@ -342,21 +606,19 @@ fn create_public_mixed<'a>(
         }],
     )?)?;
 
+    persist_many_allow_pairs(
+        &execution,
+        session_nonce,
+        &[
+            (bool_handle, &[app_contract, app_contract_evm_identity]),
+            (uint32_handle, &[app_contract, app_contract_evm_identity]),
+            (address_handle, &[app_contract, app_contract_evm_identity]),
+        ],
+    )?;
     invoke_host_batch(
         &execution,
+        session_nonce,
         vec![
-            HostInstruction::Allow {
-                handle: bool_handle,
-                account: app_contract,
-            },
-            HostInstruction::Allow {
-                handle: uint32_handle,
-                account: app_contract,
-            },
-            HostInstruction::Allow {
-                handle: address_handle,
-                account: app_contract,
-            },
             HostInstruction::AllowForDecryption {
                 handles: vec![bool_handle, uint32_handle, address_handle],
             },
@@ -364,7 +626,55 @@ fn create_public_mixed<'a>(
         ],
     )?;
 
+    execution.save_state(&state)?;
     write_result_data(vec![bool_handle, uint32_handle, address_handle])
+}
+
+fn user_decrypt_fixture_instruction(fixture_index: u8) -> Result<HostInstruction, ProgramError> {
+    let instruction = match fixture_index {
+        0 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(1),
+            to_type: FheType::Bool,
+            charge_hcu: false,
+        },
+        1 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(42),
+            to_type: FheType::Uint8,
+            charge_hcu: false,
+        },
+        2 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(16),
+            to_type: FheType::Uint16,
+            charge_hcu: false,
+        },
+        3 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(32),
+            to_type: FheType::Uint32,
+            charge_hcu: false,
+        },
+        4 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(18_446_744_073_709_551_600),
+            to_type: FheType::Uint64,
+            charge_hcu: false,
+        },
+        5 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u128(145_275_933_516_363_203_950_142_179_850_024_740_765),
+            to_type: FheType::Uint128,
+            charge_hcu: false,
+        },
+        6 => HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_evm_address(USER_DECRYPT_ADDRESS),
+            to_type: FheType::Uint160,
+            charge_hcu: false,
+        },
+        7 => HostInstruction::TrivialEncrypt {
+            plaintext: USER_DECRYPT_UINT256,
+            to_type: FheType::Uint256,
+            charge_hcu: false,
+        },
+        _ => return Err(TestInputProgramError::InvalidInstructionData.into()),
+    };
+    Ok(instruction)
 }
 
 struct ExecutionAccounts<'a> {
@@ -433,10 +743,14 @@ fn parse_execution_accounts<'a>(
     })
 }
 
-fn invoke_host_batch(execution: &ExecutionAccounts<'_>, instructions: Vec<HostInstruction>) -> Result<Vec<HostInstructionResult>, ProgramError> {
+fn invoke_host_batch(
+    execution: &ExecutionAccounts<'_>,
+    session_nonce: u64,
+    instructions: Vec<HostInstruction>,
+) -> Result<Vec<HostInstructionResult>, ProgramError> {
     let host_ix = HostOnchainInstruction::ExecuteBatch {
         instructions,
-        session_nonce: SESSION_NONCE,
+        session_nonce,
         recent_blockhash: [0; 32],
     };
 
@@ -479,12 +793,67 @@ fn invoke_host_batch(execution: &ExecutionAccounts<'_>, instructions: Vec<HostIn
         .map_err(|_| ProgramError::from(TestInputProgramError::InvalidHostReturnData))
 }
 
+fn persist_allow_pairs(
+    execution: &ExecutionAccounts<'_>,
+    session_nonce: u64,
+    handle: Handle,
+    accounts: &[HostPubkey],
+) -> Result<(), ProgramError> {
+    let instructions = accounts
+        .iter()
+        .copied()
+        .map(|account| HostInstruction::Allow { handle, account })
+        .collect();
+    invoke_host_batch(execution, session_nonce, instructions)?;
+    Ok(())
+}
+
+fn persist_many_allow_pairs(
+    execution: &ExecutionAccounts<'_>,
+    session_nonce: u64,
+    entries: &[(Handle, &[HostPubkey])],
+) -> Result<(), ProgramError> {
+    let mut instructions = Vec::new();
+    for (handle, accounts) in entries {
+        instructions.extend(
+            accounts
+                .iter()
+                .copied()
+                .map(|account| HostInstruction::Allow {
+                    handle: *handle,
+                    account,
+                }),
+        );
+    }
+    invoke_host_batch(execution, session_nonce, instructions)?;
+    Ok(())
+}
+
+fn reserve_session_nonce(state: &mut TestInputState) -> u64 {
+    let session_nonce = state.next_session_nonce;
+    state.next_session_nonce = state.next_session_nonce.checked_add(1).unwrap_or(1);
+    session_nonce
+}
+
 fn single_returned_handle(results: Vec<HostInstructionResult>) -> Result<Handle, ProgramError> {
     let handle = results
         .into_iter()
         .find_map(|result| result.returned_handle)
         .ok_or_else(|| ProgramError::from(TestInputProgramError::InvalidHostReturnData))?;
     Ok(handle)
+}
+
+fn collect_returned_handles(
+    results: Vec<HostInstructionResult>,
+) -> Result<Vec<Handle>, ProgramError> {
+    let handles = results
+        .into_iter()
+        .filter_map(|result| result.returned_handle)
+        .collect::<Vec<_>>();
+    if handles.is_empty() {
+        return Err(TestInputProgramError::InvalidHostReturnData.into());
+    }
+    Ok(handles)
 }
 
 fn write_result_data(handles: Vec<Handle>) -> ProgramResult {
@@ -584,7 +953,8 @@ fn ensure_state_account_writable(account: &AccountInfo<'_>) -> ProgramResult {
 fn ensure_system_program_account<'a>(
     account: Option<&'a AccountInfo<'a>>,
 ) -> Result<&'a AccountInfo<'a>, ProgramError> {
-    let account = account.ok_or_else(|| ProgramError::from(TestInputProgramError::MissingSystemProgram))?;
+    let account =
+        account.ok_or_else(|| ProgramError::from(TestInputProgramError::MissingSystemProgram))?;
     if !system_program::check_id(account.key) {
         return Err(TestInputProgramError::MissingSystemProgram.into());
     }
@@ -592,7 +962,8 @@ fn ensure_system_program_account<'a>(
 }
 
 fn load_rent(account: Option<&AccountInfo<'_>>) -> Result<Rent, ProgramError> {
-    let account = account.ok_or_else(|| ProgramError::from(TestInputProgramError::MissingRentSysvar))?;
+    let account =
+        account.ok_or_else(|| ProgramError::from(TestInputProgramError::MissingRentSysvar))?;
     if account.key != &sysvar::rent::id() {
         return Err(TestInputProgramError::MissingRentSysvar.into());
     }
@@ -603,6 +974,12 @@ fn load_rent(account: Option<&AccountInfo<'_>>) -> Result<Rent, ProgramError> {
 fn scalar_word_from_u64(value: u64) -> [u8; 32] {
     let mut output = [0_u8; 32];
     output[24..].copy_from_slice(&value.to_be_bytes());
+    output
+}
+
+fn scalar_word_from_u128(value: u128) -> [u8; 32] {
+    let mut output = [0_u8; 32];
+    output[16..].copy_from_slice(&value.to_be_bytes());
     output
 }
 

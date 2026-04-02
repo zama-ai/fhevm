@@ -4,7 +4,6 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
     entrypoint::ProgramResult,
-    log::sol_log_data,
     msg,
     program::{invoke, invoke_signed, set_return_data},
     program_error::ProgramError,
@@ -15,6 +14,7 @@ use solana_program::{
 };
 use solana_slot_hashes::SlotHashes;
 use solana_system_interface::{instruction as system_instruction, program as system_program};
+use std::io::{Cursor, Write};
 
 use crate::events::HostEvent;
 use crate::instructions::HostProgramConfig;
@@ -30,6 +30,11 @@ const STATE_ACCOUNT_LAYOUT_VERSION: u32 = 1;
 const SESSION_ACCOUNT_DISCRIMINATOR: [u8; 8] = *b"FHESESS0";
 const SESSION_ACCOUNT_LAYOUT_VERSION: u32 = 1;
 const MAX_BATCH_INSTRUCTIONS: usize = 64;
+const BORSH_EMPTY_RESULT_VEC: [u8; 4] = 0u32.to_le_bytes();
+// Inner-instruction account reallocations on Solana are capped at 10 KiB, so
+// reserve room up front but keep the initial allocation below that limit.
+const STATE_ACCOUNT_RESERVE_BYTES: usize = 8 * 1024;
+const SESSION_ACCOUNT_RESERVE_BYTES: usize = 2 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 struct StoredHostProgramState {
@@ -67,9 +72,7 @@ impl StoredHostProgramState {
     }
 
     fn serialized_len(state: &HostProgramState) -> Result<usize, ProgramError> {
-        borsh::to_vec(&Self::new(state.clone()))
-            .map(|bytes| bytes.len())
-            .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))
+        serialized_len(&Self::new(state.clone()))
     }
 }
 
@@ -186,14 +189,12 @@ pub fn required_state_account_len(config: &HostProgramConfig) -> Result<usize, P
 }
 
 pub fn required_session_account_len() -> Result<usize, ProgramError> {
-    borsh::to_vec(&StoredHostProgramSession::new(
+    serialized_len(&StoredHostProgramSession::new(
         Pubkey::ZERO,
         [0; 32],
         0,
         HostProgramSession::default(),
     ))
-    .map(|bytes| bytes.len())
-    .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))
 }
 
 pub fn state_account_len_with_reserve(
@@ -399,9 +400,28 @@ fn execute_batch<'a, 'b>(
         system_program_account,
         rent_sysvar_account,
     )?;
-    let return_data = borsh::to_vec(&results)
-        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
-    set_return_data(&return_data);
+    // App programs only read returned handles / verification bits from the
+    // host return data. Re-serializing the full emitted event payloads here
+    // duplicates the same data we already logged and can exhaust Solana's
+    // tight heap budget on multi-instruction flows.
+    if results
+        .iter()
+        .all(|result| result.returned_handle.is_none() && result.verified.is_none())
+    {
+        set_return_data(&BORSH_EMPTY_RESULT_VEC);
+    } else {
+        let compact_results: Vec<crate::InstructionResult> = results
+            .into_iter()
+            .map(|result| crate::InstructionResult {
+                events: Vec::new(),
+                returned_handle: result.returned_handle,
+                verified: result.verified,
+            })
+            .collect();
+        let return_data = borsh::to_vec(&compact_results)
+            .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
+        set_return_data(&return_data);
+    }
     Ok(())
 }
 
@@ -409,7 +429,10 @@ fn emit_events(events: &[HostEvent]) -> ProgramResult {
     for event in events {
         let payload = borsh::to_vec(event)
             .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
-        sol_log_data(&[b"HOST_EVENT", &payload]);
+        // Emit a single canonical log line per host event. Duplicating the same
+        // payload with both `sol_log_data` and `msg!` makes long Solana
+        // transactions much more likely to hit log truncation, which can drop
+        // trailing allow/decryption events before the listener sees them.
         msg!("HOST_EVENT:{}", encode_hex(&payload));
     }
     Ok(())
@@ -452,13 +475,13 @@ fn save_state_account<'a>(
     system_program_account: Option<&AccountInfo<'a>>,
     rent_sysvar_account: Option<&AccountInfo<'a>>,
 ) -> ProgramResult {
-    let serialized = borsh::to_vec(state)
-        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
+    let serialized_len = serialized_len(state)?;
 
-    if serialized.len() > account.data_len() {
+    if serialized_len > account.data_len() {
+        msg!("phase: resizing state account");
         resize_state_account(
             account,
-            serialized.len(),
+            serialized_len.saturating_add(STATE_ACCOUNT_RESERVE_BYTES),
             payer,
             system_program_account,
             rent_sysvar_account,
@@ -467,7 +490,9 @@ fn save_state_account<'a>(
 
     let mut data = account.try_borrow_mut_data()?;
     data.fill(0);
-    data[..serialized.len()].copy_from_slice(&serialized);
+    state
+        .serialize(&mut Cursor::new(&mut data[..serialized_len]))
+        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
     Ok(())
 }
 
@@ -478,13 +503,13 @@ fn save_session_account<'a>(
     system_program_account: Option<&AccountInfo<'a>>,
     rent_sysvar_account: Option<&AccountInfo<'a>>,
 ) -> ProgramResult {
-    let serialized = borsh::to_vec(state)
-        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
+    let serialized_len = serialized_len(state)?;
 
-    if serialized.len() > account.data_len() {
+    if serialized_len > account.data_len() {
+        msg!("phase: resizing session account");
         resize_session_account(
             account,
-            serialized.len(),
+            serialized_len.saturating_add(SESSION_ACCOUNT_RESERVE_BYTES),
             payer,
             system_program_account,
             rent_sysvar_account,
@@ -493,8 +518,34 @@ fn save_session_account<'a>(
 
     let mut data = account.try_borrow_mut_data()?;
     data.fill(0);
-    data[..serialized.len()].copy_from_slice(&serialized);
+    state
+        .serialize(&mut Cursor::new(&mut data[..serialized_len]))
+        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
     Ok(())
+}
+
+#[derive(Default)]
+struct CountingWriter {
+    len: usize,
+}
+
+impl Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.len = self.len.saturating_add(buf.len());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn serialized_len<T: BorshSerialize>(value: &T) -> Result<usize, ProgramError> {
+    let mut writer = CountingWriter::default();
+    value
+        .serialize(&mut writer)
+        .map_err(|_| ProgramError::from(SolanaHostProgramError::SerializationFailure))?;
+    Ok(writer.len)
 }
 
 fn ensure_signer(account: &AccountInfo<'_>) -> ProgramResult {
@@ -649,7 +700,7 @@ fn create_pda_state_account<'a>(
     config: &HostProgramConfig,
 ) -> ProgramResult {
     let system_program_account = ensure_system_program_account(system_program_account)?;
-    let required_len = required_state_account_len(config)?;
+    let required_len = state_account_len_with_reserve(config, STATE_ACCOUNT_RESERVE_BYTES)?;
     let lamports = load_rent(rent_sysvar_account)?.minimum_balance(required_len);
     let (_, bump) = find_state_pda(program_id);
     let bump_seed = [bump];
@@ -681,7 +732,8 @@ fn create_pda_session_account<'a>(
     rent_sysvar_account: Option<&AccountInfo<'a>>,
 ) -> ProgramResult {
     let system_program_account = ensure_system_program_account(system_program_account)?;
-    let required_len = required_session_account_len()?;
+    let required_len =
+        required_session_account_len()?.saturating_add(SESSION_ACCOUNT_RESERVE_BYTES);
     let lamports = load_rent(rent_sysvar_account)?.minimum_balance(required_len);
     let (_, bump) = find_session_pda(program_id, caller.key);
     let bump_seed = [bump];

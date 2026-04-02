@@ -21,6 +21,9 @@ services:
     container_name: relayer-db-migration
     platform: linux/amd64
     image: ghcr.io/zama-ai/fhevm/relayer-migrate:${RELAYER_MIGRATE_VERSION}
+    build:
+      context: ../../..
+      dockerfile: relayer/docker/relayer-migrate/Dockerfile
     env_file:
       - ../env/staging/.env.relayer.local
     command:
@@ -35,13 +38,16 @@ services:
     container_name: fhevm-relayer
     platform: linux/amd64
     image: ghcr.io/zama-ai/fhevm/relayer:${RELAYER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: relayer/docker/relayer/Dockerfile
     env_file:
       - ../env/staging/.env.relayer.local
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
     volumes:
-      - ../config/relayer/local.yaml:/app/config/local.yaml
+      - ../config/relayer/local.yaml.local:/app/config/local.yaml
     ports:
       - "3000:3000"
     depends_on:

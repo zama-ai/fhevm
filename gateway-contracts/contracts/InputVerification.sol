@@ -51,10 +51,16 @@ contract InputVerification is
     struct ZKProofInput {
         /// @notice The chain ID of the contract address.
         uint256 contractChainId;
-        /// @notice The contract address that verification is requested for.
+        /// @notice The contract address that verification is requested for in the legacy address flow.
         address contractAddress;
-        /// @notice The user address that requested the verification.
+        /// @notice The user address that requested the verification in the legacy address flow.
         address userAddress;
+        /// @notice The canonical host contract identity for versioned multi-chain requests.
+        bytes32 contractId;
+        /// @notice The canonical host user identity for versioned multi-chain requests.
+        bytes32 userId;
+        /// @notice The request shape version: 0 for legacy address flow, 1 for versioned identities.
+        uint8 version;
     }
 
     /**
@@ -72,6 +78,11 @@ contract InputVerification is
      * @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
      */
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
+    string private constant EIP712_ZKPOK_TYPE_V1 =
+        "CiphertextVerificationV1(bytes32[] ctHandles,bytes32 contractId,bytes32 userId,uint256 contractChainId,bytes extraData)";
+    bytes32 private constant EIP712_ZKPOK_TYPE_V1_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE_V1));
+    uint8 private constant INPUT_PROOF_IDENTITIES_VERSION_1 = 0x01;
+    uint256 private constant INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH = 65;
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
@@ -184,7 +195,14 @@ contract InputVerification is
         uint256 zkProofId = $.zkProofIdCounter;
 
         // The following stored inputs are used during response calls for the EIP712 signature validation.
-        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+        $.zkProofInputs[zkProofId] = ZKProofInput(
+            contractChainId,
+            contractAddress,
+            userAddress,
+            bytes32(0),
+            bytes32(0),
+            0
+        );
 
         // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
         $.inputVerificationContextId[zkProofId] = 1;
@@ -197,6 +215,51 @@ contract InputVerification is
             contractChainId,
             contractAddress,
             userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
+    }
+
+    /**
+     * @notice See {IInputVerification-verifyProofRequestV2}.
+     */
+    function verifyProofRequestV2(
+        uint256 contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        (bool isVersioned, bytes32 decodedContractId, bytes32 decodedUserId) = _decodeInputProofIdentities(
+            extraData
+        );
+        if (!isVersioned || decodedContractId != contractId || decodedUserId != userId) {
+            revert InvalidInputProofV1ExtraData();
+        }
+
+        $.zkProofIdCounter++;
+        uint256 zkProofId = $.zkProofIdCounter;
+
+        $.zkProofInputs[zkProofId] = ZKProofInput(
+            contractChainId,
+            address(0),
+            address(0),
+            contractId,
+            userId,
+            INPUT_PROOF_IDENTITIES_VERSION_1
+        );
+
+        $.inputVerificationContextId[zkProofId] = 1;
+
+        _collectInputVerificationFee(msg.sender);
+
+        emit VerifyProofRequestV2(
+            zkProofId,
+            contractChainId,
+            contractId,
+            userId,
             ciphertextWithZKProof,
             extraData
         );
@@ -226,17 +289,34 @@ contract InputVerification is
         // Retrieve stored ZK Proof verification request inputs.
         ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
 
-        // Initialize the CiphertextVerification structure for the signature validation.
-        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
-            ctHandles,
-            zkProofInput.userAddress,
-            zkProofInput.contractAddress,
-            zkProofInput.contractChainId,
-            extraData
-        );
+        bytes32 digest;
+        if (zkProofInput.version == INPUT_PROOF_IDENTITIES_VERSION_1) {
+            (bool isVersioned, bytes32 contractId, bytes32 userId) = _decodeInputProofIdentities(
+                extraData
+            );
+            if (!isVersioned || contractId != zkProofInput.contractId || userId != zkProofInput.userId) {
+                revert InvalidInputProofV1ExtraData();
+            }
+            digest = _hashCiphertextVerificationV1(
+                ctHandles,
+                zkProofInput.contractId,
+                zkProofInput.userId,
+                zkProofInput.contractChainId,
+                extraData
+            );
+        } else {
+            // Initialize the CiphertextVerification structure for the signature validation.
+            CiphertextVerification memory ciphertextVerification = CiphertextVerification(
+                ctHandles,
+                zkProofInput.userAddress,
+                zkProofInput.contractAddress,
+                zkProofInput.contractChainId,
+                extraData
+            );
 
-        // Compute the digest of the CiphertextVerification structure.
-        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
+            // Compute the digest of the CiphertextVerification structure.
+            digest = _hashCiphertextVerification(ciphertextVerification);
+        }
 
         // Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
@@ -423,6 +503,25 @@ contract InputVerification is
     function _hashCiphertextVerification(
         CiphertextVerification memory ctVerification
     ) internal view virtual returns (bytes32) {
+        (bool isVersioned, bytes32 contractId, bytes32 userId) = _decodeInputProofIdentities(
+            ctVerification.extraData
+        );
+        if (isVersioned) {
+            return
+                _hashTypedDataV4(
+                    keccak256(
+                        abi.encode(
+                            EIP712_ZKPOK_TYPE_V1_HASH,
+                            keccak256(abi.encodePacked(ctVerification.ctHandles)),
+                            contractId,
+                            userId,
+                            ctVerification.contractChainId,
+                            keccak256(abi.encodePacked(ctVerification.extraData))
+                        )
+                    )
+                );
+        }
+
         return
             _hashTypedDataV4(
                 keccak256(
@@ -436,6 +535,46 @@ contract InputVerification is
                     )
                 )
             );
+    }
+
+    function _hashCiphertextVerificationV1(
+        bytes32[] memory ctHandles,
+        bytes32 contractId,
+        bytes32 userId,
+        uint256 contractChainId,
+        bytes memory extraData
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_ZKPOK_TYPE_V1_HASH,
+                        keccak256(abi.encodePacked(ctHandles)),
+                        contractId,
+                        userId,
+                        contractChainId,
+                        keccak256(abi.encodePacked(extraData))
+                    )
+                )
+            );
+    }
+
+    function _decodeInputProofIdentities(
+        bytes memory extraData
+    ) internal pure returns (bool isVersioned, bytes32 contractId, bytes32 userId) {
+        if (
+            extraData.length != INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH ||
+            uint8(extraData[0]) != INPUT_PROOF_IDENTITIES_VERSION_1
+        ) {
+            return (false, bytes32(0), bytes32(0));
+        }
+
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            contractId := mload(add(extraData, 33))
+            userId := mload(add(extraData, 65))
+        }
+        return (true, contractId, userId);
     }
 
     /**

@@ -1,8 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use solana_encrypted_erc20_core::{
-    evm_address_from_solana_pubkey, find_state_pda, AllowanceEntry, BalanceEntry,
-    EncryptedErc20ExecutionResult, EncryptedErc20Instruction, EncryptedErc20State,
-    ENCRYPTED_ERC20_STATE_PDA_SEED,
+use solana_confidential_token_core::{
+    evm_address_from_solana_pubkey, evm_host_identity_from_solana_pubkey, find_state_pda,
+    AllowanceEntry, BalanceEntry, ConfidentialTokenExecutionResult, ConfidentialTokenInstruction,
+    ConfidentialTokenState, CONFIDENTIAL_TOKEN_STATE_PDA_SEED,
 };
 use solana_host_contracts_core::{
     find_session_pda as find_host_session_pda, find_state_pda as find_host_state_pda,
@@ -23,19 +23,19 @@ use solana_program::{
 };
 use solana_system_interface::{instruction as system_instruction, program as system_program};
 
-const STATE_ACCOUNT_DISCRIMINATOR: [u8; 8] = *b"EERC2000";
-const STATE_ACCOUNT_LAYOUT_VERSION: u32 = 1;
-const SESSION_NONCE: u64 = 1;
+const STATE_ACCOUNT_DISCRIMINATOR: [u8; 8] = *b"CTOK0000";
+const STATE_ACCOUNT_LAYOUT_VERSION: u32 = 2;
+const DEFAULT_SESSION_NONCE: u64 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-struct StoredEncryptedErc20State {
+struct StoredConfidentialTokenState {
     discriminator: [u8; 8],
     layout_version: u32,
-    state: EncryptedErc20State,
+    state: ConfidentialTokenState,
 }
 
-impl StoredEncryptedErc20State {
-    fn new(state: EncryptedErc20State) -> Self {
+impl StoredConfidentialTokenState {
+    fn new(state: ConfidentialTokenState) -> Self {
         Self {
             discriminator: STATE_ACCOUNT_DISCRIMINATOR,
             layout_version: STATE_ACCOUNT_LAYOUT_VERSION,
@@ -47,14 +47,14 @@ impl StoredEncryptedErc20State {
         if self.discriminator != STATE_ACCOUNT_DISCRIMINATOR
             || self.layout_version != STATE_ACCOUNT_LAYOUT_VERSION
         {
-            return Err(EncryptedErc20ProgramError::InvalidStateLayout.into());
+            return Err(ConfidentialTokenProgramError::InvalidStateLayout.into());
         }
         Ok(())
     }
 }
 
 #[repr(u32)]
-enum EncryptedErc20ProgramError {
+enum ConfidentialTokenProgramError {
     InvalidInstructionData = 1,
     MissingRequiredSignature = 2,
     InvalidStateAccount = 3,
@@ -74,8 +74,8 @@ enum EncryptedErc20ProgramError {
     Unauthorized = 17,
 }
 
-impl From<EncryptedErc20ProgramError> for ProgramError {
-    fn from(value: EncryptedErc20ProgramError) -> Self {
+impl From<ConfidentialTokenProgramError> for ProgramError {
+    fn from(value: ConfidentialTokenProgramError) -> Self {
         ProgramError::Custom(value as u32)
     }
 }
@@ -89,11 +89,11 @@ pub fn process_instruction<'a>(
     accounts: &'a [AccountInfo<'a>],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    let instruction = EncryptedErc20Instruction::try_from_slice(instruction_data)
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::InvalidInstructionData))?;
+    let instruction = ConfidentialTokenInstruction::try_from_slice(instruction_data)
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::InvalidInstructionData))?;
 
     match instruction {
-        EncryptedErc20Instruction::InitializePda {
+        ConfidentialTokenInstruction::InitializePda {
             owner,
             host_program,
             name,
@@ -110,29 +110,48 @@ pub fn process_instruction<'a>(
             max_balance_entries,
             max_allowance_entries,
         ),
-        EncryptedErc20Instruction::Mint { minted_amount } => mint(program_id, accounts, minted_amount),
-        EncryptedErc20Instruction::Transfer {
-            to,
-            input_handle,
-            input_proof,
-        } => transfer(program_id, accounts, to, input_handle, input_proof),
-        EncryptedErc20Instruction::Approve {
-            spender,
-            input_handle,
-            input_proof,
-        } => approve(program_id, accounts, spender, input_handle, input_proof),
-        EncryptedErc20Instruction::TransferFrom {
-            from,
-            to,
-            input_handle,
-            input_proof,
-        } => transfer_from(program_id, accounts, from, to, input_handle, input_proof),
-        EncryptedErc20Instruction::BalanceOf { wallet } => balance_of(program_id, accounts, wallet),
-        EncryptedErc20Instruction::Allowance { owner, spender } => {
-            allowance(program_id, accounts, owner, spender)
+        ConfidentialTokenInstruction::ResetState => reset_state(program_id, accounts),
+        ConfidentialTokenInstruction::MintTo { recipient, amount } => {
+            mint_to(program_id, accounts, recipient, amount)
         }
-        EncryptedErc20Instruction::TotalSupply => total_supply(program_id, accounts),
+        ConfidentialTokenInstruction::Transfer {
+            recipient,
+            input_handle,
+            input_proof,
+        } => transfer(program_id, accounts, recipient, input_handle, input_proof),
+        ConfidentialTokenInstruction::ApproveDelegate {
+            delegate,
+            input_handle,
+            input_proof,
+        } => approve_delegate(program_id, accounts, delegate, input_handle, input_proof),
+        ConfidentialTokenInstruction::TransferAsDelegate {
+            source,
+            recipient,
+            input_handle,
+            input_proof,
+        } => transfer_as_delegate(program_id, accounts, source, recipient, input_handle, input_proof),
+        ConfidentialTokenInstruction::Balance { owner } => balance_of(program_id, accounts, owner),
+        ConfidentialTokenInstruction::DelegateAllowance { owner, delegate } => {
+            delegate_allowance(program_id, accounts, owner, delegate)
+        }
+        ConfidentialTokenInstruction::Supply => total_supply(program_id, accounts),
     }
+}
+
+fn reset_state<'a>(program_id: &SolanaPubkey, accounts: &'a [AccountInfo<'a>]) -> ProgramResult {
+    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut state = execution.load_state()?;
+    if HostPubkey::from(execution.authority.key) != state.owner {
+        return Err(ConfidentialTokenProgramError::Unauthorized.into());
+    }
+
+    state.total_supply = 0;
+    state.zero_handle = None;
+    state.balances.clear();
+    state.allowances.clear();
+    execution.save_state(&state)?;
+    clean_host_transients(&execution)?;
+    write_result_data(vec![], Some(state.total_supply))
 }
 
 pub fn required_state_account_len(
@@ -143,12 +162,13 @@ pub fn required_state_account_len(
     max_balance_entries: u16,
     max_allowance_entries: u16,
 ) -> Result<usize, ProgramError> {
-    let state = EncryptedErc20State {
+    let state = ConfidentialTokenState {
         owner,
         host_program,
         name: name.to_owned(),
         symbol: symbol.to_owned(),
         total_supply: u64::MAX,
+        zero_handle: None,
         max_balance_entries,
         max_allowance_entries,
         balances: vec![
@@ -167,9 +187,9 @@ pub fn required_state_account_len(
             max_allowance_entries as usize
         ],
     };
-    borsh::to_vec(&StoredEncryptedErc20State::new(state))
+    borsh::to_vec(&StoredConfidentialTokenState::new(state))
         .map(|bytes| bytes.len())
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::SerializationFailure))
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::SerializationFailure))
 }
 
 fn initialize_pda<'a>(
@@ -190,12 +210,12 @@ fn initialize_pda<'a>(
 
     ensure_signer(authority)?;
     if HostPubkey::from(authority.key) != owner {
-        return Err(EncryptedErc20ProgramError::InvalidInitializer.into());
+        return Err(ConfidentialTokenProgramError::InvalidInitializer.into());
     }
 
     let (expected_pda, _) = find_state_pda(program_id);
     if state_account.key != &expected_pda {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
 
     ensure_state_account_writable(state_account)?;
@@ -219,21 +239,22 @@ fn initialize_pda<'a>(
             max_allowance_entries,
         )?;
     } else {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
 
     if load_state_account(state_account)?.is_some() {
-        return Err(EncryptedErc20ProgramError::StateAlreadyInitialized.into());
+        return Err(ConfidentialTokenProgramError::StateAlreadyInitialized.into());
     }
 
     save_state_account(
         state_account,
-        &StoredEncryptedErc20State::new(EncryptedErc20State {
+        &StoredConfidentialTokenState::new(ConfidentialTokenState {
             owner,
             host_program,
             name,
             symbol,
             total_supply: 0,
+            zero_handle: None,
             max_balance_entries,
             max_allowance_entries,
             balances: vec![],
@@ -244,46 +265,46 @@ fn initialize_pda<'a>(
     Ok(())
 }
 
-fn mint<'a>(
+fn mint_to<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    minted_amount: u64,
+    recipient: HostPubkey,
+    amount: u64,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
     if state.owner != HostPubkey::from(execution.authority.key) {
-        return Err(EncryptedErc20ProgramError::Unauthorized.into());
+        return Err(ConfidentialTokenProgramError::Unauthorized.into());
     }
 
-    let owner = HostPubkey::from(execution.authority.key);
-    let current_balance = ensure_balance_handle(&execution, &mut state, owner)?;
+    let current_balance = ensure_balance_handle(&execution, &mut state, recipient, None)?;
     let new_balance = single_returned_handle(invoke_host_batch(
         &execution,
         vec![HostInstruction::BinaryOp {
             op: Operator::FheAdd,
             lhs: current_balance,
-            rhs: BinaryOperand::Scalar(scalar_word_from_u64(minted_amount)),
+            rhs: BinaryOperand::Scalar(scalar_word_from_u64(amount)),
             result_type: FheType::Uint64,
             charge_hcu: false,
         }],
     )?)?;
 
-    persist_balance_handle(&execution, owner, new_balance)?;
-    set_balance_handle(&mut state, owner, new_balance)?;
-    state.total_supply = state.total_supply.saturating_add(minted_amount);
+    persist_balance_handle(&execution, recipient, new_balance, true)?;
+    set_balance_handle(&mut state, recipient, new_balance)?;
+    state.total_supply = state.total_supply.saturating_add(amount);
     execution.save_state(&state)?;
-    clean_host_transients(&execution)?;
     write_result_data(vec![new_balance], Some(state.total_supply))
 }
 
 fn transfer<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    to: HostPubkey,
+    recipient: HostPubkey,
     input_handle: Handle,
     input_proof: Vec<u8>,
 ) -> ProgramResult {
-    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut execution = parse_execution_accounts(program_id, accounts)?;
+    execution.session_nonce = session_nonce_from_handle(input_handle);
     let mut state = execution.load_state()?;
     let from = HostPubkey::from(execution.authority.key);
 
@@ -299,16 +320,9 @@ fn transfer<'a>(
         }],
     )?)?;
 
-    let current_from = ensure_balance_handle(&execution, &mut state, from)?;
-    let current_to = ensure_balance_handle(&execution, &mut state, to)?;
-    let zero = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::TrivialEncrypt {
-            plaintext: scalar_word_from_u64(0),
-            to_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
+    let zero = ensure_zero_handle(&execution, &mut state)?;
+    let current_from = balance_handle(&state, from).unwrap_or(zero);
+    let current_to = balance_handle(&state, recipient).unwrap_or(zero);
 
     let can_transfer = single_returned_handle(invoke_host_batch(
         &execution,
@@ -332,44 +346,54 @@ fn transfer<'a>(
         }],
     )?)?;
 
-    let new_balance_to = single_returned_handle(invoke_host_batch(
+    let mut updated_balances = returned_handles(invoke_host_batch(
         &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheAdd,
-            lhs: current_to,
-            rhs: BinaryOperand::Handle(transfer_value),
-            result_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
+        vec![
+            HostInstruction::BinaryOp {
+                op: Operator::FheAdd,
+                lhs: current_to,
+                rhs: BinaryOperand::Handle(transfer_value),
+                result_type: FheType::Uint64,
+                charge_hcu: false,
+            },
+            HostInstruction::BinaryOp {
+                op: Operator::FheSub,
+                lhs: current_from,
+                rhs: BinaryOperand::Handle(transfer_value),
+                result_type: FheType::Uint64,
+                charge_hcu: false,
+            },
+        ],
     )?)?;
+    if updated_balances.len() != 2 {
+        return Err(ConfidentialTokenProgramError::InvalidHostReturnData.into());
+    }
+    let new_balance_to = updated_balances.remove(0);
+    let new_balance_from = updated_balances.remove(0);
 
-    let new_balance_from = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheSub,
-            lhs: current_from,
-            rhs: BinaryOperand::Handle(transfer_value),
-            result_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
-
-    persist_balance_handles(&execution, &[(from, new_balance_from), (to, new_balance_to)])?;
+    // Transfer returns the updated balance handles, but the real user-facing decrypt flow
+    // queries balances again through `balance_of`. Persist only the app PDA grants here so the
+    // contract can keep composing on the fresh handles without paying for the full user-facing
+    // durable-allow fanout inside the hot transfer path.
+    persist_internal_handles(&execution, &[new_balance_from, new_balance_to], false)?;
     set_balance_handle(&mut state, from, new_balance_from)?;
-    set_balance_handle(&mut state, to, new_balance_to)?;
+    set_balance_handle(&mut state, recipient, new_balance_to)?;
     execution.save_state(&state)?;
-    clean_host_transients(&execution)?;
-    write_result_data(vec![new_balance_from, new_balance_to], Some(state.total_supply))
+    write_result_data(
+        vec![new_balance_from, new_balance_to],
+        Some(state.total_supply),
+    )
 }
 
-fn approve<'a>(
+fn approve_delegate<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    spender: HostPubkey,
+    delegate: HostPubkey,
     input_handle: Handle,
     input_proof: Vec<u8>,
 ) -> ProgramResult {
-    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut execution = parse_execution_accounts(program_id, accounts)?;
+    execution.session_nonce = session_nonce_from_handle(input_handle);
     let mut state = execution.load_state()?;
     let owner = HostPubkey::from(execution.authority.key);
 
@@ -385,22 +409,22 @@ fn approve<'a>(
         }],
     )?)?;
 
-    persist_allowance_handle(&execution, owner, spender, verified_amount)?;
-    set_allowance_handle(&mut state, owner, spender, verified_amount)?;
+    persist_allowance_handle(&execution, verified_amount, true)?;
+    set_allowance_handle(&mut state, owner, delegate, verified_amount)?;
     execution.save_state(&state)?;
-    clean_host_transients(&execution)?;
     write_result_data(vec![verified_amount], Some(state.total_supply))
 }
 
-fn transfer_from<'a>(
+fn transfer_as_delegate<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    from: HostPubkey,
-    to: HostPubkey,
+    source: HostPubkey,
+    recipient: HostPubkey,
     input_handle: Handle,
     input_proof: Vec<u8>,
 ) -> ProgramResult {
-    let execution = parse_execution_accounts(program_id, accounts)?;
+    let mut execution = parse_execution_accounts(program_id, accounts)?;
+    execution.session_nonce = session_nonce_from_handle(input_handle);
     let mut state = execution.load_state()?;
     let spender = HostPubkey::from(execution.authority.key);
 
@@ -416,39 +440,34 @@ fn transfer_from<'a>(
         }],
     )?)?;
 
-    let current_allowance = ensure_allowance_handle(&execution, &mut state, from, spender)?;
-    let current_from = ensure_balance_handle(&execution, &mut state, from)?;
-    let current_to = ensure_balance_handle(&execution, &mut state, to)?;
-    let zero = single_returned_handle(invoke_host_batch(
+    let zero = ensure_zero_handle(&execution, &mut state)?;
+    let current_allowance = allowance_handle(&state, source, spender).unwrap_or(zero);
+    let current_from = balance_handle(&state, source).unwrap_or(zero);
+    let current_to = balance_handle(&state, recipient).unwrap_or(zero);
+    let mut precheck_results = returned_handles(invoke_host_batch(
         &execution,
-        vec![HostInstruction::TrivialEncrypt {
-            plaintext: scalar_word_from_u64(0),
-            to_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
+        vec![
+            HostInstruction::BinaryOp {
+                op: Operator::FheLe,
+                lhs: verified_amount,
+                rhs: BinaryOperand::Handle(current_allowance),
+                result_type: FheType::Bool,
+                charge_hcu: false,
+            },
+            HostInstruction::BinaryOp {
+                op: Operator::FheLe,
+                lhs: verified_amount,
+                rhs: BinaryOperand::Handle(current_from),
+                result_type: FheType::Bool,
+                charge_hcu: false,
+            },
+        ],
     )?)?;
-
-    let allowed_transfer = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheLe,
-            lhs: verified_amount,
-            rhs: BinaryOperand::Handle(current_allowance),
-            result_type: FheType::Bool,
-            charge_hcu: false,
-        }],
-    )?)?;
-
-    let can_transfer = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheLe,
-            lhs: verified_amount,
-            rhs: BinaryOperand::Handle(current_from),
-            result_type: FheType::Bool,
-            charge_hcu: false,
-        }],
-    )?)?;
+    if precheck_results.len() != 2 {
+        return Err(ConfidentialTokenProgramError::InvalidHostReturnData.into());
+    }
+    let allowed_transfer = precheck_results.remove(0);
+    let can_transfer = precheck_results.remove(0);
 
     let is_transferable = single_returned_handle(invoke_host_batch(
         &execution,
@@ -457,28 +476,6 @@ fn transfer_from<'a>(
             lhs: can_transfer,
             rhs: BinaryOperand::Handle(allowed_transfer),
             result_type: FheType::Bool,
-            charge_hcu: false,
-        }],
-    )?)?;
-
-    let decreased_allowance = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheSub,
-            lhs: current_allowance,
-            rhs: BinaryOperand::Handle(verified_amount),
-            result_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
-
-    let next_allowance = single_returned_handle(invoke_host_batch(
-        &execution,
-        vec![HostInstruction::TernaryOp {
-            op: Operator::FheIfThenElse,
-            control: is_transferable,
-            if_true: decreased_allowance,
-            if_false: current_allowance,
             charge_hcu: false,
         }],
     )?)?;
@@ -494,35 +491,49 @@ fn transfer_from<'a>(
         }],
     )?)?;
 
-    let new_balance_to = single_returned_handle(invoke_host_batch(
+    let mut updated_balances = returned_handles(invoke_host_batch(
         &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheAdd,
-            lhs: current_to,
-            rhs: BinaryOperand::Handle(transfer_value),
-            result_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
+        vec![
+            HostInstruction::BinaryOp {
+                op: Operator::FheSub,
+                lhs: current_allowance,
+                rhs: BinaryOperand::Handle(transfer_value),
+                result_type: FheType::Uint64,
+                charge_hcu: false,
+            },
+            HostInstruction::BinaryOp {
+                op: Operator::FheAdd,
+                lhs: current_to,
+                rhs: BinaryOperand::Handle(transfer_value),
+                result_type: FheType::Uint64,
+                charge_hcu: false,
+            },
+            HostInstruction::BinaryOp {
+                op: Operator::FheSub,
+                lhs: current_from,
+                rhs: BinaryOperand::Handle(transfer_value),
+                result_type: FheType::Uint64,
+                charge_hcu: false,
+            },
+        ],
     )?)?;
+    if updated_balances.len() != 3 {
+        return Err(ConfidentialTokenProgramError::InvalidHostReturnData.into());
+    }
+    let next_allowance = updated_balances.remove(0);
+    let new_balance_to = updated_balances.remove(0);
+    let new_balance_from = updated_balances.remove(0);
 
-    let new_balance_from = single_returned_handle(invoke_host_batch(
+    persist_transfer_from_handles(
         &execution,
-        vec![HostInstruction::BinaryOp {
-            op: Operator::FheSub,
-            lhs: current_from,
-            rhs: BinaryOperand::Handle(transfer_value),
-            result_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
-
-    persist_allowance_handle(&execution, from, spender, next_allowance)?;
-    persist_balance_handles(&execution, &[(from, new_balance_from), (to, new_balance_to)])?;
-    set_allowance_handle(&mut state, from, spender, next_allowance)?;
-    set_balance_handle(&mut state, from, new_balance_from)?;
-    set_balance_handle(&mut state, to, new_balance_to)?;
+        next_allowance,
+        &[new_balance_from, new_balance_to],
+        false,
+    )?;
+    set_allowance_handle(&mut state, source, spender, next_allowance)?;
+    set_balance_handle(&mut state, source, new_balance_from)?;
+    set_balance_handle(&mut state, recipient, new_balance_to)?;
     execution.save_state(&state)?;
-    clean_host_transients(&execution)?;
     write_result_data(
         vec![new_balance_from, new_balance_to, next_allowance],
         Some(state.total_supply),
@@ -532,34 +543,32 @@ fn transfer_from<'a>(
 fn balance_of<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    wallet: HostPubkey,
+    owner: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
-    let handle = ensure_balance_handle(&execution, &mut state, wallet)?;
+    let handle = ensure_balance_handle(&execution, &mut state, owner, None)?;
+    persist_balance_query_handle(&execution, owner, handle, false)?;
     execution.save_state(&state)?;
     clean_host_transients(&execution)?;
     write_result_data(vec![handle], Some(state.total_supply))
 }
 
-fn allowance<'a>(
+fn delegate_allowance<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
     owner: HostPubkey,
-    spender: HostPubkey,
+    delegate: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
-    let handle = ensure_allowance_handle(&execution, &mut state, owner, spender)?;
+    let handle = ensure_allowance_handle(&execution, &mut state, owner, delegate, None)?;
     execution.save_state(&state)?;
     clean_host_transients(&execution)?;
     write_result_data(vec![handle], Some(state.total_supply))
 }
 
-fn total_supply<'a>(
-    program_id: &SolanaPubkey,
-    accounts: &'a [AccountInfo<'a>],
-) -> ProgramResult {
+fn total_supply<'a>(program_id: &SolanaPubkey, accounts: &'a [AccountInfo<'a>]) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let state = execution.load_state()?;
     write_result_data(vec![], Some(state.total_supply))
@@ -576,27 +585,32 @@ struct ExecutionAccounts<'a> {
     system_program: AccountInfo<'a>,
     rent: AccountInfo<'a>,
     app_state_bump: u8,
+    session_nonce: u64,
 }
 
 impl<'a> ExecutionAccounts<'a> {
-    fn load_state(&self) -> Result<EncryptedErc20State, ProgramError> {
+    fn load_state(&self) -> Result<ConfidentialTokenState, ProgramError> {
         let stored = load_state_account(&self.app_state)?
-            .ok_or_else(|| ProgramError::from(EncryptedErc20ProgramError::StateNotInitialized))?;
+            .ok_or_else(|| ProgramError::from(ConfidentialTokenProgramError::StateNotInitialized))?;
         if SolanaPubkey::from(stored.state.host_program) != *self.host_program.key {
-            return Err(EncryptedErc20ProgramError::InvalidHostProgram.into());
+            return Err(ConfidentialTokenProgramError::InvalidHostProgram.into());
         }
         if self.host_state.key != &find_host_state_pda(self.host_program.key).0 {
-            return Err(EncryptedErc20ProgramError::InvalidHostStateAccount.into());
+            return Err(ConfidentialTokenProgramError::InvalidHostStateAccount.into());
         }
-        if self.host_session.key != &find_host_session_pda(self.host_program.key, self.app_state.key).0
+        if self.host_session.key
+            != &find_host_session_pda(self.host_program.key, self.app_state.key).0
         {
-            return Err(EncryptedErc20ProgramError::InvalidHostSessionAccount.into());
+            return Err(ConfidentialTokenProgramError::InvalidHostSessionAccount.into());
         }
         Ok(stored.state)
     }
 
-    fn save_state(&self, state: &EncryptedErc20State) -> ProgramResult {
-        save_state_account(&self.app_state, &StoredEncryptedErc20State::new(state.clone()))
+    fn save_state(&self, state: &ConfidentialTokenState) -> ProgramResult {
+        save_state_account(
+            &self.app_state,
+            &StoredConfidentialTokenState::new(state.clone()),
+        )
     }
 }
 
@@ -620,7 +634,7 @@ fn parse_execution_accounts<'a>(
 
     let (expected_pda, bump) = find_state_pda(program_id);
     if app_state.key != &expected_pda {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
 
     Ok(ExecutionAccounts {
@@ -634,6 +648,7 @@ fn parse_execution_accounts<'a>(
         system_program: system_program.clone(),
         rent: rent.clone(),
         app_state_bump: bump,
+        session_nonce: DEFAULT_SESSION_NONCE,
     })
 }
 
@@ -643,7 +658,7 @@ fn invoke_host_batch(
 ) -> Result<Vec<HostInstructionResult>, ProgramError> {
     let host_ix = HostOnchainInstruction::ExecuteBatch {
         instructions,
-        session_nonce: SESSION_NONCE,
+        session_nonce: execution.session_nonce,
         recent_blockhash: [0; 32],
     };
 
@@ -660,10 +675,10 @@ fn invoke_host_batch(
             AccountMeta::new_readonly(*execution.rent.key, false),
         ],
         data: borsh::to_vec(&host_ix)
-            .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::SerializationFailure))?,
+            .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::SerializationFailure))?,
     };
     let bump_seed = [execution.app_state_bump];
-    let signer_seeds: &[&[u8]] = &[ENCRYPTED_ERC20_STATE_PDA_SEED, &bump_seed];
+    let signer_seeds: &[&[u8]] = &[CONFIDENTIAL_TOKEN_STATE_PDA_SEED, &bump_seed];
 
     invoke_signed(
         &instruction,
@@ -682,20 +697,21 @@ fn invoke_host_batch(
     )?;
 
     let Some((returning_program, return_data)) = get_return_data() else {
-        return Err(EncryptedErc20ProgramError::MissingHostReturnData.into());
+        return Err(ConfidentialTokenProgramError::MissingHostReturnData.into());
     };
     if returning_program != *execution.host_program.key {
-        return Err(EncryptedErc20ProgramError::InvalidHostReturnData.into());
+        return Err(ConfidentialTokenProgramError::InvalidHostReturnData.into());
     }
 
     Vec::<HostInstructionResult>::try_from_slice(&return_data)
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::InvalidHostReturnData))
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::InvalidHostReturnData))
 }
 
 fn ensure_balance_handle(
     execution: &ExecutionAccounts<'_>,
-    state: &mut EncryptedErc20State,
+    state: &mut ConfidentialTokenState,
     wallet: HostPubkey,
+    zero_handle: Option<Handle>,
 ) -> Result<Handle, ProgramError> {
     if let Some(handle) = state
         .balances
@@ -706,26 +722,34 @@ fn ensure_balance_handle(
         return Ok(handle);
     }
     if state.balances.len() >= state.max_balance_entries as usize {
-        return Err(EncryptedErc20ProgramError::CapacityExceeded.into());
+        return Err(ConfidentialTokenProgramError::CapacityExceeded.into());
     }
-    let zero = single_returned_handle(invoke_host_batch(
-        execution,
-        vec![HostInstruction::TrivialEncrypt {
-            plaintext: scalar_word_from_u64(0),
-            to_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
-    persist_balance_handle(execution, wallet, zero)?;
-    state.balances.push(BalanceEntry { wallet, handle: zero });
+    let zero = if let Some(zero) = zero_handle {
+        zero
+    } else {
+        ensure_zero_handle(execution, state)?
+    };
+    state.balances.push(BalanceEntry {
+        wallet,
+        handle: zero,
+    });
     Ok(zero)
+}
+
+fn balance_handle(state: &ConfidentialTokenState, wallet: HostPubkey) -> Option<Handle> {
+    state
+        .balances
+        .iter()
+        .find(|entry| entry.wallet == wallet)
+        .map(|entry| entry.handle)
 }
 
 fn ensure_allowance_handle(
     execution: &ExecutionAccounts<'_>,
-    state: &mut EncryptedErc20State,
+    state: &mut ConfidentialTokenState,
     owner: HostPubkey,
     spender: HostPubkey,
+    zero_handle: Option<Handle>,
 ) -> Result<Handle, ProgramError> {
     if let Some(handle) = state
         .allowances
@@ -736,17 +760,13 @@ fn ensure_allowance_handle(
         return Ok(handle);
     }
     if state.allowances.len() >= state.max_allowance_entries as usize {
-        return Err(EncryptedErc20ProgramError::CapacityExceeded.into());
+        return Err(ConfidentialTokenProgramError::CapacityExceeded.into());
     }
-    let zero = single_returned_handle(invoke_host_batch(
-        execution,
-        vec![HostInstruction::TrivialEncrypt {
-            plaintext: scalar_word_from_u64(0),
-            to_type: FheType::Uint64,
-            charge_hcu: false,
-        }],
-    )?)?;
-    persist_allowance_handle(execution, owner, spender, zero)?;
+    let zero = if let Some(zero) = zero_handle {
+        zero
+    } else {
+        ensure_zero_handle(execution, state)?
+    };
     state.allowances.push(AllowanceEntry {
         owner,
         spender,
@@ -755,24 +775,61 @@ fn ensure_allowance_handle(
     Ok(zero)
 }
 
+fn allowance_handle(
+    state: &ConfidentialTokenState,
+    owner: HostPubkey,
+    spender: HostPubkey,
+) -> Option<Handle> {
+    state
+        .allowances
+        .iter()
+        .find(|entry| entry.owner == owner && entry.spender == spender)
+        .map(|entry| entry.handle)
+}
+
+fn ensure_zero_handle(
+    execution: &ExecutionAccounts<'_>,
+    state: &mut ConfidentialTokenState,
+) -> Result<Handle, ProgramError> {
+    if let Some(handle) = state.zero_handle {
+        return Ok(handle);
+    }
+
+    let zero = single_returned_handle(invoke_host_batch(
+        execution,
+        vec![HostInstruction::TrivialEncrypt {
+            plaintext: scalar_word_from_u64(0),
+            to_type: FheType::Uint64,
+            charge_hcu: false,
+        }],
+    )?)?;
+    persist_internal_handles(execution, &[zero], false)?;
+    state.zero_handle = Some(zero);
+    Ok(zero)
+}
+
 fn set_balance_handle(
-    state: &mut EncryptedErc20State,
+    state: &mut ConfidentialTokenState,
     wallet: HostPubkey,
     handle: Handle,
 ) -> Result<(), ProgramError> {
-    if let Some(entry) = state.balances.iter_mut().find(|entry| entry.wallet == wallet) {
+    if let Some(entry) = state
+        .balances
+        .iter_mut()
+        .find(|entry| entry.wallet == wallet)
+    {
         entry.handle = handle;
         return Ok(());
     }
     if state.balances.len() >= state.max_balance_entries as usize {
-        return Err(EncryptedErc20ProgramError::CapacityExceeded.into());
+        return Err(ConfidentialTokenProgramError::CapacityExceeded.into());
     }
     state.balances.push(BalanceEntry { wallet, handle });
     Ok(())
 }
 
 fn set_allowance_handle(
-    state: &mut EncryptedErc20State,
+    state: &mut ConfidentialTokenState,
     owner: HostPubkey,
     spender: HostPubkey,
     handle: Handle,
@@ -786,7 +843,7 @@ fn set_allowance_handle(
         return Ok(());
     }
     if state.allowances.len() >= state.max_allowance_entries as usize {
-        return Err(EncryptedErc20ProgramError::CapacityExceeded.into());
+        return Err(ConfidentialTokenProgramError::CapacityExceeded.into());
     }
     state.allowances.push(AllowanceEntry {
         owner,
@@ -800,31 +857,114 @@ fn persist_balance_handle(
     execution: &ExecutionAccounts<'_>,
     wallet: HostPubkey,
     handle: Handle,
+    clean_after: bool,
 ) -> ProgramResult {
+    // Keep both native Solana and EVM-alias identities durable so the same handle works with
+    // native Solana ACL checks and the compatibility EVM-address paths exercised by the stack.
+    let wallet_pubkey = SolanaPubkey::from(wallet);
     persist_handle_to_accounts(
         execution,
         handle,
         &[
             HostPubkey::from(execution.app_state.key),
+            evm_host_identity_from_solana_pubkey(execution.app_state.key),
             wallet,
+            evm_host_identity_from_solana_pubkey(&wallet_pubkey),
         ],
+        clean_after,
     )
 }
 
 fn persist_balance_handles(
     execution: &ExecutionAccounts<'_>,
     entries: &[(HostPubkey, Handle)],
+    clean_after: bool,
 ) -> ProgramResult {
-    let mut instructions = Vec::with_capacity(entries.len() * 2);
+    let app_account = HostPubkey::from(execution.app_state.key);
+    let app_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
+    let mut instructions = Vec::with_capacity(entries.len() * 4 + usize::from(clean_after));
     for (wallet, handle) in entries {
+        let wallet_pubkey = SolanaPubkey::from(*wallet);
         instructions.push(HostInstruction::Allow {
             handle: *handle,
-            account: HostPubkey::from(execution.app_state.key),
+            account: app_account,
+        });
+        instructions.push(HostInstruction::Allow {
+            handle: *handle,
+            account: app_evm_identity,
         });
         instructions.push(HostInstruction::Allow {
             handle: *handle,
             account: *wallet,
         });
+        instructions.push(HostInstruction::Allow {
+            handle: *handle,
+            account: evm_host_identity_from_solana_pubkey(&wallet_pubkey),
+        });
+    }
+    if clean_after {
+        instructions.push(HostInstruction::CleanTransientStorage);
+    }
+    let _ = invoke_host_batch(execution, instructions)?;
+    Ok(())
+}
+
+fn persist_balance_query_handle(
+    execution: &ExecutionAccounts<'_>,
+    wallet: HostPubkey,
+    handle: Handle,
+    clean_after: bool,
+) -> ProgramResult {
+    let wallet_pubkey = SolanaPubkey::from(wallet);
+    persist_handle_to_accounts(
+        execution,
+        handle,
+        &[
+            wallet,
+            evm_host_identity_from_solana_pubkey(execution.app_state.key),
+            evm_host_identity_from_solana_pubkey(&wallet_pubkey),
+        ],
+        clean_after,
+    )
+}
+
+fn persist_internal_handles(
+    execution: &ExecutionAccounts<'_>,
+    handles: &[Handle],
+    clean_after: bool,
+) -> ProgramResult {
+    let mut instructions = Vec::with_capacity(1 + usize::from(clean_after));
+    if !handles.is_empty() {
+        instructions.push(HostInstruction::AllowMany {
+            handles: handles.to_vec(),
+            account: HostPubkey::from(execution.app_state.key),
+        });
+    }
+    if clean_after {
+        instructions.push(HostInstruction::CleanTransientStorage);
+    }
+    let _ = invoke_host_batch(execution, instructions)?;
+    Ok(())
+}
+
+fn persist_transfer_from_handles(
+    execution: &ExecutionAccounts<'_>,
+    allowance_handle: Handle,
+    balance_handles: &[Handle],
+    clean_after: bool,
+) -> ProgramResult {
+    let mut handles = Vec::with_capacity(1 + balance_handles.len());
+    handles.push(allowance_handle);
+    handles.extend_from_slice(balance_handles);
+    let mut instructions = Vec::with_capacity(1 + usize::from(clean_after));
+    if !handles.is_empty() {
+        instructions.push(HostInstruction::AllowMany {
+            handles,
+            account: HostPubkey::from(execution.app_state.key),
+        });
+    }
+    if clean_after {
+        instructions.push(HostInstruction::CleanTransientStorage);
     }
     let _ = invoke_host_batch(execution, instructions)?;
     Ok(())
@@ -832,18 +972,17 @@ fn persist_balance_handles(
 
 fn persist_allowance_handle(
     execution: &ExecutionAccounts<'_>,
-    owner: HostPubkey,
-    spender: HostPubkey,
     handle: Handle,
+    clean_after: bool,
 ) -> ProgramResult {
     persist_handle_to_accounts(
         execution,
         handle,
         &[
             HostPubkey::from(execution.app_state.key),
-            owner,
-            spender,
+            evm_host_identity_from_solana_pubkey(execution.app_state.key),
         ],
+        clean_after,
     )
 }
 
@@ -851,13 +990,17 @@ fn persist_handle_to_accounts(
     execution: &ExecutionAccounts<'_>,
     handle: Handle,
     accounts: &[HostPubkey],
+    clean_after: bool,
 ) -> ProgramResult {
-    let mut instructions = Vec::with_capacity(accounts.len());
+    let mut instructions = Vec::with_capacity(accounts.len() + usize::from(clean_after));
     for account in accounts {
         instructions.push(HostInstruction::Allow {
             handle,
             account: *account,
         });
+    }
+    if clean_after {
+        instructions.push(HostInstruction::CleanTransientStorage);
     }
     let _ = invoke_host_batch(execution, instructions)?;
     Ok(())
@@ -872,42 +1015,53 @@ fn single_returned_handle(results: Vec<HostInstructionResult>) -> Result<Handle,
     results
         .into_iter()
         .find_map(|result| result.returned_handle)
-        .ok_or_else(|| ProgramError::from(EncryptedErc20ProgramError::InvalidHostReturnData))
+        .ok_or_else(|| ProgramError::from(ConfidentialTokenProgramError::InvalidHostReturnData))
+}
+
+fn returned_handles(results: Vec<HostInstructionResult>) -> Result<Vec<Handle>, ProgramError> {
+    let handles: Vec<_> = results
+        .into_iter()
+        .filter_map(|result| result.returned_handle)
+        .collect();
+    if handles.is_empty() {
+        return Err(ConfidentialTokenProgramError::InvalidHostReturnData.into());
+    }
+    Ok(handles)
 }
 
 fn write_result_data(handles: Vec<Handle>, total_supply: Option<u64>) -> ProgramResult {
-    let encoded = borsh::to_vec(&EncryptedErc20ExecutionResult {
+    let encoded = borsh::to_vec(&ConfidentialTokenExecutionResult {
         returned_handles: handles,
         total_supply,
     })
-    .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::SerializationFailure))?;
+    .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::SerializationFailure))?;
     set_return_data(&encoded);
     Ok(())
 }
 
 fn load_state_account(
     account: &AccountInfo<'_>,
-) -> Result<Option<StoredEncryptedErc20State>, ProgramError> {
+) -> Result<Option<StoredConfidentialTokenState>, ProgramError> {
     let data = account.try_borrow_data()?;
     if data.is_empty() || data.iter().all(|byte| *byte == 0) {
         return Ok(None);
     }
 
     let mut slice: &[u8] = &data;
-    let stored = StoredEncryptedErc20State::deserialize(&mut slice)
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::SerializationFailure))?;
+    let stored = StoredConfidentialTokenState::deserialize(&mut slice)
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::SerializationFailure))?;
     stored.validate()?;
     Ok(Some(stored))
 }
 
 fn save_state_account(
     account: &AccountInfo<'_>,
-    state: &StoredEncryptedErc20State,
+    state: &StoredConfidentialTokenState,
 ) -> ProgramResult {
     let serialized = borsh::to_vec(state)
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::SerializationFailure))?;
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::SerializationFailure))?;
     if serialized.len() > account.data_len() {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
 
     let mut data = account.try_borrow_mut_data()?;
@@ -942,7 +1096,7 @@ fn create_pda_state_account<'a>(
     let lamports = load_rent(rent_sysvar_account)?.minimum_balance(required_len);
     let (_, bump) = find_state_pda(program_id);
     let bump_seed = [bump];
-    let signer_seeds: &[&[u8]] = &[ENCRYPTED_ERC20_STATE_PDA_SEED, &bump_seed];
+    let signer_seeds: &[&[u8]] = &[CONFIDENTIAL_TOKEN_STATE_PDA_SEED, &bump_seed];
 
     invoke_signed(
         &system_instruction::create_account(
@@ -952,14 +1106,18 @@ fn create_pda_state_account<'a>(
             required_len as u64,
             program_id,
         ),
-        &[payer.clone(), state_account.clone(), system_program_account.clone()],
+        &[
+            payer.clone(),
+            state_account.clone(),
+            system_program_account.clone(),
+        ],
         &[signer_seeds],
     )
 }
 
 fn ensure_signer(account: &AccountInfo<'_>) -> ProgramResult {
     if !account.is_signer {
-        return Err(EncryptedErc20ProgramError::MissingRequiredSignature.into());
+        return Err(ConfidentialTokenProgramError::MissingRequiredSignature.into());
     }
     Ok(())
 }
@@ -969,14 +1127,14 @@ fn ensure_state_account_owner(
     account: &AccountInfo<'_>,
 ) -> ProgramResult {
     if account.owner != program_id {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
     ensure_state_account_writable(account)
 }
 
 fn ensure_state_account_writable(account: &AccountInfo<'_>) -> ProgramResult {
     if !account.is_writable || account.executable {
-        return Err(EncryptedErc20ProgramError::InvalidStateAccount.into());
+        return Err(ConfidentialTokenProgramError::InvalidStateAccount.into());
     }
     Ok(())
 }
@@ -984,26 +1142,33 @@ fn ensure_state_account_writable(account: &AccountInfo<'_>) -> ProgramResult {
 fn ensure_system_program_account<'a>(
     account: Option<&'a AccountInfo<'a>>,
 ) -> Result<&'a AccountInfo<'a>, ProgramError> {
-    let account =
-        account.ok_or_else(|| ProgramError::from(EncryptedErc20ProgramError::MissingSystemProgram))?;
+    let account = account
+        .ok_or_else(|| ProgramError::from(ConfidentialTokenProgramError::MissingSystemProgram))?;
     if !system_program::check_id(account.key) {
-        return Err(EncryptedErc20ProgramError::MissingSystemProgram.into());
+        return Err(ConfidentialTokenProgramError::MissingSystemProgram.into());
     }
     Ok(account)
 }
 
 fn load_rent(account: Option<&AccountInfo<'_>>) -> Result<Rent, ProgramError> {
     let account =
-        account.ok_or_else(|| ProgramError::from(EncryptedErc20ProgramError::MissingRentSysvar))?;
+        account.ok_or_else(|| ProgramError::from(ConfidentialTokenProgramError::MissingRentSysvar))?;
     if account.key != &sysvar::rent::id() {
-        return Err(EncryptedErc20ProgramError::MissingRentSysvar.into());
+        return Err(ConfidentialTokenProgramError::MissingRentSysvar.into());
     }
     Rent::from_account_info(account)
-        .map_err(|_| ProgramError::from(EncryptedErc20ProgramError::MissingRentSysvar))
+        .map_err(|_| ProgramError::from(ConfidentialTokenProgramError::MissingRentSysvar))
 }
 
 fn scalar_word_from_u64(value: u64) -> [u8; 32] {
     let mut output = [0_u8; 32];
     output[24..].copy_from_slice(&value.to_be_bytes());
     output
+}
+
+fn session_nonce_from_handle(handle: Handle) -> u64 {
+    let bytes = handle.into_bytes();
+    let mut output = [0_u8; 8];
+    output.copy_from_slice(&bytes[..8]);
+    u64::from_be_bytes(output)
 }

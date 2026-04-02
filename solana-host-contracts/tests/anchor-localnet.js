@@ -1,16 +1,31 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { execFileSync, spawn } from "node:child_process";
-import net from "node:net";
-import { fileURLToPath } from "node:url";
+const { copyFileSync, existsSync, mkdirSync, readFileSync } = require("node:fs");
+const { join, resolve } = require("node:path");
+const { execFileSync, spawn } = require("node:child_process");
+const net = require("node:net");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
+const TEST_SUITE_STAGING_ENV_DIR = resolve(ROOT, "../test-suite/fhevm/env/staging");
+const HOST_STACK_ENV = join(TEST_SUITE_STAGING_ENV_DIR, ".env.host-sc.local");
+const GATEWAY_STACK_ENV = join(TEST_SUITE_STAGING_ENV_DIR, ".env.gateway-sc.local");
 const HOST_PROGRAM_ID = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
 const TEST_INPUT_PROGRAM_ID = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv";
-const ENCRYPTED_ERC20_PROGRAM_ID = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx";
+const CONFIDENTIAL_TOKEN_PROGRAM_ID = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx";
+const DOCKER_HOST_NODE_CONTAINER = "host-node";
 const DEFAULT_RPC_URL = "http://127.0.0.1:18999";
 const DEFAULT_WS_URL = "ws://127.0.0.1:19000";
+const ENV_OVERRIDE_KEYS = new Set([
+  "SOLANA_HOST_CHAIN_ID",
+  "CHAIN_ID_GATEWAY",
+  "INPUT_VERIFICATION_ADDRESS",
+  "DECRYPTION_ADDRESS",
+  "NUM_KMS_NODES",
+  "PUBLIC_DECRYPTION_THRESHOLD",
+  "NUM_COPROCESSORS",
+  "COPROCESSOR_THRESHOLD",
+  "HCU_CAP_PER_BLOCK",
+  "MAX_HCU_DEPTH_PER_TX",
+  "MAX_HCU_PER_TX",
+]);
 
 function parseEnvFile(path) {
   const parsed = {};
@@ -37,6 +52,49 @@ function parseEnvFile(path) {
   return parsed;
 }
 
+function mergeEnvOverrides(envConfig) {
+  const merged = { ...envConfig };
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value) {
+      continue;
+    }
+    if (
+      ENV_OVERRIDE_KEYS.has(key) ||
+      key.startsWith("PRIVATE_KEY_KMS_SIGNER_") ||
+      key.startsWith("PRIVATE_KEY_COPROCESSOR_ACCOUNT_") ||
+      key.startsWith("KMS_SIGNER_ADDRESS_") ||
+      key.startsWith("COPROCESSOR_SIGNER_ADDRESS_")
+    ) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function loadLocalStackEnvOverrides() {
+  const merged = {};
+  for (const path of [GATEWAY_STACK_ENV, HOST_STACK_ENV]) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    Object.assign(merged, parseEnvFile(path));
+  }
+  return merged;
+}
+
+function preferConfiguredSignerAddresses(mergedEnv, overrides, privateKeyPrefix, addressPrefix) {
+  for (const key of Object.keys(overrides)) {
+    if (!key.startsWith(addressPrefix)) {
+      continue;
+    }
+    const suffix = key.slice(addressPrefix.length);
+    const privateKeyKey = `${privateKeyPrefix}${suffix}`;
+    if (!(privateKeyKey in overrides)) {
+      delete mergedEnv[privateKeyKey];
+    }
+  }
+}
+
 function deriveWsUrl(rpcUrl) {
   try {
     const url = new URL(rpcUrl);
@@ -59,16 +117,112 @@ function run(cmd, args, options = {}) {
   });
 }
 
+async function runWithRetry(fn, label, attempts = 30, delayMs = 1_000) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) {
+        break;
+      }
+      await sleep(delayMs);
+    }
+  }
+  throw new Error(`${label} failed after ${attempts} attempts: ${lastError}`);
+}
+
+function initLocalArgs({
+  anchorWallet,
+  providerUrl,
+  providerWsUrl,
+  outputRpcUrl,
+  outputWsUrl,
+  addressesEnv,
+  addressesJson,
+}) {
+  return [
+    "run",
+    "--quiet",
+    "--manifest-path",
+    join(ROOT, "local-cli/Cargo.toml"),
+    "--",
+    "init-local",
+    "--rpc-url",
+    providerUrl,
+    "--ws-url",
+    providerWsUrl,
+    "--output-rpc-url",
+    outputRpcUrl,
+    "--output-ws-url",
+    outputWsUrl,
+    "--payer-keypair",
+    anchorWallet,
+    "--program-id",
+    HOST_PROGRAM_ID,
+    "--test-input-program-id",
+    TEST_INPUT_PROGRAM_ID,
+    "--confidential-token-program-id",
+    CONFIDENTIAL_TOKEN_PROGRAM_ID,
+    "--addresses-env",
+    addressesEnv,
+    "--addresses-json",
+    addressesJson,
+  ];
+}
+
+function airdropViaHost(amount, recipient, providerUrl) {
+  run("solana", ["airdrop", amount, recipient, "--url", providerUrl], {
+    stdio: "inherit",
+  });
+}
+
+function airdropViaDocker(amount, recipient, providerUrl) {
+  run(
+    "docker",
+    [
+      "exec",
+      DOCKER_HOST_NODE_CONTAINER,
+      "solana",
+      "airdrop",
+      amount,
+      recipient,
+      "--url",
+      providerUrl,
+    ],
+    {
+      stdio: "inherit",
+    },
+  );
+}
+
 function ensureDir(path) {
   mkdirSync(path, { recursive: true });
 }
 
 function localnetConfig() {
   const envFile = join(ROOT, ".env.example");
-  const envConfig = parseEnvFile(envFile);
+  const stackOverrides = loadLocalStackEnvOverrides();
+  const envConfig = mergeEnvOverrides({
+    ...parseEnvFile(envFile),
+    ...stackOverrides,
+  });
+  preferConfiguredSignerAddresses(
+    envConfig,
+    stackOverrides,
+    "PRIVATE_KEY_COPROCESSOR_ACCOUNT_",
+    "COPROCESSOR_SIGNER_ADDRESS_",
+  );
+  preferConfiguredSignerAddresses(
+    envConfig,
+    stackOverrides,
+    "PRIVATE_KEY_KMS_SIGNER_",
+    "KMS_SIGNER_ADDRESS_",
+  );
   const anchorWallet =
     process.env.ANCHOR_WALLET || resolve(ROOT, "tests/fixtures/anchor-authority.json");
-  const bobWallet = resolve(ROOT, "tests/fixtures/erc20-bob.json");
+  const bobWallet = resolve(ROOT, "tests/fixtures/confidential-token-recipient.json");
   const providerUrl = process.env.ANCHOR_PROVIDER_URL || DEFAULT_RPC_URL;
   const providerWsUrl = deriveWsUrl(providerUrl);
   const outputRpcUrl = envConfig.SOLANA_HOST_OUTPUT_RPC_URL || providerUrl;
@@ -95,7 +249,7 @@ function localnetConfig() {
   };
 }
 
-function bootstrapLocalnet() {
+async function bootstrapCommon(airdrop) {
   const {
     envConfig,
     anchorWallet,
@@ -110,51 +264,47 @@ function bootstrapLocalnet() {
     addressesEnvLocal,
     addressesJson,
   } = localnetConfig();
+  const commandEnv = { ...process.env, ...envConfig };
+  preferConfiguredSignerAddresses(
+    commandEnv,
+    envConfig,
+    "PRIVATE_KEY_COPROCESSOR_ACCOUNT_",
+    "COPROCESSOR_SIGNER_ADDRESS_",
+  );
+  preferConfiguredSignerAddresses(
+    commandEnv,
+    envConfig,
+    "PRIVATE_KEY_KMS_SIGNER_",
+    "KMS_SIGNER_ADDRESS_",
+  );
 
   ensureDir(addressesDir);
 
   const authorityPubkey = run("solana-keygen", ["pubkey", anchorWallet]).trim();
-  run("solana", ["airdrop", airdropSol, authorityPubkey, "--url", providerUrl], {
-    stdio: "inherit",
-  });
+  await runWithRetry(
+    () => airdrop(airdropSol, authorityPubkey, providerUrl),
+    `airdrop to authority ${authorityPubkey}`,
+  );
   const bobPubkey = run("solana-keygen", ["pubkey", bobWallet]).trim();
-  run("solana", ["airdrop", "5", bobPubkey, "--url", providerUrl], {
-    stdio: "inherit",
-  });
+  await runWithRetry(
+    () => airdrop("5", bobPubkey, providerUrl),
+    `airdrop to bob ${bobPubkey}`,
+  );
 
   run(
     "cargo",
-    [
-      "run",
-      "--quiet",
-      "--manifest-path",
-      join(ROOT, "local-cli/Cargo.toml"),
-      "--",
-      "init-local",
-      "--rpc-url",
-      providerUrl,
-      "--ws-url",
-      providerWsUrl,
-      "--output-rpc-url",
-      outputRpcUrl,
-      "--output-ws-url",
-      outputWsUrl,
-      "--payer-keypair",
+    initLocalArgs({
       anchorWallet,
-      "--program-id",
-      HOST_PROGRAM_ID,
-      "--test-input-program-id",
-      TEST_INPUT_PROGRAM_ID,
-      "--encrypted-erc20-program-id",
-      ENCRYPTED_ERC20_PROGRAM_ID,
-      "--addresses-env",
+      providerUrl,
+      providerWsUrl,
+      outputRpcUrl,
+      outputWsUrl,
       addressesEnv,
-      "--addresses-json",
       addressesJson,
-    ],
+    }),
     {
       stdio: "inherit",
-      env: { ...process.env, ...envConfig },
+      env: commandEnv,
     },
   );
 
@@ -167,11 +317,19 @@ function bootstrapLocalnet() {
   console.log("Anchor localnet setup complete");
   console.log(`host_program_id=${HOST_PROGRAM_ID}`);
   console.log(`test_input_program_id=${TEST_INPUT_PROGRAM_ID}`);
-  console.log(`encrypted_erc20_program_id=${ENCRYPTED_ERC20_PROGRAM_ID}`);
+  console.log(`confidential_token_program_id=${CONFIDENTIAL_TOKEN_PROGRAM_ID}`);
   console.log(`rpc_url=${outputRpcUrl}`);
   console.log(`ws_url=${outputWsUrl}`);
   console.log(`addresses_env=${addressesEnv}`);
   console.log(`addresses_json=${addressesJson}`);
+}
+
+async function bootstrapLocalnet() {
+  await bootstrapCommon(airdropViaHost);
+}
+
+async function bootstrapDockerHostNode() {
+  await bootstrapCommon(airdropViaDocker);
 }
 
 async function rpcRequest(rpcUrl, method, params = []) {
@@ -335,11 +493,11 @@ async function runPersistentLocalnet() {
       (async () => {
         await waitForProgramDeployment(providerUrl, HOST_PROGRAM_ID, 180_000);
         await waitForProgramDeployment(providerUrl, TEST_INPUT_PROGRAM_ID, 180_000);
-        await waitForProgramDeployment(providerUrl, ENCRYPTED_ERC20_PROGRAM_ID, 180_000);
+        await waitForProgramDeployment(providerUrl, CONFIDENTIAL_TOKEN_PROGRAM_ID, 180_000);
       })(),
       childExit,
     ]);
-    bootstrapLocalnet();
+    await bootstrapLocalnet();
     console.log("Anchor localnet is ready and will keep running until you stop it.");
     await childExit;
   } catch (error) {
@@ -357,11 +515,19 @@ async function main() {
   }
 
   if (mode === "bootstrap") {
-    bootstrapLocalnet();
+    await bootstrapLocalnet();
+    return;
+  }
+
+  if (mode === "bootstrap-docker") {
+    await bootstrapDockerHostNode();
     return;
   }
 
   throw new Error(`unknown mode: ${mode}`);
 }
 
-await main();
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

@@ -7,6 +7,8 @@ use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use fhevm_gateway_bindings::decryption::IDecryption::RequestValidity;
 use tracing::debug;
 
+const USER_DECRYPT_IDENTITIES_VERSION_2: u8 = 0x02;
+
 /// Builder pattern for creating UserDecryptRequest instances
 ///
 /// This builder provides a fluent API for constructing user decrypt requests
@@ -47,6 +49,7 @@ pub struct UserDecryptRequestBuilder {
     start_timestamp: Option<u64>,
     duration_days: Option<u64>,
     contracts_chain_id: Option<u64>,
+    extra_data: Option<Bytes>,
 }
 
 impl UserDecryptRequestBuilder {
@@ -61,6 +64,7 @@ impl UserDecryptRequestBuilder {
             start_timestamp: None,
             duration_days: None,
             contracts_chain_id: None,
+            extra_data: None,
         }
     }
 
@@ -153,6 +157,45 @@ impl UserDecryptRequestBuilder {
         }
 
         self.public_key = Some(public_key_bytes);
+        Ok(self)
+    }
+
+    /// Set the gateway extraData field directly from a 0x-prefixed hex string.
+    pub fn with_extra_data_from_hex(mut self, extra_data: &str) -> Result<Self> {
+        let extra_data_bytes = parse_hex_string(extra_data, "extra data")?;
+        if extra_data_bytes.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "Extra data cannot be empty".to_string(),
+            ));
+        }
+
+        self.extra_data = Some(extra_data_bytes);
+        Ok(self)
+    }
+
+    /// Build versioned V2 extraData with canonical host identities.
+    pub fn with_v2_identities(
+        mut self,
+        context_id: [u8; 32],
+        user_id: [u8; 32],
+        contract_ids: &[[u8; 32]],
+    ) -> Result<Self> {
+        if contract_ids.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one contract identity is required for V2 user decryption".to_string(),
+            ));
+        }
+
+        let mut extra_data = Vec::with_capacity(34 + (contract_ids.len() + 1) * 32);
+        extra_data.push(USER_DECRYPT_IDENTITIES_VERSION_2);
+        extra_data.extend_from_slice(&context_id);
+        extra_data.push((contract_ids.len() + 1) as u8);
+        extra_data.extend_from_slice(&user_id);
+        for contract_id in contract_ids {
+            extra_data.extend_from_slice(contract_id);
+        }
+
+        self.extra_data = Some(Bytes::from(extra_data));
         Ok(self)
     }
 
@@ -259,6 +302,7 @@ impl UserDecryptRequestBuilder {
         let public_key = self.public_key.unwrap();
         let start_timestamp = self.start_timestamp.unwrap();
         let duration_days = self.duration_days.unwrap();
+        let extra_data = self.extra_data.unwrap_or_else(|| Bytes::from(vec![0x00]));
 
         debug!("✅ UserDecryptRequest built successfully");
         debug!("   📊 Handles: {}", self.ct_handle_contract_pairs.len());
@@ -276,6 +320,7 @@ impl UserDecryptRequestBuilder {
             user_address,
             signature,
             public_key,
+            extra_data,
         })
     }
 }
@@ -371,6 +416,7 @@ mod tests {
         let request = result.unwrap();
         assert_eq!(request.ct_handle_contract_pairs.len(), 2);
         assert_eq!(request.contract_addresses.len(), 2);
+        assert_eq!(request.extra_data, Bytes::from(vec![0x00]));
     }
 
     #[test]
@@ -390,5 +436,31 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("32 bytes"));
+    }
+
+    #[test]
+    fn test_builder_with_v2_identities_populates_extra_data() {
+        let handles = vec![vec![1u8; 32]];
+        let contracts =
+            vec![Address::from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1").unwrap()];
+
+        let request = UserDecryptRequestBuilder::new()
+            .with_handles_from_bytes(&handles, &contracts)
+            .unwrap()
+            .with_user_address_from_str("0x963d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")
+            .unwrap()
+            .with_signature_from_hex(&("0x".to_owned() + &"12".repeat(65)))
+            .unwrap()
+            .with_public_key_from_hex("0x1234567890abcdef")
+            .unwrap()
+            .with_validity(1640995200, 30)
+            .unwrap()
+            .with_v2_identities([7u8; 32], [8u8; 32], &[[9u8; 32]])
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(request.extra_data[0], USER_DECRYPT_IDENTITIES_VERSION_2);
+        assert_eq!(request.extra_data.len(), 98);
     }
 }

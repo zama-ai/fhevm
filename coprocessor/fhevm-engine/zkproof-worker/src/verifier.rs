@@ -1,4 +1,3 @@
-use alloy_primitives::Address;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
@@ -14,7 +13,6 @@ use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
-use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tfhe::ReRandomizationContext;
 use tokio::sync::RwLock;
@@ -28,7 +26,7 @@ use std::time::SystemTime;
 use tfhe::set_server_key;
 
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
-use tokio::time::interval;
+use tokio::time::{interval, sleep};
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -140,6 +138,14 @@ pub async fn execute_verify_proofs_loop(
             .await
             .map_err(|err| ExecutionError::Other(err.into()))?,
     );
+    let startup_token = CancellationToken::new();
+    let latest_key = Arc::new(wait_for_latest_key(
+        &pool_mngr.pool(),
+        &db_key_cache,
+        &startup_token,
+    )
+    .await?);
+    let latest_crs = Arc::new(wait_for_latest_crs(&pool_mngr.pool(), &startup_token).await?);
 
     let mut task_set = JoinSet::new();
 
@@ -148,6 +154,8 @@ pub async fn execute_verify_proofs_loop(
         let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
+        let latest_key = latest_key.clone();
+        let latest_crs = latest_crs.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -155,6 +163,8 @@ pub async fn execute_verify_proofs_loop(
             let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
+            let latest_key = latest_key.clone();
+            let latest_crs = latest_crs.clone();
             async move {
                 execute_worker(
                     conf,
@@ -163,6 +173,8 @@ pub async fn execute_verify_proofs_loop(
                     db_key_cache,
                     host_chain_cache,
                     last_active_at,
+                    latest_key,
+                    latest_crs,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -188,9 +200,11 @@ async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
     token: CancellationToken,
-    db_key_cache: DbKeyCache,
+    _db_key_cache: DbKeyCache,
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
+    latest_key: Arc<DbKey>,
+    latest_crs: Arc<Crs>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -198,22 +212,6 @@ async fn execute_worker(
     listener.listen(&conf.listen_database_channel).await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
-
-    let latest_key = Arc::new(
-        db_key_cache
-            .fetch_latest(&pool)
-            .await
-            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
-    );
-
-    let latest_crs = Arc::new(
-        CrsCache::load(&pool)
-            .await
-            .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?
-            .get_latest()
-            .cloned()
-            .ok_or_else(|| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
-    );
 
     loop {
         update_last_active(last_active_at.clone()).await;
@@ -254,6 +252,62 @@ async fn execute_worker(
     }
 }
 
+async fn wait_for_latest_key(
+    pool: &PgPool,
+    db_key_cache: &DbKeyCache,
+    token: &CancellationToken,
+) -> Result<DbKey, ExecutionError> {
+    loop {
+        match db_key_cache.fetch_latest(pool).await {
+            Ok(key) => return Ok(key),
+            Err(error) => {
+                info!(
+                    message = "Latest key is not available yet; waiting for key material",
+                    error = error.to_string()
+                );
+            }
+        }
+
+        select! {
+            _ = sleep(Duration::from_secs(1)) => {},
+            _ = token.cancelled() => {
+                info!("Cancellation requested while waiting for latest key");
+                return Err(ExecutionError::LostDbConnection);
+            }
+        }
+    }
+}
+
+async fn wait_for_latest_crs(
+    pool: &PgPool,
+    token: &CancellationToken,
+) -> Result<Crs, ExecutionError> {
+    loop {
+        match CrsCache::load(pool).await {
+            Ok(cache) => {
+                if let Some(crs) = cache.get_latest().cloned() {
+                    return Ok(crs);
+                }
+                info!("Latest CRS is not available yet; waiting for CRS material");
+            }
+            Err(error) => {
+                info!(
+                    message = "Failed to load CRS cache; waiting for CRS material",
+                    error = error.to_string()
+                );
+            }
+        }
+
+        select! {
+            _ = sleep(Duration::from_secs(1)) => {},
+            _ = token.cancelled() => {
+                info!("Cancellation requested while waiting for latest CRS");
+                return Err(ExecutionError::LostDbConnection);
+            }
+        }
+    }
+}
+
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
@@ -264,7 +318,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, extra_data, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -281,6 +335,7 @@ async fn execute_verify_proof_routine(
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
+        let extra_data: Vec<u8> = row.get("extra_data");
         let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
 
         info!(
@@ -312,6 +367,7 @@ async fn execute_verify_proof_routine(
                 user_address,
                 chain_id: host_chain_id,
                 acl_contract_address,
+                extra_data,
             };
 
             verify_proof(request_id, &db_key, &crs, &aux_data, &input)
@@ -540,9 +596,9 @@ fn set_ciphertext_metadata(
     handle_hash.update(blob_hash);
     handle_hash.update([ct_idx as u8]);
     handle_hash.update(
-        Address::from_str(&aux_data.acl_contract_address)
-            .expect("valid acl_contract_address")
-            .into_array(),
+        aux_data
+            .acl_identity_bytes_for_handle()
+            .map_err(|err| ExecutionError::Other(err.into()))?,
     );
     handle_hash.update(chain_id_bytes);
     let handle = handle_hash.finalize().to_vec();

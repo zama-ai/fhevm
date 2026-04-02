@@ -8,6 +8,8 @@ use tracing::debug;
 struct UserDecryptionResponseHex {
     pub signature: String,
     pub payload: Option<String>,
+    #[serde(default, alias = "extraData", alias = "extra_data")]
+    pub extra_data: Option<String>,
 }
 
 /// Container for the JSON response
@@ -76,7 +78,12 @@ impl UserDecryptionDeserializer {
                 signature: vec![], // No ECDSA signature in wasm use case
                 external_signature,
                 payload,
-                extra_data: vec![], // Extra data not used for now
+                extra_data: hex_resp
+                    .extra_data
+                    .as_deref()
+                    .map(|value| decode_hex_field(value, "extra_data"))
+                    .transpose()?
+                    .unwrap_or_default(),
             });
         }
 

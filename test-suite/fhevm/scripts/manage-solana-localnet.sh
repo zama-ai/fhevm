@@ -15,10 +15,10 @@ LEDGER_DIR="$SOLANA_ROOT/.anchor/test-ledger"
 AUTHORITY_KEYPAIR="$SOLANA_ROOT/tests/fixtures/anchor-authority.json"
 HOST_PROGRAM_SO="$SOLANA_ROOT/target/deploy/solana_host_contracts.so"
 TEST_INPUT_PROGRAM_SO="$SOLANA_ROOT/target/deploy/solana_test_input_program.so"
-ENCRYPTED_ERC20_PROGRAM_SO="$SOLANA_ROOT/target/deploy/solana_encrypted_erc20_program.so"
+CONFIDENTIAL_TOKEN_PROGRAM_SO="$SOLANA_ROOT/target/deploy/solana_confidential_token_program.so"
 HOST_PROGRAM_ID="5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
 TEST_INPUT_PROGRAM_ID="5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv"
-ENCRYPTED_ERC20_PROGRAM_ID="Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
+CONFIDENTIAL_TOKEN_PROGRAM_ID="Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
 
 mkdir -p "$STATE_DIR"
 
@@ -27,6 +27,12 @@ rpc_healthy() {
     -H 'content-type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth","params":[]}' \
     "$RPC_URL" >/dev/null 2>&1
+}
+
+docker_host_node_running() {
+  local result
+  result=$(docker inspect -f '{{.State.Running}}' host-node 2>/dev/null || true)
+  [[ "$result" == "true" ]]
 }
 
 pid_is_running() {
@@ -84,9 +90,12 @@ start_localnet() {
   fi
 
   if rpc_healthy; then
-    echo "A Solana validator is already responding on $RPC_URL; reusing external localnet"
-    "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.mjs"
-    return 0
+    echo "A Solana validator is already responding on $RPC_URL; attempting bootstrap reuse"
+    if "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.js"; then
+      echo "Reused external localnet on $RPC_URL"
+      return 0
+    fi
+    echo "Existing validator bootstrap failed; falling back to a fresh managed localnet" >&2
   fi
 
   "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && make build-sbf >/dev/null"
@@ -99,11 +108,11 @@ start_localnet() {
     --faucet-port 19900 \
     --upgradeable-program '$HOST_PROGRAM_ID' 'target/deploy/solana_host_contracts.so' 'tests/fixtures/anchor-authority.json' \
     --upgradeable-program '$TEST_INPUT_PROGRAM_ID' 'target/deploy/solana_test_input_program.so' 'tests/fixtures/anchor-authority.json' \
-    --upgradeable-program '$ENCRYPTED_ERC20_PROGRAM_ID' 'target/deploy/solana_encrypted_erc20_program.so' 'tests/fixtures/anchor-authority.json'" >"$LOG_FILE" 2>&1 &
+    --upgradeable-program '$CONFIDENTIAL_TOKEN_PROGRAM_ID' 'target/deploy/solana_confidential_token_program.so' 'tests/fixtures/anchor-authority.json'" >"$LOG_FILE" 2>&1 &
   echo $! >"$PID_FILE"
 
   wait_for_rpc 240
-  "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.mjs"
+  "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.js"
   wait_for_localnet 240
   echo "Started managed Solana localnet (pid=$(cat "$PID_FILE"))"
 }
@@ -158,7 +167,12 @@ show_status() {
 }
 
 bootstrap_only() {
-  "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.mjs"
+  wait_for_rpc 240
+  if docker_host_node_running; then
+    "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.js bootstrap-docker"
+    return 0
+  fi
+  "$LOGIN_SHELL" -lic "cd '$SOLANA_ROOT' && exec node tests/anchor-localnet.js"
 }
 
 case "${1:-}" in

@@ -29,8 +29,8 @@ pub use onchain_interface::{
 pub use program::{HostProgramSession, HostProgramState, InstructionResult};
 pub use secp256k1_verifier::Secp256k1ProofVerifier;
 pub use types::{
-    ContextUserInputs, EvmAddress, FheType, Handle, KmsContextId, Operator, Pubkey,
-    SignatureThreshold, HANDLE_VERSION, MAX_DECRYPTED_RESULT_BYTES, MAX_DECRYPTION_HANDLES,
-    MAX_DECRYPTION_PROOF_BYTES, MAX_INPUT_HANDLES_PER_PROOF, MAX_INPUT_PROOF_BYTES,
-    MAX_VERIFIER_SIGNERS,
+    host_identity_from_evm_address, ContextUserInputs, EvmAddress, FheType, Handle, KmsContextId,
+    Operator, Pubkey, SignatureThreshold, HANDLE_VERSION, MAX_DECRYPTED_RESULT_BYTES,
+    MAX_DECRYPTION_HANDLES, MAX_DECRYPTION_PROOF_BYTES, MAX_INPUT_HANDLES_PER_PROOF,
+    MAX_INPUT_PROOF_BYTES, MAX_VERIFIER_SIGNERS,
 };

@@ -26,6 +26,11 @@ pub enum HostEvent {
         account: Pubkey,
         handle: Handle,
     },
+    AllowedMany {
+        caller: Pubkey,
+        account: Pubkey,
+        handles: Vec<Handle>,
+    },
     AllowedForDecryption {
         caller: Pubkey,
         handles: Vec<Handle>,

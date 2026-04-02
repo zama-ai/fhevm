@@ -5,8 +5,8 @@ members = [
     "local-cli",
     "test-input-core",
     "test-input-program",
-    "encrypted-erc20-core",
-    "encrypted-erc20-program",
+    "confidential-token-core",
+    "confidential-token-program",
 ]
 resolver = "2"
 

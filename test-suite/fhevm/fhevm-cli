@@ -79,7 +79,7 @@ function usage {
 	echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--solana] [--coprocessors N] [--coprocessor-threshold T]${RESET}    Deploy fhevm stack"
 	echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
 	echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
-	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|coprocessor-db-state-revert|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|solana-input-proof|solana-user-decryption|solana-public-decrypt-http-ebool|solana-public-decrypt-http-mixed|solana-erc20|debug)"
+	echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|ciphertext-drift|coprocessor-db-state-revert|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|hcu-block-cap|negative-acl|solana-input-proof|solana-user-decryption|solana-public-decrypt-http-ebool|solana-public-decrypt-http-mixed|solana-confidential-token|debug)"
 	echo -e "  ${YELLOW}smoke${RESET} ${CYAN}[PROFILE]${RESET}      Run multicoproc smoke profile (multi-2-2|multi-3-5)"
 	echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
 	echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -111,7 +111,7 @@ function usage {
 	echo -e "  ${PURPLE}./fhevm-cli test solana-user-decryption${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test solana-public-decrypt-http-ebool${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test solana-public-decrypt-http-mixed${RESET}"
-	echo -e "  ${PURPLE}./fhevm-cli test solana-erc20${RESET}"
+	echo -e "  ${PURPLE}./fhevm-cli test solana-confidential-token${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
 	echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
 	echo -e "${BLUE}============================================================${RESET}"
@@ -349,8 +349,8 @@ test)
 		solana-public-decrypt-http-mixed)
 			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA PUBLIC DECRYPT HTTP MIXED${RESET}"
 			;;
-		solana-erc20)
-			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA ERC20${RESET}"
+		solana-confidential-token)
+			echo -e "${LIGHT_BLUE}${BOLD}[TEST] SOLANA CONFIDENTIAL TOKEN${RESET}"
 			;;
 		esac
 
@@ -358,7 +358,7 @@ test)
 		if [ -n "$VERBOSE" ]; then
 			solana_args+=("--verbose")
 		fi
-		exec node "${SCRIPT_DIR}/scripts/run-solana-e2e.mjs" "${solana_args[@]}"
+		exec node "${SCRIPT_DIR}/scripts/run-solana-e2e.js" "${solana_args[@]}"
 	fi
 
 	docker_args=("./run-tests.sh")

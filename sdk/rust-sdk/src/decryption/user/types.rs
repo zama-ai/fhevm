@@ -14,6 +14,7 @@ pub struct UserDecryptRequest {
     pub user_address: Address,
     pub signature: Bytes,
     pub public_key: Bytes,
+    pub extra_data: Bytes,
 }
 
 /// Result of a user decryption operation

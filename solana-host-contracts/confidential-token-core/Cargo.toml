@@ -1,9 +1,9 @@
 [package]
-name = "solana-encrypted-erc20-core"
+name = "solana-confidential-token-core"
 version = "0.1.0"
 edition = "2021"
 license = "BSD-3-Clause-Clear"
-description = "Shared interface and state for the Solana EncryptedERC20 app program"
+description = "Shared interface and state for the Solana ConfidentialToken app program"
 
 [dependencies]
 borsh = { version = "1.6.0", features = ["derive"] }

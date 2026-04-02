@@ -9,8 +9,9 @@ description = "Deployable Solana host-contract program for FHEVM"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["custom-heap"]
 no-entrypoint = []
+custom-heap = []
 
 [dependencies]
 bincode = "1.3.3"

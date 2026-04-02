@@ -89,11 +89,7 @@ impl ReadinessChecker {
         request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
         self.host_acl
-            .check_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.user_address,
-            )
+            .check_user_decrypt(job_id, request)
             .await
             .map_err(|e| match &e {
                 HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
@@ -119,12 +115,7 @@ impl ReadinessChecker {
         request: &DelegatedUserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
         self.host_acl
-            .check_delegated_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.delegator_address,
-                request.delegate_address,
-            )
+            .check_delegated_user_decrypt(job_id, request)
             .await
             .map_err(|e| match &e {
                 HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),

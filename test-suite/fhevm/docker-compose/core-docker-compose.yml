@@ -22,7 +22,7 @@ services:
     ports:
       - "50051:50051"
     healthcheck:
-      test: "grpc_health_probe --addr=localhost:50051"
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/50051'"]
       interval: 1s
       timeout: 1s
       retries: 5
