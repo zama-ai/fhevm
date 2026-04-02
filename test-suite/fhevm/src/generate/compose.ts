@@ -72,6 +72,16 @@ const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolea
 /** Resolves relative compose paths against the template compose directory. */
 const resolveComposePath = (value: string) =>
   value.startsWith(".") ? path.resolve(TEMPLATE_COMPOSE_DIR, value) : value;
+const RELAYER_BUILD_SPECS: Record<string, { context: string; dockerfile: string }> = {
+  "relayer-db-migration": {
+    context: resolveComposePath("../../.."),
+    dockerfile: resolveComposePath("relayer/docker/relayer-migrate/Dockerfile"),
+  },
+  relayer: {
+    context: resolveComposePath("../../.."),
+    dockerfile: resolveComposePath("relayer/docker/relayer/Dockerfile"),
+  },
+};
 
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {
@@ -342,6 +352,9 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
+    if (component === "relayer") {
+      next.build = RELAYER_BUILD_SPECS[name];
+    }
     services[name] = next;
   }
   return { services };
