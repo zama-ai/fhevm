@@ -82,7 +82,7 @@ gateway:
         retry_interval_ms: 1000
     gw_ciphertext_check:
       retry:
-        max_attempts: 15
+        max_attempts: 45
         retry_interval_ms: 2000
     public_decrypt:
       max_concurrency: 250
