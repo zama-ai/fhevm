@@ -32,31 +32,43 @@ jobs:
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
   gateway-contracts-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
   host-contracts-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/host-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
   kms-connector-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
   relayer-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/relayer-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
+    with:
+      caller-base-commit: ${{ github.event.pull_request.base.sha }}
 
   create-e2e-tests-input:
     name: create-e2e-tests-input

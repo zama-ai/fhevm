@@ -14,6 +14,10 @@ on:
         description: "Optional narrow grep pattern for targeted operator tests"
         default: ""
         type: string
+      scenario:
+        description: "Optional fhevm scenario passed to deploy"
+        default: ""
+        type: string
       connector_version:
         description: "Connector Version"
         default: ""
@@ -74,6 +78,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       GREP: ${{ inputs.grep }}
+      SCENARIO: ${{ inputs.scenario }}
       CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
       CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
@@ -141,6 +146,9 @@ jobs:
           args=(--target latest-main)
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
+          fi
+          if [ -n "$SCENARIO" ]; then
+            args+=(--scenario "$SCENARIO")
           fi
           ./fhevm-cli deploy "${args[@]}"
 
