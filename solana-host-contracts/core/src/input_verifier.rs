@@ -8,9 +8,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use sha3::{Digest, Keccak256};
 use std::collections::HashSet;
 
-const INPUT_PROOF_IDENTITIES_VERSION_1: u8 = 0x01;
-const INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH: usize = 65;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CiphertextVerification {
     pub ct_handles: Vec<Handle>,
@@ -236,14 +233,8 @@ impl InputVerifierState {
 fn proof_cache_key(input_proof: &[u8], context: ContextUserInputs) -> [u8; 32] {
     let mut hasher = Keccak256::new();
     hasher.update(input_proof);
-    let extra_data = extract_extra_data(input_proof).unwrap_or_default();
-    if let Some((contract_id, user_id)) = parse_versioned_identities(extra_data) {
-        hasher.update(contract_id);
-        hasher.update(user_id);
-    } else {
-        hasher.update(context.user_address.as_bytes());
-        hasher.update(context.contract_address.as_bytes());
-    }
+    hasher.update(context.user_address.as_bytes());
+    hasher.update(context.contract_address.as_bytes());
     hasher.finalize().into()
 }
 
@@ -260,17 +251,4 @@ fn extract_extra_data(input_proof: &[u8]) -> Option<&[u8]> {
         .checked_add(handles_bytes)?
         .checked_add(signatures_bytes)?;
     input_proof.get(offset..)
-}
-
-fn parse_versioned_identities(extra_data: &[u8]) -> Option<([u8; 32], [u8; 32])> {
-    if extra_data.len() != INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH {
-        return None;
-    }
-    if extra_data.first().copied() != Some(INPUT_PROOF_IDENTITIES_VERSION_1) {
-        return None;
-    }
-
-    let contract_id = extra_data.get(1..33)?.try_into().ok()?;
-    let user_id = extra_data.get(33..65)?.try_into().ok()?;
-    Some((contract_id, user_id))
 }

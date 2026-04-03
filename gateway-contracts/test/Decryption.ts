@@ -1,7 +1,8 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { ed25519 } from "@noble/curves/ed25519";
 import { expect } from "chai";
-import { Wallet } from "ethers";
+import { TypedDataEncoder, Wallet, ZeroAddress, concat, getBytes, hexlify, randomBytes, toBeHex, zeroPadValue } from "ethers";
 import hre from "hardhat";
 
 import { approveContractWithMaxAllowance } from "../tasks/mockedTokenFund";
@@ -11,6 +12,7 @@ import {
   Decryption__factory,
   IDecryption,
   ProtocolPayment,
+  SolanaEd25519Verifier,
   ZamaOFT,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
@@ -50,11 +52,69 @@ import {
 const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
+const EXTRA_DATA_VERSION = 0x01;
+const DEFAULT_KMS_CONTEXT_ID = 1n;
 
 // Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
 function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+function buildDecryptionExtraData(contextId: bigint, identities: string[], authSigner?: string): string {
+  if (identities.length === 0) {
+    throw new Error("extraData must contain at least one identity");
+  }
+
+  const parts = [
+    Uint8Array.from([EXTRA_DATA_VERSION]),
+    getBytes(zeroPadValue(toBeHex(contextId), 32)),
+    Uint8Array.from([identities.length]),
+    ...identities.map((identity) => getBytes(identity)),
+  ];
+
+  if (authSigner) {
+    const authSignerBytes = getBytes(authSigner);
+    if (authSignerBytes.length < 20 || authSignerBytes.length > 255) {
+      throw new Error("authSigner must be between 20 and 255 bytes");
+    }
+    parts.push(Uint8Array.from([authSignerBytes.length]), authSignerBytes);
+  }
+
+  return hexlify(concat(parts));
+}
+
+function signEd25519TypedData(eip712: EIP712, privateKey: Uint8Array): string {
+  const primaryType = eip712.primaryType;
+  const digest = TypedDataEncoder.hash(eip712.domain, { [primaryType]: eip712.types[primaryType] }, eip712.message);
+  return hexlify(ed25519.sign(getBytes(digest), privateKey));
+}
+
+async function deploySolanaEd25519Verifier(): Promise<SolanaEd25519Verifier> {
+  const sha512Factory = await hre.ethers.getContractFactory("Sha512");
+  const sha512 = await sha512Factory.deploy();
+  await sha512.waitForDeployment();
+
+  const powFactory = await hre.ethers.getContractFactory("Ed25519_pow");
+  const ed25519Pow = await powFactory.deploy();
+  await ed25519Pow.waitForDeployment();
+
+  const ed25519Factory = await hre.ethers.getContractFactory("Ed25519", {
+    libraries: {
+      Sha512: await sha512.getAddress(),
+      Ed25519_pow: await ed25519Pow.getAddress(),
+    },
+  });
+  const ed25519Library = await ed25519Factory.deploy();
+  await ed25519Library.waitForDeployment();
+
+  const verifierFactory = await hre.ethers.getContractFactory("SolanaEd25519Verifier", {
+    libraries: {
+      Ed25519: await ed25519Library.getAddress(),
+    },
+  });
+  const verifier = await verifierFactory.deploy();
+  return verifier.waitForDeployment();
 }
 
 describe("Decryption", function () {
@@ -782,6 +842,39 @@ describe("Decryption", function () {
       };
     }
 
+    async function prepareUserDecryptNativeFixture() {
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { decryption } = fixtureData;
+
+      const verifier = await deploySolanaEd25519Verifier();
+      const nativeUserPrivateKey = randomBytes(32);
+      const nativeUserPublicKey = ed25519.getPublicKey(nativeUserPrivateKey);
+      const nativeUserId = hexlify(nativeUserPublicKey);
+      const nativeContractId = createBytes32();
+      const authSigner = hexlify(concat([await verifier.getAddress(), nativeUserPublicKey]));
+      const extraData = buildDecryptionExtraData(
+        DEFAULT_KMS_CONTEXT_ID,
+        [nativeUserId, nativeContractId],
+        authSigner,
+      );
+
+      const eip712RequestMessage = createEIP712RequestUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses,
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        extraData,
+      );
+
+      return {
+        ...fixtureData,
+        extraData,
+        nativeUserSignature: signEd25519TypedData(eip712RequestMessage, nativeUserPrivateKey),
+      };
+    }
+
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
@@ -825,6 +918,32 @@ describe("Decryption", function () {
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+    });
+
+    it("Should request a user decryption with a native Solana Ed25519 signature", async function () {
+      const fixtureData = await loadFixture(prepareUserDecryptNativeFixture);
+
+      const requestTx = await fixtureData.decryption
+        .connect(fixtureData.tokenFundedTxSender)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsInfo,
+          ZeroAddress,
+          publicKey,
+          fixtureData.nativeUserSignature,
+          fixtureData.extraData,
+        );
+
+      await expect(requestTx)
+        .to.emit(fixtureData.decryption, "UserDecryptionRequest")
+        .withArgs(
+          decryptionId,
+          toValues(fixtureData.snsCiphertextMaterials),
+          ZeroAddress,
+          publicKey,
+          fixtureData.extraData,
+        );
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1750,6 +1869,41 @@ describe("Decryption", function () {
       };
     }
 
+    async function prepareDelegatedUserDecryptNativeFixture() {
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { decryption } = fixtureData;
+
+      const verifier = await deploySolanaEd25519Verifier();
+      const nativeDelegatePrivateKey = randomBytes(32);
+      const nativeDelegatePublicKey = ed25519.getPublicKey(nativeDelegatePrivateKey);
+      const nativeDelegatorId = createBytes32();
+      const nativeDelegateId = hexlify(nativeDelegatePublicKey);
+      const nativeContractId = createBytes32();
+      const authSigner = hexlify(concat([await verifier.getAddress(), nativeDelegatePublicKey]));
+      const extraData = buildDecryptionExtraData(
+        DEFAULT_KMS_CONTEXT_ID,
+        [nativeDelegatorId, nativeDelegateId, nativeContractId],
+        authSigner,
+      );
+
+      const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses,
+        ZeroAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        extraData,
+      );
+
+      return {
+        ...fixtureData,
+        extraData,
+        nativeDelegateSignature: signEd25519TypedData(eip712RequestMessage, nativeDelegatePrivateKey),
+      };
+    }
+
     beforeEach(async function () {
       // Initialize globally used variables before each test.
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
@@ -1794,6 +1948,32 @@ describe("Decryption", function () {
           delegationAccounts.delegateAddress,
           publicKey,
           extraDataV0,
+        );
+    });
+
+    it("Should request a delegated user decryption with a native Solana Ed25519 signature", async function () {
+      const fixtureData = await loadFixture(prepareDelegatedUserDecryptNativeFixture);
+
+      const requestTx = await fixtureData.decryption
+        .connect(fixtureData.tokenFundedTxSender)
+        .delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          { delegatorAddress: ZeroAddress, delegateAddress: ZeroAddress },
+          contractsInfo,
+          publicKey,
+          fixtureData.nativeDelegateSignature,
+          fixtureData.extraData,
+        );
+
+      await expect(requestTx)
+        .to.emit(fixtureData.decryption, "UserDecryptionRequest")
+        .withArgs(
+          decryptionId,
+          toValues(fixtureData.snsCiphertextMaterials),
+          ZeroAddress,
+          publicKey,
+          fixtureData.extraData,
         );
     });
 

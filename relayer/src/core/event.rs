@@ -1023,8 +1023,6 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&json.extra_data)?;
 
-        let is_versioned = extra_data.len() == 65 && extra_data.first().copied() == Some(0x01);
-
         let contract_address = json
             .contract_address
             .as_deref()
@@ -1051,17 +1049,8 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             .map(parse_fixed_bytes_32)
             .transpose()?;
 
-        if is_versioned {
-            if contract_id.is_none() || user_id.is_none() {
-                anyhow::bail!("Versioned input proof requests require contractId and userId");
-            }
-            if contract_address.is_some() || user_address.is_some() {
-                anyhow::bail!(
-                    "Versioned input proof requests must not include contractAddress or userAddress"
-                );
-            }
-        } else if contract_address.is_none() || user_address.is_none() {
-            anyhow::bail!("Legacy input proof requests require contractAddress and userAddress");
+        if contract_address.is_none() || user_address.is_none() {
+            anyhow::bail!("Input proof requests require contractAddress and userAddress");
         }
 
         Ok(InputProofRequest {
@@ -1089,22 +1078,51 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 fn parse_decryption_extra_data_identity_sequence(
     extra_data: &[u8],
 ) -> anyhow::Result<Option<Vec<FixedBytes<32>>>> {
-    if extra_data.is_empty() || extra_data == [0x00] || extra_data[0] != 0x02 {
+    if extra_data.is_empty() || extra_data == [0x00] {
+        return Ok(None);
+    }
+
+    if extra_data[0] != 0x01 {
+        return Ok(None);
+    }
+
+    if extra_data.len() == 33 {
         return Ok(None);
     }
 
     if extra_data.len() < 34 {
         anyhow::bail!(
-            "invalid v2 decryption extra_data: expected at least 34 bytes, got {}",
+            "invalid decryption extra_data: expected at least 34 bytes, got {}",
             extra_data.len()
         );
     }
 
     let count = extra_data[33] as usize;
-    let expected_len = 34 + count * 32;
+    let identities_offset = 34usize;
+    let base_len = identities_offset + count * 32;
+    let expected_len = if extra_data.len() == base_len {
+        base_len
+    } else {
+        if extra_data.len() < base_len + 1 {
+            anyhow::bail!(
+                "invalid decryption extra_data: expected at least {} bytes, got {}",
+                base_len + 1,
+                extra_data.len()
+            );
+        }
+        let auth_signer_len = extra_data[base_len] as usize;
+        if auth_signer_len < 20 {
+            anyhow::bail!(
+                "invalid decryption extra_data: auth signer must be at least 20 bytes, got {}",
+                auth_signer_len
+            );
+        }
+        base_len + 1 + auth_signer_len
+    };
+
     if extra_data.len() != expected_len {
         anyhow::bail!(
-            "invalid v2 decryption extra_data length: expected {} bytes, got {}",
+            "invalid decryption extra_data length: expected {} bytes, got {}",
             expected_len,
             extra_data.len()
         );
@@ -1112,11 +1130,11 @@ fn parse_decryption_extra_data_identity_sequence(
 
     let mut identities = Vec::with_capacity(count);
     for index in 0..count {
-        let start = 34 + index * 32;
+        let start = identities_offset + index * 32;
         let end = start + 32;
-        let identity: [u8; 32] = extra_data[start..end].try_into().map_err(|_| {
-            anyhow::anyhow!("failed to extract v2 decryption identity at index {index}")
-        })?;
+        let identity: [u8; 32] = extra_data[start..end]
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("failed to extract decryption identity at index {index}"))?;
         identities.push(FixedBytes::from(identity));
     }
 
@@ -1139,7 +1157,7 @@ fn parse_user_decrypt_extra_data_identities(
     }
 
     anyhow::bail!(
-        "invalid v2 decryption identity count: expected {} or {}, got {}",
+        "invalid decryption identity count: expected {} or {}, got {}",
         contract_count,
         contract_count + 1,
         identities.len()
@@ -1170,7 +1188,7 @@ fn parse_delegated_user_decrypt_extra_data_identities(
     }
 
     anyhow::bail!(
-        "invalid delegated v2 decryption identity count: expected {} or {}, got {}",
+        "invalid delegated decryption identity count: expected {} or {}, got {}",
         contract_count,
         contract_count + 2,
         identities.len()

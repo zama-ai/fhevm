@@ -10,9 +10,13 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const requireFromLibrary = createRequire(
   path.join(repoRoot, 'library-solidity/package.json'),
 );
+const requireFromGatewayContracts = createRequire(
+  path.join(repoRoot, 'gateway-contracts/package.json'),
+);
 const TFHE = requireFromLibrary('node-tfhe');
 const { ethers } = requireFromLibrary('ethers');
 const createHash = requireFromLibrary('keccak');
+const { ed25519 } = requireFromGatewayContracts('@noble/curves/ed25519');
 const {
   generateKeypair: generateRelayerKeypair,
 } = requireFromLibrary('@zama-fhe/relayer-sdk/node');
@@ -85,8 +89,8 @@ const SERIALIZED_SIZE_LIMIT_PK = BigInt(1024 * 1024 * 512);
 const SERIALIZED_SIZE_LIMIT_CRS = BigInt(1024 * 1024 * 512);
 const RAW_CT_HASH_DOMAIN_SEPARATOR = 'ZK-w_rct';
 const HANDLE_HASH_DOMAIN_SEPARATOR = 'ZK-w_hdl';
-const INPUT_PROOF_IDENTITIES_VERSION_1 = 0x01;
-const DECRYPTION_IDENTITIES_VERSION_2 = 0x02;
+const INPUT_PROOF_EXTRA_DATA_VERSION = 0x01;
+const DECRYPTION_EXTRA_DATA_VERSION = 0x01;
 const MAX_UINT64 = BigInt('18446744073709551615');
 const INPUT_ENCRYPTION_TYPES = {
   2: 0,
@@ -152,6 +156,7 @@ let stoppedHostListenerContainers = [];
 let stoppedHostNode = false;
 let deployedSolanaStackMode = false;
 let deployedStackModeValue = 'evm';
+let cachedSolanaEd25519VerifierPromise = null;
 
 process.on('SIGINT', () => {
   cleanup();
@@ -288,8 +293,8 @@ async function runInputProofCase(addresses, solanaEnv, testSuiteEnv) {
     ),
     gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', 'solana-input-proof'),
     hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-    contractAddress: null,
-    userAddress: null,
+    contractAddress,
+    userAddress: aliceWallet.address,
     contractIdentity,
     userIdentity,
     aclIdentity,
@@ -329,8 +334,8 @@ async function runInputProofCase(addresses, solanaEnv, testSuiteEnv) {
     ),
     gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', 'solana-input-proof'),
     hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-    contractAddress: null,
-    userAddress: null,
+    contractAddress,
+    userAddress: aliceWallet.address,
     contractIdentity,
     userIdentity,
     aclIdentity,
@@ -371,6 +376,7 @@ async function runInputProofCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -478,6 +484,7 @@ async function runUserDecryptionCase(addresses, solanaEnv, testSuiteEnv) {
       contractAddress,
       userIdentity,
       nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+      nativeSignerKeypairPath: anchorAuthorityKeypairPath,
       userWallet: aliceWallet,
       addresses,
       testSuiteEnv,
@@ -565,6 +572,7 @@ async function runUserDecryptionCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress: wrongContractAddress,
     userIdentity,
     nativeContractIdentities: wrongContractIdentity ? [wrongContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -586,6 +594,7 @@ async function runUserDecryptionCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -617,6 +626,7 @@ async function executeUserDecryptRequest({
   contractAddresses,
   userIdentity,
   nativeContractIdentities,
+  nativeSignerKeypairPath,
   handleContractPairs,
   userWallet,
   addresses,
@@ -646,9 +656,19 @@ async function executeUserDecryptRequest({
     startTimestamp ?? (await latestGatewayBlockTimestamp(testSuiteEnv, label));
   const requestDurationDays = durationDays ?? 1;
   const userAddress = userWallet.address;
-  const extraData =
-    userIdentity && requestNativeContractIdentities.length === requestContractAddresses.length
-      ? buildDecryptionExtraDataV2(
+  const useNativeSolanaAuth =
+    typeof nativeSignerKeypairPath === 'string' &&
+    nativeSignerKeypairPath.length > 0 &&
+    userIdentity &&
+    requestNativeContractIdentities.length === requestContractAddresses.length;
+  const extraData = useNativeSolanaAuth
+    ? buildDecryptionExtraData(
+        loadKmsContextId({ ...addresses, ...testSuiteEnv }),
+        [userIdentity, ...requestNativeContractIdentities],
+        await buildNativeSolanaAuthSigner(testSuiteEnv, nativeSignerKeypairPath),
+      )
+    : userIdentity && requestNativeContractIdentities.length === requestContractAddresses.length
+      ? buildDecryptionExtraData(
           loadKmsContextId({ ...addresses, ...testSuiteEnv }),
           [userIdentity, ...requestNativeContractIdentities],
         )
@@ -658,19 +678,19 @@ async function executeUserDecryptRequest({
     contractsChainId: Number(addresses.SOLANA_HOST_CHAIN_ID),
     publicKey,
     contractAddresses: requestContractAddresses,
-    userIdentity,
-    contractIdentities: requestNativeContractIdentities,
     startTimestamp: requestStartTimestamp,
     durationDays: requestDurationDays,
     extraData,
   });
-  const signature = await userWallet.signTypedData(
-    eip712.domain,
-    Object.fromEntries(
-      Object.entries(eip712.types).filter(([typeName]) => typeName !== 'EIP712Domain'),
-    ),
-    eip712.message,
-  );
+  const signature = useNativeSolanaAuth
+    ? signEd25519TypedData(eip712, loadSolanaEd25519PrivateKey(nativeSignerKeypairPath))
+    : await userWallet.signTypedData(
+        eip712.domain,
+        Object.fromEntries(
+          Object.entries(eip712.types).filter(([typeName]) => typeName !== 'EIP712Domain'),
+        ),
+        eip712.message,
+      );
 
   const body = {
     handleContractPairs: requestHandleContractPairs,
@@ -757,8 +777,6 @@ function buildUserDecryptEip712({
   contractsChainId,
   publicKey,
   contractAddresses,
-  userIdentity,
-  contractIdentities,
   startTimestamp,
   durationDays,
   extraData,
@@ -773,13 +791,6 @@ function buildUserDecryptEip712({
     throw new Error(`invalid contract address list for user decrypt: ${contractAddresses}`);
   }
 
-  const isVersionedV2 =
-    typeof extraData === 'string' &&
-    ensure0xHex(extraData).startsWith('0x02') &&
-    userIdentity &&
-    Array.isArray(contractIdentities) &&
-    contractIdentities.length === contractAddresses.length;
-
   return {
     types: {
       EIP712Domain: [
@@ -788,30 +799,15 @@ function buildUserDecryptEip712({
         { name: 'chainId', type: 'uint256' },
         { name: 'verifyingContract', type: 'address' },
       ],
-      ...(isVersionedV2
-        ? {
-            UserDecryptRequestVerificationV2: [
-              { name: 'publicKey', type: 'bytes' },
-              { name: 'userId', type: 'bytes32' },
-              { name: 'contractIds', type: 'bytes32[]' },
-              { name: 'startTimestamp', type: 'uint256' },
-              { name: 'durationDays', type: 'uint256' },
-              { name: 'extraData', type: 'bytes' },
-            ],
-          }
-        : {
-            UserDecryptRequestVerification: [
-              { name: 'publicKey', type: 'bytes' },
-              { name: 'contractAddresses', type: 'address[]' },
-              { name: 'startTimestamp', type: 'uint256' },
-              { name: 'durationDays', type: 'uint256' },
-              { name: 'extraData', type: 'bytes' },
-            ],
-          }),
+      UserDecryptRequestVerification: [
+        { name: 'publicKey', type: 'bytes' },
+        { name: 'contractAddresses', type: 'address[]' },
+        { name: 'startTimestamp', type: 'uint256' },
+        { name: 'durationDays', type: 'uint256' },
+        { name: 'extraData', type: 'bytes' },
+      ],
     },
-    primaryType: isVersionedV2
-      ? 'UserDecryptRequestVerificationV2'
-      : 'UserDecryptRequestVerification',
+    primaryType: 'UserDecryptRequestVerification',
     domain: {
       name: 'Decryption',
       version: '1',
@@ -819,22 +815,11 @@ function buildUserDecryptEip712({
       verifyingContract,
     },
     message: {
-      ...(isVersionedV2
-        ? {
-            publicKey: ensure0xHex(publicKey),
-            userId: userIdentity,
-            contractIds: contractIdentities,
-            startTimestamp: String(startTimestamp),
-            durationDays: String(durationDays),
-            extraData,
-          }
-        : {
-            publicKey: ensure0xHex(publicKey),
-            contractAddresses,
-            startTimestamp: String(startTimestamp),
-            durationDays: String(durationDays),
-            extraData,
-          }),
+      publicKey: ensure0xHex(publicKey),
+      contractAddresses,
+      startTimestamp: String(startTimestamp),
+      durationDays: String(durationDays),
+      extraData,
     },
   };
 }
@@ -1135,8 +1120,18 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const chainId = Number(addresses.SOLANA_HOST_CHAIN_ID);
   const alicePubkey = requiredScenarioField(identities, 'payer_pubkey', 'solana-confidential-token');
   const aliceIdentity = requiredScenarioField(identities, 'payer_pubkey_hex', 'solana-confidential-token');
+  const aliceUserAddress = requiredScenarioField(
+    identities,
+    'user_evm_address',
+    'solana-confidential-token',
+  );
   const bobPubkey = requiredScenarioField(identities, 'token_recipient_pubkey', 'solana-confidential-token');
   const bobIdentity = requiredScenarioField(identities, 'token_recipient_pubkey_hex', 'solana-confidential-token');
+  const bobUserAddress = requiredScenarioField(
+    identities,
+    'token_recipient_evm_address',
+    'solana-confidential-token',
+  );
   const aclIdentity = requiredScenarioField(identities, 'host_program_id_hex', 'solana-confidential-token');
 
   function runTokenCommand(commandName, extraArgs = [], payerKeypairPath = anchorAuthorityKeypairPath) {
@@ -1167,7 +1162,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     );
   }
 
-  async function buildTokenAmountProof(value, userIdentity, label) {
+  async function buildTokenAmountProof(value, userIdentity, userAddress, label) {
     return buildGatewayBackedInputProof({
       relayerUrl: RELAYER_URL,
       aclAddress: null,
@@ -1178,8 +1173,8 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
       ),
       gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', label),
       hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-      contractAddress: null,
-      userAddress: null,
+      contractAddress,
+      userAddress,
       contractIdentity,
       userIdentity,
       aclIdentity,
@@ -1247,6 +1242,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: aliceIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -1268,6 +1264,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const successTransferProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
+    aliceUserAddress,
     'solana-confidential-token transfer success',
   );
   const successTransfer = runTokenCommand('token-transfer', [
@@ -1366,6 +1363,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: aliceIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -1384,6 +1382,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: bobIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     userWallet: bobWallet,
     addresses,
     testSuiteEnv,
@@ -1402,6 +1401,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: bobIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     userWallet: bobWallet,
     addresses,
     testSuiteEnv,
@@ -1433,6 +1433,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const failedTransferProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
+    aliceUserAddress,
     'solana-confidential-token transfer failure',
   );
   const failedTransfer = runTokenCommand('token-transfer', [
@@ -1472,6 +1473,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: aliceIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -1489,6 +1491,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: bobIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     userWallet: bobWallet,
     addresses,
     testSuiteEnv,
@@ -1510,6 +1513,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const approveProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
+    aliceUserAddress,
     'solana-confidential-token approve',
   );
   const approve = runTokenCommand('token-approve-delegate', [
@@ -1523,6 +1527,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const overAllowanceProof = await buildTokenAmountProof(
     '1338',
     bobIdentity,
+    bobUserAddress,
     'solana-confidential-token transferFrom over-allowance',
   );
   const transferFromOver = runTokenCommand(
@@ -1569,6 +1574,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: aliceIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -1586,6 +1592,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: bobIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     userWallet: bobWallet,
     addresses,
     testSuiteEnv,
@@ -1602,6 +1609,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
   const exactAllowanceProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     bobIdentity,
+    bobUserAddress,
     'solana-confidential-token transferFrom exact-allowance',
   );
   const transferFromExact = runTokenCommand(
@@ -1645,6 +1653,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: aliceIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: anchorAuthorityKeypairPath,
     userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
@@ -1662,6 +1671,7 @@ async function runConfidentialTokenCase(addresses, solanaEnv, testSuiteEnv) {
     contractAddress,
     userIdentity: bobIdentity,
     nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     userWallet: bobWallet,
     addresses,
     testSuiteEnv,
@@ -1794,6 +1804,140 @@ function loadKmsSigners(envValues) {
   return signers;
 }
 
+function signEd25519TypedData(eip712, privateKey) {
+  const primaryType = requiredString(eip712.primaryType, 'primaryType');
+  const digest = ethers.TypedDataEncoder.hash(
+    eip712.domain,
+    {
+      [primaryType]: requiredValue(eip712.types?.[primaryType], `${primaryType} typed-data fields`),
+    },
+    eip712.message,
+  );
+  return bytesToHex(ed25519.sign(hexToBytes(digest), privateKey), true);
+}
+
+function loadSolanaKeypairBytes(keypairPath) {
+  const raw = fs.readFileSync(keypairPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`invalid Solana keypair file ${keypairPath}: expected JSON byte array`);
+  }
+  return Uint8Array.from(parsed);
+}
+
+function loadSolanaEd25519PrivateKey(keypairPath) {
+  const keypairBytes = loadSolanaKeypairBytes(keypairPath);
+  if (keypairBytes.length < 32) {
+    throw new Error(`invalid Solana keypair file ${keypairPath}: expected at least 32 bytes`);
+  }
+  return keypairBytes.slice(0, 32);
+}
+
+function loadSolanaEd25519PublicKey(keypairPath) {
+  const keypairBytes = loadSolanaKeypairBytes(keypairPath);
+  if (keypairBytes.length >= 64) {
+    return keypairBytes.slice(32, 64);
+  }
+  return ed25519.getPublicKey(loadSolanaEd25519PrivateKey(keypairPath));
+}
+
+async function buildNativeSolanaAuthSigner(testSuiteEnv, keypairPath) {
+  const verifierAddress = await ensureSolanaEd25519Verifier(testSuiteEnv);
+  const publicKey = loadSolanaEd25519PublicKey(keypairPath);
+  return bytesToHex(
+    Uint8Array.from([
+      ...hexToBytes(verifierAddress),
+      ...publicKey,
+    ]),
+    true,
+  );
+}
+
+async function ensureSolanaEd25519Verifier(testSuiteEnv) {
+  if (!cachedSolanaEd25519VerifierPromise) {
+    cachedSolanaEd25519VerifierPromise = deploySolanaEd25519Verifier(testSuiteEnv)
+      .catch((error) => {
+        cachedSolanaEd25519VerifierPromise = null;
+        throw error;
+      });
+  }
+  return cachedSolanaEd25519VerifierPromise;
+}
+
+async function deploySolanaEd25519Verifier(testSuiteEnv) {
+  const gatewayEnv = parseEnvFile(gatewayEnvPath);
+  const rpcUrl = normalizeStackHttpUrl(
+    requiredEnvValue(testSuiteEnv, 'GATEWAY_RPC_URL', 'solana-native-auth'),
+  ).toString();
+  const privateKey = normalizeHexPrivateKey(
+    requiredEnvValue(gatewayEnv, 'DEPLOYER_PRIVATE_KEY', 'solana-native-auth'),
+  );
+  const signer = new ethers.Wallet(privateKey, new ethers.JsonRpcProvider(rpcUrl));
+  let nextNonce = await signer.getNonce('pending');
+
+  const sha512 = await deployGatewayVerifierArtifact('Sha512', signer, {}, nextNonce);
+  nextNonce += 1;
+  const ed25519Pow = await deployGatewayVerifierArtifact(
+    'Ed25519_pow',
+    signer,
+    {},
+    nextNonce,
+  );
+  nextNonce += 1;
+  const ed25519Library = await deployGatewayVerifierArtifact('Ed25519', signer, {
+    Sha512: await sha512.getAddress(),
+    Ed25519_pow: await ed25519Pow.getAddress(),
+  }, nextNonce);
+  nextNonce += 1;
+  const verifier = await deployGatewayVerifierArtifact('SolanaEd25519Verifier', signer, {
+    Ed25519: await ed25519Library.getAddress(),
+  }, nextNonce);
+  return verifier.getAddress();
+}
+
+function loadGatewayVerifierArtifact(name) {
+  const artifactPath = path.join(
+    repoRoot,
+    'gateway-contracts/artifacts/contracts/verifiers',
+    `${name}.sol`,
+    `${name}.json`,
+  );
+  return JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+}
+
+function linkGatewayArtifactBytecode(artifact, libraries = {}) {
+  if (typeof artifact?.bytecode !== 'string') {
+    throw new Error('gateway verifier artifact is missing bytecode');
+  }
+
+  let bytecode = stripHexPrefix(artifact.bytecode);
+  for (const [fileName, contracts] of Object.entries(artifact.linkReferences ?? {})) {
+    for (const [contractName, references] of Object.entries(contracts)) {
+      const address = libraries[contractName];
+      if (!address) {
+        throw new Error(`missing library address for ${fileName}:${contractName}`);
+      }
+      const normalizedAddress = stripHexPrefix(ethers.getAddress(address));
+      for (const reference of references) {
+        const start = reference.start * 2;
+        const length = reference.length * 2;
+        bytecode =
+          `${bytecode.slice(0, start)}${normalizedAddress}${bytecode.slice(start + length)}`;
+      }
+    }
+  }
+  return `0x${bytecode}`;
+}
+
+async function deployGatewayVerifierArtifact(name, signer, libraries = {}, nonce) {
+  const artifact = loadGatewayVerifierArtifact(name);
+  const bytecode = linkGatewayArtifactBytecode(artifact, libraries);
+  const factory = new ethers.ContractFactory(artifact.abi, bytecode, signer);
+  const contract = await factory.deploy({ nonce });
+  await contract.waitForDeployment();
+  return contract;
+}
+
 function loadKmsContextId(envValues) {
   const gatewayEnv = fs.existsSync(gatewayEnvPath)
     ? parseEnvFile(gatewayEnvPath)
@@ -1827,16 +1971,13 @@ async function buildGatewayBackedInputProofInline({
     ? null
     : ethers.getAddress(requiredString(aclAddress, 'aclAddress'));
   const normalizedInputVerificationAddress = ethers.getAddress(inputVerificationAddress);
-  const isVersionedV1 = Boolean(normalizedContractIdentity && normalizedUserIdentity);
-  const normalizedContractAddress = isVersionedV1
-    ? null
-    : ethers.getAddress(requiredString(contractAddress, 'contractAddress'));
-  const normalizedUserAddress = isVersionedV1
-    ? null
-    : ethers.getAddress(requiredString(userAddress, 'userAddress'));
+  const normalizedContractAddress = ethers.getAddress(
+    requiredString(contractAddress, 'contractAddress'),
+  );
+  const normalizedUserAddress = ethers.getAddress(requiredString(userAddress, 'userAddress'));
   const inputProofExtraData =
-    isVersionedV1
-      ? buildInputProofExtraDataV1(normalizedContractIdentity, normalizedUserIdentity)
+    normalizedContractIdentity && normalizedUserIdentity
+      ? buildInputProofExtraData(normalizedContractIdentity, normalizedUserIdentity)
       : '0x00';
 
   if (!Number.isFinite(gatewayChainId) || gatewayChainId <= 0) {
@@ -1871,15 +2012,10 @@ async function buildGatewayBackedInputProofInline({
     ciphertextWithInputVerification: bytesToHex(ciphertext),
     contractChainId: `0x${hostChainId.toString(16)}`,
     extraData: inputProofExtraData,
-    ...(isVersionedV1
-      ? {
-          contractId: normalizedContractIdentity,
-          userId: normalizedUserIdentity,
-        }
-      : {
-          contractAddress: normalizedContractAddress,
-          userAddress: normalizedUserAddress,
-        }),
+    contractAddress: normalizedContractAddress,
+    userAddress: normalizedUserAddress,
+    ...(normalizedContractIdentity ? { contractId: normalizedContractIdentity } : {}),
+    ...(normalizedUserIdentity ? { userId: normalizedUserIdentity } : {}),
   };
 
   const postPayload = await fetchJsonExpectOk(`${normalizedRelayerUrl}/v2/input-proof`, {
@@ -2111,18 +2247,21 @@ function buildGatewayInputAuxDataV1(contractIdentity, userIdentity, aclIdentity,
   return auxData;
 }
 
-function buildInputProofExtraDataV1(contractIdentity, userIdentity) {
+function buildInputProofExtraData(contractIdentity, userIdentity) {
   return `0x${Buffer.concat([
-    Buffer.from([INPUT_PROOF_IDENTITIES_VERSION_1]),
+    Buffer.from([INPUT_PROOF_EXTRA_DATA_VERSION]),
     Buffer.from(hexToBytes(contractIdentity)),
     Buffer.from(hexToBytes(userIdentity)),
   ]).toString('hex')}`;
 }
 
-function buildDecryptionExtraDataV2(contextId, identities) {
+function buildDecryptionExtraData(contextId, identities, authSigner = null) {
+  if (!Array.isArray(identities) || identities.length === 0) {
+    throw new Error('decryption extraData requires at least one identity');
+  }
   const normalizedContextId = BigInt(contextId);
   const parts = [
-    Buffer.from([DECRYPTION_IDENTITIES_VERSION_2]),
+    Buffer.from([DECRYPTION_EXTRA_DATA_VERSION]),
     Buffer.from(
       normalizedContextId.toString(16).padStart(64, '0'),
       'hex',
@@ -2131,6 +2270,14 @@ function buildDecryptionExtraDataV2(contextId, identities) {
   ];
   for (const identity of identities) {
     parts.push(Buffer.from(hexToBytes(identity)));
+  }
+  if (authSigner) {
+    const authSignerBytes = hexToBytes(authSigner);
+    if (authSignerBytes.length < 20 || authSignerBytes.length > 255) {
+      throw new Error(`invalid authSigner length: ${authSignerBytes.length}`);
+    }
+    parts.push(Buffer.from([authSignerBytes.length]));
+    parts.push(Buffer.from(authSignerBytes));
   }
   return `0x${Buffer.concat(parts).toString('hex')}`;
 }
@@ -2175,6 +2322,13 @@ function getSolanaContractIdentityByAddress(identityMap, address) {
 
 function requiredString(value, fieldName) {
   if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`missing ${fieldName}`);
+  }
+  return value;
+}
+
+function requiredValue(value, fieldName) {
+  if (value === undefined || value === null) {
     throw new Error(`missing ${fieldName}`);
   }
   return value;
@@ -2250,48 +2404,26 @@ function verifyGatewayInputProofSignatures({
     chainId: gatewayChainId,
     verifyingContract: inputVerificationAddress,
   };
-  const isVersionedV1 =
-    typeof extraData === 'string' &&
-    ensure0xHex(extraData).length === 132 &&
-    ensure0xHex(extraData).startsWith('0x01');
-  const types = isVersionedV1
-    ? {
-        CiphertextVerificationV1: [
-          { name: 'ctHandles', type: 'bytes32[]' },
-          { name: 'contractId', type: 'bytes32' },
-          { name: 'userId', type: 'bytes32' },
-          { name: 'contractChainId', type: 'uint256' },
-          { name: 'extraData', type: 'bytes' },
-        ],
-      }
-    : {
-        CiphertextVerification: [
-          { name: 'ctHandles', type: 'bytes32[]' },
-          { name: 'userAddress', type: 'address' },
-          { name: 'contractAddress', type: 'address' },
-          { name: 'contractChainId', type: 'uint256' },
-          { name: 'extraData', type: 'bytes' },
-        ],
-      };
+  const types = {
+    CiphertextVerification: [
+      { name: 'ctHandles', type: 'bytes32[]' },
+      { name: 'userAddress', type: 'address' },
+      { name: 'contractAddress', type: 'address' },
+      { name: 'contractChainId', type: 'uint256' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  };
   const recoveredAddresses = signatures.map((signature) =>
     ethers.verifyTypedData(
       domain,
       types,
-      isVersionedV1
-        ? {
-            ctHandles: handles,
-            contractId: contractIdentity,
-            userId: userIdentity,
-            contractChainId: hostChainId,
-            extraData,
-          }
-        : {
-            ctHandles: handles,
-            userAddress,
-            contractAddress,
-            contractChainId: hostChainId,
-            extraData,
-          },
+      {
+        ctHandles: handles,
+        userAddress,
+        contractAddress,
+        contractChainId: hostChainId,
+        extraData,
+      },
       ensure0xHex(signature),
     ),
   );

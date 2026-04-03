@@ -7,7 +7,7 @@ use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use fhevm_gateway_bindings::decryption::IDecryption::RequestValidity;
 use tracing::debug;
 
-const USER_DECRYPT_IDENTITIES_VERSION_2: u8 = 0x02;
+const USER_DECRYPT_EXTRA_DATA_VERSION: u8 = 0x01;
 
 /// Builder pattern for creating UserDecryptRequest instances
 ///
@@ -173,8 +173,8 @@ impl UserDecryptRequestBuilder {
         Ok(self)
     }
 
-    /// Build versioned V2 extraData with canonical host identities.
-    pub fn with_v2_identities(
+    /// Build unified extraData with canonical host identities.
+    pub fn with_host_identities(
         mut self,
         context_id: [u8; 32],
         user_id: [u8; 32],
@@ -182,12 +182,12 @@ impl UserDecryptRequestBuilder {
     ) -> Result<Self> {
         if contract_ids.is_empty() {
             return Err(FhevmError::InvalidParams(
-                "At least one contract identity is required for V2 user decryption".to_string(),
+                "At least one contract identity is required for user decryption".to_string(),
             ));
         }
 
         let mut extra_data = Vec::with_capacity(34 + (contract_ids.len() + 1) * 32);
-        extra_data.push(USER_DECRYPT_IDENTITIES_VERSION_2);
+        extra_data.push(USER_DECRYPT_EXTRA_DATA_VERSION);
         extra_data.extend_from_slice(&context_id);
         extra_data.push((contract_ids.len() + 1) as u8);
         extra_data.extend_from_slice(&user_id);
@@ -439,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_with_v2_identities_populates_extra_data() {
+    fn test_builder_with_host_identities_populates_extra_data() {
         let handles = vec![vec![1u8; 32]];
         let contracts =
             vec![Address::from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1").unwrap()];
@@ -455,12 +455,12 @@ mod tests {
             .unwrap()
             .with_validity(1640995200, 30)
             .unwrap()
-            .with_v2_identities([7u8; 32], [8u8; 32], &[[9u8; 32]])
+            .with_host_identities([7u8; 32], [8u8; 32], &[[9u8; 32]])
             .unwrap()
             .build()
             .unwrap();
 
-        assert_eq!(request.extra_data[0], USER_DECRYPT_IDENTITIES_VERSION_2);
+        assert_eq!(request.extra_data[0], USER_DECRYPT_EXTRA_DATA_VERSION);
         assert_eq!(request.extra_data.len(), 98);
     }
 }

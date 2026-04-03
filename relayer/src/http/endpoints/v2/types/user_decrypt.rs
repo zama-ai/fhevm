@@ -28,7 +28,7 @@ pub struct UserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
     #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
-    /// Optional native host contract identities for V2 flows. Each item is a `0x`-prefixed bytes32 hex string.
+    /// Optional native host contract identities. Each item is a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
         value_type = Option<Vec<String>>,
@@ -40,18 +40,15 @@ pub struct UserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
-    /// Optional native host user identity for V2 flows. Must be a `0x`-prefixed bytes32 hex string.
+    /// Optional native host user identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
         example = "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         nullable = true
     )]
     pub user_id: Option<String>,
-    /// EIP-712 signature over the decryption request, signed by the user. Raw hex, 130 chars, no `0x` prefix.
-    #[validate(
-        length(equal = 130, message = "Must be 130 characters long"),
-        custom(function = "crate::http::validate_no_0x_hex")
-    )]
+    /// Versioned auth signature over the decryption request. Raw hex, no `0x` prefix.
+    #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(
         example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
@@ -63,7 +60,7 @@ pub struct UserDecryptRequestJson {
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+    /// Extra data forwarded to the gateway contract. Supports legacy `"0x00"` and versioned formats.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
@@ -86,7 +83,7 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
     #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
-    /// Optional native host contract identities for V2 flows. Each item is a `0x`-prefixed bytes32 hex string.
+    /// Optional native host contract identities. Each item is a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
         value_type = Option<Vec<String>>,
@@ -98,7 +95,7 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub delegator_address: String,
-    /// Optional native host delegator identity for V2 flows. Must be a `0x`-prefixed bytes32 hex string.
+    /// Optional native host delegator identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
         example = "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -109,7 +106,7 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub delegate_address: String,
-    /// Optional native host delegate identity for V2 flows. Must be a `0x`-prefixed bytes32 hex string.
+    /// Optional native host delegate identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
         example = "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -124,11 +121,8 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_u32_string"))]
     #[schema(example = "1")]
     pub duration_days: String,
-    /// EIP-712 signature over the delegation request, signed by the delegator. Raw hex, 130 chars, no `0x` prefix.
-    #[validate(
-        length(equal = 130, message = "Must be 130 characters long"),
-        custom(function = "crate::http::validate_no_0x_hex")
-    )]
+    /// Versioned auth signature over the delegation request. Raw hex, no `0x` prefix.
+    #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[schema(
         example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
     )]
@@ -138,7 +132,7 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+    /// Extra data forwarded to the gateway contract. Supports legacy `"0x00"` and versioned formats.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,

@@ -678,7 +678,15 @@ struct SolanaIdentityOverrides {
 fn parse_solana_decryption_identity_sequence(
     extra_data: &[u8],
 ) -> Result<Option<Vec<[u8; 32]>>, HostAclError> {
-    if extra_data.is_empty() || extra_data == [0x00] || extra_data[0] != 0x02 {
+    if extra_data.is_empty() || extra_data == [0x00] {
+        return Ok(None);
+    }
+
+    if extra_data[0] != 0x01 {
+        return Ok(None);
+    }
+
+    if extra_data.len() == 33 {
         return Ok(None);
     }
 
@@ -686,19 +694,47 @@ fn parse_solana_decryption_identity_sequence(
         return Err(HostAclError::CallFailed {
             chain_id: 0,
             message: format!(
-                "invalid v2 decryption extra_data: expected at least 34 bytes, got {}",
+                "invalid decryption extra_data: expected at least 34 bytes, got {}",
                 extra_data.len()
             ),
         });
     }
 
     let identity_count = extra_data[33] as usize;
-    let expected_len = 34 + identity_count * 32;
+    let base_len = 34 + identity_count * 32;
+    let expected_len = if extra_data.len() == base_len {
+        base_len
+    } else {
+        if extra_data.len() < base_len + 1 {
+            return Err(HostAclError::CallFailed {
+                chain_id: 0,
+                message: format!(
+                    "invalid decryption extra_data: expected at least {} bytes, got {}",
+                    base_len + 1,
+                    extra_data.len()
+                ),
+            });
+        }
+
+        let auth_signer_len = extra_data[base_len] as usize;
+        if auth_signer_len < 20 {
+            return Err(HostAclError::CallFailed {
+                chain_id: 0,
+                message: format!(
+                    "invalid decryption extra_data: auth signer must be at least 20 bytes, got {}",
+                    auth_signer_len
+                ),
+            });
+        }
+
+        base_len + 1 + auth_signer_len
+    };
+
     if extra_data.len() != expected_len {
         return Err(HostAclError::CallFailed {
             chain_id: 0,
             message: format!(
-                "invalid v2 decryption extra_data length: expected {} bytes, got {}",
+                "invalid decryption extra_data length: expected {} bytes, got {}",
                 expected_len,
                 extra_data.len()
             ),
@@ -751,7 +787,7 @@ fn parse_solana_user_identity_overrides(
     Err(HostAclError::CallFailed {
         chain_id: 0,
         message: format!(
-            "invalid v2 decryption identity count: expected {} or {}, got {}",
+            "invalid decryption identity count: expected {} or {}, got {}",
             contract_addresses.len(),
             contract_addresses.len() + 1,
             identities.len()
@@ -788,7 +824,7 @@ fn parse_solana_delegated_identity_overrides(
     Err(HostAclError::CallFailed {
         chain_id: 0,
         message: format!(
-            "invalid delegated v2 decryption identity count: expected {} or {}, got {}",
+            "invalid delegated decryption identity count: expected {} or {}, got {}",
             contract_addresses.len(),
             contract_addresses.len() + 2,
             identities.len()
@@ -804,7 +840,7 @@ fn zip_solana_contract_identities(
         return Err(HostAclError::CallFailed {
             chain_id: 0,
             message: format!(
-                "invalid v2 decryption contract identity count: expected {}, got {}",
+                "invalid decryption contract identity count: expected {}, got {}",
                 contract_addresses.len(),
                 contract_ids.len()
             ),

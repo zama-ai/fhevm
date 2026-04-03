@@ -20,8 +20,6 @@ pub mod validation_messages {
     // Generic length validation messages
     pub const LENGTH_MUST_BE_42_CHARACTERS: &str = "Must be 42 characters long"; // Keep for backward compatibility
     pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility
-    pub const LENGTH_MUST_BE_130_CHARACTERS: &str = "Must be 130 characters long";
-
     // Generic collection validation messages
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
@@ -101,20 +99,21 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
 ///
 /// Accepted formats:
 /// - `"0x00"`: Legacy format (version 0)
-/// - `"0x01" + 64 hex chars`: Versioned format (version 1: 1 byte version + 32 bytes payload)
-/// - `"0x02" + contextId(32B) + identityCount(1B) + identities(count * 32B)`: Versioned format
+/// - `"0x01" + contextId(32B)`: Context-only format
+/// - `"0x01" + contextId(32B) + identityCount(1B) + identities(count * 32B)`: Canonical identity format
+/// - `"0x01" + contextId(32B) + identityCount(1B) + identities(count * 32B) + authSignerLen(1B) + authSigner`:
+///   Canonical identity + non-EVM auth signer format
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
     match extra_data {
         "0x00" => Ok(()),
         s if s.len() == 68 && s.starts_with("0x01") => {
-            // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
             hex::decode(&s[2..]).map_err(|_| {
                 ValidationError::new("validation_error")
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
             })?;
             Ok(())
         }
-        s if s.starts_with("0x02") => {
+        s if s.starts_with("0x01") => {
             let bytes = hex::decode(&s[2..]).map_err(|_| {
                 ValidationError::new("validation_error")
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
@@ -123,9 +122,22 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
                 return Err(ValidationError::new("validation_error")
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
             }
-            let contract_count = bytes[33] as usize;
-            let expected_len = 34 + contract_count * 32;
-            if contract_count == 0 || bytes.len() != expected_len {
+            let identity_count = bytes[33] as usize;
+            if identity_count == 0 {
+                return Err(ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+            }
+            let base_len = 34 + identity_count * 32;
+            if bytes.len() == base_len {
+                return Ok(());
+            }
+            if bytes.len() < base_len + 1 {
+                return Err(ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+            }
+            let auth_signer_len = bytes[base_len] as usize;
+            let expected_len = base_len + 1 + auth_signer_len;
+            if auth_signer_len < 20 || bytes.len() != expected_len {
                 return Err(ValidationError::new("validation_error")
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
             }

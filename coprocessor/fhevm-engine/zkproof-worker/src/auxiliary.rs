@@ -2,8 +2,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use std::str::FromStr;
 
 const LEGACY_SIZE: usize = 92;
-const INPUT_PROOF_IDENTITIES_VERSION_1: u8 = 0x01;
-const INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH: usize = 65;
+const INPUT_PROOF_EXTRA_DATA_VERSION: u8 = 0x01;
+const INPUT_PROOF_IDENTITY_EXTRA_DATA_LENGTH: usize = 65;
 
 /// ZkData is the data that is used to generate the ZKPs
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ impl ZkData {
     /// Legacy format:
     /// `contract_addr(20) || user_addr(20) || acl_addr(20) || chain_id(32)`
     ///
-    /// Version 1 format:
+    /// Native identity format:
     /// `contract_id(32) || user_id(32) || acl_id(32) || chain_id(32)`
     pub fn assemble(&self) -> anyhow::Result<Vec<u8>> {
         let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(self.chain_id.as_u64())
@@ -64,10 +64,10 @@ impl ZkData {
 }
 
 fn parse_versioned_identities(extra_data: &[u8]) -> anyhow::Result<Option<([u8; 32], [u8; 32])>> {
-    if extra_data.len() != INPUT_PROOF_IDENTITIES_V1_EXTRA_DATA_LENGTH {
+    if extra_data.len() != INPUT_PROOF_IDENTITY_EXTRA_DATA_LENGTH {
         return Ok(None);
     }
-    if extra_data[0] != INPUT_PROOF_IDENTITIES_VERSION_1 {
+    if extra_data[0] != INPUT_PROOF_EXTRA_DATA_VERSION {
         return Ok(None);
     }
 
@@ -140,7 +140,7 @@ mod tests {
         let contract_id = [0x11_u8; 32];
         let user_id = [0x22_u8; 32];
         let acl_identity = [0x33_u8; 32];
-        let mut extra_data = vec![INPUT_PROOF_IDENTITIES_VERSION_1];
+        let mut extra_data = vec![INPUT_PROOF_EXTRA_DATA_VERSION];
         extra_data.extend_from_slice(&contract_id);
         extra_data.extend_from_slice(&user_id);
 
