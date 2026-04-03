@@ -16,7 +16,7 @@ Refer to the [[Quick start - Hardhat]](../getting-started/overview-1/hardhat/REA
 
 ### 2. **Foundry (coming soon)**
 
-Mocked mode support is planned for [Foundry](./write_contract/foundry.md) in future releases.
+Mocked mode support is planned for [Foundry](./foundry.md) in future releases.
 
 ## How mocked mode works
 
