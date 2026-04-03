@@ -162,8 +162,6 @@ Options:
           [default: 4s]
       --log-level <LOG_LEVEL>
           [default: INFO]
-      --host-chain-id <HOST_CHAIN_ID>
-          
       --get-logs-poll-interval <GET_LOGS_POLL_INTERVAL>
           [default: 1s]
       --get-logs-block-batch-size <GET_LOGS_BLOCK_BATCH_SIZE>
