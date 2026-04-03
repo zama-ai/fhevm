@@ -600,8 +600,8 @@ impl DriftDetector {
     }
 }
 
-/// Default chain ID used when handle extraction fails.
-const DEFAULT_CHAIN_ID: i64 = 12345;
+/// Sentinel chain ID for log display when handle extraction fails (unreachable in practice).
+const DEFAULT_CHAIN_ID: i64 = -1;
 
 /// Extracts the host chain ID from a ciphertext handle.
 /// Handles encode the chain ID in bytes 22..30 as a big-endian u64.
