@@ -1,10 +1,7 @@
 use alloy::primitives::{Address, Uint};
 use alloy::transports::http::reqwest::Url;
-use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
-
-use tracing::error;
 
 pub mod aws_s3;
 pub(crate) mod database;
@@ -36,7 +33,6 @@ impl TryFrom<u8> for KeyType {
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
-    pub host_chain_id: ChainId,
     pub database_url: DatabaseURL,
     pub database_pool_size: u32,
     pub verify_proof_req_db_channel: String,
@@ -63,27 +59,11 @@ pub struct ConfigSettings {
     pub drift_post_consensus_grace: Duration,
 }
 
-pub fn chain_id_from_env() -> Option<ChainId> {
-    let chain_id_str = std::env::var("CHAIN_ID").ok()?;
-    let Ok(raw) = chain_id_str.parse::<u64>() else {
-        error!("CHAIN_ID environment variable is not a valid u64");
-        return None;
-    };
-    match ChainId::try_from(raw) {
-        Ok(id) => Some(id),
-        Err(err) => {
-            error!(%err, "CHAIN_ID environment variable is out of range");
-            None
-        }
-    }
-}
-
 /// Default is used by unit tests only. Production defaults come from
 /// the CLI arg definitions in `bin/gw_listener.rs` (e.g. `--drift-no-consensus-timeout 5m`).
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
-            host_chain_id: chain_id_from_env().unwrap_or(ChainId::try_from(12345_u64).unwrap()),
             database_url: DatabaseURL::default(),
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
