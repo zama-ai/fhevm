@@ -220,6 +220,7 @@ pub async fn insert_tfhe_event(
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
         block_timestamp: PrimitiveDateTime::MAX,
+        block_hash: FixedBytes::<32>::ZERO,
         dependence_chain: tx_hash,
         tx_depth_size: 0,
         log_index: log.log_index,
