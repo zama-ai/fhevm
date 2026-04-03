@@ -40,6 +40,65 @@ describe('Upgrades', function () {
     expect(aclAddress).to.equal(await acl2.getAddress());
   });
 
+  it('deploy upgradeable ProtocolConfig', async function () {
+    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    const factoryUpgraded = await ethers.getContractFactory('ProtocolConfigUpgradedExample', this.signers.fred);
+    const nodes = [
+      {
+        txSenderAddress: '0x0000000000000000000000000000000000001111',
+        signerAddress: '0x0000000000000000000000000000000000002222',
+        ipAddress: '127.0.0.1',
+        storageUrl: 'https://s0.example.com',
+      },
+      {
+        txSenderAddress: '0x0000000000000000000000000000000000003333',
+        signerAddress: '0x0000000000000000000000000000000000004444',
+        ipAddress: '127.0.0.2',
+        storageUrl: 'https://s1.example.com',
+      },
+    ];
+    const thresholds = { decryptionThreshold: 1, kmsGenThreshold: 1 };
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, {
+      initializer: 'initialize',
+      kind: 'uups',
+    });
+    const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
+      call: { fn: 'initializeFromEmptyProxy', args: [nodes, thresholds] },
+    });
+    await pc.waitForDeployment();
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.1.0');
+    expect(await pc.getDecryptionThreshold()).to.equal(1n);
+    expect(await pc.getKmsGenThreshold()).to.equal(1n);
+    const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
+    await pc2.waitForDeployment();
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await pc2.getDecryptionThreshold()).to.equal(1n);
+    expect(await pc2.getKmsGenThreshold()).to.equal(1n);
+  });
+
+  it('deploy upgradeable KMSGeneration', async function () {
+    const factory = await ethers.getContractFactory('KMSGeneration', this.signers.fred);
+    const factoryUpgraded = await ethers.getContractFactory('KMSGenerationUpgradedExample', this.signers.fred);
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, {
+      initializer: 'initialize',
+      kind: 'uups',
+    });
+    const kg = await upgrades.upgradeProxy(emptyUUPS, factory, {
+      call: { fn: 'initializeFromEmptyProxy' },
+    });
+    await kg.waitForDeployment();
+    expect(await kg.getVersion()).to.equal('KMSGeneration v0.1.0');
+    expect(await kg.getActiveKeyId()).to.equal(0n);
+    expect(await kg.getActiveCrsId()).to.equal(0n);
+    expect(await kg.hasPendingKeyManagementRequest()).to.equal(false);
+    const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);
+    await kg2.waitForDeployment();
+    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.2.0');
+    expect(await kg2.getActiveKeyId()).to.equal(0n);
+    expect(await kg2.getActiveCrsId()).to.equal(0n);
+    expect(await kg2.hasPendingKeyManagementRequest()).to.equal(false);
+  });
+
   it('deploy upgradeable KMSVerifier', async function () {
     const kmsFactory = await ethers.getContractFactory('KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host

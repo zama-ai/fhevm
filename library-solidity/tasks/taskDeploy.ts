@@ -99,6 +99,12 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
 
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
+
+  const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
+
+  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -230,6 +236,72 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
     call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
   });
   console.info('HCULimit code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployProtocolConfig')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+    const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig', deployer);
+    const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+    const decryptionThreshold = +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD');
+    const kmsGenThreshold = +getRequiredEnvVar('KMS_GEN_THRESHOLD');
+
+    const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+    const initialKmsNodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] =
+      [];
+    for (let idx = 0; idx < numNodes; idx++) {
+      const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
+      let signerAddress: string;
+      if (!taskArguments.useAddress) {
+        const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
+        signerAddress = new ethers.Wallet(privKeySigner).address;
+      } else {
+        signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
+      }
+      const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+      const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
+      initialKmsNodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+    }
+
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [initialKmsNodes, { decryptionThreshold, kmsGenThreshold }],
+      },
+    });
+    console.info('ProtocolConfig code set successfully at address:', proxyAddress);
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration (host-side)
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployKMSGeneration').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSGeneration.sol:KMSGeneration', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: { fn: 'initializeFromEmptyProxy' },
+  });
+  console.info('KMSGeneration code set successfully at address:', proxyAddress);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -432,5 +504,65 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
       console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ProtocolConfig Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setProtocolConfigAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`ProtocolConfig address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ProtocolConfig address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant protocolConfigAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with protocolConfigAdd successfully!');
+    } catch (error) {
+      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup KMSGeneration Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setKMSGenerationAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`KMSGeneration address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write KMSGeneration address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant kmsGenerationAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with kmsGenerationAdd successfully!');
+    } catch (error) {
+      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
     }
   });
