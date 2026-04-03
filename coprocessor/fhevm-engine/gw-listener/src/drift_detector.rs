@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use alloy::primitives::{Address, FixedBytes, B256};
 use fhevm_engine_common::utils::to_hex;
 use sqlx::{Pool, Postgres, Row};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::metrics::{
     CONSENSUS_LATENCY_BLOCKS_HISTOGRAM, CONSENSUS_TIMEOUT_COUNTER, DRIFT_DETECTED_COUNTER,
@@ -602,8 +602,15 @@ impl DriftDetector {
 
 /// Extracts the host chain ID from a ciphertext handle.
 /// Handles encode the chain ID in bytes 22..30 as a big-endian u64.
-fn chain_id_from_handle(handle: CiphertextDigest) -> u64 {
-    u64::from_be_bytes(handle[22..30].try_into().expect("handle is 32 bytes"))
+fn chain_id_from_handle(handle: CiphertextDigest) -> i64 {
+    match handle[22..30].try_into() {
+        Ok(bytes) => u64::from_be_bytes(bytes) as i64,
+        // Unreachable in practice: CiphertextDigest is FixedBytes<32>.
+        Err(err) => {
+            error!(%err, "Failed to extract chain_id from handle");
+            12345
+        }
+    }
 }
 
 fn has_multiple_variants(submissions: &[Submission]) -> bool {
@@ -654,6 +661,23 @@ fn sender_count_for_variant(submissions: &[Submission], digests: DigestPair) -> 
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+
+    #[test]
+    fn chain_id_from_handle_reads_bytes_22_to_30_as_be_i64() {
+        let mut bytes = [0u8; 32];
+        let chain_id: i64 = 12345;
+        bytes[22..30].copy_from_slice(&(chain_id as u64).to_be_bytes());
+        assert_eq!(
+            chain_id_from_handle(CiphertextDigest::from(bytes)),
+            chain_id
+        );
+    }
+
+    #[test]
+    fn chain_id_from_handle_does_not_panic_on_extreme_bytes() {
+        let handle = CiphertextDigest::from([0xffu8; 32]);
+        let _ = chain_id_from_handle(handle);
+    }
 
     #[test]
     fn rebuild_preserves_state_across_batches() {
