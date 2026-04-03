@@ -600,17 +600,18 @@ impl DriftDetector {
     }
 }
 
+/// Default chain ID used when handle extraction fails.
+const DEFAULT_CHAIN_ID: i64 = 12345;
+
 /// Extracts the host chain ID from a ciphertext handle.
 /// Handles encode the chain ID in bytes 22..30 as a big-endian u64.
 fn chain_id_from_handle(handle: CiphertextDigest) -> i64 {
-    match handle[22..30].try_into() {
-        Ok(bytes) => u64::from_be_bytes(bytes) as i64,
+    let Ok(bytes): Result<[u8; 8], _> = handle[22..30].try_into() else {
         // Unreachable in practice: CiphertextDigest is FixedBytes<32>.
-        Err(err) => {
-            error!(%err, "Failed to extract chain_id from handle");
-            12345
-        }
-    }
+        error!("Failed to extract chain_id from handle: slice len != 8");
+        return DEFAULT_CHAIN_ID;
+    };
+    i64::try_from(u64::from_be_bytes(bytes)).unwrap_or(DEFAULT_CHAIN_ID)
 }
 
 fn has_multiple_variants(submissions: &[Submission]) -> bool {
@@ -665,7 +666,7 @@ mod tests {
     #[test]
     fn chain_id_from_handle_reads_bytes_22_to_30_as_be_i64() {
         let mut bytes = [0u8; 32];
-        let chain_id: i64 = 12345;
+        let chain_id: i64 = 137;
         bytes[22..30].copy_from_slice(&(chain_id as u64).to_be_bytes());
         assert_eq!(
             chain_id_from_handle(CiphertextDigest::from(bytes)),
