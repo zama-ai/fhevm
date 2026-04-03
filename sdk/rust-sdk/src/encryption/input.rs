@@ -15,7 +15,7 @@ use tfhe::{safe_serialization::safe_serialize, zk::ZkComputeLoad};
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_rct";
 const HANDLE_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_hdl";
-const INPUT_PROOF_IDENTITIES_VERSION_1: u8 = 0x01;
+const INPUT_PROOF_EXTRA_DATA_VERSION: u8 = 0x01;
 
 fn padded_identity_from_address(address: Address) -> [u8; 32] {
     let mut identity = [0u8; 32];
@@ -114,7 +114,7 @@ impl EncryptedInputBuilder {
     }
 
     /// Creates a new instance of EncryptedInputBuilder for native 32-byte host identities.
-    pub fn new_v1(
+    pub fn new_with_acl_identity(
         acl_identity: [u8; 32],
         public_key: Arc<tfhe::CompactPublicKey>,
         crs: Arc<tfhe::zk::CompactPkeCrs>,
@@ -276,8 +276,8 @@ impl EncryptedInputBuilder {
         Ok(aux_data)
     }
 
-    /// Creates version 1 auxiliary data for native 32-byte host identities.
-    pub fn create_auxiliary_data_v1(
+    /// Creates auxiliary data for native 32-byte host identities.
+    pub fn create_auxiliary_data_with_identities(
         &self,
         contract_id: [u8; 32],
         user_id: [u8; 32],
@@ -291,10 +291,10 @@ impl EncryptedInputBuilder {
         Ok(aux_data)
     }
 
-    /// Creates version 1 gateway extraData carrying native host identities.
-    pub fn create_input_proof_extra_data_v1(contract_id: [u8; 32], user_id: [u8; 32]) -> Vec<u8> {
+    /// Creates gateway extraData carrying native host identities.
+    pub fn create_input_proof_extra_data(contract_id: [u8; 32], user_id: [u8; 32]) -> Vec<u8> {
         let mut extra_data = Vec::with_capacity(65);
-        extra_data.push(INPUT_PROOF_IDENTITIES_VERSION_1);
+        extra_data.push(INPUT_PROOF_EXTRA_DATA_VERSION);
         extra_data.extend_from_slice(&contract_id);
         extra_data.extend_from_slice(&user_id);
         extra_data
@@ -350,12 +350,13 @@ impl EncryptedInputBuilder {
     }
 
     /// Builds the final ciphertext with proof and generates handles for native 32-byte host identities.
-    pub fn encrypt_and_prove_for_v1(
+    pub fn encrypt_and_prove_with_identities(
         &mut self,
         contract_id: [u8; 32],
         user_id: [u8; 32],
     ) -> Result<EncryptedInputV1> {
-        let aux_data = self.create_auxiliary_data_v1(contract_id, user_id, self.acl_identity)?;
+        let aux_data =
+            self.create_auxiliary_data_with_identities(contract_id, user_id, self.acl_identity)?;
         let ciphertext = self.build_with_proof(&aux_data)?;
         let bit_widths = self.get_bits();
         let handles = Self::compute_handles(

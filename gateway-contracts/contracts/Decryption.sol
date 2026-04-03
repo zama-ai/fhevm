@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
 import { ciphertextCommitsAddress, gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IERC7913SignatureVerifier } from "@openzeppelin/contracts/interfaces/IERC7913.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
@@ -65,19 +66,6 @@ contract Decryption is
     }
 
     /**
-     * @notice The typed data structure for the EIP712 signature to validate in V2 user decryption requests.
-     * @dev V2 binds the request to native 32-byte host identities while preserving the existing auth address.
-     */
-    struct UserDecryptRequestVerificationV2 {
-        bytes publicKey;
-        bytes32 userId;
-        bytes32[] contractIds;
-        uint256 startTimestamp;
-        uint256 durationDays;
-        bytes extraData;
-    }
-
-    /**
      * @notice The typed data structure for the EIP712 signature to validate in delegated user decryption requests.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined as
      * EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE is.
@@ -94,20 +82,6 @@ contract Decryption is
         /// @notice The duration in days of the user decryption request after the start timestamp.
         uint256 durationDays;
         /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
-    /**
-     * @notice The typed data structure for the EIP712 signature to validate in V2 delegated user decryption requests.
-     * @dev V2 binds the request to native 32-byte host identities while preserving the existing auth addresses.
-     */
-    struct DelegatedUserDecryptRequestVerificationV2 {
-        bytes publicKey;
-        bytes32 delegatorId;
-        bytes32 delegateId;
-        bytes32[] contractIds;
-        uint256 startTimestamp;
-        uint256 durationDays;
         bytes extraData;
     }
 
@@ -157,7 +131,7 @@ contract Decryption is
      */
     uint8 internal constant MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
-    uint8 internal constant DECRYPTION_IDENTITIES_VERSION_2 = 0x02;
+    uint8 internal constant DECRYPTION_EXTRA_DATA_VERSION = 0x01;
 
     /**
      * @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
@@ -189,17 +163,11 @@ contract Decryption is
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
         "uint256 durationDays,bytes extraData)";
 
-    string private constant EIP712_USER_DECRYPT_REQUEST_TYPE_V2 =
-        "UserDecryptRequestVerificationV2(bytes publicKey,bytes32 userId,bytes32[] contractIds,uint256 startTimestamp,"
-        "uint256 durationDays,bytes extraData)";
-
     /**
      * @notice The hash of the UserDecryptRequestVerification structure typed data definition
      * used for signature validation in user decryption requests.
      */
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
-    bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_V2_HASH =
-        keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE_V2));
 
     /**
      * @notice The definition of the DelegatedUserDecryptRequestVerification structure typed data.
@@ -208,18 +176,12 @@ contract Decryption is
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
         "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
-    string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_V2 =
-        "DelegatedUserDecryptRequestVerificationV2(bytes publicKey,bytes32 delegatorId,bytes32 delegateId,bytes32[] contractIds,"
-        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
-
     /**
      * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
      * used for signature validation in delegated user decryption requests.
      */
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
-    bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_V2_HASH =
-        keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_V2));
 
     /**
      * @notice The definition of the UserDecryptResponseVerification structure typed data.
@@ -813,9 +775,9 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Version 1 and 2 share the same context-id prefix:
+        // Version 1 uses the unified context-id prefix:
         // [version | contextId(32B) | ...]
-        if (version == 1 || version == 2) {
+        if (version == DECRYPTION_EXTRA_DATA_VERSION) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
@@ -826,11 +788,20 @@ contract Decryption is
         revert UnsupportedExtraDataVersion(version);
     }
 
-    function _decodeUserDecryptRequestV2Identities(
+    function _decodeUserDecryptRequestIdentities(
         bytes calldata extraData,
         uint256 contractCount
-    ) internal pure returns (bool useV2, bytes32 userId, bytes32[] memory contractIds) {
-        if (extraData.length == 0 || uint8(extraData[0]) != DECRYPTION_IDENTITIES_VERSION_2) {
+    ) internal pure returns (bool hasExplicitIdentities, bytes32 userId, bytes32[] memory contractIds) {
+        if (extraData.length == 0 || (extraData.length == 1 && extraData[0] == 0)) {
+            return (false, bytes32(0), new bytes32[](0));
+        }
+
+        uint8 version = uint8(extraData[0]);
+        if (version != DECRYPTION_EXTRA_DATA_VERSION) {
+            return (false, bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length == 33) {
             return (false, bytes32(0), new bytes32[](0));
         }
 
@@ -839,14 +810,7 @@ contract Decryption is
         }
 
         uint256 identityCount = uint8(extraData[33]);
-        uint256 expectedLength = 34 + identityCount * 32;
-        if (extraData.length != expectedLength) {
-            revert InvalidExtraDataLength(extraData.length, expectedLength);
-        }
-
-        if (identityCount == contractCount) {
-            return (false, bytes32(0), new bytes32[](0));
-        }
+        _decodeExtraDataAuthSigner(extraData, identityCount);
 
         if (identityCount != contractCount + 1) {
             revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 1) * 32);
@@ -862,15 +826,24 @@ contract Decryption is
         return (true, userId, contractIds);
     }
 
-    function _decodeDelegatedUserDecryptRequestV2Identities(
+    function _decodeDelegatedUserDecryptRequestIdentities(
         bytes calldata extraData,
         uint256 contractCount
     )
         internal
         pure
-        returns (bool useV2, bytes32 delegatorId, bytes32 delegateId, bytes32[] memory contractIds)
+        returns (bool hasExplicitIdentities, bytes32 delegatorId, bytes32 delegateId, bytes32[] memory contractIds)
     {
-        if (extraData.length == 0 || uint8(extraData[0]) != DECRYPTION_IDENTITIES_VERSION_2) {
+        if (extraData.length == 0 || (extraData.length == 1 && extraData[0] == 0)) {
+            return (false, bytes32(0), bytes32(0), new bytes32[](0));
+        }
+
+        uint8 version = uint8(extraData[0]);
+        if (version != DECRYPTION_EXTRA_DATA_VERSION) {
+            return (false, bytes32(0), bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length == 33) {
             return (false, bytes32(0), bytes32(0), new bytes32[](0));
         }
 
@@ -879,14 +852,7 @@ contract Decryption is
         }
 
         uint256 identityCount = uint8(extraData[33]);
-        uint256 expectedLength = 34 + identityCount * 32;
-        if (extraData.length != expectedLength) {
-            revert InvalidExtraDataLength(extraData.length, expectedLength);
-        }
-
-        if (identityCount == contractCount) {
-            return (false, bytes32(0), bytes32(0), new bytes32[](0));
-        }
+        _decodeExtraDataAuthSigner(extraData, identityCount);
 
         if (identityCount != contractCount + 2) {
             revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 2) * 32);
@@ -903,6 +869,32 @@ contract Decryption is
         return (true, delegatorId, delegateId, contractIds);
     }
 
+    function _decodeExtraDataAuthSigner(
+        bytes calldata extraData,
+        uint256 identityCount
+    ) internal pure returns (bool hasAuthSigner, bytes memory authSigner) {
+        uint256 authSignerLengthOffset = 34 + identityCount * 32;
+        if (extraData.length < authSignerLengthOffset) {
+            revert InvalidExtraDataLength(extraData.length, authSignerLengthOffset);
+        }
+
+        if (extraData.length == authSignerLengthOffset) {
+            return (false, bytes(""));
+        }
+
+        if (extraData.length < authSignerLengthOffset + 1) {
+            revert InvalidExtraDataLength(extraData.length, authSignerLengthOffset + 1);
+        }
+
+        uint256 authSignerLength = uint8(extraData[authSignerLengthOffset]);
+        uint256 expectedLength = authSignerLengthOffset + 1 + authSignerLength;
+        if (authSignerLength < 20 || extraData.length != expectedLength) {
+            revert InvalidExtraDataLength(extraData.length, expectedLength);
+        }
+
+        return (true, extraData[authSignerLengthOffset + 1:expectedLength]);
+    }
+
     function _validateUserDecryptRequestSignature(
         RequestValidity calldata requestValidity,
         ContractsInfo calldata contractsInfo,
@@ -911,29 +903,36 @@ contract Decryption is
         bytes calldata signature,
         bytes calldata extraData
     ) internal view virtual {
-        if (extraData.length != 0 && uint8(extraData[0]) == DECRYPTION_IDENTITIES_VERSION_2) {
-            _validateUserDecryptRequestSignatureV2Only(
-                contractsInfo.addresses.length,
-                requestValidity.startTimestamp,
-                requestValidity.durationDays,
-                contractsInfo.chainId,
-                userAddress,
-                publicKey,
-                signature,
-                extraData
-            );
-            return;
-        }
-
-        _validateUserDecryptRequestSignatureV1Only(
+        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
+            publicKey,
             contractsInfo.addresses,
             requestValidity.startTimestamp,
             requestValidity.durationDays,
-            contractsInfo.chainId,
-            userAddress,
-            publicKey,
-            signature,
             extraData
+        );
+
+        (bool hasExplicitIdentities,,) = _decodeUserDecryptRequestIdentities(extraData, contractsInfo.addresses.length);
+
+        if (hasExplicitIdentities) {
+            (bool hasAuthSigner, bytes memory authSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.addresses.length + 1
+            );
+            if (hasAuthSigner) {
+                _requireValidERC7913Signature(
+                    authSigner,
+                    _hashUserDecryptRequestVerification(userDecryptRequestVerification, contractsInfo.chainId),
+                    signature
+                );
+                return;
+            }
+        }
+
+        _validateUserDecryptRequestEIP712Signature(
+            userDecryptRequestVerification,
+            userAddress,
+            signature,
+            contractsInfo.chainId
         );
     }
 
@@ -945,186 +944,45 @@ contract Decryption is
         bytes calldata signature,
         bytes calldata extraData
     ) internal view virtual {
-        if (extraData.length != 0 && uint8(extraData[0]) == DECRYPTION_IDENTITIES_VERSION_2) {
-            _validateDelegatedUserDecryptRequestSignatureV2Only(
-                contractsInfo.addresses.length,
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification =
+            DelegatedUserDecryptRequestVerification(
+                publicKey,
+                contractsInfo.addresses,
+                delegationAccounts.delegatorAddress,
                 requestValidity.startTimestamp,
                 requestValidity.durationDays,
-                contractsInfo.chainId,
-                delegationAccounts.delegateAddress,
-                publicKey,
-                signature,
                 extraData
             );
-            return;
+
+        (bool hasExplicitIdentities,,,) = _decodeDelegatedUserDecryptRequestIdentities(
+            extraData,
+            contractsInfo.addresses.length
+        );
+
+        if (hasExplicitIdentities) {
+            (bool hasAuthSigner, bytes memory authSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.addresses.length + 2
+            );
+            if (hasAuthSigner) {
+                _requireValidERC7913Signature(
+                    authSigner,
+                    _hashDelegatedUserDecryptRequestVerification(
+                        delegatedUserDecryptRequestVerification,
+                        contractsInfo.chainId
+                    ),
+                    signature
+                );
+                return;
+            }
         }
-
-        _validateDelegatedUserDecryptRequestSignatureV1Only(
-            contractsInfo.addresses,
-            delegationAccounts.delegatorAddress,
-            requestValidity.startTimestamp,
-            requestValidity.durationDays,
-            contractsInfo.chainId,
-            delegationAccounts.delegateAddress,
-            publicKey,
-            signature,
-            extraData
-        );
-    }
-
-    function _validateUserDecryptRequestSignatureV1Only(
-        address[] calldata contractAddresses,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        uint256 contractsChainId,
-        address userAddress,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) internal view virtual {
-        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
-            publicKey,
-            contractAddresses,
-            startTimestamp,
-            durationDays,
-            extraData
-        );
-
-        _validateUserDecryptRequestEIP712Signature(
-            userDecryptRequestVerification,
-            userAddress,
-            signature,
-            contractsChainId
-        );
-    }
-
-    function _validateUserDecryptRequestSignatureV2Only(
-        uint256 contractCount,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        uint256 contractsChainId,
-        address userAddress,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) internal view virtual {
-        UserDecryptRequestVerificationV2 memory userDecryptRequestVerificationV2 =
-            _buildUserDecryptRequestVerificationV2(
-                contractCount,
-                startTimestamp,
-                durationDays,
-                publicKey,
-                extraData
-            );
-        _validateUserDecryptRequestEIP712SignatureV2(
-            userDecryptRequestVerificationV2,
-            userAddress,
-            signature,
-            contractsChainId
-        );
-    }
-
-    function _validateDelegatedUserDecryptRequestSignatureV1Only(
-        address[] calldata contractAddresses,
-        address delegatorAddress,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        uint256 contractsChainId,
-        address delegateAddress,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) internal view virtual {
-        DelegatedUserDecryptRequestVerification
-            memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
-                publicKey,
-                contractAddresses,
-                delegatorAddress,
-                startTimestamp,
-                durationDays,
-                extraData
-            );
 
         _validateDelegatedUserDecryptRequestEIP712Signature(
             delegatedUserDecryptRequestVerification,
-            delegateAddress,
+            delegationAccounts.delegateAddress,
             signature,
-            contractsChainId
+            contractsInfo.chainId
         );
-    }
-
-    function _validateDelegatedUserDecryptRequestSignatureV2Only(
-        uint256 contractCount,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        uint256 contractsChainId,
-        address delegateAddress,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) internal view virtual {
-        DelegatedUserDecryptRequestVerificationV2 memory delegatedUserDecryptRequestVerificationV2 =
-            _buildDelegatedUserDecryptRequestVerificationV2(
-                contractCount,
-                startTimestamp,
-                durationDays,
-                publicKey,
-                extraData
-            );
-
-        _validateDelegatedUserDecryptRequestEIP712SignatureV2(
-            delegatedUserDecryptRequestVerificationV2,
-            delegateAddress,
-            signature,
-            contractsChainId
-        );
-    }
-
-    function _buildUserDecryptRequestVerificationV2(
-        uint256 contractCount,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        bytes calldata publicKey,
-        bytes calldata extraData
-    ) internal pure returns (UserDecryptRequestVerificationV2 memory) {
-        (bool useV2, bytes32 userId, bytes32[] memory contractIds) = _decodeUserDecryptRequestV2Identities(
-            extraData,
-            contractCount
-        );
-        if (!useV2) {
-            revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 1) * 32);
-        }
-
-        return UserDecryptRequestVerificationV2(publicKey, userId, contractIds, startTimestamp, durationDays, extraData);
-    }
-
-    function _buildDelegatedUserDecryptRequestVerificationV2(
-        uint256 contractCount,
-        uint256 startTimestamp,
-        uint256 durationDays,
-        bytes calldata publicKey,
-        bytes calldata extraData
-    ) internal pure returns (DelegatedUserDecryptRequestVerificationV2 memory) {
-        (
-            bool useV2,
-            bytes32 delegatorId,
-            bytes32 delegateId,
-            bytes32[] memory contractIds
-        ) = _decodeDelegatedUserDecryptRequestV2Identities(extraData, contractCount);
-        if (!useV2) {
-            revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 2) * 32);
-        }
-
-        return
-            DelegatedUserDecryptRequestVerificationV2(
-                publicKey,
-                delegatorId,
-                delegateId,
-                contractIds,
-                startTimestamp,
-                durationDays,
-                extraData
-            );
     }
 
     /**
@@ -1182,19 +1040,6 @@ contract Decryption is
         }
     }
 
-    function _validateUserDecryptRequestEIP712SignatureV2(
-        UserDecryptRequestVerificationV2 memory userDecryptRequestVerification,
-        address userAddress,
-        bytes calldata signature,
-        uint256 contractsChainId
-    ) internal view virtual {
-        bytes32 digest = _hashUserDecryptRequestVerificationV2(userDecryptRequestVerification, contractsChainId);
-        address signer = ECDSA.recover(digest, signature);
-        if (signer != userAddress) {
-            revert InvalidUserSignature(signature);
-        }
-    }
-
     /**
      * @notice Validates the EIP712 signature for a given delegated user decryption request.
      * @dev This function checks that the signer address is the same as the delegate address.
@@ -1219,18 +1064,31 @@ contract Decryption is
         }
     }
 
-    function _validateDelegatedUserDecryptRequestEIP712SignatureV2(
-        DelegatedUserDecryptRequestVerificationV2 memory delegatedUserDecryptRequestVerification,
-        address delegateAddress,
-        bytes calldata signature,
-        uint256 contractsChainId
+    function _requireValidERC7913Signature(
+        bytes memory signer,
+        bytes32 digest,
+        bytes calldata signature
     ) internal view virtual {
-        bytes32 digest = _hashDelegatedUserDecryptRequestVerificationV2(
-            delegatedUserDecryptRequestVerification,
-            contractsChainId
-        );
-        address signer = ECDSA.recover(digest, signature);
-        if (signer != delegateAddress) {
+        if (signer.length <= 20) {
+            revert InvalidUserSignature(signature);
+        }
+
+        address verifier;
+        assembly {
+            verifier := shr(96, mload(add(signer, 0x20)))
+        }
+
+        uint256 keyLength = signer.length - 20;
+        bytes memory key = new bytes(keyLength);
+        for (uint256 i = 0; i < keyLength; ++i) {
+            key[i] = signer[i + 20];
+        }
+
+        try IERC7913SignatureVerifier(verifier).verify(key, digest, signature) returns (bytes4 magicValue) {
+            if (magicValue != IERC7913SignatureVerifier.verify.selector) {
+                revert InvalidUserSignature(signature);
+            }
+        } catch {
             revert InvalidUserSignature(signature);
         }
     }
@@ -1295,24 +1153,6 @@ contract Decryption is
         return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
-    function _hashUserDecryptRequestVerificationV2(
-        UserDecryptRequestVerificationV2 memory userDecryptRequestVerification,
-        uint256 contractsChainId
-    ) internal view virtual returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_USER_DECRYPT_REQUEST_TYPE_V2_HASH,
-                keccak256(userDecryptRequestVerification.publicKey),
-                userDecryptRequestVerification.userId,
-                keccak256(abi.encodePacked(userDecryptRequestVerification.contractIds)),
-                userDecryptRequestVerification.startTimestamp,
-                userDecryptRequestVerification.durationDays,
-                keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
-            )
-        );
-        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
-    }
-
     /**
      * @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
      * @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
@@ -1329,25 +1169,6 @@ contract Decryption is
                 keccak256(delegatedUserDecryptRequestVerification.publicKey),
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
                 delegatedUserDecryptRequestVerification.delegatorAddress,
-                delegatedUserDecryptRequestVerification.startTimestamp,
-                delegatedUserDecryptRequestVerification.durationDays,
-                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
-            )
-        );
-        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
-    }
-
-    function _hashDelegatedUserDecryptRequestVerificationV2(
-        DelegatedUserDecryptRequestVerificationV2 memory delegatedUserDecryptRequestVerification,
-        uint256 contractsChainId
-    ) internal view virtual returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_V2_HASH,
-                keccak256(delegatedUserDecryptRequestVerification.publicKey),
-                delegatedUserDecryptRequestVerification.delegatorId,
-                delegatedUserDecryptRequestVerification.delegateId,
-                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractIds)),
                 delegatedUserDecryptRequestVerification.startTimestamp,
                 delegatedUserDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))

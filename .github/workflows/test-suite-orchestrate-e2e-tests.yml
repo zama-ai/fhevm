@@ -46,11 +46,6 @@ jobs:
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
-  relayer-docker-build:
-    if: *build-trigger-condition
-    uses: ./.github/workflows/relayer-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
@@ -64,7 +59,6 @@ jobs:
       - gateway-contracts-docker-build
       - host-contracts-docker-build
       - kms-connector-docker-build
-      - relayer-docker-build
       - test-suite-docker-build
     if: ${{ success() || failure() }}
     env:
@@ -86,8 +80,6 @@ jobs:
       connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
-      relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -134,10 +126,6 @@ jobs:
 
             core.setOutput('gateway-version', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
             core.setOutput('host-version', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
-
-            core.setOutput('relayer-migrate-version', getImageTagIfBuilt('relayer-docker-build', 'relayer_migrate_build_result'));
-            core.setOutput('relayer-version', getImageTagIfBuilt('relayer-docker-build', 'relayer_build_result'));
-
             core.setOutput('test-suite-version', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
 
   run-e2e-tests:
@@ -166,6 +154,4 @@ jobs:
       connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

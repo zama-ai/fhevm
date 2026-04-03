@@ -55,16 +55,12 @@ on:
         description: "KMS Connector Transaction Sender Image Version"
         default: ""
         type: string
-      relayer-migrate-version:
-        description: "Relayer DB Migration Image Version"
+      test-suite-version:
+        description: "Test suite version"
         default: ""
         type: string
       relayer-version:
         description: "Relayer version"
-        default: ""
-        type: string
-      test-suite-version:
-        description: "Test suite version"
         default: ""
         type: string
       kms-core-version:
@@ -112,9 +108,8 @@ jobs:
       CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector-gw-listener-version }}
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
-      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }} 
-      RELAYER_VERSION: ${{ inputs.relayer-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
+      RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
     runs-on: large_ubuntu_32
     steps:

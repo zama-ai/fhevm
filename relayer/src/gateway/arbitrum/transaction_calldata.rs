@@ -11,22 +11,11 @@ use crate::gateway::arbitrum::bindings::{
 use alloy::{
     hex,
     primitives::{Bytes, FixedBytes, U256},
-    sol,
     sol_types::SolCall,
 };
 use tracing::info;
 
 pub struct ComputeCalldata;
-
-sol! {
-    function verifyProofRequestV2(
-        uint256 contractChainId,
-        bytes32 contractId,
-        bytes32 userId,
-        bytes ciphertextWithZKProof,
-        bytes extraData
-    );
-}
 
 impl ComputeCalldata {
     /// Computes calldata for public decryption request
@@ -150,37 +139,24 @@ impl ComputeCalldata {
     pub fn verify_proof_req(
         input_proof_request: &crate::core::event::InputProofRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = match (
+        let (Some(contract_address), Some(user_address)) = (
             input_proof_request.contract_address,
             input_proof_request.user_address,
-            input_proof_request.contract_id,
-            input_proof_request.user_id,
-        ) {
-            (Some(contract_address), Some(user_address), None, None) => {
-                let request_call = InputVerification::verifyProofRequestCall {
-                    contractChainId: U256::from(input_proof_request.contract_chain_id),
-                    contractAddress: contract_address,
-                    userAddress: user_address,
-                    ciphertextWithZKProof: input_proof_request.ciphetext_with_zk_proof.clone(),
-                    extraData: input_proof_request.extra_data.clone(),
-                };
-                request_call.abi_encode()
-            }
-            (None, None, Some(contract_id), Some(user_id)) => verifyProofRequestV2Call {
-                contractChainId: U256::from(input_proof_request.contract_chain_id),
-                contractId: contract_id,
-                userId: user_id,
-                ciphertextWithZKProof: input_proof_request.ciphetext_with_zk_proof.clone(),
-                extraData: input_proof_request.extra_data.clone(),
-            }
-            .abi_encode(),
-            _ => {
-                return Err(EventProcessingError::ValidationFailed {
-                    field: "input_proof_request".to_string(),
-                    reason: "invalid input proof identity combination".to_string(),
-                });
-            }
+        ) else {
+            return Err(EventProcessingError::ValidationFailed {
+                field: "input_proof_request".to_string(),
+                reason: "contractAddress and userAddress are required".to_string(),
+            });
         };
+
+        let request_call = InputVerification::verifyProofRequestCall {
+            contractChainId: U256::from(input_proof_request.contract_chain_id),
+            contractAddress: contract_address,
+            userAddress: user_address,
+            ciphertextWithZKProof: input_proof_request.ciphetext_with_zk_proof.clone(),
+            extraData: input_proof_request.extra_data.clone(),
+        };
+        let calldata = request_call.abi_encode();
         Ok(Bytes::from(calldata))
     }
 }
