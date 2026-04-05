@@ -127,6 +127,8 @@ enum SolanaHostProgramError {
     MissingSlotHashesSysvar = 13,
     UnavailableRecentBlockhash = 14,
     InvalidSessionAccount = 15,
+    InvalidSlotHashesKey = 16,
+    InvalidSlotHashesData = 17,
 }
 
 impl From<SolanaHostProgramError> for ProgramError {
@@ -618,13 +620,37 @@ fn load_recent_blockhash(
     current_slot: u64,
 ) -> Result<[u8; 32], ProgramError> {
     if slot_hashes_account.key != &sysvar::slot_hashes::id() {
-        return Err(SolanaHostProgramError::MissingSlotHashesSysvar.into());
+        return Err(SolanaHostProgramError::InvalidSlotHashesKey.into());
     }
 
     let data = slot_hashes_account.try_borrow_data()?;
-    let slot_hashes: SlotHashes = deserialize(data.as_ref())
-        .map_err(|_| ProgramError::from(SolanaHostProgramError::MissingSlotHashesSysvar))?;
+    if data.len() < 8 {
+        return Err(SolanaHostProgramError::InvalidSlotHashesData.into());
+    }
+    let count_bytes: [u8; 8] = data[..8]
+        .try_into()
+        .map_err(|_| ProgramError::from(SolanaHostProgramError::InvalidSlotHashesData))?;
+    let entry_count = u64::from_le_bytes(count_bytes) as usize;
+    let entries = data
+        .get(8..)
+        .ok_or_else(|| ProgramError::from(SolanaHostProgramError::InvalidSlotHashesData))?;
 
+    for chunk in entries.chunks_exact(40).take(entry_count) {
+        let slot = u64::from_le_bytes(
+            chunk[..8]
+                .try_into()
+                .map_err(|_| ProgramError::from(SolanaHostProgramError::InvalidSlotHashesData))?,
+        );
+        if slot < current_slot {
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&chunk[8..40]);
+            return Ok(hash);
+        }
+    }
+
+    // Fallback for non-runtime test fixtures that still use bincode-serialized SlotHashes.
+    let slot_hashes: SlotHashes = deserialize(data.as_ref())
+        .map_err(|_| ProgramError::from(SolanaHostProgramError::InvalidSlotHashesData))?;
     slot_hashes
         .iter()
         .find(|(slot, _)| *slot < current_slot)

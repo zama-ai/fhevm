@@ -2,7 +2,7 @@ import { DEFAULT_CHAIN_ID, DEFAULT_HOST_RPC_PORT, defaultHostChainKey, hostChain
 import type { State } from "../types";
 
 const fallbackHostChains = () => [
-  { key: defaultHostChainKey([]), chainId: DEFAULT_CHAIN_ID, rpcPort: DEFAULT_HOST_RPC_PORT },
+  { key: defaultHostChainKey([]), chainId: DEFAULT_CHAIN_ID, chainKind: "evm" as const, rpcPort: DEFAULT_HOST_RPC_PORT },
 ];
 
 /** Returns host-chain runtime descriptors for the current scenario, including the implicit single-chain default. */

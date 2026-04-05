@@ -15,6 +15,7 @@ use solana_program::{
     pubkey::Pubkey as SolanaPubkey, sysvar,
 };
 use solana_slot_hashes::SlotHashes;
+use solana_system_interface::program as system_program;
 
 struct TestAccount {
     key: SolanaPubkey,
@@ -126,6 +127,20 @@ fn slot_hashes_account(slot: u64, hash_byte: u8) -> TestAccount {
     )
 }
 
+fn system_program_account() -> TestAccount {
+    TestAccount::new(system_program::id(), system_program::id(), false, false, Vec::new())
+}
+
+fn rent_account() -> TestAccount {
+    TestAccount::new(
+        solana_program::sysvar::rent::id(),
+        sysvar::id(),
+        false,
+        false,
+        bincode::serialize(&solana_program::rent::Rent::default()).unwrap(),
+    )
+}
+
 fn session_account(program_id: SolanaPubkey, caller: Pubkey) -> TestAccount {
     let (session_pda, _) = find_session_pda(&program_id, &SolanaPubkey::from(caller));
     TestAccount::new(
@@ -205,6 +220,8 @@ fn initialize_pda_and_admin_calls_persist_on_chain_state() {
 
     let mut clock = clock_account(42, 1_700_000_050);
     let mut slot_hashes = slot_hashes_account(41, 7);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let add_pauser_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::AddPauser { account: pauser },
         session_nonce: 1,
@@ -218,12 +235,16 @@ fn initialize_pda_and_admin_calls_persist_on_chain_state() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &add_pauser_accounts, &add_pauser_ix).unwrap();
     }
 
     let mut clock = clock_account(43, 1_700_000_060);
     let mut slot_hashes = slot_hashes_account(42, 8);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let pause_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::Pause,
         session_nonce: 1,
@@ -237,6 +258,8 @@ fn initialize_pda_and_admin_calls_persist_on_chain_state() {
             pauser_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &pause_accounts, &pause_ix).unwrap();
     }
@@ -277,6 +300,8 @@ fn execute_fhe_rand_updates_program_state() {
 
     let mut clock = clock_account(77, 1_700_000_100);
     let mut slot_hashes = slot_hashes_account(76, 0xAB);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let execute_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::FheRand {
             rand_type: FheType::Uint8,
@@ -293,6 +318,8 @@ fn execute_fhe_rand_updates_program_state() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &execute_accounts, &execute_ix).unwrap();
     }
@@ -372,6 +399,8 @@ fn execute_verify_input_returns_verified_handle_on_chain() {
 
     let mut clock = clock_account(80, 1_700_000_120);
     let mut slot_hashes = slot_hashes_account(79, 0xBC);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let verify_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::VerifyInput {
             context,
@@ -389,6 +418,8 @@ fn execute_verify_input_returns_verified_handle_on_chain() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &verify_accounts, &verify_ix).unwrap();
     }
@@ -452,6 +483,8 @@ fn execute_verify_decryption_signatures_returns_true_on_chain() {
 
     let mut clock = clock_account(81, 1_700_000_130);
     let mut slot_hashes = slot_hashes_account(80, 0xCD);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let verify_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::VerifyDecryptionSignatures {
             handles_list: payload.ct_handles.clone(),
@@ -469,6 +502,8 @@ fn execute_verify_decryption_signatures_returns_true_on_chain() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &verify_accounts, &verify_ix).unwrap();
     }
@@ -513,6 +548,8 @@ fn execute_batch_rejects_oversized_instruction_batches() {
         .collect();
     let mut clock = clock_account(90, 1_700_000_140);
     let mut slot_hashes = slot_hashes_account(89, 0xDD);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let batch_ix = encode_instruction(&OnchainInstruction::ExecuteBatch {
         instructions,
         session_nonce: 1,
@@ -526,6 +563,8 @@ fn execute_batch_rejects_oversized_instruction_batches() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &batch_accounts, &batch_ix).unwrap_err()
     };
@@ -561,6 +600,9 @@ fn execute_requires_slot_hashes_sysvar() {
     }
 
     let mut clock = clock_account(77, 1_700_000_100);
+    let mut wrong_slot_hashes = system_program_account();
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let execute_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::FheRand {
             rand_type: FheType::Uint8,
@@ -577,11 +619,14 @@ fn execute_requires_slot_hashes_sysvar() {
             state_account.account_info(),
             owner_session.account_info(),
             clock.account_info(),
+            wrong_slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &execute_accounts, &execute_ix).unwrap_err()
     };
 
-    assert_eq!(err, ProgramError::Custom(13));
+    assert_eq!(err, ProgramError::Custom(16));
 }
 
 #[test]
@@ -656,6 +701,8 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
 
     let mut clock = clock_account(80, 1_700_000_120);
     let mut slot_hashes = slot_hashes_account(79, 0xBC);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let verify_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::VerifyInput {
             context,
@@ -673,12 +720,16 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &verify_accounts, &verify_ix).unwrap();
     }
 
     let mut clock = clock_account(80, 1_700_000_120);
     let mut slot_hashes = slot_hashes_account(79, 0xBC);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let binary_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::BinaryOp {
             op: crate::Operator::FheAdd,
@@ -698,12 +749,16 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &binary_accounts, &binary_ix).unwrap();
     }
 
     let mut clock = clock_account(80, 1_700_000_120);
     let mut slot_hashes = slot_hashes_account(79, 0xBC);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let clean_ix = encode_instruction(&OnchainInstruction::Execute {
         instruction: HostInstruction::CleanTransientStorage,
         session_nonce,
@@ -717,12 +772,16 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &clean_accounts, &clean_ix).unwrap();
     }
 
     let mut clock = clock_account(80, 1_700_000_120);
     let mut slot_hashes = slot_hashes_account(79, 0xBC);
+    let mut system_program = system_program_account();
+    let mut rent = rent_account();
     let err = {
         let binary_accounts = vec![
             owner_account.account_info(),
@@ -730,6 +789,8 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
             owner_session.account_info(),
             clock.account_info(),
             slot_hashes.account_info(),
+            system_program.account_info(),
+            rent.account_info(),
         ];
         process_instruction(&program_id, &binary_accounts, &binary_ix).unwrap_err()
     };

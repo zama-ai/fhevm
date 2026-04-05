@@ -1,12 +1,13 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
-const { spawn, spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const { createRequire } = require('node:module');
-const path = require('node:path');
-const process = require('node:process');
+// @ts-ignore: resolved by Bun at runtime; @types/node resolves this after `bun install`
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import process from 'node:process';
 
-const repoRoot = path.resolve(__dirname, '../../..');
+const repoRoot = path.resolve(import.meta.dir, '../../../../');
 const requireFromLibrary = createRequire(
   path.join(repoRoot, 'library-solidity/package.json'),
 );
@@ -21,44 +22,22 @@ const {
   generateKeypair: generateRelayerKeypair,
 } = requireFromLibrary('@zama-fhe/relayer-sdk/node');
 const TKMS = requireFromLibrary('node-tkms');
-const stackModePath = path.join(
-  repoRoot,
-  'test-suite/fhevm/env/staging/.stack-mode.local',
-);
-const solanaLocalnetScriptPath = path.join(
-  repoRoot,
-  'test-suite/fhevm/scripts/manage-solana-localnet.sh',
-);
+const runtimeRoot = path.join(repoRoot, '.fhevm/runtime');
+const runtimeStatePath = path.join(repoRoot, '.fhevm/state/state.json');
 const solanaHostRoot = path.join(repoRoot, 'solana-host-contracts');
-const addressesEnvPath = path.join(solanaHostRoot, 'addresses/.env.host');
+const legacyAddressesEnvPath = path.join(solanaHostRoot, 'addresses/.env.host');
 const solanaExampleEnvPath = path.join(solanaHostRoot, '.env.example');
-const testSuiteEnvPath = path.join(
+const legacyTestSuiteEnvPath = path.join(
   repoRoot,
   'test-suite/fhevm/env/staging/.env.test-suite.local',
 );
-const gatewayEnvPath = path.join(
+const legacyGatewayEnvPath = path.join(
   repoRoot,
   'test-suite/fhevm/env/staging/.env.gateway-sc.local',
 );
-const hostEnvPath = path.join(
+const legacyHostEnvPath = path.join(
   repoRoot,
   'test-suite/fhevm/env/staging/.env.host-sc.local',
-);
-const solanaHostNodeComposePath = path.join(
-  repoRoot,
-  'test-suite/fhevm/docker-compose/host-node-solana-docker-compose.yml',
-);
-const mixedSolanaHostNodeComposePath = path.join(
-  repoRoot,
-  'test-suite/fhevm/docker-compose/host-node-solana-mixed-docker-compose.yml',
-);
-const solanaHostNodeEnvPath = path.join(
-  repoRoot,
-  'test-suite/fhevm/env/staging/.env.host-node-solana.local',
-);
-const listenerManifestPath = path.join(
-  repoRoot,
-  'coprocessor/fhevm-engine/Cargo.toml',
 );
 const localCliManifestPath = path.join(
   solanaHostRoot,
@@ -72,15 +51,15 @@ const tokenRecipientKeypairPath = path.join(
   solanaHostRoot,
   'tests/fixtures/confidential-token-recipient.json',
 );
+const runtimeEnvPath = (name) => path.join(runtimeRoot, 'env', `${name}.env`);
+const runtimeAddressesEnvPath = (key) =>
+  path.join(runtimeRoot, 'addresses', key, '.env.host');
 
 const DB_CONTAINER = 'coprocessor-and-kms-db';
 const DB_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/coprocessor';
 const RELAYER_URL = 'http://127.0.0.1:3000';
 const SOLANA_RPC_URL = 'http://127.0.0.1:18999';
-const EVM_HOST_RPC_URL = 'http://127.0.0.1:8545';
 const SOLANA_E2E_COMMITMENT = 'confirmed';
-const SOLANA_LISTENER_HEALTH_PORT = 18085;
-const SOLANA_LISTENER_HEALTH_URL = `http://127.0.0.1:${SOLANA_LISTENER_HEALTH_PORT}/healthz`;
 const INPUT_PROOF_U64_VALUE = '18446744073709550042';
 const ADD42_INPUT_VALUE = '7';
 const TOKEN_TRANSFER_INPUT_VALUE = '1337';
@@ -102,42 +81,6 @@ const INPUT_ENCRYPTION_TYPES = {
   160: 7,
   256: 8,
 };
-const REQUIRED_STACK_CONTAINERS = [
-  'host-node',
-  'gateway-node',
-  'coprocessor-and-kms-db',
-  'coprocessor-gw-listener',
-  'coprocessor-tfhe-worker',
-  'coprocessor-zkproof-worker',
-  'coprocessor-sns-worker',
-  'coprocessor-transaction-sender',
-];
-const REQUIRED_SOLANA_STACK_CONTAINERS = [
-  'host-node',
-  'gateway-node',
-  'coprocessor-and-kms-db',
-  'coprocessor-host-listener',
-  'coprocessor-gw-listener',
-  'coprocessor-tfhe-worker',
-  'coprocessor-zkproof-worker',
-  'coprocessor-sns-worker',
-  'coprocessor-transaction-sender',
-];
-const REQUIRED_MIXED_SOLANA_STACK_CONTAINERS = [
-  'host-node-solana',
-  'gateway-node',
-  'coprocessor-and-kms-db',
-  'coprocessor-host-listener-solana',
-  'coprocessor-gw-listener',
-  'coprocessor-tfhe-worker',
-  'coprocessor-zkproof-worker',
-  'coprocessor-sns-worker',
-  'coprocessor-transaction-sender',
-];
-const HOST_LISTENER_CONTAINER_PATTERN = /^coprocessor\d*-host-listener(?:-poller)?$/;
-const EVM_HOST_NODE_CONTAINER = 'host-node';
-const MIXED_SOLANA_HOST_NODE_CONTAINER = 'host-node-solana';
-const MIXED_SOLANA_HOST_LISTENER_CONTAINER = 'coprocessor-host-listener-solana';
 
 const verbose = process.argv.includes('--verbose');
 const testType = process.argv
@@ -149,14 +92,37 @@ if (!testType) {
   process.exit(1);
 }
 
-let localnetChild = null;
-let solanaListenerChild = null;
-let solanaListenerLogs = '';
-let stoppedHostListenerContainers = [];
-let stoppedHostNode = false;
-let deployedSolanaStackMode = false;
-let deployedStackModeValue = 'evm';
 let cachedSolanaEd25519VerifierPromise = null;
+
+function readRuntimeState() {
+  if (!fs.existsSync(runtimeStatePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(runtimeStatePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function solanaChainKeyFromState() {
+  const state = readRuntimeState();
+  const hostChains = state?.scenario?.hostChains;
+  if (!Array.isArray(hostChains)) {
+    return 'host';
+  }
+  return hostChains.find((chain) => (chain?.chainKind || 'evm') === 'solana')?.key || 'host';
+}
+
+function activeAddressesEnvPath() {
+  const runtimePath = runtimeAddressesEnvPath(solanaChainKeyFromState());
+  return fs.existsSync(runtimePath) ? runtimePath : legacyAddressesEnvPath;
+}
+
+function activeEnvPath(name, legacyPath) {
+  const runtimePath = runtimeEnvPath(name);
+  return fs.existsSync(runtimePath) ? runtimePath : legacyPath;
+}
 
 process.on('SIGINT', () => {
   cleanup();
@@ -174,44 +140,45 @@ main()
     process.exit(0);
   })
   .catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof Error) {
+      console.error(error.stack ?? error.message);
+    } else {
+      console.error(String(error));
+    }
     cleanup();
     process.exit(1);
   });
 
 async function main() {
   const solanaEnv = parseEnvFile(solanaExampleEnvPath);
-  const testSuiteEnv = fs.existsSync(testSuiteEnvPath)
-    ? parseEnvFile(testSuiteEnvPath)
-    : {};
-  const localnetEnv = buildSolanaBootstrapEnv(solanaEnv, testSuiteEnv);
-  const deployedStackMode = readStackMode();
-  const deployedSolanaStack =
-    deployedStackMode === 'solana' || deployedStackMode === 'mixed';
-  deployedSolanaStackMode = deployedSolanaStack;
-  deployedStackModeValue = deployedStackMode;
-  await ensureDockerDbReady();
-  if (deployedSolanaStack) {
-    await ensureDeployedSolanaStack();
-  } else {
-    await ensureFullCoprocessorStack();
-  }
+  const testSuiteEnvPath = activeEnvPath('test-suite', legacyTestSuiteEnvPath);
+  const testSuiteEnv: Record<string, string> = fs.existsSync(testSuiteEnvPath) ? parseEnvFile(testSuiteEnvPath) : {};
+  const localnetEnv = {
+    ...solanaEnv,
+    ...(testSuiteEnv.CHAIN_ID_HOST_SOLANA || testSuiteEnv.CHAIN_ID_HOST
+      ? { SOLANA_HOST_CHAIN_ID: testSuiteEnv.CHAIN_ID_HOST_SOLANA || testSuiteEnv.CHAIN_ID_HOST }
+      : {}),
+    ...(testSuiteEnv.CHAIN_ID_GATEWAY ? { CHAIN_ID_GATEWAY: testSuiteEnv.CHAIN_ID_GATEWAY } : {}),
+    ...(testSuiteEnv.INPUT_VERIFICATION_ADDRESS
+      ? { INPUT_VERIFICATION_ADDRESS: testSuiteEnv.INPUT_VERIFICATION_ADDRESS }
+      : {}),
+    ...(testSuiteEnv.DECRYPTION_ADDRESS
+      ? { DECRYPTION_ADDRESS: testSuiteEnv.DECRYPTION_ADDRESS }
+      : {}),
+    ...(testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER
+      ? { SOLANA_DOCKER_HOST_NODE_CONTAINER: testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER }
+      : {}),
+  };
 
-  const localnet = await ensureLocalnet(localnetEnv);
-  if (localnet.child) {
-    localnetChild = localnet.child;
-  }
+  await ensureStackDeployed();
 
-  const addresses = parseEnvFile(addressesEnvPath);
+  const addresses = parseEnvFile(activeAddressesEnvPath());
   const chainId = Number(addresses.SOLANA_HOST_CHAIN_ID);
   if (!Number.isFinite(chainId)) {
-    throw new Error('invalid SOLANA_HOST_CHAIN_ID in addresses/.env.host');
+    throw new Error('invalid SOLANA_HOST_CHAIN_ID in addresses env');
   }
 
   await resetChainState(chainId);
-  if (!deployedSolanaStack) {
-    await startSolanaListener(addresses);
-  }
 
   switch (testType) {
     case 'solana-input-proof':
@@ -238,7 +205,7 @@ async function main() {
 
 function printUsage() {
   console.error(`Usage:
-  node test-suite/fhevm/scripts/run-solana-e2e.js <test-type> [--verbose]
+  bun test-suite/e2e/test/solana/run-solana-e2e.ts <test-type> [--verbose]
 
 Supported test types:
   solana-input-proof
@@ -246,6 +213,93 @@ Supported test types:
   solana-public-decrypt-http-ebool
   solana-public-decrypt-http-mixed
   solana-confidential-token`);
+}
+
+async function ensureStackDeployed() {
+  const state = readRuntimeState();
+  if (!state) {
+    throw new Error(
+      'Stack has not been deployed; run `./fhevm-cli deploy --local --solana` first',
+    );
+  }
+  const hasSolana = state?.scenario?.hostChains?.some(
+    (c: any) => (c?.chainKind || 'evm') === 'solana',
+  );
+  if (!hasSolana) {
+    throw new Error(
+      'Active stack has no Solana host chain; redeploy with --solana or --multi-chain',
+    );
+  }
+  sqlScalar('SELECT 1');
+  if (!(await solanaRpcHealthy())) {
+    throw new Error(`Solana RPC ${SOLANA_RPC_URL} is not healthy`);
+  }
+  for (const container of requiredSolanaContainers(state)) {
+    if (!dockerContainerRunning(container)) {
+      throw new Error(
+        `Required container ${container} is not running; deploy the stack first with ./fhevm-cli deploy --local --solana`,
+      );
+    }
+  }
+}
+
+function requiredSolanaContainers(state: any) {
+  const chains = state?.scenario?.hostChains ?? [];
+  const hasMixed =
+    chains.some((c: any) => (c?.chainKind || 'evm') === 'evm') &&
+    chains.some((c: any) => c?.chainKind === 'solana');
+  return hasMixed
+    ? [
+        'host-node-solana',
+        'gateway-node',
+        'coprocessor-and-kms-db',
+        'coprocessor-host-listener-solana',
+        'coprocessor-gw-listener',
+        'coprocessor-tfhe-worker',
+        'coprocessor-zkproof-worker',
+        'coprocessor-sns-worker',
+        'coprocessor-transaction-sender',
+      ]
+    : [
+        'host-node',
+        'gateway-node',
+        'coprocessor-and-kms-db',
+        'coprocessor-host-listener',
+        'coprocessor-gw-listener',
+        'coprocessor-tfhe-worker',
+        'coprocessor-zkproof-worker',
+        'coprocessor-sns-worker',
+        'coprocessor-transaction-sender',
+      ];
+}
+
+function solanaListenerContainerName() {
+  const state = readRuntimeState();
+  const chains = state?.scenario?.hostChains ?? [];
+  const hasMixed =
+    chains.some((c: any) => (c?.chainKind || 'evm') === 'evm') &&
+    chains.some((c: any) => c?.chainKind === 'solana');
+  return hasMixed ? 'coprocessor-host-listener-solana' : 'coprocessor-host-listener';
+}
+
+function ensureSolanaListenerAlive() {
+  const containerName = solanaListenerContainerName();
+  if (dockerContainerRunning(containerName)) {
+    return;
+  }
+  const logs = runCommandAllowFailure('docker', ['logs', '--tail', '120', containerName], {
+    cwd: repoRoot,
+    capture: true,
+    allowSuccess: true,
+  });
+  const logOutput = logs.status === 0 ? logs.stdout.trim() || logs.stderr.trim() : '';
+  throw new Error(
+    `Solana host listener ${containerName} is not running${logOutput ? `\n${logOutput}` : ''}`,
+  );
+}
+
+function cleanup() {
+  // No spawned processes to clean up in deployed mode.
 }
 
 async function runInputProofCase(addresses, solanaEnv, testSuiteEnv) {
@@ -1700,6 +1754,7 @@ function runLocalCliScenario(scenarioName, solanaEnv, extraArgs = []) {
 }
 
 function runLocalCliJson(commandName, solanaEnv, extraArgs = []) {
+  const addressesEnvPath = activeAddressesEnvPath();
   const args = [
     'run',
     '--manifest-path',
@@ -1761,21 +1816,25 @@ async function buildGatewayBackedInputProof({
 }
 
 function loadCoprocessorSigners(envValues) {
+  const gatewayEnvPath = activeEnvPath('gateway-sc', legacyGatewayEnvPath);
+  const hostEnvPath = activeEnvPath('host-sc', legacyHostEnvPath);
   const gatewayEnv = fs.existsSync(gatewayEnvPath)
     ? parseEnvFile(gatewayEnvPath)
     : {};
   const hostEnv = fs.existsSync(hostEnvPath) ? parseEnvFile(hostEnvPath) : {};
-  const mergedEnv = { ...envValues, ...gatewayEnv, ...hostEnv };
+  const mergedEnv = { ...gatewayEnv, ...hostEnv, ...envValues };
   const count = Number(
     requiredEnvValue(mergedEnv, 'NUM_COPROCESSORS', 'Solana proof builder'),
   );
   const signers = [];
   for (let index = 0; index < count; index += 1) {
     signers.push(
-      requiredEnvValue(
-        mergedEnv,
-        `COPROCESSOR_SIGNER_ADDRESS_${index}`,
-        'Solana proof builder',
+      ethers.getAddress(
+        requiredEnvValue(
+          mergedEnv,
+          `COPROCESSOR_SIGNER_ADDRESS_${index}`,
+          'Solana proof builder',
+        ),
       ),
     );
   }
@@ -1783,21 +1842,25 @@ function loadCoprocessorSigners(envValues) {
 }
 
 function loadKmsSigners(envValues) {
+  const gatewayEnvPath = activeEnvPath('gateway-sc', legacyGatewayEnvPath);
+  const hostEnvPath = activeEnvPath('host-sc', legacyHostEnvPath);
   const gatewayEnv = fs.existsSync(gatewayEnvPath)
     ? parseEnvFile(gatewayEnvPath)
     : {};
   const hostEnv = fs.existsSync(hostEnvPath) ? parseEnvFile(hostEnvPath) : {};
-  const mergedEnv = { ...envValues, ...gatewayEnv, ...hostEnv };
+  const mergedEnv = { ...gatewayEnv, ...hostEnv, ...envValues };
   const count = Number(
     requiredEnvValue(mergedEnv, 'NUM_KMS_NODES', 'Solana user decrypt'),
   );
   const signers = [];
   for (let index = 0; index < count; index += 1) {
     signers.push(
-      requiredEnvValue(
-        mergedEnv,
-        `KMS_SIGNER_ADDRESS_${index}`,
-        'Solana user decrypt',
+      ethers.getAddress(
+        requiredEnvValue(
+          mergedEnv,
+          `KMS_SIGNER_ADDRESS_${index}`,
+          'Solana user decrypt',
+        ),
       ),
     );
   }
@@ -1865,7 +1928,7 @@ async function ensureSolanaEd25519Verifier(testSuiteEnv) {
 }
 
 async function deploySolanaEd25519Verifier(testSuiteEnv) {
-  const gatewayEnv = parseEnvFile(gatewayEnvPath);
+  const gatewayEnv = parseEnvFile(activeEnvPath('gateway-sc', legacyGatewayEnvPath));
   const rpcUrl = normalizeStackHttpUrl(
     requiredEnvValue(testSuiteEnv, 'GATEWAY_RPC_URL', 'solana-native-auth'),
   ).toString();
@@ -1939,6 +2002,8 @@ async function deployGatewayVerifierArtifact(name, signer, libraries = {}, nonce
 }
 
 function loadKmsContextId(envValues) {
+  const gatewayEnvPath = activeEnvPath('gateway-sc', legacyGatewayEnvPath);
+  const hostEnvPath = activeEnvPath('host-sc', legacyHostEnvPath);
   const gatewayEnv = fs.existsSync(gatewayEnvPath)
     ? parseEnvFile(gatewayEnvPath)
     : {};
@@ -2531,296 +2596,6 @@ function encodeSingleByte(value) {
   return hex.length % 2 === 0 ? hex : `0${hex}`;
 }
 
-function buildSolanaBootstrapEnv(solanaEnv, testSuiteEnv) {
-  const solanaHostChainId =
-    testSuiteEnv.CHAIN_ID_HOST_SOLANA || testSuiteEnv.CHAIN_ID_HOST;
-  return {
-    ...solanaEnv,
-    ...(solanaHostChainId
-      ? { SOLANA_HOST_CHAIN_ID: solanaHostChainId }
-      : {}),
-    ...(testSuiteEnv.CHAIN_ID_GATEWAY
-      ? { CHAIN_ID_GATEWAY: testSuiteEnv.CHAIN_ID_GATEWAY }
-      : {}),
-    ...(testSuiteEnv.INPUT_VERIFICATION_ADDRESS
-      ? { INPUT_VERIFICATION_ADDRESS: testSuiteEnv.INPUT_VERIFICATION_ADDRESS }
-      : {}),
-    ...(testSuiteEnv.DECRYPTION_ADDRESS
-      ? { DECRYPTION_ADDRESS: testSuiteEnv.DECRYPTION_ADDRESS }
-      : {}),
-    ...(testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER
-      ? {
-          SOLANA_DOCKER_HOST_NODE_CONTAINER:
-            testSuiteEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER,
-        }
-      : {}),
-  };
-}
-
-async function ensureLocalnet(solanaEnv) {
-  if (deployedSolanaStackMode) {
-    await ensureDeployedSolanaBootstrap(solanaEnv);
-    return { child: null };
-  }
-
-  if (await solanaRpcHealthy()) {
-    runZsh(`make -C ${shellQuote(solanaHostRoot)} localnet-bootstrap`, {
-      cwd: repoRoot,
-      env: { ...process.env, ...solanaEnv },
-      capture: !verbose,
-    });
-    await waitForAddresses();
-    return { child: null };
-  }
-
-  if (deployedSolanaStackMode) {
-    throw new Error(
-      `Solana stack mode is active but ${SOLANA_RPC_URL} is not healthy; inspect the Dockerized ${deployedSolanaHostNodeContainer()} with 'docker logs ${deployedSolanaHostNodeContainer()}'`,
-    );
-  }
-
-  const child = spawn(
-    '/bin/zsh',
-    ['-lic', `make -C ${shellQuote(solanaHostRoot)} localnet`],
-    {
-      cwd: repoRoot,
-      env: { ...process.env, ...solanaEnv },
-      stdio: verbose ? 'inherit' : 'ignore',
-    },
-  );
-
-  const started = Date.now();
-  let observedExitCode = null;
-  while (Date.now() - started < 180_000) {
-    if (child.exitCode !== null && observedExitCode === null) {
-      observedExitCode = child.exitCode;
-    }
-    if (await solanaRpcHealthy()) {
-      runZsh(`make -C ${shellQuote(solanaHostRoot)} localnet-bootstrap`, {
-        cwd: repoRoot,
-        env: { ...process.env, ...solanaEnv },
-        capture: !verbose,
-      });
-      await waitForAddresses();
-      return { child: child.exitCode === null ? child : null };
-    }
-    if (observedExitCode !== null && Date.now() - started > 20_000) {
-      throw new Error(`solana localnet exited early with code ${observedExitCode}`);
-    }
-    await sleep(2000);
-  }
-
-  child.kill('SIGTERM');
-  throw new Error('timed out waiting for Solana localnet to become healthy');
-}
-
-async function ensureDeployedSolanaBootstrap(solanaEnv) {
-  if (await deployedSolanaBootstrapReady()) {
-    return;
-  }
-
-  const bootstrapEnv = { ...process.env, ...solanaEnv };
-  if (deployedStackModeValue === 'mixed') {
-    bootstrapEnv.SOLANA_DOCKER_HOST_NODE_CONTAINER =
-      MIXED_SOLANA_HOST_NODE_CONTAINER;
-  }
-
-  runCommand(solanaLocalnetScriptPath, ['bootstrap'], {
-    cwd: repoRoot,
-    env: bootstrapEnv,
-    capture: !verbose,
-  });
-
-  await waitForAddresses();
-  if (!(await deployedSolanaBootstrapReady())) {
-    throw new Error(
-      'Solana deploy bootstrap completed but required Solana state PDAs are still missing',
-    );
-  }
-}
-
-async function deployedSolanaBootstrapReady() {
-  if (!fs.existsSync(addressesEnvPath)) {
-    return false;
-  }
-
-  const addresses = parseEnvFile(addressesEnvPath);
-  const requiredPdas = [
-    addresses.SOLANA_HOST_STATE_PDA,
-    addresses.SOLANA_TEST_INPUT_STATE_PDA,
-    addresses.SOLANA_CONFIDENTIAL_TOKEN_STATE_PDA,
-  ];
-
-  if (requiredPdas.some((value) => !value)) {
-    return false;
-  }
-
-  for (const pda of requiredPdas) {
-    const accountInfo = await solanaRpcCall('getAccountInfo', [
-      pda,
-      { encoding: 'base64', commitment: SOLANA_E2E_COMMITMENT },
-    ]);
-    if (!accountInfo?.value) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-async function resetDeployedSolanaHostNode(solanaEnv) {
-  const hostNodeComposePath =
-    deployedStackModeValue === 'mixed'
-      ? mixedSolanaHostNodeComposePath
-      : solanaHostNodeComposePath;
-  const hostNodeService =
-    deployedStackModeValue === 'mixed' ? 'host-node-solana' : 'host-node';
-
-  runCommandAllowFailure(
-    'docker',
-    [
-      'compose',
-      '-p',
-      'fhevm',
-      '--env-file',
-      solanaHostNodeEnvPath,
-      '-f',
-      hostNodeComposePath,
-      'rm',
-      '-sf',
-      hostNodeService,
-    ],
-    {
-      cwd: repoRoot,
-      capture: !verbose,
-      allowSuccess: true,
-    },
-  );
-
-  runCommand(
-    'docker',
-    [
-      'compose',
-      '-p',
-      'fhevm',
-      '--env-file',
-      solanaHostNodeEnvPath,
-      '-f',
-      hostNodeComposePath,
-      'up',
-      '-d',
-      '--force-recreate',
-      hostNodeService,
-    ],
-    {
-      cwd: repoRoot,
-      capture: !verbose,
-    },
-  );
-
-  const started = Date.now();
-  while (Date.now() - started < 120_000) {
-    if (await solanaRpcHealthy()) {
-      await ensureDeployedSolanaBootstrap(solanaEnv);
-      return;
-    }
-    await sleep(1000);
-  }
-
-  throw new Error(
-    `timed out waiting for Dockerized Solana ${hostNodeService} to become healthy on ${SOLANA_RPC_URL}`,
-  );
-}
-
-async function ensureFullCoprocessorStack() {
-  for (const container of REQUIRED_STACK_CONTAINERS) {
-    if (!dockerContainerRunning(container)) {
-      throw new Error(
-        `required stack container ${container} is not running; deploy the full stack first with ./test-suite/fhevm/fhevm-cli deploy --local`,
-      );
-    }
-  }
-}
-
-async function ensureDeployedSolanaStack() {
-  for (const container of deployedSolanaRequiredContainers()) {
-    if (!dockerContainerRunning(container)) {
-      throw new Error(
-        `required Solana stack container ${container} is not running; deploy the Solana stack first with ${deployedSolanaDeployCommandHint()}`,
-      );
-    }
-  }
-  if (!(await solanaRpcHealthy())) {
-    throw new Error(
-      `Solana RPC ${SOLANA_RPC_URL} is not healthy; deploy the Solana stack first with ${deployedSolanaDeployCommandHint()}`,
-    );
-  }
-}
-
-async function startSolanaListener(addresses) {
-  stopEvmHostNode();
-  stoppedHostListenerContainers = stopRunningHostListeners();
-
-  const args = [
-    'run',
-    '--manifest-path',
-    listenerManifestPath,
-    '-p',
-    'solana-host-listener',
-    '--bin',
-    'solana_host_listener_poller',
-    '--',
-    '--addresses-env',
-    addressesEnvPath,
-    '--database-url',
-    DB_URL,
-    '--batch-size-slots',
-    '512',
-    '--poll-interval-ms',
-    '500',
-    '--retry-interval-ms',
-    '1000',
-    '--health-port',
-    String(SOLANA_LISTENER_HEALTH_PORT),
-    '--commitment',
-    SOLANA_E2E_COMMITMENT,
-  ];
-
-  solanaListenerLogs = '';
-  const child = spawn('cargo', args, {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: verbose ? ['ignore', 'inherit', 'inherit'] : ['ignore', 'pipe', 'pipe'],
-  });
-  solanaListenerChild = child;
-
-  if (!verbose) {
-    child.stdout?.on('data', (chunk) => {
-      solanaListenerLogs += chunk.toString();
-    });
-    child.stderr?.on('data', (chunk) => {
-      solanaListenerLogs += chunk.toString();
-    });
-  }
-
-  const started = Date.now();
-  while (Date.now() - started < 180_000) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `solana host listener exited early with code ${child.exitCode}\n${solanaListenerLogs.trim()}`,
-      );
-    }
-    if (await solanaListenerHealthy()) {
-      return;
-    }
-    await sleep(1000);
-  }
-
-  child.kill('SIGTERM');
-  solanaListenerChild = null;
-  throw new Error('timed out waiting for solana host listener to become healthy');
-}
-
 async function waitForSolanaListenerCaughtUp(chainId, minimumSlot) {
   const started = Date.now();
   while (Date.now() - started < 120_000) {
@@ -2840,64 +2615,6 @@ async function waitForSolanaListenerCaughtUp(chainId, minimumSlot) {
   );
 }
 
-function stopRunningHostListeners() {
-  const names = dockerContainerNames().filter((name) =>
-    HOST_LISTENER_CONTAINER_PATTERN.test(name),
-  );
-  const running = names.filter((name) => dockerContainerRunning(name));
-  for (const name of running) {
-    runCommand('docker', ['stop', name], {
-      cwd: repoRoot,
-      capture: !verbose,
-    });
-  }
-  return running;
-}
-
-function restartStoppedHostListeners() {
-  for (const name of stoppedHostListenerContainers) {
-    runCommand('docker', ['start', name], {
-      cwd: repoRoot,
-      capture: !verbose,
-    });
-  }
-  stoppedHostListenerContainers = [];
-}
-
-function stopEvmHostNode() {
-  if (!dockerContainerRunning(EVM_HOST_NODE_CONTAINER)) {
-    stoppedHostNode = false;
-    return;
-  }
-  runCommand('docker', ['stop', EVM_HOST_NODE_CONTAINER], {
-    cwd: repoRoot,
-    capture: !verbose,
-  });
-  stoppedHostNode = true;
-}
-
-function restartEvmHostNode() {
-  if (!stoppedHostNode) {
-    return;
-  }
-  runCommand('docker', ['start', EVM_HOST_NODE_CONTAINER], {
-    cwd: repoRoot,
-    capture: !verbose,
-  });
-  waitForEvmHostNodeReady();
-  stoppedHostNode = false;
-}
-
-function dockerContainerNames() {
-  return runCommand('docker', ['ps', '-a', '--format', '{{.Names}}'], {
-    cwd: repoRoot,
-    capture: true,
-  })
-    .stdout.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
 function dockerContainerRunning(name) {
   const result = runCommandAllowFailure(
     'docker',
@@ -2912,44 +2629,6 @@ function dockerContainerRunning(name) {
     return false;
   }
   return result.stdout.trim() === 'true';
-}
-
-async function solanaListenerHealthy() {
-  try {
-    const response = await fetch(SOLANA_LISTENER_HEALTH_URL);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-function ensureSolanaListenerAlive() {
-  if (deployedSolanaStackMode) {
-    const listenerContainer = deployedSolanaHostListenerContainer();
-    if (dockerContainerRunning(listenerContainer)) {
-      return;
-    }
-    const logs = runCommandAllowFailure(
-      'docker',
-      ['logs', '--tail', '120', listenerContainer],
-      {
-        cwd: repoRoot,
-        capture: true,
-        allowSuccess: true,
-      },
-    );
-    const logOutput =
-      logs.status === 0 ? logs.stdout.trim() || logs.stderr.trim() : '';
-    throw new Error(
-      `deployed solana host listener ${listenerContainer} is not running${logOutput ? `\n${logOutput}` : ''}`,
-    );
-  }
-  if (solanaListenerChild && solanaListenerChild.exitCode === null) {
-    return;
-  }
-  throw new Error(
-    `solana host listener exited unexpectedly${solanaListenerLogs ? `\n${solanaListenerLogs.trim()}` : ''}`,
-  );
 }
 
 async function maxCommittedSlot(signatures, commitment) {
@@ -3028,10 +2707,6 @@ function commitmentSatisfied(status, minimumCommitment) {
     return observed === 'finalized' || (observed == null && status.confirmations == null);
   }
   return false;
-}
-
-async function ensureDockerDbReady() {
-  sqlScalar('SELECT 1');
 }
 
 async function ensureRelayerReachable() {
@@ -3201,20 +2876,6 @@ async function solanaRpcCall(method, params = []) {
   }
 
   return payload.result;
-}
-
-async function waitForAddresses() {
-  const started = Date.now();
-  while (Date.now() - started < 120_000) {
-    if (fs.existsSync(addressesEnvPath)) {
-      const parsed = parseEnvFile(addressesEnvPath);
-      if (parsed.SOLANA_HOST_RPC_URL) {
-        return;
-      }
-    }
-    await sleep(1000);
-  }
-  throw new Error(`timed out waiting for ${addressesEnvPath}`);
 }
 
 function parseEnvFile(filePath) {
@@ -3734,42 +3395,6 @@ function verifyUserDecryptResponseSignatures({
   }
 }
 
-function readStackMode() {
-  if (!fs.existsSync(stackModePath)) {
-    return 'evm';
-  }
-  const parsed = parseEnvFile(stackModePath);
-  return parsed.HOST_MODE ?? 'evm';
-}
-
-function deployedSolanaRequiredContainers() {
-  return deployedStackModeValue === 'mixed'
-    ? REQUIRED_MIXED_SOLANA_STACK_CONTAINERS
-    : REQUIRED_SOLANA_STACK_CONTAINERS;
-}
-
-function deployedSolanaDeployCommandHint() {
-  return deployedStackModeValue === 'mixed'
-    ? './test-suite/fhevm/fhevm-cli deploy --local --multi-chain'
-    : './test-suite/fhevm/fhevm-cli deploy --local --solana';
-}
-
-function deployedSolanaHostNodeContainer() {
-  return deployedStackModeValue === 'mixed'
-    ? MIXED_SOLANA_HOST_NODE_CONTAINER
-    : 'host-node';
-}
-
-function deployedSolanaHostListenerContainer() {
-  return deployedStackModeValue === 'mixed'
-    ? MIXED_SOLANA_HOST_LISTENER_CONTAINER
-    : 'coprocessor-host-listener';
-}
-
-function runZsh(command, options = {}) {
-  return runCommand('/bin/zsh', ['-lic', command], options);
-}
-
 function runCommand(command, args, options = {}) {
   if (verbose) {
     console.error(`$ ${command} ${args.join(' ')}`);
@@ -3827,76 +3452,6 @@ function oneLineSql(query) {
     .join(' ');
 }
 
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
-}
-
-function cleanup() {
-  if (solanaListenerChild && solanaListenerChild.exitCode === null) {
-    solanaListenerChild.kill('SIGTERM');
-  }
-  solanaListenerChild = null;
-  try {
-    restartEvmHostNode();
-  } catch (error) {
-    console.error(
-      `failed to restart original host-node container: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (stoppedHostListenerContainers.length > 0) {
-    try {
-      restartStoppedHostListeners();
-    } catch (error) {
-      console.error(
-        `failed to restart original host-listener containers: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-  if (localnetChild && localnetChild.exitCode === null) {
-    localnetChild.kill('SIGTERM');
-  }
-  localnetChild = null;
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function waitForEvmHostNodeReady() {
-  const started = Date.now();
-  while (Date.now() - started < 30_000) {
-    const result = spawnSync(
-      'curl',
-      [
-        '-sS',
-        '-H',
-        'content-type: application/json',
-        '-d',
-        '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}',
-        EVM_HOST_RPC_URL,
-      ],
-      {
-        cwd: repoRoot,
-        env: process.env,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    if (result.status === 0) {
-      try {
-        const payload = JSON.parse(result.stdout || '{}');
-        if (payload.result) {
-          return;
-        }
-      } catch {
-        // Retry until the node returns valid JSON-RPC.
-      }
-    }
-    spawnSync('sleep', ['1'], {
-      cwd: repoRoot,
-      env: process.env,
-      stdio: 'ignore',
-    });
-  }
-  throw new Error('timed out waiting for host-node JSON-RPC to become ready');
 }

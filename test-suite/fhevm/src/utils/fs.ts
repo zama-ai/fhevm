@@ -63,6 +63,12 @@ export const readEnvFileIfExists = async (file: string) =>
 
 /** Quotes an env value only when writing it bare would be unsafe. */
 const quoteEnvValue = (value: string) => {
+  if (
+    (value.startsWith("[") && value.endsWith("]")) ||
+    (value.startsWith("{") && value.endsWith("}"))
+  ) {
+    return value;
+  }
   if (!needsQuotes(value)) {
     return value;
   }

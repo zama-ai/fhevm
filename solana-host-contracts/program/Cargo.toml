@@ -24,6 +24,7 @@ solana-system-interface = { version = "3.0.0", features = ["bincode"] }
 [dev-dependencies]
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 sha3 = "0.10.8"
+solana-compute-budget-interface = "3.0.0"
 solana-program-test = { version = "4.0.0-beta.4", features = ["agave-unstable-api"] }
 solana-instruction = "3.2.0"
 solana-signer = "3.0.0"

@@ -5443,6 +5443,7 @@ dependencies = [
  "borsh",
  "k256",
  "sha3",
+ "solana-compute-budget-interface",
  "solana-host-contracts-core",
  "solana-instruction",
  "solana-program",

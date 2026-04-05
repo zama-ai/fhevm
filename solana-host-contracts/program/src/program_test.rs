@@ -6,11 +6,14 @@ use crate::{
     EvmAddress, FheType, HcuConfig, HostInstruction, HostProgramConfig, Pubkey,
     VerifierContextConfig,
 };
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_program_test::ProgramTest;
 use solana_signer::Signer;
 use solana_system_interface::program as system_program;
 use solana_transaction::Transaction;
+
+const TEST_HEAP_BYTES: u32 = 256 * 1024;
 use std::fs;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -74,9 +77,6 @@ async fn program_test_initialize_and_execute_rand() {
     std::env::set_var("SBF_OUT_DIR", &sbf_out_dir);
     let mut program_test = ProgramTest::new("solana_host_contracts", program_id, None);
     program_test.prefer_bpf(true);
-    // The BPF-backed path includes PDA creation, dynamic account resize, and full host-program
-    // dispatch, which is above the default ProgramTest compute cap on current Agave releases.
-    program_test.set_compute_max_units(1_000_000);
 
     let context = program_test.start_with_context().await;
     let owner = Pubkey::from(context.payer.pubkey());
@@ -94,7 +94,11 @@ async fn program_test_initialize_and_execute_rand() {
         data: encode_instruction(&OnchainInstruction::InitializePda { config }).unwrap(),
     };
     let tx = Transaction::new_signed_with_payer(
-        &[init_ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ComputeBudgetInstruction::request_heap_frame(TEST_HEAP_BYTES),
+            init_ix,
+        ],
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,
@@ -127,7 +131,11 @@ async fn program_test_initialize_and_execute_rand() {
         .unwrap(),
     };
     let tx = Transaction::new_signed_with_payer(
-        &[execute_ix],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_limit(1_000_000),
+            ComputeBudgetInstruction::request_heap_frame(TEST_HEAP_BYTES),
+            execute_ix,
+        ],
         Some(&context.payer.pubkey()),
         &[&context.payer],
         context.last_blockhash,

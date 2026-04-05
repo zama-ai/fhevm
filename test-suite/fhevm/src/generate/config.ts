@@ -7,7 +7,7 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes } from "../layout";
+import { hostChainKind, hostChainRuntimes } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 
@@ -51,12 +51,23 @@ const rewriteHostChains = (
   if (!Array.isArray(config.host_chains)) return config;
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
     const chainId = Number(chain.chainId);
-    const aclAddress = state.discovery?.hosts[chain.key]?.ACL_CONTRACT_ADDRESS ?? "";
-    return {
+    const host = state.discovery?.hosts[chain.key] ?? {};
+    const aclAddress =
+      hostChainKind(chain) === "solana"
+        ? host.SOLANA_HOST_ACL_PROGRAM_ID ?? host.SOLANA_HOST_PROGRAM_ID ?? host.ACL_CONTRACT_ADDRESS ?? ""
+        : host.ACL_CONTRACT_ADDRESS ?? "";
+    const base = {
       chain_id: chainId,
       url: `http://${chain.node}:${chain.rpcPort}`,
       acl_address: aclAddress,
     };
+    return hostChainKind(chain) === "solana"
+      ? {
+          ...base,
+          chain_kind: "solana",
+          state_pda: host.SOLANA_HOST_STATE_PDA ?? "",
+        }
+      : base;
   });
   return config;
 };

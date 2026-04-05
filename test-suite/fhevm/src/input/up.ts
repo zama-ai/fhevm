@@ -39,6 +39,9 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
   const lockFile = asString(args["lock-file"] ?? args.lockFile);
   const scenarioPath = asString(args.scenario);
+  const solana = asBool(args.solana);
+  const mixedHost = asBool(args["multi-chain"] ?? args.multiChain);
+  const local = asBool(args.local);
   const resume = asBool(args.resume);
   const dryRun = asBool(args["dry-run"] ?? args.dryRun);
   const reset = asBool(args.reset);
@@ -79,6 +82,12 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   if (resume && scenarioPath) {
     throw new PreflightError("--resume cannot be used with --scenario");
   }
+  if (solana && mixedHost) {
+    throw new PreflightError("--solana and --multi-chain cannot be used together");
+  }
+  if ((solana || mixedHost) && scenarioPath) {
+    throw new PreflightError("--solana/--multi-chain cannot be combined with --scenario");
+  }
   if (fromStep && !resume && !dryRun) {
     throw new PreflightError("--from-step requires --resume or --dry-run");
   }
@@ -95,7 +104,10 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     requestedTarget: target as VersionTarget | undefined,
     sha,
     overrides,
-    scenarioPath,
+    scenarioPath: solana ? "solana" : mixedHost ? "mixed-host" : scenarioPath,
+    solana,
+    mixedHost,
+    local,
     fromStep,
     lockFile,
     allowSchemaMismatch,

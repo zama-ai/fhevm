@@ -39,4 +39,4 @@ upgradeable = true
 pre-test = "make build-sbf"
 
 [scripts]
-test = "node tests/anchor-localnet.js"
+test = "cargo run --quiet --manifest-path local-cli/Cargo.toml -- bootstrap-localnet --wait-for-programs 1"

@@ -43,19 +43,19 @@ clean:
 	cargo clean --manifest-path Cargo.toml
 
 localnet: build-sbf
-	node tests/anchor-localnet.js live
+	NO_DNA=1 anchor localnet --skip-build
 
 localnet-live: build-sbf
-	node tests/anchor-localnet.js live
+	NO_DNA=1 anchor localnet --skip-build
 
 localnet-bootstrap:
-	node tests/anchor-localnet.js
+	cargo run --quiet --manifest-path local-cli/Cargo.toml -- bootstrap-localnet
 
 localnet-test: build-sbf
-	anchor test
+	NO_DNA=1 anchor test --skip-build
 
 localnet-test-existing: build-sbf
-	anchor test --skip-local-validator
+	NO_DNA=1 anchor test --skip-local-validator --skip-build
 
 show-addresses:
 	cat addresses/.env.host

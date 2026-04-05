@@ -35,17 +35,42 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    thread,
+    time::{Duration, Instant},
 };
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
-const DEFAULT_ADDRESSES_ENV_PATH: &str = "../addresses/.env.host";
+const DEFAULT_LOCAL_RPC_URL: &str = "http://127.0.0.1:18999";
+const DEFAULT_LOCAL_WS_URL: &str = "ws://127.0.0.1:19000";
+const DEFAULT_HOST_PROGRAM_ID: &str = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
+const DEFAULT_TEST_INPUT_PROGRAM_ID: &str = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv";
+const DEFAULT_CONFIDENTIAL_TOKEN_PROGRAM_ID: &str = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx";
 const LOCAL_TRANSACTION_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const LOCAL_TRANSACTION_HEAP_FRAME_BYTES: u32 = 256 * 1024;
 const DEFAULT_TOKEN_NAME: &str = "Naraggara";
 const DEFAULT_TOKEN_SYMBOL: &str = "NARA";
 const DEFAULT_TOKEN_MINT_AMOUNT: u64 = 10_000;
 const DEFAULT_TOKEN_TRANSFER_AMOUNT: u64 = 1_337;
+const DEFAULT_LOCALNET_AIRDROP_SOL: u64 = 20;
+const DEFAULT_TOKEN_RECIPIENT_AIRDROP_SOL: u64 = 5;
+const DEFAULT_LOCALNET_BOOTSTRAP_TIMEOUT_SECS: u64 = 180;
+const ENV_OVERRIDE_KEYS: &[&str] = &[
+    "SOLANA_HOST_CHAIN_ID",
+    "CHAIN_ID_GATEWAY",
+    "INPUT_VERIFICATION_ADDRESS",
+    "DECRYPTION_ADDRESS",
+    "NUM_KMS_NODES",
+    "PUBLIC_DECRYPTION_THRESHOLD",
+    "NUM_COPROCESSORS",
+    "COPROCESSOR_THRESHOLD",
+    "HCU_CAP_PER_BLOCK",
+    "MAX_HCU_DEPTH_PER_TX",
+    "MAX_HCU_PER_TX",
+    "SOLANA_HOST_OUTPUT_RPC_URL",
+    "SOLANA_HOST_OUTPUT_WS_URL",
+    "SOLANA_HOST_AIRDROP_SOL",
+];
 
 fn main() -> DynResult<()> {
     let mut args = env::args().skip(1);
@@ -54,6 +79,7 @@ fn main() -> DynResult<()> {
 
     match command.as_str() {
         "init-local" => init_local(parse_options(&rest)?),
+        "bootstrap-localnet" => bootstrap_localnet(parse_options(&rest)?),
         "smoke-rand" => smoke_rand(parse_options(&rest)?),
         "show-pdas" => show_pdas(parse_options(&rest)?),
         "trivial-encrypt" => trivial_encrypt_cmd(parse_options(&rest)?),
@@ -90,6 +116,14 @@ fn main() -> DynResult<()> {
 }
 
 fn init_local(options: HashMap<String, String>) -> DynResult<()> {
+    let env_values = env::vars().collect::<HashMap<_, _>>();
+    init_local_with_env(&options, &env_values)
+}
+
+fn init_local_with_env(
+    options: &HashMap<String, String>,
+    env_values: &HashMap<String, String>,
+) -> DynResult<()> {
     let rpc_url = required_option(&options, "rpc-url")?;
     let ws_url = required_option(&options, "ws-url")?;
     let output_rpc_url = options
@@ -110,8 +144,8 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
 
     let payer = read_keypair(&payer_keypair_path)?;
     let client = rpc_client(rpc_url);
-    let state_pda = maybe_initialize_state(&client, &payer, program_id)?;
-    let config = local_host_config(program_id, payer.pubkey())?;
+    let config = local_host_config_from_values(program_id, payer.pubkey(), env_values)?;
+    let state_pda = maybe_initialize_state(&client, &payer, program_id, config.clone())?;
     let test_input_state_pda =
         maybe_initialize_test_input_state(&client, &payer, test_input_program_id, program_id)?;
     let confidential_token_state_pda = maybe_initialize_confidential_token_state(
@@ -158,6 +192,125 @@ fn init_local(options: HashMap<String, String>) -> DynResult<()> {
     println!("addresses_json={}", addresses_json.display());
 
     Ok(())
+}
+
+fn bootstrap_localnet(options: HashMap<String, String>) -> DynResult<()> {
+    let env_values = load_local_bootstrap_env()?;
+    let rpc_url = options
+        .get("rpc-url")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_LOCAL_RPC_URL);
+    let ws_url = options
+        .get("ws-url")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_LOCAL_WS_URL);
+    let output_rpc_url = options
+        .get("output-rpc-url")
+        .map(String::as_str)
+        .or_else(|| env_values.get("SOLANA_HOST_OUTPUT_RPC_URL").map(String::as_str))
+        .filter(|value| !value.is_empty())
+        .unwrap_or(rpc_url);
+    let output_ws_url = options
+        .get("output-ws-url")
+        .map(String::as_str)
+        .or_else(|| env_values.get("SOLANA_HOST_OUTPUT_WS_URL").map(String::as_str))
+        .filter(|value| !value.is_empty())
+        .unwrap_or(ws_url);
+    let payer_keypair = options
+        .get("payer-keypair")
+        .cloned()
+        .unwrap_or(default_payer_keypair_path()?);
+    let recipient_keypair = options
+        .get("recipient-keypair")
+        .cloned()
+        .unwrap_or(default_token_recipient_keypair_path()?);
+    let addresses_env = options
+        .get("addresses-env")
+        .cloned()
+        .unwrap_or_else(default_addresses_env_path);
+    let addresses_json = options
+        .get("addresses-json")
+        .cloned()
+        .unwrap_or_else(default_addresses_json_path);
+    let program_id = options
+        .get("program-id")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_HOST_PROGRAM_ID);
+    let test_input_program_id = options
+        .get("test-input-program-id")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_TEST_INPUT_PROGRAM_ID);
+    let confidential_token_program_id = options
+        .get("confidential-token-program-id")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_CONFIDENTIAL_TOKEN_PROGRAM_ID);
+    let wait_for_programs = optional_bool(&options, "wait-for-programs", false)?;
+    let timeout_secs = optional_u64(
+        &options,
+        "timeout-secs",
+        DEFAULT_LOCALNET_BOOTSTRAP_TIMEOUT_SECS,
+    )?;
+    let authority_airdrop_sol = optional_u64(
+        &options,
+        "authority-airdrop-sol",
+        env_values
+            .get("SOLANA_HOST_AIRDROP_SOL")
+            .and_then(|value| parse_u64(value).ok())
+            .unwrap_or(DEFAULT_LOCALNET_AIRDROP_SOL),
+    )?;
+    let recipient_airdrop_sol = optional_u64(
+        &options,
+        "recipient-airdrop-sol",
+        DEFAULT_TOKEN_RECIPIENT_AIRDROP_SOL,
+    )?;
+
+    wait_for_rpc_health(rpc_url, timeout_secs)?;
+    if wait_for_programs {
+        wait_for_program_deployments(
+            rpc_url,
+            &[
+                parse_pubkey(program_id)?,
+                parse_pubkey(test_input_program_id)?,
+                parse_pubkey(confidential_token_program_id)?,
+            ],
+            timeout_secs,
+        )?;
+    }
+
+    let client = rpc_client(rpc_url);
+    let authority = read_keypair(&payer_keypair)?;
+    request_and_confirm_airdrop(
+        &client,
+        authority.pubkey(),
+        authority_airdrop_sol * LAMPORTS_PER_SOL,
+        timeout_secs,
+    )?;
+    let recipient = read_keypair(&recipient_keypair)?;
+    request_and_confirm_airdrop(
+        &client,
+        recipient.pubkey(),
+        recipient_airdrop_sol * LAMPORTS_PER_SOL,
+        timeout_secs,
+    )?;
+
+    let mut init_options = HashMap::new();
+    init_options.insert("rpc-url".to_owned(), rpc_url.to_owned());
+    init_options.insert("ws-url".to_owned(), ws_url.to_owned());
+    init_options.insert("output-rpc-url".to_owned(), output_rpc_url.to_owned());
+    init_options.insert("output-ws-url".to_owned(), output_ws_url.to_owned());
+    init_options.insert("payer-keypair".to_owned(), payer_keypair);
+    init_options.insert("program-id".to_owned(), program_id.to_owned());
+    init_options.insert(
+        "test-input-program-id".to_owned(),
+        test_input_program_id.to_owned(),
+    );
+    init_options.insert(
+        "confidential-token-program-id".to_owned(),
+        confidential_token_program_id.to_owned(),
+    );
+    init_options.insert("addresses-env".to_owned(), addresses_env);
+    init_options.insert("addresses-json".to_owned(), addresses_json);
+    init_local_with_env(&init_options, &env_values)
 }
 
 fn smoke_rand(options: HashMap<String, String>) -> DynResult<()> {
@@ -1292,7 +1445,7 @@ fn runtime_from_options(options: &HashMap<String, String>) -> DynResult<LocalRun
         options
             .get("addresses-env")
             .cloned()
-            .unwrap_or_else(|| DEFAULT_ADDRESSES_ENV_PATH.to_owned()),
+            .unwrap_or_else(default_addresses_env_path),
     );
     let addresses = load_addresses_env(&addresses_env)?;
     let rpc_url = options
@@ -1357,13 +1510,13 @@ fn maybe_initialize_state(
     client: &RpcClient,
     payer: &Keypair,
     program_id: Pubkey,
+    config: HostProgramConfig,
 ) -> DynResult<Pubkey> {
     let state_pda = find_state_pda(&program_id).0;
     if client.get_account(&state_pda).is_ok() {
         return Ok(state_pda);
     }
 
-    let config = local_host_config(program_id, payer.pubkey())?;
     let instruction = OnchainInstruction::InitializePda { config };
     let ix = host_program_instruction(
         program_id,
@@ -1801,23 +1954,28 @@ fn send_transaction(
     Ok(client.send_and_confirm_transaction(&tx)?.to_string())
 }
 
-fn local_host_config(program_id: Pubkey, authority: Pubkey) -> DynResult<HostProgramConfig> {
-    let gateway_chain_id = parse_env_u64("CHAIN_ID_GATEWAY")?;
-    let input_verifier_address = parse_env_evm_address("INPUT_VERIFICATION_ADDRESS")?;
-    let decryption_address = parse_env_evm_address("DECRYPTION_ADDRESS")?;
-    let coprocessor_threshold = parse_env_u32("COPROCESSOR_THRESHOLD")?;
-    let public_decryption_threshold = parse_env_u32("PUBLIC_DECRYPTION_THRESHOLD")?;
+fn local_host_config_from_values(
+    program_id: Pubkey,
+    authority: Pubkey,
+    values: &HashMap<String, String>,
+) -> DynResult<HostProgramConfig> {
+    let gateway_chain_id = parse_value_u64(values, "CHAIN_ID_GATEWAY")?;
+    let input_verifier_address = parse_value_evm_address(values, "INPUT_VERIFICATION_ADDRESS")?;
+    let decryption_address = parse_value_evm_address(values, "DECRYPTION_ADDRESS")?;
+    let coprocessor_threshold = parse_value_u32(values, "COPROCESSOR_THRESHOLD")?;
+    let public_decryption_threshold = parse_value_u32(values, "PUBLIC_DECRYPTION_THRESHOLD")?;
 
     Ok(HostProgramConfig {
         owner: HostPubkey::from(authority.to_bytes()),
         upgrade_authority: HostPubkey::from(authority.to_bytes()),
         acl_program: HostPubkey::from(program_id.to_bytes()),
-        host_chain_id: parse_env_u64("SOLANA_HOST_CHAIN_ID")?,
+        host_chain_id: parse_value_u64(values, "SOLANA_HOST_CHAIN_ID")?,
         input_verifier: VerifierContextConfig {
             source_contract: input_verifier_address,
             source_chain_id: gateway_chain_id,
-            signers: load_signers(
-                parse_env_usize("NUM_COPROCESSORS")?,
+            signers: load_signers_from_values(
+                values,
+                parse_value_usize(values, "NUM_COPROCESSORS")?,
                 "PRIVATE_KEY_COPROCESSOR_ACCOUNT_",
                 "COPROCESSOR_SIGNER_ADDRESS_",
             )?,
@@ -1826,22 +1984,24 @@ fn local_host_config(program_id: Pubkey, authority: Pubkey) -> DynResult<HostPro
         kms_verifier: VerifierContextConfig {
             source_contract: decryption_address,
             source_chain_id: gateway_chain_id,
-            signers: load_signers(
-                parse_env_usize("NUM_KMS_NODES")?,
+            signers: load_signers_from_values(
+                values,
+                parse_value_usize(values, "NUM_KMS_NODES")?,
                 "PRIVATE_KEY_KMS_SIGNER_",
                 "KMS_SIGNER_ADDRESS_",
             )?,
             threshold: public_decryption_threshold,
         },
         hcu: HcuConfig {
-            hcu_cap_per_block: parse_env_u64("HCU_CAP_PER_BLOCK")?,
-            max_hcu_depth_per_tx: parse_env_u64("MAX_HCU_DEPTH_PER_TX")?,
-            max_hcu_per_tx: parse_env_u64("MAX_HCU_PER_TX")?,
+            hcu_cap_per_block: parse_value_u64(values, "HCU_CAP_PER_BLOCK")?,
+            max_hcu_depth_per_tx: parse_value_u64(values, "MAX_HCU_DEPTH_PER_TX")?,
+            max_hcu_per_tx: parse_value_u64(values, "MAX_HCU_PER_TX")?,
         },
     })
 }
 
-fn load_signers(
+fn load_signers_from_values(
+    values: &HashMap<String, String>,
     count: usize,
     private_key_prefix: &str,
     address_prefix: &str,
@@ -1850,10 +2010,10 @@ fn load_signers(
     for index in 0..count {
         let private_key_var = format!("{private_key_prefix}{index}");
         let address_var = format!("{address_prefix}{index}");
-        if let Ok(private_key) = env::var(&private_key_var) {
-            signers.push(evm_address_from_private_key(&private_key)?);
+        if let Some(private_key) = values.get(&private_key_var) {
+            signers.push(evm_address_from_private_key(private_key)?);
         } else {
-            signers.push(parse_env_evm_address(&address_var)?);
+            signers.push(parse_value_evm_address(values, &address_var)?);
         }
     }
     Ok(signers)
@@ -1871,6 +2031,69 @@ fn evm_address_from_private_key(private_key: &str) -> DynResult<EvmAddress> {
 
 fn rpc_client(rpc_url: &str) -> RpcClient {
     RpcClient::new_with_commitment(rpc_url.to_owned(), CommitmentConfig::confirmed())
+}
+
+fn wait_for_rpc_health(rpc_url: &str, timeout_secs: u64) -> DynResult<()> {
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    while Instant::now() < deadline {
+        if rpc_call(rpc_url, "getHealth", json!([])).is_ok() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    Err(format!("timed out waiting for Solana RPC health at {rpc_url}").into())
+}
+
+fn wait_for_program_deployments(
+    rpc_url: &str,
+    program_ids: &[Pubkey],
+    timeout_secs: u64,
+) -> DynResult<()> {
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    while Instant::now() < deadline {
+        let mut deployed = true;
+        for program_id in program_ids {
+            let account_info = rpc_call(
+                rpc_url,
+                "getAccountInfo",
+                json!([
+                    program_id.to_string(),
+                    {
+                        "encoding": "base64"
+                    }
+                ]),
+            )?;
+            if account_info["value"]["executable"] != json!(true) {
+                deployed = false;
+                break;
+            }
+        }
+        if deployed {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    Err("timed out waiting for Solana programs to deploy".into())
+}
+
+fn request_and_confirm_airdrop(
+    client: &RpcClient,
+    recipient: Pubkey,
+    lamports: u64,
+    timeout_secs: u64,
+) -> DynResult<()> {
+    let signature = client.request_airdrop(&recipient, lamports)?;
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    while Instant::now() < deadline {
+        if client.confirm_transaction(&signature)? {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    Err(format!(
+        "timed out waiting for airdrop confirmation for {recipient}"
+    )
+    .into())
 }
 
 fn write_local_addresses(
@@ -2054,29 +2277,54 @@ fn optional_u64(options: &HashMap<String, String>, key: &str, default: u64) -> D
     }
 }
 
+fn optional_bool(options: &HashMap<String, String>, key: &str, default: bool) -> DynResult<bool> {
+    match options.get(key) {
+        Some(value) => match value.as_str() {
+            "1" | "true" | "TRUE" | "yes" | "on" => Ok(true),
+            "0" | "false" | "FALSE" | "no" | "off" => Ok(false),
+            _ => Err(format!("invalid boolean for --{key}: {value}").into()),
+        },
+        None => Ok(default),
+    }
+}
+
 fn read_keypair(path: &str) -> DynResult<Keypair> {
     read_keypair_file(path)
         .map_err(|error| format!("failed to read keypair {path}: {error}").into())
+}
+
+fn required_value<'a>(values: &'a HashMap<String, String>, key: &str) -> DynResult<&'a str> {
+    values
+        .get(key)
+        .map(String::as_str)
+        .ok_or_else(|| format!("missing {key} in bootstrap configuration").into())
+}
+
+fn parse_value_u64(values: &HashMap<String, String>, key: &str) -> DynResult<u64> {
+    parse_u64(required_value(values, key)?)
+}
+
+fn parse_value_u32(values: &HashMap<String, String>, key: &str) -> DynResult<u32> {
+    Ok(required_value(values, key)?.parse()?)
+}
+
+fn parse_value_usize(values: &HashMap<String, String>, key: &str) -> DynResult<usize> {
+    Ok(required_value(values, key)?.parse()?)
+}
+
+fn parse_value_evm_address(
+    values: &HashMap<String, String>,
+    key: &str,
+) -> DynResult<EvmAddress> {
+    parse_evm_address(required_value(values, key)?)
 }
 
 fn parse_pubkey(value: &str) -> DynResult<Pubkey> {
     Ok(Pubkey::from_str(value)?)
 }
 
-fn parse_env_u64(name: &str) -> DynResult<u64> {
-    parse_u64(&env::var(name)?)
-}
-
-fn parse_env_u32(name: &str) -> DynResult<u32> {
-    Ok(env::var(name)?.parse()?)
-}
-
 fn parse_env_usize(name: &str) -> DynResult<usize> {
     Ok(env::var(name)?.parse()?)
-}
-
-fn parse_env_evm_address(name: &str) -> DynResult<EvmAddress> {
-    parse_evm_address(&env::var(name)?)
 }
 
 fn parse_u64(value: &str) -> DynResult<u64> {
@@ -2246,6 +2494,64 @@ fn parse_env_contents(contents: &str) -> HashMap<String, String> {
     values
 }
 
+fn load_local_bootstrap_env() -> DynResult<HashMap<String, String>> {
+    let local_cli_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let solana_root = local_cli_root.join("..");
+    let gateway_env = solana_root.join("../test-suite/fhevm/env/staging/.env.gateway-sc.local");
+    let host_env = solana_root.join("../test-suite/fhevm/env/staging/.env.host-sc.local");
+
+    let mut merged = parse_env_contents(&fs::read_to_string(solana_root.join(".env.example"))?);
+    if gateway_env.exists() {
+        merged.extend(parse_env_contents(&fs::read_to_string(gateway_env)?));
+    }
+    if host_env.exists() {
+        merged.extend(parse_env_contents(&fs::read_to_string(host_env)?));
+    }
+
+    for key in ENV_OVERRIDE_KEYS {
+        if let Ok(value) = env::var(key) {
+            merged.insert((*key).to_owned(), value);
+        }
+    }
+
+    for (key, value) in env::vars() {
+        if key.starts_with("PRIVATE_KEY_KMS_SIGNER_")
+            || key.starts_with("PRIVATE_KEY_COPROCESSOR_ACCOUNT_")
+            || key.starts_with("KMS_SIGNER_ADDRESS_")
+            || key.starts_with("COPROCESSOR_SIGNER_ADDRESS_")
+        {
+            merged.insert(key, value);
+        }
+    }
+
+    prefer_configured_signer_addresses(
+        &mut merged,
+        "PRIVATE_KEY_COPROCESSOR_ACCOUNT_",
+        "COPROCESSOR_SIGNER_ADDRESS_",
+    );
+    prefer_configured_signer_addresses(
+        &mut merged,
+        "PRIVATE_KEY_KMS_SIGNER_",
+        "KMS_SIGNER_ADDRESS_",
+    );
+
+    Ok(merged)
+}
+
+fn prefer_configured_signer_addresses(
+    values: &mut HashMap<String, String>,
+    private_key_prefix: &str,
+    address_prefix: &str,
+) {
+    let suffixes = values
+        .keys()
+        .filter_map(|key| key.strip_prefix(address_prefix).map(str::to_owned))
+        .collect::<Vec<_>>();
+    for suffix in suffixes {
+        values.remove(&format!("{private_key_prefix}{suffix}"));
+    }
+}
+
 fn default_payer_keypair_path() -> DynResult<String> {
     if let Ok(path) = env::var("ANCHOR_WALLET") {
         return Ok(path);
@@ -2260,6 +2566,20 @@ fn default_payer_keypair_path() -> DynResult<String> {
     }
     let home = env::var("HOME")?;
     Ok(format!("{home}/.config/solana/id.json"))
+}
+
+fn default_addresses_env_path() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../addresses/.env.host")
+        .display()
+        .to_string()
+}
+
+fn default_addresses_json_path() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../addresses/localnet.json")
+        .display()
+        .to_string()
 }
 
 fn default_token_recipient_keypair_path() -> DynResult<String> {
@@ -2326,6 +2646,7 @@ fn print_usage() {
     eprintln!(
         "Usage:\n\
   local-cli init-local --rpc-url <url> --ws-url <url> [--output-rpc-url <url>] [--output-ws-url <url>] --payer-keypair <path> --program-id <pubkey> --test-input-program-id <pubkey> --confidential-token-program-id <pubkey> --addresses-env <path> --addresses-json <path>\n\
+  local-cli bootstrap-localnet [--rpc-url <url>] [--ws-url <url>] [--output-rpc-url <url>] [--output-ws-url <url>] [--payer-keypair <path>] [--recipient-keypair <path>] [--program-id <pubkey>] [--test-input-program-id <pubkey>] [--confidential-token-program-id <pubkey>] [--addresses-env <path>] [--addresses-json <path>] [--wait-for-programs 1] [--timeout-secs 180]\n\
   local-cli smoke-rand [--addresses-env ../addresses/.env.host] [--payer-keypair <path>] [--rpc-url <url>] [--program-id <pubkey>] [--rand-type uint8] [--session-nonce 1]\n\
   local-cli trivial-encrypt --value <n> --to-type <type> [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli binary-op --op <add|sub|mul> --lhs <0xhandle> (--rhs-handle <0xhandle> | --rhs-scalar <n>) --result-type <type> [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\

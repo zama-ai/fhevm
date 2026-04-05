@@ -67,8 +67,59 @@ const HOST_ADDRESS_KEYS = [
   "PAUSER_SET_CONTRACT_ADDRESS",
 ] as const;
 
-const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
-  renderEnvFile(HOST_ADDRESS_KEYS.map((key) => [key, addresses?.[key]]));
+const SOLANA_HOST_ADDRESS_KEY_ORDER = [
+  "HOST_CHAIN_KIND",
+  "SOLANA_HOST_RPC_URL",
+  "SOLANA_HOST_WS_URL",
+  "SOLANA_HOST_KIND",
+  "SOLANA_HOST_PROGRAM_ID",
+  "SOLANA_HOST_STATE_PDA",
+  "SOLANA_HOST_SESSION_PDA",
+  "SOLANA_HOST_ACL_PROGRAM_ID",
+  "SOLANA_TEST_INPUT_PROGRAM_ID",
+  "SOLANA_TEST_INPUT_STATE_PDA",
+  "SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID",
+  "SOLANA_CONFIDENTIAL_TOKEN_STATE_PDA",
+  "SOLANA_HOST_AUTHORITY",
+  "SOLANA_TOKEN_RECIPIENT",
+  "SOLANA_HOST_CHAIN_ID",
+  "CHAIN_ID_GATEWAY",
+  "INPUT_VERIFICATION_ADDRESS",
+  "DECRYPTION_ADDRESS",
+  "NUM_COPROCESSORS",
+  "COPROCESSOR_THRESHOLD",
+  "NUM_KMS_NODES",
+  "PUBLIC_DECRYPTION_THRESHOLD",
+  ...HOST_ADDRESS_KEYS,
+] as const;
+
+const isSolanaHostAddresses = (addresses?: Record<string, string>) =>
+  addresses?.HOST_CHAIN_KIND === "solana" || Boolean(addresses?.SOLANA_HOST_PROGRAM_ID);
+
+const renderSolanaHostChainAddressesEnv = (addresses: Record<string, string>) => {
+  const explicitOrder = new Map(SOLANA_HOST_ADDRESS_KEY_ORDER.map((key, index) => [key, index]));
+  const entries = Object.entries(addresses)
+    .filter(([, value]) => Boolean(value))
+    .sort(([left], [right]) => {
+      const leftOrder = explicitOrder.get(left);
+      const rightOrder = explicitOrder.get(right);
+      if (leftOrder != null || rightOrder != null) {
+        return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
+      }
+      return left.localeCompare(right);
+    });
+  return renderEnvFile(entries);
+};
+
+const renderHostChainAddressesEnv = (addresses?: Record<string, string>) => {
+  if (!addresses) {
+    return renderEnvFile([]);
+  }
+  if (isSolanaHostAddresses(addresses)) {
+    return renderSolanaHostChainAddressesEnv(addresses);
+  }
+  return renderEnvFile(HOST_ADDRESS_KEYS.map((key) => [key, addresses[key]]));
+};
 
 /** Renders discovered host addresses for a given chain key into a dotenv artifact. */
 export const renderHostChainAddresses = (state: Pick<State, "discovery">, chainKey: string) =>

@@ -1,8 +1,8 @@
 use crate::error::{HostContractError, Result};
 use crate::events::HostEvent;
 use crate::types::{
-    ContextUserInputs, EvmAddress, FheType, Handle, SignatureThreshold,
-    MAX_INPUT_HANDLES_PER_PROOF, MAX_INPUT_PROOF_BYTES, MAX_VERIFIER_SIGNERS,
+    ContextUserInputs, EvmAddress, Handle, SignatureThreshold, MAX_INPUT_HANDLES_PER_PROOF,
+    MAX_INPUT_PROOF_BYTES, MAX_VERIFIER_SIGNERS,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha3::{Digest, Keccak256};
@@ -213,7 +213,6 @@ impl InputVerifierState {
         if expected_handle != input_handle {
             return Err(HostContractError::InvalidInputHandle);
         }
-        let _ = expected_handle.fhe_type().unwrap_or(FheType::Bool);
         Ok(expected_handle)
     }
 
@@ -238,17 +237,3 @@ fn proof_cache_key(input_proof: &[u8], context: ContextUserInputs) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn extract_extra_data(input_proof: &[u8]) -> Option<&[u8]> {
-    if input_proof.len() < 2 {
-        return None;
-    }
-
-    let handle_count = *input_proof.first()? as usize;
-    let signer_count = *input_proof.get(1)? as usize;
-    let handles_bytes = handle_count.checked_mul(32)?;
-    let signatures_bytes = signer_count.checked_mul(65)?;
-    let offset = 2usize
-        .checked_add(handles_bytes)?
-        .checked_add(signatures_bytes)?;
-    input_proof.get(offset..)
-}

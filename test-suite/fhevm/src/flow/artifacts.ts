@@ -7,6 +7,7 @@ import {
   COMPONENTS,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
+  hostChainKind,
   paymentBridgingAddressesSolidityPath,
   kmsCoreConfigPath,
   relayerConfigPath,
@@ -56,11 +57,11 @@ export const runtimeArtifactPaths = (state: State) => {
       const { node, sc, copro } = chain;
       return [
         envPath(node),
-        envPath(sc),
+        ...(hostChainKind(chain) === "solana" ? [] : [envPath(sc)]),
         hostChainAddressesPath(chain.key),
         ...(state.discovery ? [hostChainAddressesSolidityPath(chain.key)] : []),
         composePath(node),
-        composePath(sc),
+        ...(hostChainKind(chain) === "solana" ? [] : [composePath(sc)]),
         composePath(copro),
         ...Array.from({ length: topology.count }, (_, index) => envPath(`coprocessor-${chain.key}.${index}`)),
       ];
@@ -85,7 +86,9 @@ export const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<
   for (const chain of extraHostChains(state)) {
     const { node, sc, copro } = chain;
     entries.push([node, "base"]);
-    entries.push([sc, "host-deploy"]);
+    if (hostChainKind(chain) !== "solana") {
+      entries.push([sc, "host-deploy"]);
+    }
     entries.push([copro, "coprocessor"]);
   }
   return entries;

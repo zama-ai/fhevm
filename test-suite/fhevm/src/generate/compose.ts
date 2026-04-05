@@ -18,6 +18,7 @@ import {
   TEMPLATE_COMPOSE_DIR,
   composePath,
   envPath,
+  hostChainKind,
   hostChainNames,
   hostChainRuntimes,
 } from "../layout";
@@ -260,7 +261,10 @@ export const serviceNameList = (state: Pick<State, "scenario">, component: strin
     return [];
   }
   const topology = topologyForState(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor;
+  const defaultChainKind = hostChainKind(state.scenario.hostChains[0] ?? { chainKind: "evm" });
+  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+    (suffix) => !(defaultChainKind === "solana" && suffix === "host-listener-poller"),
+  );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -273,6 +277,10 @@ export const serviceNameList = (state: Pick<State, "scenario">, component: strin
 /** Loads a template compose document for a component. */
 const loadComposeDoc = async (component: string) =>
   YAML.parse(await fs.readFile(path.join(TEMPLATE_COMPOSE_DIR, `${component}-docker-compose.yml`), "utf8")) as ComposeDoc;
+
+/** Loads a compose template by filename without assuming it is a top-level component. */
+const loadComposeTemplate = async (name: string) =>
+  YAML.parse(await fs.readFile(path.join(TEMPLATE_COMPOSE_DIR, `${name}-docker-compose.yml`), "utf8")) as ComposeDoc;
 
 /** Loads a previously generated compose override document for a component. */
 const loadGeneratedComposeDoc = async (component: string) =>
@@ -378,8 +386,32 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
 
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
+  const defaultChain = hostChainRuntimes(plan.hostChains)[0];
   if (component === "coprocessor") {
+    if (defaultChain && hostChainKind(defaultChain) === "solana") {
+      const doc = rewriteComposePaths(await loadComposeTemplate("coprocessor-solana"));
+      const services = { ...doc.services };
+      delete services["coprocessor-host-listener-poller"];
+      return { services };
+    }
     return buildCoprocessorOverride(plan);
+  }
+  if (component === "host-node" && defaultChain && hostChainKind(defaultChain) === "solana") {
+    const doc = rewriteComposePaths(await loadComposeTemplate("host-node-solana"));
+    const service = doc.services["host-node"];
+    if (!service) {
+      return { services: {} };
+    }
+    return {
+      ...(doc.volumes ? { volumes: structuredClone(doc.volumes) } : {}),
+      services: {
+        "host-node": {
+          ...structuredClone(service),
+          container_name: "host-node",
+          env_file: [envPath("host-node")],
+        },
+      },
+    };
   }
   const template = rewriteComposePaths(structuredClone(await loadComposeDoc(component)));
   const overridden = overriddenServicesForComponent(plan, component);
@@ -404,22 +436,29 @@ const buildExtraHostNodeOverride = async (
   chain: HostChainScenario,
   defaultChain: HostChainScenario,
 ): Promise<ComposeDoc> => {
-  const doc = rewriteComposePaths(await loadComposeDoc("host-node"));
-  const hostNode = doc.services["host-node"];
-  if (!hostNode) return { services: {} };
   const { node: container } = hostChainNames(chain.key, defaultChain.key);
+  const doc = rewriteComposePaths(
+    await loadComposeTemplate(hostChainKind(chain) === "solana" ? "host-node-solana-mixed" : "host-node"),
+  );
+  const [serviceName, hostNode] = Object.entries(doc.services)[0] ?? [];
+  if (!serviceName || !hostNode) return { services: {} };
   const clone = structuredClone(hostNode);
   clone.container_name = container;
   clone.env_file = [envPath(container)];
-  clone.ports = [`${chain.rpcPort}:${chain.rpcPort}`];
-  if (Array.isArray(clone.entrypoint)) {
+  if (hostChainKind(chain) === "evm") {
+    clone.ports = [`${chain.rpcPort}:${chain.rpcPort}`];
+  }
+  if (hostChainKind(chain) === "evm" && Array.isArray(clone.entrypoint)) {
     clone.entrypoint = clone.entrypoint.map((arg: string) => {
       if (arg === String(defaultChain.rpcPort)) return String(chain.rpcPort);
       if (arg === defaultChain.chainId) return chain.chainId;
       return arg;
     });
   }
-  return { services: { [container]: clone } };
+  return {
+    ...(doc.volumes ? { volumes: structuredClone(doc.volumes) } : {}),
+    services: { [container]: clone },
+  };
 };
 
 /** Builds a host-sc compose override for an extra host chain. */
@@ -428,6 +467,9 @@ const buildExtraHostScOverride = async (
   chain: HostChainScenario,
   defaultChain: HostChainScenario,
 ): Promise<ComposeDoc> => {
+  if (hostChainKind(chain) === "solana") {
+    return { services: {} };
+  }
   const doc = rewriteComposePaths(await loadComposeDoc("host-sc"));
   const { sc: scPrefix } = hostChainNames(chain.key, defaultChain.key);
   const localHostContracts = overriddenServicesForComponent(plan, "host-sc").size > 0;
@@ -465,6 +507,35 @@ const buildExtraCoprocessorListenerOverride = async (
   chain: HostChainScenario,
   defaultChain: HostChainScenario,
 ): Promise<ComposeDoc> => {
+  if (hostChainKind(chain) === "solana") {
+    const doc = rewriteComposePaths(await loadComposeTemplate("coprocessor-solana-host-listener"));
+    const services: Record<string, Record<string, unknown>> = {};
+    const [baseName, baseService] = Object.entries(doc.services)[0] ?? [];
+    if (!baseName || !baseService) {
+      return { services: {} };
+    }
+    const { suffix: chainSuffix } = hostChainNames(chain.key, defaultChain.key);
+    for (const instance of plan.coprocessor.instances) {
+      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+      const envName = `coprocessor-${chain.key}.${instance.index}`;
+      const envFileValue = envPath(envName);
+      const instanceEnv = await readEnvFile(envFileValue);
+      const cloneName = `${prefix}host-listener${chainSuffix}`;
+      services[cloneName] = {
+        ...applyInstanceAdjustments(
+          baseName,
+          baseService,
+          envFileValue,
+          instanceEnv,
+          instance,
+          {},
+          {},
+        ),
+        container_name: cloneName,
+      };
+    }
+    return { services };
+  }
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
   const services: Record<string, Record<string, unknown>> = {};
   const compat = compatPolicyForState(plan);
@@ -507,8 +578,14 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides">) =>
-  new Set(["coprocessor", ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group])]);
+export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "hostChains">) => {
+  const generated = new Set(["coprocessor", ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group])]);
+  const defaultChain = hostChainRuntimes(plan.hostChains)[0];
+  if (defaultChain && hostChainKind(defaultChain) === "solana") {
+    generated.add("host-node");
+  }
+  return generated;
+};
 
 /** Generates or removes compose override files to match the current runtime plan. */
 export const generateComposeOverrides = async (_state: State, plan: StackSpec) => {
@@ -534,14 +611,21 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
     const { node, sc, copro } = chain;
-    extraChainFileNames.push(node, sc, copro);
+    extraChainFileNames.push(node, copro);
+    if (hostChainKind(chain) !== "solana") {
+      extraChainFileNames.push(sc);
+    }
     const [hostNodeDoc, hostScDoc, coproDoc] = await Promise.all([
       buildExtraHostNodeOverride(chain, defaultChain),
       buildExtraHostScOverride(plan, chain, defaultChain),
       buildExtraCoprocessorListenerOverride(plan, chain, defaultChain),
     ]);
     await fs.writeFile(composePath(node), YAML.stringify(hostNodeDoc));
-    await fs.writeFile(composePath(sc), YAML.stringify(hostScDoc));
+    if (hostChainKind(chain) === "solana") {
+      await remove(composePath(sc));
+    } else {
+      await fs.writeFile(composePath(sc), YAML.stringify(hostScDoc));
+    }
     await fs.writeFile(composePath(copro), YAML.stringify(coproDoc));
   }
   // Clean up stale multi-chain compose files from previous runs.

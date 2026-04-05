@@ -10,9 +10,17 @@ import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
+  DEFAULT_SOLANA_HOST_FAUCET_PORT,
+  DEFAULT_SOLANA_HOST_WS_PORT,
   DEFAULT_TENANT_API_KEY,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
+  SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID,
+  SOLANA_HOST_NODE_IMAGE,
+  SOLANA_HOST_NODE_PLATFORM,
+  SOLANA_HOST_PROGRAM_ID,
+  SOLANA_TEST_INPUT_PROGRAM_ID,
+  hostChainKind,
   hostChainRuntimes,
 } from "../layout";
 import type { State } from "../types";
@@ -43,6 +51,11 @@ const updateContracts = (env: Record<string, string>, values: Record<string, str
     }
   }
 };
+
+const solanaAclIdentity = (values: Record<string, string>) =>
+  values.SOLANA_HOST_ACL_PROGRAM_ID ?? values.SOLANA_HOST_PROGRAM_ID ?? values.ACL_CONTRACT_ADDRESS ?? "";
+
+const defaultGatewayHostCompatAddress = "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c";
 
 /** Provides non-empty metadata defaults for host-chain registration tasks. */
 const defaultHostChainMetadata = (chain: Pick<StackSpec["hostChains"][number], "name">, index: number) => ({
@@ -148,11 +161,18 @@ const applyDiscoveryEnv = (
   const kmsHostChains = chains.map((chain) => {
     const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
     const endpoints = state.discovery!.endpoints.hosts[chain.key];
-    return {
+    const base = {
       url: endpoints?.http ?? `http://${chain.node}:${chain.rpcPort}`,
       chain_id: Number(chain.chainId),
-      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+      acl_address: hostChainKind(chain) === "solana" ? solanaAclIdentity(hostAddresses) : hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
     };
+    return hostChainKind(chain) === "solana"
+      ? {
+          ...base,
+          chain_kind: "solana",
+          state_pda: hostAddresses.SOLANA_HOST_STATE_PDA ?? "",
+        }
+      : base;
   });
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
@@ -243,16 +263,45 @@ export const renderEnvMaps = async (
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
-  envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
-  envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
-  envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
-  envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
-  envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+  const defaultHost = state.discovery?.hosts[defaultChain.key] ?? {};
+  const defaultHostHttp = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
+  const defaultHostWs =
+    hostChainKind(defaultChain) === "solana"
+      ? `ws://${defaultChain.node}:${DEFAULT_SOLANA_HOST_WS_PORT}`
+      : `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
+  if (hostChainKind(defaultChain) === "solana") {
+    envs["host-node"].SOLANA_HOST_NODE_IMAGE = SOLANA_HOST_NODE_IMAGE;
+    envs["host-node"].SOLANA_HOST_NODE_PLATFORM = SOLANA_HOST_NODE_PLATFORM;
+    envs["host-node"].SOLANA_HOST_RPC_PORT = String(defaultChain.rpcPort);
+    envs["host-node"].SOLANA_HOST_WS_PORT = String(DEFAULT_SOLANA_HOST_WS_PORT);
+    envs["host-node"].SOLANA_HOST_FAUCET_PORT = String(DEFAULT_SOLANA_HOST_FAUCET_PORT);
+    envs["host-node"].SOLANA_HOST_PROGRAM_ID = SOLANA_HOST_PROGRAM_ID;
+    envs["host-node"].SOLANA_TEST_INPUT_PROGRAM_ID = SOLANA_TEST_INPUT_PROGRAM_ID;
+    envs["host-node"].SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID = SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID;
+    envs["coprocessor"].SOLANA_HOST_LISTENER_RPC_URL = defaultHostHttp;
+    envs["coprocessor"].SOLANA_HOST_LISTENER_PROGRAM_ID = defaultHost.SOLANA_HOST_PROGRAM_ID ?? SOLANA_HOST_PROGRAM_ID;
+    envs["coprocessor"].SOLANA_HOST_LISTENER_HOST_CHAIN_ID = defaultChain.chainId;
+    envs["coprocessor"].SOLANA_HOST_LISTENER_COMMITMENT = "confirmed";
+    envs["coprocessor"].RPC_HTTP_URL = defaultHostHttp;
+    envs["coprocessor"].RPC_WS_URL = defaultHostWs;
+    envs["coprocessor"].CHAIN_ID = defaultChain.chainId;
+    envs["coprocessor"].ACL_CONTRACT_ADDRESS = solanaAclIdentity(defaultHost);
+    envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = "http://gateway-node:8546";
+    envs["test-suite"].RPC_URL = defaultHostHttp;
+    envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+    envs["test-suite"].SOLANA_HOST_RPC_URL = `http://localhost:${defaultChain.rpcPort}`;
+  } else {
+    envs["host-node"].RPC_URL = defaultHostHttp;
+    envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
+    envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
+    envs["host-sc"].RPC_URL = defaultHostHttp;
+    envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
+    envs["coprocessor"].RPC_HTTP_URL = defaultHostHttp;
+    envs["coprocessor"].RPC_WS_URL = defaultHostWs;
+    envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = defaultHostHttp;
+    envs["test-suite"].RPC_URL = defaultHostHttp;
+    envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+  }
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
@@ -262,10 +311,20 @@ export const renderEnvMaps = async (
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
     const metadata = defaultHostChainMetadata(chain, chainIndex);
     envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${chainIndex}`] = chain.chainId;
-    envs["gateway-sc"][`HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_${chainIndex}`] =
-      hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
-    envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${chainIndex}`] =
-      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    const compatGatewayAddress =
+      hostChainKind(chain) === "evm"
+        ? hostAddresses.ACL_CONTRACT_ADDRESS ?? envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${chainIndex}`]
+        : envs["gateway-sc"].HOST_CHAIN_ACL_ADDRESS_0 ?? defaultGatewayHostCompatAddress;
+    const executorAddress =
+      hostChainKind(chain) === "evm"
+        ? hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? compatGatewayAddress
+        : compatGatewayAddress;
+    if (executorAddress) {
+      envs["gateway-sc"][`HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_${chainIndex}`] = executorAddress;
+    }
+    if (compatGatewayAddress) {
+      envs["gateway-sc"][`HOST_CHAIN_ACL_ADDRESS_${chainIndex}`] = compatGatewayAddress;
+    }
     envs["gateway-sc"][`HOST_CHAIN_NAME_${chainIndex}`] = metadata.name;
     envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${chainIndex}`] = metadata.website;
   }
@@ -274,29 +333,46 @@ export const renderEnvMaps = async (
   for (const chain of chains.filter((item) => !item.isDefault)) {
     const chainIndex = chain.index;
     const hostHttp = `http://${chain.node}:${chain.rpcPort}`;
-    const hostWs = `ws://${chain.node}:${chain.rpcPort}`;
+    const hostWs =
+      hostChainKind(chain) === "solana"
+        ? `ws://${chain.node}:${DEFAULT_SOLANA_HOST_WS_PORT}`
+        : `ws://${chain.node}:${chain.rpcPort}`;
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
 
-    instanceEnvs[chain.node] = {
-      ...envs["host-node"],
-      HOST_NODE_CONTAINER_NAME: chain.node,
-      HOST_NODE_PORT: String(chain.rpcPort),
-      HOST_NODE_CHAIN_ID: chain.chainId,
-    };
+    if (hostChainKind(chain) === "solana") {
+      instanceEnvs[chain.node] = {
+        ...envs["host-node"],
+        SOLANA_HOST_NODE_IMAGE: SOLANA_HOST_NODE_IMAGE,
+        SOLANA_HOST_NODE_PLATFORM: SOLANA_HOST_NODE_PLATFORM,
+        SOLANA_HOST_RPC_PORT: String(chain.rpcPort),
+        SOLANA_HOST_WS_PORT: String(DEFAULT_SOLANA_HOST_WS_PORT),
+        SOLANA_HOST_FAUCET_PORT: String(DEFAULT_SOLANA_HOST_FAUCET_PORT),
+        SOLANA_HOST_PROGRAM_ID: SOLANA_HOST_PROGRAM_ID,
+        SOLANA_TEST_INPUT_PROGRAM_ID: SOLANA_TEST_INPUT_PROGRAM_ID,
+        SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID: SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID,
+      };
+    } else {
+      instanceEnvs[chain.node] = {
+        ...envs["host-node"],
+        HOST_NODE_CONTAINER_NAME: chain.node,
+        HOST_NODE_PORT: String(chain.rpcPort),
+        HOST_NODE_CHAIN_ID: chain.chainId,
+      };
 
-    const hostSc = { ...envs["host-sc"] };
-    hostSc.RPC_URL = hostHttp;
-    hostSc.CHAIN_ID = chain.chainId;
-    hostSc.HOST_ADDRESS_DIR = chain.key;
-    hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
-    hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
-    hostSc.NUM_COPROCESSORS = String(plan.topology.count);
-    hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
-    for (let i = 0; i < plan.topology.count; i += 1) {
-      const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
-      if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
+      const hostSc = { ...envs["host-sc"] };
+      hostSc.RPC_URL = hostHttp;
+      hostSc.CHAIN_ID = chain.chainId;
+      hostSc.HOST_ADDRESS_DIR = chain.key;
+      hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
+      hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
+      hostSc.NUM_COPROCESSORS = String(plan.topology.count);
+      hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
+      for (let i = 0; i < plan.topology.count; i += 1) {
+        const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
+        if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
+      }
+      instanceEnvs[chain.sc] = hostSc;
     }
-    instanceEnvs[chain.sc] = hostSc;
 
     for (let index = 0; index < plan.topology.count; index += 1) {
       const baseKey = index === 0 ? "coprocessor" : `coprocessor.${index}`;
@@ -306,7 +382,13 @@ export const renderEnvMaps = async (
       coproChain.RPC_HTTP_URL = hostHttp;
       coproChain.RPC_WS_URL = hostWs;
       coproChain.CHAIN_ID = chain.chainId;
-      if (hostAddresses.ACL_CONTRACT_ADDRESS) {
+      if (hostChainKind(chain) === "solana") {
+        coproChain.SOLANA_HOST_LISTENER_RPC_URL = hostHttp;
+        coproChain.SOLANA_HOST_LISTENER_PROGRAM_ID = hostAddresses.SOLANA_HOST_PROGRAM_ID ?? SOLANA_HOST_PROGRAM_ID;
+        coproChain.SOLANA_HOST_LISTENER_HOST_CHAIN_ID = chain.chainId;
+        coproChain.SOLANA_HOST_LISTENER_COMMITMENT = "confirmed";
+        coproChain.ACL_CONTRACT_ADDRESS = solanaAclIdentity(hostAddresses);
+      } else if (hostAddresses.ACL_CONTRACT_ADDRESS) {
         coproChain.ACL_CONTRACT_ADDRESS = hostAddresses.ACL_CONTRACT_ADDRESS;
         coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
         coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
@@ -316,10 +398,15 @@ export const renderEnvMaps = async (
 
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_RPC_URL`] = hostHttp;
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_CHAIN_ID`] = chain.chainId;
-    envs["test-suite"][`HOST_CHAIN_${chainIndex}_ACL_CONTRACT_ADDRESS`] = hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_ACL_CONTRACT_ADDRESS`] =
+      hostChainKind(chain) === "solana" ? solanaAclIdentity(hostAddresses) : hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    if (hostChainKind(chain) === "solana") {
+      envs["test-suite"].CHAIN_ID_HOST_SOLANA = chain.chainId;
+      envs["test-suite"].SOLANA_HOST_RPC_URL = `http://localhost:${chain.rpcPort}`;
+    }
   }
 
   validateEnvMaps(envs, instanceEnvs);

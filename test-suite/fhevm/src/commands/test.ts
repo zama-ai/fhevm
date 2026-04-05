@@ -1,6 +1,9 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import path from "node:path";
+import process from "node:process";
+
 import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
@@ -23,6 +26,7 @@ import {
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
+  hostChainKind,
 } from "../layout";
 import type { TestOptions } from "../types";
 
@@ -45,7 +49,14 @@ const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decr
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const SOLANA_TEST_PROFILES = [
+  "solana-input-proof",
+  "solana-user-decryption",
+  "solana-public-decrypt-http-ebool",
+  "solana-public-decrypt-http-mixed",
+  "solana-confidential-token",
+] as const;
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), ...SOLANA_TEST_PROFILES, "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
@@ -73,7 +84,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "solana-input-proof": "Run Solana input proof coverage.",
+  "solana-user-decryption": "Run Solana user decryption coverage.",
+  "solana-public-decrypt-http-ebool": "Run Solana HTTP public decrypt coverage for ebool payloads.",
+  "solana-public-decrypt-http-mixed": "Run Solana mixed HTTP public decrypt coverage.",
+  "solana-confidential-token": "Run Solana ConfidentialToken coverage.",
 };
+
+const SOLANA_RUNNER = path.resolve(import.meta.dir, "..", "..", "..", "e2e", "test", "solana", "run-solana-e2e.ts");
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
 export const validateNamedProfileGrep = (testName: string | undefined, grep: string | undefined) => {
@@ -103,6 +121,27 @@ export const listTestProfiles = () => {
     console.log(`${name}${suiteTags.length ? ` - ${suiteTags.join(", ")}` : ""}`);
     console.log(`  ${description}`);
   }
+};
+
+const runSolanaProfile = async (
+  state: Awaited<ReturnType<typeof loadState>>,
+  name: (typeof SOLANA_TEST_PROFILES)[number],
+  options: TestOptions,
+) => {
+  if (!state) {
+    throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+  if (!state.scenario.hostChains.some((chain) => hostChainKind(chain) === "solana")) {
+    throw new PreflightError(`${name} requires a Solana host chain; rerun with --solana or --multi-chain`);
+  }
+  console.log(`[test] ${name} (${options.network})`);
+  const started = Date.now();
+  return runLogged(name, started, async () => {
+    await runWithHeartbeat(
+      [process.execPath, SOLANA_RUNNER, name, ...(options.verbose ? ["--verbose"] : [])],
+      `test ${name}`,
+    );
+  });
 };
 
 /** Logs pass/fail timing around one test task. */
@@ -689,6 +728,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
   const runProfile = async (name: string) => {
+    if ((SOLANA_TEST_PROFILES as readonly string[]).includes(name)) {
+      return runSolanaProfile(state, name as (typeof SOLANA_TEST_PROFILES)[number], options);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }
