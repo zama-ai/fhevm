@@ -1,14 +1,6 @@
 # =============================================================================
 # FHEVM Coprocessor Configuration
 # =============================================================================
-
-# -----------------------------------------------------------------------------
-# Shared host-listener dependence settings (applies to all HL types)
-# -----------------------------------------------------------------------------
-dependentOps:
-  # Max dependent ops per chain per ingested block before slow-lane.
-  # 0 disables slow-lane decisions.
-  maxPerChain: 0
 # This chart deploys the FHEVM coprocessor components including:
 # - Configuration setup
 # - Database migration
@@ -21,15 +13,71 @@ dependentOps:
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Configuration Setup
+# Common Configuration
+# -----------------------------------------------------------------------------
+# Shared configuration across all coprocessor components
+commonConfig:
+  # Database connection string
+  # Can use $(VAR_NAME) syntax to reference variables from commonConfig.env
+  databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
+
+  # Host chain configuration
+  hostChainWsUrl: "ws://ethereum-node:8546"
+  hostChainHttpUrl: "http://ethereum-node:8545"
+  aclContractAddress: null            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
+  fhevmExecutorContractAddress: null  # required — e.g. 0x...
+
+  # Gateway chain configuration
+  gatewayUrl: "ws://gateway-rpc-node:8548"
+  gatewayContractAddresses:
+    inputVerification: null          # required
+    kmsGeneration: null              # required
+    ciphertextCommits: null          # required
+    gatewayConfig: null              # required
+    multichainAcl: null              # required
+
+  # Max dependent ops per chain per ingested block before slow-lane.
+  # 0 disables slow-lane decisions.
+  dependentOpsMaxPerChain: 0
+
+  # Distributed tracing configuration
+  tracing:
+    enabled: false
+    endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
+
+  # Environment variables applied to all components before component-level env vars.
+  # Use this to set shared variables (e.g. credentials sourced from secrets) or to
+  # override any hardcoded default injected from commonConfig (e.g. DATABASE_URL).
+  # Component-level env vars are applied after and take the highest precedence.
+  # Example:
+  # - name: PGPASSWORD
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: coprocessor-db
+  #       key: password
+  env: []
+
+# -----------------------------------------------------------------------------
+# Global Pod Configuration
+# -----------------------------------------------------------------------------
+# Pod annotations for additional metadata
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+# Pod labels for selection and organization
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+# -----------------------------------------------------------------------------
+# Coprocessor Configuration Setup
 # -----------------------------------------------------------------------------
 # Initializes secrets and configuration required by other components
 config:
   enabled: true
 
   image:
-    name: ghcr.io/zama-ai/kube-utils
-    tag: 0.1.0
+    name: hub.zama.org/zama-protocol/zama-ai/security-hub/infra/kube-utils
+    tag: v0.4.3
 
   # Coprocessor cryptographic key configuration
   # TODO: this should be deprecated, to be confirmed
@@ -72,19 +120,21 @@ dbMigration:
     # "helm.sh/hook-needs": "config-setup"
 
   image:
-    name: ghcr.io/zama-ai/fhevm-db-migration
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
+    tag: v0.11.0
 
   # Environment variables for migration process
+  # DATABASE_URL is injected automatically from commonConfig. Use env to set
+  # additional variables or override it.
   env:
     - name: CHAIN_ID
       value: "12345"
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   # Persistent volume for migration data
@@ -99,64 +149,65 @@ dbMigration:
       cpu: 500m
       memory: 512Mi
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
   affinity:
-    enabled: false
-
   tolerations:
-    enabled: false
-    items: []
 
 # -----------------------------------------------------------------------------
 # Host Listener
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain
+# Processes blockchain events from the host chain via WebSocket
 hostListener:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
+  env: []
 
-  # Command line arguments for the host listener
+  # Command line arguments for the host listener.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-    - --initial-block-time=12  # it can switch to real blockTime when data is available
-    - --log-level=INFO
-    - --health-port=8080
-    - --reorg-maximum-duration-in-blocks=50
+    logLevel: INFO
+    initialBlockTime: 12        # switches to real block time when data is available
+    reorgMaximumDurationInBlocks: 50
+    # New in v0.10
+    serviceName: host-listener
+    catchupFinalizationInBlocks: 20  # continuous catchup will wait for block "finalization"
 
-    ### Dependence chains parameters
-    # - --dependence-cache-size=10000
-    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
-    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
-
-    ### Catchup parameters (optional)
-    # - --catchup-margin
-    # - --catchup-paging
-    # - --start-at-block  # To be used to catch up from a specific block
-    # - --end-at-block    # To be used to stop at a specific block
-
-    ### New in v0.10
-    - --service-name="host-listener"
-    - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
-
-    ### New in v0.11
-    # - --timeout-request-websocket=15 # OPTIONAL, Default timeout in seconds for websocket interactions
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --dependence-cache-size=10000
+  #   - --dependence-by-connexity
+  #   - --dependence-cross-block
+  #   - --catchup-margin=10
+  #   - --catchup-paging=100
+  #   - --start-at-block=12345
+  #   - --end-at-block=12400
+  #   - --timeout-request-websocket=15  # new in v0.11: default timeout (seconds) for websocket interactions
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -166,6 +217,11 @@ hostListener:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -193,12 +249,17 @@ hostListener:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -209,54 +270,51 @@ hostListener:
 # -----------------------------------------------------------------------------
 # Host Listener Poller
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain
+# Processes blockchain events from the host chain via HTTP polling
 hostListenerPoller:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.10.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_HTTP_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
+  env: []
 
-  # Command line arguments for the host listener poller
+  # Command line arguments for the host listener poller.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    ### Required parameters
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_HTTP_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+    logLevel: INFO
+    serviceName: host-listener-poller
+    finalityLag: 3
+    batchSize: 100              # maximum number of blocks to process per iteration
+    pollIntervalMs: 6000        # sleep between iterations (half block time ~6s for Ethereum)
+    retryIntervalMs: 1000       # backoff between retry attempts for RPC/DB failures
+    maxHttpRetries: 45          # maximum HTTP/RPC retry attempts before failing an operation
+    rpcComputeUnitsPerSecond: 1000  # rate limiting budget for RPC calls during block catchup
 
-    ### Polling and block processing parameters
-    - --finality-lag=3
-    - --batch-size=100  # Maximum number of blocks to process per iteration
-    - --poll-interval-ms=6000  # Sleep duration between iterations in milliseconds (half block time ~6s for Ethereum)
-    - --retry-interval-ms=1000  # Backoff between retry attempts for RPC/DB failures in milliseconds
-    - --max-http-retries=45  # Maximum number of HTTP/RPC retry attempts before failing an operation
-    - --rpc-compute-units-per-second=1000  # Rate limiting budget for RPC calls during block catchup (compute units per second)
-
-    ### Observability parameters
-    - --log-level=INFO
-    - --health-port=8080
-    - --service-name=host-listener-poller
-
-    ### Prometheus metrics
-    - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
-
-    ### Dependence chains parameters
-    # - --dependence-cache-size=10000
-    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
-    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --dependence-cache-size=10000
+  #   - --dependence-by-connexity
+  #   - --dependence-cross-block
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -266,6 +324,11 @@ hostListenerPoller:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -293,12 +356,17 @@ hostListenerPoller:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -312,47 +380,51 @@ hostListenerPoller:
 # Host listener variant that runs only the catchup loop without real-time subscription.
 hostListenerCatchupOnly:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.10.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Additional environment variables. DATABASE_URL, ETHEREUM_RPC_URL,
+  # ACL_CONTRACT_ADDRESS, and FHEVM_EXECUTOR_CONTRACT_ADDRESS are injected
+  # automatically from commonConfig. Use env to set component-specific variables
+  # or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # coprocessor API key is required (--coprocessor-api-key is always injected).
+  env: []
 
-  # Command line arguments for the host listener catchup only mode
-  # NOTE: --only-catchup-loop requires --end-at-block to be set
+  # Command line arguments for the host listener catchup only mode.
+  # NOTE: onlyCatchupLoop requires endAtBlock to be set.
+  # The following are injected automatically by the template:
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --health-port (from ports.healthcheck)
+  #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --coprocessor-api-key=$(TENANT_API_KEY)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --url=$(ETHEREUM_RPC_URL)
-    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-    - --initial-block-time=12
-    - --log-level=INFO
-    - --health-port=8080
-    - --dependence-cache-size=128
-    - --reorg-maximum-duration-in-blocks=50
-    - --service-name="host-listener-catchup-only"
-    - --catchup-finalization-in-blocks=20
+    logLevel: INFO
+    initialBlockTime: 12
+    dependenceCacheSize: 128
+    reorgMaximumDurationInBlocks: 50
+    serviceName: host-listener-catchup-only
+    catchupFinalizationInBlocks: 20
+    # Catchup-only specific parameters
+    onlyCatchupLoop: true       # run only the catchup loop, not real-time subscription
+    endAtBlock: -15             # relative to latest block (negative value)
+    catchupLoopSleepSecs: 60
 
-    ### Catchup-only specific parameters (required)
-    - --only-catchup-loop
-    - --end-at-block=-15  # Relative to latest block (negative value)
-    - --catchup-loop-sleep-secs=60
-
-    ### Optional catchup parameters
-    # - --start-at-block  # To catch up from a specific block
-    # - --catchup-margin
-    # - --catchup-paging
-    # --dependent-ops-max-per-chain is injected from dependentOps.maxPerChain
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags not covered by args fields above, e.g.:
+  #   - --start-at-block=12345
+  #   - --catchup-margin=10
+  #   - --catchup-paging=100
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -362,6 +434,11 @@ hostListenerCatchupOnly:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -389,12 +466,17 @@ hostListenerCatchupOnly:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -408,67 +490,48 @@ hostListenerCatchupOnly:
 # Processes events from the gateway chain
 gwListener:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
+    tag: v0.11.0
 
   replicas: 1
 
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: INPUT_VERIFICATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: input_verification.address
-    - name: KMS_GENERATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: kms_generation.address
-    - name: CIPHERTEXT_COMMITS_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: ciphertext_commits.address
-    - name: GATEWAY_CONFIG_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: gateway_config.address
+  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS,
+  # and GATEWAY_CONFIG_ADDRESS are injected automatically from commonConfig.
+  # Use env to set component-specific variables or override any of the above.
+  env: []
 
-  # Command line arguments for the gateway listener
+  # Command line arguments for the gateway listener.
+  # The following are injected automatically by the template:
+  #   --database-url, --gw-url, --input-verification-address, --kms-generation-address,
+  #   --ciphertext-commits-address, --gateway-config-address (from commonConfig)
+  #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --database-pool-size=16
-    - --verify-proof-req-database-channel=event_zkpok_new_work
-    - --gw-url=ws://gateway-rpc-node:8548
-    - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-    - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
-    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-    - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=10
-    - --health-check-port=8080
-    - --metrics-addr=0.0.0.0:9100
-    - --provider-max-retries=4294967295
-    - --provider-retry-interval=4s
-    - --log-level=INFO
-    - --get-logs-poll-interval=500ms
-    - --get-logs-block-batch-size=100
-    - --service-name=gw-listener
-    - --log-last-processed-every-number-of-updates=50
-    ### Replay parameters (optional)
-    # --replay-from-block BLOCK_NUMBER
-    # To go back in time from latest block
-    # --replay-from-block -NB_BLOCK
-    # --replay-skip-verify-proof  # Skip VerifyProofRequest events during replay
+    logLevel: INFO
+    serviceName: gw-listener
+    databasePoolSize: 16
+    verifyProofReqDatabaseChannel: event_zkpok_new_work
+    errorSleepInitialSecs: 1
+    errorSleepMaxSecs: 10
+    providerMaxRetries: "4294967295"
+    providerRetryInterval: 4s
+    getLogsPollInterval: 500ms
+    getLogsBlockBatchSize: 100
+    logLastProcessedEveryNumberOfUpdates: 50
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for replay parameters, e.g.:
+  #   - --replay-from-block=12345
+  #   - --replay-skip-verify-proof
+  #   - --catchup-kms-generation-from-block=12345
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -478,6 +541,11 @@ gwListener:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -505,12 +573,17 @@ gwListener:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -524,57 +597,50 @@ gwListener:
 # Performs FHE (Fully Homomorphic Encryption) computations
 tfheWorker:
   enabled: true
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tfhe-worker
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: ACL_CONTRACT_ADDRESS
-      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  # Additional environment variables. DATABASE_URL and ACL_CONTRACT_ADDRESS are
+  # injected automatically from commonConfig. Use env to set component-specific
+  # variables or override any of the above.
+  # Example: set WORKER_ID to override the auto-generated UUID
+  # - name: WORKER_ID
+  #   value: "00000000-0000-0000-0000-000000000001"
+  env: []
 
-  # Command line arguments for TFHE worker
+  # Command line arguments for the TFHE worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --run-bg-worker=true
-    - --worker-polling-interval-ms=10000
-    - --work-items-batch-size=100  # scheduling changed
-    - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
-    - --key-cache-size=32
-    - --coprocessor-fhe-threads=64  # scheduling changed
-    - --tokio-threads=16  # scheduling changed
-    - --pg-pool-max-connections=10
-    - --metrics-addr=0.0.0.0:9100
-    - --service-name=tfhe-worker  # tfhe-worker service name in OTLP traces
-    - --log-level=INFO
-    # Should not be used (unsafe - testing only, keep false values except CI)
-    - --generate-fhe-keys=false
-    # Unique worker identifier (valid UUID v4 format)
-    # If not set, defaults to a random UUID generated at startup
-    - --worker-id=$(WORKER_ID)
-    - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
-    # Disable dependence chain ID locking
-    # WARNING: May cause multiple workers to process the same DCID concurrently
-    # Defaults to false
-    - --disable-dcid-locking=false
-    # Time slice (in seconds) for processing a single dependence chain
-    # Locks are released if processing exceeds this duration
-    - --dcid-timeslice-sec=90
-    # Processed DCIDs older than this value are cleaned up
-    # Defaults to 48 hours (172800 seconds)
-    # Time-to-live (in seconds) for processed dependence chains
-    - --processed-dcid-ttl-sec=172800
-    - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
-    - --dcid-max-no-progress-cycles=2   # Worker cycles without progress before releasing
+    logLevel: INFO
+    serviceName: tfhe-worker    # service name in OTLP traces
+    runBgWorker: true
+    workerPollingIntervalMs: 10000
+    workItemsBatchSize: 100     # scheduling changed
+    dependenceChainsPerBatch: 100  # deprecated, to be removed in a future release
+    keyCacheSize: 32
+    coprocessorFheThreads: 64   # scheduling changed
+    tokioThreads: 16            # scheduling changed
+    pgPoolMaxConnections: 10
+    generateFheKeys: false      # unsafe - for testing only, keep false in production
+    dcidTtlSec: 30              # time-to-live (seconds) for dependence chain locks
+    disableDcidLocking: false   # WARNING: may cause multiple workers to process the same DCID concurrently
+    dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain; locks released if exceeded
+    processedDcidTtlSec: 172800  # time-to-live (seconds) for processed dependence chains (default 48h)
+    dcidCleanupIntervalSec: 3600  # interval (seconds) for cleaning up expired DCID locks
+    dcidMaxNoProgressCycles: 2  # worker cycles without progress before releasing
+
+  # Additional args appended after all template-injected and structured args.
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -584,6 +650,11 @@ tfheWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -612,17 +683,18 @@ tfheWorker:
       periodSeconds: 10
 
   # Distributed tracing configuration
+  # If enabled, overrides commonConfig.tracing.enabled for this component
   tracing:
     enabled: false
-    endpoint: ""
     service: "coprocessor_server"
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
   affinity:
-    enabled: false
-
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -631,6 +703,7 @@ tfheWorker:
       maxUnavailable: 0
 
   # Horizontal Pod Autoscaler configuration
+  # TODO: check dependencies required for hpa (metrics-server?)
   hpa:
     enabled: false
     minReplicas: 1
@@ -661,34 +734,40 @@ tfheWorker:
 # Generates zero-knowledge proofs for verification
 zkProofWorker:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/zkproof-worker
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Additional environment variables. DATABASE_URL is injected automatically
+  # from commonConfig. Use env to set component-specific variables or override
+  # any of the above.
+  env: []
 
-  # Command line arguments for ZK proof worker
+  # Command line arguments for the ZK proof worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --pg-listen-channel=event_zkpok_new_work
-    - --pg-notify-channel=event_zkpok_computed
-    - --pg-polling-interval=5
-    - --pg-pool-connections=5
-    - --pg-timeout=15s
-    - --worker-thread-count=8
-    - --service-name=zkproof-worker
-    - --log-level=INFO
-    # - --pg-auto-explain-with-min-duration="30s"
+    logLevel: INFO
+    serviceName: zkproof-worker
+    pgListenChannel: event_zkpok_new_work
+    pgNotifyChannel: event_zkpok_computed
+    pgPollingInterval: 5
+    pgPoolConnections: 5
+    pgTimeout: 15s
+    workerThreadCount: 8
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags, e.g.:
+  #   - --pg-auto-explain-with-min-duration=30s
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -698,6 +777,11 @@ zkProofWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -725,12 +809,17 @@ zkProofWorker:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -769,54 +858,65 @@ zkProofWorker:
 # Handles Simple Notification Service operations
 snsWorker:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/sns-worker
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
+  # Component-specific configuration
+  config:
+    # S3 bucket name for ciphertext storage (ct64 and ct128)
+    s3BucketName: ""
 
-  # Command line arguments for SNS worker
+  # Additional environment variables. DATABASE_URL is injected automatically
+  # from commonConfig and S3_BUCKET_NAME from config. Use env to set
+  # component-specific variables or override any of the above.
+  # TENANT_API_KEY must be provided here or via commonConfig.env when the
+  # tenant API key is required (--tenant-api-key is always injected).
+  env: []
+
+  # Command line arguments for the SNS worker.
+  # The following are injected automatically by the template:
+  #   --database-url (from commonConfig)
+  #   --bucket-name-ct64 and --bucket-name-ct128 (from S3_BUCKET_NAME env var)
+  #   --tenant-api-key=$(TENANT_API_KEY)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --database-url=$(DATABASE_URL)
-    - --pg-listen-channels
-    - event_pbs_computations
-    - event_ciphertext_computed
-    - --pg-notify-channel
-    - event_ciphertext128_computed
-    - --work-items-batch-size=20
-    - --pg-polling-interval=1
-    - --pg-pool-connections=10
-    - --pg-timeout=15s
-    - --bucket-name-ct64=$(S3_BUCKET_NAME)
-    - --bucket-name-ct128=$(S3_BUCKET_NAME)
-    - --s3-max-concurrent-uploads=100
-    - --s3-max-retries-per-upload=100
-    - --s3-max-backoff=10s
-    - --s3-max-retries-timeout=120s
-    - --s3-recheck-duration=2s
-    - --s3-regular-recheck-duration=120s
-    - --gc-batch-size=80
-    - --cleanup-interval=120s
-    - --liveness-threshold=70s
-    - --lifo=false
-    - --enable-compression=true
-    - --schedule-policy=rayon_parallel
-    - --service-name=sns-worker
-    - --log-level=INFO
-    # Only enable `gauge-update-interval-secs` for some of the workers to reduce DB load and not have duplicate metrics data for no reason.
-    # --gauge-update-interval-secs=10
-    # - --pg-auto-explain-with-min-duration="30s"
-    # - --keys-file-path
+    logLevel: INFO
+    serviceName: sns-worker
+    pgListenChannels:           # list of pg channels to listen on
+      - event_pbs_computations
+      - event_ciphertext_computed
+    pgNotifyChannel: event_ciphertext128_computed
+    workItemsBatchSize: 20
+    pgPollingInterval: 1
+    pgPoolConnections: 10
+    pgTimeout: 15s
+    s3MaxConcurrentUploads: 100
+    s3MaxRetriesPerUpload: 100
+    s3MaxBackoff: 10s
+    s3MaxRetriesTimeout: 120s
+    s3RecheckDuration: 2s
+    s3RegularRecheckDuration: 120s
+    gcBatchSize: 80
+    cleanupInterval: 120s
+    livenessThreshold: 70s
+    lifo: false
+    enableCompression: true
+    schedulePolicy: rayon_parallel
+
+  # Additional args appended after all template-injected and structured args.
+  # Use for optional flags, e.g.:
+  #   - --gauge-update-interval-secs=10  # only enable on select workers to reduce DB load
+  #   - --pg-auto-explain-with-min-duration=30s
+  #   - --keys-file-path=/path/to/keys
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -826,6 +926,11 @@ snsWorker:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -853,12 +958,17 @@ snsWorker:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
@@ -897,67 +1007,76 @@ snsWorker:
 # Submits transactions to the blockchain
 txSender:
   enabled: false
+  # nameOverride: override the default resource name for this component.
+  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
+  # Useful when deploying multiple coprocessor instances in the same namespace.
   nameOverride:
 
   image:
-    name: ghcr.io/zama-ai/fhevm-coprocessor
-    tag: v0.9.0
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tx-sender
+    tag: v0.11.0
 
   replicas: 1
 
-  # Environment variables
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-db-url
-          key: coprocessor-db-url
-    - name: TX_SENDER_PRIVATE_KEY
-      value: "0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e"
-    - name: INPUT_VERIFICATION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: input_verification.address
-    - name: CIPHERTEXT_COMMITS_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gateway-sc-addresses
-          key: ciphertext_commits.address
+  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
+  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS,
+  # MULTICHAIN_ACL_ADDRESS, and TX_SENDER_PRIVATE_KEY (or TX_SENDER_AWS_KMS_KEY_ID)
+  # are injected automatically. Use env to set component-specific variables or
+  # override any of the above.
+  env: []
 
-  # Command line arguments for transaction sender
+  # Wallet configuration for transaction signing
+  wallet:
+    awsKms:
+      # If set to true, will use the AWS KMS key specified in the configmap
+      # instead of the private key specified in the secret
+      enabled: false
+      configmap:
+        name: coprocessor-tx-sender
+        key: TX_SENDER_AWS_KMS_KEY_ID
+    secret:
+      name: coprocessor-tx-sender
+      key: private-key
+      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
+
+  # Command line arguments for the transaction sender.
+  # The following are injected automatically by the template:
+  #   --database-url, --gateway-url, --input-verification-address, --ciphertext-commits-address,
+  #   --multichain-acl-address (from commonConfig)
+  #   --signer-type and wallet key args (from wallet config)
+  #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
+  # Use extraArgs to pass flags not covered by the fields below.
   args:
-    - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --gateway-url=ws://gateway-rpc-node:8548
-    - --signer-type=private-key
-    - --private-key=$(TX_SENDER_PRIVATE_KEY)
-    - --database-url=$(DATABASE_URL)
-    - --database-pool-size=10
-    - --database-polling-interval-secs=1
-    - --verify-proof-resp-database-channel=event_zkpok_computed
-    - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
-    - --verify-proof-resp-batch-limit=128
-    - --verify-proof-resp-max-retries=6
-    - --verify-proof-remove-after-max-retries
-    - --add-ciphertexts-batch-limit=10
-    - --add-ciphertexts-max-retries=2147483647
-    - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=4
-    - --txn-receipt-timeout-secs=4
-    - --review-after-unlimited-retries=30
-    - --provider-max-retries=4294967295
-    - --provider-retry-interval=4s
-    - --health-check-port=8080
-    - --metrics-addr=0.0.0.0:9100
-    - --health-check-timeout=4s
-    - --log-level=INFO
-    - --gas-limit-overprovision-percent=120
-    - --graceful-shutdown-timeout=8s
-    - --service-name=txn-sender
-    - --metric-host-txn-latency=0.1:60.0:0.1
-    - --metric-zkproof-txn-latency=0.1:60.0:0.1
-    - --gauge-update-interval-secs=10
+    logLevel: INFO
+    serviceName: txn-sender
+    databasePoolSize: 10
+    databasePollingIntervalSecs: 1
+    verifyProofRespDatabaseChannel: event_zkpok_computed
+    addCiphertextsDatabaseChannel: event_ciphertexts_uploaded
+    allowHandleDatabaseChannel: event_allowed_handle
+    verifyProofRespBatchLimit: 128
+    verifyProofRespMaxRetries: 6
+    verifyProofRemoveAfterMaxRetries: true
+    addCiphertextsBatchLimit: 10
+    allowHandleBatchLimit: 10
+    allowHandleMaxRetries: "2147483647"
+    addCiphertextsMaxRetries: "2147483647"
+    errorSleepInitialSecs: 1
+    errorSleepMaxSecs: 4
+    txnReceiptTimeoutSecs: 4
+    reviewAfterUnlimitedRetries: 30
+    providerMaxRetries: "4294967295"
+    providerRetryInterval: 4s
+    healthCheckTimeout: 4s
+    gasLimitOverprovisionPercent: 120
+    gracefulShutdownTimeout: 8s
+    metricHostTxnLatency: "0.1:60.0:0.1"
+    metricZkproofTxnLatency: "0.1:60.0:0.1"
+    gaugeUpdateIntervalSecs: 10
+    delegationBlockDelay: 10  # number of blocks to wait before processing delegation events
+
+  # Additional args appended after all template-injected and structured args.
+  extraArgs: []
 
   # Service ports configuration
   ports:
@@ -967,6 +1086,11 @@ txSender:
   serviceMonitor:
     enabled: false
 
+  # serviceAccountName: name of an existing ServiceAccount to use for this component.
+  # If unset, the namespace default ServiceAccount is used. Set this when the component
+  # needs workload identity (e.g. IRSA on EKS) to assume an IAM role — for example
+  # to grant snsWorker access to S3.
+  # See: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
   serviceAccountName:
 
   resources:
@@ -994,26 +1118,20 @@ txSender:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  affinity:
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
     enabled: false
 
+  # nodeSelector: schedule this component only on nodes matching the given labels.
+  # affinity: express more complex scheduling rules (node/pod affinity and anti-affinity).
+  # tolerations: allow this component to be scheduled on nodes with matching taints.
+  # See: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  nodeSelector:
+  affinity:
   tolerations:
-    enabled: false
-    items: []
 
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-
-# -----------------------------------------------------------------------------
-# Global Pod Configuration
-# -----------------------------------------------------------------------------
-# Pod annotations for additional metadata
-# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-podAnnotations: {}
-
-# Pod labels for selection and organization
-# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-podLabels: {}

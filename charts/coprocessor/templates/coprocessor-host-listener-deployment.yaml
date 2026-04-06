@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.hostListener.affinity .Values.hostListener.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.hostListener.affinity "enabled") | indent 8 }}
+      {{- with .Values.hostListener.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.hostListener.tolerations .Values.hostListener.tolerations.enabled }}
+      {{- with .Values.hostListener.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hostListener.tolerations }}
       tolerations:
-{{ toYaml .Values.hostListener.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.hostListener.serviceAccountName }}
       serviceAccountName: {{ .Values.hostListener.serviceAccountName }}
@@ -47,14 +51,44 @@ spec:
           image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
           command: ["host_listener"]
           args:
-            {{- range $arg := .Values.hostListener.args }}
-            {{- if not (hasPrefix "--dependent-ops-max-per-chain=" $arg) }}
-            - {{ $arg | quote }}
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port={{ .Values.hostListener.ports.healthcheck }}
+            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ .Values.hostListener.args.logLevel }}
+            - --initial-block-time={{ .Values.hostListener.args.initialBlockTime }}
+            - --reorg-maximum-duration-in-blocks={{ .Values.hostListener.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ .Values.hostListener.args.serviceName }}
+            - --catchup-finalization-in-blocks={{ .Values.hostListener.args.catchupFinalizationInBlocks }}
+            - --coprocessor-api-key=$(TENANT_API_KEY)
+            {{- with .Values.hostListener.extraArgs }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- end }}
-            - --dependent-ops-max-per-chain={{ int .Values.dependentOps.maxPerChain }}
           env:
-{{ toYaml .Values.hostListener.env | nindent 12 }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: ETHEREUM_RPC_URL
+              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
+            - name: ACL_CONTRACT_ADDRESS
+              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.hostListener.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.hostListener.ports }}
             - name: {{ $portName }}
@@ -70,10 +104,10 @@ spec:
               memory: {{ .Values.hostListener.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.hostListener.probes .Values.hostListener.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.hostListener.probes .Values.hostListener.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.zkProofWorker.affinity .Values.zkProofWorker.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.zkProofWorker.affinity "enabled") | indent 8 }}
+      {{- with .Values.zkProofWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.zkProofWorker.tolerations .Values.zkProofWorker.tolerations.enabled }}
+      {{- with .Values.zkProofWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.zkProofWorker.tolerations }}
       tolerations:
-{{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.zkProofWorker.serviceAccountName }}
       serviceAccountName: {{ .Values.zkProofWorker.serviceAccountName }}
@@ -47,9 +51,35 @@ spec:
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
           command: ["zkproof_worker"]
           args:
-{{ toYaml .Values.zkProofWorker.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --log-level={{ .Values.zkProofWorker.args.logLevel }}
+            - --service-name={{ .Values.zkProofWorker.args.serviceName }}
+            - --pg-listen-channel={{ .Values.zkProofWorker.args.pgListenChannel }}
+            - --pg-notify-channel={{ .Values.zkProofWorker.args.pgNotifyChannel }}
+            - --pg-polling-interval={{ .Values.zkProofWorker.args.pgPollingInterval }}
+            - --pg-pool-connections={{ .Values.zkProofWorker.args.pgPoolConnections }}
+            - --pg-timeout={{ .Values.zkProofWorker.args.pgTimeout }}
+            - --worker-thread-count={{ .Values.zkProofWorker.args.workerThreadCount }}
+            {{- with .Values.zkProofWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.zkProofWorker.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.zkProofWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.zkProofWorker.ports }}
             - name: {{ $portName }}
@@ -65,10 +95,10 @@ spec:
               memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}
