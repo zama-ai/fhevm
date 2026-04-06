@@ -2559,8 +2559,8 @@ fn default_payer_keypair_path() -> DynResult<String> {
     if let Ok(path) = env::var("SOLANA_KEYPAIR") {
         return Ok(path);
     }
-    let anchor_fixture =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/anchor-authority.json");
+    let anchor_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/fixtures/anchor-authority.json");
     if anchor_fixture.exists() {
         return Ok(anchor_fixture.display().to_string());
     }

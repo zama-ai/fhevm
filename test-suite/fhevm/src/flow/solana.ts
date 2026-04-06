@@ -19,10 +19,11 @@ import { ensureDir, readEnvFile, readEnvFileIfExists, readJson, withHexPrefix, w
 import { run } from "../utils/process";
 
 const SOLANA_ROOT = path.join(REPO_ROOT, "solana-host-contracts");
+const SOLANA_FIXTURES_ROOT = path.join(SOLANA_ROOT, "tests", "fixtures");
 const SOLANA_EXAMPLE_ENV = path.join(SOLANA_ROOT, ".env.example");
 const SOLANA_LOCAL_CLI_MANIFEST = path.join(SOLANA_ROOT, "local-cli", "Cargo.toml");
-const SOLANA_AUTHORITY_KEYPAIR = path.join(SOLANA_ROOT, "tests", "fixtures", "anchor-authority.json");
-const SOLANA_TOKEN_RECIPIENT_KEYPAIR = path.join(SOLANA_ROOT, "tests", "fixtures", "confidential-token-recipient.json");
+const SOLANA_AUTHORITY_KEYPAIR = path.join(SOLANA_FIXTURES_ROOT, "anchor-authority.json");
+const SOLANA_TOKEN_RECIPIENT_KEYPAIR = path.join(SOLANA_FIXTURES_ROOT, "confidential-token-recipient.json");
 const SOLANA_HOST_PROGRAM_SO = path.join(SOLANA_ROOT, "target", "deploy", "solana_host_contracts.so");
 const SOLANA_TEST_INPUT_PROGRAM_SO = path.join(SOLANA_ROOT, "target", "deploy", "solana_test_input_program.so");
 const SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_SO = path.join(
@@ -32,10 +33,10 @@ const SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_SO = path.join(
   "solana_confidential_token_program.so",
 );
 const SOLANA_SOURCE_ROOTS = [
-  path.join(SOLANA_ROOT, "core"),
-  path.join(SOLANA_ROOT, "program"),
-  path.join(SOLANA_ROOT, "test-input-program"),
-  path.join(SOLANA_ROOT, "confidential-token-program"),
+  path.join(SOLANA_ROOT, "crates", "core"),
+  path.join(SOLANA_ROOT, "programs", "solana-host-contracts"),
+  path.join(SOLANA_ROOT, "programs", "solana-test-input-program"),
+  path.join(SOLANA_ROOT, "programs", "solana-confidential-token-program"),
 ];
 
 const parseEnvU64 = (value: string | undefined, label: string) => {

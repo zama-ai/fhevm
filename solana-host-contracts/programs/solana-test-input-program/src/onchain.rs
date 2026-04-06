@@ -843,19 +843,6 @@ fn single_returned_handle(results: Vec<HostInstructionResult>) -> Result<Handle,
     Ok(handle)
 }
 
-fn collect_returned_handles(
-    results: Vec<HostInstructionResult>,
-) -> Result<Vec<Handle>, ProgramError> {
-    let handles = results
-        .into_iter()
-        .filter_map(|result| result.returned_handle)
-        .collect::<Vec<_>>();
-    if handles.is_empty() {
-        return Err(TestInputProgramError::InvalidHostReturnData.into());
-    }
-    Ok(handles)
-}
-
 fn write_result_data(handles: Vec<Handle>) -> ProgramResult {
     let encoded = borsh::to_vec(&TestInputExecutionResult {
         returned_handles: handles,

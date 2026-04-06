@@ -15,8 +15,8 @@ custom-heap = []
 
 [dependencies]
 borsh = { version = "1.6.0", features = ["derive"] }
-solana-host-contracts-core = { path = "../core" }
+solana-host-contracts-core = { path = "../../crates/core" }
 solana-program = "4.0.0"
 solana-slot-hashes = "3.0.1"
 solana-system-interface = { version = "3.0.0", features = ["bincode"] }
-solana-test-input-core = { path = "../test-input-core" }
+solana-test-input-core = { path = "../../crates/test-input-core" }

@@ -3,10 +3,14 @@
 use solana_program::{
     account_info::AccountInfo,
     entrypoint,
-    entrypoint::{BumpAllocator, ProgramResult, HEAP_START_ADDRESS},
+    entrypoint::ProgramResult,
     pubkey::Pubkey,
 };
 
+#[cfg(all(not(feature = "no-entrypoint"), target_os = "solana"))]
+use solana_program::entrypoint::{BumpAllocator, HEAP_START_ADDRESS};
+
+#[cfg(all(not(feature = "no-entrypoint"), target_os = "solana"))]
 const CUSTOM_HEAP_BYTES: usize = 256 * 1024;
 
 #[cfg(all(not(feature = "no-entrypoint"), target_os = "solana"))]

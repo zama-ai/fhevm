@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "core",
-    "program",
+    "crates/core",
+    "crates/test-input-core",
+    "crates/confidential-token-core",
     "local-cli",
-    "test-input-core",
-    "test-input-program",
-    "confidential-token-core",
-    "confidential-token-program",
+    "programs/solana-host-contracts",
+    "programs/solana-test-input-program",
+    "programs/solana-confidential-token-program",
 ]
 resolver = "2"
 

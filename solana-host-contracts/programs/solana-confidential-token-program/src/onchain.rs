@@ -875,40 +875,6 @@ fn persist_balance_handle(
     )
 }
 
-fn persist_balance_handles(
-    execution: &ExecutionAccounts<'_>,
-    entries: &[(HostPubkey, Handle)],
-    clean_after: bool,
-) -> ProgramResult {
-    let app_account = HostPubkey::from(execution.app_state.key);
-    let app_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
-    let mut instructions = Vec::with_capacity(entries.len() * 4 + usize::from(clean_after));
-    for (wallet, handle) in entries {
-        let wallet_pubkey = SolanaPubkey::from(*wallet);
-        instructions.push(HostInstruction::Allow {
-            handle: *handle,
-            account: app_account,
-        });
-        instructions.push(HostInstruction::Allow {
-            handle: *handle,
-            account: app_evm_identity,
-        });
-        instructions.push(HostInstruction::Allow {
-            handle: *handle,
-            account: *wallet,
-        });
-        instructions.push(HostInstruction::Allow {
-            handle: *handle,
-            account: evm_host_identity_from_solana_pubkey(&wallet_pubkey),
-        });
-    }
-    if clean_after {
-        instructions.push(HostInstruction::CleanTransientStorage);
-    }
-    let _ = invoke_host_batch(execution, instructions)?;
-    Ok(())
-}
-
 fn persist_balance_query_handle(
     execution: &ExecutionAccounts<'_>,
     wallet: HostPubkey,

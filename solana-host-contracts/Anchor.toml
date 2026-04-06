@@ -1,9 +1,6 @@
-[toolchain]
-package_manager = "npm"
-
 [provider]
 cluster = "localnet"
-wallet = "tests/fixtures/anchor-authority.json"
+wallet = "./tests/fixtures/anchor-authority.json"
 
 [programs.localnet]
 solana_host_contracts = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
@@ -37,6 +34,3 @@ upgradeable = true
 
 [hooks]
 pre-test = "make build-sbf"
-
-[scripts]
-test = "cargo run --quiet --manifest-path local-cli/Cargo.toml -- bootstrap-localnet --wait-for-programs 1"

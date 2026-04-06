@@ -15,7 +15,7 @@ custom-heap = []
 
 [dependencies]
 borsh = { version = "1.6.0", features = ["derive"] }
-solana-confidential-token-core = { path = "../confidential-token-core" }
-solana-host-contracts-core = { path = "../core" }
+solana-confidential-token-core = { path = "../../crates/confidential-token-core" }
+solana-host-contracts-core = { path = "../../crates/core" }
 solana-program = "4.0.0"
 solana-system-interface = { version = "3.0.0", features = ["bincode"] }

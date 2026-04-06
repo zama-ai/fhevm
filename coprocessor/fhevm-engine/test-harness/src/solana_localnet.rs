@@ -4,12 +4,19 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command, Output, Stdio},
     time::{Duration, Instant},
 };
 
 const DEFAULT_RPC_URL: &str = "http://127.0.0.1:18999";
 const LOCALNET_TIMEOUT: Duration = Duration::from_secs(180);
+const SOLANA_HOST_PROGRAM_MANIFEST: &str =
+    "solana-host-contracts/programs/solana-host-contracts/Cargo.toml";
+const SOLANA_TEST_INPUT_PROGRAM_MANIFEST: &str =
+    "solana-host-contracts/programs/solana-test-input-program/Cargo.toml";
+const SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_MANIFEST: &str =
+    "solana-host-contracts/programs/solana-confidential-token-program/Cargo.toml";
+const SOLANA_LOCAL_CLI_MANIFEST: &str = "solana-host-contracts/local-cli/Cargo.toml";
 
 pub struct SolanaLocalnet {
     repo_root: PathBuf,
@@ -26,16 +33,7 @@ impl SolanaLocalnet {
         if std::env::var("SOLANA_E2E_USE_EXISTING_LOCALNET").is_ok()
             || rpc_is_healthy(DEFAULT_RPC_URL).await
         {
-            run_shell(
-                &repo_root,
-                &format!(
-                    "source ~/.zshrc && make -C {} localnet-bootstrap",
-                    shell_escape(&solana_host_root)
-                ),
-                false,
-            )
-            .await
-            .context("bootstrap existing Solana localnet")?;
+            bootstrap_localnet(&repo_root).context("bootstrap existing Solana localnet")?;
 
             wait_for_localnet(&addresses_env).await?;
 
@@ -46,14 +44,13 @@ impl SolanaLocalnet {
             });
         }
 
-        let command = format!(
-            "source ~/.zshrc && make -C {} localnet",
-            shell_escape(&solana_host_root)
-        );
-        let mut child = Command::new("/bin/zsh")
-            .arg("-lc")
-            .arg(command)
-            .current_dir(&repo_root)
+        ensure_programs_built(&repo_root).context("build Solana SBF programs")?;
+
+        let mut child = Command::new("anchor")
+            .arg("localnet")
+            .arg("--skip-build")
+            .env("NO_DNA", "1")
+            .current_dir(&solana_host_root)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
@@ -82,16 +79,18 @@ impl SolanaLocalnet {
     }
 
     pub async fn run_scenario(&self, scenario: &str) -> Result<Value> {
-        let local_cli_manifest =
-            self.repo_root.join("solana-host-contracts/local-cli/Cargo.toml");
-        let command = format!(
-            "source ~/.zshrc && cargo run --manifest-path {} -- {} --addresses-env {}",
-            shell_escape(&local_cli_manifest),
-            scenario,
-            shell_escape(&self.addresses_env),
-        );
-        let stdout = run_shell(&self.repo_root, &command, true)
-            .await
+        let manifest_path = self.repo_root.join(SOLANA_LOCAL_CLI_MANIFEST);
+        let mut command = Command::new("cargo");
+        command
+            .arg("run")
+            .arg("--manifest-path")
+            .arg(&manifest_path)
+            .arg("--")
+            .arg(scenario)
+            .arg("--addresses-env")
+            .arg(&self.addresses_env)
+            .current_dir(&self.repo_root);
+        let stdout = run_command_capture(command)
             .with_context(|| format!("run solana scenario {scenario}"))?;
         serde_json::from_str(stdout.trim()).context("parse local-cli scenario JSON")
     }
@@ -153,22 +152,62 @@ async fn rpc_is_healthy(rpc_url: &str) -> bool {
     }
 }
 
-async fn run_shell(repo_root: &Path, command: &str, capture_stdout: bool) -> Result<String> {
-    let mut cmd = Command::new("/bin/zsh");
-    cmd.arg("-lc").arg(command).current_dir(repo_root);
+fn bootstrap_localnet(repo_root: &Path) -> Result<()> {
+    let manifest_path = repo_root.join(SOLANA_LOCAL_CLI_MANIFEST);
+    let mut command = Command::new("cargo");
+    command
+        .arg("run")
+        .arg("--quiet")
+        .arg("--manifest-path")
+        .arg(manifest_path)
+        .arg("--")
+        .arg("bootstrap-localnet")
+        .current_dir(repo_root);
+    run_command(command).map(|_| ())
+}
 
-    if capture_stdout {
-        cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
-    } else {
-        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+fn ensure_programs_built(repo_root: &Path) -> Result<()> {
+    for manifest in [
+        SOLANA_HOST_PROGRAM_MANIFEST,
+        SOLANA_TEST_INPUT_PROGRAM_MANIFEST,
+        SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_MANIFEST,
+    ] {
+        let manifest_path = repo_root.join(manifest);
+        let output = Command::new("cargo")
+            .arg("build-sbf")
+            .arg("--manifest-path")
+            .arg(&manifest_path)
+            .current_dir(repo_root)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .output()
+            .with_context(|| format!("run cargo build-sbf for {}", manifest_path.display()))?;
+        ensure_success(
+            output,
+            &format!("cargo build-sbf --manifest-path {}", manifest_path.display()),
+        )?;
     }
+    Ok(())
+}
 
-    let output = cmd.output().context("run shell command")?;
-    if !output.status.success() {
-        bail!("command failed: {command}");
-    }
+fn run_command(mut command: Command) -> Result<Output> {
+    command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    let output = command.output().context("run command")?;
+    ensure_success(output, "command")
+}
 
+fn run_command_capture(mut command: Command) -> Result<String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::inherit());
+    let output = command.output().context("run command")?;
+    let output = ensure_success(output, "command")?;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn ensure_success(output: Output, description: &str) -> Result<Output> {
+    if !output.status.success() {
+        bail!("{description} failed with status {}", output.status);
+    }
+    Ok(output)
 }
 
 fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
@@ -202,9 +241,4 @@ fn workspace_root() -> Result<PathBuf> {
         .nth(3)
         .map(PathBuf::from)
         .context("resolve workspace root")
-}
-
-fn shell_escape(path: &Path) -> String {
-    let value = path.display().to_string();
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }

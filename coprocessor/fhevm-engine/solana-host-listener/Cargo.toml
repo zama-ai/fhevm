@@ -30,7 +30,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
-solana-host-contracts-core = { path = "../../../solana-host-contracts/core" }
+solana-host-contracts-core = { path = "../../../solana-host-contracts/crates/core" }
 
 [dev-dependencies]
 anyhow = { workspace = true }

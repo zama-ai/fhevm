@@ -77,7 +77,7 @@ COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
-COPY solana-host-contracts/core ./solana-host-contracts/core
+COPY solana-host-contracts/crates/core ./solana-host-contracts/crates/core
 
 WORKDIR /app/coprocessor/fhevm-engine
 

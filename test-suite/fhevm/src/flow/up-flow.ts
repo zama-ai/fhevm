@@ -1,6 +1,7 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
+import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
@@ -736,6 +737,27 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "relayer":
+      if (state.scenario.hostChains.some((chain) => hostChainKind(chain) === "solana")) {
+        await timed("[solana] deploy SolanaEd25519Verifier", async () => {
+          const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+          const gatewayScEnv = await readEnvFile(envPath("gateway-sc"));
+          const SOLANA_VERIFIER_DEPLOY_SCRIPT = path.resolve(
+            import.meta.dir, "..", "..", "..", "e2e", "scripts", "deploy-solana-verifier.ts",
+          );
+          await run([process.execPath, "run", SOLANA_VERIFIER_DEPLOY_SCRIPT], {
+            env: {
+              GATEWAY_RPC_URL: testSuiteEnv.GATEWAY_RPC_URL ?? "",
+              // Use the gateway chain deployer (has ETH on the gateway node).
+              // testSuiteEnv.DEPLOYER_PRIVATE_KEY belongs to the test-suite
+              // account which is not funded on the gateway chain.
+              DEPLOYER_PRIVATE_KEY:
+                gatewayScEnv.DEPLOYER_PRIVATE_KEY ?? testSuiteEnv.DEPLOYER_PRIVATE_KEY ?? "",
+              TEST_SUITE_ENV_FILE: envPath("test-suite"),
+              REPO_ROOT,
+            },
+          });
+        });
+      }
       await stepComposeUp("relayer", state);
       await waitForContainer("fhevm-relayer-db", "healthy");
       await waitForContainer("fhevm-relayer", "running");

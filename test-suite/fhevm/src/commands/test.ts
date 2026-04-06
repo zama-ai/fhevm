@@ -9,7 +9,7 @@ import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInst
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl } from "../utils/fs";
+import { hostReachableRpcUrl, readEnvFile, readEnvFileIfExists } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -26,6 +26,8 @@ import {
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
+  envPath,
+  hostChainAddressesPath,
   hostChainKind,
 } from "../layout";
 import type { TestOptions } from "../types";
@@ -134,12 +136,38 @@ const runSolanaProfile = async (
   if (!state.scenario.hostChains.some((chain) => hostChainKind(chain) === "solana")) {
     throw new PreflightError(`${name} requires a Solana host chain; rerun with --solana or --multi-chain`);
   }
+  const solanaChain = state.scenario.hostChains.find((chain) => hostChainKind(chain) === "solana")!;
+  const addressesEnvFile = hostChainAddressesPath(solanaChain.key);
+  const gatewayEnv = await readEnvFile(envPath("gateway-sc"));
+  const hostEnv = await readEnvFileIfExists(envPath("host-sc"));
+  const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+  const addressesEnv = await readEnvFile(addressesEnvFile);
+  const relayerBaseUrl = testSuiteEnv.RELAYER_URL
+    ? hostReachableRpcUrl(testSuiteEnv.RELAYER_URL).replace(/\/v2\/?$/, "")
+    : undefined;
+  const hostReachableTestEnv = {
+    ...testSuiteEnv,
+    ...(relayerBaseUrl ? { RELAYER_URL: relayerBaseUrl } : {}),
+    ...(testSuiteEnv.GATEWAY_RPC_URL ? { GATEWAY_RPC_URL: hostReachableRpcUrl(testSuiteEnv.GATEWAY_RPC_URL) } : {}),
+    ...(gatewayEnv.DEPLOYER_PRIVATE_KEY ? { GATEWAY_DEPLOYER_PRIVATE_KEY: gatewayEnv.DEPLOYER_PRIVATE_KEY } : {}),
+  };
   console.log(`[test] ${name} (${options.network})`);
   const started = Date.now();
   return runLogged(name, started, async () => {
     await runWithHeartbeat(
-      [process.execPath, SOLANA_RUNNER, name, ...(options.verbose ? ["--verbose"] : [])],
+      [process.execPath, "test", "--test-name-pattern", name, SOLANA_RUNNER],
       `test ${name}`,
+      {
+        env: {
+          ...process.env,
+          ...gatewayEnv,
+          ...hostEnv,
+          ...hostReachableTestEnv,
+          ...addressesEnv,
+          FHEVM_SOLANA_ADDRESSES_ENV: addressesEnvFile,
+          ...(options.verbose ? { VERBOSE: "1" } : {}),
+        },
+      },
     );
   });
 };

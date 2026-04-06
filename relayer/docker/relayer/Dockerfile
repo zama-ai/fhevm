@@ -27,7 +27,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
 #    --mount=type=bind,source=.git/refs,target=.git/refs \
     --mount=type=bind,source=relayer/.sqlx,target=.sqlx \
-    --mount=type=bind,source=solana-host-contracts/core,target=/app/solana-host-contracts/core \
+    --mount=type=bind,source=solana-host-contracts/crates/core,target=/app/solana-host-contracts/crates/core \
     --mount=type=cache,target=/app/relayer/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
