@@ -19,20 +19,12 @@ services:
   coprocessor-db-migration:
     container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: db-migration
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
-      - /initialize_db.sh
+      - /initialize_db.sh && ( [ ! -x /insert_test_host_chain.sh ] || /insert_test_host_chain.sh )
     volumes:
       - keys-cache:/fhevm-keys
 
@@ -40,16 +32,8 @@ services:
   coprocessor-host-listener:
     container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -65,16 +49,8 @@ services:
   coprocessor-host-listener-poller:
     container_name: coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: host-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
@@ -89,21 +65,8 @@ services:
   coprocessor-gw-listener:
     container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: gw-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -123,18 +86,8 @@ services:
   coprocessor-tfhe-worker:
     container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: tfhe-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -152,16 +105,8 @@ services:
   coprocessor-zkproof-worker:
     container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: zkproof-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -177,16 +122,8 @@ services:
   coprocessor-sns-worker:
     container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: sns-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -214,16 +151,8 @@ services:
   coprocessor-transaction-sender:
     container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: transaction-sender
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-      cache_from:
-        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
