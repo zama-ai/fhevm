@@ -13,7 +13,7 @@ use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use reqwest::Url;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 use crate::readiness::ReadinessStep;
@@ -37,6 +37,9 @@ type Provider = FillProvider<
 >;
 
 type GatewayDecryption = DecryptionInstance<Arc<Provider>, alloy::network::AnyNetwork>;
+
+const READINESS_BACKOFF_CAP_SHIFT: u32 = 3;
+const READINESS_JITTER_DIVISOR: u128 = 8;
 
 /// Checks gateway ciphertext readiness (isPublicDecryptionReady / isUserDecryptionReady).
 pub struct CiphertextChecker {
@@ -182,7 +185,7 @@ impl CiphertextChecker {
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
     {
         let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
+        let base_retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
         let mut retries = 0;
         let mut last_error: Option<alloy::contract::Error> = None;
 
@@ -216,14 +219,27 @@ impl CiphertextChecker {
                 };
             }
 
+            let delay = retry_delay(base_retry_interval, retries);
             warn!(
                 step = %ReadinessStep::Retrying,
                 int_job_id = %job_id,
                 attempt = retries,
                 max_attempts = max_retries,
+                delay_ms = delay.as_millis(),
                 "Retrying readiness check"
             );
-            tokio::time::sleep(retry_interval).await;
+            tokio::time::sleep(delay).await;
         }
     }
+}
+
+fn retry_delay(base: Duration, retries: u32) -> Duration {
+    let multiplier = 1u32 << retries.saturating_sub(1).min(READINESS_BACKOFF_CAP_SHIFT);
+    let backoff = base.checked_mul(multiplier).unwrap_or(base);
+    let jitter_cap_ms = (backoff.as_millis() / READINESS_JITTER_DIVISOR).max(1);
+    let jitter_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| (elapsed.as_nanos() % jitter_cap_ms) as u64)
+        .unwrap_or(0);
+    backoff.saturating_add(Duration::from_millis(jitter_ms))
 }
