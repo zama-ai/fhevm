@@ -65,7 +65,7 @@ pub struct Chain {
     pub before_size: u64,
     pub new_chain: bool,
 }
-pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
+pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -108,6 +108,7 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 }
 
 // A pool of connection with some cached information and automatic reconnection
+#[derive(Clone)]
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
@@ -138,13 +139,14 @@ impl Database {
         dependence_cache_size: u16,
     ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
-        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroU16::new(
-                dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
-            )
-            .unwrap()
-            .into(),
-        ));
+        let bucket_cache =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         Ok(Database {
             url: url.clone(),
             chain_id,
