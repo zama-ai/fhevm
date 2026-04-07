@@ -10,19 +10,6 @@ DEFAULT_GREP="test user input uint64"
 DEFAULT_NETWORK="staging"
 VERBOSE=false
 NO_COMPILE=false
-DRIFT_GREP="test user input uint64 (non-trivial)"
-# Intentional ciphertext drift must never run on shared/live networks.
-CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS=("sepolia" "mainnet" "zwsDev")
-
-is_forbidden_ciphertext_drift_network() {
-  local network="$1"
-  for forbidden in "${CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS[@]}"; do
-    if [ "$network" = "$forbidden" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
 
 show_help() {
   echo -e "${BLUE}============================================================${RESET}"
@@ -101,11 +88,6 @@ cd "$SCRIPT_DIR" || {
   echo -e "${RED}Failed to navigate to script directory${RESET}" >&2
   exit 1
 }
-
-if is_forbidden_ciphertext_drift_network "$NETWORK" && [ "$GREP_TEXT" = "$DRIFT_GREP" ]; then
-  echo -e "${RED}Error: ciphertext-drift is not allowed on ${NETWORK}. Run it only on local disposable environments.${RESET}" >&2
-  exit 1
-fi
 
 # Display configuration
 echo -e "${BLUE}============================================================${RESET}"
