@@ -3,10 +3,8 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use gw_listener::aws_s3::AwsS3Client;
-use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -63,9 +61,6 @@ struct Conf {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     log_level: Level,
-
-    #[arg(long)]
-    host_chain_id: Option<u64>,
 
     #[arg(long, default_value = "500ms", value_parser = parse_duration)]
     get_logs_poll_interval: Duration,
@@ -173,16 +168,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
 
-    let Some(host_chain_id) = conf
-        .host_chain_id
-        .map(ChainId::try_from)
-        .transpose()?
-        .or_else(chain_id_from_env)
-    else {
-        anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
-    };
     let config = ConfigSettings {
-        host_chain_id,
         database_url: conf.database_url.clone().unwrap_or_default(),
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,

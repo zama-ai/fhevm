@@ -171,7 +171,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         };
         let mut drift_detector = DriftDetector::new(
             expected_senders,
-            self.conf.host_chain_id,
             self.conf.drift_no_consensus_timeout,
             self.conf.drift_post_consensus_grace,
         );
