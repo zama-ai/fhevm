@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
@@ -198,7 +198,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::B256;
+    use alloy_primitives::B256;
     use broker::{amqp::RmqPublisher, traits::Publisher};
     use primitives::event::BlockFlow;
 

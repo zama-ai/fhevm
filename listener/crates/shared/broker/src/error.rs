@@ -50,4 +50,8 @@ pub enum BrokerError {
     /// Type-erased publish error (from DynPublisher).
     #[error("publish error: {0}")]
     Publish(#[from] crate::traits::publisher::DynPublishError),
+
+    /// Unknown Url Schema.
+    #[error("Unknown url schema (neither redis nor ampq): {0}")]
+    UnknownUrlSchema(String),
 }
