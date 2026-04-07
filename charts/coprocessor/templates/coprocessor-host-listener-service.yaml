@@ -1,21 +1,26 @@
-{{- if .Values.hostListener.enabled }}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListener).enabled) }}
+{{- $deploymentName := ternary (printf "%s-host-listener" $.Release.Name) (printf "%s-host-listener-%s" $.Release.Name $chain.name) (eq $i 0) -}}
+{{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) (eq $i 0) -}}
+---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: coprocessor-host-listener
-    app.kubernetes.io/name: {{ include "hostListenerName" . }}
-  name: {{ include "hostListenerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
   ports:
     - name: metrics
-      port: {{ .Values.hostListener.ports.metrics }}
+      port: {{ $.Values.hostListener.ports.metrics }}
       targetPort: metrics
     - name: healthcheck
-      port: {{ .Values.hostListener.ports.healthcheck }}
+      port: {{ $.Values.hostListener.ports.healthcheck }}
       targetPort: healthcheck
   selector:
-    app: coprocessor-host-listener
-    app.kubernetes.io/name: {{ include "hostListenerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
   type: ClusterIP
+{{- end }}
 {{- end }}

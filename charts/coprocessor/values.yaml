@@ -485,6 +485,38 @@ hostListenerCatchupOnly:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Chains
+# -----------------------------------------------------------------------------
+# Each entry deploys up to three host listener variants for a given chain.
+# Top-level hostListener / hostListenerPoller / hostListenerCatchupOnly values
+# are used as defaults; per-chain fields override or extend them.
+#
+# The first entry preserves the legacy Deployment name (<release>-host-listener)
+# so that an existing single-chain installation can migrate without downtime.
+# Subsequent entries are named <release>-host-listener-<name>.
+#
+# Example:
+# chains:
+#   - name: ethereum
+#     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly
+#     httpUrl: "http://eth-node:8545"   # required by hostListenerPoller
+#     aclContractAddress: "0x..."
+#     fhevmExecutorContractAddress: "0x..."
+#     hostListener:
+#       enabled: true
+#       extraArgs: []  # appended after top-level hostListener.extraArgs
+#       env: []        # appended after top-level hostListener.env
+#     hostListenerPoller:
+#       enabled: true
+#       extraArgs: []
+#       env: []
+#     hostListenerCatchupOnly:
+#       enabled: true
+#       extraArgs: []
+#       env: []
+chains: []
+
+# -----------------------------------------------------------------------------
 # Gateway Listener
 # -----------------------------------------------------------------------------
 # Processes events from the gateway chain
