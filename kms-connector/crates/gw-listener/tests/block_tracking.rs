@@ -13,10 +13,6 @@ use tracing::info;
 #[case::prep_keygen(EventType::PrepKeygenRequest)]
 #[case::keygen(EventType::KeygenRequest)]
 #[case::crsgen(EventType::CrsgenRequest)]
-// As there is currently only one PRSS init ID allowed, the test won't pass as there will be only
-// one row in the DB instead of two.
-// #[case::prss_init(EventType::PrssInit)]
-#[case::key_reshare_same_set(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(90))]
 #[tokio::test]
 async fn test_block_tracking(#[case] event_type: EventType) -> anyhow::Result<()> {

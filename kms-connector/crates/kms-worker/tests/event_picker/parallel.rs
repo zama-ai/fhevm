@@ -49,19 +49,6 @@ async fn test_parallel_crsgen_picking() -> anyhow::Result<()> {
     test_parallel_request_picking(EventType::CrsgenRequest).await
 }
 
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-#[ignore = "Not possible to have parallel PRSS Init the only ID currently allowed is 1"]
-async fn test_parallel_prss_init_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PrssInit).await
-}
-
-#[tokio::test]
-async fn test_parallel_key_reshare_same_set_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::KeyReshareSameSet).await
-}
-
 async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;

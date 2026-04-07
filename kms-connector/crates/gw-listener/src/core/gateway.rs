@@ -27,12 +27,10 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::UserDecryptionRequest,
 ];
 
-const KMS_GENERATION_EVENT_TYPES: [EventType; 5] = [
+const KMS_GENERATION_EVENT_TYPES: [EventType; 3] = [
     EventType::PrepKeygenRequest,
     EventType::KeygenRequest,
     EventType::CrsgenRequest,
-    EventType::PrssInit,
-    EventType::KeyReshareSameSet,
 ];
 
 /// Identifies which contract is being polled.
@@ -229,8 +227,6 @@ where
                     KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
                     KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
                     KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
-                    KMSGenerationEvents::PRSSInit(e) => Ok(e.into()),
-                    KMSGenerationEvents::KeyReshareSameSet(e) => Ok(e.into()),
                     _ => Err(anyhow!("Unexpected KMSGeneration event: {log:?}")),
                 }
             }

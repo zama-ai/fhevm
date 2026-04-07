@@ -2,9 +2,9 @@ use crate::types::request_id_to_u256;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    CrsGenRequest, CrsGenResult, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest,
-    KeyGenPreprocResult, KeyGenRequest, KeyGenResult, PublicDecryptionRequest,
-    PublicDecryptionResponse, RequestId, UserDecryptionRequest, UserDecryptionResponse,
+    CrsGenRequest, CrsGenResult, KeyGenPreprocRequest, KeyGenPreprocResult, KeyGenRequest,
+    KeyGenResult, PublicDecryptionRequest, PublicDecryptionResponse, RequestId,
+    UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -16,8 +16,6 @@ pub enum KmsGrpcRequest {
     PrepKeygen(KeyGenPreprocRequest),
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
-    PrssInit(InitRequest),
-    KeyReshareSameSet(InitiateResharingRequest),
 }
 
 impl From<PublicDecryptionRequest> for KmsGrpcRequest {

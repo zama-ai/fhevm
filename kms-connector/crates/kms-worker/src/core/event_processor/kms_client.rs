@@ -9,15 +9,12 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{
-        KmsGrpcRequest, KmsGrpcResponse, db::EventType, event::PRSS_INIT_ID, request_id_to_u256,
-        u256_to_request_id, u256_to_u32,
-    },
+    types::{KmsGrpcRequest, KmsGrpcResponse, db::EventType, request_id_to_u256, u256_to_u32},
 };
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest, KeyGenRequest,
-        PublicDecryptionRequest, RequestId, UserDecryptionRequest,
+        CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, PublicDecryptionRequest, RequestId,
+        UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -101,8 +98,6 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
-            KmsGrpcRequest::PrssInit(req) => self.request_prss_init(req).await,
-            KmsGrpcRequest::KeyReshareSameSet(req) => self.request_initiate_resharing(req).await,
         }
     }
 
@@ -120,8 +115,6 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.poll_prep_keygen_result(req).await,
             KmsGrpcRequest::Keygen(req) => self.poll_keygen_result(req).await,
             KmsGrpcRequest::Crsgen(req) => self.poll_crsgen_result(req).await,
-            KmsGrpcRequest::PrssInit(_) => (0, Ok(KmsGrpcResponse::NoResponseExpected)),
-            KmsGrpcRequest::KeyReshareSameSet(_) => (0, Ok(KmsGrpcResponse::NoResponseExpected)),
         }
     }
 
@@ -244,46 +237,6 @@ impl KmsClient {
                 async move { client.crs_gen(request).await }
             },
             EventType::CrsgenRequest,
-        )
-        .await
-    }
-
-    async fn request_prss_init(&self, request: &InitRequest) -> (i16, Result<(), ProcessingError>) {
-        let inner_client = self.choose_client(u256_to_request_id(PRSS_INIT_ID));
-        send_request_with_retries(
-            self.grpc_request_retries,
-            || {
-                let mut client = inner_client.clone();
-                let request = request.clone();
-                async move { client.init(request).await }
-            },
-            EventType::PrssInit,
-        )
-        .await
-    }
-
-    async fn request_initiate_resharing(
-        &self,
-        request: &InitiateResharingRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
-        let Some(request_id) = request.request_id.clone() else {
-            return (
-                0,
-                Err(ProcessingError::Irrecoverable(anyhow!(
-                    "Missing request ID"
-                ))),
-            );
-        };
-        let inner_client = self.choose_client(request_id.clone());
-
-        send_request_with_retries(
-            self.grpc_request_retries,
-            || {
-                let mut client = inner_client.clone();
-                let request = request.clone();
-                async move { client.initiate_resharing(request).await }
-            },
-            EventType::KeyReshareSameSet,
         )
         .await
     }

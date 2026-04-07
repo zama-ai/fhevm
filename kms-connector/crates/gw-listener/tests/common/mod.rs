@@ -13,7 +13,6 @@ use connector_utils::{
     types::{
         ProtocolEventKind,
         db::{EventType, ParamsTypeDb},
-        event::PRSS_INIT_ID,
     },
 };
 use fhevm_gateway_bindings::{
@@ -21,9 +20,7 @@ use fhevm_gateway_bindings::{
         Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
         IDecryption::{ContractsInfo, RequestValidity},
     },
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use gw_listener::core::{Config, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
@@ -144,27 +141,6 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::PrssInit => {
-            let tx = test_instance
-                .kms_generation_contract()
-                .prssInit()
-                .send()
-                .await?;
-            (tx, PRSSInit.into())
-        }
-        EventType::KeyReshareSameSet => {
-            let rand_key_id = rand_u256();
-            let event = KeyReshareSameSet {
-                keyId: rand_key_id,
-                ..Default::default()
-            };
-            let tx = test_instance
-                .kms_generation_contract()
-                .keyReshareSameSet(rand_key_id)
-                .send()
-                .await?;
-            (tx, event.into())
-        }
     };
     let receipt = pending_tx.get_receipt().await?;
     let block_number = test_instance
@@ -185,8 +161,6 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
         EventType::PrepKeygenRequest => "SELECT * FROM prep_keygen_requests",
         EventType::KeygenRequest => "SELECT * FROM keygen_requests",
         EventType::CrsgenRequest => "SELECT * FROM crsgen_requests",
-        EventType::PrssInit => "SELECT * FROM prss_init",
-        EventType::KeyReshareSameSet => "SELECT * FROM key_reshare_same_set",
     };
     sqlx::query(query).fetch_all(db).await
 }
@@ -250,20 +224,6 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
                 {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::PrssInit(_) => {
-            for r in rows {
-                if U256::from_le_bytes(r.try_get::<[u8; 32], _>("id")?) == PRSS_INIT_ID {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::KeyReshareSameSet(e) => {
-            for r in rows {
-                if e.keyId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("key_id")?) {
                     return Ok(());
                 }
             }
