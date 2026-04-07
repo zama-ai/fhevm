@@ -11,10 +11,11 @@ const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize
 
 // This file defines generic tasks that can be used to upgrade the implementation of already deployed contracts.
 
-function getImplementationDirectory(input: string): string {
-  const colonIndex = input.lastIndexOf('/');
-  if (colonIndex !== -1) {
-    return input.substring(0, colonIndex);
+// Strip the contract name from a qualified path.
+function getImplementationSourcePath(input: string): string {
+  const contractNameSeparatorIndex = input.lastIndexOf(':');
+  if (contractNameSeparatorIndex !== -1) {
+    return input.substring(0, contractNameSeparatorIndex);
   }
   return input;
 }
@@ -110,8 +111,8 @@ async function deployImplementationForPreparedUpgrade(
   // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
   // reusing artifacts compiled against another environment.
   await hre.run('clean');
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
 
   await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
 
@@ -154,8 +155,8 @@ async function compileImplementations(
   newImplementation: string,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
 }
 
 async function checkImplementationArtifacts(
