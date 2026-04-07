@@ -101,8 +101,6 @@ impl DbEventPicker {
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
-            EventType::PrssInit => self.pick_prss_init().await,
-            EventType::KeyReshareSameSet => self.pick_key_reshare_same_set().await,
         }
     }
 
@@ -220,51 +218,6 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_crsgen_row)
-        .collect()
-    }
-
-    async fn pick_prss_init(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
-        sqlx::query(
-            "
-                UPDATE prss_init
-                SET status = 'under_process'
-                FROM (
-                    SELECT id
-                    FROM prss_init
-                    WHERE status = 'pending'
-                    LIMIT 1 FOR UPDATE SKIP LOCKED
-                ) AS req
-                WHERE prss_init.id = req.id
-                RETURNING req.id, created_at, otlp_context
-            ",
-        )
-        .fetch_all(&self.db_pool)
-        .await?
-        .iter()
-        .map(event::from_prss_init_row)
-        .collect()
-    }
-
-    async fn pick_key_reshare_same_set(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
-        sqlx::query(
-            "
-                UPDATE key_reshare_same_set
-                SET status = 'under_process'
-                FROM (
-                    SELECT key_id
-                    FROM key_reshare_same_set
-                    WHERE status = 'pending'
-                    LIMIT 1 FOR UPDATE SKIP LOCKED
-                ) AS req
-                WHERE key_reshare_same_set.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, tx_hash,
-                created_at, otlp_context
-            ",
-        )
-        .fetch_all(&self.db_pool)
-        .await?
-        .iter()
-        .map(event::from_key_reshare_same_set_row)
         .collect()
     }
 }

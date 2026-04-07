@@ -54,13 +54,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
                 info!("Event successfully processed!");
                 response
             }
-            (Err(ProcessingError::Irrecoverable(e)), _)
-            | (
-                Err(ProcessingError::Recoverable(e)),
-                // Consider all errors as irrecoverable for PrssInit and KeyReshareSameSet, as KMS does
-                // not provide any response for these operations
-                ProtocolEventKind::PrssInit(_) | ProtocolEventKind::KeyReshareSameSet(_),
-            ) => {
+            (Err(ProcessingError::Irrecoverable(e)), _) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
                 event.mark_as_failed(&self.db_pool).await;
                 None
@@ -175,12 +169,6 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             ProtocolEventKind::Crsgen(req) => {
                 self.kms_generation_processor.prepare_crsgen_request(req)
             }
-            ProtocolEventKind::PrssInit(id) => {
-                self.kms_generation_processor.prepare_prss_init_request(*id)
-            }
-            ProtocolEventKind::KeyReshareSameSet(req) => self
-                .kms_generation_processor
-                .prepare_initiate_resharing_request(req),
         };
         Ok(request)
     }

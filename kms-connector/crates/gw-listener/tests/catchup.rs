@@ -13,8 +13,6 @@ use tracing::info;
 #[case::prep_keygen(EventType::PrepKeygenRequest)]
 #[case::keygen(EventType::KeygenRequest)]
 #[case::crsgen(EventType::CrsgenRequest)]
-#[case::prss_init(EventType::PrssInit)]
-#[case::key_reshare_same_set(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_catchup_from_block(#[case] event_type: EventType) -> anyhow::Result<()> {
@@ -26,22 +24,15 @@ async fn test_catchup_from_block(#[case] event_type: EventType) -> anyhow::Resul
 
     let (event1, block1) = mock_event_on_gw(&test_instance, event_type).await?;
     assert!(block1.is_some());
-    let event2 = if !matches!(event_type, EventType::PrssInit) {
-        let (event2, block2) = mock_event_on_gw(&test_instance, event_type).await?;
-        assert_ne!(block1, block2);
-        Some(event2)
-    } else {
-        None
-    };
+    let (event2, block2) = mock_event_on_gw(&test_instance, event_type).await?;
+    assert_ne!(block1, block2);
 
     // Start the listener after the transactions are sent.
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), block1).await;
 
     poll_db_for_event(test_instance.db(), event_type, &event1).await?;
-    if let Some(ref event2) = event2 {
-        poll_db_for_event(test_instance.db(), event_type, event2).await?;
-    }
+    poll_db_for_event(test_instance.db(), event_type, &event2).await?;
     info!("Events successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();

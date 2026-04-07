@@ -2,12 +2,9 @@ use crate::core::config::Config;
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, u256_to_request_id};
 use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
-use kms_grpc::kms::v1::{
-    CrsGenRequest, Eip712DomainMsg, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest,
-    KeyGenRequest,
-};
+use kms_grpc::kms::v1::{CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest, KeyGenRequest};
 use tracing::error;
 
 #[derive(Clone)]
@@ -76,26 +73,6 @@ impl KMSGenerationProcessor {
             domain: Some(self.domain.clone()),
             params: crsgen_request.paramsType as i32,
             max_num_bits,
-            context_id: None,
-        })
-    }
-
-    pub fn prepare_prss_init_request(&self, id: U256) -> KmsGrpcRequest {
-        KmsGrpcRequest::PrssInit(InitRequest {
-            request_id: Some(u256_to_request_id(id)),
-            context_id: None, // TODO: update once context is implemented
-        })
-    }
-
-    pub fn prepare_initiate_resharing_request(&self, req: &KeyReshareSameSet) -> KmsGrpcRequest {
-        KmsGrpcRequest::KeyReshareSameSet(InitiateResharingRequest {
-            request_id: Some(u256_to_request_id(req.keyReshareId)),
-            key_id: Some(u256_to_request_id(req.keyId)),
-            key_digests: vec![], // TODO: update once resharing is implemented
-            preproc_id: Some(u256_to_request_id(req.prepKeygenId)),
-            key_parameters: req.paramsType as i32,
-            domain: Some(self.domain.clone()),
-            epoch_id: None,
             context_id: None,
         })
     }

@@ -46,20 +46,6 @@ async fn test_pick_crsgen_with_polling_backup() -> anyhow::Result<()> {
     test_pick_request_with_polling_backup(EventType::CrsgenRequest).await
 }
 
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_prss_init_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_key_reshare_same_set_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::KeyReshareSameSet).await
-}
-
 async fn test_pick_request_with_polling_backup(event_type: EventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
