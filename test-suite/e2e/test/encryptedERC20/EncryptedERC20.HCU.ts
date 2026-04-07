@@ -3,6 +3,7 @@ import type { TransactionResponse } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
+import { isLiveNetwork } from '../network';
 import { getSigners, initSigners } from '../signers';
 import { getTxHCUFromTxReceipt, mineNBlocks, waitForPendingTransactions, waitForTransactionReceipt } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
@@ -145,13 +146,18 @@ describe('EncryptedERC20:HCU', function () {
       this.hcuLimit = new ethers.Contract(hcuLimitAddress, HCU_LIMIT_ABI, ethers.provider);
 
       const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
-      if (!deployerKey) {
-        throw new Error('DEPLOYER_PRIVATE_KEY env var is required for block cap tests');
+      if (deployerKey) {
+        this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
       }
-      this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
     });
 
     beforeEach(async function () {
+      if (!this.deployer) {
+        if (isLiveNetwork()) {
+          this.skip();
+        }
+        throw new Error('DEPLOYER_PRIVATE_KEY env var is required for block cap tests');
+      }
       [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
         this.hcuLimit.getGlobalHCUCapPerBlock(),
         this.hcuLimit.getMaxHCUPerTx(),
@@ -161,9 +167,14 @@ describe('EncryptedERC20:HCU', function () {
     });
 
     afterEach(async function () {
-      // Restore automine + 1-second interval mining (Anvil --block-time 1)
-      await ethers.provider.send('evm_setAutomine', [true]);
-      await ethers.provider.send('evm_setIntervalMining', [1]);
+      if (!this.deployer) {
+        return;
+      }
+      if (!isLiveNetwork()) {
+        // Restore automine + 1-second interval mining (Anvil --block-time 1)
+        await ethers.provider.send('evm_setAutomine', [true]);
+        await ethers.provider.send('evm_setIntervalMining', [1]);
+      }
 
       const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
       await (await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock)).wait();
@@ -178,12 +189,15 @@ describe('EncryptedERC20:HCU', function () {
       }
     });
 
-    describe('with lowered limits', function () {
+    describe('local deterministic coverage', function () {
       const TIGHT_DEPTH_PER_TX = 400_000;
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
 
       beforeEach(async function () {
+        if (isLiveNetwork()) {
+          this.skip();
+        }
         // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
@@ -257,59 +271,89 @@ describe('EncryptedERC20:HCU', function () {
         const receiptRetry = await retryBob.wait();
         expect(receiptRetry?.status).to.eq(1, 'Bob should succeed after rollover');
       });
-    });
+      it('should count HCU after whitelist removal', async function () {
+        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
 
-    it('should count HCU after whitelist removal', async function () {
-      const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+        // Use manual mining (automine=false + explicit evm_mine) to avoid
+        // the unreliable automine+intervalMining(0) combo that hangs in CI.
+        await ethers.provider.send('evm_setIntervalMining', [0]);
+        await ethers.provider.send('evm_setAutomine', [false]);
 
-      // Use manual mining (automine=false + explicit evm_mine) to avoid
-      // the unreliable automine+intervalMining(0) combo that hangs in CI.
-      await ethers.provider.send('evm_setIntervalMining', [0]);
-      await ethers.provider.send('evm_setAutomine', [false]);
+        const mintTx = await this.erc20.mint(10000);
+        await ethers.provider.send('evm_mine');
+        const mintReceipt = await waitForTransactionReceipt(mintTx.hash);
+        expect(mintReceipt.status).to.eq(1, 'Mint should succeed');
 
-      const mintTx = await this.erc20.mint(10000);
-      await ethers.provider.send('evm_mine');
-      const mintReceipt = await waitForTransactionReceipt(mintTx.hash);
-      expect(mintReceipt.status).to.eq(1, 'Mint should succeed');
+        const whitelistTx = await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+        await ethers.provider.send('evm_mine');
+        await waitForTransactionReceipt(whitelistTx.hash);
 
-      const whitelistTx = await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
-      await ethers.provider.send('evm_mine');
-      await waitForTransactionReceipt(whitelistTx.hash);
+        // Advance to a fresh block so the transfer starts with a clean meter
+        await mineNBlocks(1);
 
-      // Advance to a fresh block so the transfer starts with a clean meter
-      await mineNBlocks(1);
+        // Transfer while whitelisted — meter stays at 0
+        const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        await ethers.provider.send('evm_mine');
+        await waitForTransactionReceipt(tx1.hash);
 
-      // Transfer while whitelisted — meter stays at 0
-      const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
-        gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter();
+        expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
+
+        const unwhitelistTx = await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+        await ethers.provider.send('evm_mine');
+        await waitForTransactionReceipt(unwhitelistTx.hash);
+
+        // Transfer after removal — meter should count HCU
+        const tx2 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
+          gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+        });
+        await ethers.provider.send('evm_mine');
+        await waitForTransactionReceipt(tx2.hash);
+
+        const [, usedHCUAfterRemoval] = await this.hcuLimit.getBlockMeter();
+        expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
       });
-      await ethers.provider.send('evm_mine');
-      await waitForTransactionReceipt(tx1.hash);
 
-      const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
-
-      const unwhitelistTx = await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
-      await ethers.provider.send('evm_mine');
-      await waitForTransactionReceipt(unwhitelistTx.hash);
-
-      // Transfer after removal — meter should count HCU
-      const tx2 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
-        gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
+      it('should reject setHCUPerBlock from non-owner', async function () {
+        const aliceHcuLimit = this.hcuLimit.connect(this.signers.alice);
+        await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.revertedWithCustomError(
+          this.hcuLimit,
+          'NotHostOwner',
+        );
       });
-      await ethers.provider.send('evm_mine');
-      await waitForTransactionReceipt(tx2.hash);
-
-      const [, usedHCUAfterRemoval] = await this.hcuLimit.getBlockMeter();
-      expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
     });
 
-    it('should reject setHCUPerBlock from non-owner', async function () {
-      const aliceHcuLimit = this.hcuLimit.connect(this.signers.alice);
-      await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.revertedWithCustomError(
-        this.hcuLimit,
-        'NotHostOwner',
-      );
+    describe('live-network-safe coverage', function () {
+      beforeEach(function () {
+        if (!isLiveNetwork()) {
+          this.skip();
+        }
+      });
+
+      it('should count HCU after whitelist removal', async function () {
+        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+
+        const mintTx = await this.erc20.mint(10000);
+        const mintReceipt = await waitForConfirmedTx(mintTx, 'mint');
+        expect(mintReceipt?.status).to.eq(1, 'Mint should succeed');
+
+        await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
+
+        const whitelistedTransfer = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+        const whitelistedReceipt = await waitForConfirmedTx(whitelistedTransfer, 'whitelisted transfer');
+        const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter({ blockTag: whitelistedReceipt!.blockNumber });
+        expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
+
+        await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
+
+        const countedTransfer = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+        const countedReceipt = await waitForConfirmedTx(countedTransfer, 'counted transfer');
+        const [, usedHCUAfterRemoval] = await this.hcuLimit.getBlockMeter({ blockTag: countedReceipt!.blockNumber });
+        expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
+      });
     });
+
   });
 });

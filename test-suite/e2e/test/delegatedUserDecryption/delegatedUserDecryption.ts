@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
+import { isLiveNetwork } from '../network';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
@@ -309,6 +310,9 @@ describe('Delegated user decryption', function () {
     });
 
     it('should reject when delegation has expired', async function () {
+      if (isLiveNetwork()) {
+        this.skip();
+      }
       // Expiration must be >1h from chain time (FHE library constraint).
       // Use block timestamp, not Date.now(), since evm_increaseTime shifts chain clock.
       const oneHour = 3600;
