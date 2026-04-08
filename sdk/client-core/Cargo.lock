@@ -1665,7 +1665,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhevm-client-core"
+name = "fhevm_client_core"
 version = "0.1.0"
 dependencies = [
  "alloy",
