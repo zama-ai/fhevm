@@ -6,6 +6,7 @@
 use crate::{ClientCoreError, Result};
 use alloy::primitives::{Address, B256, Bytes};
 use alloy::signers::local::PrivateKeySigner;
+use kms_lib::client::js_api::{self, ml_kem_pke_pk_to_u8vec, ml_kem_pke_sk_to_u8vec};
 use serde::{Deserialize, Serialize};
 
 pub mod eip712;
@@ -65,6 +66,28 @@ impl Keypair {
     pub fn private_key(&self) -> &str {
         &self.private_key
     }
+}
+
+/// Generate a new ML-KEM keypair for user decryption operations.
+///
+/// Returns hex-encoded public and private keys (with 0x prefix).
+pub fn generate_keypair() -> Result<Keypair> {
+    // Generate private key using the KMS JS API
+    let private_key = js_api::ml_kem_pke_keygen();
+    let public_key = js_api::ml_kem_pke_get_pk(&private_key);
+
+    let priv_key = ml_kem_pke_sk_to_u8vec(&private_key).map_err(|_| {
+        ClientCoreError::SignatureError("Failed to convert private key to bytes".into())
+    })?;
+
+    let pub_key = ml_kem_pke_pk_to_u8vec(&public_key).map_err(|_| {
+        ClientCoreError::SignatureError("Failed to convert public key to bytes".into())
+    })?;
+
+    Ok(Keypair {
+        public_key: format!("0x{}", hex::encode(pub_key)),
+        private_key: format!("0x{}", hex::encode(priv_key)),
+    })
 }
 
 /// Validate private key format (64 hex characters, optionally 0x-prefixed).

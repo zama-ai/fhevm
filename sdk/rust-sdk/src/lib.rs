@@ -259,7 +259,7 @@ impl FhevmSdk {
 
     /// Generate a new cryptobox keypair
     pub fn generate_keypair(&self) -> Result<signature::Keypair> {
-        signature::generate_keypair()
+        Ok(signature::generate_keypair()?)
     }
 
     /// Generate calldata for UserDelegatedDecrypt operation
