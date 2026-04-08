@@ -710,6 +710,8 @@ export const resumeOptionConflicts = (
     | "reset"
     | "coprocessorTfheWorkerThreads"
     | "coprocessorTfheWorkerTokioThreads"
+    | "coprocessorTfheWorkerPollingIntervalMs"
+    | "coprocessorTfheWorkerWorkItemsBatchSize"
   >,
 ) => {
   const mismatches: string[] = [];
@@ -720,6 +722,8 @@ export const resumeOptionConflicts = (
   if (options.overrides.length) mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
   if (options.coprocessorTfheWorkerThreads) mismatches.push(`coprocessor-tfhe-worker-threads=${options.coprocessorTfheWorkerThreads}`);
   if (options.coprocessorTfheWorkerTokioThreads) mismatches.push(`coprocessor-tfhe-worker-tokio-threads=${options.coprocessorTfheWorkerTokioThreads}`);
+  if (options.coprocessorTfheWorkerPollingIntervalMs) mismatches.push(`coprocessor-tfhe-worker-polling-interval-ms=${options.coprocessorTfheWorkerPollingIntervalMs}`);
+  if (options.coprocessorTfheWorkerWorkItemsBatchSize) mismatches.push(`coprocessor-tfhe-worker-work-items-batch-size=${options.coprocessorTfheWorkerWorkItemsBatchSize}`);
   if (options.allowSchemaMismatch) mismatches.push("--allow-schema-mismatch");
   if (options.reset) mismatches.push("--reset");
   return mismatches;
@@ -739,6 +743,8 @@ const ensureResumeOptions = (
     | "reset"
     | "coprocessorTfheWorkerThreads"
     | "coprocessorTfheWorkerTokioThreads"
+    | "coprocessorTfheWorkerPollingIntervalMs"
+    | "coprocessorTfheWorkerWorkItemsBatchSize"
   >,
 ) => {
   const mismatches = resumeOptionConflicts(state, options);
@@ -775,7 +781,15 @@ const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["s
 
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
-  options: Pick<UpOptions, "overrides" | "lockFile" | "coprocessorTfheWorkerThreads" | "coprocessorTfheWorkerTokioThreads">,
+  options: Pick<
+    UpOptions,
+    | "overrides"
+    | "lockFile"
+    | "coprocessorTfheWorkerThreads"
+    | "coprocessorTfheWorkerTokioThreads"
+    | "coprocessorTfheWorkerPollingIntervalMs"
+    | "coprocessorTfheWorkerWorkItemsBatchSize"
+  >,
   bundle: VersionBundle,
   scenario: State["scenario"],
 ): State => {
@@ -789,6 +803,8 @@ export const previewStateFromBundle = (
     overrides: options.overrides,
     coprocessorTfheWorkerThreads: options.coprocessorTfheWorkerThreads,
     coprocessorTfheWorkerTokioThreads: options.coprocessorTfheWorkerTokioThreads,
+    coprocessorTfheWorkerPollingIntervalMs: options.coprocessorTfheWorkerPollingIntervalMs,
+    coprocessorTfheWorkerWorkItemsBatchSize: options.coprocessorTfheWorkerWorkItemsBatchSize,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],
@@ -814,6 +830,8 @@ const bootstrapState = async (options: UpOptions) => {
     overrides: options.overrides,
     coprocessorTfheWorkerThreads: options.coprocessorTfheWorkerThreads,
     coprocessorTfheWorkerTokioThreads: options.coprocessorTfheWorkerTokioThreads,
+    coprocessorTfheWorkerPollingIntervalMs: options.coprocessorTfheWorkerPollingIntervalMs,
+    coprocessorTfheWorkerWorkItemsBatchSize: options.coprocessorTfheWorkerWorkItemsBatchSize,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],

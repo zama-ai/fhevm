@@ -195,6 +195,8 @@ describe("env", () => {
       overrides: [],
       coprocessorTfheWorkerThreads: 64,
       coprocessorTfheWorkerTokioThreads: 16,
+      coprocessorTfheWorkerPollingIntervalMs: 500,
+      coprocessorTfheWorkerWorkItemsBatchSize: 64,
       scenario: testDefaultScenario(),
       completedSteps: [],
       updatedAt: "2026-04-01T00:00:00.000Z",
@@ -203,5 +205,7 @@ describe("env", () => {
     const rendered = await renderEnvMaps(state, stackSpecForState(state), templateEnvs, deriveWallet);
     expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_FHE_THREADS).toBe("64");
     expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_TOKIO_THREADS).toBe("16");
+    expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_POLLING_INTERVAL_MS).toBe("500");
+    expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_WORK_ITEMS_BATCH_SIZE).toBe("64");
   });
 });

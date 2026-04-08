@@ -170,6 +170,8 @@ const upCommandDefinition = {
     scenario: { type: "string", description: "Scenario preset name or path." },
     "coprocessor-tfhe-worker-threads": { type: "string", description: "Set tfhe-worker blocking compute threads for the stack." },
     "coprocessor-tfhe-worker-tokio-threads": { type: "string", description: "Set tfhe-worker Tokio runtime threads for the stack." },
+    "coprocessor-tfhe-worker-polling-interval-ms": { type: "string", description: "Set tfhe-worker DB polling interval for the stack." },
+    "coprocessor-tfhe-worker-work-items-batch-size": { type: "string", description: "Set tfhe-worker work-items batch size for the stack." },
     resume: { type: "boolean", description: "Resume from persisted state." },
     "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
     reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },

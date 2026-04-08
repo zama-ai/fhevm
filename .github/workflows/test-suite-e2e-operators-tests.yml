@@ -145,8 +145,10 @@ jobs:
         run: |
           args=(
             --target latest-main
-            --coprocessor-tfhe-worker-threads 64
+            --coprocessor-tfhe-worker-threads 96
             --coprocessor-tfhe-worker-tokio-threads 32
+            --coprocessor-tfhe-worker-polling-interval-ms 500
+            --coprocessor-tfhe-worker-work-items-batch-size 64
           )
           if [ "$BUILD" = "true" ]; then
             args+=(--build)

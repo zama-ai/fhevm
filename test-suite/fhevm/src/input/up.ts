@@ -62,6 +62,14 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     asString(args["coprocessor-tfhe-worker-tokio-threads"] ?? args.coprocessorTfheWorkerTokioThreads),
     "--coprocessor-tfhe-worker-tokio-threads",
   );
+  const coprocessorTfheWorkerPollingIntervalMs = parsePositiveIntFlag(
+    asString(args["coprocessor-tfhe-worker-polling-interval-ms"] ?? args.coprocessorTfheWorkerPollingIntervalMs),
+    "--coprocessor-tfhe-worker-polling-interval-ms",
+  );
+  const coprocessorTfheWorkerWorkItemsBatchSize = parsePositiveIntFlag(
+    asString(args["coprocessor-tfhe-worker-work-items-batch-size"] ?? args.coprocessorTfheWorkerWorkItemsBatchSize),
+    "--coprocessor-tfhe-worker-work-items-batch-size",
+  );
 
   if (target && !TARGETS.includes(target as VersionTarget)) {
     throw new PreflightError(`Unsupported target ${target}. Valid: ${TARGETS.join(", ")}`);
@@ -115,6 +123,8 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     overrides,
     coprocessorTfheWorkerThreads,
     coprocessorTfheWorkerTokioThreads,
+    coprocessorTfheWorkerPollingIntervalMs,
+    coprocessorTfheWorkerWorkItemsBatchSize,
     scenarioPath,
     fromStep,
     lockFile,

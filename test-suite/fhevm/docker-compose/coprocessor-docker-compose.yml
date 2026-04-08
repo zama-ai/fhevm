@@ -93,8 +93,8 @@ services:
       - --run-bg-worker
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
-      - --worker-polling-interval-ms=1000
-      - --work-items-batch-size=10
+      - --worker-polling-interval-ms=${COPROCESSOR_TFHE_WORKER_POLLING_INTERVAL_MS:-1000}
+      - --work-items-batch-size=${COPROCESSOR_TFHE_WORKER_WORK_ITEMS_BATCH_SIZE:-10}
       - --key-cache-size=32
       - --coprocessor-fhe-threads=${COPROCESSOR_TFHE_WORKER_FHE_THREADS:-8}
       - --tokio-threads=${COPROCESSOR_TFHE_WORKER_TOKIO_THREADS:-4}

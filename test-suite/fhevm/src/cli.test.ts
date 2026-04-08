@@ -259,6 +259,8 @@ describe("cli", () => {
         overrides: [],
         coprocessorTfheWorkerThreads: undefined,
         coprocessorTfheWorkerTokioThreads: undefined,
+        coprocessorTfheWorkerPollingIntervalMs: undefined,
+        coprocessorTfheWorkerWorkItemsBatchSize: undefined,
         allowSchemaMismatch: false,
         reset: false,
       }),

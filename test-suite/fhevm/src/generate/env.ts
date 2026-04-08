@@ -228,7 +228,14 @@ const validateEnvMaps = (
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
-  state: Pick<State, "discovery" | "coprocessorTfheWorkerThreads" | "coprocessorTfheWorkerTokioThreads">,
+  state: Pick<
+    State,
+    | "discovery"
+    | "coprocessorTfheWorkerThreads"
+    | "coprocessorTfheWorkerTokioThreads"
+    | "coprocessorTfheWorkerPollingIntervalMs"
+    | "coprocessorTfheWorkerWorkItemsBatchSize"
+  >,
   plan: StackSpec,
   templateEnvs: Record<string, Record<string, string>>,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
@@ -248,6 +255,12 @@ export const renderEnvMaps = async (
   }
   if (state.coprocessorTfheWorkerTokioThreads) {
     envs["coprocessor"].COPROCESSOR_TFHE_WORKER_TOKIO_THREADS = String(state.coprocessorTfheWorkerTokioThreads);
+  }
+  if (state.coprocessorTfheWorkerPollingIntervalMs) {
+    envs["coprocessor"].COPROCESSOR_TFHE_WORKER_POLLING_INTERVAL_MS = String(state.coprocessorTfheWorkerPollingIntervalMs);
+  }
+  if (state.coprocessorTfheWorkerWorkItemsBatchSize) {
+    envs["coprocessor"].COPROCESSOR_TFHE_WORKER_WORK_ITEMS_BATCH_SIZE = String(state.coprocessorTfheWorkerWorkItemsBatchSize);
   }
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);

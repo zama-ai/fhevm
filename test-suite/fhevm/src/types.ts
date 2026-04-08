@@ -147,6 +147,8 @@ export type State = {
   overrides: LocalOverride[];
   coprocessorTfheWorkerThreads?: number;
   coprocessorTfheWorkerTokioThreads?: number;
+  coprocessorTfheWorkerPollingIntervalMs?: number;
+  coprocessorTfheWorkerWorkItemsBatchSize?: number;
   scenario: ResolvedCoprocessorScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
@@ -162,6 +164,8 @@ export type UpOptions = {
   overrides: LocalOverride[];
   coprocessorTfheWorkerThreads?: number;
   coprocessorTfheWorkerTokioThreads?: number;
+  coprocessorTfheWorkerPollingIntervalMs?: number;
+  coprocessorTfheWorkerWorkItemsBatchSize?: number;
   scenarioPath?: string;
   fromStep?: StepName;
   lockFile?: string;
