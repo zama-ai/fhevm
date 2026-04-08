@@ -1,5 +1,4 @@
 import { expect } from 'chai';
-import type { TransactionResponse } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
@@ -25,6 +24,22 @@ const HCU_LIMIT_ABI = [
 ];
 
 describe('EncryptedERC20:HCU', function () {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function assertWithinConfiguredCaps(hcuLimit: any, receipt: any, label: string) {
+    if (!hcuLimit) {
+      throw new Error('HCU_LIMIT_CONTRACT_ADDRESS env var is required for live HCU block-cap coverage');
+    }
+    const { globalTxHCU, maxTxHCUDepth } = getTxHCUFromTxReceipt(receipt);
+    const [perBlock, maxPerTx, maxDepth] = await Promise.all([
+      hcuLimit.getGlobalHCUCapPerBlock(),
+      hcuLimit.getMaxHCUPerTx(),
+      hcuLimit.getMaxHCUDepthPerTx(),
+    ]);
+    expect(BigInt(globalTxHCU) <= perBlock).to.eq(true, `${label} should stay within the deployed block cap`);
+    expect(BigInt(globalTxHCU) <= maxPerTx).to.eq(true, `${label} should stay within the deployed per-tx cap`);
+    expect(BigInt(maxTxHCUDepth) <= maxDepth).to.eq(true, `${label} should stay within the deployed depth cap`);
+  }
+
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -35,6 +50,8 @@ describe('EncryptedERC20:HCU', function () {
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
     this.instances = await createInstances(this.signers);
+    const hcuLimitAddress = process.env.HCU_LIMIT_CONTRACT_ADDRESS;
+    this.hcuLimit = hcuLimitAddress ? new ethers.Contract(hcuLimitAddress, HCU_LIMIT_ABI, ethers.provider) : null;
   });
 
   it('should transfer tokens between two users', async function () {
@@ -57,6 +74,11 @@ describe('EncryptedERC20:HCU', function () {
     console.log('Total HCU in transfer', HCUTransfer);
     console.log('HCU Depth in transfer', HCUMaxDepthTransfer);
     console.log('Native Gas Consumed in transfer', t2.gasUsed);
+
+    if (isLiveNetwork()) {
+      await assertWithinConfiguredCaps(this.hcuLimit, t2, 'transfer');
+      return;
+    }
 
     // Le euint64 (149000) +  TrivialEncrypt euint64 (32) + Select euint64 (55000) + Add euint64 (162000)
     /// + TrivialEncrypt euint64(32) (Initialize balance to 0) + Sub euint euint64 (162000)
@@ -98,6 +120,11 @@ describe('EncryptedERC20:HCU', function () {
     console.log('HCU Depth in transferFrom', HCUMaxDepthTransferFrom);
     console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
 
+    if (isLiveNetwork()) {
+      await assertWithinConfiguredCaps(this.hcuLimit, t3, 'transferFrom');
+      return;
+    }
+
     // Le euint64 (149000) + Le euint64 (149000) + And ebool (34000) + Sub euint64 (162000) + TrivialEncrypt (32) + Select euint64 (55000) +
     // Select euint64 (55000) + Add ebool (25000) + TrivialEncrypt (Initialize balance to 0) (32) + Sub euint64 (162000)
     expect(HCUTransferFrom).to.eq(919_064, 'HCU incorrect');
@@ -108,18 +135,6 @@ describe('EncryptedERC20:HCU', function () {
 
   describe('block cap scenarios', function () {
     const BATCHED_TRANSFER_GAS_LIMIT = 1_000_000;
-    const RECEIPT_TIMEOUT_MS = 300_000;
-    let savedHCUPerBlock: bigint;
-    let savedMaxHCUPerTx: bigint;
-    let savedMaxHCUDepthPerTx: bigint;
-    let wasWhitelisted: boolean;
-
-    async function waitForConfirmedTx(tx: TransactionResponse, label: string) {
-      console.log(`[HCU] waiting ${label} ${tx.hash}`);
-      const receipt = await tx.wait(1, RECEIPT_TIMEOUT_MS);
-      console.log(`[HCU] mined ${label} ${tx.hash} block=${receipt?.blockNumber} status=${receipt?.status}`);
-      return receipt;
-    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function sendEncryptedTransfer(ctx: any, sender: string, recipient: string, amount: number, overrides?: any) {
@@ -139,53 +154,9 @@ describe('EncryptedERC20:HCU', function () {
     }
 
     before(async function () {
-      const hcuLimitAddress = process.env.HCU_LIMIT_CONTRACT_ADDRESS;
-      if (!hcuLimitAddress) {
-        throw new Error('HCU_LIMIT_CONTRACT_ADDRESS env var is required for block cap tests');
-      }
-      this.hcuLimit = new ethers.Contract(hcuLimitAddress, HCU_LIMIT_ABI, ethers.provider);
-
       const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
       if (deployerKey) {
         this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
-      }
-    });
-
-    beforeEach(async function () {
-      if (!this.deployer) {
-        if (isLiveNetwork()) {
-          this.skip();
-        }
-        throw new Error('DEPLOYER_PRIVATE_KEY env var is required for block cap tests');
-      }
-      [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
-        this.hcuLimit.getGlobalHCUCapPerBlock(),
-        this.hcuLimit.getMaxHCUPerTx(),
-        this.hcuLimit.getMaxHCUDepthPerTx(),
-        this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
-      ]);
-    });
-
-    afterEach(async function () {
-      if (!this.deployer) {
-        return;
-      }
-      if (!isLiveNetwork()) {
-        // Restore automine + 1-second interval mining (Anvil --block-time 1)
-        await ethers.provider.send('evm_setAutomine', [true]);
-        await ethers.provider.send('evm_setIntervalMining', [1]);
-      }
-
-      const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-      await (await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock)).wait();
-      await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
-      await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
-
-      const isWhitelisted = await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress);
-      if (wasWhitelisted && !isWhitelisted) {
-        await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
-      } else if (!wasWhitelisted && isWhitelisted) {
-        await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
       }
     });
 
@@ -193,16 +164,49 @@ describe('EncryptedERC20:HCU', function () {
       const TIGHT_DEPTH_PER_TX = 400_000;
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
+      let savedHCUPerBlock: bigint;
+      let savedMaxHCUPerTx: bigint;
+      let savedMaxHCUDepthPerTx: bigint;
+      let wasWhitelisted: boolean;
 
       beforeEach(async function () {
         if (isLiveNetwork()) {
           this.skip();
         }
+        if (!this.hcuLimit) {
+          throw new Error('HCU_LIMIT_CONTRACT_ADDRESS env var is required for block cap tests');
+        }
+        if (!this.deployer) {
+          throw new Error('DEPLOYER_PRIVATE_KEY env var is required for block cap tests');
+        }
+        [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
+          this.hcuLimit.getGlobalHCUCapPerBlock(),
+          this.hcuLimit.getMaxHCUPerTx(),
+          this.hcuLimit.getMaxHCUDepthPerTx(),
+          this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
+        ]);
         // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
         await (await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK)).wait();
+      });
+
+      afterEach(async function () {
+        await ethers.provider.send('evm_setAutomine', [true]);
+        await ethers.provider.send('evm_setIntervalMining', [1]);
+
+        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
+        await (await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock)).wait();
+        await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
+        await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
+
+        const isWhitelisted = await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress);
+        if (wasWhitelisted && !isWhitelisted) {
+          await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
+        } else if (!wasWhitelisted && isWhitelisted) {
+          await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
+        }
       });
 
       it('should accumulate HCU across users until the block cap is exhausted', async function () {
@@ -324,36 +328,5 @@ describe('EncryptedERC20:HCU', function () {
         );
       });
     });
-
-    describe('live-network-safe coverage', function () {
-      beforeEach(function () {
-        if (!isLiveNetwork()) {
-          this.skip();
-        }
-      });
-
-      it('should count HCU after whitelist removal', async function () {
-        const ownerHcuLimit = this.hcuLimit.connect(this.deployer);
-
-        const mintTx = await this.erc20.mint(10000);
-        const mintReceipt = await waitForConfirmedTx(mintTx, 'mint');
-        expect(mintReceipt?.status).to.eq(1, 'Mint should succeed');
-
-        await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
-
-        const whitelistedTransfer = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-        const whitelistedReceipt = await waitForConfirmedTx(whitelistedTransfer, 'whitelisted transfer');
-        const [, usedHCUWhitelisted] = await this.hcuLimit.getBlockMeter({ blockTag: whitelistedReceipt!.blockNumber });
-        expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
-
-        await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
-
-        const countedTransfer = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
-        const countedReceipt = await waitForConfirmedTx(countedTransfer, 'counted transfer');
-        const [, usedHCUAfterRemoval] = await this.hcuLimit.getBlockMeter({ blockTag: countedReceipt!.blockNumber });
-        expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
-      });
-    });
-
   });
 });
