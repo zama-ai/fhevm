@@ -2,7 +2,7 @@
 name = "fhevm_client_core"
 version = "0.1.0"
 edition = "2024"
-description = "Platform-agnostic FHE client operations for FHEVM — no tokio, no filesystem, no gRPC"
+description = "Platform-agnostic FHE client operations for FHEVM"
 
 [lib]
 name = "fhevm_client_core"
