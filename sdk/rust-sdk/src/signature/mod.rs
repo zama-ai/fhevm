@@ -11,9 +11,8 @@ pub mod eip712;
 
 // Re-export core types and functions
 pub use fhevm_client_core::signature::{
-    Eip712Config, Eip712Result, Eip712SignatureBuilder,
-    Keypair, generate_keypair, validate_private_key_format,
-    derive_address_from_private_key,
+    Eip712Config, Eip712Result, Eip712SignatureBuilder, Keypair, derive_address_from_private_key,
+    generate_keypair, validate_private_key_format,
 };
 
 /// Sign an EIP-712 hash with a private key

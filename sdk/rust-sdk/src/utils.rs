@@ -39,20 +39,24 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
     // Then use TFHE-rs as usual
     let client_key = tfhe::ClientKey::generate(config);
     let server_key = tfhe::ServerKey::new(&client_key);
-    let public_key = tfhe::CompactPublicKey::try_new(&client_key)
-        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to generate public key: {e}")))?;
+    let public_key = tfhe::CompactPublicKey::try_new(&client_key).map_err(|e| {
+        FhevmError::KeyGenerationError(format!("Failed to generate public key: {e}"))
+    })?;
 
     let mut serialized_pub_key = Vec::new();
-    safe_serialize(&public_key, &mut serialized_pub_key, 1 << 30)
-        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize public key: {e}")))?;
+    safe_serialize(&public_key, &mut serialized_pub_key, 1 << 30).map_err(|e| {
+        FhevmError::KeyGenerationError(format!("Failed to serialize public key: {e}"))
+    })?;
 
     let mut serialized_client_key = Vec::new();
-    safe_serialize(&client_key, &mut serialized_client_key, 1 << 30)
-        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize client key: {e}")))?;
+    safe_serialize(&client_key, &mut serialized_client_key, 1 << 30).map_err(|e| {
+        FhevmError::KeyGenerationError(format!("Failed to serialize client key: {e}"))
+    })?;
 
     let mut serialized_server_key = Vec::new();
-    safe_serialize(&server_key, &mut serialized_server_key, 1 << 30)
-        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize server key: {e}")))?;
+    safe_serialize(&server_key, &mut serialized_server_key, 1 << 30).map_err(|e| {
+        FhevmError::KeyGenerationError(format!("Failed to serialize server key: {e}"))
+    })?;
 
     let mut serialized_crs = Vec::new();
     safe_serialize(&crs, &mut serialized_crs, 1 << 30)

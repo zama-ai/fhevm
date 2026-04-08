@@ -107,4 +107,3 @@ pub mod signature;
 pub mod utils;
 
 pub use encryption::input::{EncryptedInput, EncryptedInputBuilder, InputBuilderFactory};
-

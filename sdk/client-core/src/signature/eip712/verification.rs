@@ -16,9 +16,9 @@ pub fn recover_signer(signature: &[u8], hash: B256) -> Result<Address> {
     let sig = Signature::from_raw(signature)
         .map_err(|e| ClientCoreError::SignatureError(format!("Invalid signature: {e}")))?;
 
-    let recovered = sig.recover_address_from_prehash(&hash).map_err(|e| {
-        ClientCoreError::SignatureError(format!("Failed to recover address: {e}"))
-    })?;
+    let recovered = sig
+        .recover_address_from_prehash(&hash)
+        .map_err(|e| ClientCoreError::SignatureError(format!("Failed to recover address: {e}")))?;
 
     Ok(recovered)
 }

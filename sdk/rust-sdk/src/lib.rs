@@ -236,7 +236,9 @@ impl FhevmSdk {
     }
 
     /// Create an EIP-712 signature builder for user decrypt operations
-    pub fn create_eip712_signature_builder(&self) -> Result<signature::eip712::Eip712SignatureBuilder> {
+    pub fn create_eip712_signature_builder(
+        &self,
+    ) -> Result<signature::eip712::Eip712SignatureBuilder> {
         let verifying_contract = self.config.gateway_contracts.decryption.ok_or_else(|| {
             FhevmError::InvalidParams(
                 "Decryption contract address must be configured for EIP-712 signatures".to_string(),
@@ -507,7 +509,9 @@ impl FhevmSdkBuilder {
 
     pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Result<Self> {
         let addr = Address::from_str(address).map_err(|e| {
-            FhevmError::AddressError(format!("Invalid address for gateway contract '{name}': {e}"))
+            FhevmError::AddressError(format!(
+                "Invalid address for gateway contract '{name}': {e}"
+            ))
         })?;
 
         match name.to_lowercase().as_str() {
@@ -530,7 +534,9 @@ impl FhevmSdkBuilder {
     pub fn with_input_verification_contract(mut self, address: &str) -> Result<Self> {
         self.gateway_contracts.input_verification =
             Some(Address::from_str(address).map_err(|e| {
-                FhevmError::AddressError(format!("Invalid input verification contract address: {e}"))
+                FhevmError::AddressError(format!(
+                    "Invalid input verification contract address: {e}"
+                ))
             })?);
         Ok(self)
     }
