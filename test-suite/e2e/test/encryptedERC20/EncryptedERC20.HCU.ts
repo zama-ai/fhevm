@@ -242,6 +242,9 @@ describe('EncryptedERC20:HCU', function () {
       });
 
       afterEach(async function () {
+        if (isLiveNetwork()) {
+          return;
+        }
         await ethers.provider.send('evm_setAutomine', [true]);
         await ethers.provider.send('evm_setIntervalMining', [1]);
 
