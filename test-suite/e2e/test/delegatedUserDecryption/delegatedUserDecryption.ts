@@ -202,6 +202,8 @@ describe('Delegated user decryption', function () {
 
   describe('negative-acl', function () {
     it('should reject when delegation has been revoked', async function () {
+      // 10min — observed ~6m37s due to two 15-block waits for delegation propagation in sepolia
+      this.timeout(600000); 
       // First, ensure Bob has delegation.
       const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
       const delegateTx = await this.smartWallet
