@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstance as createHardhatInstance } from '../instance';
+import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 import {
@@ -188,6 +189,10 @@ describe('Multi-Chain State Isolation', function () {
 
   describe('Block Reorg Isolation', function () {
     it('evm_revert on Chain A does not affect Chain B state', async function () {
+      if (isLiveNetwork()) {
+        this.skip();
+      }
+
       const providerB = getProvider(this.chains[1]);
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
       const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
@@ -225,6 +230,10 @@ describe('Multi-Chain State Isolation', function () {
 
   describe('Chain Halt Isolation', function () {
     it('Chain A halt does not affect Chain B operations', async function () {
+      if (isLiveNetwork()) {
+        this.skip();
+      }
+
       const providerB = getProvider(this.chains[1]);
       const chainABlockBefore = await ethers.provider.getBlockNumber();
 
