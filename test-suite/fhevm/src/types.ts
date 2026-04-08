@@ -145,6 +145,8 @@ export type State = {
   requiresGitHub?: boolean;
   versions: VersionBundle;
   overrides: LocalOverride[];
+  coprocessorTfheWorkerThreads?: number;
+  coprocessorTfheWorkerTokioThreads?: number;
   scenario: ResolvedCoprocessorScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
@@ -158,6 +160,8 @@ export type UpOptions = {
   requestedTarget?: VersionTarget;
   sha?: string;
   overrides: LocalOverride[];
+  coprocessorTfheWorkerThreads?: number;
+  coprocessorTfheWorkerTokioThreads?: number;
   scenarioPath?: string;
   fromStep?: StepName;
   lockFile?: string;

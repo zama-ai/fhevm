@@ -228,7 +228,7 @@ const validateEnvMaps = (
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
-  state: Pick<State, "discovery">,
+  state: Pick<State, "discovery" | "coprocessorTfheWorkerThreads" | "coprocessorTfheWorkerTokioThreads">,
   plan: StackSpec,
   templateEnvs: Record<string, Record<string, string>>,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
@@ -243,6 +243,12 @@ export const renderEnvMaps = async (
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
+  if (state.coprocessorTfheWorkerThreads) {
+    envs["coprocessor"].COPROCESSOR_TFHE_WORKER_FHE_THREADS = String(state.coprocessorTfheWorkerThreads);
+  }
+  if (state.coprocessorTfheWorkerTokioThreads) {
+    envs["coprocessor"].COPROCESSOR_TFHE_WORKER_TOKIO_THREADS = String(state.coprocessorTfheWorkerTokioThreads);
+  }
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;

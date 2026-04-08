@@ -168,6 +168,8 @@ const upCommandDefinition = {
     "from-step": { type: "string", description: `Start from a specific pipeline step when resuming or previewing. Valid: ${STEP_NAMES.join(", ")}.` },
     "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
     scenario: { type: "string", description: "Scenario preset name or path." },
+    "coprocessor-tfhe-worker-threads": { type: "string", description: "Set tfhe-worker blocking compute threads for the stack." },
+    "coprocessor-tfhe-worker-tokio-threads": { type: "string", description: "Set tfhe-worker Tokio runtime threads for the stack." },
     resume: { type: "boolean", description: "Resume from persisted state." },
     "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
     reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },

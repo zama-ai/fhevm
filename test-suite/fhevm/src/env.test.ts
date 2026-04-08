@@ -177,4 +177,31 @@ describe("env", () => {
     expect(rendered.versionsEnv.RELAYER_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer");
     expect(rendered.versionsEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer-migrate");
   });
+
+  test("exports optional tfhe-worker thread overrides into coprocessor env", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      coprocessorTfheWorkerThreads: 64,
+      coprocessorTfheWorkerTokioThreads: 16,
+      scenario: testDefaultScenario(),
+      completedSteps: [],
+      updatedAt: "2026-04-01T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps(state, stackSpecForState(state), templateEnvs, deriveWallet);
+    expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_FHE_THREADS).toBe("64");
+    expect(rendered.componentEnvs["coprocessor"].COPROCESSOR_TFHE_WORKER_TOKIO_THREADS).toBe("16");
+  });
 });

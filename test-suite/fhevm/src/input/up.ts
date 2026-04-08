@@ -8,6 +8,16 @@ import { asBool, asString, asStringList } from "./shared";
 
 const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
 
+const parsePositiveIntFlag = (value: string | undefined, flag: string) => {
+  if (!value) {
+    return undefined;
+  }
+  if (!/^\d+$/.test(value) || Number(value) <= 0) {
+    throw new PreflightError(`${flag} must be a positive integer`);
+  }
+  return Number(value);
+};
+
 /** Parses a local override flag into normalized override selections. */
 const parseLocalOverride = (value: string): LocalOverride[] => {
   if (value === "all") {
@@ -44,6 +54,14 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   const reset = asBool(args.reset);
   const allowSchemaMismatch = asBool(args["allow-schema-mismatch"] ?? args.allowSchemaMismatch);
   const build = asBool(args.build);
+  const coprocessorTfheWorkerThreads = parsePositiveIntFlag(
+    asString(args["coprocessor-tfhe-worker-threads"] ?? args.coprocessorTfheWorkerThreads),
+    "--coprocessor-tfhe-worker-threads",
+  );
+  const coprocessorTfheWorkerTokioThreads = parsePositiveIntFlag(
+    asString(args["coprocessor-tfhe-worker-tokio-threads"] ?? args.coprocessorTfheWorkerTokioThreads),
+    "--coprocessor-tfhe-worker-tokio-threads",
+  );
 
   if (target && !TARGETS.includes(target as VersionTarget)) {
     throw new PreflightError(`Unsupported target ${target}. Valid: ${TARGETS.join(", ")}`);
@@ -95,6 +113,8 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     requestedTarget: target as VersionTarget | undefined,
     sha,
     overrides,
+    coprocessorTfheWorkerThreads,
+    coprocessorTfheWorkerTokioThreads,
     scenarioPath,
     fromStep,
     lockFile,

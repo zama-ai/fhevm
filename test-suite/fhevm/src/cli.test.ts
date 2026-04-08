@@ -99,6 +99,8 @@ describe("cli", () => {
     expect(output).toContain("Boot the fhevm stack");
     expect(output).toContain("fhevm-cli up");
     expect(output).toContain("--target");
+    expect(output).toContain("--coprocessor-tfhe-worker-threads");
+    expect(output).toContain("--coprocessor-tfhe-worker-tokio-threads");
     expect(output).toContain("preflight, resolve, generate");
     expect(result.stdout).not.toContain("[up] target=");
   });
@@ -255,6 +257,8 @@ describe("cli", () => {
         lockFile: undefined,
         scenarioPath: undefined,
         overrides: [],
+        coprocessorTfheWorkerThreads: undefined,
+        coprocessorTfheWorkerTokioThreads: undefined,
         allowSchemaMismatch: false,
         reset: false,
       }),

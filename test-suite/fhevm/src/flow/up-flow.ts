@@ -701,7 +701,15 @@ export const resumeOptionConflicts = (
   state: State,
   options: Pick<
     UpOptions,
-    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "reset"
+    | "requestedTarget"
+    | "sha"
+    | "lockFile"
+    | "scenarioPath"
+    | "overrides"
+    | "allowSchemaMismatch"
+    | "reset"
+    | "coprocessorTfheWorkerThreads"
+    | "coprocessorTfheWorkerTokioThreads"
   >,
 ) => {
   const mismatches: string[] = [];
@@ -710,6 +718,8 @@ export const resumeOptionConflicts = (
   if (options.lockFile) mismatches.push(`lock-file=${options.lockFile}`);
   if (options.scenarioPath) mismatches.push(`scenario=${options.scenarioPath}`);
   if (options.overrides.length) mismatches.push(`overrides=${options.overrides.map(describeOverride).join(", ")}`);
+  if (options.coprocessorTfheWorkerThreads) mismatches.push(`coprocessor-tfhe-worker-threads=${options.coprocessorTfheWorkerThreads}`);
+  if (options.coprocessorTfheWorkerTokioThreads) mismatches.push(`coprocessor-tfhe-worker-tokio-threads=${options.coprocessorTfheWorkerTokioThreads}`);
   if (options.allowSchemaMismatch) mismatches.push("--allow-schema-mismatch");
   if (options.reset) mismatches.push("--reset");
   return mismatches;
@@ -720,7 +730,15 @@ const ensureResumeOptions = (
   state: State,
   options: Pick<
     UpOptions,
-    "requestedTarget" | "sha" | "lockFile" | "scenarioPath" | "overrides" | "allowSchemaMismatch" | "reset"
+    | "requestedTarget"
+    | "sha"
+    | "lockFile"
+    | "scenarioPath"
+    | "overrides"
+    | "allowSchemaMismatch"
+    | "reset"
+    | "coprocessorTfheWorkerThreads"
+    | "coprocessorTfheWorkerTokioThreads"
   >,
 ) => {
   const mismatches = resumeOptionConflicts(state, options);
@@ -757,7 +775,7 @@ const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["s
 
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
-  options: Pick<UpOptions, "overrides" | "lockFile">,
+  options: Pick<UpOptions, "overrides" | "lockFile" | "coprocessorTfheWorkerThreads" | "coprocessorTfheWorkerTokioThreads">,
   bundle: VersionBundle,
   scenario: State["scenario"],
 ): State => {
@@ -769,6 +787,8 @@ export const previewStateFromBundle = (
     requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
     versions: bundle,
     overrides: options.overrides,
+    coprocessorTfheWorkerThreads: options.coprocessorTfheWorkerThreads,
+    coprocessorTfheWorkerTokioThreads: options.coprocessorTfheWorkerTokioThreads,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],
@@ -792,6 +812,8 @@ const bootstrapState = async (options: UpOptions) => {
     requiresGitHub: targetNeedsGitHub({ target: resolved.bundle.target, lockFile: options.lockFile }),
     versions: resolved.bundle,
     overrides: options.overrides,
+    coprocessorTfheWorkerThreads: options.coprocessorTfheWorkerThreads,
+    coprocessorTfheWorkerTokioThreads: options.coprocessorTfheWorkerTokioThreads,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
     completedSteps: [],
