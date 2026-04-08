@@ -49,6 +49,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `USER_DECRYPTION_PRICE`             | Price of a user decryption                 | address       | -                                                                                                   | The price is in $ZAMA base units (using 18 decimals)                             |
 | `ZAMA_OFT_ADDRESS`                  | Address of the ZamaOFT contract            | address       | -                                                                                                   | When using a real environment, the contract should already be deployed.          |
 | `FEES_SENDER_TO_BURNER_ADDRESS`     | Address of the FeesSenderToBurner contract | address       | -                                                                                                   | When using a real environment, the contract should already be deployed.          |
+| `KMS_CONTEXT_ID`                    | Initial KMS context ID                     | uint256       | -                                                                                                   | Must be non-zero. Format: `[0x07 \| counter_1..31]`                              |
 | `DEPLOYER_PRIVATE_KEY`              | Private key for contract deployment        | bytes32       | -                                                                                                   | -                                                                                |
 | `HARDHAT_NETWORK`                   | Network to deploy contracts on             | string        | "hardhat"                                                                                           | Possible values: `hardhat`, `localGateway`, `staging`, `zwsDev`, `testnet`       |
 | `CHAIN_ID_GATEWAY`                  | Chain ID of the gateway network            | uint256       | 31337                                                                                               | It should be consistent with the `HARDHAT_NETWORK` value                         |
@@ -68,6 +69,14 @@ These values are crucial for the FHEVM Gateway protocol and are set in the `Gate
 #### At deployment
 
 The following values are set at deployment.
+
+- KMS Context ID {#kms-context-id}
+
+```bash
+KMS_CONTEXT_ID="3166189940082864718613269121331309980362851143201109172953918312716374638593" # (uint256)
+```
+
+`KMS_CONTEXT_ID` is the initial KMS context identifier. It must be non-zero. The format is `[0x07 | counter_1..31]` (a 32-byte big-endian value whose first byte is `0x07`). See [KMS Context](../contracts/gateway_config.md#kms-context) for details.
 
 - Protocol metadata:
 

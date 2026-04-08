@@ -38,6 +38,20 @@ Options:
 
 ```
 
+### Slow Lane
+
+The slow lane prevents a single chain's deep dependency burst from starving other chains. Set `dependentOpsMaxPerChain` (Helm) or the equivalent env var to the maximum number of dependent operations allowed per chain per ingested block before the chain is deprioritised:
+
+```yaml
+# charts/coprocessor/values.yaml
+commonConfig:
+  # Max dependent ops per chain per ingested block before slow-lane.
+  # 0 disables slow-lane decisions (default).
+  dependentOpsMaxPerChain: 0
+```
+
+Setting this to `0` disables the slow lane entirely. A recommended starting value for production is `500`; tune upward if legitimate workloads are being throttled. See [Slow Lane](../../../fundamentals/fhevm/coprocessor/fhe_computation.md#slow-lane-for-dependent-operations) for the conceptual overview.
+
 #### Threads
 
 Note that there are two thread pools in the Coprocessor backend:
