@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 // Re-export core types that are identical
 pub use fhevm_client_core::{GatewayContracts, HostContracts};
@@ -85,9 +85,21 @@ pub enum FhevmError {
 
     #[error("Alloy parse error: {0}")]
     AlloyParseError(#[from] alloy::primitives::ruint::ParseError),
+}
 
-    #[error("Client core error: {0}")]
-    CoreError(#[from] fhevm_client_core::ClientCoreError),
+impl From<fhevm_client_core::ClientCoreError> for FhevmError {
+    fn from(err: fhevm_client_core::ClientCoreError) -> Self {
+        use fhevm_client_core::ClientCoreError;
+        match err {
+            ClientCoreError::EncryptionError(msg) => FhevmError::EncryptionError(msg),
+            ClientCoreError::DecryptionError(msg) => FhevmError::DecryptionError(msg),
+            ClientCoreError::InvalidParams(msg) => FhevmError::InvalidParams(msg),
+            ClientCoreError::SignatureError(msg) => FhevmError::SignatureError(msg),
+            ClientCoreError::KeyError(msg) => FhevmError::InvalidParams(msg),
+            ClientCoreError::HexError(e) => FhevmError::HexError(e),
+            ClientCoreError::AlloyParseError(e) => FhevmError::AlloyParseError(e),
+        }
+    }
 }
 
 /// Result type for FHEVM operations
@@ -192,7 +204,9 @@ impl FhevmSdk {
                 .config
                 .keys_directory
                 .as_ref()
-                .expect("Keys directory must be configured");
+                .ok_or_else(|| FhevmError::InvalidParams(
+                    "Keys directory must be configured. Set keys_directory in FhevmConfig or use FhevmSdkBuilder.".to_string(),
+                ))?;
 
             debug!("Loading keys from {}", keys_directory.display());
             let (public_key, _client_key, _server_key, crs) =
@@ -222,11 +236,12 @@ impl FhevmSdk {
     }
 
     /// Create an EIP-712 signature builder for user decrypt operations
-    pub fn create_eip712_signature_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
-        let verifying_contract = self.config.gateway_contracts.decryption.unwrap_or_else(|| {
-            warn!("Decryption contract not set, using zero address");
-            Address::ZERO
-        });
+    pub fn create_eip712_signature_builder(&self) -> Result<signature::eip712::Eip712SignatureBuilder> {
+        let verifying_contract = self.config.gateway_contracts.decryption.ok_or_else(|| {
+            FhevmError::InvalidParams(
+                "Decryption contract address must be configured for EIP-712 signatures".to_string(),
+            )
+        })?;
 
         let config = signature::eip712::Eip712Config {
             gateway_chain_id: self.config.gateway_chain_id,
@@ -234,11 +249,11 @@ impl FhevmSdk {
             contracts_chain_id: self.config.host_chain_id,
         };
 
-        signature::eip712::Eip712SignatureBuilder::new(config)
+        Ok(signature::eip712::Eip712SignatureBuilder::new(config))
     }
 
     /// Alternative shorter name for discoverability
-    pub fn eip712_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
+    pub fn eip712_builder(&self) -> Result<signature::eip712::Eip712SignatureBuilder> {
         self.create_eip712_signature_builder()
     }
 
@@ -254,8 +269,9 @@ impl FhevmSdk {
         _user_address: &str,
         _delegate_address: &str,
     ) -> Result<Vec<u8>> {
-        // Placeholder
-        Ok(vec![])
+        Err(FhevmError::InvalidParams(
+            "User delegated decryption is not yet implemented".to_string(),
+        ))
     }
 
     /// Generate calldata for PublicDecrypt operation
@@ -483,10 +499,10 @@ impl FhevmSdkBuilder {
         self
     }
 
-    pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Self {
-        let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for gateway contract '{name}': {address}")
-        });
+    pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Result<Self> {
+        let addr = Address::from_str(address).map_err(|e| {
+            FhevmError::AddressError(format!("Invalid address for gateway contract '{name}': {e}"))
+        })?;
 
         match name.to_lowercase().as_str() {
             "input_verification" | "input-verifier" | "input-verification" => {
@@ -496,55 +512,55 @@ impl FhevmSdkBuilder {
                 self.gateway_contracts.decryption = Some(addr);
             }
             _ => {
-                warn!(
+                return Err(FhevmError::InvalidParams(format!(
                     "Unknown gateway contract name: '{}'. Valid names are: 'input_verification', 'decryption'",
                     name
-                );
+                )));
             }
         }
-        self
+        Ok(self)
     }
 
-    pub fn with_input_verification_contract(mut self, address: &str) -> Self {
+    pub fn with_input_verification_contract(mut self, address: &str) -> Result<Self> {
         self.gateway_contracts.input_verification =
-            Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for input verification contract: {address}")
-            }));
-        self
+            Some(Address::from_str(address).map_err(|e| {
+                FhevmError::AddressError(format!("Invalid input verification contract address: {e}"))
+            })?);
+        Ok(self)
     }
 
-    pub fn with_decryption_contract(mut self, address: &str) -> Self {
-        self.gateway_contracts.decryption = Some(Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for decryption contract: {address}")
-        }));
-        self
+    pub fn with_decryption_contract(mut self, address: &str) -> Result<Self> {
+        self.gateway_contracts.decryption = Some(Address::from_str(address).map_err(|e| {
+            FhevmError::AddressError(format!("Invalid decryption contract address: {e}"))
+        })?);
+        Ok(self)
     }
 
-    pub fn with_acl_contract(mut self, address: &str) -> Self {
+    pub fn with_acl_contract(mut self, address: &str) -> Result<Self> {
         self.host_contracts.acl =
-            Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for ACL contract: {address}")
-            }));
-        self
+            Some(Address::from_str(address).map_err(|e| {
+                FhevmError::AddressError(format!("Invalid ACL contract address: {e}"))
+            })?);
+        Ok(self)
     }
 
-    pub fn with_host_contract(mut self, name: &str, address: &str) -> Self {
-        let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for host contract '{name}': {address}")
-        });
+    pub fn with_host_contract(mut self, name: &str, address: &str) -> Result<Self> {
+        let addr = Address::from_str(address).map_err(|e| {
+            FhevmError::AddressError(format!("Invalid address for host contract '{name}': {e}"))
+        })?;
 
         match name.to_lowercase().as_str() {
             "acl" => {
                 self.host_contracts.acl = Some(addr);
             }
             _ => {
-                warn!(
+                return Err(FhevmError::InvalidParams(format!(
                     "Unknown host contract name: '{}'. Valid names are: 'acl'",
                     name
-                );
+                )));
             }
         }
-        self
+        Ok(self)
     }
 
     /// Export the current builder state to YAML

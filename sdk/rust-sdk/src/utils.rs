@@ -29,23 +29,29 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
         .use_dedicated_compact_public_key_parameters((cpk_params, casting_params))
         .build();
 
-    let crs = CompactPkeCrs::from_config(config, 512).unwrap();
+    let crs = CompactPkeCrs::from_config(config, 512)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to generate CRS: {e}")))?;
 
     let client_key = tfhe::ClientKey::generate(config);
     let server_key = tfhe::ServerKey::new(&client_key);
-    let public_key = tfhe::CompactPublicKey::try_new(&client_key).unwrap();
+    let public_key = tfhe::CompactPublicKey::try_new(&client_key)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to generate public key: {e}")))?;
 
     let mut serialized_pub_key = Vec::new();
-    safe_serialize(&public_key, &mut serialized_pub_key, 1 << 30).unwrap();
+    safe_serialize(&public_key, &mut serialized_pub_key, 1 << 30)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize public key: {e}")))?;
 
     let mut serialized_client_key = Vec::new();
-    safe_serialize(&client_key, &mut serialized_client_key, 1 << 30).unwrap();
+    safe_serialize(&client_key, &mut serialized_client_key, 1 << 30)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize client key: {e}")))?;
 
     let mut serialized_server_key = Vec::new();
-    safe_serialize(&server_key, &mut serialized_server_key, 1 << 30).unwrap();
+    safe_serialize(&server_key, &mut serialized_server_key, 1 << 30)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize server key: {e}")))?;
 
     let mut serialized_crs = Vec::new();
-    safe_serialize(&crs, &mut serialized_crs, 1 << 30).unwrap();
+    safe_serialize(&crs, &mut serialized_crs, 1 << 30)
+        .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to serialize CRS: {e}")))?;
 
     std::fs::write(output_dir.join("public_key.bin"), &serialized_pub_key)
         .map_err(|e| FhevmError::FileError(format!("Failed to write public key: {e}")))?;

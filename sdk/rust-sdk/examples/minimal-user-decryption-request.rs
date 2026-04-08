@@ -25,9 +25,9 @@ fn main() -> Result<()> {
     let sdk = FhevmSdkBuilder::new()
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111) // Example: Ethereum Sepolia
-        .with_decryption_contract("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
-        .with_acl_contract("0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")?
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")?
+        .with_acl_contract("0x0987654321098765432109876543210987654321")?
         .build()?;
 
     let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";

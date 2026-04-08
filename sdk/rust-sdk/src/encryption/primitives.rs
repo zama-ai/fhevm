@@ -11,7 +11,7 @@ use tfhe::zk::CompactPkeCrs;
 use tfhe::{ProvenCompactCiphertextList, set_server_key};
 use tracing::info;
 
-/// Verifies and expands an encrypted boolean with its proof
+/// Verifies and expands an encrypted compact ciphertext list with its ZK proof
 ///
 /// # Arguments
 /// * `serialized_proven_compact_list` - Serialized proven compact ciphertext list

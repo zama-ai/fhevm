@@ -16,15 +16,15 @@ fn main() -> Result<()> {
         .with_keys_directory("./keys")
         .with_gateway_chain_id(54321)
         .with_host_chain_id(12345)
-        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
-        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
-        .with_acl_contract("0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")?
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")?
+        .with_acl_contract("0x0987654321098765432109876543210987654321")?
         .build()?;
 
     // Generate signature
 
     let result = sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(
             "2000000000000000750f4e54713eae622dfeb01809290183a447e2b277e89d2c6a681af1aa5b2c2b",
         )

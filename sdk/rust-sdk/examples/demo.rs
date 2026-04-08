@@ -41,9 +41,9 @@ fn create_sdk() -> Result<FhevmSdk> {
         .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)
-        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
-        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
-        .with_acl_contract("0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")?
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")?
+        .with_acl_contract("0x0987654321098765432109876543210987654321")?
         .build()
 }
 
@@ -94,7 +94,7 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     // Mode 1: Hash only
     info!("\n   Mode 1: Hash Only (No Signing)");
     let hash_only = sdk
-        .eip712_builder()
+        .eip712_builder()?
         .with_public_key(public_key)
         .with_contract(contract_addresses_str)?
         .with_validity_period(start_timestamp, duration_days)
@@ -105,7 +105,7 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     // Mode 2: Hash + Sign (fast, no verification)
     info!("\n   Mode 2: Hash + Sign (Fast)");
     let signed_only = sdk
-        .eip712_builder()
+        .eip712_builder()?
         .with_public_key(public_key)
         .with_contract(contract_addresses_str)?
         .with_validity_period(start_timestamp, duration_days)
@@ -127,7 +127,7 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     // Mode 3: Hash + Sign + Verify (complete)
     info!("\n   Mode 3: Hash + Sign + Verify (Full)");
     let verified = sdk
-        .eip712_builder()
+        .eip712_builder()?
         .with_public_key(public_key)
         .with_contract(contract_addresses_str)?
         .with_validity_period(start_timestamp, duration_days)

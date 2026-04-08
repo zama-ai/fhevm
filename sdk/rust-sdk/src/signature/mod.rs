@@ -15,10 +15,20 @@ pub mod eip712;
 pub use self::eip712::{Eip712Config, Eip712Result, Eip712SignatureBuilder};
 
 /// Keypair for ML-KEM operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Keypair {
     pub public_key: String,
+    #[serde(skip_serializing)]
     pub private_key: String,
+}
+
+impl std::fmt::Debug for Keypair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Keypair")
+            .field("public_key", &self.public_key)
+            .field("private_key", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// Generate a new keypair for ML-KEM operations

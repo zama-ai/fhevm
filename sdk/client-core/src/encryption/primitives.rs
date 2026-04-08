@@ -1,6 +1,9 @@
 use crate::{ClientCoreError, Result};
 
 /// Defines the bit width for different encryption types.
+///
+/// Discriminant values match the on-chain protocol:
+/// `ebool=0, euint8=2, euint16=3, ...` — discriminant 1 is reserved/unused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EncryptionType {
     Bit1,   // Boolean

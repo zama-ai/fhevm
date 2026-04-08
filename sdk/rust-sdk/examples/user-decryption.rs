@@ -54,9 +54,9 @@ fn create_configured_sdk() -> Result<FhevmSdk, FhevmError> {
         .with_keys_directory(PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)
-        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
-        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
-        .with_acl_contract("0x0987654321098765432109876543210987654321")
+        .with_decryption_contract("0x1234567890123456789012345678901234567bbb")?
+        .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")?
+        .with_acl_contract("0x0987654321098765432109876543210987654321")?
         .build()?;
 
     info!("✅ SDK configured successfully");
@@ -120,7 +120,7 @@ fn generate_user_decrypt_signature(
 
     // Generate EIP-712 signature with verification
     let eip712_result = sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(public_key)
         .with_contract_addresses_vec(contract_addresses)
         .with_validity_period(start_timestamp, duration_days)
@@ -304,7 +304,7 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     // Scenario 1: Try to verify without wallet key
     info!("Testing verification without wallet key...");
     match sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(public_key)
         .with_contract_addresses_vec(contracts)
         .with_validity_period(1748252823, 10)
@@ -334,7 +334,7 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     let start = std::time::Instant::now();
 
     let _ = sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(public_key)
         .with_contract_addresses_vec(contracts.clone())
         .with_validity_period(1748252823, 10)
@@ -344,7 +344,7 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     // Benchmark: Hash + Sign
     let start = std::time::Instant::now();
     let _ = sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(public_key)
         .with_contract_addresses_vec(contracts.clone())
         .with_validity_period(1748252823, 10)
@@ -357,7 +357,7 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     // Benchmark: Hash + Sign + Verify
     let start = std::time::Instant::now();
     let _ = sdk
-        .create_eip712_signature_builder()
+        .create_eip712_signature_builder()?
         .with_public_key(public_key)
         .with_contract_addresses_vec(contracts)
         .with_validity_period(1748252823, 10)

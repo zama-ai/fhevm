@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Modeled as an enum to make illegal states unrepresentable:
 /// - `HashOnly`: only the hash was computed (no private key provided)
 /// - `Signed`: hash was computed and signed (no verification requested)
-/// - `Verified`: hash was computed, signed, and verification was attempted
+/// - `Verified`: hash was computed, signed, and signature was verified to match the signing key
 #[derive(Debug, Clone)]
 pub enum Eip712Result {
     /// Only the EIP-712 hash was generated (no signing).
