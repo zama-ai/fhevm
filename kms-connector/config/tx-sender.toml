@@ -12,6 +12,24 @@ gateway_url = "http://localhost:8545"
 # ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
 gateway_chain_id = 54321
 
+# Ethereum RPC nod endpoint (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_URL
+ethereum_url = "http://localhost:8545"
+
+# Chain ID for the Ethereum network (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+ethereum_chain_id = 11155111
+
+# Number of confirmations required for Ethereum transactions to be considered confirmed
+# (optional, defaults to 64)
+# ENV: KMS_CONNECTOR_ETHEREUM_TX_REQUIRED_CONFIRMATIONS
+# ethereum_tx_required_confirmations = 64
+
+# Timeout for getting Ethereum transaction receipts with the required number of confirmations
+# (optional, defaults to 5m)
+# ENV: KMS_CONNECTOR_ETHEREUM_TX_GET_RECEIPT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# ethereum_tx_get_receipt_timeout = "5m"
+
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
 # ENV: KMS_CONNECTOR_DATABASE_URL
@@ -89,9 +107,9 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the KMSGeneration contract (required)
+# Configuration of the KMSGeneration contract on Ethereum (required)
 [kms_generation_contract]
-# Address of the KMSGeneration contract (required)
+# Address of the KMSGeneration contract on Ethereum (required)
 # Format: hex string with 0x prefix
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
 address = "0x0000000000000000000000000000000000000000"

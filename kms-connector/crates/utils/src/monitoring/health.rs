@@ -43,10 +43,12 @@ pub async fn database_healthcheck(
     }
 }
 
-/// Performs the Gateway healthcheck.
+/// Performs the healthcheck of a blockchain RPC node.
+///
+/// Uses `eth_getBlockNumber` for this.
 ///
 /// Stores the potential error in the `errors` vector.
-pub async fn gateway_healthcheck<P: Provider>(
+pub async fn rpc_node_healthcheck<P: Provider>(
     provider: P,
     timeout: Duration,
     errors: &mut Vec<String>,
