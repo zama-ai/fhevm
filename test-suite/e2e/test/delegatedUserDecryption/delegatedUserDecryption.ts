@@ -9,6 +9,13 @@ const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 const DELEGATION_EXPIRY_SECONDS = 75;
 const DELEGATION_EXPIRY_POLL_MS = 2_000;
 
+const relayerErrorLabel = (error: unknown): string | undefined => {
+  if (typeof error !== 'object' || error === null || !('relayerApiError' in error)) {
+    return undefined;
+  }
+  return (error as { relayerApiError?: { label?: string } }).relayerApiError?.label;
+};
+
 const waitForDelegationExpiry = async (expirationTimestamp: number) => {
   while (true) {
     const latestBlock = await ethers.provider.getBlock('latest');
@@ -260,8 +267,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected after revocation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
@@ -281,8 +288,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected without delegation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
@@ -315,8 +322,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for wrong contract');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
@@ -348,8 +355,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for expired delegation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
   });
