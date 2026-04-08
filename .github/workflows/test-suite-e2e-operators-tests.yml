@@ -8,7 +8,7 @@ on:
     inputs:
       build:
         description: "Build repo-owned images from the checked out branch on the runner"
-        default: false
+        default: true
         type: boolean
       grep:
         description: "Optional narrow grep pattern for targeted operator tests"
@@ -155,6 +155,17 @@ jobs:
             args+=(--scenario "$SCENARIO")
           fi
           ./fhevm-cli deploy "${args[@]}"
+
+      - name: Verify tfhe-worker args
+        run: |
+          echo "BUILD=$BUILD"
+          for container in coprocessor-tfhe-worker coprocessor1-tfhe-worker; do
+            if docker inspect "$container" >/dev/null 2>&1; then
+              echo "::group::${container} command"
+              docker inspect "$container" --format '{{json .Config.Cmd}}'
+              echo "::endgroup::"
+            fi
+          done
 
       - name: Validate targeted grep
         if: ${{ inputs.grep != '' }}
