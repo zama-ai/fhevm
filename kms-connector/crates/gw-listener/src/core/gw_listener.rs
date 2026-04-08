@@ -73,8 +73,9 @@ impl EventListener<DefaultProvider, DefaultProvider> {
         );
 
         let gateway_listener =
-            GatewayListener::new(db_pool.clone(), gateway_provider, &config, cancel_token);
-        let ethereum_listener = EthereumListener::new(db_pool, ethereum_provider, &config);
+            GatewayListener::new(db_pool.clone(), gateway_provider, &config, cancel_token.clone());
+        let ethereum_listener =
+            EthereumListener::new(db_pool, ethereum_provider, &config, cancel_token);
         let event_listener = EventListener::new(gateway_listener, ethereum_listener);
         Ok((event_listener, state))
     }

@@ -3,11 +3,11 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::primitives::{FixedBytes, U256};
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
-    },
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -155,6 +155,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
@@ -175,6 +176,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::Keygen(KeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
@@ -196,6 +198,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
         maxBitLength: U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,

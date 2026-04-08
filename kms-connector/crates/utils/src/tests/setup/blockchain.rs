@@ -37,6 +37,7 @@ pub struct GatewayInstance {
     pub decryption_contract: DecryptionInstance<WalletProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletProvider>,
+    pub kms_verifier_address: Address,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -50,6 +51,7 @@ impl GatewayInstance {
         decryption_address: Address,
         gateway_config_address: Address,
         kms_generation_address: Address,
+        kms_verifier_address: Address,
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(decryption_address, provider.clone());
@@ -61,6 +63,7 @@ impl GatewayInstance {
             decryption_contract,
             gateway_config_contract,
             kms_generation_contract,
+            kms_verifier_address,
             anvil,
             anvil_host_port,
             block_time,
@@ -95,10 +98,15 @@ impl GatewayInstance {
             .canonicalize()
             .map_err(|e| anyhow::anyhow!("Could not find gateway-contracts directory: {e}"))?;
 
+        let kms_connector_tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/contracts")
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("Could not find kms-connector tests/contracts: {e}"))?;
+
         let rpc_url = Self::anvil_http_endpoint_impl(anvil_host_port).to_string();
         let private_key = DEPLOYER_PRIVATE_KEY.to_string();
 
-        let (decryption_addr, gateway_config_addr, kms_generation_addr) =
+        let (decryption_addr, gateway_config_addr, kms_generation_addr, kms_verifier_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
                     "contracts/mocks/DecryptionMock.sol",
@@ -117,20 +125,29 @@ impl GatewayInstance {
                 )?;
 
                 let kms_generation = deploy_contract(
-                    "contracts/mocks/KMSGenerationMock.sol",
+                    "KMSGenerationMock.sol",
                     "KMSGenerationMock",
                     &rpc_url,
                     &private_key,
-                    &gateway_contracts_path,
+                    &kms_connector_tests_path,
                 )?;
 
-                Ok::<_, anyhow::Error>((decryption, gateway_config, kms_generation))
+                let kms_verifier = deploy_contract(
+                    "KMSVerifierMock.sol",
+                    "KMSVerifierMock",
+                    &rpc_url,
+                    &private_key,
+                    &kms_connector_tests_path,
+                )?;
+
+                Ok::<_, anyhow::Error>((decryption, gateway_config, kms_generation, kms_verifier))
             })
             .await??;
 
         info!("DecryptionMock deployed at: {}", decryption_addr);
         info!("GatewayConfigMock deployed at: {}", gateway_config_addr);
         info!("KMSGenerationMock deployed at: {}", kms_generation_addr);
+        info!("KMSVerifierMock deployed at: {}", kms_verifier_addr);
 
         Ok(GatewayInstance::new(
             anvil,
@@ -139,6 +156,7 @@ impl GatewayInstance {
             decryption_addr,
             gateway_config_addr,
             kms_generation_addr,
+            kms_verifier_addr,
             block_time,
         ))
     }
@@ -173,6 +191,8 @@ async fn setup_anvil(block_time: u64) -> anyhow::Result<ContainerAsync<GenericIm
             TEST_MNEMONIC,
             "--block-time",
             &format!("{block_time}"),
+            "--slots-in-an-epoch",
+            "1",
         ])
         .start()
         .await?;

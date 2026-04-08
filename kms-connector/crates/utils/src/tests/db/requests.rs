@@ -11,14 +11,14 @@ use crate::{
 };
 use alloy::{
     hex,
-    primitives::{FixedBytes, U256},
+    primitives::{Bytes, FixedBytes, U256},
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
-    },
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use tracing::info;
@@ -156,6 +156,7 @@ pub async fn insert_rand_prep_keygen_request(
     let epoch_id = rand_u256();
     let params_type = ParamsTypeDb::Test;
     let status = options.status.unwrap_or(OperationStatus::Pending);
+    let extra_data = options.extra_data.unwrap_or_default();
 
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(\
@@ -177,6 +178,7 @@ pub async fn insert_rand_prep_keygen_request(
         prepKeygenId: prep_keygen_request_id,
         epochId: epoch_id,
         paramsType: params_type as u8,
+        extraData: extra_data,
     })
 }
 
@@ -187,6 +189,7 @@ pub async fn insert_rand_keygen_request(
     let key_id = options.id.unwrap_or_else(rand_u256);
     let prep_key_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
+    let extra_data = options.extra_data.unwrap_or_default();
 
     sqlx::query!(
         "INSERT INTO keygen_requests(\
@@ -206,6 +209,7 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        extraData: extra_data,
     })
 }
 
@@ -217,6 +221,7 @@ pub async fn insert_rand_crsgen_request(
     let max_bit_length = rand_u256();
     let params_type = ParamsTypeDb::Test;
     let status = options.status.unwrap_or(OperationStatus::Pending);
+    let extra_data = options.extra_data.unwrap_or_default();
 
     sqlx::query!(
         "INSERT INTO crsgen_requests(\
@@ -238,6 +243,7 @@ pub async fn insert_rand_crsgen_request(
         crsId: crs_id,
         maxBitLength: max_bit_length,
         paramsType: params_type as u8,
+        extraData: extra_data,
     })
 }
 
@@ -314,6 +320,7 @@ pub struct InsertRequestOptions {
     pub tx_hash: Option<FixedBytes<32>>,
     pub sns_ct_materials: Option<Vec<SnsCiphertextMaterial>>,
     pub context_id: Option<U256>,
+    pub extra_data: Option<Bytes>,
 }
 
 impl InsertRequestOptions {

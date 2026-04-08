@@ -13,11 +13,9 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{ProtocolEvent, ProtocolEventKind, db::EventType},
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
-};
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres, Row};
-use tokio::{select, task::JoinSet};
+use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -27,33 +25,7 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::UserDecryptionRequest,
 ];
 
-const KMS_GENERATION_EVENT_TYPES: [EventType; 3] = [
-    EventType::PrepKeygenRequest,
-    EventType::KeygenRequest,
-    EventType::CrsgenRequest,
-];
-
-/// Identifies which contract is being polled.
-///
-/// **Note:** The kms-connector is designed to listen to a specific set of events/contracts,
-/// so listening to a new contract/event to monitor requires a code change and a new release.
-#[derive(Clone, Copy)]
-enum MonitoredContract {
-    Decryption,
-    KmsGeneration,
-}
-
-impl std::fmt::Display for MonitoredContract {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MonitoredContract::Decryption => write!(f, "Decryption"),
-            MonitoredContract::KmsGeneration => write!(f, "KmsGeneration"),
-        }
-    }
-}
-
-/// Struct monitoring and storing Gateway's events.
-#[derive(Clone)]
+/// Struct monitoring and storing Gateway's decryption events.
 pub struct GatewayListener<P>
 where
     P: Provider,
@@ -92,50 +64,25 @@ where
 
     /// Starts the `GatewayListener`.
     ///
-    /// Spawns two polling tasks: one for Decryption events and one for KMSGeneration events.
+    /// Polls for Decryption events on the Gateway chain.
     pub async fn start(self) {
-        let mut tasks = JoinSet::new();
-        tasks.spawn(self.clone().poll_events(MonitoredContract::Decryption));
-        tasks.spawn(self.poll_events(MonitoredContract::KmsGeneration));
-
-        while let Some(res) = tasks.join_next().await {
-            if let Err(e) = res {
-                error!("{e}");
-            }
-        }
-        info!("GatewayListener stopped successfully!");
-    }
-
-    /// Polls a contract for events using `eth_getLogs`.
-    ///
-    /// Cancels all other tasks on failure.
-    async fn poll_events(self, contract: MonitoredContract) {
         select! {
             biased;
-            _ = self.cancel_token.cancelled() => info!("{contract} polling cancelled..."),
-            result = self.run_poll_loop(contract) => if let Err(e) = result {
-                error!("{contract} polling failed: {e}");
+            _ = self.cancel_token.cancelled() => info!("Decryption polling cancelled..."),
+            result = self.run_poll_loop() => if let Err(e) = result {
+                error!("Decryption polling failed: {e}");
             }
         }
         self.cancel_token.cancel();
+        info!("GatewayListener stopped successfully!");
     }
 
-    /// Polling loop to listen to both [`Decryption`] and [`KMSGeneration`] contracts.
-    async fn run_poll_loop(&self, contract: MonitoredContract) -> anyhow::Result<()> {
-        let (contract_address, poll_interval, from_block_config, event_types) = match contract {
-            MonitoredContract::Decryption => (
-                self.config.decryption_contract.address,
-                self.config.decryption_polling,
-                self.config.decryption_from_block_number,
-                DECRYPTION_EVENT_TYPES.as_slice(),
-            ),
-            MonitoredContract::KmsGeneration => (
-                self.config.kms_generation_contract.address,
-                self.config.key_management_polling,
-                self.config.kms_operation_from_block_number,
-                KMS_GENERATION_EVENT_TYPES.as_slice(),
-            ),
-        };
+    /// Polling loop to listen to [`Decryption`] contract events.
+    async fn run_poll_loop(&self) -> anyhow::Result<()> {
+        let contract_address = self.config.decryption_contract.address;
+        let poll_interval = self.config.decryption_polling;
+        let from_block_config = self.config.decryption_from_block_number;
+        let event_types = DECRYPTION_EVENT_TYPES.as_slice();
 
         let event_signatures = event_types
             .iter()
@@ -146,7 +93,7 @@ where
             .event_signature(event_signatures);
 
         let mut from_block = self.get_start_block(from_block_config, event_types).await?;
-        info!("Started {contract} polling from block {from_block}");
+        info!("Started Decryption polling from block {from_block}");
 
         let mut ticker = tokio::time::interval(poll_interval);
         let max_errors = self.config.max_consecutive_polling_errors;
@@ -154,7 +101,7 @@ where
         loop {
             ticker.tick().await;
             match self
-                .fetch_and_publish(contract, base_filter.clone(), event_types, from_block)
+                .fetch_and_publish(base_filter.clone(), event_types, from_block)
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -166,12 +113,12 @@ where
                 }
                 Err(e) => {
                     EVENT_LISTENING_ERRORS
-                        .with_label_values(&[contract.to_string().to_lowercase()])
+                        .with_label_values(&["decryption"])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("{contract} listening error: {e} ({consecutive_errors}/{max_errors})");
+                    warn!("Decryption listening error: {e} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
-                        anyhow::bail!("Too many consecutive errors for {contract}");
+                        anyhow::bail!("Too many consecutive errors for Decryption");
                     }
                 }
             }
@@ -183,7 +130,6 @@ where
     /// Returns `(new_from_block, has_more_blocks)`.
     async fn fetch_and_publish(
         &self,
-        contract: MonitoredContract,
         base_filter: Filter,
         event_types: &[EventType],
         from_block: u64,
@@ -202,45 +148,28 @@ where
         let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
-        let events = Self::prepare_events(contract, logs)?;
+        let events = Self::prepare_events(logs)?;
         publish_batch(&self.db_pool, events, event_types, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < current_block))
     }
 
     /// Decodes a log into a `ProtocolEventKind`.
-    fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<ProtocolEventKind> {
-        match contract {
-            MonitoredContract::Decryption => {
-                let event = DecryptionEvents::decode_log(&log.inner)
-                    .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
-                match event.data {
-                    DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-                    DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
-                    _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
-                }
-            }
-            MonitoredContract::KmsGeneration => {
-                let event = KMSGenerationEvents::decode_log(&log.inner)
-                    .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?;
-                match event.data {
-                    KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
-                    KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
-                    KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
-                    _ => Err(anyhow!("Unexpected KMSGeneration event: {log:?}")),
-                }
-            }
+    fn decode_log(log: &Log) -> anyhow::Result<ProtocolEventKind> {
+        let event = DecryptionEvents::decode_log(&log.inner)
+            .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
+        match event.data {
+            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+            _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
         }
     }
 
     /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
-    fn prepare_events(
-        contract: MonitoredContract,
-        logs: Vec<Log>,
-    ) -> anyhow::Result<Vec<ProtocolEvent>> {
+    fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = Self::decode_log(contract, &log)?;
+            let event_kind = Self::decode_log(&log)?;
             EVENT_RECEIVED_COUNTER
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();
@@ -336,7 +265,7 @@ mod tests {
             });
         }
 
-        gw_listener.poll_events(MonitoredContract::Decryption).await;
+        gw_listener.start().await;
     }
 
     #[rstest::rstest]
@@ -364,7 +293,7 @@ mod tests {
     const MAX_CONSECUTIVE_POLLING_ERRORS: usize = 2;
 
     async fn test_setup(
-        kms_operation_from_block_number: Option<u64>,
+        decryption_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
@@ -373,8 +302,7 @@ mod tests {
 
         let config = Config {
             decryption_polling: Duration::from_millis(500),
-            key_management_polling: Duration::from_millis(500),
-            kms_operation_from_block_number,
+            decryption_from_block_number,
             max_consecutive_polling_errors: MAX_CONSECUTIVE_POLLING_ERRORS,
             ..Default::default()
         };

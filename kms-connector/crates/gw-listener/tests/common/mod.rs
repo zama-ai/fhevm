@@ -15,21 +15,19 @@ use connector_utils::{
         db::{EventType, ParamsTypeDb},
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::{
-        Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        IDecryption::{ContractsInfo, RequestValidity},
-    },
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+use fhevm_gateway_bindings::decryption::{
+    Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
+    IDecryption::{ContractsInfo, RequestValidity},
 };
-use gw_listener::core::{Config, GatewayListener};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+};
+use gw_listener::core::{Config, EthereumListener, EventListener, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-const NB_POLL_GROUPS: usize = 2;
 
 pub async fn start_test_listener(
     test_instance: &mut TestInstance,
@@ -39,23 +37,31 @@ pub async fn start_test_listener(
     let mut config = Config::default();
     config.decryption_contract.address = *test_instance.decryption_contract().address();
     config.kms_generation_contract.address = *test_instance.kms_generation_contract().address();
+    config.kms_verifier_address = test_instance.kms_verifier_address();
     config.decryption_from_block_number = from_block_number;
     config.kms_operation_from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);
     config.key_management_polling = Duration::from_millis(300);
-    let gw_listener = GatewayListener::new(
+
+    let gateway_listener = GatewayListener::new(
+        test_instance.db().clone(),
+        test_instance.provider().clone(),
+        &config,
+        cancel_token.clone(),
+    );
+    let ethereum_listener = EthereumListener::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
         &config,
         cancel_token,
     );
+    let event_listener = EventListener::new(gateway_listener, ethereum_listener);
 
-    let listener_task = tokio::spawn(gw_listener.start());
+    let listener_task = tokio::spawn(async move {
+        event_listener.start().await.unwrap();
+    });
 
-    // Wait for both polling tasks to start + 2 anvil blocks
-    for _ in 0..NB_POLL_GROUPS {
-        test_instance.wait_for_log("Started ").await;
-    }
+    // Wait for 2 anvil blocks for listener to be ready
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     Ok(listener_task)
