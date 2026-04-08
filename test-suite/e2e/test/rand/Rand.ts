@@ -277,67 +277,69 @@ describe('Rand', function () {
   });
 
   it('8 and 16 bits generate and decrypt with hardhat snapshots [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat') {
-      // snapshots are only possible in hardhat node, i.e in mocked mode
-      this.snapshotId = await ethers.provider.send('evm_snapshot');
-      const values: number[] = [];
-      for (let i = 0; i < 5; i++) {
-        const txn = await this.rand.generate8();
-        await txn.wait();
-        const valueHandle = (await this.rand.value8()) as `0x${string}`;
-        const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res.clearValues[valueHandle] as bigint;
-        expect(typeof value).to.eq('bigint');
-        const valueNum = Number(value);
-        expect(valueNum).to.be.lessThanOrEqual(0xff);
-        values.push(valueNum);
-      }
-      // Expect at least two different generated values.
-      const unique = new Set(values);
-      expect(unique.size).to.be.greaterThanOrEqual(2);
-
-      await ethers.provider.send('evm_revert', [this.snapshotId]);
-      this.snapshotId = await ethers.provider.send('evm_snapshot');
-
-      const values2: number[] = [];
-      for (let i = 0; i < 5; i++) {
-        const txn = await this.rand.generate8();
-        await txn.wait();
-        const valueHandle = (await this.rand.value8()) as `0x${string}`;
-        const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res.clearValues[valueHandle] as bigint;
-        expect(typeof value).to.eq('bigint');
-        const valueNum = Number(value);
-        expect(valueNum).to.be.lessThanOrEqual(0xff);
-        values2.push(valueNum);
-      }
-      // Expect at least two different generated values.
-      const unique2 = new Set(values2);
-      expect(unique2.size).to.be.greaterThanOrEqual(2);
-
-      await ethers.provider.send('evm_revert', [this.snapshotId]);
-      const values3: number[] = [];
-      let has16bit: boolean = false;
-      for (let i = 0; i < 5; i++) {
-        const txn = await this.rand.generate16();
-        await txn.wait();
-        const valueHandle = (await this.rand.value16()) as `0x${string}`;
-        const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res.clearValues[valueHandle] as bigint;
-        expect(typeof value).to.eq('bigint');
-        const valueNum = Number(value);
-        expect(valueNum).to.be.lessThanOrEqual(0xffff);
-        if (valueNum > 0xff) {
-          has16bit = true;
-        }
-        values3.push(valueNum);
-      }
-      // Make sure we actually generate 16 bit integers.
-      expect(has16bit).to.be.true;
-      // Expect at least two different generated values.
-      const unique3 = new Set(values3);
-      expect(unique3.size).to.be.greaterThanOrEqual(2);
+    if (network.name !== 'hardhat') {
+      this.skip();
     }
+
+    // snapshots are only possible in hardhat node, i.e in mocked mode
+    this.snapshotId = await ethers.provider.send('evm_snapshot');
+    const values: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const txn = await this.rand.generate8();
+      await txn.wait();
+      const valueHandle = (await this.rand.value8()) as `0x${string}`;
+      const res = await this.instances.alice.publicDecrypt([valueHandle]);
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xff);
+      values.push(valueNum);
+    }
+    // Expect at least two different generated values.
+    const unique = new Set(values);
+    expect(unique.size).to.be.greaterThanOrEqual(2);
+
+    await ethers.provider.send('evm_revert', [this.snapshotId]);
+    this.snapshotId = await ethers.provider.send('evm_snapshot');
+
+    const values2: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const txn = await this.rand.generate8();
+      await txn.wait();
+      const valueHandle = (await this.rand.value8()) as `0x${string}`;
+      const res = await this.instances.alice.publicDecrypt([valueHandle]);
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xff);
+      values2.push(valueNum);
+    }
+    // Expect at least two different generated values.
+    const unique2 = new Set(values2);
+    expect(unique2.size).to.be.greaterThanOrEqual(2);
+
+    await ethers.provider.send('evm_revert', [this.snapshotId]);
+    const values3: number[] = [];
+    let has16bit: boolean = false;
+    for (let i = 0; i < 5; i++) {
+      const txn = await this.rand.generate16();
+      await txn.wait();
+      const valueHandle = (await this.rand.value16()) as `0x${string}`;
+      const res = await this.instances.alice.publicDecrypt([valueHandle]);
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xffff);
+      if (valueNum > 0xff) {
+        has16bit = true;
+      }
+      values3.push(valueNum);
+    }
+    // Make sure we actually generate 16 bit integers.
+    expect(has16bit).to.be.true;
+    // Expect at least two different generated values.
+    const unique3 = new Set(values3);
+    expect(unique3.size).to.be.greaterThanOrEqual(2);
   });
 
   it('generating rand in reverting sub-call', async function () {
