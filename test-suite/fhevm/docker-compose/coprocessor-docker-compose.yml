@@ -96,8 +96,8 @@ services:
       - --worker-polling-interval-ms=1000
       - --work-items-batch-size=10
       - --key-cache-size=32
-      - --coprocessor-fhe-threads=8
-      - --tokio-threads=4
+      - --coprocessor-fhe-threads=${COPROCESSOR_TFHE_WORKER_FHE_THREADS:-8}
+      - --tokio-threads=${COPROCESSOR_TFHE_WORKER_TOKIO_THREADS:-4}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

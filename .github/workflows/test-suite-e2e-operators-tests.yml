@@ -92,6 +92,8 @@ jobs:
       COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor_version }}
       COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor_version }}
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor_version }}
+      COPROCESSOR_TFHE_WORKER_FHE_THREADS: 64
+      COPROCESSOR_TFHE_WORKER_TOKIO_THREADS: 32
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
