@@ -301,12 +301,16 @@ impl Database {
     pub async fn reconnect(&mut self) {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
-            let (new_pool, new_refresh_handle) = Self::new_pool(&self.url).await;
+            let (new_pool, new_refresh_handle) =
+                Self::new_pool(&self.url).await;
             let mut pool = self.pool.write().await;
-            let mut pool_refresh_handle = self.pool_refresh_handle.write().await;
+            let mut pool_refresh_handle =
+                self.pool_refresh_handle.write().await;
             let old_pool = std::mem::replace(&mut *pool, new_pool);
-            let old_refresh_handle =
-                std::mem::replace(&mut *pool_refresh_handle, new_refresh_handle);
+            let old_refresh_handle = std::mem::replace(
+                &mut *pool_refresh_handle,
+                new_refresh_handle,
+            );
             (old_pool, old_refresh_handle)
         };
         // doing the close outside out of lock

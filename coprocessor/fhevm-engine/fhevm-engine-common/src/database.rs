@@ -188,7 +188,7 @@ impl DatabaseAuth {
 
         let cancel_token = refresh_parent
             .map(CancellationToken::child_token)
-            .unwrap_or_else(CancellationToken::new);
+            .unwrap_or_default();
         let task_cancel_token = cancel_token.clone();
         let config = config.clone();
 
@@ -452,7 +452,7 @@ fn generate_rds_iam_token(
     let mut signed_url = Url::parse(&url)
         .map_err(|err| DatabaseConnectionError::TokenGeneration(err.to_string()))?;
     for (name, value) in signing_instructions.params() {
-        signed_url.query_pairs_mut().append_pair(name, &value);
+        signed_url.query_pairs_mut().append_pair(name, value);
     }
 
     Ok(signed_url.to_string().split_off("https://".len()))

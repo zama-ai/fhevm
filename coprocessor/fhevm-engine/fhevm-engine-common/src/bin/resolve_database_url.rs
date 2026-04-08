@@ -1,5 +1,5 @@
-use fhevm_engine_common::{
-    database::{resolve_database_url_from_option, resolve_runtime_database_url},
+use fhevm_engine_common::database::{
+    resolve_database_url_from_option, resolve_runtime_database_url,
 };
 
 #[tokio::main]

@@ -4,9 +4,7 @@ use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
-use fhevm_engine_common::database::{
-    connect_options_for_database_url, connect_pool_with_options,
-};
+use fhevm_engine_common::database::{connect_options_for_database_url, connect_pool_with_options};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
 use futures_util::future::join_all;
@@ -784,16 +782,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut error_details = Vec::new();
 
         // Check database connection
-        let db_pool_result =
-            match connect_options_for_database_url(&self.conf.database_url).await {
-                Ok(connect_options) => {
-                    PgPoolOptions::new()
-                        .max_connections(self.conf.database_pool_size)
-                        .connect_with(connect_options)
-                        .await
-                }
-                Err(err) => Err(sqlx::Error::Configuration(Box::new(err))),
-            };
+        let db_pool_result = match connect_options_for_database_url(&self.conf.database_url).await {
+            Ok(connect_options) => {
+                PgPoolOptions::new()
+                    .max_connections(self.conf.database_pool_size)
+                    .connect_with(connect_options)
+                    .await
+            }
+            Err(err) => Err(sqlx::Error::Configuration(Box::new(err))),
+        };
 
         match db_pool_result {
             Ok(pool) => {
