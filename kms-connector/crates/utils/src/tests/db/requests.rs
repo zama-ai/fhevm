@@ -160,12 +160,14 @@ pub async fn insert_rand_prep_keygen_request(
 
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(\
-            prep_keygen_id, epoch_id, params_type, otlp_context, created_at, already_sent, status\
+            prep_keygen_id, epoch_id, params_type, extra_data, otlp_context, created_at, \
+            already_sent, status\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         prep_keygen_request_id.as_le_slice(),
         epoch_id.as_le_slice(),
         params_type as ParamsTypeDb,
+        extra_data.to_vec() as Vec<u8>,
         bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),
         options.already_sent,
@@ -193,11 +195,12 @@ pub async fn insert_rand_keygen_request(
 
     sqlx::query!(
         "INSERT INTO keygen_requests(\
-            prep_keygen_id, key_id, created_at, otlp_context, already_sent, status\
+            prep_keygen_id, key_id, extra_data, created_at, otlp_context, already_sent, status\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         key_id.as_le_slice(),
+        extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         options.already_sent,
@@ -225,12 +228,14 @@ pub async fn insert_rand_crsgen_request(
 
     sqlx::query!(
         "INSERT INTO crsgen_requests(\
-            crs_id, max_bit_length, params_type, created_at, otlp_context, already_sent, status\
+            crs_id, max_bit_length, params_type, extra_data, created_at, otlp_context, \
+            already_sent, status\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         crs_id.as_le_slice(),
         max_bit_length.as_le_slice(),
         params_type as ParamsTypeDb,
+        extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         options.already_sent,

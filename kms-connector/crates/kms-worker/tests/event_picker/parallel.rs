@@ -15,41 +15,14 @@ use std::time::Duration;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(EventType::PublicDecryptionRequest)]
+#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::prep_keygen(EventType::PrepKeygenRequest)]
+#[case::keygen(EventType::KeygenRequest)]
+#[case::crsgen(EventType::CrsgenRequest)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_parallel_public_decryption_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_user_decryption_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_prep_keygen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_keygen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_crsgen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::CrsgenRequest).await
-}
-
-async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<()> {
+async fn test_parallel_request_picking(#[case] event_type: EventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 
