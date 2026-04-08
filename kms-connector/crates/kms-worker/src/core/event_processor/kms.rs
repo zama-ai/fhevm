@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, u256_to_request_id};
-use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest, KeyGenRequest};

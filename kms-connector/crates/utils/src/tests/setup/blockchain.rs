@@ -44,6 +44,7 @@ pub struct GatewayInstance {
 }
 
 impl GatewayInstance {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         anvil: ContainerAsync<GenericImage>,
         anvil_host_port: u16,

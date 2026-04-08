@@ -72,8 +72,12 @@ impl EventListener<DefaultProvider, DefaultProvider> {
             config.healthcheck_timeout,
         );
 
-        let gateway_listener =
-            GatewayListener::new(db_pool.clone(), gateway_provider, &config, cancel_token.clone());
+        let gateway_listener = GatewayListener::new(
+            db_pool.clone(),
+            gateway_provider,
+            &config,
+            cancel_token.clone(),
+        );
         let ethereum_listener =
             EthereumListener::new(db_pool, ethereum_provider, &config, cancel_token);
         let event_listener = EventListener::new(gateway_listener, ethereum_listener);
