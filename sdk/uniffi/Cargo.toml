@@ -1,0 +1,29 @@
+[package]
+name = "fhevm_uniffi"
+version = "0.1.0"
+edition = "2024"
+description = "UniFFI bindings for FHEVM client operations (iOS / Android / React Native)"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+name = "fhevm_uniffi"
+
+[dependencies]
+fhevm_client_core = { path = "../client-core" }
+fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
+uniffi = { version = "0.29", features = ["cli"] }
+tfhe = { version = "1.5.1", features = ["boolean", "integer", "zk-pok"] }
+alloy = { version = "=1.4.3", default-features = false, features = ["essentials", "std"] }
+hex = "0.4"
+serde_json = "1"
+thiserror = "2.0.12"
+
+
+[dev-dependencies]
+uniffi = { version = "0.29", features = ["bindgen-tests"] }
+
+[profile.release]
+lto = true
+strip = "symbols"
+opt-level = "s"
+codegen-units = 1

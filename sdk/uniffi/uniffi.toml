@@ -1,0 +1,7 @@
+[bindings.swift]
+module_name = "FhevmUniFFI"
+generate_immutable_records = true
+
+[bindings.kotlin]
+package_name = "ai.zama.fhevm.uniffi"
+generate_immutable_records = true
