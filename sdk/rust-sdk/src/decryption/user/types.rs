@@ -1,20 +1,9 @@
-use alloy::primitives::{Address, Bytes};
-use fhevm_gateway_bindings::decryption::{
-    Decryption::CtHandleContractPair, IDecryption::RequestValidity,
-};
-use kms_grpc::kms::v1::TypedPlaintext;
-use serde::{Deserialize, Serialize};
+// Re-export core types
+pub use fhevm_client_core::decryption::user::{DecryptedValue, UserDecryptRequest};
 
-/// Represents a user decryption request with all necessary data
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
-    pub request_validity: RequestValidity,
-    pub contract_addresses: Vec<Address>,
-    pub user_address: Address,
-    pub signature: Bytes,
-    pub public_key: Bytes,
-}
+use alloy::primitives::Address;
+use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
+use kms_grpc::kms::v1::TypedPlaintext;
 
 /// Result of a user decryption operation
 #[derive(Debug, Clone)]
@@ -34,17 +23,6 @@ pub struct DecryptionMetadata {
     pub user_address: Address,
     /// Whether signatures were verified
     pub signatures_verified: bool,
-}
-
-/// A single decrypted value
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DecryptedValue {
-    /// The handle that was decrypted
-    pub handle: String,
-    /// The decrypted value
-    pub value: Vec<u8>,
-    /// The FHE type of the value
-    pub fhe_type: i32,
 }
 
 /// Configuration for response processing

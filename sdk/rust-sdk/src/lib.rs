@@ -1,9 +1,11 @@
 //! # FHEVM SDK
 //!
 //! A Rust SDK for interacting with FHEVM networks.
+//!
+//! Built on top of [`fhevm_client_core`] which provides the platform-agnostic
+//! cryptographic operations. This crate adds filesystem-based key management,
+//! ML-KEM keypair generation, YAML configuration, and KMS response processing.
 
-use alloy::primitives::Address;
-use decryption::user::{UserDecryptRequestBuilder, UserDecryptionResponseBuilder};
 use serde::{Deserialize, Serialize};
 
 use std::fs::File;
@@ -15,16 +17,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GatewayContracts {
-    pub input_verification: Option<Address>,
-    pub decryption: Option<Address>,
-}
+// Re-export core types that are identical
+pub use fhevm_client_core::{GatewayContracts, HostContracts};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostContracts {
-    pub acl: Option<Address>,
-}
+use alloy::primitives::Address;
+use decryption::user::{UserDecryptRequestBuilder, UserDecryptionResponseBuilder};
 
 /// Configuration for the FHEVM SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +36,18 @@ pub struct FhevmConfig {
     pub gateway_contracts: GatewayContracts,
     /// Contract addresses on Host chain
     pub host_contracts: HostContracts,
+}
+
+impl FhevmConfig {
+    /// Convert to a [`fhevm_client_core::ClientCoreConfig`] (drops `keys_directory`).
+    pub fn to_core_config(&self) -> fhevm_client_core::ClientCoreConfig {
+        fhevm_client_core::ClientCoreConfig {
+            gateway_chain_id: self.gateway_chain_id,
+            host_chain_id: self.host_chain_id,
+            gateway_contracts: self.gateway_contracts.clone(),
+            host_contracts: self.host_contracts.clone(),
+        }
+    }
 }
 
 /// Errors that can occur in the SDK
@@ -76,6 +85,9 @@ pub enum FhevmError {
 
     #[error("Alloy parse error: {0}")]
     AlloyParseError(#[from] alloy::primitives::ruint::ParseError),
+
+    #[error("Client core error: {0}")]
+    CoreError(#[from] fhevm_client_core::ClientCoreError),
 }
 
 /// Result type for FHEVM operations
@@ -210,34 +222,6 @@ impl FhevmSdk {
     }
 
     /// Create an EIP-712 signature builder for user decrypt operations
-    ///
-    /// This is the primary way to generate EIP-712 signatures in the SDK.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
-    /// // Just generate hash
-    /// let hash = sdk.eip712_builder()
-    ///     .with_public_key("0x2000...")
-    ///     .with_contract("0x742d...")?
-    ///     .with_validity_period(1748252823, 10)
-    ///     .generate_hash()?;
-    ///
-    /// // Sign and verify (consistent with your actual usage)
-    /// let result = sdk.eip712_builder()
-    ///     .with_public_key("0x2000...")
-    ///     .with_contract("0x742d...")?
-    ///     .with_validity_period(1748252823, 10)
-    ///     .with_private_key("0x7136...")
-    ///     .with_verification(true)
-    ///     .build()?;
-    ///
-    /// println!("Signed: {}, Verified: {}", result.is_signed(), result.is_verified());
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn create_eip712_signature_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
         let verifying_contract = self.config.gateway_contracts.decryption.unwrap_or_else(|| {
             warn!("Decryption contract not set, using zero address");
@@ -259,20 +243,6 @@ impl FhevmSdk {
     }
 
     /// Generate a new cryptobox keypair
-    ///
-    /// This is used for user decryption operations where responses need to be
-    /// encrypted back to the user.
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
-    /// let keypair = sdk.generate_keypair()?;
-    /// println!("Public key: {}", keypair.public_key);
-    /// // Never log private keys in production!
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn generate_keypair(&self) -> Result<signature::Keypair> {
         signature::generate_keypair()
     }
@@ -289,37 +259,12 @@ impl FhevmSdk {
     }
 
     /// Generate calldata for PublicDecrypt operation
-    ///
-    /// This method creates the transaction calldata for public decryption,
-    /// where anyone can decrypt values that are marked as publicly decryptable.
-    ///
-    /// # Arguments
-    /// * `ct_handles` - Array of 32-byte ciphertext handles to decrypt
-    ///
-    /// # Returns
-    /// Transaction calldata ready to be sent to the blockchain
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
-    /// let handles = vec![
-    ///     vec![1u8; 32], // First handle
-    ///     vec![2u8; 32], // Second handle
-    /// ];
-    ///
-    /// let calldata = sdk.generate_public_decrypt_calldata(&handles)?;
-    /// println!("Calldata: 0x{}", hex::encode(&calldata));
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn generate_public_decrypt_calldata(&self, ct_handles: &[Vec<u8>]) -> Result<Vec<u8>> {
         info!(
             "🔓 Generating public decrypt calldata for {} handles",
             ct_handles.len()
         );
 
-        // Use the existing builder pattern
         let calldata = self
             .create_public_decrypt_request_builder()
             .with_handles_from_bytes(ct_handles)?
@@ -333,36 +278,6 @@ impl FhevmSdk {
     }
 
     /// Generate calldata for Input verification operation
-    ///
-    /// This method creates the transaction calldata for verifying encrypted inputs
-    /// with their zero-knowledge proofs.
-    ///
-    /// # Arguments
-    /// * `encrypted_input` - The encrypted input containing ciphertext and proof
-    ///
-    /// # Returns
-    /// Transaction calldata ready to be sent to the blockchain
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # use alloy::primitives::address;
-    /// # fn example(sdk: &mut FhevmSdk) -> Result<(), FhevmError> {
-    /// // Create and encrypt some input
-    /// let mut builder = sdk.create_input_builder()?;
-    /// builder.add_u64(42)?;
-    ///
-    /// let encrypted = builder.encrypt_and_prove_for(
-    ///     address!("0x7777777777777777777777777777777777777777"),
-    ///     address!("0x8888888888888888888888888888888888888888")
-    /// )?;
-    ///
-    /// // Generate verification calldata
-    /// let calldata = sdk.generate_verify_proof_calldata(&encrypted)?;
-    /// println!("Verification calldata: {} bytes", calldata.len());
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn generate_verify_proof_calldata(
         &self,
         encrypted_input: &EncryptedInput,
@@ -372,7 +287,6 @@ impl FhevmSdk {
         debug!("   User: {}", encrypted_input.user_address);
         debug!("   Handles: {}", encrypted_input.handles.len());
 
-        // Use the existing calldata generation function
         let calldata = crate::blockchain::calldata::verify_proof_req(
             encrypted_input.chain_id,
             encrypted_input.contract_address,
@@ -390,11 +304,8 @@ impl FhevmSdk {
     /// Create an input builder factory for creating encrypted inputs
     pub fn create_input_factory(&mut self) -> Result<()> {
         if self.input_factory.is_none() {
-            // Load public key and CRS from config
-
             self.ensure_keys_loaded()?;
 
-            // Get ACL contract address from config
             let acl_address = self.config.host_contracts.acl.ok_or_else(|| {
                 FhevmError::InvalidParams("ACL contract address is not set".to_string())
             })?;
@@ -411,7 +322,6 @@ impl FhevmSdk {
                 .ok_or_else(|| FhevmError::InvalidParams("CRS not loaded".to_string()))?
                 .clone();
 
-            // Create factory
             self.input_factory = Some(InputBuilderFactory::new(
                 acl_address,
                 self.config.host_chain_id,
@@ -438,59 +348,6 @@ impl FhevmSdk {
     }
 
     /// Create a user decrypt request builder
-    ///
-    /// This builder provides a fluent API for constructing user decrypt requests
-    /// with comprehensive validation and clear error messages.
-    ///
-    /// The builder automatically configures the chain ID from the SDK configuration.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # use alloy::primitives::Address;
-    /// # use std::str::FromStr;
-    /// # use std::path::PathBuf;
-    /// # use gateway_sdk::FhevmSdkBuilder;
-    /// #
-    /// # fn example() -> Result<(), FhevmError> {
-    /// # let sdk = FhevmSdkBuilder::new()
-    /// #     .with_keys_directory(PathBuf::from("./test_keys"))
-    /// #     .with_gateway_chain_id(31337)
-    /// #     .with_host_chain_id(31337)
-    /// #     .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
-    /// #     .with_input_verification_contract("0x1234567890123456789012345678901234567aaa")
-    /// #     .with_acl_contract("0x0987654321098765432109876543210987654321")
-    /// #     .build()?;
-    /// #
-    /// # // Sample data
-    /// # let handles = vec![vec![1u8; 32]]; // Your encrypted handles
-    /// # let contracts = vec![
-    /// #     Address::from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1").unwrap()
-    /// # ];
-    /// # let timestamp = 1640995200u64;
-    /// #
-    /// let calldata = sdk.create_user_decrypt_request_builder()
-    ///     .with_handles_from_bytes(&handles, &contracts)?
-    ///     .with_user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")?
-    ///     .with_signature_from_hex("0x1234567890abc5678...")?
-    ///     .with_public_key_from_hex("0x200000000000...bc6f331")?
-    ///     .with_validity(timestamp, 30)?
-    ///     .build_and_generate_calldata()?;
-    ///
-    /// println!("Generated calldata: {} bytes", calldata.len());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Quick Start Steps
-    ///
-    /// 1. **Add handles**: `.with_handles_from_bytes()` - The encrypted data
-    /// 2. **Set user**: `.with_user_address_from_str()` - Who can decrypt
-    /// 3. **Add signature**: `.with_signature_from_hex()` - EIP-712 signature
-    /// 4. **Add public key**: `.with_public_key_from_hex()` - User's decryption key
-    /// 5. **Set validity**: `.with_validity()` - Time period for permission
-    /// 6. **Build**: `.build_and_generate_calldata()` - Generate final calldata
     pub fn create_user_decrypt_request_builder(&self) -> UserDecryptRequestBuilder {
         UserDecryptRequestBuilder::new().with_contracts_chain_id(self.config.host_chain_id)
     }
@@ -510,38 +367,6 @@ impl FhevmSdk {
     }
 
     /// Builder pattern for creating PublicDecryptRequest instances
-    ///
-    /// This builder provides a fluent API for constructing public decrypt requests
-    /// with comprehensive validation and clear error messages.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use gateway_sdk::{FhevmSdk, FhevmError};
-    /// # use std::path::PathBuf;
-    /// # use gateway_sdk::FhevmSdkBuilder;
-    /// #
-    /// # fn example() -> Result<(), FhevmError> {
-    /// # let sdk = FhevmSdkBuilder::new()
-    /// #     .with_keys_directory(PathBuf::from("./test_keys"))
-    /// #     .with_gateway_chain_id(31337)
-    /// #     .with_host_chain_id(31337)
-    /// #     .with_gateway_contract("decryption", "0x1111111111111111111111111111111111111111")
-    /// #     .with_gateway_contract("input-verification", "0x2222222222222222222222222222222222222222")
-    /// #     .with_host_contract("ACL", "0x3333333333333333333333333333333333333333")
-    /// #     .build()?;
-    /// #
-    /// # // Sample data
-    /// # let handles = vec![vec![1u8; 32], vec![2u8; 32]]; // Your encrypted handles
-    /// #
-    /// let calldata = sdk.create_public_decrypt_request_builder()
-    ///     .with_handles_from_bytes(&handles)?
-    ///     .build_and_generate_calldata()?;
-    ///
-    /// println!("Generated calldata: {} bytes", calldata.len());
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn create_public_decrypt_request_builder(
         &self,
     ) -> decryption::public::PublicDecryptRequestBuilder {
@@ -579,7 +404,10 @@ pub mod logging;
 pub mod signature;
 pub mod utils;
 
-pub use encryption::input::{EncryptedInput, EncryptedInputBuilder, InputBuilderFactory};
+// Re-export core encryption types (these come from fhevm_client_core)
+pub use fhevm_client_core::encryption::input::{
+    EncryptedInput, EncryptedInputBuilder, InputBuilderFactory,
+};
 
 // Simple type definitions
 pub mod types {
@@ -633,7 +461,6 @@ impl FhevmSdkBuilder {
     pub fn with_keys_directory_or_generate<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
 
-        // Check if keys exist, generate if not
         if !path_buf.exists() || !path_buf.join("public_key.bin").exists() {
             info!(
                 "Keys not found at {}, generating new keys...",
@@ -722,12 +549,8 @@ impl FhevmSdkBuilder {
 
     /// Export the current builder state to YAML
     pub fn to_yaml(&self) -> Result<String> {
-        // Convert builder to config
         let config = self.to_config()?;
-
-        // Serialize to YAML
         let yaml = serde_yaml::to_string(&config).map_err(FhevmError::YamlError)?;
-
         Ok(yaml)
     }
 
@@ -740,7 +563,6 @@ impl FhevmSdkBuilder {
 
     /// Convert the builder to a config
     fn to_config(&self) -> Result<FhevmConfig> {
-        // Validate required fields
         let keys_directory = self.keys_directory.clone();
 
         let gateway_chain_id = self
@@ -763,7 +585,6 @@ impl FhevmSdkBuilder {
             ));
         }
 
-        // Create the config
         let config = FhevmConfig {
             keys_directory,
             gateway_chain_id,
@@ -776,7 +597,6 @@ impl FhevmSdkBuilder {
     }
 
     pub fn build(self) -> Result<FhevmSdk> {
-        // Convert to config and create the SDK
         debug!("Building FhevmSdk from builder");
         let config = self.to_config()?;
         let is_keys_directory_set = config.keys_directory.is_some();
@@ -790,7 +610,6 @@ impl FhevmSdkBuilder {
             fhevm.create_input_factory()?;
         }
 
-        // Create and return the SDK
         Ok(fhevm)
     }
 }

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 /// Represents a user decryption request with all necessary data.
 ///
 /// Constructed via [`UserDecryptRequestBuilder`](super::UserDecryptRequestBuilder).
-#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,

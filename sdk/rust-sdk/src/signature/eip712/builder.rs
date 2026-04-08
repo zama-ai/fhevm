@@ -36,13 +36,13 @@ pub trait IntoEthereumAddress {
 
 impl IntoEthereumAddress for &str {
     fn into_address(self) -> Result<Address> {
-        crate::utils::validate_address_from_str(self)
+        Ok(crate::utils::validate_address_from_str(self)?)
     }
 }
 
 impl IntoEthereumAddress for String {
     fn into_address(self) -> Result<Address> {
-        crate::utils::validate_address_from_str(&self)
+        Ok(crate::utils::validate_address_from_str(&self)?)
     }
 }
 

@@ -7,7 +7,6 @@ use tracing::debug;
 /// Public decrypt request structure.
 ///
 /// Constructed via [`PublicDecryptRequestBuilder`].
-#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct PublicDecryptRequest {
     pub ct_handles: Vec<FixedBytes<32>>,
