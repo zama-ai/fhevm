@@ -62,6 +62,38 @@ impl EncryptionType {
         }
     }
 
+    /// Get the canonical FHE type name (e.g. "ebool", "euint64", "eaddress").
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bit1 => "ebool",
+            Self::Bit8 => "euint8",
+            Self::Bit16 => "euint16",
+            Self::Bit32 => "euint32",
+            Self::Bit64 => "euint64",
+            Self::Bit128 => "euint128",
+            Self::Bit160 => "eaddress",
+            Self::Bit256 => "euint256",
+        }
+    }
+
+    /// Parse from a canonical FHE type name.
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "ebool" => Ok(Self::Bit1),
+            "euint8" => Ok(Self::Bit8),
+            "euint16" => Ok(Self::Bit16),
+            "euint32" => Ok(Self::Bit32),
+            "euint64" => Ok(Self::Bit64),
+            "euint128" => Ok(Self::Bit128),
+            "eaddress" => Ok(Self::Bit160),
+            "euint256" => Ok(Self::Bit256),
+            _ => Err(ClientCoreError::InvalidParams(format!(
+                "Unknown FHE type: '{s}'. Valid types: ebool, euint8, euint16, \
+                 euint32, euint64, euint128, eaddress, euint256"
+            ))),
+        }
+    }
+
     /// Get the encryption type from a bit width.
     pub fn from_bit_width(bit_width: usize) -> Result<Self> {
         match bit_width {

@@ -8,6 +8,8 @@ uniffi::setup_scaffolding!();
 mod error;
 
 use error::FhevmError;
+use fhevm_client_core::encryption::primitives::EncryptionType;
+use fhevm_client_core::utils::validate_address_from_str;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -66,7 +68,7 @@ pub struct Eip712Result {
 pub struct DecryptedValue {
     /// 32-byte ciphertext handle.
     pub handle: Vec<u8>,
-    /// Decrypted value as a string.
+    /// Decrypted value as a hex string.
     pub value: String,
     /// FHE type: "ebool", "euint8", etc.
     pub fhe_type: String,
@@ -107,10 +109,7 @@ pub fn create_eip712(
     start_timestamp: u64,
     duration_days: u64,
 ) -> Result<Eip712Result, FhevmError> {
-    let verifying_contract = alloy::primitives::Address::from_str(&config.verifying_contract)
-        .map_err(|e| FhevmError::InvalidInput {
-            reason: format!("Invalid verifying contract address: {e}"),
-        })?;
+    let verifying_contract = validate_address_from_str(&config.verifying_contract)?;
 
     let core_config = fhevm_client_core::signature::eip712::Eip712Config {
         gateway_chain_id: config.gateway_chain_id,
@@ -121,23 +120,21 @@ pub fn create_eip712(
         contracts_chain_id: config.gateway_chain_id,
     };
 
-    let mut builder = fhevm_client_core::signature::eip712::Eip712SignatureBuilder::new(core_config)
-        .with_public_key(&public_key)
-        .with_validity_period(start_timestamp, duration_days);
+    let mut builder =
+        fhevm_client_core::signature::eip712::Eip712SignatureBuilder::new(core_config)
+            .with_public_key(&public_key)
+            .with_validity_period(start_timestamp, duration_days);
 
     for addr in &contract_addresses {
         builder = builder.with_contract(addr.as_str())?;
     }
 
-    // Validate the builder configuration by generating the hash
-    let _hash = builder.generate_hash()?;
-
-    // Build the EIP-712 JSON components for external signing
+    // Domain name must match client-core's eip712 domain ("Decryption")
     let domain = serde_json::json!({
-        "name": "GatewayDecryption",
+        "name": "Decryption",
         "version": "1",
         "chainId": config.gateway_chain_id,
-        "verifyingContract": format!("{verifying_contract}")
+        "verifyingContract": verifying_contract.to_string()
     });
 
     let types = serde_json::json!({
@@ -191,7 +188,6 @@ pub fn encrypt(
     acl_address: String,
     chain_id: u64,
 ) -> Result<EncryptedInput, FhevmError> {
-    // Deserialize key material
     let pk: tfhe::CompactPublicKey = tfhe::safe_serialization::safe_deserialize_conformant(
         public_key.as_slice(),
         1 << 30,
@@ -208,23 +204,10 @@ pub fn encrypt(
             }
         })?;
 
-    let acl_addr =
-        alloy::primitives::Address::from_str(&acl_address).map_err(|e| FhevmError::InvalidInput {
-            reason: format!("Invalid ACL address: {e}"),
-        })?;
+    let acl_addr = validate_address_from_str(&acl_address)?;
+    let contract_addr = validate_address_from_str(&contract_address)?;
+    let user_addr = validate_address_from_str(&user_address)?;
 
-    let contract_addr = alloy::primitives::Address::from_str(&contract_address).map_err(|e| {
-        FhevmError::InvalidInput {
-            reason: format!("Invalid contract address: {e}"),
-        }
-    })?;
-
-    let user_addr =
-        alloy::primitives::Address::from_str(&user_address).map_err(|e| FhevmError::InvalidInput {
-            reason: format!("Invalid user address: {e}"),
-        })?;
-
-    // Build the encrypted input
     let mut builder = fhevm_client_core::EncryptedInputBuilder::new(
         acl_addr,
         Arc::new(pk),
@@ -261,12 +244,8 @@ pub fn build_user_decrypt_calldata(
 ) -> Result<Vec<u8>, FhevmError> {
     let addresses: Vec<alloy::primitives::Address> = contract_addresses
         .iter()
-        .map(|a| {
-            alloy::primitives::Address::from_str(a).map_err(|e| FhevmError::InvalidInput {
-                reason: format!("Invalid contract address '{a}': {e}"),
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|a| Ok(validate_address_from_str(a)?))
+        .collect::<Result<Vec<_>, FhevmError>>()?;
 
     let calldata = fhevm_client_core::decryption::user::UserDecryptRequestBuilder::new()
         .with_handles_from_bytes(&handles, &addresses)?
@@ -296,16 +275,12 @@ pub fn process_user_decrypt_response(
     handle_contract_pairs: Vec<HandleContractPair>,
     signature: String,
 ) -> Result<Vec<DecryptedValue>, FhevmError> {
-    // Build handle-contract pairs for the core builder
     let pairs: Vec<fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair> =
         handle_contract_pairs
             .iter()
             .map(|p| {
                 let handle = alloy::primitives::U256::from_be_slice(&p.handle);
-                let contract = alloy::primitives::Address::from_str(&p.contract_address)
-                    .map_err(|e| FhevmError::InvalidInput {
-                        reason: format!("Invalid contract address '{}': {e}", p.contract_address),
-                    })?;
+                let contract = validate_address_from_str(&p.contract_address)?;
                 Ok(
                     fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair {
                         ctHandle: handle.into(),
@@ -315,7 +290,6 @@ pub fn process_user_decrypt_response(
             })
             .collect::<Result<Vec<_>, FhevmError>>()?;
 
-    // Delegate to client-core's response builder
     let results = fhevm_client_core::decryption::user::process_user_decryption_response()
         .with_kms_signers(kms_signer_addresses)
         .with_user_address(&user_address)
@@ -328,22 +302,13 @@ pub fn process_user_decrypt_response(
         .with_json_response(&response_json)
         .process()?;
 
-    // Convert TypedPlaintext results to our UniFFI-friendly DecryptedValue
     let decrypted: Vec<DecryptedValue> = results
         .iter()
         .enumerate()
         .map(|(i, pt)| {
-            let fhe_type = match pt.fhe_type {
-                0 => "ebool",
-                2 => "euint8",
-                3 => "euint16",
-                4 => "euint32",
-                5 => "euint64",
-                6 => "euint128",
-                7 => "eaddress",
-                8 => "euint256",
-                _ => "unknown",
-            };
+            let fhe_type = EncryptionType::from_discriminant(pt.fhe_type as u8)
+                .map(|t| t.as_str())
+                .unwrap_or("unknown");
             DecryptedValue {
                 handle: handle_contract_pairs
                     .get(i)
@@ -365,67 +330,64 @@ fn add_typed_value(
     builder: &mut fhevm_client_core::EncryptedInputBuilder,
     tv: &TypedValue,
 ) -> Result<(), FhevmError> {
-    match tv.fhe_type.as_str() {
-        "ebool" => {
+    // Validate fhe_type string via EncryptionType (centralized mapping)
+    let enc_type = EncryptionType::from_str(&tv.fhe_type)?;
+
+    match enc_type {
+        EncryptionType::Bit1 => {
             let v: bool = match tv.value.as_str() {
                 "true" | "1" => true,
                 "false" | "0" => false,
                 other => {
                     return Err(FhevmError::InvalidInput {
-                        reason: format!("Invalid boolean value: '{other}'. Use 'true'/'false' or '1'/'0'."),
+                        reason: format!(
+                            "Invalid boolean value: '{other}'. Use 'true'/'false' or '1'/'0'."
+                        ),
                     });
                 }
             };
             builder.add_bool(v)?;
         }
-        "euint8" => {
+        EncryptionType::Bit8 => {
             let v: u8 = tv.value.parse().map_err(|e| FhevmError::InvalidInput {
                 reason: format!("Invalid u8 value '{}': {e}", tv.value),
             })?;
             builder.add_u8(v)?;
         }
-        "euint16" => {
+        EncryptionType::Bit16 => {
             let v: u16 = tv.value.parse().map_err(|e| FhevmError::InvalidInput {
                 reason: format!("Invalid u16 value '{}': {e}", tv.value),
             })?;
             builder.add_u16(v)?;
         }
-        "euint32" => {
+        EncryptionType::Bit32 => {
             let v: u32 = tv.value.parse().map_err(|e| FhevmError::InvalidInput {
                 reason: format!("Invalid u32 value '{}': {e}", tv.value),
             })?;
             builder.add_u32(v)?;
         }
-        "euint64" => {
+        EncryptionType::Bit64 => {
             let v: u64 = tv.value.parse().map_err(|e| FhevmError::InvalidInput {
                 reason: format!("Invalid u64 value '{}': {e}", tv.value),
             })?;
             builder.add_u64(v)?;
         }
-        "euint128" => {
+        EncryptionType::Bit128 => {
             let v: u128 = tv.value.parse().map_err(|e| FhevmError::InvalidInput {
                 reason: format!("Invalid u128 value '{}': {e}", tv.value),
             })?;
             builder.add_u128(v)?;
         }
-        "eaddress" => {
+        EncryptionType::Bit160 => {
             builder.add_address(&tv.value)?;
         }
-        "euint256" => {
+        EncryptionType::Bit256 => {
             let u256 = alloy::primitives::U256::from_str(&tv.value).map_err(|e| {
                 FhevmError::InvalidInput {
                     reason: format!("Invalid u256 value '{}': {e}", tv.value),
                 }
             })?;
             builder.add_u256(u256)?;
-        }
-        other => {
-            return Err(FhevmError::InvalidInput {
-                reason: format!(
-                    "Unknown FHE type: '{other}'. Valid types: ebool, euint8, euint16, \
-                     euint32, euint64, euint128, eaddress, euint256"
-                ),
-            });
         }
     }
     Ok(())
