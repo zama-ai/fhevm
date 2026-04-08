@@ -7,9 +7,11 @@ use connector_utils::{
         db::{EventType, ParamsTypeDb, SnsCiphertextMaterialDbItem},
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     PgExecutor, Pool, Postgres,
@@ -149,12 +151,13 @@ async fn publish_prep_keygen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(\
-            prep_keygen_id, epoch_id, params_type, tx_hash, created_at, otlp_context\
+            prep_keygen_id, epoch_id, params_type, extra_data, tx_hash, created_at, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         request.epochId.as_le_slice(),
         params_type as ParamsTypeDb,
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
@@ -172,10 +175,11 @@ async fn publish_keygen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, tx_hash, created_at, otlp_context) \
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         request.keyId.as_le_slice(),
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
@@ -195,12 +199,13 @@ async fn publish_crsgen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
         "INSERT INTO crsgen_requests(\
-            crs_id, max_bit_length, params_type, tx_hash, created_at, otlp_context\
+            crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.crsId.as_le_slice(),
         request.maxBitLength.as_le_slice(),
         params_type as ParamsTypeDb,
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,

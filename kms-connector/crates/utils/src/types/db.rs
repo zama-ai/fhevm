@@ -4,14 +4,12 @@ use alloy::{
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
-    },
-    kms_generation::{
-        IKMSGeneration::KeyDigest,
-        KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
-    },
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::{
+    IKMSGeneration::KeyDigest,
+    KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
