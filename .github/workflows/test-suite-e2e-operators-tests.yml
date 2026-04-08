@@ -159,6 +159,8 @@ jobs:
       - name: Verify tfhe-worker args
         run: |
           echo "BUILD=$BUILD"
+          echo "Inspect tfhe-worker thread flags below and evaluate them against the bench runner capacity."
+          echo "The goal is to tune --coprocessor-fhe-threads and --tokio-threads for this machine, not to assume the current values are optimal."
           for container in coprocessor-tfhe-worker coprocessor1-tfhe-worker; do
             if docker inspect "$container" >/dev/null 2>&1; then
               echo "::group::${container} command"
