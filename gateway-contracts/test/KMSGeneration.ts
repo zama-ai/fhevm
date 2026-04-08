@@ -4,7 +4,7 @@ import { Wallet } from "ethers";
 import hre from "hardhat";
 
 import { KMSGeneration, KMSGeneration__factory } from "../typechain-types";
-import { getKeyId, getCrsId, loadTestVariablesFixture } from "./utils";
+import { getCrsId, getKeyId, loadTestVariablesFixture } from "./utils";
 
 describe("KMSGeneration", function () {
   describe("Deployment", function () {

@@ -2,21 +2,14 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import {
-  CiphertextCommitsMock,
-  DecryptionMock,
-  GatewayConfigMock,
-  InputVerificationMock,
-  KMSGenerationMock,
-} from "../../typechain-types";
-import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getKeyReshareId, getPrepKeygenId, toValues } from "../utils";
+import { CiphertextCommitsMock, DecryptionMock, GatewayConfigMock, InputVerificationMock } from "../../typechain-types";
+import { toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
   let ciphertextCommitsMock: CiphertextCommitsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
-  let kmsGenerationMock: KMSGenerationMock;
   let inputVerificationMock: InputVerificationMock;
 
   // Default values
@@ -78,13 +71,6 @@ describe("Mock contracts", function () {
     delegateAddress: DefaultAddress,
   };
 
-  const DefaultParamsType = ParamsTypeEnum.Default;
-
-  const DefaultKmsDigest = {
-    keyType: KeyTypeEnum.Server,
-    digest: DefaultBytes,
-  };
-
   async function loadMockContractsFixture() {
     const ciphertextCommitsFactory = await ethers.getContractFactory("CiphertextCommitsMock");
     const ciphertextCommitsMock = await ciphertextCommitsFactory.deploy();
@@ -98,14 +84,10 @@ describe("Mock contracts", function () {
     const inputVerificationFactory = await ethers.getContractFactory("InputVerificationMock");
     const inputVerificationMock = await inputVerificationFactory.deploy();
 
-    const kmsGenerationFactory = await ethers.getContractFactory("KMSGenerationMock");
-    const kmsGenerationMock = await kmsGenerationFactory.deploy();
-
     return {
       ciphertextCommitsMock,
       decryptionMock,
       gatewayConfigMock,
-      kmsGenerationMock,
       inputVerificationMock,
     };
   }
@@ -116,7 +98,6 @@ describe("Mock contracts", function () {
     ciphertextCommitsMock = fixture.ciphertextCommitsMock;
     decryptionMock = fixture.decryptionMock;
     gatewayConfigMock = fixture.gatewayConfigMock;
-    kmsGenerationMock = fixture.kmsGenerationMock;
     inputVerificationMock = fixture.inputVerificationMock;
   });
 
@@ -331,64 +312,6 @@ describe("Mock contracts", function () {
       await expect(inputVerificationMock.rejectProofResponse(zkProofCounterId, DefaultBytes))
         .to.emit(inputVerificationMock, "RejectProofResponse")
         .withArgs(zkProofCounterId);
-    });
-  });
-
-  describe("KMSGenerationMock", async function () {
-    const prepKeygenId = getPrepKeygenId(1);
-    const keyId = getKeyId(1);
-    const crsgenId = getCrsId(1);
-    const epochId = 0;
-
-    it("Should emit PrepKeygenRequest event on keygen request", async function () {
-      await expect(kmsGenerationMock.keygen(DefaultParamsType))
-        .to.emit(kmsGenerationMock, "PrepKeygenRequest")
-        .withArgs(prepKeygenId, epochId, DefaultParamsType);
-    });
-
-    it("Should emit KeygenRequest and KeygenResponse events on preprocessing keygen response", async function () {
-      await expect(kmsGenerationMock.prepKeygenResponse(prepKeygenId, DefaultBytes))
-        .to.emit(kmsGenerationMock, "KeygenRequest")
-        .withArgs(prepKeygenId, keyId)
-        .to.emit(kmsGenerationMock, "PrepKeygenResponse")
-        .withArgs(prepKeygenId, DefaultBytes, DefaultAddress);
-    });
-
-    it("Should emit ActivateKey and KeygenResponse events on keygen response", async function () {
-      await expect(kmsGenerationMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes))
-        .to.emit(kmsGenerationMock, "ActivateKey")
-        .withArgs(keyId, [DefaultString], toValues([DefaultKmsDigest]))
-        .to.emit(kmsGenerationMock, "KeygenResponse")
-        .withArgs(keyId, toValues([DefaultKmsDigest]), DefaultBytes, DefaultAddress);
-    });
-
-    it("Should emit CrsgenRequest event on crsgen request", async function () {
-      await expect(kmsGenerationMock.crsgenRequest(DefaultUint256, DefaultParamsType))
-        .to.emit(kmsGenerationMock, "CrsgenRequest")
-        .withArgs(crsgenId, DefaultUint256, DefaultParamsType);
-    });
-
-    it("Should emit ActivateCrs and CrsgenResponse events on crsgen request", async function () {
-      await expect(kmsGenerationMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
-        .to.emit(kmsGenerationMock, "ActivateCrs")
-        .withArgs(crsgenId, [DefaultString], DefaultBytes)
-        .to.emit(kmsGenerationMock, "CrsgenResponse")
-        .withArgs(crsgenId, DefaultBytes, DefaultBytes, DefaultAddress);
-    });
-
-    it("Should emit PRSSInit event on prssInit call", async function () {
-      await expect(kmsGenerationMock.prssInit()).to.emit(kmsGenerationMock, "PRSSInit");
-    });
-
-    it("Should emit KeyReshareSameSet event on keyReshareSameSet call", async function () {
-      // Define incremented prepKeygenId since the mock contract increments
-      // this value internally from previous test cases.
-      const prepKeygenId = getPrepKeygenId(2);
-      const keyReshareId = getKeyReshareId(1);
-
-      await expect(kmsGenerationMock.keyReshareSameSet(keyId))
-        .to.emit(kmsGenerationMock, "KeyReshareSameSet")
-        .withArgs(prepKeygenId, keyId, keyReshareId, DefaultParamsType);
     });
   });
 });
