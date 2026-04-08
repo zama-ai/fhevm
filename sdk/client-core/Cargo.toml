@@ -1,0 +1,23 @@
+[package]
+name = "fhevm-client-core"
+version = "0.1.0"
+edition = "2024"
+description = "Platform-agnostic FHE client operations for FHEVM — no tokio, no filesystem, no gRPC"
+
+[lib]
+name = "fhevm_client_core"
+path = "src/lib.rs"
+
+[dependencies]
+fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
+tfhe = { version = "1.5.1", features = ["boolean", "integer", "zk-pok"] }
+
+alloy = { version = "1.0", default-features = false, features = [
+    "essentials",
+    "std",
+] }
+hex = "0.4.3"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+tracing = "0.1.41"
