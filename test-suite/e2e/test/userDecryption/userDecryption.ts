@@ -28,6 +28,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.ebool',
     );
     expect(decryptedValue).to.equal(true);
   });
@@ -42,6 +43,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint8',
     );
     expect(decryptedValue).to.equal(42n);
   });
@@ -56,6 +58,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint16',
     );
     expect(decryptedValue).to.equal(16n);
   });
@@ -70,6 +73,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint32',
     );
     expect(decryptedValue).to.equal(32n);
   });
@@ -84,6 +88,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint64',
     );
     expect(decryptedValue).to.equal(18446744073709551600n);
   });
@@ -98,6 +103,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint128',
     );
     expect(decryptedValue).to.equal(145275933516363203950142179850024740765n);
   });
@@ -112,6 +118,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.eaddress',
     );
     expect(decryptedValue).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
   });
@@ -126,6 +133,7 @@ describe('User decryption', function () {
       this.signers.alice,
       privateKey,
       publicKey,
+      'userDecrypt.alice.euint256',
     );
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
   });

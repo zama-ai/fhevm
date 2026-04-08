@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
+import { delegatedUserDecryptSingleHandle, encryptAndLog, waitForBlock } from '../utils';
 
 const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 
@@ -34,7 +34,7 @@ describe('Delegated user decryption', function () {
     const transferAmount = 500000n;
     const input = this.instances.alice.createEncryptedInput(this.tokenAddress, this.signers.alice.address);
     input.add64(transferAmount);
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(input, 'delegatedUserDecrypt.bootstrap.input', this.tokenAddress);
 
     const transferTx = await this.token
       .connect(this.signers.alice)
@@ -77,9 +77,9 @@ describe('Delegated user decryption', function () {
       this.signers.bob,
       privateKey,
       publicKey,
+      'delegatedUserDecrypt.self.bob',
     );
 
-    // Verify the decrypted balance matches what was transferred.
     expect(decryptedBalance).to.equal(500000n);
   });
 
@@ -114,9 +114,9 @@ describe('Delegated user decryption', function () {
       this.signers.carol,
       privateKey,
       publicKey,
+      'delegatedUserDecrypt.thirdParty.carol',
     );
 
-    // Verify the decrypted balance matches what was transferred.
     expect(decryptedBalance).to.equal(500000n);
   });
 
@@ -148,6 +148,7 @@ describe('Delegated user decryption', function () {
       this.signers.bob,
       skBefore,
       pkBefore,
+      'delegatedUserDecrypt.transfer.before.bob',
     );
 
     // Bob proposes a transaction from the smartWallet to transfer tokens to Carol.
@@ -155,7 +156,7 @@ describe('Delegated user decryption', function () {
     const transferAmount = 100000n;
     const input = this.instances.bob.createEncryptedInput(this.tokenAddress, this.smartWalletAddress);
     input.add64(transferAmount);
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(input, 'delegatedUserDecrypt.transfer.input', this.tokenAddress);
 
     // Encode the transfer function call with full signature to avoid ambiguity.
     const transferData = this.token.interface.encodeFunctionData(
@@ -194,6 +195,7 @@ describe('Delegated user decryption', function () {
       this.signers.bob,
       skAfter,
       pkAfter,
+      'delegatedUserDecrypt.transfer.after.bob',
     );
 
     // The smartWallet balance should have decreased by the transfer amount.

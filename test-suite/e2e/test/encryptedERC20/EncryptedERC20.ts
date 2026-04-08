@@ -3,7 +3,7 @@ import hre from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { encryptAndLog, userDecryptSingleHandle } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20', function () {
@@ -47,6 +47,7 @@ describe('EncryptedERC20', function () {
       this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
+      'encryptedERC20.mint.alice',
     );
 
     expect(balanceAlice).to.equal(1000n);
@@ -63,7 +64,7 @@ describe('EncryptedERC20', function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
 
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(input, 'encryptedERC20.transfer.input', this.contractAddress);
 
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
@@ -83,6 +84,7 @@ describe('EncryptedERC20', function () {
       this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
+      'encryptedERC20.transfer.alice',
     );
 
     expect(balanceAlice).to.equal(10000 - 1337);
@@ -98,6 +100,7 @@ describe('EncryptedERC20', function () {
       this.signers.bob,
       privateKeyBob,
       publicKeyBob,
+      'encryptedERC20.transfer.bob',
     );
 
     expect(balanceBob).to.equal(1337);
@@ -109,7 +112,11 @@ describe('EncryptedERC20', function () {
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(
+      input,
+      'encryptedERC20.transferRejected.input',
+      this.contractAddress,
+    );
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -127,6 +134,7 @@ describe('EncryptedERC20', function () {
       this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
+      'encryptedERC20.transferRejected.alice',
     );
 
     expect(balanceAlice).to.equal(1000n);
@@ -142,6 +150,7 @@ describe('EncryptedERC20', function () {
       this.signers.bob,
       privateKeyBob,
       publicKeyBob,
+      'encryptedERC20.transferRejected.bob',
     );
 
     expect(balanceBob).to.equal(0);
@@ -153,7 +162,11 @@ describe('EncryptedERC20', function () {
 
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
-    const encryptedAllowanceAmount = await inputAlice.encrypt();
+    const encryptedAllowanceAmount = await encryptAndLog(
+      inputAlice,
+      'encryptedERC20.transferFrom.approveInput',
+      this.contractAddress,
+    );
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedAllowanceAmount.handles[0],
@@ -164,7 +177,11 @@ describe('EncryptedERC20', function () {
     const bobErc20 = this.erc20.connect(this.signers.bob);
     const inputBob1 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob1.add64(1338); // above allowance so next tx should actually not send any token
-    const encryptedTransferAmount = await inputBob1.encrypt();
+    const encryptedTransferAmount = await encryptAndLog(
+      inputBob1,
+      'encryptedERC20.transferFrom.firstTransferInput',
+      this.contractAddress,
+    );
     const tx2 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -183,6 +200,7 @@ describe('EncryptedERC20', function () {
       this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
+      'encryptedERC20.transferFrom.aliceBefore',
     );
     expect(balanceAlice).to.equal(10000); // check that transfer did not happen, as expected
 
@@ -196,12 +214,17 @@ describe('EncryptedERC20', function () {
       this.signers.bob,
       privateKeyBob,
       publicKeyBob,
+      'encryptedERC20.transferFrom.bobBefore',
     );
     expect(balanceBob).to.equal(0); // check that transfer did not happen, as expected
 
     const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
     inputBob2.add64(1337); // below allowance so next tx should send token
-    const encryptedTransferAmount2 = await inputBob2.encrypt();
+    const encryptedTransferAmount2 = await encryptAndLog(
+      inputBob2,
+      'encryptedERC20.transferFrom.secondTransferInput',
+      this.contractAddress,
+    );
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -219,6 +242,7 @@ describe('EncryptedERC20', function () {
       this.signers.alice,
       privateKeyAlice,
       publicKeyAlice,
+      'encryptedERC20.transferFrom.aliceAfter',
     );
     expect(balanceAlice2).to.equal(10000 - 1337); // check that transfer did happen this time
 
@@ -231,6 +255,7 @@ describe('EncryptedERC20', function () {
       this.signers.bob,
       privateKeyBob,
       publicKeyBob,
+      'encryptedERC20.transferFrom.bobAfter',
     );
     expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });

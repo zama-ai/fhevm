@@ -3,6 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { publicDecryptAndLog } from '../utils';
 
 describe('HTTPPublicDecrypt', function () {
   before(async function () {
@@ -19,7 +20,12 @@ describe('HTTPPublicDecrypt', function () {
 
   it('test HTTPPublicDecrypt ebool', async function () {
     const handleBool = await this.contract.xBool();
-    const res = await this.instances.alice.publicDecrypt([handleBool]);
+    const res = await publicDecryptAndLog(
+      this.instances.alice,
+      [handleBool],
+      'httpPublicDecrypt.ebool',
+      this.contractAddress,
+    );
     const expectedRes = {
       [handleBool]: true,
     };
@@ -30,7 +36,12 @@ describe('HTTPPublicDecrypt', function () {
     const handleBool = await this.contract.xBool();
     const handle32 = await this.contract.xUint32();
     const handleAddress = await this.contract.xAddress();
-    const res = await this.instances.alice.publicDecrypt([handleBool, handle32, handleAddress]);
+    const res = await publicDecryptAndLog(
+      this.instances.alice,
+      [handleBool, handle32, handleAddress],
+      'httpPublicDecrypt.mixed',
+      this.contractAddress,
+    );
     const expectedRes = {
       [handleBool]: true,
       [handle32]: 242n,

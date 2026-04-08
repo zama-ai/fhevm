@@ -130,7 +130,9 @@ export const userDecryptSingleHandle = async (
   signer: Signer,
   privateKey: string,
   publicKey: string,
+  logLabel = 'userDecrypt',
 ): Promise<bigint | boolean | string> => {
+  const signerAddress = await signer.getAddress();
   const HandleContractPairs = [
     {
       handle: handle,
@@ -156,7 +158,13 @@ export const userDecryptSingleHandle = async (
     eip712.message,
   );
 
-  const signerAddress = await signer.getAddress();
+  const onProgress = makeOnProgressLogger(logLabel, {
+    user: signerAddress,
+    contract: contractAddress,
+    handle: formatHandleValue(handle),
+    publicKey: formatHexValue(publicKey),
+  });
+
   const result = await instance.userDecrypt(
     HandleContractPairs,
     privateKey,
@@ -166,7 +174,7 @@ export const userDecryptSingleHandle = async (
     signerAddress,
     startTimeStamp,
     durationDays,
-    extraData,
+    { onProgress },
   );
 
   const decryptedValue = result[handle];
@@ -182,6 +190,7 @@ export const delegatedUserDecryptSingleHandle = async (
   signer: Signer,
   delegatePrivateKey: string,
   delegatePublicKey: string,
+  logLabel = 'delegatedUserDecrypt',
 ): Promise<bigint | boolean | string> => {
   const handleContractPairs = [
     {
@@ -215,6 +224,14 @@ export const delegatedUserDecryptSingleHandle = async (
     eip712.message,
   );
 
+  const onProgress = makeOnProgressLogger(logLabel, {
+    delegator: delegatorAddress,
+    delegatee: delegateAddress,
+    contract: contractAddress,
+    handle: formatHandleValue(handle),
+    publicKey: formatHexValue(delegatePublicKey),
+  });
+
   const result = await instance.delegatedUserDecrypt(
     handleContractPairs,
     delegatePrivateKey,
@@ -225,10 +242,70 @@ export const delegatedUserDecryptSingleHandle = async (
     delegateAddress,
     startTimeStamp,
     durationDays,
-    extraData,
+    { onProgress },
   );
 
   return result[handle];
+};
+
+const formatHandleValue = (value: string | Uint8Array): string => {
+  if (typeof value === 'string') return value;
+  return `0x${Buffer.from(value).toString('hex')}`;
+};
+
+const formatHexValue = (value: string): string => {
+  return value.startsWith('0x') ? value : `0x${value}`;
+};
+
+const logRelayerFields = (label: string, fields: Record<string, string>) => {
+  const formattedFields = Object.entries(fields)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+  console.log(`[relayer] ${label} ${formattedFields}`);
+};
+
+const makeOnProgressLogger = (label: string, extraFields: Record<string, string>) => {
+  return (args: { type: string; jobId?: string; requestId?: string }) => {
+    if (args.type === 'succeeded') {
+      logRelayerFields(label, {
+        ...extraFields,
+        ...(args.jobId ? { jobId: args.jobId } : {}),
+        ...(args.requestId ? { requestId: args.requestId } : {}),
+      });
+    }
+  };
+};
+
+export const encryptAndLog = async (
+  input: { encrypt: (options?: any) => Promise<{ handles: Array<string | Uint8Array>; inputProof: Uint8Array | string }> },
+  label: string,
+  contractAddress: string,
+) => {
+  const onProgress = (args: any) => {
+    if (args.type === 'succeeded' && args.result?.handles) {
+      logRelayerFields(label, {
+        contract: contractAddress,
+        handles: args.result.handles.map((h: string | Uint8Array) => formatHandleValue(h)).join(','),
+        ...(args.jobId ? { jobId: args.jobId } : {}),
+        ...(args.requestId ? { requestId: args.requestId } : {}),
+      });
+    }
+  };
+  const encrypted = await input.encrypt({ onProgress });
+  return encrypted;
+};
+
+export const publicDecryptAndLog = async (
+  instance: { publicDecrypt: (handles: string[], options?: any) => Promise<any> },
+  handles: string[],
+  label: string,
+  contractAddress: string,
+) => {
+  const onProgress = makeOnProgressLogger(label, {
+    contract: contractAddress,
+    handles: handles.map((handle) => formatHandleValue(handle)).join(','),
+  });
+  return instance.publicDecrypt(handles, { onProgress });
 };
 
 const abi = [
