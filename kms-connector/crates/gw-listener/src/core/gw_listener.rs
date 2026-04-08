@@ -59,7 +59,7 @@ impl EventListener<DefaultProvider, DefaultProvider> {
     pub async fn from_config(
         config: Config,
         cancel_token: CancellationToken,
-    ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
+    ) -> anyhow::Result<(Self, State<DefaultProvider, DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let gateway_provider =
             connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
@@ -69,6 +69,7 @@ impl EventListener<DefaultProvider, DefaultProvider> {
         let state = State::new(
             db_pool.clone(),
             gateway_provider.clone(),
+            ethereum_provider.clone(),
             config.healthcheck_timeout,
         );
 
