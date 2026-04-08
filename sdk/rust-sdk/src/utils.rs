@@ -148,34 +148,8 @@ pub fn load_fhe_keyset(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::Address;
 
-    #[test]
-    fn test_chain_id_to_bytes_different_sizes() {
-        let bytes = chain_id_to_bytes(1);
-        assert_eq!(
-            hex::encode(bytes),
-            "0000000000000000000000000000000000000000000000000000000000000001"
-        );
-
-        let bytes = chain_id_to_bytes(42161);
-        assert_eq!(
-            hex::encode(bytes),
-            "000000000000000000000000000000000000000000000000000000000000a4b1"
-        );
-
-        let bytes = chain_id_to_bytes(4294967295);
-        assert_eq!(
-            hex::encode(bytes),
-            "00000000000000000000000000000000000000000000000000000000ffffffff"
-        );
-
-        let bytes = chain_id_to_bytes(u64::MAX);
-        assert_eq!(
-            hex::encode(bytes),
-            "000000000000000000000000000000000000000000000000ffffffffffffffff"
-        );
-    }
+    // Note: test_chain_id_to_bytes_different_sizes lives in client-core
 
     #[test]
     fn test_chain_id_in_auxiliary_data() {
