@@ -23,7 +23,6 @@ region = "eu-west-1"
 s3_endpoint = "http://minio:9000"
 
 [public_vault]
-storage_cache_size = 1000
 
 [public_vault.storage.s3]
 bucket = "kms-public"
@@ -39,4 +38,4 @@ user_decrypt = 1
 crsgen = 100
 preproc = 25000
 keygen = 1000
-reshare = 25
+new_epoch = 1
