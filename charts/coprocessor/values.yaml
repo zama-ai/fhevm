@@ -162,12 +162,6 @@ dbMigration:
 # -----------------------------------------------------------------------------
 # Processes blockchain events from the host chain via WebSocket
 hostListener:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -184,17 +178,16 @@ hostListener:
 
   # Command line arguments for the host listener.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
     initialBlockTime: 12        # switches to real block time when data is available
     reorgMaximumDurationInBlocks: 50
-    # New in v0.10
-    serviceName: host-listener
     catchupFinalizationInBlocks: 20  # continuous catchup will wait for block "finalization"
 
   # Additional args appended after all template-injected and structured args.
@@ -272,12 +265,6 @@ hostListener:
 # -----------------------------------------------------------------------------
 # Processes blockchain events from the host chain via HTTP polling
 hostListenerPoller:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -294,14 +281,14 @@ hostListenerPoller:
 
   # Command line arguments for the host listener poller.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-poller-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
-    serviceName: host-listener-poller
     finalityLag: 3
     batchSize: 100              # maximum number of blocks to process per iteration
     pollIntervalMs: 6000        # sleep between iterations (half block time ~6s for Ethereum)
@@ -379,12 +366,6 @@ hostListenerPoller:
 # -----------------------------------------------------------------------------
 # Host listener variant that runs only the catchup loop without real-time subscription.
 hostListenerCatchupOnly:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -402,9 +383,10 @@ hostListenerCatchupOnly:
   # Command line arguments for the host listener catchup only mode.
   # NOTE: onlyCatchupLoop requires endAtBlock to be set.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-catchup-only-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
@@ -412,7 +394,6 @@ hostListenerCatchupOnly:
     initialBlockTime: 12
     dependenceCacheSize: 128
     reorgMaximumDurationInBlocks: 50
-    serviceName: host-listener-catchup-only
     catchupFinalizationInBlocks: 20
     # Catchup-only specific parameters
     onlyCatchupLoop: true       # run only the catchup loop, not real-time subscription
