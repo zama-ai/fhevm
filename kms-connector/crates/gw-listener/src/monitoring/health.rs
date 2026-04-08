@@ -9,30 +9,46 @@ use std::time::Duration;
 
 #[derive(Clone)]
 /// The struct used to monitor the state of the `GatewayListener`.
-pub struct State<P> {
+pub struct State<GP, EP> {
     db_pool: Pool<Postgres>,
-    provider: P,
-    // TODO: GW + Ethereum?
+    gateway_provider: GP,
+    ethereum_provider: EP,
     healthcheck_timeout: Duration,
 }
 
-impl<P: Provider> State<P> {
-    pub fn new(db_pool: Pool<Postgres>, provider: P, healthcheck_timeout: Duration) -> Self {
+impl<GP: Provider, EP: Provider> State<GP, EP> {
+    pub fn new(
+        db_pool: Pool<Postgres>,
+        gateway_provider: GP,
+        ethereum_provider: EP,
+        healthcheck_timeout: Duration,
+    ) -> Self {
         Self {
             db_pool,
-            provider,
+            gateway_provider,
+            ethereum_provider,
             healthcheck_timeout,
         }
     }
 }
 
-impl<P: Provider> Healthcheck for State<P> {
+impl<GP: Provider, EP: Provider> Healthcheck for State<GP, EP> {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let mut errors = vec![];
         let database_connected =
             database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected =
-            rpc_node_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
+        let gateway_connected = rpc_node_healthcheck(
+            &self.gateway_provider,
+            self.healthcheck_timeout,
+            &mut errors,
+        )
+        .await;
+        let ethereum_connected = rpc_node_healthcheck(
+            &self.ethereum_provider,
+            self.healthcheck_timeout,
+            &mut errors,
+        )
+        .await;
 
         let (status_code, healthy) = if errors.is_empty() {
             (StatusCode::OK, true)
@@ -44,6 +60,7 @@ impl<P: Provider> Healthcheck for State<P> {
             healthy,
             database_connected,
             gateway_connected,
+            ethereum_connected,
             details: errors.join("; "),
         };
 
@@ -64,6 +81,8 @@ pub struct HealthStatus {
     pub database_connected: bool,
     /// Gateway provider connection status.
     pub gateway_connected: bool,
+    /// Ethereum provider connection status.
+    pub ethereum_connected: bool,
     /// Details about any issues encountered during healthcheck.
     pub details: String,
 }
