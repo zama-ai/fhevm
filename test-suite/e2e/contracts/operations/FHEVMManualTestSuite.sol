@@ -263,4 +263,50 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         resEuint64 = FHE.rotr(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof));
         FHE.makePubliclyDecryptable(resEuint64);
     }
+
+    function test_sum_euint8(
+        externalEuint8 a,
+        externalEuint8 b,
+        externalEuint8 c,
+        bytes calldata inputProof
+    ) external {
+        euint8[] memory values = new euint8[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        resEuint8 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint8);
+    }
+
+    function test_sum_euint16(externalEuint16 a, externalEuint16 b, bytes calldata inputProof) external {
+        euint16[] memory values = new euint16[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        resEuint16 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint16);
+    }
+
+    function test_sum_euint32(externalEuint32 a, externalEuint32 b, bytes calldata inputProof) external {
+        euint32[] memory values = new euint32[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        resEuint32 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint32);
+    }
+
+    function test_sum_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) external {
+        euint64[] memory values = new euint64[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        resEuint64 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_sum_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) external {
+        euint128[] memory values = new euint128[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        resEuint128 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint128);
+    }
 }

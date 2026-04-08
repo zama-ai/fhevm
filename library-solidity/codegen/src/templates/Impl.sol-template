@@ -88,6 +88,13 @@ interface IFHEVMExecutor {
     function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
 
     /**
+     * @notice          Computes FHESum operation over an array of ciphertexts.
+     * @param values    Array of ciphertext handles; all must be the same FheType.
+     * @return result   Result handle of the same FheType as the inputs.
+     */
+    function fheSum(bytes32[] calldata values) external returns (bytes32 result);
+
+    /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
      * @return inputVerifierAddress Address of the InputVerifier.
      */
@@ -311,6 +318,11 @@ library Impl {
     function randBounded(uint256 upperBound, FheType randType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).fheRandBounded(upperBound, randType);
+    }
+
+    function sum(bytes32[] memory values) internal returns (bytes32 result) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        result = IFHEVMExecutor($.CoprocessorAddress).fheSum(values);
     }
 
     /**

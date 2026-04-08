@@ -1480,6 +1480,65 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * @notice Check the homomorphic complexity units limit for FheSum.
+     * @param resultType Result type.
+     * @param values Input ciphertext handles.
+     * @param result Result handle.
+     * @param caller Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheSum(
+        FheType resultType,
+        bytes32[] calldata values,
+        bytes32 result,
+        address caller
+    ) external virtual {
+        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        uint256 n = values.length;
+        uint256 opHCU;
+        if (resultType == FheType.Uint8) {
+            if (n <= 10) opHCU = 90900;
+            else if (n <= 30) opHCU = 127000;
+            else if (n <= 60) opHCU = 148000;
+            else opHCU = 159000;
+        } else if (resultType == FheType.Uint16) {
+            if (n <= 10) opHCU = 95000;
+            else if (n <= 30) opHCU = 136000;
+            else if (n <= 60) opHCU = 162000;
+            else opHCU = 184000;
+        } else if (resultType == FheType.Uint32) {
+            if (n <= 10) opHCU = 116000;
+            else if (n <= 30) opHCU = 164000;
+            else if (n <= 60) opHCU = 205000;
+            else opHCU = 281000;
+        } else if (resultType == FheType.Uint64) {
+            if (n <= 10) opHCU = 139000;
+            else if (n <= 30) opHCU = 216000;
+            else opHCU = 306000;
+        } else if (resultType == FheType.Uint128) {
+            if (n <= 10) opHCU = 219000;
+            else if (n <= 30) opHCU = 355000;
+            else opHCU = 552000;
+        } else {
+            revert UnsupportedOperation();
+        }
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        uint256 maxInputDepth = 0;
+        for (uint256 i = 0; i < values.length; i++) {
+            uint256 inputDepth = _getHCUForHandle(values[i]);
+            if (inputDepth > maxInputDepth) {
+                maxInputDepth = inputDepth;
+            }
+        }
+
+        uint256 totalHCU = opHCU + maxInputDepth;
+        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+        _setHCUForHandle(result, totalHCU);
+    }
+
+    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */

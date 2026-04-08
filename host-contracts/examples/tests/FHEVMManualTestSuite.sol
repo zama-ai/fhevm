@@ -210,4 +210,23 @@ contract FHEVMManualTestSuite {
     function test_ebool_xor_scalarR(bool a, bool b) public {
         resEbool = FHE.xor(FHE.asEbool(a), b);
     }
+
+    function test_sum_euint8(externalEuint8 a, externalEuint8 b, externalEuint8 c, bytes calldata inputProof) public {
+        euint8[] memory values = new euint8[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
+
+    function test_sum_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64[] memory values = new euint64[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        euint64 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint64 = result;
+    }
 }
