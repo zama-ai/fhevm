@@ -281,6 +281,7 @@ impl FhevmSdk {
             ct_handles.len()
         );
 
+        // Use the existing builder pattern
         let calldata = self
             .create_public_decrypt_request_builder()
             .with_handles_from_bytes(ct_handles)?
@@ -303,6 +304,7 @@ impl FhevmSdk {
         debug!("   User: {}", encrypted_input.user_address);
         debug!("   Handles: {}", encrypted_input.handles.len());
 
+        // Use the existing calldata generation function
         let calldata = crate::blockchain::calldata::verify_proof_req(
             encrypted_input.chain_id,
             encrypted_input.contract_address,
@@ -320,8 +322,10 @@ impl FhevmSdk {
     /// Create an input builder factory for creating encrypted inputs
     pub fn create_input_factory(&mut self) -> Result<()> {
         if self.input_factory.is_none() {
+            // Load public key and CRS from config
             self.ensure_keys_loaded()?;
 
+            // Get ACL contract address from config
             let acl_address = self.config.host_contracts.acl.ok_or_else(|| {
                 FhevmError::InvalidParams("ACL contract address is not set".to_string())
             })?;
@@ -338,6 +342,7 @@ impl FhevmSdk {
                 .ok_or_else(|| FhevmError::InvalidParams("CRS not loaded".to_string()))?
                 .clone();
 
+            // Create factory
             self.input_factory = Some(InputBuilderFactory::new(
                 acl_address,
                 self.config.host_chain_id,
@@ -477,6 +482,7 @@ impl FhevmSdkBuilder {
     pub fn with_keys_directory_or_generate<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
 
+        // Check if keys exist, generate if not
         if !path_buf.exists() || !path_buf.join("public_key.bin").exists() {
             info!(
                 "Keys not found at {}, generating new keys...",
@@ -565,8 +571,12 @@ impl FhevmSdkBuilder {
 
     /// Export the current builder state to YAML
     pub fn to_yaml(&self) -> Result<String> {
+        // Convert builder to config
         let config = self.to_config()?;
+
+        // Serialize to YAML
         let yaml = serde_yaml::to_string(&config).map_err(FhevmError::YamlError)?;
+
         Ok(yaml)
     }
 
@@ -579,6 +589,7 @@ impl FhevmSdkBuilder {
 
     /// Convert the builder to a config
     fn to_config(&self) -> Result<FhevmConfig> {
+        // Validate required fields
         let keys_directory = self.keys_directory.clone();
 
         let gateway_chain_id = self
@@ -601,6 +612,7 @@ impl FhevmSdkBuilder {
             ));
         }
 
+        // Create the config
         let config = FhevmConfig {
             keys_directory,
             gateway_chain_id,
@@ -613,6 +625,7 @@ impl FhevmSdkBuilder {
     }
 
     pub fn build(self) -> Result<FhevmSdk> {
+        // Convert to config and create the SDK
         debug!("Building FhevmSdk from builder");
         let config = self.to_config()?;
         let is_keys_directory_set = config.keys_directory.is_some();
@@ -626,6 +639,7 @@ impl FhevmSdkBuilder {
             fhevm.create_input_factory()?;
         }
 
+        // Create and return the SDK
         Ok(fhevm)
     }
 }
