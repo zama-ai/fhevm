@@ -55,7 +55,10 @@ impl std::fmt::Debug for Eip712SignatureBuilder {
             .field("contract_addresses", &self.contract_addresses)
             .field("start_timestamp", &self.start_timestamp)
             .field("duration_days", &self.duration_days)
-            .field("private_key", &self.private_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "private_key",
+                &self.private_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("verify_signature", &self.verify_signature)
             .field("delegated_account", &self.delegated_account)
             .field("extra_data", &self.extra_data)
@@ -213,9 +216,10 @@ impl Eip712SignatureBuilder {
     }
 
     fn generate_signature(self) -> Result<Eip712Result> {
-        let public_key = self.public_key.as_ref().ok_or_else(|| {
-            ClientCoreError::InvalidParams("Public key is required".to_string())
-        })?;
+        let public_key = self
+            .public_key
+            .as_ref()
+            .ok_or_else(|| ClientCoreError::InvalidParams("Public key is required".to_string()))?;
 
         let start_timestamp = self.start_timestamp.ok_or_else(|| {
             ClientCoreError::InvalidParams(
@@ -459,15 +463,14 @@ mod tests {
         let builder = Eip712SignatureBuilder::new(config);
 
         // Missing public key
-        let result = builder
-            .clone()
-            .with_validity_period(1748252823, 10)
-            .build();
+        let result = builder.clone().with_validity_period(1748252823, 10).build();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Public key is required"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Public key is required")
+        );
 
         // Missing contracts
         let result = builder
@@ -476,10 +479,12 @@ mod tests {
             .with_validity_period(1748252823, 10)
             .build();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("contract address is required"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("contract address is required")
+        );
 
         // Missing validity period
         let result = builder
@@ -491,10 +496,12 @@ mod tests {
             .unwrap()
             .build();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Start timestamp is required"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Start timestamp is required")
+        );
     }
 
     #[test]
@@ -512,10 +519,12 @@ mod tests {
             .build();
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Duration must be between 1 and 365 days"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Duration must be between 1 and 365 days")
+        );
     }
 
     #[test]

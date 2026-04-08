@@ -74,12 +74,14 @@ impl PublicDecryptionResponseBuilder {
     pub fn process(self) -> Result<DecryptedResults> {
         validate_config(&self.config)?;
 
-        let kms_signers = self.config.kms_signers.ok_or_else(|| {
-            ClientCoreError::InvalidParams("KMS signers not configured".into())
-        })?;
-        let threshold = self.config.threshold.ok_or_else(|| {
-            ClientCoreError::InvalidParams("Threshold not configured".into())
-        })?;
+        let kms_signers = self
+            .config
+            .kms_signers
+            .ok_or_else(|| ClientCoreError::InvalidParams("KMS signers not configured".into()))?;
+        let threshold = self
+            .config
+            .threshold
+            .ok_or_else(|| ClientCoreError::InvalidParams("Threshold not configured".into()))?;
         let gateway_chain_id = self.config.gateway_chain_id.ok_or_else(|| {
             ClientCoreError::InvalidParams("Gateway chain ID not configured".into())
         })?;
@@ -90,9 +92,10 @@ impl PublicDecryptionResponseBuilder {
         let ct_handles = self.config.ct_handles.ok_or_else(|| {
             ClientCoreError::InvalidParams("Ciphertext handles not configured".into())
         })?;
-        let json_response = self.config.json_response.ok_or_else(|| {
-            ClientCoreError::InvalidParams("JSON response not configured".into())
-        })?;
+        let json_response = self
+            .config
+            .json_response
+            .ok_or_else(|| ClientCoreError::InvalidParams("JSON response not configured".into()))?;
 
         info!("Processing public decryption response");
         info!("   KMS signers: {} signers", kms_signers.len());
@@ -144,9 +147,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
     let responses = response_data
         .get("response")
         .and_then(|r| r.as_array())
-        .ok_or_else(|| {
-            ClientCoreError::DecryptionError("No response array in JSON".to_string())
-        })?;
+        .ok_or_else(|| ClientCoreError::DecryptionError("No response array in JSON".to_string()))?;
 
     if responses.is_empty() {
         return Err(ClientCoreError::DecryptionError(

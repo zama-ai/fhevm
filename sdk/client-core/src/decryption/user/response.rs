@@ -202,8 +202,9 @@ impl ResponseProcessor {
                     ClientCoreError::DecryptionError(format!("Invalid private key: {e:?}"))
                 })?;
 
-        let eip712_domain = protobuf_to_alloy_domain(&eip712_domain)
-            .map_err(|e| ClientCoreError::DecryptionError(format!("Invalid EIP-712 domain: {e:?}")))?;
+        let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).map_err(|e| {
+            ClientCoreError::DecryptionError(format!("Invalid EIP-712 domain: {e:?}"))
+        })?;
 
         let decryption_result = if self.config.verify_signatures {
             client
@@ -294,9 +295,8 @@ fn create_decryption_payload(
 ) -> Result<ParsedUserDecryptionRequest> {
     // Parse signature
     let sig_bytes = parse_hex_string(signature, "signature")?;
-    let sig = Signature::from_raw(&sig_bytes).map_err(|e| {
-        ClientCoreError::DecryptionError(format!("Invalid signature format: {e}"))
-    })?;
+    let sig = Signature::from_raw(&sig_bytes)
+        .map_err(|e| ClientCoreError::DecryptionError(format!("Invalid signature format: {e}")))?;
 
     // Convert handles
     let ct_handles: Vec<CiphertextHandle> = handle_contract_pairs

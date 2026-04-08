@@ -31,9 +31,9 @@ impl Eip712Result {
     /// Get the EIP-712 hash.
     pub fn hash(&self) -> &B256 {
         match self {
-            Self::HashOnly { hash }
-            | Self::Signed { hash, .. }
-            | Self::Verified { hash, .. } => hash,
+            Self::HashOnly { hash } | Self::Signed { hash, .. } | Self::Verified { hash, .. } => {
+                hash
+            }
         }
     }
 

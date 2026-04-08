@@ -5,8 +5,8 @@
 
 // Re-export core types and builders
 pub use fhevm_client_core::decryption::user::{
-    DecryptedValue, UserDecryptRequest, UserDecryptRequestBuilder,
-    UserDecryptionResponseBuilder, process_user_decryption_response,
+    DecryptedValue, UserDecryptRequest, UserDecryptRequestBuilder, UserDecryptionResponseBuilder,
+    process_user_decryption_response,
 };
 
 // Re-export convenience function at module level

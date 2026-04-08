@@ -199,8 +199,9 @@ impl EncryptedInputBuilder {
             ));
         }
 
-        let address_bytes = hex::decode(address)
-            .map_err(|e| ClientCoreError::EncryptionError(format!("Invalid hex in address: {e}")))?;
+        let address_bytes = hex::decode(address).map_err(|e| {
+            ClientCoreError::EncryptionError(format!("Invalid hex in address: {e}"))
+        })?;
 
         let mut padded_bytes = [0u8; 32];
         padded_bytes[12..32].copy_from_slice(&address_bytes);
@@ -211,7 +212,9 @@ impl EncryptedInputBuilder {
         self.check_limit(160)?;
         self.builder
             .push_with_num_bits(address_u160, 160)
-            .map_err(|e| ClientCoreError::EncryptionError(format!("Failed to push address: {e}")))?;
+            .map_err(|e| {
+                ClientCoreError::EncryptionError(format!("Failed to push address: {e}"))
+            })?;
 
         self.bits.push(160);
         self.encrypted_bits_total += 160;
@@ -448,8 +451,13 @@ mod tests {
         let bit_widths = vec![8; 257]; // one too many
         let acl_address = Address::from_str("0x1234567890123456789012345678901234567890").unwrap();
 
-        let result =
-            EncryptedInputBuilder::compute_handles(&mock_ciphertext, &bit_widths, &acl_address, 1, 0);
+        let result = EncryptedInputBuilder::compute_handles(
+            &mock_ciphertext,
+            &bit_widths,
+            &acl_address,
+            1,
+            0,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Maximum 256"));
     }
