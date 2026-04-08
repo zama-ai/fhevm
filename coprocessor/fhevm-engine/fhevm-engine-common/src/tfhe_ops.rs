@@ -1,6 +1,8 @@
 use crate::{
     keys::FhevmKeys,
-    types::{FheOperationType, FhevmError, SupportedFheCiphertexts, SupportedFheOperations},
+    types::{
+        get_ct_type, FheOperationType, FhevmError, SupportedFheCiphertexts, SupportedFheOperations,
+    },
     utils::{safe_deserialize, safe_deserialize_conformant},
 };
 use tfhe::{
@@ -695,6 +697,52 @@ pub fn check_fhe_operand_types(
                             expected_operand_bytes: 1,
                             got_bytes: rand_type.len(),
                         });
+                    }
+
+                    Ok(())
+                }
+                SupportedFheOperations::FheSum => {
+                    const FHE_SUM_MIN_INPUTS: usize = 2;
+                    // Wide types require more GPU memory per element; matches FHEVMExecutor.sol limits.
+                    const FHE_SUM_MAX_INPUTS_WIDE: usize = 60;
+                    const FHE_SUM_MAX_INPUTS_NARROW: usize = 100;
+
+                    if input_handles.len() < FHE_SUM_MIN_INPUTS {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands: FHE_SUM_MIN_INPUTS,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+
+                    let first_type = get_ct_type(&input_handles[0])?;
+
+                    let fhe_sum_max_inputs = match first_type {
+                        5 | 6 => FHE_SUM_MAX_INPUTS_WIDE, // Uint64 | Uint128
+                        _ => FHE_SUM_MAX_INPUTS_NARROW,
+                    };
+
+                    if input_handles.len() > fhe_sum_max_inputs {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands: fhe_sum_max_inputs,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+
+                    for (i, handle) in input_handles.iter().enumerate().skip(1) {
+                        let handle_type = get_ct_type(handle)?;
+                        if handle_type != first_type {
+                            return Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: handle at index {i} has type {handle_type}, expected {first_type}",
+                                    fhe_op
+                                ),
+                                input_types: vec![],
+                            });
+                        }
                     }
 
                     Ok(())
@@ -3126,6 +3174,67 @@ pub fn perform_fhe_operation_impl(
             fhe_operation: format!("{:?}", fhe_operation),
             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
         }),
+        SupportedFheOperations::FheSum => match &input_operands[0] {
+            SupportedFheCiphertexts::FheUint8(_) => input_operands
+                .iter()
+                .map(|op| match op {
+                    SupportedFheCiphertexts::FheUint8(v) => Ok(v),
+                    _ => Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|refs| SupportedFheCiphertexts::FheUint8(refs.into_iter().sum())),
+            SupportedFheCiphertexts::FheUint16(_) => input_operands
+                .iter()
+                .map(|op| match op {
+                    SupportedFheCiphertexts::FheUint16(v) => Ok(v),
+                    _ => Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|refs| SupportedFheCiphertexts::FheUint16(refs.into_iter().sum())),
+            SupportedFheCiphertexts::FheUint32(_) => input_operands
+                .iter()
+                .map(|op| match op {
+                    SupportedFheCiphertexts::FheUint32(v) => Ok(v),
+                    _ => Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|refs| SupportedFheCiphertexts::FheUint32(refs.into_iter().sum())),
+            SupportedFheCiphertexts::FheUint64(_) => input_operands
+                .iter()
+                .map(|op| match op {
+                    SupportedFheCiphertexts::FheUint64(v) => Ok(v),
+                    _ => Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|refs| SupportedFheCiphertexts::FheUint64(refs.into_iter().sum())),
+            SupportedFheCiphertexts::FheUint128(_) => input_operands
+                .iter()
+                .map(|op| match op {
+                    SupportedFheCiphertexts::FheUint128(v) => Ok(v),
+                    _ => Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum())),
+            _ => Err(FhevmError::UnsupportedFheTypes {
+                fhe_operation: format!("{:?}", fhe_operation),
+                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+            }),
+        },
     }
 }
 
@@ -3408,5 +3517,88 @@ pub fn generate_random_number(
             ))
         }
         other => Err(FhevmError::UnknownFheType(other as i32)),
+    }
+}
+
+#[cfg(test)]
+mod fhe_sum_tests {
+    use super::{
+        check_fhe_operand_types, does_fhe_operation_support_scalar, SupportedFheOperations,
+    };
+    use crate::types::FheOperationType;
+
+    const FHE_SUM_OP: i32 = SupportedFheOperations::FheSum as i32;
+
+    fn check_sum(n: usize, type_byte: u8) -> bool {
+        let handles: Vec<Vec<u8>> = (0..n)
+            .map(|_| {
+                let mut h = vec![0u8; 32];
+                h[30] = type_byte;
+                h
+            })
+            .collect();
+        let scalars = vec![false; n];
+        check_fhe_operand_types(FHE_SUM_OP, &handles, &scalars).is_ok()
+    }
+
+    #[test]
+    fn fhe_sum_op_type_is_other() {
+        assert!(SupportedFheOperations::FheSum.op_type() == FheOperationType::Other);
+    }
+
+    #[test]
+    fn fhe_sum_try_from_i16_roundtrip() {
+        let op: SupportedFheOperations = (35i16).try_into().unwrap();
+        assert_eq!(op, SupportedFheOperations::FheSum);
+        assert_eq!(op as i16, 35);
+    }
+
+    #[test]
+    fn fhe_sum_check_operand_types_too_few_inputs() {
+        assert!(check_fhe_operand_types(FHE_SUM_OP, &[], &[]).is_err());
+        assert!(check_fhe_operand_types(FHE_SUM_OP, &[vec![0u8; 32]], &[false]).is_err());
+    }
+
+    #[test]
+    fn fhe_sum_check_operand_types_too_many_inputs() {
+        // (count, type_byte): Uint8=2 max 100, Uint64=5 and Uint128=6 max 60
+        for (n, ty) in [(101usize, 2u8), (61, 5), (61, 6)] {
+            assert!(!check_sum(n, ty), "n={n} ty={ty} should fail");
+        }
+    }
+
+    #[test]
+    fn fhe_sum_check_operand_types_valid_bounds() {
+        // (count, type_byte): min=2, narrow max=100, wide max=60
+        for (n, ty) in [(2usize, 2u8), (100, 2), (60, 5), (60, 6)] {
+            assert!(check_sum(n, ty), "n={n} ty={ty} should pass");
+        }
+    }
+
+    #[test]
+    fn fhe_sum_rejects_scalar_input() {
+        let handles: Vec<Vec<u8>> = (0..3).map(|_| vec![0u8; 32]).collect();
+        assert!(check_fhe_operand_types(FHE_SUM_OP, &handles, &[false, true, false]).is_err());
+    }
+
+    #[test]
+    fn fhe_sum_scalar_not_supported() {
+        assert!(!does_fhe_operation_support_scalar(&SupportedFheOperations::FheSum));
+        assert!(!SupportedFheOperations::FheSum.does_have_more_than_one_scalar());
+    }
+
+    #[test]
+    fn fhe_sum_check_operand_types_mismatched_types() {
+        // First handle is Uint8 (type_byte=2), second is Uint16 (type_byte=3) — should fail.
+        let mut h0 = vec![0u8; 32];
+        h0[30] = 2; // Uint8
+        let mut h1 = vec![0u8; 32];
+        h1[30] = 3; // Uint16
+        let handles = vec![h0, h1];
+        let scalars = vec![false, false];
+        assert!(
+            check_fhe_operand_types(FHE_SUM_OP, &handles, &scalars).is_err(),
+            "mixed types should fail"
+        );
     }
 }
