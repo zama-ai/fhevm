@@ -1369,6 +1369,61 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
+    function test_checkHCUForFheSumWorksAsExpectedForSupportedTypes(uint8 resultType, uint8 count) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSum));
+        // Bound count in [2, 10] to stay well within per-type size limits and HCU budget.
+        // Use bound() instead of assume() to avoid excessive fuzz input rejections.
+        count = uint8(bound(count, 2, 10));
+
+        bytes32[] memory values = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            values[i] = bytes32(uint256(i + 1));
+        }
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
+
+        uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 88000 * 2);
+        vm.assertLe(totalTransactionHCU, 259000 * 10);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheSum(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.prank(randomAccount);
+        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
+        hcuLimit.checkHCUForFheSum(FheType.Uint8, values, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheSumRevertsForUnsupportedTypes(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSum));
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheSum(FheType(fheType), values, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheSumRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSum));
+
+        hcuLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionLimitExceeded.selector);
+        hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
+    }
+
     /**
      * @dev Tests that only the owner can authorize an upgrade.
      */

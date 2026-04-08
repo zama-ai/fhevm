@@ -69,6 +69,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice Returned if the upper bound is above the max value of the underlying type.
     error UpperBoundAboveMaxTypeValue();
 
+    /// @notice Returned if the collection size is invalid for the requested operation.
+    /// @param size     The actual collection size.
+    /// @param limit    The violated bound: the maximum allowed (if too large) or the minimum required (if too small).
+    error FHECollectionSizeInvalid(uint256 size, uint256 limit);
+
     /**
      * @param userAddress       Address of the user.
      * @param contractAddress   Contract address.
@@ -113,7 +118,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         trivialEncrypt,
         fheIfThenElse,
         fheRand,
-        fheRandBounded
+        fheRandBounded,
+        fheSum
     }
 
     /// @notice Name of the contract.
@@ -648,6 +654,41 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes16 seed = _generateSeed();
         result = _generateRandBounded(upperBound, randType, seed);
         emit FheRandBounded(msg.sender, upperBound, randType, seed, result);
+    }
+
+    /**
+     * @notice          Computes FHESum operation over an array of ciphertexts of the same type.
+     * @param values    Array of ciphertext handles. All must be the same FheType.
+     * @return result   Result handle of the same FheType as the inputs.
+     */
+    function fheSum(bytes32[] calldata values) public virtual returns (bytes32 result) {
+        if (values.length < 2) revert FHECollectionSizeInvalid(values.length, 2);
+
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128));
+        FheType resultType = _verifyAndReturnType(values[0], supportedTypes);
+
+        uint256 maxSize;
+        if (resultType == FheType.Uint64 || resultType == FheType.Uint128) {
+            maxSize = 60;
+        } else {
+            maxSize = 100;
+        }
+        if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
+
+        for (uint256 i = 0; i < values.length; i++) {
+            if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            if (i > 0 && _typeOf(values[i]) != resultType) revert IncompatibleTypes();
+        }
+
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheSum, values, acl, block.chainid, blockhash(block.number - 1), block.timestamp));
+        result = _appendMetadataToPrehandle(result, resultType);
+        acl.allowTransient(result, msg.sender);
+        hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
+        emit FheSum(msg.sender, values, result);
     }
 
     /**

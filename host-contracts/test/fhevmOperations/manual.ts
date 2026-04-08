@@ -739,4 +739,36 @@ describe('FHEVM manual operations', function () {
     const res4 = await decryptBool(await this.contract.resEbool());
     expect(res4).to.equal(true);
   });
+
+  it('sum euint8 - three elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add8(10);
+    input.add8(20);
+    input.add8(30);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(60);
+  });
+
+  it('sum euint64 - two elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1000000n);
+    input.add64(2000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt64(await this.contract.resEuint64());
+    expect(res).to.equal(3000000n);
+  });
 });

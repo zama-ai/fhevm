@@ -1796,6 +1796,28 @@ pub fn get_op_size_on_gpu(
                 }),
             }
         }
+        SupportedFheOperations::FheSum => {
+            if input_operands.is_empty() {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: vec![],
+                });
+            }
+            let n = input_operands.len() as u64;
+            // No dedicated get_sum_size_on_gpu API exists in tfhe-rs; using N * ciphertext_size
+            // as an approximation.
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(v) => Ok(v.get_size_on_gpu() * n),
+                SupportedFheCiphertexts::FheUint16(v) => Ok(v.get_size_on_gpu() * n),
+                SupportedFheCiphertexts::FheUint32(v) => Ok(v.get_size_on_gpu() * n),
+                SupportedFheCiphertexts::FheUint64(v) => Ok(v.get_size_on_gpu() * n),
+                SupportedFheCiphertexts::FheUint128(v) => Ok(v.get_size_on_gpu() * n),
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
     }
 }

@@ -24,6 +24,7 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint128));
 
     uint256 internal supportedTypesFheSub = supportedTypesFheAdd;
+    uint256 internal supportedTypesFheSum = supportedTypesFheAdd;
     uint256 internal supportedTypesFheMul = supportedTypesFheSub;
     uint256 internal supportedTypesFheDiv = supportedTypesFheMul;
     uint256 internal supportedTypesFheRem = supportedTypesFheDiv;
@@ -397,6 +398,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             )
         );
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
+    }
+
+    function _computeExpectedResultFheSum(bytes32[] memory values, FheType resultType) internal view returns (bytes32 result) {
+        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.fheSum, values, acl, block.chainid, blockhash(block.number - 1), block.timestamp));
+        result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
     }
 
     /**
@@ -1249,6 +1255,28 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
+    function test_FheSumSupportedTypesWorkAsExpected(uint8 fheType, uint8 count) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSum));
+        count = uint8(bound(count, 2, 5));
+        address sender = address(123);
+
+        bytes32[] memory values = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            values[i] = _generateMockHandle(FheType(fheType));
+            _approveHandleInACL(values[i], sender);
+        }
+
+        bytes32 expectedResult = _computeExpectedResultFheSum(values, FheType(fheType));
+
+        vm.prank(sender);
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheSum(sender, values, expectedResult);
+        bytes32 result = fhevmExecutor.fheSum(values);
+        assertEq(result, expectedResult);
+    }
+
     /**
      * @dev The following tests will verify that only the supported types are allowed for each operation.
      */
@@ -1674,6 +1702,18 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.trivialEncrypt(pt, FheType(fheType));
     }
 
+    function test_FheSumNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSum));
+
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = _generateMockHandle(FheType(fheType));
+        values[1] = _generateMockHandle(FheType(fheType));
+
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
+        fhevmExecutor.fheSum(values);
+    }
+
     function test_RevertsIfACLNotAllowed_Cast() public {
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
         bytes32 handle = _generateMockHandle(FheType.Uint128);
@@ -1936,5 +1976,59 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRandBounded(1 << 9, FheType.Uint8);
         vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
         fhevmExecutor.fheRandBounded(1 << 129, FheType.Uint128);
+    }
+
+    function test_RevertsIfACLNotAllowed_FheSum() public {
+        address account = address(123);
+        bytes32[] memory values = new bytes32[](3);
+        values[0] = _generateMockHandle(FheType.Uint32);
+        values[1] = _generateMockHandle(FheType.Uint32);
+        values[2] = _generateMockHandle(FheType.Uint32);
+        _approveHandleInACL(values[0], account);
+        _approveHandleInACL(values[1], account);
+        // values[2] is not approved
+
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
+        vm.prank(account);
+        fhevmExecutor.fheSum(values);
+    }
+
+    function test_RevertsIfFheSumIncompatibleTypes(uint8 fheTypeLhs, uint8 fheTypeRhs) public {
+        vm.assume(fheTypeLhs <= uint8(FheType.Int248));
+        vm.assume(fheTypeRhs <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheTypeLhs), supportedTypesFheSum));
+        vm.assume(fheTypeLhs != fheTypeRhs);
+
+        address account = address(123);
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = _generateMockHandle(FheType(fheTypeLhs));
+        values[1] = _generateMockHandle(FheType(fheTypeRhs));
+        _approveHandleInACL(values[0], account);
+        _approveHandleInACL(values[1], account);
+
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
+        vm.prank(account);
+        fhevmExecutor.fheSum(values);
+    }
+
+    function test_RevertsIfFheSumTooFewInputs() public {
+        bytes32[] memory empty = new bytes32[](0);
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        fhevmExecutor.fheSum(empty);
+
+        bytes32[] memory single = new bytes32[](1);
+        single[0] = _generateMockHandle(FheType.Uint8);
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        fhevmExecutor.fheSum(single);
+    }
+
+    function test_RevertsIfFheSumTooManyInputs() public {
+        // Uint64 has maxSize=60; 61 elements should revert.
+        bytes32[] memory values = new bytes32[](61);
+        for (uint256 i = 0; i < 61; i++) {
+            values[i] = _generateMockHandle(FheType.Uint64);
+        }
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        fhevmExecutor.fheSum(values);
     }
 }
