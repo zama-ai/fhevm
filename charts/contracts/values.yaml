@@ -30,6 +30,7 @@ scDeploy:
 
   # ConfigMap to store deployed contract addresses
   configmap:
+    create: true
     name: "sc-addresses"
     annotations:
 
