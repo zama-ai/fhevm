@@ -33,24 +33,6 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Description**: Counts the number of failed add ciphertext material transactions in the transaction-sender.
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
- 
-#### Metric Name: `coprocessor_txn_sender_allow_handle_success_counter`
- - **Type**: Counter
- - **Description**: Counts the number of successful allow handle transactions in the transaction-sender.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
-
-#### Metric Name: `coprocessor_txn_sender_allow_handle_fail_counter`
- - **Type**: Counter
- - **Description**: Counts the number of failed allow handle transactions in the transaction-sender.
- - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
-
-#### Metric Name: `coprocessor_allow_handle_unsent_gauge`
- - **Type**: Gauge
- - **Description**: Tracks the number of unsent allow handle transactions in the transaction-sender.
- - **Alarm**: If the gauge value exceeds a predefined threshold.
-    - **Recommendation**: more than 100 unsent over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
 
 #### Metric Name: `coprocessor_add_ciphertext_material_unsent_gauge`
  - **Type**: Gauge
@@ -134,6 +116,26 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Description**: Counts the number of key digest mismatches in GW listener.
  - **Alarm**: If the counter increases from 0. Key digest mismatch is not something that is supposed to happen in normal circumstances.
     - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
+
+#### Metric Name: `coprocessor_gw_listener_drift_detected_counter`
+ - **Type**: Counter
+ - **Description**: Number of handles where coprocessor digests diverged. Does not discriminate whether divergence comes from the local coprocessor or another coprocessor in the network.
+
+#### Metric Name: `coprocessor_gw_listener_consensus_timeout_counter`
+ - **Type**: Counter
+ - **Description**: Number of handles that timed out without a consensus event. This includes both handles where no consensus was ever observed and handles where all expected coprocessors submitted but the gateway never emitted a consensus event.
+
+#### Metric Name: `coprocessor_gw_listener_missing_submission_counter`
+ - **Type**: Counter
+ - **Description**: Number of handles where consensus was reached but some expected coprocessors never submitted their ciphertext material before the post-consensus grace period expired.
+
+#### Metric Name: `coprocessor_gw_listener_consensus_latency_blocks`
+ - **Type**: Histogram
+ - **Description**: Block distance between the first observed submission and the consensus event for a handle. Diagnostic metric for understanding on-chain latency; timeouts are wall-clock based and configured via `--drift-no-consensus-timeout`. Bucket boundaries: 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144.
+
+#### Metric Name: `coprocessor_gw_listener_post_consensus_completion_blocks`
+ - **Type**: Histogram
+ - **Description**: Block distance between the consensus event and seeing all expected submissions for a handle. Diagnostic metric for understanding on-chain completion latency; the grace window is wall-clock based and configured via `--drift-post-consensus-grace`. Bucket boundaries: 0, 1, 2, 3, 5, 8, 13, 21, 34.
 
 ### zkproof-worker
 
@@ -220,11 +222,11 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
-#### Metric Name: `kms_connector_gw_listener_event_received_errors`
+#### Metric Name: `kms_connector_gw_listener_event_listening_errors`
  - **Type**: Counter
  - **Labels**:
-   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
- - **Description**: Counts the number of errors encountered by the GW listener while receiving events.
+   - `contract`: can be used to filter by contract (decryption, kmsgeneration).
+ - **Description**: Counts the number of errors encountered by the GW listener while listening for events.
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 

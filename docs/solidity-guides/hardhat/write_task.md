@@ -23,12 +23,12 @@ task("task:get-count", "Calls the getCount() function of Counter Contract")
   .setAction(async function (taskArguments: TaskArguments, hre) {
     const { ethers, deployments } = hre;
 
-    const CounterDeployement = taskArguments.address
+    const CounterDeployment = taskArguments.address
       ? { address: taskArguments.address }
       : await deployments.get("Counter");
-    console.log(`Counter: ${CounterDeployement.address}`);
+    console.log(`Counter: ${CounterDeployment.address}`);
 
-    const counterContract = await ethers.getContractAt("Counter", CounterDeployement.address);
+    const counterContract = await ethers.getContractAt("Counter", CounterDeployment.address);
 
     const clearCount = await counterContract.getCount();
 
@@ -51,12 +51,12 @@ task("task:get-count", "Calls the getCount() function of Counter Contract")
   .setAction(async function (taskArguments: TaskArguments, hre) {
     // const { ethers, deployments } = hre;
 
-    // const CounterDeployement = taskArguments.address
+    // const CounterDeployment = taskArguments.address
     //   ? { address: taskArguments.address }
     //   : await deployments.get("Counter");
-    // console.log(`Counter: ${CounterDeployement.address}`);
+    // console.log(`Counter: ${CounterDeployment.address}`);
 
-    // const counterContract = await ethers.getContractAt("Counter", CounterDeployement.address);
+    // const counterContract = await ethers.getContractAt("Counter", CounterDeployment.address);
 
     // const clearCount = await counterContract.getCount();
 
@@ -110,12 +110,12 @@ Calling `initializeCLIApi()` is essential. Unlike built-in Hardhat tasks like `t
 Replace the following commented-out lines:
 
 ```ts
-    // const CounterDeployement = taskArguments.address
+    // const CounterDeployment = taskArguments.address
     //   ? { address: taskArguments.address }
     //   : await deployments.get("Counter");
-    // console.log(`Counter: ${CounterDeployement.address}`);
+    // console.log(`Counter: ${CounterDeployment.address}`);
 
-    // const counterContract = await ethers.getContractAt("Counter", CounterDeployement.address);
+    // const counterContract = await ethers.getContractAt("Counter", CounterDeployment.address);
 
     // const clearCount = await counterContract.getCount();
 ```
@@ -123,12 +123,12 @@ Replace the following commented-out lines:
 With the FHEVM equivalent:
 
 ```ts
-    const FHECounterDeployement = taskArguments.address
+    const FHECounterDeployment = taskArguments.address
       ? { address: taskArguments.address }
       : await deployments.get("FHECounter");
-    console.log(`FHECounter: ${FHECounterDeployement.address}`);
+    console.log(`FHECounter: ${FHECounterDeployment.address}`);
 
-    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployement.address);
+    const fheCounterContract = await ethers.getContractAt("FHECounter", FHECounterDeployment.address);
 
     const encryptedCount = await fheCounterContract.getCount();
     if (encryptedCount === ethers.ZeroHash) {
@@ -158,7 +158,7 @@ With the decryption logic:
     const clearCount = await fhevm.userDecryptEuint(
       FhevmType.euint32,
       encryptedCount,
-      FHECounterDeployement.address,
+      FHECounterDeployment.address,
       signers[0],
     );
     console.log(`Encrypted count: ${encryptedCount}`);

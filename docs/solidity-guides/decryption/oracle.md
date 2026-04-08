@@ -125,7 +125,7 @@ contract FooBarContract is ZamaEthereumConfig {
 
   function _runFooBarClearBusinessLogicFinalization() private {
     // Business logic starts here.
-    // Transfer ERC20, releave price or winner etc.
+    // Transfer ERC20, reveal price or winner etc.
   }
 }
 ```
