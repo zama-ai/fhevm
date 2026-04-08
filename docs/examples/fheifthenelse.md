@@ -1,4 +1,4 @@
-This example demonstrates how to write a simple contract with conditions using FHEVM, in comparison to a simple counter.
+This example shows conditional operations on encrypted values using FHE.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -62,14 +62,15 @@ contract FHEIfThenElse is ZamaEthereumConfig {
 
 {% tab title="FHEIfThenElse.ts" %}
 
-```ts
-import { FHEIfThenElse, FHEIfThenElse__factory } from "../../../types";
-import type { Signers } from "../../types";
+```typescript
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import * as hre from "hardhat";
+
+import { FHEIfThenElse, FHEIfThenElse__factory } from "../../../types";
+import type { Signers } from "../../types";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
@@ -144,6 +145,7 @@ describe("FHEIfThenElse", function () {
     expect(clearMax).to.equal(a >= b ? a : b);
   });
 });
+
 ```
 
 {% endtab %}

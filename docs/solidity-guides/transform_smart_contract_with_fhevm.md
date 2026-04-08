@@ -130,7 +130,7 @@ Adjust your contract’s code to accept and return encrypted data where necessar
 
 However, it is far from being the main change. As this example illustrates, working with FHEVM often requires re-architecting the original logic to support privacy. 
 
-In the updated code, the logic becomes async; results are hidden until a request (to the oracle) explicitely has to be made to decrypt publically the vote results.
+In the updated code, the logic becomes async; results are hidden until a request (to the oracle) explicitly has to be made to decrypt publicly the vote results.
 
 ## Conclusion
 

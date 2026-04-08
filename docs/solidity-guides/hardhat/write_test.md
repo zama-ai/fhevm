@@ -35,13 +35,13 @@ import * as hre from "hardhat";
 Suppose the FHEVM smart contract you want to test has a function called `foo` that takes an encrypted `uint32` value as input. The Solidity function `foo` should be declared as follows:
 
 ```solidity
-function foo(externalEunit32 value, bytes calldata memory inputProof);
+function foo(externalEuint32 value, bytes calldata inputProof);
 ```
 
 Where:
 
-- `externalEunit32 value` : is a `bytes32` representing the encrypted `uint32`
-- `bytes calldata memory inputProof` : is a `bytes` array representing the zero-knowledge proof of knowledge that validates the encryption
+- `externalEuint32 value` : is a `bytes32` representing the encrypted `uint32`
+- `bytes calldata inputProof` : is a `bytes` array representing the zero-knowledge proof of knowledge that validates the encryption
 
 To compute these arguments in TypeScript, you need:
 
@@ -52,7 +52,7 @@ To compute these arguments in TypeScript, you need:
 
 {% step %}
 
-#### Create a new encryted input
+#### Create a new encrypted input
 
 ```ts
 // use the `fhevm` API module from the Hardhat Runtime Environment
@@ -87,7 +87,7 @@ const encryptedInputs = await input.encrypt();
 
 ```ts
 const externalUint32Value = encryptedInputs.handles[0];
-const inputProof = encryptedInputs.proof;
+const inputProof = encryptedInputs.inputProof;
 
 const tx = await input.foo(externalUint32Value, inputProof);
 await tx.wait();
