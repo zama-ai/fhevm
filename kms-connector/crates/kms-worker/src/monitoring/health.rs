@@ -1,6 +1,8 @@
 use actix_web::http::StatusCode;
 use alloy::providers::Provider;
-use connector_utils::monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck};
+use connector_utils::monitoring::health::{
+    Healthcheck, database_healthcheck, rpc_node_healthcheck,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -42,7 +44,7 @@ impl<P: Provider> Healthcheck for State<P> {
         let database_connected =
             database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
         let gateway_connected =
-            gateway_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
+            rpc_node_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
 
         let mut kms_core_connected = true;
         let kms_healtcheck_results = self.kms_health_client.check(self.healthcheck_timeout).await;

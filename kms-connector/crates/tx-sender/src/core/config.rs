@@ -32,12 +32,27 @@ pub struct Config {
     pub gateway_url: Url,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
-    /// The `Decryption` contract configuration.
+    /// The `Decryption` contract configuration (on Gateway).
     #[serde(deserialize_with = "deserialize_decryption_contract_config")]
     pub decryption_contract: ContractConfig,
-    /// The `KMSGeneration` contract configuration.
+
+    /// The Ethereum RPC endpoint.
+    pub ethereum_url: Url,
+    /// The Chain ID of the Ethereum chain.
+    pub ethereum_chain_id: u64,
+    /// The number of confirmations required for Ethereum transactions to be considered confirmed.
+    #[serde(default = "default_ethereum_tx_required_confirmations")]
+    pub ethereum_tx_required_confirmations: u64,
+    /// The timeout to get Ethereum transaction receipts with the required number of confirmations.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_ethereum_tx_get_receipt_timeout"
+    )]
+    pub ethereum_tx_get_receipt_timeout: Duration,
+    /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+
     /// The private key of the `TransactionSender`'s wallet.
     pub private_key: Option<String>,
     /// The AWS KMS configuration of the `TransactionSender`'s wallet.
@@ -116,8 +131,8 @@ where
 impl DeserializeConfig for Config {}
 
 impl Config {
-    pub async fn build_wallet(&self) -> Result<KmsWallet, Error> {
-        let chain_id = Some(self.gateway_chain_id);
+    pub async fn build_wallet(&self, chain_id: u64) -> Result<KmsWallet, Error> {
+        let chain_id = Some(chain_id);
         if let Some(private_key) = &self.private_key {
             KmsWallet::from_private_key_str(private_key, chain_id)
         } else if let Some(aws_kms_config) = self.aws_kms_config.clone() {
@@ -174,6 +189,21 @@ fn default_gc_decryption_under_process_limit() -> PgInterval {
     PgInterval::try_from(Duration::from_mins(6)).unwrap()
 }
 
+fn default_ethereum_tx_get_receipt_timeout() -> Duration {
+    // Max time required for a transaction to be considered finalized on Ethereum.
+    // Ethereum uses 12-second slots and 32 slots per epoch (about 6.4 minutes). So 2 epochs take
+    // usually 12-13 minutes. Thus, a 20 minutes timeout is reasonable.
+    Duration::from_mins(20)
+}
+
+fn default_ethereum_tx_required_confirmations() -> u64 {
+    // Number of confirmations required for a transaction to be considered finalized on Ethereum.
+    // Validators vote on epochs of 32 slots. A block is finalized after 2 epochs = ~64 blocks.
+    // There are edge cases where a transaction may be finalized with fewer confirmations, but this
+    // is rare.
+    64
+}
+
 // Default implementation for testing purpose
 impl Default for Config {
     fn default() -> Self {
@@ -184,6 +214,10 @@ impl Default for Config {
             gateway_url: Url::from_str("http://localhost:8545").unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
+            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_chain_id: 11155111,
+            ethereum_tx_required_confirmations: default_ethereum_tx_required_confirmations(),
+            ethereum_tx_get_receipt_timeout: default_ethereum_tx_get_receipt_timeout(),
             kms_generation_contract: default_kms_generation_contract_config(),
             service_name: default_service_name(),
             private_key: Some(
@@ -218,6 +252,10 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_TX_REQUIRED_CONFIRMATIONS");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_TX_GET_RECEIPT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_PRIVATE_KEY");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
@@ -256,6 +294,10 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "http://localhost:9545");
             env::set_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID", "31888");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_URL", "http://localhost:9546");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_TX_REQUIRED_CONFIRMATIONS", "32");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_TX_GET_RECEIPT_TIMEOUT", "60s");
             env::set_var(
                 "KMS_CONNECTOR_PRIVATE_KEY",
                 "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f",
@@ -289,6 +331,16 @@ mod tests {
             Url::from_str("http://localhost:9545").unwrap()
         );
         assert_eq!(config.gateway_chain_id, 31888);
+        assert_eq!(
+            config.ethereum_url,
+            Url::from_str("http://localhost:9546").unwrap()
+        );
+        assert_eq!(config.ethereum_chain_id, 31444);
+        assert_eq!(config.ethereum_tx_required_confirmations, 32);
+        assert_eq!(
+            config.ethereum_tx_get_receipt_timeout,
+            Duration::from_secs(60)
+        );
         assert_eq!(
             config.decryption_contract.address,
             address!("0x5fbdb2315678afecb367f032d93f642f64180aa3")
