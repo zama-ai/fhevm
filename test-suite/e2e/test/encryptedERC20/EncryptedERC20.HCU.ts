@@ -29,7 +29,7 @@ const HCU_LIMIT_ABI = [
 
 type HcuLimitContract = {
   connect(runner: ContractRunner): HcuLimitContract;
-  getBlockMeter(): Promise<[bigint, bigint]>;
+  getBlockMeter(overrides?: ReadAtBlock): Promise<[bigint, bigint]>;
   getGlobalHCUCapPerBlock(): Promise<bigint>;
   getMaxHCUPerTx(): Promise<bigint>;
   getMaxHCUDepthPerTx(): Promise<bigint>;
@@ -39,6 +39,10 @@ type HcuLimitContract = {
   addToBlockHCUWhitelist(address: string): Promise<ContractTransactionResponse>;
   removeFromBlockHCUWhitelist(address: string): Promise<ContractTransactionResponse>;
   isBlockHCUWhitelisted(address: string): Promise<boolean>;
+};
+
+type ReadAtBlock = {
+  blockTag?: number | string;
 };
 
 type TransferSender = 'alice' | 'bob';
@@ -87,6 +91,18 @@ describe('EncryptedERC20:HCU', function () {
     expect(BigInt(maxTxHCUDepth) <= maxDepth).to.eq(true, `${label} should stay within the deployed depth cap`);
   }
 
+  async function assertBlockMeterIncludesTransaction(hcuLimit: HcuLimitContract, receipt: TransactionReceipt, label: string) {
+    const { globalTxHCU } = getTxHCUFromTxReceipt(receipt);
+    const [[blockNumber, usedHCU], perBlock] = await Promise.all([
+      hcuLimit.getBlockMeter({ blockTag: receipt.blockNumber }),
+      hcuLimit.getGlobalHCUCapPerBlock(),
+    ]);
+    expect(blockNumber).to.eq(BigInt(receipt.blockNumber), `${label} should read the receipt block meter`);
+    expect(usedHCU).to.be.greaterThan(0n, `${label} should record non-zero HCU in the block meter`);
+    expect(usedHCU >= BigInt(globalTxHCU)).to.eq(true, `${label} block meter should include this tx HCU`);
+    expect(usedHCU <= perBlock).to.eq(true, `${label} block meter should stay within the deployed block cap`);
+  }
+
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -125,7 +141,6 @@ describe('EncryptedERC20:HCU', function () {
     console.log('Native Gas Consumed in transfer', t2.gasUsed);
 
     if (isLiveNetwork()) {
-      await assertWithinConfiguredCaps(requireHcuLimit(this.hcuLimit, LIVE_HCU_LIMIT_ERROR), t2, 'transfer');
       return;
     }
 
@@ -170,7 +185,6 @@ describe('EncryptedERC20:HCU', function () {
     console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
 
     if (isLiveNetwork()) {
-      await assertWithinConfiguredCaps(requireHcuLimit(this.hcuLimit, LIVE_HCU_LIMIT_ERROR), t3, 'transferFrom');
       return;
     }
 
@@ -211,6 +225,60 @@ describe('EncryptedERC20:HCU', function () {
       if (deployerKey) {
         this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
       }
+    });
+
+    describe('live read-only coverage', function () {
+      beforeEach(function () {
+        if (!isLiveNetwork()) {
+          this.skip();
+        }
+      });
+
+      it('should keep transfer HCU within deployed caps', async function () {
+        const mintTx = await this.erc20.mint(10000);
+        await mintTx.wait();
+
+        const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+        input.add64(1337);
+        const encryptedTransferAmount = await input.encrypt();
+        const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+          this.signers.bob.address,
+          encryptedTransferAmount.handles[0],
+          encryptedTransferAmount.inputProof,
+        );
+        const receipt = requireReceipt(await tx.wait(), 'live transfer');
+        const hcuLimit = requireHcuLimit(this.hcuLimit, LIVE_HCU_LIMIT_ERROR);
+        await assertWithinConfiguredCaps(hcuLimit, receipt, 'transfer');
+        await assertBlockMeterIncludesTransaction(hcuLimit, receipt, 'transfer');
+      });
+
+      it('should keep transferFrom HCU within deployed caps', async function () {
+        const mintTx = await this.erc20.mint(10000);
+        await mintTx.wait();
+
+        const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+        inputAlice.add64(1337);
+        const encryptedAllowanceAmount = await inputAlice.encrypt();
+        const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
+          this.signers.bob.address,
+          encryptedAllowanceAmount.handles[0],
+          encryptedAllowanceAmount.inputProof,
+        );
+        await approveTx.wait();
+
+        const bobErc20 = this.erc20.connect(this.signers.bob);
+        const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
+        inputBob.add64(1337);
+        const encryptedTransferAmount = await inputBob.encrypt();
+        const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
+          this.signers.alice.address,
+          this.signers.bob.address,
+          encryptedTransferAmount.handles[0],
+          encryptedTransferAmount.inputProof,
+        );
+        const receipt = requireReceipt(await tx.wait(), 'live transferFrom');
+        await assertWithinConfiguredCaps(requireHcuLimit(this.hcuLimit, LIVE_HCU_LIMIT_ERROR), receipt, 'transferFrom');
+      });
     });
 
     describe('local deterministic coverage', function () {
