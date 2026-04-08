@@ -1,18 +1,18 @@
 //! User decryption module for FHEVM SDK
 //!
-//! This module provides user decryption functionality with a clean builder pattern
-//! for both request construction and response processing.
+//! Re-exports platform-agnostic decryption types and builders from
+//! [`fhevm_client_core`] and adds SDK-specific result types.
 
-// Internal modules
-mod deserializer;
-mod request;
-mod response;
 mod types;
 
-// Re-export main types and functions
-pub use self::request::UserDecryptRequestBuilder;
-pub use self::response::{UserDecryptionResponseBuilder, process_user_decryption_response};
-pub use self::types::{DecryptedValue, UserDecryptRequest, UserDecryptionResult};
+// Re-export core types and builders
+pub use fhevm_client_core::decryption::user::{
+    DecryptedValue, UserDecryptRequest, UserDecryptRequestBuilder,
+    UserDecryptionResponseBuilder, process_user_decryption_response,
+};
+
+// Re-export SDK-specific types
+pub use self::types::UserDecryptionResult;
 
 // Re-export convenience function at module level
-pub use self::response::process_user_decryption_response as user_decrypt_response;
+pub use fhevm_client_core::decryption::user::process_user_decryption_response as user_decrypt_response;

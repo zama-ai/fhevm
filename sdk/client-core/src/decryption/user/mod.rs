@@ -1,10 +1,12 @@
 //! User decryption module for FHEVM client core.
 //!
-//! Provides request building and type definitions. The KMS-dependent
-//! response processing stays in gateway-sdk.
+//! Provides request building, response processing, and type definitions.
 
+pub(crate) mod deserializer;
 mod request;
+mod response;
 mod types;
 
 pub use self::request::UserDecryptRequestBuilder;
+pub use self::response::{UserDecryptionResponseBuilder, process_user_decryption_response};
 pub use self::types::{DecryptedValue, UserDecryptRequest};

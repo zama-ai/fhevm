@@ -16,6 +16,10 @@ alloy = { version = "1.0", default-features = false, features = [
     "essentials",
     "std",
 ] }
+kms = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.13.0-rc.3", default-features = false }
+kms-grpc = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.13.0-rc.3", default-features = false }
+bc2wrap = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.13.0-rc.3", default-features = false }
+ml-kem = "0.2.1"
 hex = "0.4.3"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
