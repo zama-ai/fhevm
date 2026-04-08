@@ -322,8 +322,12 @@ impl EncryptedInputBuilder {
             ));
         }
 
-        let ciphertext_preimage = [RAW_CT_HASH_DOMAIN_SEPARATOR.as_bytes(), ciphertext].concat();
-        let ciphertext_hash = keccak256(ciphertext_preimage);
+        // Use incremental hashing to avoid copying the full ciphertext (can be megabytes)
+        use alloy::primitives::Keccak256;
+        let mut hasher = Keccak256::new();
+        hasher.update(RAW_CT_HASH_DOMAIN_SEPARATOR.as_bytes());
+        hasher.update(ciphertext);
+        let ciphertext_hash = hasher.finalize();
         let chain_id_bytes = chain_id_to_bytes(chain_id);
 
         let handles = bit_widths
@@ -338,13 +342,13 @@ impl EncryptedInputBuilder {
                     ))
                 })?;
 
-                // 8 (domain separator) + 32 (hash) + 1 (index) + 20 (address) + 32 (chain_id)
-                let mut hash_input = Vec::with_capacity(93);
-                hash_input.extend_from_slice(HANDLE_HASH_DOMAIN_SEPARATOR.as_bytes());
-                hash_input.extend_from_slice(ciphertext_hash.as_slice());
-                hash_input.push(index_byte);
-                hash_input.extend_from_slice(acl_contract_address.as_slice());
-                hash_input.extend_from_slice(&chain_id_bytes);
+                // 8 (domain separator) + 32 (hash) + 1 (index) + 20 (address) + 32 (chain_id) = 93
+                let mut hash_input = [0u8; 93];
+                hash_input[0..8].copy_from_slice(HANDLE_HASH_DOMAIN_SEPARATOR.as_bytes());
+                hash_input[8..40].copy_from_slice(ciphertext_hash.as_slice());
+                hash_input[40] = index_byte;
+                hash_input[41..61].copy_from_slice(acl_contract_address.as_slice());
+                hash_input[61..93].copy_from_slice(&chain_id_bytes);
 
                 let handle_hash = keccak256(&hash_input);
 

@@ -202,7 +202,8 @@ impl ResponseProcessor {
                     ClientCoreError::DecryptionError(format!("Invalid private key: {e:?}"))
                 })?;
 
-        let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).unwrap();
+        let eip712_domain = protobuf_to_alloy_domain(&eip712_domain)
+            .map_err(|e| ClientCoreError::DecryptionError(format!("Invalid EIP-712 domain: {e:?}")))?;
 
         let decryption_result = if self.config.verify_signatures {
             client
@@ -272,15 +273,8 @@ fn build_eip712_domain(
     gateway_chain_id: u64,
     verifying_contract: &str,
 ) -> Eip712DomainMsg {
-    // Create chain ID buffer (32 bytes, big-endian)
-    let mut chain_id_buffer = [0u8; 32];
-    if gateway_chain_id <= u32::MAX as u64 {
-        chain_id_buffer[28..32].copy_from_slice(&(gateway_chain_id as u32).to_be_bytes());
-    } else {
-        chain_id_buffer[24..32].copy_from_slice(&gateway_chain_id.to_be_bytes());
-    }
-
-    debug!("Chain ID buffer: {}", hex::encode(chain_id_buffer));
+    // Reuse the shared chain_id_to_bytes utility (32 bytes, big-endian)
+    let chain_id_buffer = crate::utils::chain_id_to_bytes(gateway_chain_id);
 
     Eip712DomainMsg {
         name: domain.to_string(),
