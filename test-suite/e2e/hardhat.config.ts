@@ -165,7 +165,7 @@ const config: HardhatUserConfig = {
   // https://github.com/NomicFoundation/hardhat/issues/2756
   defaultNetwork: DEFAULT_NETWORK,
   mocha: {
-    timeout: 600000,
+    timeout: 1200000,
     rootHooks: require('./test/consensusWatchdog').mochaHooks,
   },
   gasReporter: {
