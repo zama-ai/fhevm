@@ -59,23 +59,30 @@ pub fn create_encryption_parameters(
     tfhe::ServerKey,
     tfhe::zk::CompactPkeCrs,
 )> {
+    // Check if keys_path exists and has the necessary key files
     if keys_path.exists()
         && keys_path.join("public_key.bin").exists()
         && keys_path.join("client_key.bin").exists()
         && keys_path.join("server_key.bin").exists()
         && keys_path.join("crs.bin").exists()
     {
+        // Load the keys from the existing directory
         info!("Loading existing keys from: {}", keys_path.display());
         return utils::load_fhe_keyset(keys_path);
     }
 
+    // If path doesn't exist or is missing files, generate new keys
     info!("Generating new keys and saving to: {}", keys_path.display());
 
+    // First, ensure the directory exists
     if !keys_path.exists() {
         std::fs::create_dir_all(keys_path)
             .map_err(|e| FhevmError::FileError(format!("Failed to create directory: {e}")))?;
     }
 
+    // Generate the keys and save them
     utils::generate_fhe_keyset(keys_path)?;
+
+    // Load and return the newly generated keys
     utils::load_fhe_keyset(keys_path)
 }

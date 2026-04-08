@@ -22,16 +22,21 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
         .map_err(|e| FhevmError::FileError(format!("Failed to create output directory: {e}")))?;
 
     let params = tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+    // Indicate which parameters to use for the Compact Public Key encryption
     let cpk_params = tfhe::shortint::parameters::PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+    // And parameters allowing to keyswitch/cast to the computation parameters.
     let casting_params =
         tfhe::shortint::parameters::PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+    // Enable the dedicated parameters on the config
     let config = tfhe::ConfigBuilder::with_custom_parameters(params)
         .use_dedicated_compact_public_key_parameters((cpk_params, casting_params))
         .build();
 
+    // The CRS should be generated in an offline phase then shared to all clients and the server
     let crs = CompactPkeCrs::from_config(config, 512)
         .map_err(|e| FhevmError::KeyGenerationError(format!("Failed to generate CRS: {e}")))?;
 
+    // Then use TFHE-rs as usual
     let client_key = tfhe::ClientKey::generate(config);
     let server_key = tfhe::ServerKey::new(&client_key);
     let public_key = tfhe::CompactPublicKey::try_new(&client_key)
@@ -78,6 +83,7 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
         output_dir.display()
     );
 
+    // Print file sizes for information
     info!("File sizes:");
     info!("  Public key: {} bytes", serialized_pub_key.len());
     info!("  Client key: {} bytes", serialized_client_key.len());
@@ -97,8 +103,11 @@ pub fn load_fhe_keyset(
 )> {
     info!("Loading FHE keyset from: {}", input_dir.display());
 
+    // Indicate which parameters to use for the Compact Public Key encryption
     let cpk_params = tfhe::shortint::parameters::PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+    // And parameters allowing to keyswitch/cast to the computation parameters.
 
+    // Read public key
     let pub_key_data = std::fs::read(input_dir.join("public_key.bin"))
         .map_err(|e| FhevmError::FileError(format!("Failed to read public key: {e}")))?;
 
@@ -107,6 +116,7 @@ pub fn load_fhe_keyset(
             |e| FhevmError::EncryptionError(format!("Failed to deserialize public key: {e}")),
         )?;
 
+    // Read client key
     let client_key_data = std::fs::read(input_dir.join("client_key.bin"))
         .map_err(|e| FhevmError::FileError(format!("Failed to read client key: {e}")))?;
 
@@ -115,6 +125,7 @@ pub fn load_fhe_keyset(
             FhevmError::EncryptionError(format!("Failed to deserialize client key: {e}"))
         })?;
 
+    // Read server key
     let server_key_data = std::fs::read(input_dir.join("server_key.bin"))
         .map_err(|e| FhevmError::FileError(format!("Failed to read server key: {e}")))?;
 
@@ -122,6 +133,7 @@ pub fn load_fhe_keyset(
         FhevmError::EncryptionError(format!("Failed to deserialize server key: {e}"))
     })?;
 
+    // Read CRS
     let crs_data = std::fs::read(input_dir.join("crs.bin"))
         .map_err(|e| FhevmError::FileError(format!("Failed to read CRS: {e}")))?;
 
