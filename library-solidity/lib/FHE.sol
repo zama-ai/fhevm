@@ -8791,7 +8791,7 @@ library FHE {
     }
 
     /**
-     * @dev Sums an array of euint8 ciphertexts into a single euint8. Array length must be in [2, 100].
+     * @dev Evaluates sum(euint8[] values) and returns the result. Array length must be in [2, 100].
      */
     function sum(euint8[] memory values) internal returns (euint8) {
         bytes32[] memory handles = new bytes32[](values.length);
@@ -8802,7 +8802,7 @@ library FHE {
     }
 
     /**
-     * @dev Sums an array of euint16 ciphertexts into a single euint16. Array length must be in [2, 100].
+     * @dev Evaluates sum(euint16[] values) and returns the result. Array length must be in [2, 100].
      */
     function sum(euint16[] memory values) internal returns (euint16) {
         bytes32[] memory handles = new bytes32[](values.length);
@@ -8813,7 +8813,7 @@ library FHE {
     }
 
     /**
-     * @dev Sums an array of euint32 ciphertexts into a single euint32. Array length must be in [2, 100].
+     * @dev Evaluates sum(euint32[] values) and returns the result. Array length must be in [2, 100].
      */
     function sum(euint32[] memory values) internal returns (euint32) {
         bytes32[] memory handles = new bytes32[](values.length);
@@ -8824,7 +8824,7 @@ library FHE {
     }
 
     /**
-     * @dev Sums an array of euint64 ciphertexts into a single euint64. Array length must be in [2, 60].
+     * @dev Evaluates sum(euint64[] values) and returns the result. Array length must be in [2, 60].
      */
     function sum(euint64[] memory values) internal returns (euint64) {
         bytes32[] memory handles = new bytes32[](values.length);
@@ -8835,7 +8835,7 @@ library FHE {
     }
 
     /**
-     * @dev Sums an array of euint128 ciphertexts into a single euint128. Array length must be in [2, 60].
+     * @dev Evaluates sum(euint128[] values) and returns the result. Array length must be in [2, 60].
      */
     function sum(euint128[] memory values) internal returns (euint128) {
         bytes32[] memory handles = new bytes32[](values.length);
