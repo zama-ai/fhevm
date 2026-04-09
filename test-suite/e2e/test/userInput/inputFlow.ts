@@ -5,6 +5,9 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 
+const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(['sepolia', 'mainnet', 'zwsDev']);
+const activeNetwork = () => process.env.NETWORK ?? process.env.HARDHAT_NETWORK ?? '';
+
 describe('Input Flow', function () {
   before(async function () {
     await initSigners(2);
@@ -26,6 +29,9 @@ describe('Input Flow', function () {
   });
 
   it('test user input uint64 (non-trivial)', async function () {
+    if (CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS.has(activeNetwork())) {
+      this.skip();
+    }
     const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     inputAlice.add64(18446744073709550042n);
     const encryptedAmount = await inputAlice.encrypt();
