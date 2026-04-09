@@ -40,6 +40,8 @@ const DB_REVERT_CONTAINERS = [
 const DB_REVERT_RECOVERY_PROFILE = "input-proof-compute-decrypt";
 const KEY_BOOTSTRAP_LOG = /Fetched keyset/;
 const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decrypt"]);
+// Intentional ciphertext drift must never run on shared/live networks.
+const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsDev"]);
 
 /** Formats a progress label with elapsed wall-clock time. */
 const timedLabel = (label: string, started: number) =>
@@ -104,6 +106,11 @@ export const listTestProfiles = () => {
     console.log(`  ${description}`);
   }
 };
+
+const ciphertextDriftNetworkRequirement = (network: string) =>
+  CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS.has(network)
+    ? `ciphertext-drift is not allowed on ${network}; run it only on local disposable environments`
+    : undefined;
 
 /** Logs pass/fail timing around one test task. */
 const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
@@ -662,6 +669,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   }
 
   const ciphertextDriftRequirement = () => {
+    const networkRequirement = ciphertextDriftNetworkRequirement(options.network);
+    if (networkRequirement) {
+      return networkRequirement;
+    }
     const topology = topologyForState(state);
     if (topology.count < 2) {
       return "ciphertext-drift requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-two` first";
@@ -678,7 +689,8 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const ciphertextDriftSkipReason = () =>
-    state.scenario.topology.count < 2 ? "topology has fewer than 2 coprocessors" : ciphertextDriftRequirement();
+    ciphertextDriftNetworkRequirement(options.network) ??
+    (state.scenario.topology.count < 2 ? "topology has fewer than 2 coprocessors" : ciphertextDriftRequirement());
 
   const multiChainIsolationRequirement = () =>
     state.scenario.hostChains.length > 1
