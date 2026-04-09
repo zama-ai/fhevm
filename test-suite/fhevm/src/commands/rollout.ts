@@ -7,7 +7,7 @@ import { ensureDir, readJson, writeJson } from "../utils/fs";
 
 type RolloutStep = string[];
 type RolloutMatrix = {
-  include: Array<{ step: string; lockFile: string; name: string }>;
+  include: Array<{ step: string; stepIndex: number; name: string }>;
 };
 export type CompatTestDefinition = {
   name: string;
@@ -116,6 +116,14 @@ const bundleFromEnv = (test: CompatTestDefinition, kind: "from" | "to"): Version
   sources: [`compat-test=${test.name}`, kind],
 });
 
+const rolloutEntries = (test: CompatTestDefinition) => [
+  { step: "baseline", stepIndex: 0, name: lockStem(0, "baseline").replace(/\.lock\.json$/, "") },
+  ...test.steps.map((step, index) => {
+    const label = stepLabel(step);
+    return { step: label, stepIndex: index + 1, name: lockStem(index + 1, label).replace(/\.lock\.json$/, "") };
+  }),
+] satisfies RolloutMatrix["include"];
+
 /** Generates the baseline and cumulative mixed-version rollout locks for one compat-test. */
 export const generateRolloutLocks = (test: CompatTestDefinition) => {
   const from = bundleFromEnv(test, "from");
@@ -145,19 +153,43 @@ export const generateRolloutLocks = (test: CompatTestDefinition) => {
   ];
 };
 
+/** Returns the GitHub Actions matrix descriptor for one compat-test. */
+export const rolloutMatrix = (test: CompatTestDefinition): RolloutMatrix => ({
+  include: rolloutEntries(test),
+});
+
+/** Returns one rendered rollout lock for a specific matrix step index. */
+export const renderRolloutStep = (test: CompatTestDefinition, stepIndex: number): VersionBundle => {
+  if (!Number.isInteger(stepIndex) || stepIndex < 0 || stepIndex > test.steps.length) {
+    throw new PreflightError(`rollout step must be an integer between 0 and ${test.steps.length}`);
+  }
+  return generateRolloutLocks(test)[stepIndex];
+};
+
+/** Writes one rollout lock file for a specific compat-test step. */
+export const rolloutStep = async (options: { compatTest: string; out: string; step: number }) => {
+  if (!options.compatTest) throw new PreflightError("rollout requires --compat-test <file>");
+  if (!options.out) throw new PreflightError("rollout requires --out <file>");
+  const test = await readCompatTest(options.compatTest);
+  const bundle = renderRolloutStep(test, options.step);
+  await ensureDir(path.dirname(options.out));
+  await writeJson(options.out, { ...bundle, lockName: path.basename(options.out) });
+  console.log(options.out);
+};
+
+/** Prints the rollout matrix JSON for one compat-test. */
+export const printRolloutMatrix = async (options: { compatTest: string }) => {
+  if (!options.compatTest) throw new PreflightError("rollout requires --compat-test <file>");
+  console.log(JSON.stringify(rolloutMatrix(await readCompatTest(options.compatTest))));
+};
+
 /** Writes rollout lock files and the GitHub Actions matrix descriptor into one output directory. */
 export const rollout = async (options: { compatTest: string; out: string }) => {
   if (!options.compatTest) throw new PreflightError("rollout requires --compat-test <file>");
   if (!options.out) throw new PreflightError("rollout requires --out <directory>");
   const test = await readCompatTest(options.compatTest);
   const locks = generateRolloutLocks(test);
-  const matrix: RolloutMatrix = {
-    include: locks.map((bundle, index) => ({
-      step: index === 0 ? "baseline" : stepLabel(test.steps[index - 1]),
-      lockFile: bundle.lockName,
-      name: bundle.lockName.replace(/\.lock\.json$/, ""),
-    })),
-  };
+  const matrix = rolloutMatrix(test);
   await ensureDir(options.out);
   await Promise.all([
     ...locks.map((bundle) => writeJson(path.join(options.out, bundle.lockName), bundle)),

@@ -23,7 +23,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
-      artifact_name: ${{ steps.prepare.outputs.artifact_name }}
+      compat_test: ${{ steps.prepare.outputs.compat_test }}
       matrix: ${{ steps.prepare.outputs.matrix }}
       scenario: ${{ steps.prepare.outputs.scenario }}
       test_profile: ${{ steps.prepare.outputs.test_profile }}
@@ -47,7 +47,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - id: prepare
-        name: Resolve compat-test and generate rollout locks
+        name: Resolve compat-test and generate rollout matrix
         working-directory: test-suite/fhevm
         env:
           COMPAT_TEST_INPUT: ${{ inputs.compat-test }}
@@ -76,24 +76,16 @@ jobs:
             echo "Could not resolve compat-test: $value" >&2
             exit 1
           }
-          out_dir="${RUNNER_TEMP}/compat-rollout"
-          artifact_name="compat-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
-          ./fhevm-cli rollout --compat-test "$compat_test" --out "$out_dir"
+          compat_test_rel="${compat_test#${GITHUB_WORKSPACE}/}"
           {
-            echo "artifact_name=$artifact_name"
+            echo "compat_test=$compat_test_rel"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
-            cat "$out_dir/matrix.json"
+            ./fhevm-cli rollout --compat-test "$compat_test" --matrix
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Upload rollout locks
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
-        with:
-          name: ${{ steps.prepare.outputs.artifact_name }}
-          path: ${{ runner.temp }}/compat-rollout
 
   compatibility-e2e:
     name: compatibility-${{ matrix.name }}
@@ -112,7 +104,7 @@ jobs:
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     with:
       build: false
-      lock-artifact-name: ${{ needs.prepare_rollout.outputs.artifact_name }}
-      lock-file-name: ${{ matrix.lockFile }}
+      compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
+      rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
       test-profile: ${{ needs.prepare_rollout.outputs.test_profile }}
