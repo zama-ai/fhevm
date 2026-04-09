@@ -272,6 +272,7 @@ jobs:
           ./fhevm-cli test "$TEST_PROFILE"
 
       - name: Host listener poller test
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
           docker stop coprocessor-host-listener
