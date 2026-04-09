@@ -473,6 +473,14 @@ That keeps the scenario explicit while limiting the local build to `host-listene
 
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
+## Troubleshooting
+
+**Services exit silently shortly after startup (e.g. `coprocessor-zkproof-worker`)**
+
+This is usually a Docker memory limit. The stack requires at least 16 GB allocated to Docker. Scenarios with both multiple chains and multiple coprocessors need 32 GB.
+
+Check your current allocation in Docker Desktop → Settings → Resources → Memory, then restart the stack.
+
 ## Runtime State
 
 The CLI owns:
