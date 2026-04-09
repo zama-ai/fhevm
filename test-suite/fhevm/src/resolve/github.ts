@@ -15,6 +15,7 @@ const GH_API_RATE_LIMIT_RETRY_DELAY_MS = 60_000;
 const GH_API_RATE_LIMIT_RETRY_MAX_DELAY_MS = 300_000;
 const GH_API_RETRY_JITTER_RATIO = 0.2;
 const GH_PACKAGE_VERSION_LIMIT = 5_000;
+const SECOND_MS = 1_000;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
 export const explainGitHubCliError = (message: string): string => {
@@ -68,6 +69,39 @@ export const retryDelayMs = (attempt: number, rateLimited = false) => {
   return base + Math.floor(base * GH_API_RETRY_JITTER_RATIO * Math.random());
 };
 
+type GhHttpResponse = {
+  headers: Record<string, string>;
+  body: string;
+};
+
+const parseGhHttpResponse = (text: string): GhHttpResponse => {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const [rawHeaders = "", ...bodyParts] = normalized.split("\n\n");
+  const headers = Object.fromEntries(
+    rawHeaders
+      .split("\n")
+      .slice(1)
+      .map((line) => {
+        const index = line.indexOf(":");
+        return index < 0 ? undefined : [line.slice(0, index).trim().toLowerCase(), line.slice(index + 1).trim()] as const;
+      })
+      .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+  );
+  return { headers, body: bodyParts.join("\n\n").trim() };
+};
+
+export const rateLimitRetryDelayMs = (headers: Record<string, string>, attempt: number, now = Date.now()) => {
+  const retryAfter = Number(headers["retry-after"]);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return retryAfter * SECOND_MS;
+  }
+  const reset = Number(headers["x-ratelimit-reset"]);
+  if (Number.isFinite(reset) && reset > 0) {
+    return Math.max((reset * SECOND_MS) - now, GH_API_RATE_LIMIT_RETRY_DELAY_MS);
+  }
+  return retryDelayMs(attempt, true);
+};
+
 const retryReason = (message: string) => {
   const lower = message.toLowerCase();
   if (lower.includes("secondary rate limit")) return "secondary rate limit";
@@ -82,21 +116,23 @@ const retryReason = (message: string) => {
 
 const runGhApi = async <T>(apiPath: string): Promise<T> => {
   for (let attempt = 1; attempt <= GH_API_RETRIES; attempt += 1) {
-    try {
-      const result = await run(["gh", "api", apiPath], { timeoutMs: GH_API_TIMEOUT_MS });
-      return JSON.parse(result.stdout) as T;
-    } catch (error) {
-      const raw = error instanceof Error ? error.message : String(error);
-      if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
-        const delay = retryDelayMs(attempt, isRateLimitGitHubCliError(raw));
+    const result = await run(["gh", "api", apiPath, "-i"], { timeoutMs: GH_API_TIMEOUT_MS, allowFailure: true });
+    if (result.code === 0) {
+      return JSON.parse(parseGhHttpResponse(result.stdout).body) as T;
+    }
+    const raw = [result.stderr, parseGhHttpResponse(result.stdout).body].filter(Boolean).join("\n").trim() || result.stdout.trim();
+    if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
+        const response = parseGhHttpResponse(result.stdout);
+        const delay = isRateLimitGitHubCliError(raw)
+          ? rateLimitRetryDelayMs(response.headers, attempt)
+          : retryDelayMs(attempt, false);
         console.log(
           `[resolve] gh api retry ${attempt}/${GH_API_RETRIES - 1} after ${retryReason(raw)}; waiting ${(delay / 1000).toFixed(1)}s`,
         );
         await Bun.sleep(delay);
         continue;
-      }
-      throw new GitHubApiError(explainGitHubCliError(raw));
     }
+    throw new GitHubApiError(explainGitHubCliError(raw));
   }
   throw new GitHubApiError("GitHub metadata lookup failed");
 };

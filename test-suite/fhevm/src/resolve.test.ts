@@ -6,6 +6,7 @@ import { validateBundleCompatibility } from "./compat/compat";
 import {
   explainGitHubCliError,
   isRateLimitGitHubCliError,
+  rateLimitRetryDelayMs,
   retryDelayMs,
   shouldRetryGitHubCliError,
   shouldStopPackageTagScan,
@@ -180,6 +181,14 @@ describe("resolve", () => {
     } finally {
       Math.random = random;
     }
+  });
+
+  test("prefers Retry-After for rate-limit cooldowns when available", () => {
+    expect(rateLimitRetryDelayMs({ "retry-after": "90" }, 1, 0)).toBe(90_000);
+  });
+
+  test("falls back to X-RateLimit-Reset for rate-limit cooldowns", () => {
+    expect(rateLimitRetryDelayMs({ "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(150_000);
   });
 
   test("rewrites missing package scope errors into actionable guidance", () => {
