@@ -667,7 +667,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param signature The signature to validate.
      * @return The signer address.
      */
-    function _validateEIP712Signature(bytes32 digest, bytes calldata signature) internal virtual returns (address) {
+    function _validateEIP712Signature(
+        bytes32 digest,
+        bytes calldata signature
+    ) internal view virtual returns (address) {
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
