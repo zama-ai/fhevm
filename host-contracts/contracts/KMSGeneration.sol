@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
-import {IKMSGenerationMigration} from "./interfaces/IKMSGenerationMigration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode} from "./shared/Structs.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
@@ -16,13 +15,7 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  * @title KMSGeneration contract
  * @notice See {IKMSGeneration}.
  */
-contract KMSGeneration is
-    IKMSGeneration,
-    IKMSGenerationMigration,
-    EIP712Upgradeable,
-    UUPSUpgradeableEmptyProxy,
-    ACLOwnable
-{
+contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmptyProxy, ACLOwnable {
     // ----------------------------------------------------------------------------------------------
     // EIP712 utility constants:
     // ----------------------------------------------------------------------------------------------
@@ -850,8 +843,53 @@ contract KMSGeneration is
     }
 
     // ----------------------------------------------------------------------------------------------
-    // Migration-only entrypoints and helpers:
+    // Migration-only errors, types, entrypoints, and helpers:
     // ----------------------------------------------------------------------------------------------
+
+    /// @notice Thrown when migrated counters and active IDs do not describe a valid finalized state.
+    error InvalidMigrationCounterState();
+
+    /// @notice Thrown when migrated finalized consensus data is incomplete or inconsistent.
+    error InvalidMigrationConsensusState(uint256 requestId);
+
+    /// @notice Thrown when a migrated consensus tx sender is not registered in the migrated request context.
+    error UnknownMigrationConsensusTxSender(uint256 requestId, address txSender);
+
+    /// @notice Thrown when migrated key digests or CRS digest material is empty for a finalized request.
+    error InvalidMigrationMaterial(uint256 requestId);
+
+    /**
+     * @notice Migration state for initializeFromMigration.
+     * @dev Only active state is imported; historical Gateway state stays on the frozen Gateway contract.
+     *      Migration expects already-finalized active key/prep-keygen/CRS state with registered KMS senders.
+     */
+    struct MigrationState {
+        uint256 prepKeygenCounter;
+        uint256 keyCounter;
+        uint256 crsCounter;
+        uint256 activeKeyId;
+        uint256 activeCrsId;
+        // Active prep-keygen <-> key pairing
+        uint256 activePrepKeygenId;
+        // Active key digests / CRS digest
+        IKMSGeneration.KeyDigest[] activeKeyDigests;
+        bytes activeCrsDigest;
+        // Finalized consensus tx senders for migrated active items
+        address[] keyConsensusTxSenders;
+        bytes32 keyConsensusDigest;
+        address[] crsConsensusTxSenders;
+        bytes32 crsConsensusDigest;
+        address[] prepKeygenConsensusTxSenders;
+        bytes32 prepKeygenConsensusDigest;
+        // CRS max bit length
+        uint256 crsMaxBitLength;
+        // Params types
+        // The prep-keygen params type is also the keygen params type for the paired key lifecycle.
+        IKMSGeneration.ParamsType prepKeygenParamsType;
+        IKMSGeneration.ParamsType crsParamsType;
+        // KMS context ID for the migrated active prep-keygen, key, and CRS state.
+        uint256 contextId;
+    }
 
     /**
      * @notice Migration initializer: imports active state from the frozen Gateway contract.
@@ -860,7 +898,7 @@ contract KMSGeneration is
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromMigration(
-        IKMSGenerationMigration.MigrationState calldata state
+        MigrationState calldata state
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
 
@@ -970,7 +1008,7 @@ contract KMSGeneration is
         }
     }
 
-    function _validateMigrationCounters(IKMSGenerationMigration.MigrationState calldata state) internal pure virtual {
+    function _validateMigrationCounters(MigrationState calldata state) internal pure virtual {
         if (
             state.activePrepKeygenId <= PREP_KEYGEN_COUNTER_BASE || state.prepKeygenCounter != state.activePrepKeygenId
         ) {

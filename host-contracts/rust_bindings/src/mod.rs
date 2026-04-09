@@ -23,7 +23,6 @@ pub mod r#i_beacon;
 pub mod r#ierc1967;
 pub mod r#ierc5267;
 pub mod r#ikms_generation;
-pub mod r#ikms_generation_migration;
 pub mod r#i_pauser_set;
 pub mod r#i_protocol_config;
 pub mod r#initializable;

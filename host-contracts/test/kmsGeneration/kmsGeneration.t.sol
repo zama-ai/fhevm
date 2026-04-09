@@ -6,7 +6,6 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
-import {IKMSGenerationMigration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGenerationMigration.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
@@ -105,7 +104,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function _deployMigrationProxyAndState()
         internal
-        returns (address migrateProxy, address kmsGenImpl, IKMSGenerationMigration.MigrationState memory state)
+        returns (address migrateProxy, address kmsGenImpl, KMSGeneration.MigrationState memory state)
     {
         (migrateProxy, kmsGenImpl) = _deployMigrationProxy();
         state = _defaultMigrationState(migrateProxy);
@@ -294,7 +293,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function _defaultMigrationState(
         address verifier
-    ) internal view returns (IKMSGenerationMigration.MigrationState memory state) {
+    ) internal view returns (KMSGeneration.MigrationState memory state) {
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         bytes memory extraData = _buildExtraDataForContextId(contextId);
@@ -309,7 +308,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         address[] memory prepTxSenders = new address[](1);
         prepTxSenders[0] = kmsTxSender0;
 
-        state = IKMSGenerationMigration.MigrationState({
+        state = KMSGeneration.MigrationState({
             prepKeygenCounter: PREP_KEYGEN_COUNTER_BASE + 1,
             keyCounter: KEY_COUNTER_BASE + 1,
             crsCounter: CRS_COUNTER_BASE + 1,
@@ -338,7 +337,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function _deployMigratedKmsGeneration(
-        IKMSGenerationMigration.MigrationState memory state
+        KMSGeneration.MigrationState memory state
     ) internal returns (KMSGeneration migrated) {
         (address migrateProxy, address kmsGenImpl) = _deployMigrationProxy();
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
@@ -347,7 +346,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function _deployMigratedKmsGeneration()
         internal
-        returns (KMSGeneration migrated, IKMSGenerationMigration.MigrationState memory state)
+        returns (KMSGeneration migrated, KMSGeneration.MigrationState memory state)
     {
         (address migrateProxy, address kmsGenImpl) = _deployMigrationProxy();
         state = _defaultMigrationState(migrateProxy);
@@ -358,12 +357,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function _upgradeMigrationProxy(
         address migrateProxy,
         address kmsGenImpl,
-        IKMSGenerationMigration.MigrationState memory state
+        KMSGeneration.MigrationState memory state
     ) internal {
         vm.prank(owner);
         EmptyUUPSProxy(migrateProxy).upgradeToAndCall(
             kmsGenImpl,
-            abi.encodeCall(IKMSGenerationMigration.initializeFromMigration, (state))
+            abi.encodeCall(KMSGeneration.initializeFromMigration, (state))
         );
     }
 
@@ -385,7 +384,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertMigrationAfterInit() public {
-        IKMSGenerationMigration.MigrationState memory state;
+        KMSGeneration.MigrationState memory state;
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
         kmsGeneration.initializeFromMigration(state);
@@ -1025,7 +1024,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRestoresDuplicateSignerProtection() public {
-        (KMSGeneration migrated, IKMSGenerationMigration.MigrationState memory state) = _deployMigratedKmsGeneration();
+        (KMSGeneration migrated, KMSGeneration.MigrationState memory state) = _deployMigratedKmsGeneration();
 
         bytes32 keyDigest = _hashKeygen(
             address(migrated),
@@ -1047,13 +1046,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGenerationMigration.InvalidMigrationMaterial.selector, state.activeKeyId)
-        );
+        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeKeyId));
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
@@ -1061,13 +1058,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.activeCrsDigest = "";
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGenerationMigration.InvalidMigrationMaterial.selector, state.activeCrsId)
-        );
+        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeCrsId));
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
@@ -1075,12 +1070,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.keyConsensusTxSenders = new address[](0);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IKMSGenerationMigration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
         );
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
@@ -1089,15 +1084,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.prepKeygenConsensusDigest = bytes32(0);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IKMSGenerationMigration.InvalidMigrationConsensusState.selector,
-                state.activePrepKeygenId
-            )
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activePrepKeygenId)
         );
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
@@ -1106,14 +1098,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         address unknownTxSender = address(0xBEEF);
         state.keyConsensusTxSenders[0] = unknownTxSender;
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IKMSGenerationMigration.UnknownMigrationConsensusTxSender.selector,
+                KMSGeneration.UnknownMigrationConsensusTxSender.selector,
                 state.activeKeyId,
                 unknownTxSender
             )
@@ -1122,7 +1114,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationLateSignerStillUpdatesConsensusTxSenders() public {
-        (KMSGeneration migrated, IKMSGenerationMigration.MigrationState memory state) = _deployMigratedKmsGeneration();
+        (KMSGeneration migrated, KMSGeneration.MigrationState memory state) = _deployMigratedKmsGeneration();
 
         bytes32 keyDigest = _hashKeygen(
             address(migrated),
@@ -1146,11 +1138,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.keyCounter++;
 
-        vm.expectRevert(IKMSGenerationMigration.InvalidMigrationCounterState.selector);
+        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
@@ -1158,11 +1150,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.crsCounter++;
 
-        vm.expectRevert(IKMSGenerationMigration.InvalidMigrationCounterState.selector);
+        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
@@ -1170,11 +1162,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (
             address migrateProxy,
             address kmsGenImpl,
-            IKMSGenerationMigration.MigrationState memory state
+            KMSGeneration.MigrationState memory state
         ) = _deployMigrationProxyAndState();
         state.prepKeygenCounter++;
 
-        vm.expectRevert(IKMSGenerationMigration.InvalidMigrationCounterState.selector);
+        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
