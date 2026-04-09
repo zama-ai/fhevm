@@ -1,17 +1,20 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::transports::http::reqwest::Url;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
         contract::{
-            default_decryption_contract_config, default_kms_generation_contract_config,
-            deserialize_decryption_contract_config, deserialize_kms_generation_contract_config,
+            default_decryption_contract_config, default_gateway_config_contract_config,
+            default_kms_generation_contract_config, deserialize_decryption_contract_config,
+            deserialize_gateway_config_contract_config, deserialize_kms_generation_contract_config,
         },
         default_database_pool_size,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(debug_assertions)]
+use serde::Serialize;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `GatewayListener`.
@@ -31,6 +34,9 @@ pub struct Config {
     /// The `Decryption` contract configuration.
     #[serde(deserialize_with = "deserialize_decryption_contract_config")]
     pub decryption_contract: ContractConfig,
+    /// The `GatewayConfig` contract configuration.
+    #[serde(deserialize_with = "deserialize_gateway_config_contract_config")]
+    pub gateway_config_contract: ContractConfig,
     /// The `KMSGeneration` contract configuration.
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
@@ -39,8 +45,9 @@ pub struct Config {
     pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
-    /// The address of the `KMSVerifier` contract.
-    pub kms_verifier_address: Address,
+    /// Skip the legacy host-side KMS context bootstrap.
+    #[serde(default)]
+    pub skip_ethereum_context_bootstrap: bool,
 
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
@@ -106,11 +113,12 @@ impl Default for Config {
             database_pool_size: default_database_pool_size(),
             gateway_url: Url::from_str("http://localhost:8545").unwrap(),
             gateway_chain_id: 54321,
+            decryption_contract: default_decryption_contract_config(),
+            gateway_config_contract: default_gateway_config_contract_config(),
+            kms_generation_contract: default_kms_generation_contract_config(),
             ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
             ethereum_chain_id: 11155111,
-            kms_verifier_address: Address::default(),
-            decryption_contract: default_decryption_contract_config(),
-            kms_generation_contract: default_kms_generation_contract_config(),
+            skip_ethereum_context_bootstrap: false,
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
@@ -139,8 +147,8 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
-            env::remove_var("KMS_CONNECTOR_KMS_VERIFIER_ADDRESS");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_GET_LOGS_BATCH_SIZE");
@@ -173,7 +181,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ETHEREUM_URL", "http://localhost:9545");
             env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
             env::set_var(
-                "KMS_CONNECTOR_KMS_VERIFIER_ADDRESS",
+                "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
                 "0x0000000000000000000000000000000000000001",
             );
             env::set_var(
@@ -210,7 +218,7 @@ mod tests {
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
-            config.kms_verifier_address,
+            config.gateway_config_contract.address,
             address!("0x0000000000000000000000000000000000000001")
         );
         assert_eq!(config.service_name, "kms-connector-test");

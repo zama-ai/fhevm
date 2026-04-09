@@ -10,7 +10,7 @@ use crate::{
     },
     gateway::{
         arbitrum::{
-            bindings::InputVerification,
+            bindings::{InputVerification, InputVerificationNative},
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
@@ -142,6 +142,25 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
 }
 
 impl InputProofGatewayHandler {
+    fn extract_input_proof_request_id_from_receipt(
+        receipt: &TxResult,
+    ) -> Result<alloy::primitives::U256, EventProcessingError> {
+        TransactionHelper::extract_gateway_id_from_receipt::<InputVerification::VerifyProofRequest>(
+            receipt,
+            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
+            |event| event.zkProofId,
+        )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                InputVerificationNative::VerifyProofRequestNative,
+            >(
+                receipt,
+                InputVerificationNative::VerifyProofRequestNative::SIGNATURE_HASH,
+                |event| event.zkProofId,
+            )
+        })
+    }
+
     /// Processes user input proof request by sending it to the Gateway blockchain.
     ///
     /// Steps:
@@ -180,13 +199,7 @@ impl InputProofGatewayHandler {
             })?;
 
         // PRE-CALCULATE CALLDATA
-        let calldata_bytes = ComputeCalldata::verify_proof_req(
-            input_proof_request.contract_chain_id,
-            input_proof_request.contract_address,
-            input_proof_request.user_address,
-            input_proof_request.ciphetext_with_zk_proof.clone(),
-            input_proof_request.extra_data.clone(),
-        )?;
+        let calldata_bytes = ComputeCalldata::verify_proof_req(input_proof_request)?;
 
         // CONSTRUCT TASK
         let task = GatewayTxTask {
@@ -705,13 +718,7 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            InputVerification::VerifyProofRequest,
-        >(
-            receipt,
-            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
-            |event| event.zkProofId,
-        )?;
+        let gw_reference_id = Self::extract_input_proof_request_id_from_receipt(receipt)?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

@@ -13,7 +13,7 @@ use tracing::info;
 
 pub fn public_decryption_req(handles: Vec<FixedBytes<32>>) -> Result<Bytes> {
     info!("Generating public decryption request calldata");
-    let extra_data = Bytes::new(); // Empty extra_data for now
+    let extra_data = Bytes::from(vec![0x00]);
     let calldata = publicDecryptionRequestCall::new((handles, extra_data)).abi_encode();
     Ok(Bytes::from(calldata))
 }
@@ -24,8 +24,6 @@ pub fn user_decryption_req(
     contracts_chain_id: u64,
 ) -> Result<Bytes> {
     info!("Generating user decryption request calldata");
-
-    let extra_data = Bytes::new(); // Empty extra_data for now
     let call = userDecryptionRequestCall::new((
         user_decrypt_request.ct_handle_contract_pairs,
         user_decrypt_request.request_validity,
@@ -36,7 +34,7 @@ pub fn user_decryption_req(
         user_decrypt_request.user_address,
         user_decrypt_request.public_key,
         user_decrypt_request.signature,
-        extra_data,
+        user_decrypt_request.extra_data,
     ));
 
     let calldata = userDecryptionRequestCall::abi_encode(&call);
@@ -63,7 +61,7 @@ pub fn verify_proof_req(
         contractAddress: contract_address,
         userAddress: user_address,
         ciphertextWithZKProof: ciphertext_with_zkproof,
-        extraData: Bytes::new(), // Empty extra_data for now
+        extraData: Bytes::from(vec![0x00]),
     };
     let calldata = request_call.abi_encode();
     Ok(Bytes::from(calldata))

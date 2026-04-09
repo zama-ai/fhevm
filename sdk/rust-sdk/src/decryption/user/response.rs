@@ -2,7 +2,7 @@ use super::deserializer::UserDecryptionDeserializer;
 use super::types::ResponseConfig;
 use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, keccak256};
 use alloy::signers::Signature;
 use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
@@ -86,6 +86,15 @@ impl UserDecryptionResponseBuilder {
         self
     }
 
+    /// Set the native 32-byte user identity and derive the internal KMS client address from it.
+    ///
+    /// This keeps Solana-native callers from needing a separate EVM keypair while still
+    /// satisfying the current KMS client-address requirement.
+    pub fn with_native_user_id(mut self, user_id: &str) -> Result<Self> {
+        self.config.user_address = Some(native_client_address_from_user_id(user_id)?.to_checksum(None));
+        Ok(self)
+    }
+
     /// Set gateway chain ID (required)
     pub fn with_gateway_chain_id(mut self, chain_id: u64) -> Self {
         self.config.gateway_chain_id = Some(chain_id);
@@ -160,6 +169,19 @@ impl UserDecryptionResponseBuilder {
         let processor = ResponseProcessor::new(self.config);
         processor.process()
     }
+}
+
+fn native_client_address_from_user_id(user_id: &str) -> Result<Address> {
+    let user_id_bytes = parse_hex_string(user_id, "native user ID")?;
+    if user_id_bytes.len() != 32 {
+        return Err(FhevmError::InvalidParams(format!(
+            "Invalid native user ID length: expected 32 bytes, got {}",
+            user_id_bytes.len()
+        )));
+    }
+
+    let digest = keccak256(user_id_bytes);
+    Ok(Address::from_slice(&digest[12..]))
 }
 
 /// Handles the actual processing logic
@@ -610,5 +632,23 @@ mod config_tests {
 
         let builder = builder.with_domain("CustomDomain");
         assert_eq!(builder.config.domain, Some("CustomDomain".to_string()));
+    }
+
+    #[test]
+    fn test_builder_native_user_id_derives_internal_client_address() {
+        let builder = UserDecryptionResponseBuilder::new()
+            .with_native_user_id(
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+            )
+            .expect("native user id should be accepted");
+
+        assert_eq!(
+            builder.config.user_address,
+            Some(native_client_address_from_user_id(
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+            )
+            .expect("address derivation should succeed")
+            .to_checksum(None))
+        );
     }
 }

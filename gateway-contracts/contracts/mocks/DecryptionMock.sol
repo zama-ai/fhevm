@@ -18,6 +18,16 @@ contract DecryptionMock {
         address delegateAddress;
     }
 
+    struct NativeContractsInfo {
+        uint256 chainId;
+        bytes32[] ids;
+    }
+
+    struct NativeDelegationAccounts {
+        bytes32 delegatorId;
+        bytes32 delegateId;
+    }
+
     struct PublicDecryptVerification {
         bytes32[] ctHandles;
         bytes decryptedResult;
@@ -36,6 +46,23 @@ contract DecryptionMock {
         bytes publicKey;
         address[] contractAddresses;
         address delegatorAddress;
+        uint256 startTimestamp;
+        uint256 durationDays;
+        bytes extraData;
+    }
+
+    struct NativeUserDecryptRequestVerification {
+        bytes publicKey;
+        bytes32[] contractIds;
+        uint256 startTimestamp;
+        uint256 durationDays;
+        bytes extraData;
+    }
+
+    struct NativeDelegatedUserDecryptRequestVerification {
+        bytes publicKey;
+        bytes32[] contractIds;
+        bytes32 delegatorId;
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;
@@ -78,6 +105,14 @@ contract DecryptionMock {
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
+        bytes publicKey,
+        bytes extraData
+    );
+
+    event UserDecryptionRequestNative(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes32 userId,
         bytes publicKey,
         bytes extraData
     );
@@ -133,6 +168,22 @@ contract DecryptionMock {
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
+    function userDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeContractsInfo calldata contractsInfo,
+        bytes32 userId,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
+        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+
+        emit UserDecryptionRequestNative(decryptionId, snsCtMaterials, userId, publicKey, extraData);
+    }
+
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
@@ -150,6 +201,28 @@ contract DecryptionMock {
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
+    function delegatedUserDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeDelegationAccounts calldata delegationAccounts,
+        NativeContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
+        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+
+        emit UserDecryptionRequestNative(
+            decryptionId,
+            snsCtMaterials,
+            delegationAccounts.delegateId,
+            publicKey,
+            extraData
+        );
+    }
+
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
@@ -161,5 +234,33 @@ contract DecryptionMock {
         emit UserDecryptionResponse(decryptionId, indexShare, userDecryptedShare, signature, extraData);
 
         emit UserDecryptionResponseThresholdReached(decryptionId);
+    }
+
+    function isUserDecryptionReady(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external pure returns (bool) {
+        return ctHandleContractPairs.length > 0;
+    }
+
+    function isUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external pure returns (bool) {
+        return ctHandleContractPairs.length > 0;
+    }
+
+    function isDelegatedUserDecryptionReady(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external pure returns (bool) {
+        return ctHandleContractPairs.length > 0;
+    }
+
+    function isDelegatedUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external pure returns (bool) {
+        return ctHandleContractPairs.length > 0;
     }
 }

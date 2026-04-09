@@ -28,6 +28,14 @@ sol! {
         uint256 contractChainId;
         bytes extraData;
     }
+
+    struct NativeCiphertextVerification {
+        bytes32[] ctHandles;
+        bytes32 userId;
+        bytes32 contractId;
+        uint256 contractChainId;
+        bytes extraData;
+    }
 }
 
 #[derive(Clone)]
@@ -334,17 +342,30 @@ where
                         chain_id: self.gw_chain_id,
                         verifying_contract: self.input_verification_address,
                     };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
+                    let signing_hash = if let Some((contract_id, user_id)) =
+                        parse_native_input_proof_identities(&row.extra_data)
+                    {
+                        NativeCiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userId: user_id.into(),
+                            contractId: contract_id.into(),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain)
+                    } else {
+                        CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row.user_address.parse().expect("invalid user address"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid contract address"),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain)
+                    };
                     let signature = self
                         .signer
                         .sign_hash(&signing_hash)
@@ -425,4 +446,20 @@ where
         }
         Ok(maybe_has_more_work)
     }
+}
+
+const INPUT_PROOF_EXTRA_DATA_VERSION: u8 = 0x01;
+const INPUT_PROOF_IDENTITY_EXTRA_DATA_LENGTH: usize = 65;
+
+fn parse_native_input_proof_identities(extra_data: &[u8]) -> Option<([u8; 32], [u8; 32])> {
+    if extra_data.len() != INPUT_PROOF_IDENTITY_EXTRA_DATA_LENGTH {
+        return None;
+    }
+    if extra_data.first().copied() != Some(INPUT_PROOF_EXTRA_DATA_VERSION) {
+        return None;
+    }
+
+    let contract_id: [u8; 32] = extra_data[1..33].try_into().ok()?;
+    let user_id: [u8; 32] = extra_data[33..65].try_into().ok()?;
+    Some((contract_id, user_id))
 }

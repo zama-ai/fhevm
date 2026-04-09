@@ -25,6 +25,7 @@ tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
 humantime = { workspace = true }
 prometheus = { workspace = true }
+bs58 = "0.5"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

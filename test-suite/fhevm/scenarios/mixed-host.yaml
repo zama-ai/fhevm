@@ -1,0 +1,16 @@
+version: 1
+kind: coprocessor-consensus
+name: Mixed Host
+description: Single coprocessor with one EVM host chain and one Solana host chain.
+hostChains:
+  - key: host
+    chainId: "12345"
+    chainKind: evm
+    rpcPort: 8545
+  - key: solana
+    chainId: "123456"
+    chainKind: solana
+    rpcPort: 18999
+topology:
+  count: 1
+  threshold: 1

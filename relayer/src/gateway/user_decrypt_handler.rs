@@ -11,7 +11,7 @@ use crate::{
     },
     gateway::{
         arbitrum::{
-            bindings::Decryption,
+            bindings::{Decryption, DecryptionNative},
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
@@ -49,7 +49,9 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
     fn from(pair: &HandleContractPair) -> Self {
         Self {
             ctHandle: pair.ct_handle.into(),
-            contractAddress: pair.contract_address,
+            contractAddress: pair
+                .contract_address
+                .expect("legacy handle-contract pair requires contractAddress"),
         }
     }
 }
@@ -1197,7 +1199,16 @@ impl TxLifecycleHooks for GatewayHandler {
             receipt,
             Decryption::UserDecryptionRequest::SIGNATURE_HASH,
             |event| event.decryptionId,
-        )?;
+        )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                DecryptionNative::UserDecryptionRequestNative,
+            >(
+                receipt,
+                DecryptionNative::UserDecryptionRequestNative::SIGNATURE_HASH,
+                |event| event.decryptionId,
+            )
+        })?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

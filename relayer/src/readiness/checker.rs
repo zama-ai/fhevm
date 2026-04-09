@@ -8,7 +8,7 @@ use crate::{
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::primitives::{Bytes, FixedBytes};
 use std::fmt;
 
 /// Steps for readiness checker operations
@@ -89,11 +89,7 @@ impl ReadinessChecker {
         request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
         self.host_acl
-            .check_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.user_address,
-            )
+            .check_user_decrypt(job_id, request)
             .await
             .map_err(|e| match &e {
                 HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
@@ -104,12 +100,22 @@ impl ReadinessChecker {
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        address: Address,
         pairs: &[crate::core::event::HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_user_decryption_readiness(job_id, address, pairs, extra_data)
+            .check_user_decryption_readiness(job_id, pairs, extra_data)
+            .await
+    }
+
+    pub async fn check_delegated_user_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        pairs: &[crate::core::event::HandleContractPair],
+        extra_data: Bytes,
+    ) -> Result<(), ReadinessCheckError> {
+        self.ciphertext
+            .check_delegated_user_decryption_readiness(job_id, pairs, extra_data)
             .await
     }
 
@@ -119,12 +125,7 @@ impl ReadinessChecker {
         request: &DelegatedUserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
         self.host_acl
-            .check_delegated_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.delegator_address,
-                request.delegate_address,
-            )
+            .check_delegated_user_decrypt(job_id, request)
             .await
             .map_err(|e| match &e {
                 HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),

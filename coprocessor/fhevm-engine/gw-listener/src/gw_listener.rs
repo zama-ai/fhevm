@@ -2,7 +2,8 @@ use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
-use alloy::sol_types::SolEventInterface;
+use alloy::sol;
+use alloy::sol_types::{SolEvent, SolEventInterface};
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
@@ -33,6 +34,18 @@ use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration;
+
+sol! {
+    #[derive(Debug)]
+    event VerifyProofRequestNative(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+}
 
 #[derive(Debug)]
 struct DigestMismatchError {
@@ -270,6 +283,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                                 VERIFY_PROOF_FAIL_COUNTER.inc();
                                         })?;
                                     }
+                                } else if let Ok(event) = VerifyProofRequestNative::decode_log(&log.inner) {
+                                    self.verify_proof_request_native(db_pool, event.data, log.clone()).await
+                                        .inspect(|_| {
+                                            verify_proof_success += 1;
+                                        })
+                                        .inspect_err(|e| {
+                                            error!(error = %e, "VerifyProofRequestNative processing failed");
+                                            VERIFY_PROOF_FAIL_COUNTER.inc();
+                                        })?;
                                 } else {
                                     error!(log = ?log, "Failed to decode InputVerification event log");
                                 }
@@ -583,6 +605,50 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             chain_id.as_i64(),
             request.contractAddress.to_string(),
             request.userAddress.to_string(),
+            Some(request.ciphertextWithZKProof.as_ref()),
+            request.extraData.as_ref(),
+            transaction_id,
+            self.conf.verify_proof_req_db_channel
+        )
+        .execute(db_pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn verify_proof_request_native(
+        &self,
+        db_pool: &Pool<Postgres>,
+        request: VerifyProofRequestNative,
+        log: Log,
+    ) -> anyhow::Result<()> {
+        let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
+        info!(
+            zk_proof_id = %request.zkProofId,
+            tid = %to_hex(&transaction_id),
+            "Received native ZK proof request event"
+        );
+
+        let chain_id = ChainId::try_from(request.contractChainId)?;
+
+        let _ = telemetry::try_begin_transaction(
+            db_pool,
+            chain_id,
+            &transaction_id,
+            log.block_number.unwrap_or_default(),
+        )
+        .await;
+
+        sqlx::query!(
+            "WITH ins AS (
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT(zk_proof_id) DO NOTHING
+            )
+            SELECT pg_notify($8, '')",
+            request.zkProofId.to::<i64>(),
+            chain_id.as_i64(),
+            Address::ZERO.to_string(),
+            Address::ZERO.to_string(),
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
             transaction_id,

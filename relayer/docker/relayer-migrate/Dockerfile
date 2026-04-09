@@ -5,7 +5,7 @@ ARG APP_NAME=relayer-migrate
 
 FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
 ARG APP_NAME
-WORKDIR /app
+WORKDIR /app/relayer/relayer-migrate
 
 # Build the application.
 # Leverage a cache mount to /usr/local/cargo/registry/
@@ -22,7 +22,7 @@ RUN --mount=type=bind,source=relayer/relayer-migrate/Cargo.toml,target=Cargo.tom
     --mount=type=bind,source=relayer/relayer-migrate/src,target=src \
     --mount=type=bind,source=relayer/relayer-migrate/migrations,target=migrations \
     --mount=type=bind,source=relayer/relayer-migrate/down,target=down \
-    --mount=type=cache,target=/app/target/ \
+    --mount=type=cache,target=/app/relayer/relayer-migrate/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
     cargo build --locked --release && \

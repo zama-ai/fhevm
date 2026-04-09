@@ -1,0 +1,153 @@
+host_chains:
+  - chain_id: __SOLANA_HOST_CHAIN_ID__
+    chain_kind: solana
+    url: "__SOLANA_HOST_RPC_URL__"
+    acl_address: "__SOLANA_HOST_ACL_ADDRESS__"
+    state_pda: "__SOLANA_HOST_STATE_PDA__"
+
+gateway:
+  blockchain_rpc:
+    read_http_url: "http://gateway-node:8546"
+    chain_id: 54321
+    ws_health_check_timeout_secs: 5
+    http_health_check_timeout_secs: 5
+  listener_pool:
+    reconnect_config:
+      max_attempts: 20
+      retry_interval_ms: 500
+    polling_max_attempts: 40
+    recycle_interval_mins: 30
+    poll_interval_ms: 2000
+    dedup_ttl_seconds: 5
+    dedup_max_capacity: 100000
+    listeners:
+      - type: subscription
+        url: "ws://gateway-node:8546"
+      - type: subscription
+        url: "ws://gateway-node:8546"
+      - type: subscription
+        url: "ws://gateway-node:8546"
+  tx_engine:
+    signer:
+      type: "private_key"
+      private_key: "0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257"
+    max_concurrency: 100
+    retry:
+      max_attempts: 100
+      retry_interval_ms: 500
+    tx_throttlers:
+      input_proof:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+      user_decrypt:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+      public_decrypt:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+    tx_throttler_per_secs: 20
+    tx_throttler_capacity: 11000
+    tx_throttler_safety_margin: 1000
+  readiness_checker:
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 15
+        retry_interval_ms: 2000
+    public_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+    user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+    delegated_user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+  contracts:
+    decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
+    user_decrypt_shares_threshold: 1
+log:
+  format: "compact"
+  show_file_line: true
+  show_thread_ids: true
+  show_timestamp: true
+  show_target: true
+
+keyurl:
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://0.0.0.0:3001/publicKey.bin"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://0.0.0.0:3001/crs2048.bin"
+
+http:
+  endpoint: "0.0.0.0:3000"
+  rate_limit_post_endpoints:
+    requests_per_second: 30
+    burst_size: 30
+    retry_after_seconds: 5
+    jitter_max_ms: 2000
+  metrics:
+    histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
+  api_retry_after_seconds: 4
+  retry_after:
+    min_seconds: 1
+    max_seconds: 300
+    safety_margin: 0.2
+    nominal_times:
+      readiness_check_seconds: 4
+      input_proof_processing_seconds: 2
+      user_decrypt_processing_seconds: 6
+      public_decrypt_processing_seconds: 6
+      tx_confirmation_ms: 250
+    copro_kms_backoff_intervals:
+      - [0, 4]
+      - [60, 10]
+      - [120, 30]
+      - [300, 60]
+      - [900, 300]
+
+metrics:
+  endpoint: "0.0.0.0:9898"
+  query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
+  request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
+  transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+  retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+
+storage:
+  sql_database_url: "postgresql://postgres:postgres@relayer-db:5433/relayer_db"
+  app_pool:
+    max_connections: 10
+    min_connections: 2
+    acquire_timeout_secs: 10
+    idle_timeout_secs: 300
+    max_lifetime_secs: 900
+  cron_pool:
+    max_connections: 5
+    min_connections: 1
+    acquire_timeout_secs: 30
+    idle_timeout_secs: 600
+    max_lifetime_secs: 1800
+  sql_health_check_timeout_secs: 5
+  cron:
+    timeout_cron_interval: "60s"
+    public_decrypt_timeout: "30m"
+    user_decrypt_timeout: "30m"
+    input_proof_timeout: "30m"
+    expiry_cron_interval: "5m"
+    public_decrypt_expiry: "365d"
+    user_decrypt_expiry: "7d"
+    input_proof_expiry: "7d"
+    cron_startup_delay_after_recovery: "30s"

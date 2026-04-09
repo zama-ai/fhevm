@@ -1,0 +1,21 @@
+[package]
+name = "solana-confidential-token-program"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+description = "Deployable Solana ConfidentialToken app program for local FHEVM parity tests"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["custom-heap"]
+no-entrypoint = []
+custom-heap = []
+
+[dependencies]
+borsh = { version = "1.6.0", features = ["derive"] }
+solana-confidential-token-core = { path = "../../crates/confidential-token-core" }
+solana-host-contracts-core = { path = "../../crates/core" }
+solana-program = "4.0.0"
+solana-system-interface = { version = "3.0.0", features = ["bincode"] }

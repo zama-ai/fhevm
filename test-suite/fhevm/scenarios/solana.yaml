@@ -1,0 +1,12 @@
+version: 1
+kind: coprocessor-consensus
+name: Solana
+description: Single coprocessor with a single Solana host chain.
+hostChains:
+  - key: host
+    chainId: "123456"
+    chainKind: solana
+    rpcPort: 18999
+topology:
+  count: 1
+  threshold: 1

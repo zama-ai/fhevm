@@ -1,0 +1,28 @@
+[package]
+name = "solana-host-contracts-local-cli"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+description = "Local validator deployment and smoke-test CLI for the Solana host contracts"
+
+[dependencies]
+base64 = "0.22.1"
+borsh = { version = "1.6.0", features = ["derive"] }
+hex = "0.4.3"
+k256 = { version = "0.13.4", features = ["ecdsa"] }
+reqwest = { version = "0.12.20", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde_json = "1.0.140"
+sha3 = "0.10.8"
+solana-confidential-token-core = { path = "../crates/confidential-token-core" }
+solana-host-contracts-core = { path = "../crates/core" }
+solana-client = "4.0.0-beta.4"
+solana-compute-budget-interface = "3.0.0"
+solana-commitment-config = "3.1.1"
+solana-instruction = "3.2.0"
+solana-keypair = "3.1.2"
+solana-pubkey = "4.1.0"
+solana-signer = "3.0.0"
+solana-sdk = "4.0.1"
+solana-transaction = "=3.1.0"
+solana-system-interface = { version = "3.0.0", features = ["bincode"] }
+solana-test-input-core = { path = "../crates/test-input-core" }

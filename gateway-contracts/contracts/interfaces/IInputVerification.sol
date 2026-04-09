@@ -26,6 +26,24 @@ interface IInputVerification {
     );
 
     /**
+     * @notice Emitted when a native-host ZK proof verification is started.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param contractChainId The host chain's chain ID of the contract requiring the ZK Proof verification.
+     * @param contractId The native identity of the dapp requiring the ZK Proof verification.
+     * @param userId The native identity of the user providing the input.
+     * @param ciphertextWithZKProof The combination of the ciphertext and the ZK proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event VerifyProofRequestNative(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
      * request for a proof validation.
      * @param zkProofId The ID of the ZK Proof.
@@ -98,6 +116,22 @@ interface IInputVerification {
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests the verification of a native-host ZK proof.
+     * @param contractChainId The ID of the blockchain the contract belongs to.
+     * @param contractId The native host identity of the dapp the input is used for.
+     * @param userId The native host identity of the user providing the input.
+     * @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function verifyProofRequestNative(
+        uint256 contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
         bytes calldata ciphertextWithZKProof,
         bytes calldata extraData
     ) external;

@@ -1,12 +1,15 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import path from "node:path";
+import process from "node:process";
+
 import { compatPolicyForState } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl } from "../utils/fs";
+import { hostReachableRpcUrl, readEnvFile, readEnvFileIfExists } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -23,6 +26,9 @@ import {
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
+  envPath,
+  hostChainAddressesPath,
+  hostChainKind,
 } from "../layout";
 import type { TestOptions } from "../types";
 
@@ -45,7 +51,14 @@ const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decr
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const SOLANA_TEST_PROFILES = [
+  "solana-input-proof",
+  "solana-user-decryption",
+  "solana-public-decrypt-http-ebool",
+  "solana-public-decrypt-http-mixed",
+  "solana-confidential-token",
+] as const;
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), ...SOLANA_TEST_PROFILES, "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
@@ -73,7 +86,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "solana-input-proof": "Run Solana input proof coverage.",
+  "solana-user-decryption": "Run Solana user decryption coverage.",
+  "solana-public-decrypt-http-ebool": "Run Solana HTTP public decrypt coverage for ebool payloads.",
+  "solana-public-decrypt-http-mixed": "Run Solana mixed HTTP public decrypt coverage.",
+  "solana-confidential-token": "Run Solana ConfidentialToken coverage.",
 };
+
+const SOLANA_RUNNER = path.resolve(import.meta.dir, "..", "..", "..", "e2e", "test", "solana", "run-solana-e2e.ts");
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
 export const validateNamedProfileGrep = (testName: string | undefined, grep: string | undefined) => {
@@ -103,6 +123,53 @@ export const listTestProfiles = () => {
     console.log(`${name}${suiteTags.length ? ` - ${suiteTags.join(", ")}` : ""}`);
     console.log(`  ${description}`);
   }
+};
+
+const runSolanaProfile = async (
+  state: Awaited<ReturnType<typeof loadState>>,
+  name: (typeof SOLANA_TEST_PROFILES)[number],
+  options: TestOptions,
+) => {
+  if (!state) {
+    throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+  if (!state.scenario.hostChains.some((chain) => hostChainKind(chain) === "solana")) {
+    throw new PreflightError(`${name} requires a Solana host chain; rerun with --solana or --multi-chain`);
+  }
+  const solanaChain = state.scenario.hostChains.find((chain) => hostChainKind(chain) === "solana")!;
+  const addressesEnvFile = hostChainAddressesPath(solanaChain.key);
+  const gatewayEnv = await readEnvFile(envPath("gateway-sc"));
+  const hostEnv = await readEnvFileIfExists(envPath("host-sc"));
+  const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+  const addressesEnv = await readEnvFile(addressesEnvFile);
+  const relayerBaseUrl = testSuiteEnv.RELAYER_URL
+    ? hostReachableRpcUrl(testSuiteEnv.RELAYER_URL).replace(/\/v2\/?$/, "")
+    : undefined;
+  const hostReachableTestEnv = {
+    ...testSuiteEnv,
+    ...(relayerBaseUrl ? { RELAYER_URL: relayerBaseUrl } : {}),
+    ...(testSuiteEnv.GATEWAY_RPC_URL ? { GATEWAY_RPC_URL: hostReachableRpcUrl(testSuiteEnv.GATEWAY_RPC_URL) } : {}),
+    ...(gatewayEnv.DEPLOYER_PRIVATE_KEY ? { GATEWAY_DEPLOYER_PRIVATE_KEY: gatewayEnv.DEPLOYER_PRIVATE_KEY } : {}),
+  };
+  console.log(`[test] ${name} (${options.network})`);
+  const started = Date.now();
+  return runLogged(name, started, async () => {
+    await runWithHeartbeat(
+      [process.execPath, "test", "--test-name-pattern", name, SOLANA_RUNNER],
+      `test ${name}`,
+      {
+        env: {
+          ...process.env,
+          ...gatewayEnv,
+          ...hostEnv,
+          ...hostReachableTestEnv,
+          ...addressesEnv,
+          FHEVM_SOLANA_ADDRESSES_ENV: addressesEnvFile,
+          ...(options.verbose ? { VERBOSE: "1" } : {}),
+        },
+      },
+    );
+  });
 };
 
 /** Logs pass/fail timing around one test task. */
@@ -689,6 +756,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
   const runProfile = async (name: string) => {
+    if ((SOLANA_TEST_PROFILES as readonly string[]).includes(name)) {
+      return runSolanaProfile(state, name as (typeof SOLANA_TEST_PROFILES)[number], options);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }

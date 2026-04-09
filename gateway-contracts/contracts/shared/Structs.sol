@@ -99,6 +99,17 @@ struct CtHandleContractPair {
 }
 
 /**
+ * @notice A struct that contains a ciphertext handle and a native host contract identity that is
+ * expected to be allowed to decrypt this ciphertext.
+ */
+struct NativeCtHandleContractPair {
+    /// @notice The handle of the ciphertext
+    bytes32 ctHandle;
+    /// @notice The native host contract identity
+    bytes32 contractId;
+}
+
+/**
  * @notice A struct that contains user decryption delegation data.
  */
 struct UserDecryptionDelegation {

@@ -17,6 +17,7 @@ import {
   resolveServiceOverrides,
 } from "../layout";
 import type {
+  HostChainKind,
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
@@ -96,6 +97,16 @@ const scenarioCandidatePaths = (value: string) => {
 };
 
 const DEFAULT_HOST_CHAIN: HostChainScenario = { key: DEFAULT_HOST_CHAIN_KEY, chainId: DEFAULT_CHAIN_ID, rpcPort: DEFAULT_HOST_RPC_PORT };
+const parseHostChainKind = (value: unknown, label: string): HostChainKind => {
+  if (value === undefined) {
+    return "evm";
+  }
+  const normalized = normalizeScalar(value, label);
+  if (normalized === "evm" || normalized === "solana") {
+    return normalized;
+  }
+  throw new Error(`${label} must be "evm" or "solana"`);
+};
 
 /** Parses hostChains from YAML. */
 const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): HostChainScenario[] | undefined => {
@@ -141,6 +152,7 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         key,
         chainId,
         rpcPort,
+        chainKind: parseHostChainKind(chain.chainKind, `${sourceLabel}: hostChains[${index}].chainKind`),
         name: normalizeOptionalText(chain.name, `${sourceLabel}: hostChains[${index}].name`),
       };
     });

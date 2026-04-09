@@ -1,0 +1,210 @@
+services:
+  coprocessor-db-migration:
+    container_name: coprocessor-db-migration
+    image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: db-migration
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    environment:
+      - KEY_ID=${FHE_KEY_ID}
+    command:
+      - /initialize_db.sh
+    volumes:
+      - keys-cache:/fhevm-keys
+
+  coprocessor-host-listener:
+    container_name: coprocessor-host-listener
+    image: ghcr.io/zama-ai/fhevm/coprocessor/solana-host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: solana-host-listener
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - solana_host_listener_poller
+      - --database-url=${DATABASE_URL}
+      - --rpc-url=${SOLANA_HOST_LISTENER_RPC_URL}
+      - --program-id=${SOLANA_HOST_LISTENER_PROGRAM_ID}
+      - --host-chain-id=${SOLANA_HOST_LISTENER_HOST_CHAIN_ID}
+      - --batch-size-slots=512
+      - --poll-interval-ms=500
+      - --retry-interval-ms=1000
+      - --health-port=8080
+      - --commitment=${SOLANA_HOST_LISTENER_COMMITMENT}
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-gw-listener:
+    container_name: coprocessor-gw-listener
+    image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: gw-listener
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    command:
+      - gw_listener
+      - --database-url=${DATABASE_URL}
+      - --database-pool-size=16
+      - --verify-proof-req-database-channel=event_zkpok_new_work
+      - --gw-url=${GATEWAY_WS_URL}
+      - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --error-sleep-initial-secs=1
+      - --error-sleep-max-secs=10
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-tfhe-worker:
+    container_name: coprocessor-tfhe-worker
+    image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: tfhe-worker
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+      cache_to:
+        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    command:
+      - tfhe_worker
+      - --run-bg-worker
+      - --database-url=${DATABASE_URL}
+      - --pg-pool-max-connections=10
+      - --worker-polling-interval-ms=1000
+      - --work-items-batch-size=10
+      - --key-cache-size=32
+      - --coprocessor-fhe-threads=8
+      - --tokio-threads=4
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-zkproof-worker:
+    container_name: coprocessor-zkproof-worker
+    image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: zkproof-worker
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    command:
+      - zkproof_worker
+      - --database-url=${DATABASE_URL}
+      - --pg-listen-channel=event_zkpok_new_work
+      - --pg-notify-channel=event_zkpok_computed
+      - --pg-polling-interval=5
+      - --pg-pool-connections=5
+      - --worker-thread-count=4
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-sns-worker:
+    container_name: coprocessor-sns-worker
+    image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: sns-worker
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    command:
+      - sns_worker
+      - --database-url=${DATABASE_URL}
+      - --pg-listen-channels
+      - event_pbs_computations
+      - event_ciphertext_computed
+      - --pg-notify-channel
+      - event_ciphertext128_computed
+      - --work-items-batch-size=20
+      - --pg-polling-interval=30
+      - --pg-pool-connections=10
+      - --bucket-name-ct64=ct64
+      - --bucket-name-ct128=ct128
+      - --s3-max-concurrent-uploads=100
+      - --s3-max-retries-per-upload=100
+      - --s3-max-backoff=10s
+      - --s3-max-retries-timeout=120s
+      - --s3-recheck-duration=2s
+      - --s3-regular-recheck-duration=120s
+      - --enable-compression
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-transaction-sender:
+    container_name: coprocessor-transaction-sender
+    image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: transaction-sender
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+      cache_from:
+        - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
+    env_file:
+      - ../env/staging/.env.coprocessor-solana.local
+    command:
+      - transaction_sender
+      - --database-url=${DATABASE_URL}
+      - --gateway-url=${GATEWAY_WS_URL}
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
+      - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
+      - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --database-pool-size=10
+      - --database-polling-interval-secs=20
+      - --verify-proof-resp-database-channel=event_zkpok_computed
+      - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
+      - --verify-proof-resp-batch-limit=128
+      - --verify-proof-resp-max-retries=15
+      - --verify-proof-remove-after-max-retries
+      - --signer-type=private-key
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+volumes:
+  keys-cache:

@@ -15,6 +15,13 @@ use tfhe::{safe_serialization::safe_serialize, zk::ZkComputeLoad};
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_rct";
 const HANDLE_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_hdl";
+const INPUT_PROOF_EXTRA_DATA_VERSION: u8 = 0x01;
+
+fn padded_identity_from_address(address: Address) -> [u8; 32] {
+    let mut identity = [0u8; 32];
+    identity[12..32].copy_from_slice(address.as_slice());
+    identity
+}
 
 /// Struct for building encrypted inputs with verification data
 /// Only constants are used for the builder factory
@@ -74,6 +81,8 @@ pub struct EncryptedInputBuilder {
     pub acl_contract_address: Address,
     /// Chain ID where the contract lives
     pub chain_id: u64,
+    /// Canonical 32-byte ACL identity used by the native proof/input path.
+    pub acl_identity: [u8; 32],
     /// Public key
     public_key: Arc<tfhe::CompactPublicKey>,
     /// CRS for zero-knowledge proof
@@ -98,6 +107,26 @@ impl EncryptedInputBuilder {
             builder,
             bits: Vec::new(),
             acl_contract_address,
+            acl_identity: padded_identity_from_address(acl_contract_address),
+            chain_id,
+            public_key,
+        }
+    }
+
+    /// Creates a new instance of EncryptedInputBuilder for native 32-byte host identities.
+    pub fn new_with_acl_identity(
+        acl_identity: [u8; 32],
+        public_key: Arc<tfhe::CompactPublicKey>,
+        crs: Arc<tfhe::zk::CompactPkeCrs>,
+        chain_id: u64,
+    ) -> Self {
+        let builder = tfhe::ProvenCompactCiphertextList::builder(&public_key);
+        Self {
+            crs,
+            builder,
+            bits: Vec::new(),
+            acl_contract_address: Address::ZERO,
+            acl_identity,
             chain_id,
             public_key,
         }
@@ -247,6 +276,30 @@ impl EncryptedInputBuilder {
         Ok(aux_data)
     }
 
+    /// Creates auxiliary data for native 32-byte host identities.
+    pub fn create_auxiliary_data_with_identities(
+        &self,
+        contract_id: [u8; 32],
+        user_id: [u8; 32],
+        acl_id: [u8; 32],
+    ) -> Result<Vec<u8>> {
+        let mut aux_data = Vec::with_capacity(128);
+        aux_data.extend_from_slice(&contract_id);
+        aux_data.extend_from_slice(&user_id);
+        aux_data.extend_from_slice(&acl_id);
+        aux_data.extend_from_slice(&chain_id_to_bytes(self.chain_id));
+        Ok(aux_data)
+    }
+
+    /// Creates gateway extraData carrying native host identities.
+    pub fn create_input_proof_extra_data(contract_id: [u8; 32], user_id: [u8; 32]) -> Vec<u8> {
+        let mut extra_data = Vec::with_capacity(65);
+        extra_data.push(INPUT_PROOF_EXTRA_DATA_VERSION);
+        extra_data.extend_from_slice(&contract_id);
+        extra_data.extend_from_slice(&user_id);
+        extra_data
+    }
+
     /// Builds the final ciphertext with proof
     fn build_with_proof(&mut self, auxiliary_data: &[u8]) -> Result<Vec<u8>> {
         let metadata = auxiliary_data;
@@ -282,7 +335,7 @@ impl EncryptedInputBuilder {
         let handles = Self::compute_handles(
             &ciphertext,
             bit_widths,
-            &self.acl_contract_address,
+            &self.acl_identity,
             self.chain_id,
             CIPHERTEXT_VERSION,
         )?;
@@ -292,6 +345,33 @@ impl EncryptedInputBuilder {
             handles,
             contract_address,
             user_address,
+            chain_id: self.chain_id,
+        })
+    }
+
+    /// Builds the final ciphertext with proof and generates handles for native 32-byte host identities.
+    pub fn encrypt_and_prove_with_identities(
+        &mut self,
+        contract_id: [u8; 32],
+        user_id: [u8; 32],
+    ) -> Result<EncryptedInputV1> {
+        let aux_data =
+            self.create_auxiliary_data_with_identities(contract_id, user_id, self.acl_identity)?;
+        let ciphertext = self.build_with_proof(&aux_data)?;
+        let bit_widths = self.get_bits();
+        let handles = Self::compute_handles(
+            &ciphertext,
+            bit_widths,
+            &self.acl_identity,
+            self.chain_id,
+            CIPHERTEXT_VERSION,
+        )?;
+
+        Ok(EncryptedInputV1 {
+            ciphertext,
+            handles,
+            contract_id,
+            user_id,
             chain_id: self.chain_id,
         })
     }
@@ -315,7 +395,7 @@ impl EncryptedInputBuilder {
     pub fn compute_handles(
         ciphertext: &[u8],
         bit_widths: &[usize],
-        acl_contract_address: &Address,
+        acl_identity: &[u8; 32],
         chain_id: u64,
         ciphertext_version: u8,
     ) -> Result<Vec<[u8; 32]>> {
@@ -353,7 +433,7 @@ impl EncryptedInputBuilder {
                 hash_input.extend_from_slice(HANDLE_HASH_DOMAIN_SEPARATOR.as_bytes());
                 hash_input.extend_from_slice(ciphertext_hash.as_slice());
                 hash_input.push(index_byte);
-                hash_input.extend_from_slice(acl_contract_address.as_slice());
+                hash_input.extend_from_slice(acl_identity);
                 hash_input.extend_from_slice(&chain_id_bytes);
 
                 let handle_hash = keccak256(&hash_input);
@@ -377,6 +457,28 @@ impl EncryptedInputBuilder {
             .collect::<Result<Vec<[u8; 32]>>>()?;
 
         Ok(handles)
+    }
+}
+
+/// Represents a fully encrypted input built for native 32-byte host identities.
+pub struct EncryptedInputV1 {
+    pub ciphertext: Vec<u8>,
+    pub handles: Vec<[u8; 32]>,
+    pub contract_id: [u8; 32],
+    pub user_id: [u8; 32],
+    pub chain_id: u64,
+}
+
+impl EncryptedInputV1 {
+    pub fn handles_as_hex(&self) -> Vec<String> {
+        self.handles
+            .iter()
+            .map(|h| format!("0x{}", hex::encode(h)))
+            .collect()
+    }
+
+    pub fn ciphertext_as_hex(&self) -> String {
+        format!("0x{}", hex::encode(&self.ciphertext))
     }
 }
 
@@ -443,13 +545,14 @@ mod tests {
         let mock_ciphertext = vec![1, 2, 3, 4, 5];
         let bit_widths = vec![1, 8, 64];
         let acl_address = Address::from_str("0x1234567890123456789012345678901234567890").unwrap();
+        let acl_identity = padded_identity_from_address(acl_address);
         let chain_id = 1;
         let version = 0;
 
         let handles = EncryptedInputBuilder::compute_handles(
             &mock_ciphertext,
             &bit_widths,
-            &acl_address,
+            &acl_identity,
             chain_id,
             version,
         )

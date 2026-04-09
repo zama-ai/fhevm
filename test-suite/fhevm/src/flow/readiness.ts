@@ -9,6 +9,7 @@ import {
   MINIO_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
   defaultHostChainKey,
+  hostChainKind,
   hostChainSuffix,
 } from "../layout";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -160,7 +161,10 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
 export const coprocessorHealthContainers = (state: Pick<State, "scenario">) => {
   const topology = topologyForState(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter((suffix) => !suffix.includes("migration"));
+  const defaultChainKind = hostChainKind(state.scenario.hostChains[0] ?? { chainKind: "evm" });
+  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter((suffix) =>
+    !suffix.includes("migration") && !(defaultChainKind === "solana" && suffix === "host-listener-poller"),
+  );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -173,12 +177,15 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario">) => {
 /** Waits for all coprocessor runtime services to reach their expected states. */
 export const waitForCoprocessorServices = async (state: State, skipMigration: boolean) => {
   const topology = topologyForState(state);
+  const defaultChainKind = hostChainKind(state.scenario.hostChains[0] ?? { chainKind: "evm" });
   for (let index = 0; index < topology.count; index += 1) {
     if (!skipMigration) {
       await waitForContainer(toServiceName("db-migration", index), "complete");
     }
     await waitForContainer(toServiceName("host-listener", index), "running");
-    await waitForContainer(toServiceName("host-listener-poller", index), "running");
+    if (defaultChainKind !== "solana") {
+      await waitForContainer(toServiceName("host-listener-poller", index), "running");
+    }
     await waitForContainer(toServiceName("gw-listener", index), "running");
     await waitForContainer(toServiceName("tfhe-worker", index), "running");
     await waitForContainer(toServiceName("zkproof-worker", index), "running");
@@ -194,10 +201,14 @@ export const waitForCoprocessor = async (state: State) => waitForCoprocessorServ
 const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenario">, chainKey: string) => {
   const suffix = hostChainSuffix(chainKey, defaultHostChainKey(state.scenario.hostChains));
   const topology = topologyForState(state);
+  const chain = state.scenario.hostChains.find((item) => item.key === chainKey);
+  const solana = hostChainKind(chain ?? { chainKind: "evm" }) === "solana";
   for (let index = 0; index < topology.count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitForContainer(`${prefix}host-listener${suffix}`, "running");
-    await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    if (!solana) {
+      await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    }
   }
 };
 
@@ -205,9 +216,13 @@ const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenari
 export const listenerContainersForChain = (state: Pick<State, "scenario">, chainKey: string) => {
   const suffix = hostChainSuffix(chainKey, defaultHostChainKey(state.scenario.hostChains));
   const topology = topologyForState(state);
+  const chain = state.scenario.hostChains.find((item) => item.key === chainKey);
+  const solana = hostChainKind(chain ?? { chainKind: "evm" }) === "solana";
   return Array.from({ length: topology.count }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
+    return solana
+      ? [`${prefix}host-listener${suffix}`]
+      : [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
   }).flat();
 };
 

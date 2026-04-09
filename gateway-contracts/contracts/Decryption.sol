@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
 import { ciphertextCommitsAddress, gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IERC7913SignatureVerifier } from "@openzeppelin/contracts/interfaces/IERC7913.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
@@ -16,7 +17,7 @@ import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair, NativeCtHandleContractPair } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -85,6 +86,40 @@ contract Decryption is
     }
 
     /**
+     * @notice The typed data structure for the signature to validate in native-host user decryption requests.
+     */
+    struct NativeUserDecryptRequestVerification {
+        /// @notice The user's public key to be used for reencryption.
+        bytes publicKey;
+        /// @notice The native host contract identities that verification is requested for.
+        bytes32[] contractIds;
+        /// @notice The start timestamp of the user decryption request.
+        uint256 startTimestamp;
+        /// @notice The duration in days of the user decryption request after the start timestamp.
+        uint256 durationDays;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
+    }
+
+    /**
+     * @notice The typed data structure for the signature to validate in native-host delegated user decryption requests.
+     */
+    struct NativeDelegatedUserDecryptRequestVerification {
+        /// @notice The user's public key to be used for reencryption.
+        bytes publicKey;
+        /// @notice The native host contract identities that verification is requested for.
+        bytes32[] contractIds;
+        /// @notice The native host identity of the account that delegates access to its handles.
+        bytes32 delegatorId;
+        /// @notice The start timestamp of the user decryption request.
+        uint256 startTimestamp;
+        /// @notice The duration in days of the user decryption request after the start timestamp.
+        uint256 durationDays;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
+    }
+
+    /**
      * @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined
      * EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
@@ -129,6 +164,8 @@ contract Decryption is
      * @notice The maximum number of contracts that can request for user decryption at once.
      */
     uint8 internal constant MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
+
+    uint8 internal constant DECRYPTION_EXTRA_DATA_VERSION = 0x01;
 
     /**
      * @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
@@ -179,6 +216,34 @@ contract Decryption is
      */
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
+
+    /**
+     * @notice The definition of the NativeUserDecryptRequestVerification structure typed data.
+     */
+    string private constant EIP712_NATIVE_USER_DECRYPT_REQUEST_TYPE =
+        "NativeUserDecryptRequestVerification(bytes publicKey,bytes32[] contractIds,uint256 startTimestamp,"
+        "uint256 durationDays,bytes extraData)";
+
+    /**
+     * @notice The hash of the NativeUserDecryptRequestVerification structure typed data definition
+     * used for signature validation in native-host user decryption requests.
+     */
+    bytes32 private constant EIP712_NATIVE_USER_DECRYPT_REQUEST_TYPE_HASH =
+        keccak256(bytes(EIP712_NATIVE_USER_DECRYPT_REQUEST_TYPE));
+
+    /**
+     * @notice The definition of the NativeDelegatedUserDecryptRequestVerification structure typed data.
+     */
+    string private constant EIP712_NATIVE_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
+        "NativeDelegatedUserDecryptRequestVerification(bytes publicKey,bytes32[] contractIds,bytes32 delegatorId,"
+        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+
+    /**
+     * @notice The hash of the NativeDelegatedUserDecryptRequestVerification structure typed data definition
+     * used for signature validation in native-host delegated user decryption requests.
+     */
+    bytes32 private constant EIP712_NATIVE_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
+        keccak256(bytes(EIP712_NATIVE_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
 
     /**
      * @notice The definition of the UserDecryptResponseVerification structure typed data.
@@ -443,21 +508,13 @@ contract Decryption is
         // - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(ctHandleContractPairs, contractsInfo);
 
-        // Initialize the UserDecryptRequestVerification structure for the signature validation.
-        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
-            publicKey,
-            contractsInfo.addresses,
-            requestValidity.startTimestamp,
-            requestValidity.durationDays,
-            extraData
-        );
-
-        // Validate the received EIP712 signature on the user decryption request.
-        _validateUserDecryptRequestEIP712Signature(
-            userDecryptRequestVerification,
+        _validateUserDecryptRequestSignature(
+            requestValidity,
+            contractsInfo,
             userAddress,
+            publicKey,
             signature,
-            contractsInfo.chainId
+            extraData
         );
 
         // Fetch the ciphertexts from the CiphertextCommits contract
@@ -494,6 +551,55 @@ contract Decryption is
     }
 
     /**
+     * @notice See {IDecryption-userDecryptionRequestNative}.
+     */
+    function userDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeContractsInfo calldata contractsInfo,
+        bytes32 userId,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsInfo.chainId) {
+        if (contractsInfo.ids.length == 0) {
+            revert EmptyContractIds();
+        }
+        if (contractsInfo.ids.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractIdsMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractsInfo.ids.length);
+        }
+
+        _checkUserDecryptionRequestValidity(requestValidity);
+
+        if (_containsContractId(contractsInfo.ids, userId)) {
+            revert UserIdInContractIds(userId, contractsInfo.ids);
+        }
+
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUserNative(ctHandleContractPairs, contractsInfo);
+
+        _validateNativeUserDecryptRequestSignature(
+            requestValidity,
+            contractsInfo,
+            userId,
+            publicKey,
+            signature,
+            extraData
+        );
+
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        _collectUserDecryptionFee(msg.sender);
+
+        emit UserDecryptionRequestNative(userDecryptionId, snsCtMaterials, userId, publicKey, extraData);
+    }
+
+    /**
      * @notice See {IDecryption-delegatedUserDecryptionRequest}.
      */
     function delegatedUserDecryptionRequest(
@@ -526,28 +632,14 @@ contract Decryption is
         // Extract the handles and check their conformance.
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(ctHandleContractPairs, contractsInfo);
 
-        // Using scoped local variable to avoid "stack too deep" errors. This will be revisited during the EIP-712 struct refactor.
-        // See: https://github.com/zama-ai/fhevm-internal/issues/403
-        {
-            // Initialize the DelegatedUserDecryptRequestVerification structure for the signature validation.
-            DelegatedUserDecryptRequestVerification
-                memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
-                    publicKey,
-                    contractsInfo.addresses,
-                    delegationAccounts.delegatorAddress,
-                    requestValidity.startTimestamp,
-                    requestValidity.durationDays,
-                    extraData
-                );
-
-            // Validate the received EIP712 signature on the delegated user decryption request.
-            _validateDelegatedUserDecryptRequestEIP712Signature(
-                delegatedUserDecryptRequestVerification,
-                delegationAccounts.delegateAddress,
-                signature,
-                contractsInfo.chainId
-            );
-        }
+        _validateDelegatedUserDecryptRequestSignature(
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            signature,
+            extraData
+        );
 
         // Fetch the ciphertexts from the CiphertextCommits contract.
         // This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -583,6 +675,61 @@ contract Decryption is
             userDecryptionId,
             snsCtMaterials,
             delegationAccounts.delegateAddress,
+            publicKey,
+            extraData
+        );
+    }
+
+    /**
+     * @notice See {IDecryption-delegatedUserDecryptionRequestNative}.
+     */
+    function delegatedUserDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeDelegationAccounts calldata delegationAccounts,
+        NativeContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsInfo.chainId) {
+        if (contractsInfo.ids.length == 0) {
+            revert EmptyContractIds();
+        }
+        if (contractsInfo.ids.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractIdsMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractsInfo.ids.length);
+        }
+
+        _checkUserDecryptionRequestValidity(requestValidity);
+
+        if (_containsContractId(contractsInfo.ids, delegationAccounts.delegatorId)) {
+            revert DelegatorIdInContractIds(delegationAccounts.delegatorId, contractsInfo.ids);
+        }
+
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUserNative(ctHandleContractPairs, contractsInfo);
+
+        _validateNativeDelegatedUserDecryptRequestSignature(
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            signature,
+            extraData
+        );
+
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        _collectUserDecryptionFee(msg.sender);
+
+        emit UserDecryptionRequestNative(
+            userDecryptionId,
+            snsCtMaterials,
+            delegationAccounts.delegateId,
             publicKey,
             extraData
         );
@@ -703,6 +850,25 @@ contract Decryption is
     }
 
     /**
+     * @dev See {IDecryption-isUserDecryptionReadyNative}.
+     */
+    function isUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata /* extraData */
+    ) public view virtual returns (bool) {
+        if (ctHandleContractPairs.length == 0) {
+            return false;
+        }
+
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * @dev See {IDecryption-isUserDecryptionReady}.
      * @custom:deprecated Use isUserDecryptionReady(CtHandleContractPair[], bytes) instead.
      */
@@ -726,6 +892,25 @@ contract Decryption is
         }
 
         // Check that ciphertext material has been added for each cthandle.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @dev See {IDecryption-isDelegatedUserDecryptionReadyNative}.
+     */
+    function isDelegatedUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata /* extraData */
+    ) external view virtual returns (bool) {
+        if (ctHandleContractPairs.length == 0) {
+            return false;
+        }
+
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
                 return false;
@@ -794,8 +979,9 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Version 1 -> extract contextId from bytes 1..33
-        if (version == 1) {
+        // Version 1 uses the unified context-id prefix:
+        // [version | contextId(32B) | ...]
+        if (version == DECRYPTION_EXTRA_DATA_VERSION) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
@@ -804,6 +990,331 @@ contract Decryption is
 
         // Unsupported version
         revert UnsupportedExtraDataVersion(version);
+    }
+
+    function _decodeUserDecryptRequestIdentities(
+        bytes calldata extraData,
+        uint256 contractCount
+    ) internal pure returns (bool hasExplicitIdentities, bytes32 userId, bytes32[] memory contractIds) {
+        if (extraData.length == 0 || (extraData.length == 1 && extraData[0] == 0)) {
+            return (false, bytes32(0), new bytes32[](0));
+        }
+
+        uint8 version = uint8(extraData[0]);
+        if (version != DECRYPTION_EXTRA_DATA_VERSION) {
+            return (false, bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length == 33) {
+            return (false, bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length < 34) {
+            revert InvalidExtraDataLength(extraData.length, 34);
+        }
+
+        uint256 identityCount = uint8(extraData[33]);
+        _decodeExtraDataAuthSigner(extraData, identityCount);
+
+        if (identityCount != contractCount + 1) {
+            revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 1) * 32);
+        }
+
+        userId = abi.decode(extraData[34:66], (bytes32));
+        contractIds = new bytes32[](contractCount);
+        for (uint256 i = 0; i < contractCount; i++) {
+            uint256 start = 66 + (i * 32);
+            contractIds[i] = abi.decode(extraData[start:start + 32], (bytes32));
+        }
+
+        return (true, userId, contractIds);
+    }
+
+    function _decodeDelegatedUserDecryptRequestIdentities(
+        bytes calldata extraData,
+        uint256 contractCount
+    )
+        internal
+        pure
+        returns (bool hasExplicitIdentities, bytes32 delegatorId, bytes32 delegateId, bytes32[] memory contractIds)
+    {
+        if (extraData.length == 0 || (extraData.length == 1 && extraData[0] == 0)) {
+            return (false, bytes32(0), bytes32(0), new bytes32[](0));
+        }
+
+        uint8 version = uint8(extraData[0]);
+        if (version != DECRYPTION_EXTRA_DATA_VERSION) {
+            return (false, bytes32(0), bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length == 33) {
+            return (false, bytes32(0), bytes32(0), new bytes32[](0));
+        }
+
+        if (extraData.length < 34) {
+            revert InvalidExtraDataLength(extraData.length, 34);
+        }
+
+        uint256 identityCount = uint8(extraData[33]);
+        _decodeExtraDataAuthSigner(extraData, identityCount);
+
+        if (identityCount != contractCount + 2) {
+            revert InvalidExtraDataLength(extraData.length, 34 + (contractCount + 2) * 32);
+        }
+
+        delegatorId = abi.decode(extraData[34:66], (bytes32));
+        delegateId = abi.decode(extraData[66:98], (bytes32));
+        contractIds = new bytes32[](contractCount);
+        for (uint256 i = 0; i < contractCount; i++) {
+            uint256 start = 98 + (i * 32);
+            contractIds[i] = abi.decode(extraData[start:start + 32], (bytes32));
+        }
+
+        return (true, delegatorId, delegateId, contractIds);
+    }
+
+    function _decodeExtraDataAuthSigner(
+        bytes calldata extraData,
+        uint256 identityCount
+    ) internal pure returns (bool hasAuthSigner, bytes memory authSigner) {
+        uint256 authSignerLengthOffset = 34 + identityCount * 32;
+        if (extraData.length < authSignerLengthOffset) {
+            revert InvalidExtraDataLength(extraData.length, authSignerLengthOffset);
+        }
+
+        if (extraData.length == authSignerLengthOffset) {
+            return (false, bytes(""));
+        }
+
+        if (extraData.length < authSignerLengthOffset + 1) {
+            revert InvalidExtraDataLength(extraData.length, authSignerLengthOffset + 1);
+        }
+
+        uint256 authSignerLength = uint8(extraData[authSignerLengthOffset]);
+        uint256 expectedLength = authSignerLengthOffset + 1 + authSignerLength;
+        if (authSignerLength < 20 || extraData.length != expectedLength) {
+            revert InvalidExtraDataLength(extraData.length, expectedLength);
+        }
+
+        return (true, extraData[authSignerLengthOffset + 1:expectedLength]);
+    }
+
+    function _validateUserDecryptRequestSignature(
+        RequestValidity calldata requestValidity,
+        ContractsInfo calldata contractsInfo,
+        address userAddress,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal view virtual {
+        UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
+            publicKey,
+            contractsInfo.addresses,
+            requestValidity.startTimestamp,
+            requestValidity.durationDays,
+            extraData
+        );
+
+        (bool hasExplicitIdentities,,) = _decodeUserDecryptRequestIdentities(extraData, contractsInfo.addresses.length);
+
+        if (hasExplicitIdentities) {
+            (bool hasAuthSigner, bytes memory authSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.addresses.length + 1
+            );
+            if (hasAuthSigner) {
+                _requireValidERC7913Signature(
+                    authSigner,
+                    _hashUserDecryptRequestVerification(userDecryptRequestVerification, contractsInfo.chainId),
+                    signature
+                );
+                return;
+            }
+        }
+
+        _validateUserDecryptRequestEIP712Signature(
+            userDecryptRequestVerification,
+            userAddress,
+            signature,
+            contractsInfo.chainId
+        );
+    }
+
+    function _validateNativeUserDecryptRequestSignature(
+        RequestValidity calldata requestValidity,
+        NativeContractsInfo calldata contractsInfo,
+        bytes32 userId,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal view virtual {
+        {
+            (bool hasExplicitIdentities, bytes32 decodedUserId, bytes32[] memory decodedContractIds) =
+                _decodeUserDecryptRequestIdentities(extraData, contractsInfo.ids.length);
+            if (
+                !hasExplicitIdentities ||
+                decodedUserId != userId ||
+                !_equalContractIds(decodedContractIds, contractsInfo.ids)
+            ) {
+                revert NativeIdentitiesMismatch();
+            }
+        }
+
+        bytes memory authSigner;
+        {
+            (bool hasAuthSigner, bytes memory decodedAuthSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.ids.length + 1
+            );
+            if (!hasAuthSigner) {
+                revert MissingNativeAuthSigner();
+            }
+            authSigner = decodedAuthSigner;
+        }
+
+        _requireValidERC7913Signature(
+            authSigner,
+            _hashNativeUserDecryptRequestSignaturePayload(requestValidity, contractsInfo, publicKey, extraData),
+            signature
+        );
+    }
+
+    function _validateDelegatedUserDecryptRequestSignature(
+        RequestValidity calldata requestValidity,
+        DelegationAccounts calldata delegationAccounts,
+        ContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal view virtual {
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification =
+            DelegatedUserDecryptRequestVerification(
+                publicKey,
+                contractsInfo.addresses,
+                delegationAccounts.delegatorAddress,
+                requestValidity.startTimestamp,
+                requestValidity.durationDays,
+                extraData
+            );
+
+        (bool hasExplicitIdentities,,,) = _decodeDelegatedUserDecryptRequestIdentities(
+            extraData,
+            contractsInfo.addresses.length
+        );
+
+        if (hasExplicitIdentities) {
+            (bool hasAuthSigner, bytes memory authSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.addresses.length + 2
+            );
+            if (hasAuthSigner) {
+                _requireValidERC7913Signature(
+                    authSigner,
+                    _hashDelegatedUserDecryptRequestVerification(
+                        delegatedUserDecryptRequestVerification,
+                        contractsInfo.chainId
+                    ),
+                    signature
+                );
+                return;
+            }
+        }
+
+        _validateDelegatedUserDecryptRequestEIP712Signature(
+            delegatedUserDecryptRequestVerification,
+            delegationAccounts.delegateAddress,
+            signature,
+            contractsInfo.chainId
+        );
+    }
+
+    function _validateNativeDelegatedUserDecryptRequestSignature(
+        RequestValidity calldata requestValidity,
+        NativeDelegationAccounts calldata delegationAccounts,
+        NativeContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal view virtual {
+        {
+            (
+                bool hasExplicitIdentities,
+                bytes32 decodedDelegatorId,
+                bytes32 decodedDelegateId,
+                bytes32[] memory decodedContractIds
+            ) = _decodeDelegatedUserDecryptRequestIdentities(extraData, contractsInfo.ids.length);
+            if (
+                !hasExplicitIdentities ||
+                decodedDelegatorId != delegationAccounts.delegatorId ||
+                decodedDelegateId != delegationAccounts.delegateId ||
+                !_equalContractIds(decodedContractIds, contractsInfo.ids)
+            ) {
+                revert NativeIdentitiesMismatch();
+            }
+        }
+
+        bytes memory authSigner;
+        {
+            (bool hasAuthSigner, bytes memory decodedAuthSigner) = _decodeExtraDataAuthSigner(
+                extraData,
+                contractsInfo.ids.length + 2
+            );
+            if (!hasAuthSigner) {
+                revert MissingNativeAuthSigner();
+            }
+            authSigner = decodedAuthSigner;
+        }
+
+        _requireValidERC7913Signature(
+            authSigner,
+            _hashNativeDelegatedUserDecryptRequestSignaturePayload(
+                requestValidity,
+                delegationAccounts,
+                contractsInfo,
+                publicKey,
+                extraData
+            ),
+            signature
+        );
+    }
+
+    function _hashNativeUserDecryptRequestSignaturePayload(
+        RequestValidity calldata requestValidity,
+        NativeContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata extraData
+    ) internal view virtual returns (bytes32) {
+        NativeUserDecryptRequestVerification memory nativeUserDecryptRequestVerification =
+            NativeUserDecryptRequestVerification(
+                publicKey,
+                contractsInfo.ids,
+                requestValidity.startTimestamp,
+                requestValidity.durationDays,
+                extraData
+            );
+        return _hashNativeUserDecryptRequestVerification(nativeUserDecryptRequestVerification, contractsInfo.chainId);
+    }
+
+    function _hashNativeDelegatedUserDecryptRequestSignaturePayload(
+        RequestValidity calldata requestValidity,
+        NativeDelegationAccounts calldata delegationAccounts,
+        NativeContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata extraData
+    ) internal view virtual returns (bytes32) {
+        NativeDelegatedUserDecryptRequestVerification memory nativeDelegatedUserDecryptRequestVerification =
+            NativeDelegatedUserDecryptRequestVerification(
+                publicKey,
+                contractsInfo.ids,
+                delegationAccounts.delegatorId,
+                requestValidity.startTimestamp,
+                requestValidity.durationDays,
+                extraData
+            );
+        return _hashNativeDelegatedUserDecryptRequestVerification(
+            nativeDelegatedUserDecryptRequestVerification,
+            contractsInfo.chainId
+        );
     }
 
     /**
@@ -885,6 +1396,35 @@ contract Decryption is
         }
     }
 
+    function _requireValidERC7913Signature(
+        bytes memory signer,
+        bytes32 digest,
+        bytes calldata signature
+    ) internal view virtual {
+        if (signer.length <= 20) {
+            revert InvalidUserSignature(signature);
+        }
+
+        address verifier;
+        assembly {
+            verifier := shr(96, mload(add(signer, 0x20)))
+        }
+
+        uint256 keyLength = signer.length - 20;
+        bytes memory key = new bytes(keyLength);
+        for (uint256 i = 0; i < keyLength; ++i) {
+            key[i] = signer[i + 20];
+        }
+
+        try IERC7913SignatureVerifier(verifier).verify(key, digest, signature) returns (bytes4 magicValue) {
+            if (magicValue != IERC7913SignatureVerifier.verify.selector) {
+                revert InvalidUserSignature(signature);
+            }
+        } catch {
+            revert InvalidUserSignature(signature);
+        }
+    }
+
     /**
      * @notice Computes the hash of a given PublicDecryptVerification structured data
      * @param publicDecryptVerification The PublicDecryptVerification structure
@@ -946,6 +1486,29 @@ contract Decryption is
     }
 
     /**
+     * @notice Computes the hash of a given NativeUserDecryptRequestVerification structured data.
+     * @param nativeUserDecryptRequestVerification The NativeUserDecryptRequestVerification structure to hash.
+     * @param contractsChainId The chain ID of the contracts.
+     * @return The hash of the NativeUserDecryptRequestVerification structure.
+     */
+    function _hashNativeUserDecryptRequestVerification(
+        NativeUserDecryptRequestVerification memory nativeUserDecryptRequestVerification,
+        uint256 contractsChainId
+    ) internal view virtual returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_NATIVE_USER_DECRYPT_REQUEST_TYPE_HASH,
+                keccak256(nativeUserDecryptRequestVerification.publicKey),
+                keccak256(abi.encodePacked(nativeUserDecryptRequestVerification.contractIds)),
+                nativeUserDecryptRequestVerification.startTimestamp,
+                nativeUserDecryptRequestVerification.durationDays,
+                keccak256(abi.encodePacked(nativeUserDecryptRequestVerification.extraData))
+            )
+        );
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
+    }
+
+    /**
      * @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
      * @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
      * @param contractsChainId The chain ID of the contracts.
@@ -964,6 +1527,30 @@ contract Decryption is
                 delegatedUserDecryptRequestVerification.startTimestamp,
                 delegatedUserDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
+            )
+        );
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
+    }
+
+    /**
+     * @notice Computes the hash of a given NativeDelegatedUserDecryptRequestVerification structured data.
+     * @param nativeDelegatedUserDecryptRequestVerification The native delegated user decryption structure to hash.
+     * @param contractsChainId The chain ID of the contracts.
+     * @return The hash of the NativeDelegatedUserDecryptRequestVerification structure.
+     */
+    function _hashNativeDelegatedUserDecryptRequestVerification(
+        NativeDelegatedUserDecryptRequestVerification memory nativeDelegatedUserDecryptRequestVerification,
+        uint256 contractsChainId
+    ) internal view virtual returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_NATIVE_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
+                keccak256(nativeDelegatedUserDecryptRequestVerification.publicKey),
+                keccak256(abi.encodePacked(nativeDelegatedUserDecryptRequestVerification.contractIds)),
+                nativeDelegatedUserDecryptRequestVerification.delegatorId,
+                nativeDelegatedUserDecryptRequestVerification.startTimestamp,
+                nativeDelegatedUserDecryptRequestVerification.durationDays,
+                keccak256(abi.encodePacked(nativeDelegatedUserDecryptRequestVerification.extraData))
             )
         );
         return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
@@ -1099,6 +1686,47 @@ contract Decryption is
     }
 
     /**
+     * @notice Extracts the handles and checks their conformance for native-host user decryption requests.
+     * @param ctHandleContractPairs The list of ciphertext handles and native contract identities.
+     * @param contractsInfo The native contracts' information (chain ID, identities).
+     * @return ctHandles The list of ciphertext handles.
+     */
+    function _extractCtHandlesCheckConformanceUserNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        NativeContractsInfo calldata contractsInfo
+    ) internal view virtual returns (bytes32[] memory ctHandles) {
+        if (ctHandleContractPairs.length == 0) {
+            revert EmptyCtHandleContractPairs();
+        }
+
+        ctHandles = new bytes32[](ctHandleContractPairs.length);
+
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
+            bytes32 contractId = ctHandleContractPairs[i].contractId;
+
+            uint256 chainId = HandleOps.extractChainId(ctHandle);
+            if (chainId != contractsInfo.chainId) {
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, chainId, contractsInfo.chainId);
+            }
+
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            if (!_containsContractId(contractsInfo.ids, contractId)) {
+                revert ContractIdNotInContractIds(contractId, contractsInfo.ids);
+            }
+
+            ctHandles[i] = ctHandle;
+        }
+
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
+    /**
      * @notice Checks if a user decryption request's start timestamp and duration days are valid.
      * @param requestValidity The RequestValidity structure
      */
@@ -1142,6 +1770,39 @@ contract Decryption is
             }
         }
         return false;
+    }
+
+    /**
+     * @notice Checks if a given contractId is included in the contractIds list.
+     * @param contractIds The list of contract identities.
+     * @param contractId The contract identity to check.
+     * @return Whether the contract identity is included in the list.
+     */
+    function _containsContractId(
+        bytes32[] memory contractIds,
+        bytes32 contractId
+    ) internal pure virtual returns (bool) {
+        for (uint256 i = 0; i < contractIds.length; i++) {
+            if (contractIds[i] == contractId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function _equalContractIds(
+        bytes32[] memory lhs,
+        bytes32[] calldata rhs
+    ) internal pure virtual returns (bool) {
+        if (lhs.length != rhs.length) {
+            return false;
+        }
+        for (uint256 i = 0; i < lhs.length; i++) {
+            if (lhs[i] != rhs[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

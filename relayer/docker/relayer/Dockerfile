@@ -5,7 +5,7 @@ ARG APP_NAME=fhevm-relayer
 
 FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
 ARG APP_NAME
-WORKDIR /app
+WORKDIR /app/relayer
 
 # Build the application.
 # Leverage a cache mount to /usr/local/cargo/registry/
@@ -27,7 +27,8 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
 #    --mount=type=bind,source=.git/refs,target=.git/refs \
     --mount=type=bind,source=relayer/.sqlx,target=.sqlx \
-    --mount=type=cache,target=/app/target/ \
+    --mount=type=bind,source=solana-host-contracts/crates/core,target=/app/solana-host-contracts/crates/core \
+    --mount=type=cache,target=/app/relayer/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
     cargo build --locked --release && \

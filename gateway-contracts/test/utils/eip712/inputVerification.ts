@@ -50,6 +50,51 @@ export function createEIP712ResponseZKPoK(
   };
 }
 
+export function createEIP712ResponseNativeZKPoK(
+  gatewayChainId: number,
+  verifyingContract: string,
+  ctHandles: string[],
+  userId: string,
+  contractId: string,
+  contractChainId: number,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      NativeCiphertextVerification: [
+        { name: "ctHandles", type: "bytes32[]" },
+        { name: "userId", type: "bytes32" },
+        { name: "contractId", type: "bytes32" },
+        { name: "contractChainId", type: "uint256" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "NativeCiphertextVerification",
+    domain: {
+      name: "InputVerification",
+      version: "1",
+      chainId: gatewayChainId,
+      verifyingContract,
+    },
+    message: {
+      ctHandles,
+      userId,
+      contractId,
+      contractChainId,
+      extraData,
+    },
+  };
+}
+
 // Get signatures from signers using the EIP712 message response for proof verification
 export async function getSignaturesZKPoK(
   eip712: EIP712,

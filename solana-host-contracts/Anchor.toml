@@ -1,0 +1,36 @@
+[provider]
+cluster = "localnet"
+wallet = "./tests/fixtures/anchor-authority.json"
+
+[programs.localnet]
+solana_host_contracts = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
+solana_test_input_program = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv"
+solana_confidential_token_program = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
+
+[test]
+startup_wait = 10000
+
+[test.validator]
+bind_address = "127.0.0.1"
+ledger = ".anchor/test-ledger"
+rpc_port = 18999
+faucet_port = 19900
+faucet_sol = "100000"
+
+[[test.genesis]]
+address = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"
+program = "target/deploy/solana_host_contracts.so"
+upgradeable = true
+
+[[test.genesis]]
+address = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv"
+program = "target/deploy/solana_test_input_program.so"
+upgradeable = true
+
+[[test.genesis]]
+address = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx"
+program = "target/deploy/solana_confidential_token_program.so"
+upgradeable = true
+
+[hooks]
+pre-test = "make build-sbf"

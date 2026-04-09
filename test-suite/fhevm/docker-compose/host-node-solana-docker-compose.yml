@@ -1,0 +1,31 @@
+services:
+  host-node:
+    container_name: host-node
+    image: ${SOLANA_HOST_NODE_IMAGE}
+    platform: ${SOLANA_HOST_NODE_PLATFORM}
+    env_file:
+      - ../env/staging/.env.host-node-solana.local
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        exec solana-test-validator \
+          --reset \
+          --ledger /ledger \
+          --bind-address 0.0.0.0 \
+          --rpc-port "${SOLANA_HOST_RPC_PORT}" \
+          --faucet-port "${SOLANA_HOST_FAUCET_PORT}" \
+          --upgradeable-program "${SOLANA_HOST_PROGRAM_ID}" /opt/solana/programs/solana_host_contracts.so /opt/solana/fixtures/anchor-authority.json \
+          --upgradeable-program "${SOLANA_TEST_INPUT_PROGRAM_ID}" /opt/solana/programs/solana_test_input_program.so /opt/solana/fixtures/anchor-authority.json \
+          --upgradeable-program "${SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID}" /opt/solana/programs/solana_confidential_token_program.so /opt/solana/fixtures/anchor-authority.json
+    ports:
+      - "${SOLANA_HOST_RPC_PORT}:${SOLANA_HOST_RPC_PORT}"
+      - "${SOLANA_HOST_WS_PORT}:${SOLANA_HOST_WS_PORT}"
+      - "${SOLANA_HOST_FAUCET_PORT}:${SOLANA_HOST_FAUCET_PORT}"
+    volumes:
+      - solana-host-node-ledger:/ledger
+      - ../../../solana-host-contracts/target/deploy:/opt/solana/programs:ro
+      - ../../../solana-host-contracts/tests/fixtures:/opt/solana/fixtures:ro
+
+volumes:
+  solana-host-node-ledger:

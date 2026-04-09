@@ -14,11 +14,35 @@ impl ContentHasher for InputProofRequest {
         hasher.update(b"contract_chain_id:");
         hasher.update(self.contract_chain_id.to_be_bytes());
 
-        hasher.update(b"contract_address:");
-        hasher.update(self.contract_address.as_slice());
+        hasher.update(b"contract_identity:");
+        match (&self.contract_address, &self.contract_id) {
+            (Some(contract_address), None) => {
+                hasher.update([0x00]);
+                hasher.update(contract_address.as_slice());
+            }
+            (None, Some(contract_id)) => {
+                hasher.update([0x01]);
+                hasher.update(contract_id.as_slice());
+            }
+            _ => {
+                hasher.update([0xff]);
+            }
+        }
 
-        hasher.update(b"user_address:");
-        hasher.update(self.user_address.as_slice());
+        hasher.update(b"user_identity:");
+        match (&self.user_address, &self.user_id) {
+            (Some(user_address), None) => {
+                hasher.update([0x00]);
+                hasher.update(user_address.as_slice());
+            }
+            (None, Some(user_id)) => {
+                hasher.update([0x01]);
+                hasher.update(user_id.as_slice());
+            }
+            _ => {
+                hasher.update([0xff]);
+            }
+        }
 
         hasher.update(b"ciphertext_with_zk_proof:");
         hasher.update(&self.ciphetext_with_zk_proof);
@@ -39,8 +63,10 @@ mod tests {
     fn test_input_proof_request_content_hash_deterministic() {
         let request = InputProofRequest {
             contract_chain_id: 1337,
-            contract_address: Address::from([1; 20]),
-            user_address: Address::from([2; 20]),
+            contract_address: Some(Address::from([1; 20])),
+            user_address: Some(Address::from([2; 20])),
+            contract_id: None,
+            user_id: None,
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa, 0xbb, 0xcc]),
             extra_data: Bytes::from(vec![0x00]),
         };
@@ -56,8 +82,10 @@ mod tests {
     fn test_input_proof_request_content_hash_different_for_different_requests() {
         let request1 = InputProofRequest {
             contract_chain_id: 1337,
-            contract_address: Address::from([1; 20]),
-            user_address: Address::from([2; 20]),
+            contract_address: Some(Address::from([1; 20])),
+            user_address: Some(Address::from([2; 20])),
+            contract_id: None,
+            user_id: None,
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa, 0xbb]),
             extra_data: Bytes::from(vec![0x00]),
         };
@@ -78,8 +106,10 @@ mod tests {
     fn test_input_proof_request_each_field_affects_hash() {
         let base_request = InputProofRequest {
             contract_chain_id: 1337,
-            contract_address: Address::from([1; 20]),
-            user_address: Address::from([2; 20]),
+            contract_address: Some(Address::from([1; 20])),
+            user_address: Some(Address::from([2; 20])),
+            contract_id: None,
+            user_id: None,
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa]),
             extra_data: Bytes::from(vec![0x00]),
         };
@@ -96,7 +126,7 @@ mod tests {
 
         // Test contract_address
         let mut modified = base_request.clone();
-        modified.contract_address = Address::from([99; 20]);
+        modified.contract_address = Some(Address::from([99; 20]));
         assert_ne!(
             base_hash,
             modified.content_hash(),
@@ -105,7 +135,7 @@ mod tests {
 
         // Test user_address
         let mut modified = base_request.clone();
-        modified.user_address = Address::from([99; 20]);
+        modified.user_address = Some(Address::from([99; 20]));
         assert_ne!(
             base_hash,
             modified.content_hash(),
@@ -135,8 +165,10 @@ mod tests {
     fn test_input_proof_request_hash_format() {
         let request = InputProofRequest {
             contract_chain_id: 1337,
-            contract_address: Address::from([1; 20]),
-            user_address: Address::from([2; 20]),
+            contract_address: Some(Address::from([1; 20])),
+            user_address: Some(Address::from([2; 20])),
+            contract_id: None,
+            user_id: None,
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa]),
             extra_data: Bytes::from(vec![0x00]),
         };

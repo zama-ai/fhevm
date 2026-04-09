@@ -1,6 +1,7 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
+import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
@@ -58,6 +59,7 @@ import {
   dockerArgs,
   envPath,
   gatewayAddressesPath,
+  hostChainKind,
   hostChainAddressesPath,
 } from "../layout";
 import type {
@@ -106,6 +108,7 @@ import {
   waitForStableChainListeners,
   waitForTestSuite,
 } from "./readiness";
+import { bootstrapSolanaHost, isSolanaChain, waitForSolanaRpc } from "./solana";
 import {
   ensureGeneratedAddressFile,
   ensureRuntimeArtifacts,
@@ -427,8 +430,12 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
-/** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
-const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
+/** Registers one host chain in all coprocessor databases and optionally restarts zkproof-workers. */
+const registerChainInCoprocessor = async (
+  state: State,
+  chain: { key: string; chainId: string },
+  options: { restartWorkers: boolean },
+) => {
   const plan = stackSpecForState(state);
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
@@ -443,10 +450,12 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
     if (result.code !== 0) {
       throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
     }
-    console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
-    await run(["docker", "stop", `${prefix}zkproof-worker`]);
-    await run(["docker", "start", `${prefix}zkproof-worker`]);
-    await waitForContainer(`${prefix}zkproof-worker`, "running");
+    if (options.restartWorkers) {
+      console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
+      await run(["docker", "stop", `${prefix}zkproof-worker`]);
+      await run(["docker", "start", `${prefix}zkproof-worker`]);
+      await waitForContainer(`${prefix}zkproof-worker`, "running");
+    }
   }
 };
 
@@ -483,26 +492,36 @@ export const runStep = async (state: State, step: StepName) => {
       if (!defaultChain) {
         throw new PreflightError("Missing default host chain");
       }
-      await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
+      if (isSolanaChain(defaultChain)) {
+        await waitForSolanaRpc(`http://localhost:${defaultChain.rpcPort}`);
+      } else {
+        await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
+      }
       await stepComposeUp("gateway-node", state);
       await waitForRpc(`http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`);
       const plan = stackSpecForState(state);
       const endpoints = await defaultEndpoints();
       endpoints.hosts[defaultChain.key] = {
         http: `http://${defaultChain.node}:${defaultChain.rpcPort}`,
-        ws: `ws://${defaultChain.node}:${defaultChain.rpcPort}`,
+        ws: isSolanaChain(defaultChain)
+          ? `ws://${defaultChain.node}:19000`
+          : `ws://${defaultChain.node}:${defaultChain.rpcPort}`,
       };
       state.discovery = createDiscovery(endpoints);
       for (const chain of extraHostChains(state)) {
         state.discovery.endpoints.hosts[chain.key] = {
           http: `http://${chain.node}:${chain.rpcPort}`,
-          ws: `ws://${chain.node}:${chain.rpcPort}`,
+          ws: isSolanaChain(chain) ? `ws://${chain.node}:19000` : `ws://${chain.node}:${chain.rpcPort}`,
         };
       }
       await generateRuntime(state, stackSpecForState(state));
       for (const chain of extraHostChains(state)) {
         await multiChainComposeUp(chain.node);
-        await waitForRpc(`http://localhost:${chain.rpcPort}`);
+        if (isSolanaChain(chain)) {
+          await waitForSolanaRpc(`http://localhost:${chain.rpcPort}`);
+        } else {
+          await waitForRpc(`http://localhost:${chain.rpcPort}`);
+        }
       }
       break;
     }
@@ -535,32 +554,54 @@ export const runStep = async (state: State, step: StepName) => {
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
-      await waitForContainer("host-sc-deploy", "complete");
-      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
-        "ACL_CONTRACT_ADDRESS",
-        "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
-        "KMS_VERIFIER_CONTRACT_ADDRESS",
-        "INPUT_VERIFIER_CONTRACT_ADDRESS",
-        "HCU_LIMIT_CONTRACT_ADDRESS",
-      ]);
-      for (const chain of extraHostChains(state)) {
-        const scKey = chain.sc;
-        await timed(`[multi-chain] ${scKey}-deploy`, async () => {
-          await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
-          await waitForContainer(`${scKey}-deploy`, "complete");
-          await ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
+      if (isSolanaChain(defaultHostChain(state)!)) {
+        await timed("[solana] bootstrap host", async () => {
+          await bootstrapSolanaHost(defaultHostChain(state)!);
+          await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "solana bootstrap", [
+            "SOLANA_HOST_PROGRAM_ID",
+            "SOLANA_HOST_STATE_PDA",
             "ACL_CONTRACT_ADDRESS",
-            "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
-            "KMS_VERIFIER_CONTRACT_ADDRESS",
-            "INPUT_VERIFIER_CONTRACT_ADDRESS",
-            "HCU_LIMIT_CONTRACT_ADDRESS",
           ]);
         });
-        await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
-          await multiChainComposeTask(scKey, [`${scKey}-add-pausers`]);
-          await waitForContainer(`${scKey}-add-pausers`, "complete");
-        });
+      } else {
+        await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
+        await waitForContainer("host-sc-deploy", "complete");
+        await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
+          "ACL_CONTRACT_ADDRESS",
+          "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
+          "KMS_VERIFIER_CONTRACT_ADDRESS",
+          "INPUT_VERIFIER_CONTRACT_ADDRESS",
+          "HCU_LIMIT_CONTRACT_ADDRESS",
+        ]);
+      }
+      for (const chain of extraHostChains(state)) {
+        if (isSolanaChain(chain)) {
+          await timed(`[solana] bootstrap ${chain.key}`, async () => {
+            await bootstrapSolanaHost(chain);
+            await ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), `solana bootstrap ${chain.key}`, [
+              "SOLANA_HOST_PROGRAM_ID",
+              "SOLANA_HOST_STATE_PDA",
+              "ACL_CONTRACT_ADDRESS",
+            ]);
+          });
+        } else {
+          const scKey = chain.sc;
+          await timed(`[multi-chain] ${scKey}-deploy`, async () => {
+            await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
+            await waitForContainer(`${scKey}-deploy`, "complete");
+            await ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
+              "ACL_CONTRACT_ADDRESS",
+              "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
+              "KMS_VERIFIER_CONTRACT_ADDRESS",
+              "INPUT_VERIFIER_CONTRACT_ADDRESS",
+              "HCU_LIMIT_CONTRACT_ADDRESS",
+            ]);
+          });
+          await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
+            await multiChainComposeTask(scKey, [`${scKey}-add-pausers`]);
+            await waitForContainer(`${scKey}-add-pausers`, "complete");
+          });
+        }
       }
       break;
     case "discover": {
@@ -583,14 +624,26 @@ export const runStep = async (state: State, step: StepName) => {
     }
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
-      const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
-      await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
+      const defaultChain = defaultHostChain(state);
+      if (defaultChain && isSolanaChain(defaultChain)) {
+        if (!skipMigration) {
+          await stepComposeUp("coprocessor", state, ["coprocessor-db-migration"]);
+          await waitForContainer("coprocessor-db-migration", "complete");
+          await timed("[solana] register host chain in coprocessor DBs", () =>
+            registerChainInCoprocessor(state, defaultChain, { restartWorkers: false }),
+          );
+        }
+        await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
+      } else {
+        const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
+        await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
+      }
       await waitForCoprocessorServices(state, skipMigration);
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;
         await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
-          registerExtraChainInCoprocessor(state, chain),
+          registerChainInCoprocessor(state, chain, { restartWorkers: true }),
         );
         await timed(`[multi-chain] start host-listener${suffix} services`, async () => {
           await multiChainComposeUp(coprocessorHostKey(chain.key));
@@ -645,17 +698,19 @@ export const runStep = async (state: State, step: StepName) => {
       if (!bootstrapHost) {
         throw new PreflightError("Missing default host chain");
       }
-      const hostPauserRegistered = await castBool(
-        state.discovery!.endpoints.hosts[bootstrapHost.key].http,
-        withHexPrefix(state.discovery!.hosts[bootstrapHost.key].PAUSER_SET_CONTRACT_ADDRESS),
-        "isPauser(address)(bool)",
-        withHexPrefix(hostEnv.PAUSER_ADDRESS_0),
-      ).catch(() => false);
-      if (!hostPauserRegistered) {
-        await timed("[bootstrap] add-host-pausers", () =>
-          stepComposeTask("host-sc", state, ["host-sc-add-pausers"], { noDeps: true }),
-        );
-        await waitForContainer("host-sc-add-pausers", "complete");
+      if (!isSolanaChain(bootstrapHost)) {
+        const hostPauserRegistered = await castBool(
+          state.discovery!.endpoints.hosts[bootstrapHost.key].http,
+          withHexPrefix(state.discovery!.hosts[bootstrapHost.key].PAUSER_SET_CONTRACT_ADDRESS),
+          "isPauser(address)(bool)",
+          withHexPrefix(hostEnv.PAUSER_ADDRESS_0),
+        ).catch(() => false);
+        if (!hostPauserRegistered) {
+          await timed("[bootstrap] add-host-pausers", () =>
+            stepComposeTask("host-sc", state, ["host-sc-add-pausers"], { noDeps: true }),
+          );
+          await waitForContainer("host-sc-add-pausers", "complete");
+        }
       }
       const gatewayPauserRegistered = await castBool(
         state.discovery!.endpoints.gateway.http,
@@ -682,6 +737,27 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "relayer":
+      if (state.scenario.hostChains.some((chain) => hostChainKind(chain) === "solana")) {
+        await timed("[solana] deploy SolanaEd25519Verifier", async () => {
+          const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+          const gatewayScEnv = await readEnvFile(envPath("gateway-sc"));
+          const SOLANA_VERIFIER_DEPLOY_SCRIPT = path.resolve(
+            import.meta.dir, "..", "..", "..", "e2e", "scripts", "deploy-solana-verifier.ts",
+          );
+          await run([process.execPath, "run", SOLANA_VERIFIER_DEPLOY_SCRIPT], {
+            env: {
+              GATEWAY_RPC_URL: testSuiteEnv.GATEWAY_RPC_URL ?? "",
+              // Use the gateway chain deployer (has ETH on the gateway node).
+              // testSuiteEnv.DEPLOYER_PRIVATE_KEY belongs to the test-suite
+              // account which is not funded on the gateway chain.
+              DEPLOYER_PRIVATE_KEY:
+                gatewayScEnv.DEPLOYER_PRIVATE_KEY ?? testSuiteEnv.DEPLOYER_PRIVATE_KEY ?? "",
+              TEST_SUITE_ENV_FILE: envPath("test-suite"),
+              REPO_ROOT,
+            },
+          });
+        });
+      }
       await stepComposeUp("relayer", state);
       await waitForContainer("fhevm-relayer-db", "healthy");
       await waitForContainer("fhevm-relayer", "running");

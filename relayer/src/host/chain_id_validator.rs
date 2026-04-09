@@ -82,7 +82,8 @@ mod tests {
         let handle_bytes = make_handle_with_chain_id(8009);
         let pairs = vec![HandleContractPair {
             ct_handle: U256::from_be_bytes(handle_bytes),
-            contract_address: Address::ZERO,
+            contract_address: Some(Address::ZERO),
+            contract_id: None,
         }];
         assert!(validator.validate_u256_handles(&pairs).is_ok());
     }
@@ -93,7 +94,8 @@ mod tests {
         let handle_bytes = make_handle_with_chain_id(5555);
         let pairs = vec![HandleContractPair {
             ct_handle: U256::from_be_bytes(handle_bytes),
-            contract_address: Address::ZERO,
+            contract_address: Some(Address::ZERO),
+            contract_id: None,
         }];
         assert_eq!(validator.validate_u256_handles(&pairs), Err(5555));
     }

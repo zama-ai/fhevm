@@ -1,15 +1,19 @@
 use crate::core::{Config, publish::publish_context_id};
 use alloy::{network::Ethereum, providers::Provider};
-use fhevm_host_bindings::kms_verifier::KMSVerifier::{self, KMSVerifierInstance};
+use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigInstance};
 use sqlx::{Pool, Postgres};
-use tracing::info;
+use tokio::time::{Duration, sleep};
+use tracing::{info, warn};
 
 pub struct EthereumListener<P> {
     /// The database pool for storing Ethereum's events.
     db_pool: Pool<Postgres>,
 
-    /// The `KMSVerifier` contract instance on Ethereum.
-    kms_verifier_contract: KMSVerifierInstance<P>,
+    /// The `GatewayConfig` contract instance on Ethereum.
+    gateway_config_contract: GatewayConfigInstance<P>,
+
+    /// Whether to skip the legacy host-side context bootstrap.
+    skip_context_bootstrap: bool,
 }
 
 impl<P> EthereumListener<P>
@@ -18,16 +22,34 @@ where
 {
     /// Creates a new `EthereumListener` instance.
     pub fn new(db_pool: Pool<Postgres>, provider: P, config: &Config) -> Self {
-        let kms_verifier_contract = KMSVerifier::new(config.kms_verifier_address, provider);
+        let gateway_config_contract =
+            GatewayConfig::new(config.gateway_config_contract.address, provider);
         Self {
             db_pool,
-            kms_verifier_contract,
+            gateway_config_contract,
+            skip_context_bootstrap: config.skip_ethereum_context_bootstrap,
         }
     }
 
     /// Starts the `EthereumListener`.
     pub async fn start(self) {
-        // No listening for now, will be done when implementing RFC-005.
+        if self.skip_context_bootstrap {
+            info!("Skipping legacy host-side KMS context bootstrap");
+            info!("EthereumListener stopped successfully!");
+            return;
+        }
+
+        loop {
+            match self.store_on_chain_context().await {
+                Ok(()) => break,
+                Err(error) => {
+                    warn!(
+                        "Failed to store current context yet: {error}; retrying in 5s"
+                    );
+                    sleep(Duration::from_secs(5)).await;
+                }
+            }
+        }
 
         info!("EthereumListener stopped successfully!");
     }
@@ -35,7 +57,7 @@ where
     /// Stores the current context ID found on-chain in the database.
     pub async fn store_on_chain_context(&self) -> anyhow::Result<()> {
         let current_context_id = self
-            .kms_verifier_contract
+            .gateway_config_contract
             .getCurrentKmsContextId()
             .call()
             .await?;

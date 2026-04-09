@@ -94,6 +94,9 @@ export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
+export const DEFAULT_SOLANA_HOST_RPC_PORT = 18999;
+export const DEFAULT_SOLANA_HOST_WS_PORT = 19000;
+export const DEFAULT_SOLANA_HOST_FAUCET_PORT = 19900;
 export const MINIO_PORT = 9000;
 export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
@@ -109,6 +112,12 @@ export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
 export const DEFAULT_CHAIN_ID = "12345";
+export const DEFAULT_SOLANA_CHAIN_ID = "123456";
+export const SOLANA_HOST_NODE_IMAGE = "anzaxyz/agave:v2.3.8";
+export const SOLANA_HOST_NODE_PLATFORM = "linux/amd64";
+export const SOLANA_HOST_PROGRAM_ID = "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf";
+export const SOLANA_TEST_INPUT_PROGRAM_ID = "5MaDNrtMTmYccr1ASgE1i2LZgbnyBPeDR7tN8Q8ewXTv";
+export const SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_ID = "Cjb3AVoxxKmG4TGWX5gzSjCNwtxN6gneVsWB7f9i8Csx";
 
 export const COMPONENTS = [
   "minio",
@@ -313,6 +322,7 @@ const composeFiles = (name: string) =>
     : [composeTemplatePath(name)];
 /** The implicit single-chain key used when hostChains is omitted. */
 export const DEFAULT_HOST_CHAIN_KEY = "host";
+export const hostChainKind = (chain: Pick<HostChainScenario, "chainKind">) => chain.chainKind ?? "evm";
 export const hostChainAddressesPath = (key: string) =>
   path.join(ADDRESS_DIR, key, ".env.host");
 export const defaultHostChainKey = (chains: Array<Pick<HostChainScenario, "key">>) =>

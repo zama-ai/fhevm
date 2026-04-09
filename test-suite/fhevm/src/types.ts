@@ -35,6 +35,8 @@ export type CoprocessorInstanceSource =
   | { mode: "local" }
   | { mode: "registry"; tag: string };
 
+export type HostChainKind = "evm" | "solana";
+
 export type CoprocessorScenarioInstance = {
   index: number;
   source?: CoprocessorInstanceSource;
@@ -47,6 +49,7 @@ export type HostChainScenario = {
   key: string;
   chainId: string;
   rpcPort: number;
+  chainKind?: HostChainKind;
   name?: string;
 };
 
@@ -159,6 +162,9 @@ export type UpOptions = {
   sha?: string;
   overrides: LocalOverride[];
   scenarioPath?: string;
+  solana: boolean;
+  mixedHost: boolean;
+  local: boolean;
   fromStep?: StepName;
   lockFile?: string;
   allowSchemaMismatch: boolean;

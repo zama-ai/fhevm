@@ -46,6 +46,22 @@ contract InputVerification is
     }
 
     /**
+     * @notice The typed data structure for native-host signature validation in ZK proof verification responses.
+     */
+    struct NativeCiphertextVerification {
+        /// @notice The coprocessor's computed ciphertext handles.
+        bytes32[] ctHandles;
+        /// @notice The native host identity of the user that provided the input.
+        bytes32 userId;
+        /// @notice The native host identity of the dapp requiring the ZK proof verification.
+        bytes32 contractId;
+        /// @notice The host chain's chain ID of the contract requiring the ZK proof verification.
+        uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
+    }
+
+    /**
      * @notice The stored structure for the received ZK Proof verification request inputs.
      */
     struct ZKProofInput {
@@ -55,6 +71,12 @@ contract InputVerification is
         address contractAddress;
         /// @notice The user address that requested the verification.
         address userAddress;
+        /// @notice The native host contract identity that verification is requested for.
+        bytes32 contractId;
+        /// @notice The native host user identity that requested the verification.
+        bytes32 userId;
+        /// @notice Whether the stored request uses native host identities.
+        bool isNative;
     }
 
     /**
@@ -72,6 +94,17 @@ contract InputVerification is
      * @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
      */
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
+
+    /**
+     * @notice The definition of the NativeCiphertextVerification structure typed data.
+     */
+    string private constant EIP712_NATIVE_ZKPOK_TYPE =
+        "NativeCiphertextVerification(bytes32[] ctHandles,bytes32 userId,bytes32 contractId,uint256 contractChainId,bytes extraData)";
+
+    /**
+     * @notice The hash of the NativeCiphertextVerification structure typed data definition used for signature validation.
+     */
+    bytes32 private constant EIP712_NATIVE_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_NATIVE_ZKPOK_TYPE));
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
@@ -162,7 +195,7 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -184,9 +217,16 @@ contract InputVerification is
         uint256 zkProofId = $.zkProofIdCounter;
 
         // The following stored inputs are used during response calls for the EIP712 signature validation.
-        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+        $.zkProofInputs[zkProofId] = ZKProofInput(
+            contractChainId,
+            contractAddress,
+            userAddress,
+            bytes32(0),
+            bytes32(0),
+            false
+        );
 
-        // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Associate the request to coprocessor context ID 1 using the current unified extraData layout.
         $.inputVerificationContextId[zkProofId] = 1;
 
         // Collect the fee from the transaction sender for this input verification request.
@@ -197,6 +237,44 @@ contract InputVerification is
             contractChainId,
             contractAddress,
             userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
+    }
+
+    /**
+     * @notice See {IInputVerification-verifyProofRequestNative}.
+     */
+    function verifyProofRequestNative(
+        uint256 contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        $.zkProofIdCounter++;
+        uint256 zkProofId = $.zkProofIdCounter;
+
+        $.zkProofInputs[zkProofId] = ZKProofInput(
+            contractChainId,
+            address(0),
+            address(0),
+            contractId,
+            userId,
+            true
+        );
+
+        $.inputVerificationContextId[zkProofId] = 1;
+
+        _collectInputVerificationFee(msg.sender);
+
+        emit VerifyProofRequestNative(
+            zkProofId,
+            contractChainId,
+            contractId,
+            userId,
             ciphertextWithZKProof,
             extraData
         );
@@ -227,16 +305,25 @@ contract InputVerification is
         ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
 
         // Initialize the CiphertextVerification structure for the signature validation.
-        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
-            ctHandles,
-            zkProofInput.userAddress,
-            zkProofInput.contractAddress,
-            zkProofInput.contractChainId,
-            extraData
-        );
-
-        // Compute the digest of the CiphertextVerification structure.
-        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
+        bytes32 digest = zkProofInput.isNative
+            ? _hashNativeCiphertextVerification(
+                NativeCiphertextVerification(
+                    ctHandles,
+                    zkProofInput.userId,
+                    zkProofInput.contractId,
+                    zkProofInput.contractChainId,
+                    extraData
+                )
+            )
+            : _hashCiphertextVerification(
+                CiphertextVerification(
+                    ctHandles,
+                    zkProofInput.userAddress,
+                    zkProofInput.contractAddress,
+                    zkProofInput.contractChainId,
+                    extraData
+                )
+            );
 
         // Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
@@ -431,6 +518,29 @@ contract InputVerification is
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
+                    )
+                )
+            );
+    }
+
+    /**
+     * @notice Computes the hash of a given NativeCiphertextVerification structured data.
+     * @param ctVerification The NativeCiphertextVerification structure.
+     * @return The hash of the NativeCiphertextVerification structure.
+     */
+    function _hashNativeCiphertextVerification(
+        NativeCiphertextVerification memory ctVerification
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_NATIVE_ZKPOK_TYPE_HASH,
+                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
+                        ctVerification.userId,
+                        ctVerification.contractId,
                         ctVerification.contractChainId,
                         keccak256(abi.encodePacked(ctVerification.extraData))
                     )
