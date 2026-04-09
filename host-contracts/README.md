@@ -91,8 +91,8 @@ KMSVerifier context (ProtocolConfig) or a frozen Gateway contract (KMSGeneration
 
 Requires one additional env var:
 
-| Variable | Description |
-|---|---|
+| Variable              | Description                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
 | `EXISTING_CONTEXT_ID` | The context ID from the old KMSVerifier to preserve. Must be `>= KMS_CONTEXT_COUNTER_BASE + 1`. |
 
 ```bash
@@ -107,26 +107,26 @@ has exactly `EXISTING_CONTEXT_ID`, preserving context continuity for downstream 
 
 Requires the full active state from the frozen Gateway. All env vars below are mandatory:
 
-| Variable | Format |
-|---|---|
-| `MIGRATION_PREP_KEYGEN_COUNTER` | uint256 |
-| `MIGRATION_KEY_COUNTER` | uint256 |
-| `MIGRATION_CRS_COUNTER` | uint256 |
-| `MIGRATION_ACTIVE_KEY_ID` | uint256 |
-| `MIGRATION_ACTIVE_CRS_ID` | uint256 |
-| `MIGRATION_ACTIVE_PREP_KEYGEN_ID` | uint256 |
-| `MIGRATION_ACTIVE_KEY_DIGESTS` | JSON array: `[{"keyType":0,"digest":"0x…"}, …]` |
-| `MIGRATION_ACTIVE_CRS_DIGEST` | hex bytes |
-| `MIGRATION_KEY_CONSENSUS_TX_SENDERS` | comma-separated addresses |
-| `MIGRATION_KEY_CONSENSUS_DIGEST` | bytes32 hex |
-| `MIGRATION_CRS_CONSENSUS_TX_SENDERS` | comma-separated addresses |
-| `MIGRATION_CRS_CONSENSUS_DIGEST` | bytes32 hex |
-| `MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS` | comma-separated addresses |
-| `MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST` | bytes32 hex |
-| `MIGRATION_CRS_MAX_BIT_LENGTH` | uint256 (e.g. `4096`) |
-| `MIGRATION_PREP_KEYGEN_PARAMS_TYPE` | `0` (Default) or `1` (Test) |
-| `MIGRATION_CRS_PARAMS_TYPE` | `0` (Default) or `1` (Test) |
-| `MIGRATION_CONTEXT_ID` | KMS context ID for the migrated state |
+| Variable                                     | Format                                          |
+| -------------------------------------------- | ----------------------------------------------- |
+| `MIGRATION_PREP_KEYGEN_COUNTER`              | uint256                                         |
+| `MIGRATION_KEY_COUNTER`                      | uint256                                         |
+| `MIGRATION_CRS_COUNTER`                      | uint256                                         |
+| `MIGRATION_ACTIVE_KEY_ID`                    | uint256                                         |
+| `MIGRATION_ACTIVE_CRS_ID`                    | uint256                                         |
+| `MIGRATION_ACTIVE_PREP_KEYGEN_ID`            | uint256                                         |
+| `MIGRATION_ACTIVE_KEY_DIGESTS`               | JSON array: `[{"keyType":0,"digest":"0x…"}, …]` |
+| `MIGRATION_ACTIVE_CRS_DIGEST`                | hex bytes                                       |
+| `MIGRATION_KEY_CONSENSUS_TX_SENDERS`         | comma-separated addresses                       |
+| `MIGRATION_KEY_CONSENSUS_DIGEST`             | bytes32 hex                                     |
+| `MIGRATION_CRS_CONSENSUS_TX_SENDERS`         | comma-separated addresses                       |
+| `MIGRATION_CRS_CONSENSUS_DIGEST`             | bytes32 hex                                     |
+| `MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS` | comma-separated addresses                       |
+| `MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST`     | bytes32 hex                                     |
+| `MIGRATION_CRS_MAX_BIT_LENGTH`               | uint256 (e.g. `4096`)                           |
+| `MIGRATION_PREP_KEYGEN_PARAMS_TYPE`          | `0` (Default) or `1` (Test)                     |
+| `MIGRATION_CRS_PARAMS_TYPE`                  | `0` (Default) or `1` (Test)                     |
+| `MIGRATION_CONTEXT_ID`                       | KMS context ID for the migrated state           |
 
 ```bash
 MIGRATION_PREP_KEYGEN_COUNTER="…" \

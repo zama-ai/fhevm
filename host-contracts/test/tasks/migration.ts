@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { Wallet } from 'ethers';
 import fs from 'fs';
+import { ethers, run, upgrades } from 'hardhat';
 import path from 'path';
-import { ethers, upgrades, run } from 'hardhat';
 
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
@@ -76,10 +76,7 @@ describe('Migration deploy tasks', function () {
 
       await run('task:deployProtocolConfigFromMigration');
 
-      const protocolConfig = (await ethers.getContractAt(
-        'ProtocolConfig',
-        proxyAddress,
-      )) as unknown as ProtocolConfig;
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
 
       // Context ID must match exactly.
       expect(await protocolConfig.getCurrentKmsContextId()).to.equal(migratedContextId);
@@ -145,10 +142,7 @@ describe('Migration deploy tasks', function () {
 
       await run('task:deployKMSGenerationFromMigration');
 
-      const kmsGeneration = (await ethers.getContractAt(
-        'KMSGeneration',
-        proxyAddress,
-      )) as unknown as KMSGeneration;
+      const kmsGeneration = (await ethers.getContractAt('KMSGeneration', proxyAddress)) as unknown as KMSGeneration;
 
       // Active IDs should match.
       expect(await kmsGeneration.getActiveKeyId()).to.equal(activeKeyId);
