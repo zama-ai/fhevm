@@ -74,6 +74,9 @@ contract DelegationLibraryAdapter {
 }
 
 contract FHEDelegationTest is HostContractsDeployerTestUtils {
+    uint64 internal constant MIN_FUTURE_EXPIRY_OFFSET = 1;
+    uint64 internal constant DEFAULT_FUTURE_EXPIRY_OFFSET = 120;
+
     DelegationLibraryAdapter internal adapter;
     ACL internal acl;
 
@@ -120,7 +123,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
     }
 
     function _boundValidFutureExpiry(uint256 expirationDate) internal view returns (uint64) {
-        uint256 minExpiry = block.timestamp + 1 hours;
+        uint256 minExpiry = block.timestamp + MIN_FUTURE_EXPIRY_OFFSET;
         uint256 maxExpiry = type(uint64).max;
         return uint64(bound(expirationDate, minExpiry, maxExpiry));
     }
@@ -191,7 +194,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         bytes32 handle = adapter.mintAndPersistHandle(plaintext);
         adapter.allowHandle(handle, contractContext);
 
-        uint64 expirationDate = uint64(block.timestamp + 2 hours);
+        uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
         adapter.delegateUserDecryption(delegate, contractContext, expirationDate);
 
         bool delegated = adapter.isDelegatedForUserDecryption(address(adapter), delegate, contractContext, handle);
@@ -207,7 +210,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         bytes32 handle = adapter.mintAndPersistHandle(plaintext);
         adapter.allowHandle(handle, contractContext);
 
-        uint64 expirationDate = uint64(block.timestamp + 2 hours);
+        uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
         adapter.delegateUserDecryption(delegate, contractContext, expirationDate);
 
         vm.warp(uint256(expirationDate) + 1);
@@ -230,7 +233,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
     function test_DelegateUserDecryption_RevertsWhenSenderIsContractAddress(address delegate) public {
         vm.assume(delegate != address(adapter));
-        uint64 expirationDate = uint64(block.timestamp + 2 hours);
+        uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
 
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, address(adapter)));
         adapter.delegateUserDecryption(delegate, address(adapter), expirationDate);
@@ -238,7 +241,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
     function test_DelegateUserDecryption_RevertsWhenDelegateEqualsSender(address contractContext) public {
         vm.assume(contractContext != address(adapter));
-        uint64 expirationDate = uint64(block.timestamp + 2 hours);
+        uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
 
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeDelegate.selector, address(adapter)));
         adapter.delegateUserDecryption(address(adapter), contractContext, expirationDate);
@@ -246,7 +249,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
     function test_DelegateUserDecryption_RevertsWhenDelegateEqualsContract(address contractContext) public {
         vm.assume(contractContext != address(adapter));
-        uint64 expirationDate = uint64(block.timestamp + 2 hours);
+        uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
 
         vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, contractContext));
         adapter.delegateUserDecryption(contractContext, contractContext, expirationDate);
@@ -347,7 +350,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
     ) public {
         address[] memory contracts = new address[](0);
 
-        adapter.delegateUserDecryptions(delegate, contracts, uint64(block.timestamp + 2 hours));
+        adapter.delegateUserDecryptions(delegate, contracts, uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET));
 
         uint64 stored = acl.getUserDecryptionDelegationExpirationDate(address(adapter), delegate, contractContext);
         assertEq(stored, 0, "no delegation should be recorded");
