@@ -520,7 +520,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         uint256 migratedId = KMS_CONTEXT_COUNTER_BASE + 5;
         vm.prank(owner);
-        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
         protocolConfig.initializeFromMigration(migratedId, _makeNodes(1), _defaultThresholds());
     }
 
@@ -540,20 +540,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
         protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 1);
-    }
-
-    function test_revertMigrationNotOwner() public {
-        _setupEmptyProxy();
-
-        // Upgrade as owner without initializing, so initializeFromMigration's own guard is tested.
-        address impl = address(new ProtocolConfig());
-        vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, "");
-
-        uint256 migratedId = KMS_CONTEXT_COUNTER_BASE + 3;
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        ProtocolConfig(protocolConfigAdd).initializeFromMigration(migratedId, _makeNodes(2), _defaultThresholds());
     }
 
     function test_revertUpgradeNotOwner() public {

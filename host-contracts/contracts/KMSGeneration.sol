@@ -861,7 +861,7 @@ contract KMSGeneration is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromMigration(
         IKMSGenerationMigration.MigrationState calldata state
-    ) public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
 
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();

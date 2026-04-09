@@ -384,6 +384,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.initializeFromEmptyProxy();
     }
 
+    function test_revertMigrationAfterInit() public {
+        IKMSGenerationMigration.MigrationState memory state;
+        vm.prank(owner);
+        vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
+        kmsGeneration.initializeFromMigration(state);
+    }
+
     // -----------------------------------------------------------------------
     // Full keygen cycle
     // -----------------------------------------------------------------------
