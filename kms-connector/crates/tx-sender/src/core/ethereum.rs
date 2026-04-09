@@ -160,7 +160,10 @@ where
         .await?;
 
         let tx = self.provider.send_transaction(call).await?;
-        info!("Tx sent to RPC node. Waiting for finalized receipt (~64 confirmations)...");
+        info!(
+            "Tx sent to RPC node. Waiting for receipt ({} confirmations)...",
+            self.config.tx_required_confirmations
+        );
         let receipt = tx
             .with_required_confirmations(self.config.tx_required_confirmations)
             .with_timeout(Some(self.config.get_receipt_timeout))
@@ -249,7 +252,6 @@ mod tests {
         // 3. eth_sendRawTransaction (returns tx hash)
         asserter.push_success(&receipt.transaction_hash);
         // 4. eth_getTransactionReceipt (from watch_pending_transaction initial check;
-        //    since ETHEREUM_FINALIZED_CONFIRMATIONS == 1 in test, returns PendingTransaction::ready)
         asserter.push_success(&receipt);
         // 5. eth_getTransactionReceipt (from get_receipt loop body)
         asserter.push_success(&receipt);
@@ -264,7 +266,9 @@ mod tests {
                 tx_retries: 1,
                 trace_reverted_tx: true,
                 gas_multiplier_percent: 105,
-                ..Default::default()
+                tx_required_confirmations: 1,
+                get_receipt_timeout: Duration::from_mins(1),
+                tx_retry_interval: Duration::from_millis(100),
             },
         );
         tx_sender
