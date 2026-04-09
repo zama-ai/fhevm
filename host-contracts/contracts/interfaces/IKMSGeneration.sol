@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title Interface for the host-side KMSGeneration contract.
  * @notice Manages FHE key and CRS generation on the Ethereum host chain, reading config from
- * ProtocolConfig instead of GatewayConfig. EIP-712 verification types include trailing `extraData`.
+ * ProtocolConfig.
  */
 interface IKMSGeneration {
     /**
@@ -36,11 +36,10 @@ interface IKMSGeneration {
     /**
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param epochId The ID of the resharing epoch.
      * @param paramsType The type of the parameters to use.
      * @param extraData Additional context data (0x02 || contextId || epochId).
      */
-    event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 
     /**
      * @notice Emitted when a KMS node has responded to a preprocessing keygen request.

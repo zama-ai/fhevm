@@ -39,7 +39,7 @@ interface IKMSGeneration {
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
-    event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
     function abortCrsgen(uint256 crsId) external;
@@ -590,12 +590,6 @@ interface IKMSGeneration {
     "inputs": [
       {
         "name": "prepKeygenId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -4049,9 +4043,9 @@ event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, add
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `PrepKeygenRequest(uint256,uint256,uint8,bytes)` and selector `0xc0ada6fd1b65690a546d49df7531a21c52ed502d14efd98ee0c8f4846abb9310`.
+    /**Event with signature `PrepKeygenRequest(uint256,uint8,bytes)` and selector `0xfbf5274810b94f86970c1147e8ffaebed246ee9777d695a69004dc6256d1fe91`.
 ```solidity
-event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType, bytes extraData);
+event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4063,8 +4057,6 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
     pub struct PrepKeygenRequest {
         #[allow(missing_docs)]
         pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub paramsType: <ParamsType as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -4082,7 +4074,6 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
         impl alloy_sol_types::SolEvent for PrepKeygenRequest {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
                 ParamsType,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -4090,11 +4081,11 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "PrepKeygenRequest(uint256,uint256,uint8,bytes)";
+            const SIGNATURE: &'static str = "PrepKeygenRequest(uint256,uint8,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                192u8, 173u8, 166u8, 253u8, 27u8, 101u8, 105u8, 10u8, 84u8, 109u8, 73u8,
-                223u8, 117u8, 49u8, 162u8, 28u8, 82u8, 237u8, 80u8, 45u8, 20u8, 239u8,
-                217u8, 142u8, 224u8, 200u8, 244u8, 132u8, 106u8, 187u8, 147u8, 16u8,
+                251u8, 245u8, 39u8, 72u8, 16u8, 185u8, 79u8, 134u8, 151u8, 12u8, 17u8,
+                71u8, 232u8, 255u8, 174u8, 190u8, 210u8, 70u8, 238u8, 151u8, 119u8,
+                214u8, 149u8, 166u8, 144u8, 4u8, 220u8, 98u8, 86u8, 209u8, 254u8, 145u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4105,9 +4096,8 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
             ) -> Self {
                 Self {
                     prepKeygenId: data.0,
-                    epochId: data.1,
-                    paramsType: data.2,
-                    extraData: data.3,
+                    paramsType: data.1,
+                    extraData: data.2,
                 }
             }
             #[inline]
@@ -4131,9 +4121,6 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
                     <ParamsType as alloy_sol_types::SolType>::tokenize(&self.paramsType),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
@@ -8419,15 +8406,15 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 217u8, 233u8, 18u8, 156u8, 102u8, 30u8, 253u8, 249u8, 64u8, 29u8,
             ],
             [
-                192u8, 173u8, 166u8, 253u8, 27u8, 101u8, 105u8, 10u8, 84u8, 109u8, 73u8,
-                223u8, 117u8, 49u8, 162u8, 28u8, 82u8, 237u8, 80u8, 45u8, 20u8, 239u8,
-                217u8, 142u8, 224u8, 200u8, 244u8, 132u8, 106u8, 187u8, 147u8, 16u8,
-            ],
-            [
                 235u8, 133u8, 194u8, 109u8, 188u8, 173u8, 70u8, 184u8, 10u8, 104u8,
                 160u8, 242u8, 76u8, 206u8, 124u8, 44u8, 144u8, 240u8, 161u8, 250u8,
                 222u8, 216u8, 65u8, 132u8, 19u8, 136u8, 57u8, 252u8, 158u8, 128u8, 162u8,
                 91u8,
+            ],
+            [
+                251u8, 245u8, 39u8, 72u8, 16u8, 185u8, 79u8, 134u8, 151u8, 12u8, 17u8,
+                71u8, 232u8, 255u8, 174u8, 190u8, 210u8, 70u8, 238u8, 151u8, 119u8,
+                214u8, 149u8, 166u8, 144u8, 4u8, 220u8, 98u8, 86u8, 209u8, 254u8, 145u8,
             ],
         ];
     }

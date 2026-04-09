@@ -30,9 +30,8 @@ contract KMSGeneration is
     /**
      * @notice The PrepKeygenVerification typed definition.
      * @dev prepKeygenId: The ID of the preprocessing keygen request.
-     *      extraData: Additional context data (0x02 || contextId || epochId).
      */
-    string private constant EIP712_PREP_KEYGEN_TYPE = "PrepKeygenVerification(uint256 prepKeygenId,bytes extraData)";
+    string private constant EIP712_PREP_KEYGEN_TYPE = "PrepKeygenVerification(uint256 prepKeygenId)";
 
     /**
      * @notice The hash of the PrepKeygenVerification typed definition.
@@ -265,10 +264,6 @@ contract KMSGeneration is
         $.keygenIdPairs[prepKeygenId] = keyId;
         $.keygenIdPairs[keyId] = prepKeygenId;
 
-        // TODO: Get the epochId once resharing is implemented.
-        // See https://github.com/zama-ai/fhevm-internal/issues/151
-        uint256 epochId = 0;
-
         // Store the FHE params type, used for both the preprocessing and the key generation
         // This value can later be read through the `getKeyParamsType` function, once the key
         // has been generated
@@ -279,7 +274,7 @@ contract KMSGeneration is
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
 
-        emit PrepKeygenRequest(prepKeygenId, epochId, paramsType, extraData);
+        emit PrepKeygenRequest(prepKeygenId, paramsType, extraData);
     }
 
     /**
@@ -293,10 +288,8 @@ contract KMSGeneration is
             revert PrepKeygenNotRequested(prepKeygenId);
         }
 
-        bytes memory extraData = $.requestExtraData[prepKeygenId];
-
         // Compute the digest of the PrepKeygenVerification struct.
-        bytes32 digest = _hashPrepKeygenVerification(prepKeygenId, extraData);
+        bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
 
         // Recover the signer address from the signature and check that it is a KMS node
         address kmsSigner = _validateEIP712Signature(digest, signature);
@@ -328,7 +321,7 @@ contract KMSGeneration is
             // Get the keyId associated to the prepKeygenId
             uint256 keyId = $.keygenIdPairs[prepKeygenId];
 
-            emit KeygenRequest(prepKeygenId, keyId, extraData);
+            emit KeygenRequest(prepKeygenId, keyId, $.requestExtraData[prepKeygenId]);
         }
     }
 
@@ -710,15 +703,10 @@ contract KMSGeneration is
     /**
      * @notice Computes the hash of a PrepKeygenVerification struct
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param extraData The extra data for replay protection.
      * @return The hash of the PrepKeygenVerification struct
      */
-    function _hashPrepKeygenVerification(
-        uint256 prepKeygenId,
-        bytes memory extraData
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId, keccak256(extraData))));
+    function _hashPrepKeygenVerification(uint256 prepKeygenId) internal view virtual returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId)));
     }
 
     /**
