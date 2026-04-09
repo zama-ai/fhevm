@@ -17,7 +17,7 @@ use connector_utils::{
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use tracing::{debug, error, info, warn};
 
-/// The internal struct used to send decryption transactions to the Gateway.
+/// The struct used to send decryption transactions to the Gateway.
 pub struct GatewayTransactionSender<F, P>
 where
     F: TxFiller,
@@ -131,7 +131,7 @@ where
 
     /// Sends the requested transaction with retries.
     ///
-    /// The `gas_limit` is increased at each attempts.
+    /// The gas_limit is re-estimated and (likely) increased at each attempt.
     async fn send_tx_sync_with_retry(
         &self,
         call: TransactionRequest,

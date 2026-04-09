@@ -13,7 +13,7 @@ use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-/// The internal struct used to send keygen transactions to Ethereum.
+/// The struct used to send keygen transactions to Ethereum.
 pub struct EthereumTransactionSender<F, P>
 where
     F: TxFiller,
@@ -132,7 +132,7 @@ where
 
     /// Sends the requested transaction with retries.
     ///
-    /// The `gas_limit` is increased at each attempts.
+    /// The gas_limit is re-estimated and (likely) increased at each attempt.
     async fn send_tx_with_retry(
         &self,
         call: TransactionRequest,
