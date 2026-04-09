@@ -93,6 +93,16 @@ describe("rollout", () => {
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
+  test("rejects compat-tests that leave required version keys out of all units", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
+    tempDirs.push(root);
+    const file = path.join(root, "compat.json");
+    const testDef = compatTest();
+    const { RELAYER_SDK: _relayerSdk, ...units } = testDef.units;
+    await writeJson(file, { ...testDef, units });
+    await expect(readCompatTest(file)).rejects.toThrow("do not cover required version keys: TEST_SUITE_VERSION");
+  });
+
   test("generates cumulative mixed-version locks from ordered unit steps", () => {
     const locks = generateRolloutLocks(compatTest());
     expect(locks.map((entry) => entry.lockName)).toEqual([
