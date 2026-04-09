@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { PreflightError } from "./errors";
-import { generateRolloutLocks, readCompatTest, rollout, validateCompatSteps } from "./commands/rollout";
+import { generateRolloutLocks, readCompatTest, renderRolloutStep, rollout, rolloutMatrix, rolloutStep, validateCompatSteps } from "./commands/rollout";
 import { readJson, remove, writeJson } from "./utils/fs";
 import type { VersionBundle } from "./types";
 import type { CompatTestDefinition } from "./commands/rollout";
@@ -122,6 +122,27 @@ describe("rollout", () => {
     expect(locks[5].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
   });
 
+  test("renders one rollout step on demand", () => {
+    const bundle = renderRolloutStep(compatTest(), 3);
+    expect(bundle.lockName).toBe("03-kms-core_kms-connector.lock.json");
+    expect(bundle.env.RELAYER_VERSION).toBe("to-relayer_version");
+    expect(bundle.env.CORE_VERSION).toBe("to-core_version");
+    expect(bundle.env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
+  });
+
+  test("prints matrix metadata without lock file names", () => {
+    expect(rolloutMatrix(compatTest())).toEqual({
+      include: [
+        { step: "baseline", stepIndex: 0, name: "00-baseline" },
+        { step: "relayer", stepIndex: 1, name: "01-relayer" },
+        { step: "gateway-contracts_host-contracts", stepIndex: 2, name: "02-gateway-contracts_host-contracts" },
+        { step: "kms-core_kms-connector", stepIndex: 3, name: "03-kms-core_kms-connector" },
+        { step: "coprocessor", stepIndex: 4, name: "04-coprocessor" },
+        { step: "relayer-sdk", stepIndex: 5, name: "05-relayer-sdk" },
+      ],
+    });
+  });
+
   test("writes lock files and matrix metadata from a compat-test file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
@@ -132,19 +153,32 @@ describe("rollout", () => {
       compatTest: file,
       out: outDir,
     });
-    const matrix = await readJson<{ include: Array<{ step: string; lockFile: string; name: string }> }>(path.join(outDir, "matrix.json"));
-    expect(matrix.include.map((entry) => entry.lockFile)).toEqual([
-      "00-baseline.lock.json",
-      "01-relayer.lock.json",
-      "02-gateway-contracts_host-contracts.lock.json",
-      "03-kms-core_kms-connector.lock.json",
-      "04-coprocessor.lock.json",
-      "05-relayer-sdk.lock.json",
+    const matrix = await readJson<{ include: Array<{ step: string; stepIndex: number; name: string }> }>(path.join(outDir, "matrix.json"));
+    expect(matrix.include.map((entry) => entry.name)).toEqual([
+      "00-baseline",
+      "01-relayer",
+      "02-gateway-contracts_host-contracts",
+      "03-kms-core_kms-connector",
+      "04-coprocessor",
+      "05-relayer-sdk",
     ]);
     const mixed = await readJson<VersionBundle>(path.join(outDir, "03-kms-core_kms-connector.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(mixed.env.GATEWAY_VERSION).toBe("to-gateway_version");
     expect(mixed.env.CORE_VERSION).toBe("to-core_version");
     expect(mixed.env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
+  });
+
+  test("writes one ephemeral lock file for a specific step", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
+    tempDirs.push(root);
+    const file = path.join(root, "compat.json");
+    const outFile = path.join(root, "tmp", "step.lock.json");
+    await writeJson(file, compatTest());
+    await rolloutStep({ compatTest: file, out: outFile, step: 2 });
+    const mixed = await readJson<VersionBundle>(outFile);
+    expect(mixed.lockName).toBe("step.lock.json");
+    expect(mixed.env.HOST_VERSION).toBe("to-host_version");
+    expect(mixed.env.CORE_VERSION).toBe("from-core_version");
   });
 });

@@ -82,6 +82,14 @@ on:
         description: "Relayer version"
         default: ""
         type: string
+      compat-test:
+        description: "Compat-test JSON path or stem under test-suite/fhevm/compat-tests"
+        default: ""
+        type: string
+      rollout-step:
+        description: "Compat rollout step index to render locally before boot"
+        default: ""
+        type: string
       lock-artifact-name:
         description: "Uploaded lock artifact name used to freeze the resolved bundle"
         default: ""
@@ -202,14 +210,14 @@ jobs:
         run: bun run compat-smoke
 
       - name: Download frozen baseline lock
-        if: ${{ inputs.lock-artifact-name != '' }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ inputs.lock-artifact-name }}
           path: ${{ runner.temp }}/baseline-lock
 
       - name: Resolve frozen lock path
-        if: ${{ inputs.lock-artifact-name != '' }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         run: |
           set -euo pipefail
           if [ -n "${{ inputs.lock-file-name }}" ]; then
@@ -227,8 +235,44 @@ jobs:
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
+      - name: Render compat rollout step
+        if: ${{ inputs.compat-test != '' }}
+        working-directory: test-suite/fhevm
+        env:
+          COMPAT_TEST_INPUT: ${{ inputs.compat-test }}
+          ROLLOUT_STEP_INPUT: ${{ inputs.rollout-step }}
+        run: |
+          set -euo pipefail
+          resolve_test() {
+            local value="$1"
+            local workspace_value="${GITHUB_WORKSPACE}/${value}"
+            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
+            if [ -f "$value" ]; then
+              realpath "$value"
+              return
+            fi
+            if [ -f "$workspace_value" ]; then
+              realpath "$workspace_value"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}.json" ]; then
+              realpath "${compat_dir}/${value}.json"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}" ]; then
+              realpath "${compat_dir}/${value}"
+              return
+            fi
+            echo "Could not resolve compat-test: $value" >&2
+            exit 1
+          }
+          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          lock_file="${RUNNER_TEMP}/compat-step.lock.json"
+          ./fhevm-cli rollout --compat-test "$compat_test" --step "${ROLLOUT_STEP_INPUT:-0}" --out "$lock_file"
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
       - name: Resolve latest-main lock once
-        if: ${{ inputs.lock-artifact-name == '' && !inputs.orchestrated }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
         run: |
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
