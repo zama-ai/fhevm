@@ -45,7 +45,7 @@ pub async fn database_healthcheck(
 
 /// Performs the healthcheck of a blockchain RPC node.
 ///
-/// Uses `eth_getBlockNumber` for this.
+/// Uses `eth_blockNumber` for this.
 ///
 /// Stores the potential error in the `errors` vector.
 pub async fn rpc_node_healthcheck<P: Provider>(

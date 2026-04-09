@@ -11,7 +11,7 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, ProtocolEventKind, db::EventType},
+    types::{ProtocolEvent, db::EventType},
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres, Row};
@@ -154,22 +154,14 @@ where
         Ok((to_block.saturating_add(1), to_block < current_block))
     }
 
-    /// Decodes a log into a `ProtocolEventKind`.
-    fn decode_log(log: &Log) -> anyhow::Result<ProtocolEventKind> {
-        let event = DecryptionEvents::decode_log(&log.inner)
-            .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
-        match event.data {
-            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
-            _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
-        }
-    }
-
     /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = Self::decode_log(&log)?;
+            let event_kind = DecryptionEvents::decode_log(&log.inner)
+                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?
+                .data
+                .try_into()?;
             EVENT_RECEIVED_COUNTER
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();

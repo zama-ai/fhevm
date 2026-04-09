@@ -12,7 +12,7 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, ProtocolEventKind, db::EventType},
+    types::{ProtocolEvent, db::EventType},
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationEvents;
 use fhevm_host_bindings::kms_verifier::KMSVerifier::{self, KMSVerifierInstance};
@@ -176,23 +176,14 @@ where
         Ok((to_block.saturating_add(1), to_block < finalized_block))
     }
 
-    /// Decodes a log into a `ProtocolEventKind`.
-    fn decode_log(log: &Log) -> anyhow::Result<ProtocolEventKind> {
-        let event = KMSGenerationEvents::decode_log(&log.inner)
-            .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?;
-        match event.data {
-            KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
-            KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
-            KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
-            _ => Err(anyhow!("Unexpected KMSGeneration event: {log:?}")),
-        }
-    }
-
     /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = Self::decode_log(&log)?;
+            let event_kind = KMSGenerationEvents::decode_log(&log.inner)
+                .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?
+                .data
+                .try_into()?;
             EVENT_RECEIVED_COUNTER
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();
@@ -282,7 +273,7 @@ mod tests {
     use std::time::Duration;
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(90))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     async fn test_store_current_context_id() {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
@@ -315,7 +306,7 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(90))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     async fn test_consecutive_get_logs_error_stops_listener() {
         let (_test_instance, asserter, eth_listener) = test_setup(None).await;
@@ -339,7 +330,7 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(90))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     async fn test_listener_ended_by_cancel_token() {
         let (mut test_instance, _asserter, eth_listener) = test_setup(None).await;

@@ -3,11 +3,12 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::primitives::{FixedBytes, U256};
+use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    DecryptionEvents, PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -360,5 +361,31 @@ impl From<KeygenRequest> for ProtocolEventKind {
 impl From<CrsgenRequest> for ProtocolEventKind {
     fn from(value: CrsgenRequest) -> Self {
         Self::Crsgen(value)
+    }
+}
+
+impl TryFrom<DecryptionEvents> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
+        match value {
+            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+            _ => Err(anyhow!("Unexpected Decryption event: {value:?}")),
+        }
+    }
+}
+
+impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: KMSGenerationEvents) -> Result<Self, Self::Error> {
+        match value {
+            KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
+            // `KMSGenerationEvents` does not currently implement `Debug` unfortunately
+            _ => Err(anyhow!("Unexpected KMSGeneration event")),
+        }
     }
 }
