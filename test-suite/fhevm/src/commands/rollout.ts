@@ -59,6 +59,10 @@ const validateCompatUnits = (units: Record<string, string[]>, env: Record<string
       referenced.add(key);
     }
   }
+  const missing = Object.keys(env).filter((key) => !referenced.has(key));
+  if (missing.length) {
+    throw new PreflightError(`compat-test units do not cover required version keys: ${missing.join(", ")}`);
+  }
 };
 
 /** Validates ordered rollout steps, unit names, and duplicate coverage. */

@@ -201,7 +201,7 @@ Compat-tests define:
 
 - explicit `from` and `to` version maps
 - ordered rollout `steps`
-- the fixed `units` map for readability and drift checks
+- an explicit `units` map that assigns every version key to exactly one rollout unit
 - optional execution defaults such as scenario and test profile
 
 `rollout` writes:
