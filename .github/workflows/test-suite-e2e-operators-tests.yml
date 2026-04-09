@@ -365,7 +365,7 @@ jobs:
       - name: Run operators shard
         working-directory: test-suite/fhevm
         run: |
-          mapfile -t host_files < <(rg -l -g '*.ts' 'test operator|FHEVM manual operations' "$GITHUB_WORKSPACE/test-suite/e2e/test" | sort -V)
+          mapfile -t host_files < <(find "$GITHUB_WORKSPACE/test-suite/e2e/test" -type f -name '*.ts' | sort -V)
           count=${#host_files[@]}
           if [ "$count" -eq 0 ]; then
             echo "No operators files found" >&2
@@ -503,7 +503,7 @@ jobs:
       - name: Run operators shard
         working-directory: test-suite/fhevm
         run: |
-          mapfile -t host_files < <(rg -l -g '*.ts' 'test operator|FHEVM manual operations' "$GITHUB_WORKSPACE/test-suite/e2e/test" | sort -V)
+          mapfile -t host_files < <(find "$GITHUB_WORKSPACE/test-suite/e2e/test" -type f -name '*.ts' | sort -V)
           count=${#host_files[@]}
           if [ "$count" -eq 0 ]; then
             echo "No operators files found" >&2
