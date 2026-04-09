@@ -191,20 +191,25 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 
 ## Rollout Lock Generation
 
-For release compatibility matrices, generate ephemeral mixed-version lock files from two pinned bundles and an explicit rollout order:
+For release compatibility matrices, check in a compat-test definition under `compat-tests/` and generate ephemeral mixed-version lock files from it:
 
 ```sh
 ./fhevm-cli rollout \
-  --from .fhevm/state/locks/latest-supported.json \
-  --to .fhevm/state/locks/latest-main.json \
-  --order relayer,contracts,kms-plane,coprocessor,test-suite \
+  --compat-test ./compat-tests/v0.11-to-v0.12.json \
   --out /tmp/fhevm-rollout
 ```
 
-`rollout` requires the full ordered group list exactly once. It writes:
+Compat-tests define:
+
+- explicit `from` and `to` version maps
+- ordered rollout `steps`
+- the fixed `units` map for readability and drift checks
+- optional execution defaults such as scenario and test profile
+
+`rollout` writes:
 
 - `00-baseline.lock.json`
-- one cumulative lock file per rollout step (`01-relayer.lock.json`, ...)
+- one cumulative lock file per rollout step
 - `matrix.json` for GitHub Actions matrix expansion
 
 The generated lock files are CI artifacts, not checked-in state.

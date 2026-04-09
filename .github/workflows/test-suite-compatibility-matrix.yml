@@ -3,31 +3,15 @@ name: test-suite-compatibility-matrix
 on:
   workflow_dispatch:
     inputs:
-      from:
-        description: "Baseline target or lock file path"
-        default: "latest-supported"
-        type: string
-      to:
-        description: "Upgrade target or lock file path"
-        default: "latest-main"
-        type: string
-      order:
-        description: "Comma-separated rollout group order"
-        default: "relayer,contracts,kms-plane,coprocessor,test-suite"
-        type: string
-      scenario:
-        description: "Deployment scenario"
-        default: "two-of-two"
-        type: string
-      test-profile:
-        description: "Named test profile to run"
-        default: "standard"
+      compat-test:
+        description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
+        default: "v0.11-to-v0.12"
         type: string
 
 permissions: {}
 
 concurrency:
-  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.from }}-${{ github.event.inputs.to }}-${{ github.run_attempt }}
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test }}-${{ github.run_attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -41,6 +25,8 @@ jobs:
     outputs:
       artifact_name: ${{ steps.prepare.outputs.artifact_name }}
       matrix: ${{ steps.prepare.outputs.matrix }}
+      scenario: ${{ steps.prepare.outputs.scenario }}
+      test_profile: ${{ steps.prepare.outputs.test_profile }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -61,17 +47,16 @@ jobs:
         run: bun install --frozen-lockfile
 
       - id: prepare
-        name: Resolve bundles and generate rollout locks
+        name: Resolve compat-test and generate rollout locks
         working-directory: test-suite/fhevm
         env:
-          FROM_INPUT: ${{ inputs.from }}
-          TO_INPUT: ${{ inputs.to }}
-          ORDER_INPUT: ${{ inputs.order }}
+          COMPAT_TEST_INPUT: ${{ inputs.compat-test }}
         run: |
           set -euo pipefail
-          resolve_input() {
+          resolve_test() {
             local value="$1"
             local workspace_value="${GITHUB_WORKSPACE}/${value}"
+            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
             if [ -f "$value" ]; then
               realpath "$value"
               return
@@ -80,15 +65,25 @@ jobs:
               realpath "$workspace_value"
               return
             fi
-            ./fhevm-cli resolve --target "$value" | tail -n1
+            if [ -f "${compat_dir}/${value}.json" ]; then
+              realpath "${compat_dir}/${value}.json"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}" ]; then
+              realpath "${compat_dir}/${value}"
+              return
+            fi
+            echo "Could not resolve compat-test: $value" >&2
+            exit 1
           }
           out_dir="${RUNNER_TEMP}/compat-rollout"
           artifact_name="compat-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          from_lock="$(resolve_input "$FROM_INPUT")"
-          to_lock="$(resolve_input "$TO_INPUT")"
-          ./fhevm-cli rollout --from "$from_lock" --to "$to_lock" --order "$ORDER_INPUT" --out "$out_dir"
+          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          ./fhevm-cli rollout --compat-test "$compat_test" --out "$out_dir"
           {
             echo "artifact_name=$artifact_name"
+            echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
+            echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
             cat "$out_dir/matrix.json"
             echo "EOF"
@@ -119,5 +114,5 @@ jobs:
       build: false
       lock-artifact-name: ${{ needs.prepare_rollout.outputs.artifact_name }}
       lock-file-name: ${{ matrix.lockFile }}
-      scenario: ${{ inputs.scenario }}
-      test-profile: ${{ inputs.test-profile }}
+      scenario: ${{ needs.prepare_rollout.outputs.scenario }}
+      test-profile: ${{ needs.prepare_rollout.outputs.test_profile }}
