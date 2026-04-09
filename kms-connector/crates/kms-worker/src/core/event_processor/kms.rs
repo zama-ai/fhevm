@@ -50,6 +50,7 @@ impl KMSGenerationProcessor {
             params: None,
             epoch_id: None,
             context_id: None,
+            extra_data: keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: None,
             keyset_added_info: None,
@@ -70,8 +71,10 @@ impl KMSGenerationProcessor {
 
         KmsGrpcRequest::Crsgen(CrsGenRequest {
             request_id: Some(u256_to_request_id(crsgen_request.crsId)),
+            epoch_id: None,
             domain: Some(self.domain.clone()),
             params: crsgen_request.paramsType as i32,
+            extra_data: crsgen_request.extraData.to_vec(),
             max_num_bits,
             context_id: None,
         })

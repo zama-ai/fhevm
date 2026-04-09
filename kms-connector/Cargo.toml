@@ -22,9 +22,9 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 # TODO: switch back to path deps ASAP
 # fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "66a83815ae92f14edd70e5e0f9bfa6b910a8bd13", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.0-rc.1", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.0-rc.1", default-features = true }
-tfhe = "=1.5.1"
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.10", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.10", default-features = true }
+tfhe = "=1.5.4"
 
 #####################################################################
 #                       External dependencies                       #
@@ -38,8 +38,8 @@ alloy = { version = "=1.0.38", default-features = false, features = [
     "signer-aws",
     "std",
 ] }
-anyhow = { version = "=1.0.98", default-features = false }
-async-trait = { version = "=0.1.88", default-features = false }
+anyhow = { version = "=1.0.100", default-features = false }
+async-trait = { version = "=0.1.89", default-features = false }
 aws-config = { version = "=1.8.6", default-features = true }
 aws-sdk-kms = { version = "=1.86.0", default-features = true }
 aws-sdk-s3 = { version = "=1.105.0", default-features = true }
@@ -89,7 +89,7 @@ tonic = { version = "=0.13.1", default-features = true, features = [
     "tls-native-roots",
 ] }
 tonic-health = { version = "=0.13.1", default-features = false }
-tracing = { version = "=0.1.41", default-features = true }
+tracing = { version = "=0.1.44", default-features = true }
 tracing-opentelemetry = "=0.31.0"
 tracing-subscriber = { version = "=0.3.20", default-features = true, features = [
     "env-filter",
