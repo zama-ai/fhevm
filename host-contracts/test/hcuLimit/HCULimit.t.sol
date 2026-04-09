@@ -1385,8 +1385,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
 
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 88000 * 2);
-        vm.assertLe(totalTransactionHCU, 259000 * 10);
+        vm.assertGe(totalTransactionHCU, 88000);
+        vm.assertLe(totalTransactionHCU, 259000);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheSum(address randomAccount) public {
