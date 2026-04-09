@@ -34,6 +34,7 @@ jobs:
   prepare_rollout:
     permissions:
       contents: 'read'
+      packages: 'read'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
@@ -70,8 +71,13 @@ jobs:
           set -euo pipefail
           resolve_input() {
             local value="$1"
+            local workspace_value="${GITHUB_WORKSPACE}/${value}"
             if [ -f "$value" ]; then
-              printf '%s\n' "$value"
+              realpath "$value"
+              return
+            fi
+            if [ -f "$workspace_value" ]; then
+              realpath "$workspace_value"
               return
             fi
             ./fhevm-cli resolve --target "$value" | tail -n1
