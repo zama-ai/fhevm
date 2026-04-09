@@ -164,6 +164,13 @@ interface IProtocolConfig {
     function getUserDecryptionThreshold() external view returns (uint256);
 
     /**
+     * @notice Returns the user decryption threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The user decryption threshold for the context.
+     */
+    function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
      * @notice Returns the current kmsGen threshold (for the active context).
      * @return The kmsGen threshold.
      */

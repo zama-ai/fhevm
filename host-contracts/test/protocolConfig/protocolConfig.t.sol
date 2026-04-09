@@ -113,7 +113,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(_makeNodes(1), t, expectedRevert);
     }
 
-    /// @dev Asserts all five context-guarded view functions revert for the given context ID.
+    /// @dev Asserts all six context-guarded view functions revert for the given context ID.
     function _expectAllViewsRevertForContext(uint256 contextId) internal {
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsSignersForContext(contextId);
@@ -129,6 +129,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsNodeForContext(contextId, txSender0);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getUserDecryptionThresholdForContext(contextId);
     }
 
     // -----------------------------------------------------------------------
@@ -481,6 +484,29 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
     // Threshold getters after context rotation
     // -----------------------------------------------------------------------
+
+    function test_getUserDecryptionThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        // _setupDefault uses userDecryption = 2
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+
+        // Rotate to a new context with userDecryption = 1
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 1,
+            mpc: 1
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeNodes(2, 4), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        // New context returns its own threshold
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(secondContextId), 1);
+        // Old context still returns the original threshold
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+    }
 
     function test_thresholdsAfterContextRotation() public {
         _setupDefault();

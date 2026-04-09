@@ -217,6 +217,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
+        _requireValidContext(kmsContextId);
+        return _getProtocolConfigStorage().userDecryptionThresholdForContext[kmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getKmsGenThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.kmsGenThresholdForContext[$.currentKmsContextId];
