@@ -215,7 +215,7 @@ impl Default for Config {
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
-            ethereum_chain_id: 11155111,
+            ethereum_chain_id: 11155111, // Sepolia
             ethereum_tx_required_confirmations: default_ethereum_tx_required_confirmations(),
             ethereum_tx_get_receipt_timeout: default_ethereum_tx_get_receipt_timeout(),
             kms_generation_contract: default_kms_generation_contract_config(),

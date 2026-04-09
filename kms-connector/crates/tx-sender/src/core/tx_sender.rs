@@ -162,12 +162,7 @@ impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider>
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
 
         // Gateway provider + Decryption contract
-        let gw_sender_config = GatewaySenderConfig {
-            tx_retries: config.tx_retries,
-            tx_retry_interval: config.tx_retry_interval,
-            trace_reverted_tx: config.trace_reverted_tx,
-            gas_multiplier_percent: config.gas_multiplier_percent,
-        };
+        let gw_sender_config = GatewaySenderConfig::from(&config);
         let gw_wallet = config.build_wallet(config.gateway_chain_id).await?;
         let gw_provider = connect_to_rpc_node_with_wallet(
             config.gateway_url.clone(),
@@ -184,14 +179,7 @@ impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider>
         );
 
         // Ethereum provider + KMSGeneration contract
-        let eth_sender_config = EthereumSenderConfig {
-            tx_retries: config.tx_retries,
-            tx_retry_interval: config.tx_retry_interval,
-            trace_reverted_tx: config.trace_reverted_tx,
-            gas_multiplier_percent: config.gas_multiplier_percent,
-            tx_required_confirmations: config.ethereum_tx_required_confirmations,
-            get_receipt_timeout: config.ethereum_tx_get_receipt_timeout,
-        };
+        let eth_sender_config = EthereumSenderConfig::from(&config);
         let eth_wallet = config.build_wallet(config.ethereum_chain_id).await?;
         let eth_provider = connect_to_rpc_node_with_wallet(
             config.ethereum_url.clone(),

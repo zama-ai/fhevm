@@ -34,6 +34,19 @@ pub struct EthereumSenderConfig {
     pub get_receipt_timeout: Duration,
 }
 
+impl From<&super::Config> for EthereumSenderConfig {
+    fn from(config: &super::Config) -> Self {
+        Self {
+            tx_retries: config.tx_retries,
+            tx_retry_interval: config.tx_retry_interval,
+            trace_reverted_tx: config.trace_reverted_tx,
+            gas_multiplier_percent: config.gas_multiplier_percent,
+            tx_required_confirmations: config.ethereum_tx_required_confirmations,
+            get_receipt_timeout: config.ethereum_tx_get_receipt_timeout,
+        }
+    }
+}
+
 impl<F, P> EthereumTransactionSender<F, P>
 where
     F: TxFiller,
