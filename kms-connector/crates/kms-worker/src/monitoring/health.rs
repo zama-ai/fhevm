@@ -43,8 +43,13 @@ impl<P: Provider> Healthcheck for State<P> {
         let mut errors = vec![];
         let database_connected =
             database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected =
-            rpc_node_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
+        let gateway_connected = rpc_node_healthcheck(
+            &self.provider,
+            self.healthcheck_timeout,
+            "Gateway",
+            &mut errors,
+        )
+        .await;
 
         let mut kms_core_connected = true;
         let kms_healtcheck_results = self.kms_health_client.check(self.healthcheck_timeout).await;

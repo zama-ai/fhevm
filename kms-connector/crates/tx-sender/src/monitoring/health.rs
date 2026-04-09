@@ -40,12 +40,14 @@ impl Healthcheck for State {
         let gateway_connected = rpc_node_healthcheck(
             &self.gateway_provider,
             self.healthcheck_timeout,
+            "Gateway",
             &mut errors,
         )
         .await;
         let ethereum_connected = rpc_node_healthcheck(
             &self.ethereum_provider,
             self.healthcheck_timeout,
+            "Ethereum",
             &mut errors,
         )
         .await;
