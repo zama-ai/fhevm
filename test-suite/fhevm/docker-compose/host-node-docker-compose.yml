@@ -18,5 +18,9 @@ services:
       - "120"
       - --mnemonic
       - "${MNEMONIC}"
+      # Reduce number of slots in an epoch to consider transaction as finalized ASAP.
+      # A tx is generally considered finalized after two epochs.
+      - --slots-in-an-epoch
+      - 1
     ports:
       - "${HOST_NODE_PORT:-8545}:${HOST_NODE_PORT:-8545}"
