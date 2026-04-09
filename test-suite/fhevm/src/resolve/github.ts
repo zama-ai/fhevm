@@ -61,6 +61,18 @@ const retryDelayMs = (attempt: number) => {
   return base + Math.floor(base * GH_API_RETRY_JITTER_RATIO * Math.random());
 };
 
+const retryReason = (message: string) => {
+  const lower = message.toLowerCase();
+  if (lower.includes("secondary rate limit")) return "secondary rate limit";
+  if (lower.includes("rate limit") || /\bhttp 429\b/.test(lower)) return "rate limit";
+  if (/\bhttp 5\d\d\b/.test(lower)) return "GitHub API 5xx";
+  if (lower.includes("timed out") || lower.includes("tls handshake timeout")) return "timeout";
+  if (lower.includes("connection reset") || lower.includes("econnreset")) return "connection reset";
+  if (lower.includes("connection refused")) return "connection refused";
+  if (lower.includes("temporary failure")) return "temporary failure";
+  return "transient GitHub API error";
+};
+
 const runGhApi = async <T>(apiPath: string): Promise<T> => {
   for (let attempt = 1; attempt <= GH_API_RETRIES; attempt += 1) {
     try {
@@ -69,7 +81,11 @@ const runGhApi = async <T>(apiPath: string): Promise<T> => {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
-        await Bun.sleep(retryDelayMs(attempt));
+        const delay = retryDelayMs(attempt);
+        console.log(
+          `[resolve] gh api retry ${attempt}/${GH_API_RETRIES - 1} after ${retryReason(raw)}; waiting ${(delay / 1000).toFixed(1)}s`,
+        );
+        await Bun.sleep(delay);
         continue;
       }
       throw new GitHubApiError(explainGitHubCliError(raw));
