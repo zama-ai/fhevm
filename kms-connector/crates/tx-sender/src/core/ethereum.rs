@@ -267,7 +267,7 @@ mod tests {
                 trace_reverted_tx: true,
                 gas_multiplier_percent: 105,
                 tx_required_confirmations: 1,
-                get_receipt_timeout: Duration::from_mins(1),
+                get_receipt_timeout: Duration::from_secs(10),
                 tx_retry_interval: Duration::from_millis(100),
             },
         );
