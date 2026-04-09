@@ -44,6 +44,26 @@ interface IDecryption {
     }
 
     /**
+     * @notice A struct that specifies native host identities of the contracts to be used in the decryption.
+     */
+    struct NativeContractsInfo {
+        /// @notice The chain ID of the host contracts to be used in the decryption.
+        uint256 chainId;
+        /// @notice The native host contract identities to be used in the decryption.
+        bytes32[] ids;
+    }
+
+    /**
+     * @notice A struct that contains native host identities for a delegated user decryption.
+     */
+    struct NativeDelegationAccounts {
+        /// @notice The native host identity of the account that delegates access to its handles.
+        bytes32 delegatorId;
+        /// @notice The native host identity of the account that receives the delegation.
+        bytes32 delegateId;
+    }
+
+    /**
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
@@ -97,6 +117,22 @@ interface IDecryption {
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
+        bytes publicKey,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted when a native-host user decryption request is made.
+     * @param decryptionId The decryption request ID.
+     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param userId The native host identity of the user (or delegate for delegated requests).
+     * @param publicKey The user's public key used for reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event UserDecryptionRequestNative(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes32 userId,
         bytes publicKey,
         bytes extraData
     );
@@ -224,6 +260,49 @@ interface IDecryption {
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
 
     /**
+     * @notice Error indicating that the list of contract identities is empty.
+     */
+    error EmptyContractIds();
+
+    /**
+     * @notice Error indicating that the number of contract identities exceeds the maximum allowed.
+     * @param maxLength The maximum number of contract identities allowed.
+     * @param actualLength The actual number of contract identities provided.
+     */
+    error ContractIdsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
+
+    /**
+     * @notice Error indicating that the user identity is included in the contract identities list.
+     * @param userId The native user identity that is included in the list.
+     * @param contractIds The list of expected contract identities.
+     */
+    error UserIdInContractIds(bytes32 userId, bytes32[] contractIds);
+
+    /**
+     * @notice Error indicating that the delegator identity is included in the contract identities list.
+     * @param delegatorId The native delegator identity that is included in the list.
+     * @param contractIds The list of expected contract identities.
+     */
+    error DelegatorIdInContractIds(bytes32 delegatorId, bytes32[] contractIds);
+
+    /**
+     * @notice Error indicating that the contract identity is not included in the contract identities list.
+     * @param contractId The native contract identity that is not in the list.
+     * @param contractIds The list of expected contract identities.
+     */
+    error ContractIdNotInContractIds(bytes32 contractId, bytes32[] contractIds);
+
+    /**
+     * @notice Error indicating that the explicit native identities do not match the native request payload.
+     */
+    error NativeIdentitiesMismatch();
+
+    /**
+     * @notice Error indicating that a native user/delegated decryption request did not include an auth signer.
+     */
+    error MissingNativeAuthSigner();
+
+    /**
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
      * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
      * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
@@ -296,6 +375,26 @@ interface IDecryption {
     ) external;
 
     /**
+     * @notice Requests a native-host user decryption.
+     * @param ctHandleContractPairs The ciphertexts to decrypt for associated native host contracts.
+     * @param requestValidity The validity period of the user decryption request.
+     * @param contractsInfo The native contracts' information (chain ID, identities).
+     * @param userId The native host identity of the user.
+     * @param publicKey The user's public key to reencrypt the decryption shares.
+     * @param signature The native signature to verify.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function userDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeContractsInfo calldata contractsInfo,
+        bytes32 userId,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
      * @notice Requests a delegated user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
@@ -310,6 +409,26 @@ interface IDecryption {
         RequestValidity calldata requestValidity,
         DelegationAccounts calldata delegationAccounts,
         ContractsInfo calldata contractsInfo,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests a native-host delegated user decryption.
+     * @param ctHandleContractPairs The ciphertexts to decrypt for associated native host contracts.
+     * @param requestValidity The validity period of the user decryption request.
+     * @param delegationAccounts The native identities of the delegator and delegate.
+     * @param contractsInfo The native contracts' information (chain ID, identities).
+     * @param publicKey The delegate's public key to reencrypt the decryption shares.
+     * @param signature The native signature to verify.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function delegatedUserDecryptionRequestNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        NativeDelegationAccounts calldata delegationAccounts,
+        NativeContractsInfo calldata contractsInfo,
         bytes calldata publicKey,
         bytes calldata signature,
         bytes calldata extraData
@@ -350,6 +469,16 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
+     * @notice Indicates if native-host handles are ready to be decrypted by a user.
+     * @param ctHandleContractPairs The ciphertext handles with associated native contract identities.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function isUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external view returns (bool);
+
+    /**
      * @notice Indicates if handles are ready to be decrypted by a user.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
@@ -369,6 +498,16 @@ interface IDecryption {
      */
     function isDelegatedUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external view returns (bool);
+
+    /**
+     * @notice Indicates if native-host handles are ready to be decrypted by a delegated user.
+     * @param ctHandleContractPairs The ciphertext handles with associated native contract identities.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function isDelegatedUserDecryptionReadyNative(
+        NativeCtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
     ) external view returns (bool);
 

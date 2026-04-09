@@ -594,7 +594,7 @@ impl ExecutorState {
             HostEvent::VerifyInput {
                 caller: meta.caller,
                 input_handle,
-                user_address: context.user_address,
+                user_id: context.user_id,
                 input_proof_len: input_proof.len() as u32,
                 input_type: result_type,
                 result,

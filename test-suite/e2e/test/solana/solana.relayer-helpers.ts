@@ -2,14 +2,13 @@
 // Solana relayer helpers
 //
 // Handles user-decrypt and public-decrypt relayer calls for Solana e2e tests.
-// Uses EIP-712 (required by the relayer/KMS protocol) alongside native Solana
-// Ed25519 signatures for native-auth flows.
+// Native Solana user-decrypt requests are authenticated with Ed25519 over the
+// gateway's native typed-data digest.
 // ---------------------------------------------------------------------------
 
 import fs from 'node:fs';
 
 import { ed25519 } from '@noble/curves/ed25519';
-import { ethers } from 'ethers';
 import TKMS from 'node-tkms';
 
 import { RELAYER_URL, DECRYPTION_EXTRA_DATA_VERSION } from './solana.config';
@@ -21,33 +20,17 @@ import {
   normalizeStackHttpUrl,
   requiredEnvValue,
   sleep,
-  stripHexPrefix,
 } from './solana.proof-helpers';
-
-// ---------------------------------------------------------------------------
-// Minimal wallet interface — avoids exposing ethers types to test files
-// ---------------------------------------------------------------------------
-
-export interface TestWallet {
-  address: string;
-  signTypedData(
-    domain: Record<string, unknown>,
-    types: Record<string, Array<{ name: string; type: string }>>,
-    value: Record<string, unknown>,
-  ): Promise<string>;
-}
-
-export function createTestWallet(privateKey: string): TestWallet {
-  return new ethers.Wallet(normalizeHexPrivateKey(privateKey));
-}
-
-export function createRandomTestWallet(): TestWallet {
-  return ethers.Wallet.createRandom();
-}
-
-function normalizeHexPrivateKey(value: string): string {
-  return value.startsWith('0x') ? value : `0x${value}`;
-}
+import {
+  hashTypedData,
+  checksumAddress,
+  isAddress,
+  nativeClientAddressFromIdentity,
+  normalizeAddress,
+  verifyTypedDataSigner,
+  type TypedDataDomain,
+  type TypedDataTypes,
+} from './gateway-typed-data';
 
 // ---------------------------------------------------------------------------
 // KMS signer loading
@@ -58,7 +41,7 @@ export function loadKmsSigners(envValues: Record<string, string>): string[] {
   const signers: string[] = [];
   for (let index = 0; index < count; index += 1) {
     signers.push(
-      ethers.getAddress(
+      normalizeAddress(
         requiredEnvValue(
           envValues,
           `KMS_SIGNER_ADDRESS_${index}`,
@@ -138,15 +121,11 @@ export function signEd25519TypedData(
   eip712: EIP712TypedData,
   privateKey: Uint8Array,
 ): string {
-  const primaryType = requiredString(eip712.primaryType, 'primaryType');
-  const digest = ethers.TypedDataEncoder.hash(
+  const digest = hashTypedData(
     eip712.domain,
-    {
-      [primaryType]: requiredValue(
-        eip712.types?.[primaryType],
-        `${primaryType} typed-data fields`,
-      ),
-    },
+    Object.fromEntries(
+      Object.entries(eip712.types).filter(([typeName]) => typeName !== 'EIP712Domain'),
+    ),
     eip712.message,
   );
   return bytesToHex(ed25519.sign(hexToBytes(digest), privateKey), true);
@@ -205,22 +184,17 @@ export function generateRelayerKeypair(): { publicKey: string; privateKey: strin
 // ---------------------------------------------------------------------------
 
 export interface EIP712TypedData {
-  types: Record<string, Array<{ name: string; type: string }>>;
+  types: TypedDataTypes;
   primaryType: string;
-  domain: {
-    name: string;
-    version: string;
-    chainId: number;
-    verifyingContract: string;
-  };
+  domain: TypedDataDomain;
   message: Record<string, unknown>;
 }
 
-export function buildUserDecryptEip712({
+export function buildNativeUserDecryptEip712({
   verifyingContract,
   contractsChainId,
   publicKey,
-  contractAddresses,
+  contractIds,
   startTimestamp,
   durationDays,
   extraData,
@@ -228,19 +202,16 @@ export function buildUserDecryptEip712({
   verifyingContract: string;
   contractsChainId: number;
   publicKey: string;
-  contractAddresses: string[];
+  contractIds: string[];
   startTimestamp: number;
   durationDays: number;
   extraData: string;
 }): EIP712TypedData {
-  if (!ethers.isAddress(verifyingContract)) {
+  if (!isAddress(verifyingContract)) {
     throw new Error(`invalid verifying contract address: ${verifyingContract}`);
   }
-  if (
-    !Array.isArray(contractAddresses) ||
-    contractAddresses.some((address) => !ethers.isAddress(address))
-  ) {
-    throw new Error(`invalid contract address list for user decrypt: ${contractAddresses}`);
+  if (!Array.isArray(contractIds) || contractIds.length === 0) {
+    throw new Error('invalid contract id list for native user decrypt');
   }
 
   return {
@@ -251,15 +222,15 @@ export function buildUserDecryptEip712({
         { name: 'chainId', type: 'uint256' },
         { name: 'verifyingContract', type: 'address' },
       ],
-      UserDecryptRequestVerification: [
+      NativeUserDecryptRequestVerification: [
         { name: 'publicKey', type: 'bytes' },
-        { name: 'contractAddresses', type: 'address[]' },
+        { name: 'contractIds', type: 'bytes32[]' },
         { name: 'startTimestamp', type: 'uint256' },
         { name: 'durationDays', type: 'uint256' },
         { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: 'UserDecryptRequestVerification',
+    primaryType: 'NativeUserDecryptRequestVerification',
     domain: {
       name: 'Decryption',
       version: '1',
@@ -268,7 +239,7 @@ export function buildUserDecryptEip712({
     },
     message: {
       publicKey: ensure0xHex(publicKey),
-      contractAddresses,
+      contractIds,
       startTimestamp: String(startTimestamp),
       durationDays: String(durationDays),
       extraData,
@@ -283,13 +254,11 @@ export function buildUserDecryptEip712({
 export interface UserDecryptRequestParams {
   handle?: string;
   handles?: string[];
-  contractAddress?: string;
-  contractAddresses?: string[];
-  userIdentity?: string;
-  nativeContractIdentities?: string[] | null;
-  nativeSignerKeypairPath?: string;
-  handleContractPairs?: Array<{ handle: string; contractAddress: string }>;
-  userWallet: TestWallet;
+  contractId?: string;
+  contractIds?: string[];
+  userIdentity: string;
+  nativeSignerKeypairPath: string;
+  handleContractPairs?: Array<{ handle: string; contractId: string }>;
   addresses: Record<string, string>;
   testSuiteEnv: Record<string, string>;
   label: string;
@@ -307,20 +276,19 @@ export interface UserDecryptResult {
   errorMessage?: string | null;
   clearValues?: Record<string, unknown>;
   decryptedValue?: unknown;
-  userAddress?: string;
+  clientIdentity?: string;
+  clientAddress?: string;
   payload?: unknown;
 }
 
 export async function executeUserDecryptRequest({
   handle,
   handles,
-  contractAddress,
-  contractAddresses,
+  contractId,
+  contractIds,
   userIdentity,
-  nativeContractIdentities,
   nativeSignerKeypairPath,
   handleContractPairs,
-  userWallet,
   addresses,
   testSuiteEnv,
   label,
@@ -329,60 +297,45 @@ export async function executeUserDecryptRequest({
 }: UserDecryptRequestParams): Promise<UserDecryptResult> {
   const { publicKey, privateKey } = generateRelayerKeypair();
   const requestHandles = Array.isArray(handles) && handles.length > 0 ? handles : [handle];
-  const requestContractAddresses: string[] =
-    Array.isArray(contractAddresses) && contractAddresses.length > 0
-      ? contractAddresses
-      : contractAddress !== undefined ? [contractAddress] : [];
+  const requestContractIds =
+    Array.isArray(contractIds) && contractIds.length > 0
+      ? contractIds
+      : contractId !== undefined ? [contractId] : [];
   const requestHandleContractPairs =
     Array.isArray(handleContractPairs) && handleContractPairs.length > 0
       ? handleContractPairs
       : requestHandles.map((requestHandle) => ({
           handle: requestHandle,
-          contractAddress,
+          contractId,
         }));
-  const requestNativeContractIdentities =
-    Array.isArray(nativeContractIdentities) && nativeContractIdentities.length > 0
-      ? nativeContractIdentities
-      : [];
   const requestStartTimestamp =
     startTimestamp ?? (await latestGatewayBlockTimestamp(testSuiteEnv, label));
   const requestDurationDays = durationDays ?? 1;
-  const userAddress = userWallet.address;
-  const useNativeSolanaAuth =
-    typeof nativeSignerKeypairPath === 'string' &&
-    nativeSignerKeypairPath.length > 0 &&
-    userIdentity &&
-    requestNativeContractIdentities.length === requestContractAddresses.length;
-  const extraData = useNativeSolanaAuth
-    ? buildDecryptionExtraData(
-        loadKmsContextId({ ...addresses, ...testSuiteEnv }),
-        [userIdentity as string, ...requestNativeContractIdentities],
-        buildNativeSolanaAuthSigner(testSuiteEnv, nativeSignerKeypairPath as string),
-      )
-    : userIdentity && requestNativeContractIdentities.length === requestContractAddresses.length
-      ? buildDecryptionExtraData(
-          loadKmsContextId({ ...addresses, ...testSuiteEnv }),
-          [userIdentity, ...requestNativeContractIdentities],
-        )
-      : '0x00';
-  const eip712 = buildUserDecryptEip712({
+  if (
+    !userIdentity ||
+    !nativeSignerKeypairPath ||
+    requestContractIds.length === 0 ||
+    requestContractIds.length !== requestHandleContractPairs.length
+  ) {
+    throw new Error('native Solana user decrypt requires userIdentity, nativeSignerKeypairPath, and contractIds');
+  }
+  const clientIdentity = ensure0xHex(userIdentity);
+  const clientAddress = nativeClientAddressFromIdentity(clientIdentity);
+  const extraData = buildDecryptionExtraData(
+    loadKmsContextId({ ...addresses, ...testSuiteEnv }),
+    [clientIdentity, ...requestContractIds],
+    buildNativeSolanaAuthSigner(testSuiteEnv, nativeSignerKeypairPath),
+  );
+  const eip712 = buildNativeUserDecryptEip712({
     verifyingContract: requiredEnvValue(testSuiteEnv, 'DECRYPTION_ADDRESS', label),
     contractsChainId: Number(addresses.SOLANA_HOST_CHAIN_ID),
     publicKey,
-    contractAddresses: requestContractAddresses,
+    contractIds: requestContractIds,
     startTimestamp: requestStartTimestamp,
     durationDays: requestDurationDays,
     extraData,
   });
-  const signature = useNativeSolanaAuth
-    ? signEd25519TypedData(eip712, loadSolanaEd25519PrivateKey(nativeSignerKeypairPath as string))
-    : await userWallet.signTypedData(
-        eip712.domain as Record<string, unknown>,
-        Object.fromEntries(
-          Object.entries(eip712.types).filter(([typeName]) => typeName !== 'EIP712Domain'),
-        ),
-        eip712.message,
-      );
+  const signature = signEd25519TypedData(eip712, loadSolanaEd25519PrivateKey(nativeSignerKeypairPath));
 
   const body = {
     handleContractPairs: requestHandleContractPairs,
@@ -391,15 +344,11 @@ export async function executeUserDecryptRequest({
       durationDays: String(requestDurationDays),
     },
     contractsChainId: addresses.SOLANA_HOST_CHAIN_ID,
-    contractAddresses: requestContractAddresses,
-    userAddress,
     signature: signature.replace(/^0x/, ''),
     publicKey: publicKey.replace(/^0x/, ''),
     extraData,
-    ...(userIdentity ? { userId: userIdentity } : {}),
-    ...(requestNativeContractIdentities.length > 0
-      ? { contractIds: requestNativeContractIdentities }
-      : {}),
+    userId: clientIdentity,
+    contractIds: requestContractIds,
   };
 
   const response = await fetch(`${RELAYER_URL}/v2/user-decrypt`, {
@@ -445,7 +394,7 @@ export async function executeUserDecryptRequest({
   const clearValues = decryptUserDecryptResult({
     responsePayload: statusResult.payload,
     handles: requestHandles as string[],
-    userAddress,
+    clientAddress,
     publicKey,
     privateKey,
     gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', label),
@@ -460,7 +409,8 @@ export async function executeUserDecryptRequest({
     jobId,
     clearValues,
     decryptedValue: clearValues[requestHandles[0] as string],
-    userAddress,
+    clientIdentity,
+    clientAddress,
   };
 }
 
@@ -490,17 +440,6 @@ export function isUserDecryptAclRejection(result: UserDecryptResult): boolean {
     includesErrorMessage(result, 'not authorized to user decrypt handle') ||
     includesErrorMessage(result, 'not allowed on host acl') ||
     includesErrorMessage(result, 'acl check failed')
-  );
-}
-
-export function isUserEqualsContractRejection(result: UserDecryptResult): boolean {
-  return (
-    includesErrorMessage(
-      result,
-      'should not be equal to contract address when requesting user decryption',
-    ) ||
-    includesErrorMessage(result, 'useraddressincontractaddresses') ||
-    includesErrorMessage(result, '0xdc4d78b1')
   );
 }
 
@@ -541,7 +480,7 @@ async function waitForUserDecryptJob(
 function decryptUserDecryptResult({
   responsePayload,
   handles,
-  userAddress,
+  clientAddress,
   publicKey,
   privateKey,
   gatewayChainId,
@@ -551,7 +490,7 @@ function decryptUserDecryptResult({
 }: {
   responsePayload: unknown;
   handles: string[];
-  userAddress: string;
+  clientAddress: string;
   publicKey: string;
   privateKey: string;
   gatewayChainId: string;
@@ -598,9 +537,9 @@ function decryptUserDecryptResult({
   const publicKeyBytes = TKMS.u8vec_to_ml_kem_pke_pk(hexToBytes(publicKey));
   const privateKeyBytes = TKMS.u8vec_to_ml_kem_pke_sk(hexToBytes(privateKey));
   const indexedKmsSigners = kmsSigners.map((signer, index) =>
-    TKMS.new_server_id_addr(index + 1, signer),
+    TKMS.new_server_id_addr(index + 1, checksumAddress(signer)),
   );
-  const client = TKMS.new_client(indexedKmsSigners, userAddress, 'default');
+  const client = TKMS.new_client(indexedKmsSigners, clientAddress, 'default');
   const decrypted = TKMS.process_user_decryption_resp_from_js(
     client,
     null,
@@ -612,9 +551,10 @@ function decryptUserDecryptResult({
   );
   const clearValues: Record<string, unknown> = {};
   for (let index = 0; index < handles.length; index += 1) {
+    const decryptedEntry = decrypted[index] as unknown as { bytes?: ArrayLike<number> };
     clearValues[handles[index]] = decodeUserDecryptBytes(
       handles[index],
-      (decrypted[index] as Record<string, unknown>)?.bytes ?? [],
+      decryptedEntry?.bytes ?? [],
     );
   }
   return clearValues;
@@ -637,13 +577,13 @@ function verifyUserDecryptResponseSignatures({
   kmsSigners: string[];
   extraData: string;
 }): void {
-  const domain = {
+  const domain: TypedDataDomain = {
     name: 'Decryption',
     version: '1',
     chainId: Number(gatewayChainId),
-    verifyingContract: ethers.getAddress(verifyingContract),
+    verifyingContract: normalizeAddress(verifyingContract),
   };
-  const types = {
+  const types: TypedDataTypes = {
     UserDecryptResponseVerification: [
       { name: 'publicKey', type: 'bytes' },
       { name: 'ctHandles', type: 'bytes32[]' },
@@ -651,7 +591,7 @@ function verifyUserDecryptResponseSignatures({
       { name: 'extraData', type: 'bytes' },
     ],
   };
-  const normalizedExpected = new Set(kmsSigners.map((signer) => ethers.getAddress(signer)));
+  const normalizedExpected = new Set(kmsSigners.map((signer) => normalizeAddress(signer)));
   const normalizedRecovered = aggregatedResponse.map((share) => {
     const sharePayload = requiredString(share?.payload, 'user decrypt share payload');
     const shareSignature = ensure0xHex(requiredString(share?.signature, 'user decrypt share signature'));
@@ -661,18 +601,13 @@ function verifyUserDecryptResponseSignatures({
         : typeof share?.extra_data === 'string'
           ? share.extra_data
           : extraData;
-    return ethers.getAddress(
-      ethers.verifyTypedData(
-        domain,
-        types,
-        {
-          publicKey: ensure0xHex(requiredString(publicKey, 'user decrypt public key')),
-          ctHandles: handles.map((h) => ensure0xHex(requiredString(h, 'user decrypt handle'))),
-          userDecryptedShare: ensure0xHex(sharePayload),
-          extraData: ensure0xHex((shareExtraData as string) ?? '0x'),
-        },
-        shareSignature,
-      ),
+    return normalizeAddress(
+      verifyTypedDataSigner(domain, types, {
+        publicKey: ensure0xHex(requiredString(publicKey, 'user decrypt public key')),
+        ctHandles: handles.map((h) => ensure0xHex(requiredString(h, 'user decrypt handle'))),
+        userDecryptedShare: ensure0xHex(sharePayload),
+        extraData: ensure0xHex((shareExtraData as string) ?? '0x'),
+      }, shareSignature),
     );
   });
 
@@ -1014,4 +949,3 @@ function requiredValue<T>(value: T | undefined | null, fieldName: string): T {
   }
   return value;
 }
-

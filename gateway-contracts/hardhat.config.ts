@@ -178,21 +178,41 @@ const config: HardhatUserConfig = {
   },
   // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
   solidity: {
-    version: "0.8.24",
-    settings: {
-      metadata: {
-        // Not including the metadata hash
-        // https://github.com/paulrberg/hardhat-template/issues/31
-        bytecodeHash: "none",
+    compilers: [
+      {
+        version: "0.8.24",
+        settings: {
+          metadata: {
+            // Not including the metadata hash
+            // https://github.com/paulrberg/hardhat-template/issues/31
+            bytecodeHash: "none",
+          },
+          // Disable the optimizer when debugging
+          // https://hardhat.org/hardhat-network/#solidity-optimizer-support
+          optimizer: {
+            enabled: true,
+            runs: 800,
+          },
+          evmVersion: "cancun",
+          viaIR: false,
+        },
       },
-      // Disable the optimizer when debugging
-      // https://hardhat.org/hardhat-network/#solidity-optimizer-support
-      optimizer: {
-        enabled: true,
-        runs: 800,
+    ],
+    overrides: {
+      "contracts/Decryption.sol": {
+        version: "0.8.24",
+        settings: {
+          metadata: {
+            bytecodeHash: "none",
+          },
+          optimizer: {
+            enabled: true,
+            runs: 800,
+          },
+          evmVersion: "cancun",
+          viaIR: true,
+        },
       },
-      evmVersion: "cancun",
-      viaIR: false,
     },
   },
   warnings: {

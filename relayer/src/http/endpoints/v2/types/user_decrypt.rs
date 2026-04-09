@@ -24,9 +24,9 @@ pub struct UserDecryptRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contracts_chain_id: String,
-    #[validate(length(min = 1, message = "Must not be empty"))]
+    #[serde(default)]
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
-    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
+    #[schema(value_type = Vec<String>, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
     /// Optional native host contract identities. Each item is a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
@@ -37,9 +37,12 @@ pub struct UserDecryptRequestJson {
     )]
     pub contract_ids: Option<Vec<String>>,
     /// Ethereum address of the user requesting decryption. `0x` + 40 hex chars.
+    /// Required for EVM host chains. May be omitted for native host chains (e.g. Solana)
+    /// when `userId` is provided.
+    #[serde(default)]
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub user_address: String,
+    #[schema(example = "0x1234567890123456789012345678901234567890", nullable = true)]
+    pub user_address: Option<String>,
     /// Optional native host user identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
@@ -79,9 +82,9 @@ pub struct DelegatedUserDecryptRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contracts_chain_id: String,
-    #[validate(length(min = 1, message = "Must not be empty"))]
+    #[serde(default)]
     #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
-    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
+    #[schema(value_type = Vec<String>, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
     /// Optional native host contract identities. Each item is a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
@@ -92,9 +95,10 @@ pub struct DelegatedUserDecryptRequestJson {
     )]
     pub contract_ids: Option<Vec<String>>,
     /// Ethereum address of the delegator (the user who owns the ciphertexts). `0x` + 40 hex chars.
+    #[serde(default)]
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub delegator_address: String,
+    #[schema(example = "0x1234567890123456789012345678901234567890", nullable = true)]
+    pub delegator_address: Option<String>,
     /// Optional native host delegator identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(
@@ -103,9 +107,10 @@ pub struct DelegatedUserDecryptRequestJson {
     )]
     pub delegator_id: Option<String>,
     /// Ethereum address of the delegate (the party authorized to decrypt). `0x` + 40 hex chars.
+    #[serde(default)]
     #[validate(custom(function = "crate::http::validate_blockchain_address"))]
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub delegate_address: String,
+    #[schema(example = "0x1234567890123456789012345678901234567890", nullable = true)]
+    pub delegate_address: Option<String>,
     /// Optional native host delegate identity. Must be a `0x`-prefixed bytes32 hex string.
     #[serde(default)]
     #[schema(

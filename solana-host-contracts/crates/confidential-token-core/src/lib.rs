@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use sha3::{Digest, Keccak256};
-use solana_host_contracts_core::{host_identity_from_evm_address, EvmAddress, Handle, Pubkey};
+use solana_host_contracts_core::{Handle, Pubkey};
 use solana_program::pubkey::Pubkey as SolanaPubkey;
 
 pub const CONFIDENTIAL_TOKEN_STATE_PDA_SEED: &[u8] = b"confidential-token-state";
@@ -85,13 +84,6 @@ pub fn find_state_pda(program_id: &SolanaPubkey) -> (SolanaPubkey, u8) {
     SolanaPubkey::find_program_address(&[CONFIDENTIAL_TOKEN_STATE_PDA_SEED], program_id)
 }
 
-pub fn evm_address_from_solana_pubkey(pubkey: &SolanaPubkey) -> EvmAddress {
-    let digest = Keccak256::digest(pubkey.as_ref());
-    let mut bytes = [0_u8; 20];
-    bytes.copy_from_slice(&digest[12..]);
-    EvmAddress::new(bytes)
-}
-
-pub fn evm_host_identity_from_solana_pubkey(pubkey: &SolanaPubkey) -> Pubkey {
-    host_identity_from_evm_address(evm_address_from_solana_pubkey(pubkey))
+pub fn host_identity_from_solana_pubkey(pubkey: &SolanaPubkey) -> Pubkey {
+    Pubkey::from(pubkey.to_bytes())
 }

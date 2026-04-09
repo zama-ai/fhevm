@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use alloy::{
+    hex,
     primitives::{Address, Bytes, FixedBytes},
     providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
     sol_types::SolCall,
@@ -188,11 +189,15 @@ impl HostAclChecker {
         // Group pairs by chain_id (extracted from handle)
         let grouped = group_pairs_by_chain(pairs);
         let identity_overrides = if let Some(contract_ids) = request.contract_ids.as_ref() {
-            SolanaIdentityOverrides {
-                contract_ids: Some(zip_solana_contract_identities_from_fixed_bytes(
-                    &request.contract_addresses,
-                    contract_ids,
-                )?),
+            if request.contract_addresses.is_empty() {
+                SolanaIdentityOverrides::default()
+            } else {
+                SolanaIdentityOverrides {
+                    contract_ids: Some(zip_solana_contract_identities_from_fixed_bytes(
+                        &request.contract_addresses,
+                        contract_ids,
+                    )?),
+                }
             }
         } else {
             parse_solana_user_identity_overrides(
@@ -247,11 +252,15 @@ impl HostAclChecker {
 
         let grouped = group_pairs_by_chain(pairs);
         let identity_overrides = if let Some(contract_ids) = request.contract_ids.as_ref() {
-            SolanaIdentityOverrides {
-                contract_ids: Some(zip_solana_contract_identities_from_fixed_bytes(
-                    &request.contract_addresses,
-                    contract_ids,
-                )?),
+            if request.contract_addresses.is_empty() {
+                SolanaIdentityOverrides::default()
+            } else {
+                SolanaIdentityOverrides {
+                    contract_ids: Some(zip_solana_contract_identities_from_fixed_bytes(
+                        &request.contract_addresses,
+                        contract_ids,
+                    )?),
+                }
             }
         } else {
             parse_solana_delegated_identity_overrides(
@@ -374,16 +383,21 @@ impl HostAclChecker {
         chain_acl: &HostChainAcl,
         chain_id: u64,
         chain_pairs: &[HandleContractPair],
-        user: Address,
+        user: Option<Address>,
         native_user_id: Option<SolanaHostPubkey>,
         native_contract_id_overrides: Option<&HashMap<Address, SolanaHostPubkey>>,
     ) -> Result<Vec<AclFailure>, HostAclError> {
         match chain_acl {
             HostChainAcl::Evm { acl } => {
+                let user = user.ok_or_else(|| HostAclError::CallFailed {
+                    chain_id,
+                    message: "legacy user decrypt requires userAddress".to_string(),
+                })?;
                 let mut calls: Vec<Bytes> = Vec::with_capacity(chain_pairs.len() * 2);
                 for pair in chain_pairs {
                     let handle_bytes: [u8; 32] = pair.ct_handle.to_be_bytes();
                     let handle = FixedBytes::from(handle_bytes);
+                    let contract_address = require_legacy_contract_address(pair, chain_id)?;
 
                     calls.push(Bytes::from(
                         ACL::isAllowedCall {
@@ -395,7 +409,7 @@ impl HostAclChecker {
                     calls.push(Bytes::from(
                         ACL::isAllowedCall {
                             handle,
-                            account: pair.contract_address,
+                            account: contract_address,
                         }
                         .abi_encode(),
                     ));
@@ -418,6 +432,7 @@ impl HostAclChecker {
 
                 let mut failures = Vec::new();
                 for (i, pair) in chain_pairs.iter().enumerate() {
+                    let contract_address = require_legacy_contract_address(pair, chain_id)?;
                     let handle_hex = format!("0x{:064x}", pair.ct_handle);
                     let user_allowed =
                         decode_bool(&results[i * 2]).map_err(|msg| HostAclError::CallFailed {
@@ -440,7 +455,7 @@ impl HostAclChecker {
                     if !contract_allowed {
                         failures.push(AclFailure {
                             handle: handle_hex,
-                            check: format!("isAllowed(contract {})", pair.contract_address),
+                            check: format!("isAllowed(contract {})", contract_address),
                         });
                     }
                 }
@@ -449,28 +464,46 @@ impl HostAclChecker {
             }
             HostChainAcl::Solana { client } => {
                 let state = fetch_solana_state(client, chain_id).await?;
-                let user_identity =
-                    native_user_id.unwrap_or_else(|| solana_host_identity_from_evm_address(user));
+                let user_identity = if let Some(native_user_id) = native_user_id {
+                    native_user_id
+                } else {
+                    solana_host_identity_from_evm_address(user.ok_or_else(|| {
+                        HostAclError::CallFailed {
+                            chain_id,
+                            message: "native user decrypt requires userId or userAddress"
+                                .to_string(),
+                        }
+                    })?)
+                };
                 let mut failures = Vec::new();
                 for pair in chain_pairs {
                     let handle = SolanaHandle::from(pair.ct_handle.to_be_bytes());
-                    let contract_identity = native_contract_id_overrides
-                        .and_then(|overrides| overrides.get(&pair.contract_address).copied())
-                        .unwrap_or_else(|| {
-                            solana_host_identity_from_evm_address(pair.contract_address)
-                        });
+                    let contract_identity = resolve_solana_contract_identity(
+                        pair,
+                        native_contract_id_overrides,
+                        chain_id,
+                    )?;
                     let handle_hex = format!("0x{:064x}", pair.ct_handle);
 
                     if !state.acl().persist_allowed(handle, user_identity) {
                         failures.push(AclFailure {
                             handle: handle_hex.clone(),
-                            check: format!("isAllowed(user {})", user),
+                            check: format!(
+                                "isAllowed(user {})",
+                                user.map(|address| address.to_string())
+                                    .unwrap_or_else(|| {
+                                        format!("0x{}", hex::encode(user_identity.as_bytes()))
+                                    })
+                            ),
                         });
                     }
                     if !state.acl().persist_allowed(handle, contract_identity) {
                         failures.push(AclFailure {
                             handle: handle_hex,
-                            check: format!("isAllowed(contract {})", pair.contract_address),
+                            check: format!(
+                                "isAllowed(contract {})",
+                                format_handle_contract_identity(pair)
+                            ),
                         });
                     }
                 }
@@ -485,27 +518,37 @@ impl HostAclChecker {
         chain_acl: &HostChainAcl,
         chain_id: u64,
         chain_pairs: &[HandleContractPair],
-        delegator: Address,
+        delegator: Option<Address>,
         native_delegator_id: Option<SolanaHostPubkey>,
-        delegate: Address,
+        delegate: Option<Address>,
         native_delegate_id: Option<SolanaHostPubkey>,
         native_contract_id_overrides: Option<&HashMap<Address, SolanaHostPubkey>>,
     ) -> Result<Vec<AclFailure>, HostAclError> {
         match chain_acl {
             HostChainAcl::Evm { acl } => {
+                let delegator = delegator.ok_or_else(|| HostAclError::CallFailed {
+                    chain_id,
+                    message: "legacy delegated user decrypt requires delegatorAddress"
+                        .to_string(),
+                })?;
+                let delegate = delegate.ok_or_else(|| HostAclError::CallFailed {
+                    chain_id,
+                    message: "legacy delegated user decrypt requires delegateAddress".to_string(),
+                })?;
                 let calls: Vec<Bytes> = chain_pairs
                     .iter()
                     .map(|pair| {
                         let handle_bytes: [u8; 32] = pair.ct_handle.to_be_bytes();
+                        let contract_address = require_legacy_contract_address(pair, chain_id)?;
                         let call = ACL::isHandleDelegatedForUserDecryptionCall {
                             delegator,
                             delegate,
-                            contractAddress: pair.contract_address,
+                            contractAddress: contract_address,
                             handle: FixedBytes::from(handle_bytes),
                         };
-                        Bytes::from(call.abi_encode())
+                        Ok(Bytes::from(call.abi_encode()))
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, HostAclError>>()?;
 
                 let results = self
                     .multicall_with_retry(job_id, acl, &calls, chain_id)
@@ -540,19 +583,39 @@ impl HostAclChecker {
             }
             HostChainAcl::Solana { client } => {
                 let state = fetch_solana_state(client, chain_id).await?;
-                let delegator_identity = native_delegator_id
-                    .unwrap_or_else(|| solana_host_identity_from_evm_address(delegator));
-                let delegate_identity = native_delegate_id
-                    .unwrap_or_else(|| solana_host_identity_from_evm_address(delegate));
+                let delegator_identity = if let Some(native_delegator_id) = native_delegator_id {
+                    native_delegator_id
+                } else {
+                    solana_host_identity_from_evm_address(delegator.ok_or_else(|| {
+                        HostAclError::CallFailed {
+                            chain_id,
+                            message:
+                                "native delegated user decrypt requires delegatorId or delegatorAddress"
+                                    .to_string(),
+                        }
+                    })?)
+                };
+                let delegate_identity = if let Some(native_delegate_id) = native_delegate_id {
+                    native_delegate_id
+                } else {
+                    solana_host_identity_from_evm_address(delegate.ok_or_else(|| {
+                        HostAclError::CallFailed {
+                            chain_id,
+                            message:
+                                "native delegated user decrypt requires delegateId or delegateAddress"
+                                    .to_string(),
+                        }
+                    })?)
+                };
                 let now = current_unix_timestamp();
                 let mut failures = Vec::new();
 
                 for pair in chain_pairs {
-                    let contract_identity = native_contract_id_overrides
-                        .and_then(|overrides| overrides.get(&pair.contract_address).copied())
-                        .unwrap_or_else(|| {
-                            solana_host_identity_from_evm_address(pair.contract_address)
-                        });
+                    let contract_identity = resolve_solana_contract_identity(
+                        pair,
+                        native_contract_id_overrides,
+                        chain_id,
+                    )?;
                     let handle = SolanaHandle::from(pair.ct_handle.to_be_bytes());
                     if !state.acl().is_handle_delegated_for_user_decryption(
                         delegator_identity,
@@ -668,6 +731,44 @@ fn solana_host_identity_from_evm_address(address: Address) -> SolanaHostPubkey {
 
 fn solana_host_identity_from_fixed_bytes(identity: FixedBytes<32>) -> SolanaHostPubkey {
     SolanaHostPubkey::from(*identity)
+}
+
+fn require_legacy_contract_address(
+    pair: &HandleContractPair,
+    chain_id: u64,
+) -> Result<Address, HostAclError> {
+    pair.contract_address.ok_or_else(|| HostAclError::CallFailed {
+        chain_id,
+        message: format!(
+            "legacy handle-contract pair for handle 0x{:064x} requires contractAddress",
+            pair.ct_handle
+        ),
+    })
+}
+
+fn resolve_solana_contract_identity(
+    pair: &HandleContractPair,
+    native_contract_id_overrides: Option<&HashMap<Address, SolanaHostPubkey>>,
+    chain_id: u64,
+) -> Result<SolanaHostPubkey, HostAclError> {
+    if let Some(contract_id) = pair.contract_id {
+        return Ok(solana_host_identity_from_fixed_bytes(contract_id));
+    }
+
+    let contract_address = require_legacy_contract_address(pair, chain_id)?;
+    Ok(native_contract_id_overrides
+        .and_then(|overrides| overrides.get(&contract_address).copied())
+        .unwrap_or_else(|| solana_host_identity_from_evm_address(contract_address)))
+}
+
+fn format_handle_contract_identity(pair: &HandleContractPair) -> String {
+    if let Some(contract_id) = pair.contract_id {
+        format!("0x{}", hex::encode(contract_id))
+    } else if let Some(contract_address) = pair.contract_address {
+        contract_address.to_string()
+    } else {
+        "<missing-contract-identity>".to_string()
+    }
 }
 
 #[derive(Default)]

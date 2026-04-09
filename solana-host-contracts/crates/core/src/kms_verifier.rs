@@ -237,6 +237,14 @@ impl KmsVerifierState {
             .unwrap_or_default()
     }
 
+    pub fn get_source_contract(&self) -> EvmAddress {
+        self.source_contract
+    }
+
+    pub fn get_source_chain_id(&self) -> u64 {
+        self.source_chain_id
+    }
+
     pub fn get_context_signers_and_threshold_from_extra_data(
         &self,
         extra_data: &[u8],

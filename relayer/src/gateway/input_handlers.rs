@@ -10,7 +10,7 @@ use crate::{
     },
     gateway::{
         arbitrum::{
-            bindings::InputVerification,
+            bindings::{InputVerification, InputVerificationNative},
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
@@ -150,6 +150,15 @@ impl InputProofGatewayHandler {
             InputVerification::VerifyProofRequest::SIGNATURE_HASH,
             |event| event.zkProofId,
         )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                InputVerificationNative::VerifyProofRequestNative,
+            >(
+                receipt,
+                InputVerificationNative::VerifyProofRequestNative::SIGNATURE_HASH,
+                |event| event.zkProofId,
+            )
+        })
     }
 
     /// Processes user input proof request by sending it to the Gateway blockchain.

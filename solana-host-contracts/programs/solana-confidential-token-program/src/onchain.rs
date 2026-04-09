@@ -1,8 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_confidential_token_core::{
-    evm_address_from_solana_pubkey, evm_host_identity_from_solana_pubkey, find_state_pda,
-    AllowanceEntry, BalanceEntry, ConfidentialTokenExecutionResult, ConfidentialTokenInstruction,
-    ConfidentialTokenState, CONFIDENTIAL_TOKEN_STATE_PDA_SEED,
+    find_state_pda, AllowanceEntry, BalanceEntry, ConfidentialTokenExecutionResult,
+    ConfidentialTokenInstruction, ConfidentialTokenState, CONFIDENTIAL_TOKEN_STATE_PDA_SEED,
 };
 use solana_host_contracts_core::{
     find_session_pda as find_host_session_pda, find_state_pda as find_host_state_pda,
@@ -312,8 +311,8 @@ fn transfer<'a>(
         &execution,
         vec![HostInstruction::VerifyInput {
             context: ContextUserInputs {
-                user_address: evm_address_from_solana_pubkey(execution.authority.key),
-                contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
+                user_id: HostPubkey::from(execution.authority.key),
+                contract_id: HostPubkey::from(execution.app_state.key),
             },
             input_handle,
             input_proof,
@@ -401,8 +400,8 @@ fn approve_delegate<'a>(
         &execution,
         vec![HostInstruction::VerifyInput {
             context: ContextUserInputs {
-                user_address: evm_address_from_solana_pubkey(execution.authority.key),
-                contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
+                user_id: HostPubkey::from(execution.authority.key),
+                contract_id: HostPubkey::from(execution.app_state.key),
             },
             input_handle,
             input_proof,
@@ -432,8 +431,8 @@ fn transfer_as_delegate<'a>(
         &execution,
         vec![HostInstruction::VerifyInput {
             context: ContextUserInputs {
-                user_address: evm_address_from_solana_pubkey(execution.authority.key),
-                contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
+                user_id: HostPubkey::from(execution.authority.key),
+                contract_id: HostPubkey::from(execution.app_state.key),
             },
             input_handle,
             input_proof,
@@ -859,17 +858,12 @@ fn persist_balance_handle(
     handle: Handle,
     clean_after: bool,
 ) -> ProgramResult {
-    // Keep both native Solana and EVM-alias identities durable so the same handle works with
-    // native Solana ACL checks and the compatibility EVM-address paths exercised by the stack.
-    let wallet_pubkey = SolanaPubkey::from(wallet);
     persist_handle_to_accounts(
         execution,
         handle,
         &[
             HostPubkey::from(execution.app_state.key),
-            evm_host_identity_from_solana_pubkey(execution.app_state.key),
             wallet,
-            evm_host_identity_from_solana_pubkey(&wallet_pubkey),
         ],
         clean_after,
     )
@@ -881,14 +875,11 @@ fn persist_balance_query_handle(
     handle: Handle,
     clean_after: bool,
 ) -> ProgramResult {
-    let wallet_pubkey = SolanaPubkey::from(wallet);
     persist_handle_to_accounts(
         execution,
         handle,
         &[
             wallet,
-            evm_host_identity_from_solana_pubkey(execution.app_state.key),
-            evm_host_identity_from_solana_pubkey(&wallet_pubkey),
         ],
         clean_after,
     )
@@ -944,10 +935,7 @@ fn persist_allowance_handle(
     persist_handle_to_accounts(
         execution,
         handle,
-        &[
-            HostPubkey::from(execution.app_state.key),
-            evm_host_identity_from_solana_pubkey(execution.app_state.key),
-        ],
+        &[HostPubkey::from(execution.app_state.key)],
         clean_after,
     )
 }

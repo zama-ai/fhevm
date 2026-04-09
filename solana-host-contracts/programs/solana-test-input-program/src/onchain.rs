@@ -1,8 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_host_contracts_core::{
     find_session_pda as find_host_session_pda, find_state_pda as find_host_state_pda,
-    host_identity_from_evm_address, BinaryOperand, ContextUserInputs, EvmAddress, FheType, Handle,
-    HostInstruction, InstructionResult as HostInstructionResult,
+    BinaryOperand, ContextUserInputs, FheType, Handle, HostInstruction, InstructionResult as HostInstructionResult,
     OnchainInstruction as HostOnchainInstruction, Pubkey as HostPubkey,
 };
 use solana_program::{
@@ -18,8 +17,8 @@ use solana_program::{
 };
 use solana_system_interface::{instruction as system_instruction, program as system_program};
 use solana_test_input_core::{
-    evm_address_from_solana_pubkey, evm_host_identity_from_solana_pubkey, find_state_pda,
-    TestInputExecutionResult, TestInputInstruction, TestInputState, TEST_INPUT_STATE_PDA_SEED,
+    find_state_pda, TestInputExecutionResult, TestInputInstruction, TestInputState,
+    TEST_INPUT_STATE_PDA_SEED,
 };
 
 const STATE_ACCOUNT_DISCRIMINATOR: [u8; 8] = *b"TINPUT00";
@@ -108,42 +107,42 @@ pub fn process_instruction<'a>(
         TestInputInstruction::RequestUint64NonTrivial {
             input_handle,
             input_proof,
-            user_evm_address,
+            user_id,
         } => request_uint64_non_trivial(
             program_id,
             accounts,
             input_handle,
             input_proof,
-            user_evm_address,
+            user_id,
         ),
         TestInputInstruction::Add42ToInput64 {
             input_handle,
             input_proof,
-            user_evm_address,
+            user_id,
         } => add_42_to_input_64(
             program_id,
             accounts,
             input_handle,
             input_proof,
-            user_evm_address,
+            user_id,
         ),
         TestInputInstruction::CreateUserDecryptFixture {
             fixture_index,
-            user_evm_address,
-        } => create_user_decrypt_fixture(program_id, accounts, fixture_index, user_evm_address),
-        TestInputInstruction::CreateUserDecryptFixtures { user_evm_address } => {
-            create_user_decrypt_fixtures(program_id, accounts, user_evm_address)
+            user_id,
+        } => create_user_decrypt_fixture(program_id, accounts, fixture_index, user_id),
+        TestInputInstruction::CreateUserDecryptFixtures { user_id } => {
+            create_user_decrypt_fixtures(program_id, accounts, user_id)
         }
         TestInputInstruction::CreateUserDecryptFixturesChunk {
             start_fixture_index,
             fixture_count,
-            user_evm_address,
+            user_id,
         } => create_user_decrypt_fixtures_chunk(
             program_id,
             accounts,
             start_fixture_index,
             fixture_count,
-            user_evm_address,
+            user_id,
         ),
         TestInputInstruction::CreatePublicEbool => create_public_ebool(program_id, accounts),
         TestInputInstruction::CreatePublicMixed => create_public_mixed(program_id, accounts),
@@ -229,13 +228,12 @@ fn request_uint64_non_trivial<'a>(
     accounts: &'a [AccountInfo<'a>],
     input_handle: Handle,
     input_proof: Vec<u8>,
-    user_evm_address: EvmAddress,
+    user_id: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
 
     invoke_host_batch(
         &execution,
@@ -243,8 +241,8 @@ fn request_uint64_non_trivial<'a>(
         vec![
             HostInstruction::VerifyInput {
                 context: ContextUserInputs {
-                    user_address: user_evm_address,
-                    contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
+                    user_id,
+                    contract_id: HostPubkey::from(execution.app_state.key),
                 },
                 input_handle,
                 input_proof,
@@ -252,10 +250,6 @@ fn request_uint64_non_trivial<'a>(
             HostInstruction::Allow {
                 handle: input_handle,
                 account: app_contract,
-            },
-            HostInstruction::Allow {
-                handle: input_handle,
-                account: app_contract_evm_identity,
             },
             HostInstruction::CleanTransientStorage,
         ],
@@ -271,23 +265,20 @@ fn add_42_to_input_64<'a>(
     accounts: &'a [AccountInfo<'a>],
     input_handle: Handle,
     input_proof: Vec<u8>,
-    user_evm_address: EvmAddress,
+    user_id: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let user_account = HostPubkey::from(execution.authority.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
-    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
 
     invoke_host_batch(
         &execution,
         session_nonce,
         vec![HostInstruction::VerifyInput {
             context: ContextUserInputs {
-                user_address: user_evm_address,
-                contract_address: evm_address_from_solana_pubkey(execution.app_state.key),
+                user_id,
+                contract_id: HostPubkey::from(execution.app_state.key),
             },
             input_handle,
             input_proof,
@@ -322,9 +313,7 @@ fn add_42_to_input_64<'a>(
         result,
         &[
             app_contract,
-            app_contract_evm_identity,
-            user_account,
-            user_account_evm_identity,
+            user_id,
         ],
     )?;
     invoke_host_batch(
@@ -351,7 +340,6 @@ fn create_public_ebool<'a>(
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
     let handle = single_returned_handle(invoke_host_batch(
         &execution,
         session_nonce,
@@ -366,7 +354,7 @@ fn create_public_ebool<'a>(
         &execution,
         session_nonce,
         handle,
-        &[app_contract, app_contract_evm_identity],
+        &[app_contract],
     )?;
     invoke_host_batch(
         &execution,
@@ -386,15 +374,12 @@ fn create_public_ebool<'a>(
 fn create_user_decrypt_fixtures<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
-    user_evm_address: EvmAddress,
+    user_id: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
-    let user_account = HostPubkey::from(execution.authority.key);
-    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
 
     let trivial_encrypts = [
         HostInstruction::TrivialEncrypt {
@@ -455,9 +440,7 @@ fn create_user_decrypt_fixtures<'a>(
             *handle,
             &[
                 app_contract,
-                app_contract_evm_identity,
-                user_account,
-                user_account_evm_identity,
+                user_id,
             ],
         )?;
     }
@@ -476,7 +459,7 @@ fn create_user_decrypt_fixtures_chunk<'a>(
     accounts: &'a [AccountInfo<'a>],
     start_fixture_index: u8,
     fixture_count: u8,
-    user_evm_address: EvmAddress,
+    user_id: HostPubkey,
 ) -> ProgramResult {
     if fixture_count == 0 {
         return write_result_data(Vec::new());
@@ -493,9 +476,6 @@ fn create_user_decrypt_fixtures_chunk<'a>(
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
-    let user_account = HostPubkey::from(execution.authority.key);
-    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
 
     let mut handles = Vec::with_capacity(fixture_count as usize);
     for fixture_index in start_fixture_index..end_fixture_index {
@@ -513,9 +493,7 @@ fn create_user_decrypt_fixtures_chunk<'a>(
             *handle,
             &[
                 app_contract,
-                app_contract_evm_identity,
-                user_account,
-                user_account_evm_identity,
+                user_id,
             ],
         )?;
     }
@@ -533,15 +511,12 @@ fn create_user_decrypt_fixture<'a>(
     program_id: &SolanaPubkey,
     accounts: &'a [AccountInfo<'a>],
     fixture_index: u8,
-    user_evm_address: EvmAddress,
+    user_id: HostPubkey,
 ) -> ProgramResult {
     let execution = parse_execution_accounts(program_id, accounts)?;
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
-    let user_account = HostPubkey::from(execution.authority.key);
-    let user_account_evm_identity = host_identity_from_evm_address(user_evm_address);
     let handle = single_returned_handle(invoke_host_batch(
         &execution,
         session_nonce,
@@ -554,9 +529,7 @@ fn create_user_decrypt_fixture<'a>(
         handle,
         &[
             app_contract,
-            app_contract_evm_identity,
-            user_account,
-            user_account_evm_identity,
+            user_id,
         ],
     )?;
     invoke_host_batch(
@@ -577,7 +550,6 @@ fn create_public_mixed<'a>(
     let mut state = execution.load_state()?;
     let session_nonce = reserve_session_nonce(&mut state);
     let app_contract = HostPubkey::from(execution.app_state.key);
-    let app_contract_evm_identity = evm_host_identity_from_solana_pubkey(execution.app_state.key);
     let bool_handle = single_returned_handle(invoke_host_batch(
         &execution,
         session_nonce,
@@ -610,9 +582,9 @@ fn create_public_mixed<'a>(
         &execution,
         session_nonce,
         &[
-            (bool_handle, &[app_contract, app_contract_evm_identity]),
-            (uint32_handle, &[app_contract, app_contract_evm_identity]),
-            (address_handle, &[app_contract, app_contract_evm_identity]),
+            (bool_handle, &[app_contract]),
+            (uint32_handle, &[app_contract]),
+            (address_handle, &[app_contract]),
         ],
     )?;
     invoke_host_batch(

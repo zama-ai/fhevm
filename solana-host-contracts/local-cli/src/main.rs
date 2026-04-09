@@ -23,8 +23,7 @@ use solana_sdk::{native_token::LAMPORTS_PER_SOL, sysvar};
 use solana_signer::Signer;
 use solana_system_interface::program as system_program;
 use solana_test_input_core::{
-    evm_address_from_solana_pubkey, find_state_pda as find_test_input_state_pda,
-    TestInputExecutionResult, TestInputInstruction,
+    find_state_pda as find_test_input_state_pda, TestInputExecutionResult, TestInputInstruction,
 };
 use solana_transaction::Transaction;
 use std::{
@@ -96,6 +95,7 @@ fn main() -> DynResult<()> {
         "scenario-public-mixed" => scenario_public_mixed(parse_options(&rest)?),
         "scenario-user-decrypt" => scenario_user_decrypt(parse_options(&rest)?),
         "runtime-identities" => runtime_identities(parse_options(&rest)?),
+        "runtime-state" => runtime_state(parse_options(&rest)?),
         "scenario-input-proof" => scenario_input_proof(parse_options(&rest)?),
         "scenario-test-input-add42" => scenario_test_input_add42(parse_options(&rest)?),
         "scenario-confidential-token" => scenario_confidential_token(parse_options(&rest)?),
@@ -484,16 +484,16 @@ fn verify_input_cmd(options: HashMap<String, String>) -> DynResult<()> {
         .cloned()
         .unwrap_or_else(|| "solana-input-proof".to_owned())
         .into_bytes();
-    let user_address = options
-        .get("user-address")
-        .map(|value| parse_evm_address(value))
+    let user_id = options
+        .get("user-id")
+        .map(|value| parse_host_pubkey(value))
         .transpose()?
-        .unwrap_or_else(|| EvmAddress::new([4; 20]));
-    let contract_address = options
-        .get("contract-address")
-        .map(|value| parse_evm_address(value))
+        .unwrap_or_else(|| HostPubkey::from([4; 32]));
+    let contract_id = options
+        .get("contract-id")
+        .map(|value| parse_host_pubkey(value))
         .transpose()?
-        .unwrap_or_else(|| EvmAddress::new([5; 20]));
+        .unwrap_or_else(|| HostPubkey::from([5; 32]));
     let extra_data = parse_optional_hex_bytes(options.get("extra-data").map(String::as_str))?
         .unwrap_or_else(|| vec![0xAA, 0xBB, 0xCC]);
 
@@ -502,8 +502,8 @@ fn verify_input_cmd(options: HashMap<String, String>) -> DynResult<()> {
         &ciphertext,
         fhe_type,
         ContextUserInputs {
-            user_address,
-            contract_address,
+            user_id,
+            contract_id,
         },
         extra_data,
     )?;
@@ -799,8 +799,8 @@ fn scenario_public_mixed(options: HashMap<String, String>) -> DynResult<()> {
 
 fn scenario_user_decrypt(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
-    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
-    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let user_id = scenario_user_id(&options, &runtime.payer.pubkey())?;
+    let contract_id = HostPubkey::from(runtime.test_input_state_pda.to_bytes());
     let mut signatures = Vec::new();
     let mut handles = Vec::new();
     for (start_fixture_index, fixture_count) in
@@ -811,7 +811,7 @@ fn scenario_user_decrypt(options: HashMap<String, String>) -> DynResult<()> {
             TestInputInstruction::CreateUserDecryptFixturesChunk {
                 start_fixture_index,
                 fixture_count,
-                user_evm_address,
+                user_id,
             },
         )?;
         signatures.push(receipt.signature);
@@ -849,8 +849,8 @@ fn scenario_user_decrypt(options: HashMap<String, String>) -> DynResult<()> {
             { "name": "xUint256", "value": "74285495974541385002137713624115238327312291047062397922780925695323480915729", "output_type": "uint256" }
         ],
         "incompatibilities": [],
-        "user_evm_address": evm_address_string(user_evm_address),
-        "contract_evm_address": evm_address_string(contract_evm_address),
+        "user_id_hex": host_pubkey_hex_string(user_id),
+        "contract_id_hex": host_pubkey_hex_string(contract_id),
     }))
 }
 
@@ -871,31 +871,75 @@ fn runtime_identities(options: HashMap<String, String>) -> DynResult<()> {
         "test_input_program_id_hex": pubkey_hex_string(runtime.test_input_program_id),
         "test_input_state_pda": runtime.test_input_state_pda.to_string(),
         "test_input_state_pda_hex": pubkey_hex_string(runtime.test_input_state_pda),
+        "test_input_contract_id_hex": host_pubkey_hex_string(HostPubkey::from(runtime.test_input_state_pda.to_bytes())),
         "confidential_token_program_id": runtime.confidential_token_program_id.to_string(),
         "confidential_token_program_id_hex": pubkey_hex_string(runtime.confidential_token_program_id),
         "confidential_token_state_pda": runtime.confidential_token_state_pda.to_string(),
         "confidential_token_state_pda_hex": pubkey_hex_string(runtime.confidential_token_state_pda),
-        "user_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.payer.pubkey())),
-        "test_input_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.test_input_state_pda)),
-        "confidential_token_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda)),
+        "payer_user_id_hex": host_pubkey_hex_string(HostPubkey::from(runtime.payer.pubkey().to_bytes())),
+        "confidential_token_contract_id_hex": host_pubkey_hex_string(HostPubkey::from(runtime.confidential_token_state_pda.to_bytes())),
         "token_recipient_pubkey": recipient.pubkey().to_string(),
         "token_recipient_pubkey_hex": pubkey_hex_string(recipient.pubkey()),
-        "token_recipient_evm_address": evm_address_string(evm_address_from_solana_pubkey(&recipient.pubkey())),
+        "token_recipient_user_id_hex": host_pubkey_hex_string(HostPubkey::from(recipient.pubkey().to_bytes())),
+    }))
+}
+
+fn runtime_state(options: HashMap<String, String>) -> DynResult<()> {
+    let runtime = runtime_from_options(&options)?;
+    let client = rpc_client(&runtime.rpc_url);
+    let account = client.get_account(&runtime.state_pda)?;
+    if account.data.len() < 12 {
+        return Err("host state account is too small".into());
+    }
+    if &account.data[..8] != b"FHEHOST0" {
+        return Err("host state discriminator mismatch".into());
+    }
+    let mut slice: &[u8] = &account.data[12..];
+    let state = HostProgramState::deserialize(&mut slice)?;
+    let input_verifier = state.input_verifier();
+    let kms_verifier = state.kms_verifier();
+
+    print_json(&json!({
+        "host_chain_id": state.host_chain_id(),
+        "owner": host_pubkey_hex_string(state.owner()),
+        "upgrade_authority": host_pubkey_hex_string(state.upgrade_authority()),
+        "host_state_pda": runtime.state_pda.to_string(),
+        "input_verifier": {
+            "source_chain_id": input_verifier.get_source_chain_id(),
+            "source_contract": evm_address_string(input_verifier.get_source_contract()),
+            "threshold": input_verifier.get_threshold(),
+            "signers": input_verifier
+                .get_coprocessor_signers()
+                .iter()
+                .copied()
+                .map(evm_address_string)
+                .collect::<Vec<_>>(),
+        },
+        "kms_verifier": {
+            "source_chain_id": kms_verifier.get_source_chain_id(),
+            "source_contract": evm_address_string(kms_verifier.get_source_contract()),
+            "threshold": kms_verifier.get_threshold(),
+            "signers": kms_verifier
+                .get_signers_for_kms_context(solana_host_contracts_core::KmsContextId::base())
+                .into_iter()
+                .map(evm_address_string)
+                .collect::<Vec<_>>(),
+        },
     }))
 }
 
 fn scenario_input_proof(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
-    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
-    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let user_id = scenario_user_id(&options, &runtime.payer.pubkey())?;
+    let contract_id = HostPubkey::from(runtime.test_input_state_pda.to_bytes());
     let bundle = input_verification_bundle_from_options_or_default(
         &options,
         &runtime,
         b"solana-input-proof",
         FheType::Uint64,
         ContextUserInputs {
-            user_address: user_evm_address,
-            contract_address: contract_evm_address,
+            user_id,
+            contract_id,
         },
         vec![0xAA, 0xBB, 0xCC],
     )?;
@@ -905,7 +949,7 @@ fn scenario_input_proof(options: HashMap<String, String>) -> DynResult<()> {
         TestInputInstruction::RequestUint64NonTrivial {
             input_handle: bundle.selected_handle,
             input_proof: bundle.input_proof,
-            user_evm_address,
+            user_id,
         },
     )?;
 
@@ -921,23 +965,23 @@ fn scenario_input_proof(options: HashMap<String, String>) -> DynResult<()> {
         "notes": [
             "This mirrors the EVM requestUint64NonTrivial shape: VerifyInput plus a durable Allow event on the verified handle. The gateway InputVerification flow materializes the proof outputs, while the Solana host listener ingests the host-side ACL follow-up events."
         ],
-        "user_evm_address": evm_address_string(user_evm_address),
-        "contract_evm_address": evm_address_string(contract_evm_address),
+        "user_id_hex": host_pubkey_hex_string(user_id),
+        "contract_id_hex": host_pubkey_hex_string(contract_id),
     }))
 }
 
 fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
-    let user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
-    let contract_evm_address = evm_address_from_solana_pubkey(&runtime.test_input_state_pda);
+    let user_id = scenario_user_id(&options, &runtime.payer.pubkey())?;
+    let contract_id = HostPubkey::from(runtime.test_input_state_pda.to_bytes());
     let bundle = input_verification_bundle_from_options_or_default(
         &options,
         &runtime,
         b"solana-test-input-add42",
         FheType::Uint64,
         ContextUserInputs {
-            user_address: user_evm_address,
-            contract_address: contract_evm_address,
+            user_id,
+            contract_id,
         },
         vec![0xAA, 0x42, 0xCC],
     )?;
@@ -947,7 +991,7 @@ fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> 
         TestInputInstruction::Add42ToInput64 {
             input_handle: bundle.selected_handle,
             input_proof: bundle.input_proof,
-            user_evm_address,
+            user_id,
         },
     )?;
 
@@ -967,28 +1011,28 @@ fn scenario_test_input_add42(options: HashMap<String, String>) -> DynResult<()> 
             "output_type": "uint64",
         }],
         "incompatibilities": [],
-        "user_evm_address": evm_address_string(user_evm_address),
-        "contract_evm_address": evm_address_string(contract_evm_address),
+        "user_id_hex": host_pubkey_hex_string(user_id),
+        "contract_id_hex": host_pubkey_hex_string(contract_id),
     }))
 }
 
-fn scenario_user_evm_address(
+fn scenario_user_id(
     options: &HashMap<String, String>,
     default_user: &solana_sdk::pubkey::Pubkey,
-) -> DynResult<EvmAddress> {
+) -> DynResult<HostPubkey> {
     options
-        .get("user-evm-address")
-        .map(|value| parse_evm_address(value))
+        .get("user-id")
+        .map(|value| parse_host_pubkey(value))
         .transpose()?
         .map(Ok)
-        .unwrap_or_else(|| Ok(evm_address_from_solana_pubkey(default_user)))
+        .unwrap_or_else(|| Ok(HostPubkey::from(default_user.to_bytes())))
 }
 
 fn scenario_confidential_token(options: HashMap<String, String>) -> DynResult<()> {
     let runtime = runtime_from_options(&options)?;
     let recipient = read_keypair(&default_token_recipient_keypair_path()?)?;
     let recipient_pubkey = recipient.pubkey();
-    let proof_user_evm_address = scenario_user_evm_address(&options, &runtime.payer.pubkey())?;
+    let proof_user_id = scenario_user_id(&options, &runtime.payer.pubkey())?;
 
     let mint_receipt = send_confidential_token_instruction(
         &runtime,
@@ -1017,8 +1061,8 @@ fn scenario_confidential_token(options: HashMap<String, String>) -> DynResult<()
         format!("solana-confidential-token-transfer:{DEFAULT_TOKEN_TRANSFER_AMOUNT}").as_bytes(),
         FheType::Uint64,
         ContextUserInputs {
-            user_address: proof_user_evm_address,
-            contract_address: evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda),
+            user_id: proof_user_id,
+            contract_id: HostPubkey::from(runtime.confidential_token_state_pda.to_bytes()),
         },
         vec![0xE2, 0xC2, 0x00, 0x01],
     )?;
@@ -1071,7 +1115,7 @@ fn scenario_confidential_token(options: HashMap<String, String>) -> DynResult<()
         "alice_balance_handle_after_transfer": handle_to_hex(alice_balance_after_transfer),
         "recipient_balance_handle_after_transfer": handle_to_hex(bob_balance_after_transfer),
         "confidential_token_state_pda": runtime.confidential_token_state_pda.to_string(),
-        "confidential_token_contract_evm_address": evm_address_string(evm_address_from_solana_pubkey(&runtime.confidential_token_state_pda)),
+        "confidential_token_contract_id_hex": host_pubkey_hex_string(HostPubkey::from(runtime.confidential_token_state_pda.to_bytes())),
         "alice_pubkey": runtime.payer.pubkey().to_string(),
         "recipient_pubkey": recipient_pubkey.to_string(),
         "total_supply": mint_receipt.total_supply.unwrap_or_default().to_string(),
@@ -1326,8 +1370,8 @@ fn build_input_verification_bundle(
     let message = solana_host_contracts_core::Secp256k1ProofVerifier::input_verification_message(
         &solana_host_contracts_core::CiphertextVerification {
             ct_handles: handles.clone(),
-            user_address: context.user_address,
-            contract_address: context.contract_address,
+            user_id: context.user_id,
+            contract_id: context.contract_id,
             contract_chain_id: host_chain_id,
             extra_data: extra_data.clone(),
         },
@@ -2220,6 +2264,14 @@ fn pubkey_hex_string(pubkey: Pubkey) -> String {
     output
 }
 
+fn host_pubkey_hex_string(pubkey: HostPubkey) -> String {
+    let mut output = String::from("0x");
+    for byte in pubkey.as_bytes() {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
+}
+
 fn parse_fhe_type(value: &str) -> DynResult<FheType> {
     match value {
         "bool" => Ok(FheType::Bool),
@@ -2321,6 +2373,13 @@ fn parse_value_evm_address(
 
 fn parse_pubkey(value: &str) -> DynResult<Pubkey> {
     Ok(Pubkey::from_str(value)?)
+}
+
+fn parse_host_pubkey(value: &str) -> DynResult<HostPubkey> {
+    if value.starts_with("0x") {
+        return Ok(HostPubkey::from(parse_hex_32(value)?));
+    }
+    Ok(HostPubkey::from(parse_pubkey(value)?.to_bytes()))
 }
 
 fn parse_env_usize(name: &str) -> DynResult<usize> {
@@ -2660,11 +2719,11 @@ fn print_usage() {
   local-cli scenario-batch [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli scenario-public-ebool [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
   local-cli scenario-public-mixed [--addresses-env ../addresses/.env.host] [--session-nonce 1]\n\
-  local-cli scenario-user-decrypt [--addresses-env ../addresses/.env.host] [--user-evm-address <0x...>]\n\
+  local-cli scenario-user-decrypt [--addresses-env ../addresses/.env.host] [--user-id <pubkey|0x...>]\n\
   local-cli runtime-identities [--addresses-env ../addresses/.env.host]\n\
-  local-cli scenario-input-proof [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--session-nonce 1]\n\
-  local-cli scenario-test-input-add42 [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--session-nonce 1]\n\
-  local-cli scenario-confidential-token [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>]\n\
+  local-cli scenario-input-proof [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--user-id <pubkey|0x...>] [--session-nonce 1]\n\
+  local-cli scenario-test-input-add42 [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--user-id <pubkey|0x...>] [--session-nonce 1]\n\
+  local-cli scenario-confidential-token [--addresses-env ../addresses/.env.host] [--input-handle <0x...>] [--input-proof <0x...>] [--user-id <pubkey|0x...>]\n\
   local-cli token-reset [--addresses-env ../addresses/.env.host]\n\
   local-cli token-mint-to --amount <n> [--recipient <pubkey>] [--addresses-env ../addresses/.env.host]\n\
   local-cli token-transfer --recipient <pubkey> --input-handle <0x...> --input-proof <0x...> [--addresses-env ../addresses/.env.host]\n\

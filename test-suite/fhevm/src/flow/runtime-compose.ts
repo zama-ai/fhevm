@@ -7,6 +7,7 @@ import {
   dockerArgs,
 } from "../layout";
 import { loadMergedComposeDoc, resolvedComposeEnv, serviceNameList, type ComposeDoc } from "../generate/compose";
+import { effectiveOverrides } from "../scenario/resolve";
 import { stackSpecForState } from "../stack-spec/stack-spec";
 import { saveState } from "../state/state";
 import type { BuiltImage, State, StepName } from "../types";
@@ -174,6 +175,12 @@ const composeBuild = async (component: string, services: string[], env?: Record<
 export const maybeBuild = async (component: string, state: State, options: { force?: boolean } = {}) => {
   try {
     if (component === "coprocessor") {
+      const localCoprocessor = effectiveOverrides(state.overrides, state.scenario).some(
+        (override) => override.group === "coprocessor",
+      );
+      if (!localCoprocessor) {
+        return;
+      }
       const doc = await loadMergedComposeDoc(component);
       const services = Object.entries(doc.services)
         .filter(([, service]) => !!service.build)

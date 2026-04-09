@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Solana proof helpers
 //
-// Builds gateway-backed input proofs for Solana host contracts.
-// Talks to the relayer /v2/input-proof endpoint, verifies coprocessor
-// signatures, and returns the encoded proof bytes + handle.
+// Builds gateway-backed input proofs for Solana host contracts using the
+// native Solana identity path. Talks to the relayer /v2/input-proof endpoint,
+// verifies coprocessor signatures, and returns the encoded proof bytes
+// + handle.
 // ---------------------------------------------------------------------------
 
-import { ethers } from 'ethers';
 // keccak ships without type declarations — cast to a minimal fluent interface
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const createHash = require('keccak') as (algorithm: string) => KeccakHasher;
@@ -15,6 +15,14 @@ interface KeccakHasher {
   digest(): Buffer;
 }
 import TFHE from 'node-tfhe';
+
+import {
+  hashTypedData,
+  normalizeAddress,
+  verifyTypedDataSigner,
+  type TypedDataDomain,
+  type TypedDataTypes,
+} from './gateway-typed-data';
 
 import {
   SERIALIZED_SIZE_LIMIT_CIPHERTEXT,
@@ -101,7 +109,7 @@ export function loadCoprocessorSigners(envValues: Record<string, string>): strin
   const signers: string[] = [];
   for (let index = 0; index < count; index += 1) {
     signers.push(
-      ethers.getAddress(
+      normalizeAddress(
         requiredEnvValue(
           envValues,
           `COPROCESSOR_SIGNER_ADDRESS_${index}`,
@@ -112,10 +120,6 @@ export function loadCoprocessorSigners(envValues: Record<string, string>): strin
   }
   return signers;
 }
-
-// ---------------------------------------------------------------------------
-// Solana contract identity helpers
-// ---------------------------------------------------------------------------
 
 export function normalizeIdentityHex(value: string | null | undefined): string | null {
   if (!value) {
@@ -129,52 +133,18 @@ export function normalizeIdentityHex(value: string | null | undefined): string |
   return normalized.toLowerCase();
 }
 
-export function buildSolanaContractIdentityMap(
-  identities: Record<string, unknown>,
-): Map<string, string | null> {
-  const entries = [
-    [
-      identities?.test_input_contract_evm_address as string | undefined,
-      identities?.test_input_state_pda_hex as string | undefined,
-    ],
-    [
-      identities?.confidential_token_contract_evm_address as string | undefined,
-      identities?.confidential_token_state_pda_hex as string | undefined,
-    ],
-  ].filter(([address, contractIdentity]) => address && contractIdentity) as [string, string][];
-  return new Map(
-    entries.map(([address, contractIdentity]) => [
-      ethers.getAddress(address),
-      normalizeIdentityHex(`0x${stripHexPrefix(contractIdentity)}`),
-    ]),
-  );
-}
-
-export function getSolanaContractIdentityByAddress(
-  identityMap: Map<string, string | null> | undefined,
-  address: string | undefined,
-): string | undefined {
-  if (!identityMap || !address) {
-    return undefined;
-  }
-  return identityMap.get(ethers.getAddress(address)) ?? undefined;
-}
-
 // ---------------------------------------------------------------------------
 // Input proof construction
 // ---------------------------------------------------------------------------
 
 export interface BuildInputProofParams {
   relayerUrl: string;
-  aclAddress: string | null;
   inputVerificationAddress: string;
   gatewayChainId: string | number;
   hostChainId: string | number;
-  contractAddress: string;
-  userAddress: string;
-  contractIdentity?: string | null;
-  userIdentity?: string | null;
-  aclIdentity?: string | null;
+  contractIdentity: string;
+  userIdentity: string;
+  aclIdentity: string;
   value: string;
   type: string;
   coprocessorSigners: string[];
@@ -202,30 +172,24 @@ export async function buildGatewayBackedInputProof(
 
 async function buildGatewayBackedInputProofInline({
   relayerUrl,
-  aclAddress,
   inputVerificationAddress,
   gatewayChainId,
   hostChainId,
-  contractAddress,
-  userAddress,
-  contractIdentity = null,
-  userIdentity = null,
-  aclIdentity = null,
+  contractIdentity,
+  userIdentity,
+  aclIdentity,
   value,
   type,
   coprocessorSigners,
   coprocessorThreshold,
 }: {
   relayerUrl: string;
-  aclAddress: string | null;
   inputVerificationAddress: string;
   gatewayChainId: number;
   hostChainId: number;
-  contractAddress: string;
-  userAddress: string;
-  contractIdentity?: string | null;
-  userIdentity?: string | null;
-  aclIdentity?: string | null;
+  contractIdentity: string;
+  userIdentity: string;
+  aclIdentity: string;
   value: string;
   type: string;
   coprocessorSigners: string[];
@@ -235,18 +199,14 @@ async function buildGatewayBackedInputProofInline({
   const normalizedContractIdentity = normalizeIdentityHex(contractIdentity);
   const normalizedUserIdentity = normalizeIdentityHex(userIdentity);
   const normalizedAclIdentity = normalizeIdentityHex(aclIdentity);
-  const normalizedAclAddress = normalizedAclIdentity
-    ? null
-    : ethers.getAddress(requiredString(aclAddress, 'aclAddress'));
-  const normalizedInputVerificationAddress = ethers.getAddress(inputVerificationAddress);
-  const normalizedContractAddress = ethers.getAddress(
-    requiredString(contractAddress, 'contractAddress'),
+  const normalizedInputVerificationAddress = normalizeAddress(inputVerificationAddress);
+  if (!normalizedContractIdentity || !normalizedUserIdentity || !normalizedAclIdentity) {
+    throw new Error('native Solana input-proof requires contractIdentity, userIdentity, and aclIdentity');
+  }
+  const inputProofExtraData = buildInputProofExtraData(
+    normalizedContractIdentity,
+    normalizedUserIdentity,
   );
-  const normalizedUserAddress = ethers.getAddress(requiredString(userAddress, 'userAddress'));
-  const inputProofExtraData =
-    normalizedContractIdentity && normalizedUserIdentity
-      ? buildInputProofExtraData(normalizedContractIdentity, normalizedUserIdentity)
-      : '0x00';
 
   if (!Number.isFinite(gatewayChainId) || gatewayChainId <= 0) {
     throw new Error(`invalid gateway chain id: ${gatewayChainId}`);
@@ -263,13 +223,10 @@ async function buildGatewayBackedInputProofInline({
 
   const keyMaterial = await getGatewayInputProofKeys(normalizedRelayerUrl);
   const { ciphertext, bits } = encryptGatewayInputValue({
-    aclAddress: normalizedAclAddress,
     aclIdentity: normalizedAclIdentity,
     hostChainId,
     tfheCompactPublicKey: keyMaterial.publicKey,
     publicParams: keyMaterial.publicParams,
-    contractAddress: normalizedContractAddress,
-    userAddress: normalizedUserAddress,
     contractIdentity: normalizedContractIdentity,
     userIdentity: normalizedUserIdentity,
     inputType: type,
@@ -280,10 +237,8 @@ async function buildGatewayBackedInputProofInline({
     ciphertextWithInputVerification: bytesToHex(ciphertext),
     contractChainId: `0x${hostChainId.toString(16)}`,
     extraData: inputProofExtraData,
-    contractAddress: normalizedContractAddress,
-    userAddress: normalizedUserAddress,
-    ...(normalizedContractIdentity ? { contractId: normalizedContractIdentity } : {}),
-    ...(normalizedUserIdentity ? { userId: normalizedUserIdentity } : {}),
+    contractId: normalizedContractIdentity,
+    userId: normalizedUserIdentity,
   };
 
   const postPayload = await fetchJsonExpectOk(`${normalizedRelayerUrl}/v2/input-proof`, {
@@ -307,7 +262,7 @@ async function buildGatewayBackedInputProofInline({
   const handles = computeGatewayInputHandles(
     ciphertext,
     bits,
-    (normalizedAclIdentity ?? normalizedAclAddress) as string,
+    normalizedAclIdentity,
     hostChainId,
     currentCiphertextVersion(),
   );
@@ -320,8 +275,6 @@ async function buildGatewayBackedInputProofInline({
   verifyGatewayInputProofSignatures({
     handles,
     signatures,
-    userAddress: normalizedUserAddress,
-    contractAddress: normalizedContractAddress,
     contractIdentity: normalizedContractIdentity,
     userIdentity: normalizedUserIdentity,
     hostChainId,
@@ -396,27 +349,21 @@ async function getGatewayInputProofKeys(relayerUrl: string) {
 }
 
 function encryptGatewayInputValue({
-  aclAddress,
   aclIdentity,
   hostChainId,
   tfheCompactPublicKey,
   publicParams,
-  contractAddress,
-  userAddress,
   contractIdentity,
   userIdentity,
   inputType,
   value,
 }: {
-  aclAddress: string | null;
-  aclIdentity: string | null;
+  aclIdentity: string;
   hostChainId: number;
   tfheCompactPublicKey: ReturnType<typeof TFHE.TfheCompactPublicKey.safe_deserialize>;
   publicParams: Record<number, { publicParams: ReturnType<typeof TFHE.CompactPkeCrs.safe_deserialize>; publicParamsId: unknown }>;
-  contractAddress: string;
-  userAddress: string;
-  contractIdentity: string | null;
-  userIdentity: string | null;
+  contractIdentity: string;
+  userIdentity: string;
   inputType: string;
   value: string;
 }): { ciphertext: Uint8Array; bits: number[] } {
@@ -429,10 +376,12 @@ function encryptGatewayInputValue({
     throw new Error(`too many encrypted bits for one input proof: ${totalBits}`);
   }
 
-  const auxData =
-    contractIdentity && userIdentity && aclIdentity
-      ? buildGatewayInputAuxDataV1(contractIdentity, userIdentity, aclIdentity, hostChainId)
-      : buildGatewayInputAuxData(contractAddress, userAddress, aclAddress as string, hostChainId);
+  const auxData = buildGatewayInputAuxDataV1(
+    contractIdentity,
+    userIdentity,
+    aclIdentity,
+    hostChainId,
+  );
   const encrypted = builder.build_with_proof_packed(
     publicParams[2048].publicParams,
     auxData,
@@ -485,7 +434,7 @@ function addGatewayEncryptedValue(
       bits.push(128);
       return;
     case 'address': {
-      const normalized = ethers.getAddress(rawValue);
+      const normalized = normalizeAddress(rawValue);
       builder.push_u160(BigInt(normalized));
       bits.push(160);
       return;
@@ -505,28 +454,6 @@ function assertGatewayUintRange(rawValue: string, width: number): void {
   if (value < 0n || value >= 1n << BigInt(width)) {
     throw new Error(`value ${rawValue} does not fit in ${width} bits`);
   }
-}
-
-function buildGatewayInputAuxData(
-  contractAddress: string,
-  userAddress: string,
-  aclAddress: string,
-  hostChainId: number,
-): Uint8Array {
-  const contractBytes = hexToBytes(contractAddress);
-  const userBytes = hexToBytes(userAddress);
-  const aclBytes = hexToBytes(aclAddress);
-  const chainBytes = Uint8Array.from(
-    Buffer.from(hostChainId.toString(16).padStart(64, '0'), 'hex'),
-  );
-  const auxData = new Uint8Array(
-    contractBytes.length + userBytes.length + aclBytes.length + chainBytes.length,
-  );
-  auxData.set(contractBytes, 0);
-  auxData.set(userBytes, 20);
-  auxData.set(aclBytes, 40);
-  auxData.set(chainBytes, auxData.length - chainBytes.length);
-  return auxData;
 }
 
 function buildGatewayInputAuxDataV1(
@@ -624,8 +551,6 @@ function assertGatewayHandleListsMatch(
 function verifyGatewayInputProofSignatures({
   handles,
   signatures,
-  userAddress,
-  contractAddress,
   contractIdentity,
   userIdentity,
   hostChainId,
@@ -637,10 +562,8 @@ function verifyGatewayInputProofSignatures({
 }: {
   handles: Uint8Array[];
   signatures: string[];
-  userAddress: string;
-  contractAddress: string;
-  contractIdentity: string | null;
-  userIdentity: string | null;
+  contractIdentity: string;
+  userIdentity: string;
   hostChainId: number;
   extraData: string;
   gatewayChainId: number;
@@ -648,29 +571,29 @@ function verifyGatewayInputProofSignatures({
   coprocessorSigners: string[];
   threshold: number;
 }): void {
-  const domain = {
+  const domain: TypedDataDomain = {
     name: 'InputVerification',
     version: '1',
     chainId: gatewayChainId,
     verifyingContract: inputVerificationAddress,
   };
-  const types = {
-    CiphertextVerification: [
+  const types: TypedDataTypes = {
+    NativeCiphertextVerification: [
       { name: 'ctHandles', type: 'bytes32[]' },
-      { name: 'userAddress', type: 'address' },
-      { name: 'contractAddress', type: 'address' },
+      { name: 'userId', type: 'bytes32' },
+      { name: 'contractId', type: 'bytes32' },
       { name: 'contractChainId', type: 'uint256' },
       { name: 'extraData', type: 'bytes' },
     ],
   };
   const recoveredAddresses = signatures.map((signature) =>
-    ethers.verifyTypedData(
+    verifyTypedDataSigner(
       domain,
       types,
       {
         ctHandles: handles,
-        userAddress,
-        contractAddress,
+        userId: userIdentity,
+        contractId: contractIdentity,
         contractChainId: hostChainId,
         extraData,
       },
@@ -678,8 +601,8 @@ function verifyGatewayInputProofSignatures({
     ),
   );
 
-  const normalizedExpected = new Set(coprocessorSigners.map((address) => ethers.getAddress(address)));
-  const normalizedRecovered = recoveredAddresses.map((address) => ethers.getAddress(address));
+  const normalizedExpected = new Set(coprocessorSigners.map((address) => normalizeAddress(address)));
+  const normalizedRecovered = recoveredAddresses.map((address) => normalizeAddress(address));
   const uniqueRecovered = new Set(normalizedRecovered);
   if (uniqueRecovered.size !== normalizedRecovered.length) {
     throw new Error('duplicate coprocessor signer recovered from input-proof response');

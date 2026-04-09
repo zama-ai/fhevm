@@ -367,14 +367,14 @@ fn execute_verify_input_returns_verified_handle_on_chain() {
         ExecutorState::compute_input_handles(b"ciphertext", &[8, 16], acl_program, host_chain_id)
             .unwrap();
     let context = ContextUserInputs {
-        user_address: evm(4),
-        contract_address: evm(5),
+        user_id: custom_pubkey(4),
+        contract_id: custom_pubkey(5),
     };
     let extra_data = vec![0xAA, 0xBB, 0xCC];
     let payload = crate::CiphertextVerification {
         ct_handles: handles.clone(),
-        user_address: context.user_address,
-        contract_address: context.contract_address,
+        user_id: context.user_id,
+        contract_id: context.contract_id,
         contract_chain_id: host_chain_id,
         extra_data: extra_data.clone(),
     };
@@ -668,14 +668,14 @@ fn execute_reuses_transient_session_across_calls_until_cleaned() {
         ExecutorState::compute_input_handles(b"ciphertext", &[8, 16], acl_program, host_chain_id)
             .unwrap();
     let context = ContextUserInputs {
-        user_address: evm(4),
-        contract_address: evm(5),
+        user_id: custom_pubkey(4),
+        contract_id: custom_pubkey(5),
     };
     let extra_data = vec![0xAA, 0xBB];
     let payload = crate::CiphertextVerification {
         ct_handles: handles.clone(),
-        user_address: context.user_address,
-        contract_address: context.contract_address,
+        user_id: context.user_id,
+        contract_id: context.contract_id,
         contract_chain_id: host_chain_id,
         extra_data: extra_data.clone(),
     };

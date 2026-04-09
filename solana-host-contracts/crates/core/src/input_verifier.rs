@@ -1,18 +1,19 @@
 use crate::error::{HostContractError, Result};
 use crate::events::HostEvent;
 use crate::types::{
-    ContextUserInputs, EvmAddress, Handle, SignatureThreshold, MAX_INPUT_HANDLES_PER_PROOF,
+    ContextUserInputs, EvmAddress, Handle, Pubkey, SignatureThreshold, MAX_INPUT_HANDLES_PER_PROOF,
     MAX_INPUT_PROOF_BYTES, MAX_VERIFIER_SIGNERS,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha3::{Digest, Keccak256};
+use solana_program::msg;
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CiphertextVerification {
     pub ct_handles: Vec<Handle>,
-    pub user_address: EvmAddress,
-    pub contract_address: EvmAddress,
+    pub user_id: Pubkey,
+    pub contract_id: Pubkey,
     pub contract_chain_id: u64,
     pub extra_data: Vec<u8>,
 }
@@ -191,11 +192,20 @@ impl InputVerifierState {
 
         let payload = CiphertextVerification {
             ct_handles: handles.clone(),
-            user_address: context.user_address,
-            contract_address: context.contract_address,
+            user_id: context.user_id,
+            contract_id: context.contract_id,
             contract_chain_id: host_chain_id,
             extra_data: input_proof[extra_data_offset..].to_vec(),
         };
+
+        msg!(
+            "verify_input payload handles={} user_id={:?} contract_id={:?} host_chain_id={} extra_data={:?}",
+            payload.ct_handles.len(),
+            payload.user_id.as_bytes(),
+            payload.contract_id.as_bytes(),
+            payload.contract_chain_id,
+            payload.extra_data
+        );
 
         if !session.contains(&cache_key) {
             proof_verifier.verify(
@@ -227,13 +237,20 @@ impl InputVerifierState {
     pub fn get_threshold(&self) -> SignatureThreshold {
         self.threshold
     }
+
+    pub fn get_source_contract(&self) -> EvmAddress {
+        self.source_contract
+    }
+
+    pub fn get_source_chain_id(&self) -> u64 {
+        self.source_chain_id
+    }
 }
 
 fn proof_cache_key(input_proof: &[u8], context: ContextUserInputs) -> [u8; 32] {
     let mut hasher = Keccak256::new();
     hasher.update(input_proof);
-    hasher.update(context.user_address.as_bytes());
-    hasher.update(context.contract_address.as_bytes());
+    hasher.update(context.user_id.as_bytes());
+    hasher.update(context.contract_id.as_bytes());
     hasher.finalize().into()
 }
-

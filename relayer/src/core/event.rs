@@ -566,7 +566,9 @@ pub struct UserDecryptRequest {
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
     pub contract_ids: Option<Vec<FixedBytes<32>>>,
-    pub user_address: Address,
+    /// EVM address of the user. Required for EVM host chains.
+    /// `None` is accepted for native host chains (e.g. Solana) when `user_id` is present.
+    pub user_address: Option<Address>,
     pub user_id: Option<FixedBytes<32>>,
     pub signature: Bytes,
     pub public_key: Bytes,
@@ -579,9 +581,9 @@ pub struct DelegatedUserDecryptRequest {
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
     pub contract_ids: Option<Vec<FixedBytes<32>>>,
-    pub delegator_address: Address,
+    pub delegator_address: Option<Address>,
     pub delegator_id: Option<FixedBytes<32>>,
-    pub delegate_address: Address,
+    pub delegate_address: Option<Address>,
     pub delegate_id: Option<FixedBytes<32>>,
     #[serde(rename = "startTimestamp")]
     pub start_timestamp: U256,
@@ -598,7 +600,9 @@ pub struct HandleContractPair {
     #[serde(rename = "handle")]
     pub ct_handle: U256,
     #[serde(rename = "contractAddress")]
-    pub contract_address: Address,
+    pub contract_address: Option<Address>,
+    #[serde(rename = "contractId")]
+    pub contract_id: Option<FixedBytes<32>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
@@ -647,13 +651,22 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
                 U256::from_str_radix(&json_data.handle, 16)
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
-
-            let contract_address = Address::from_str(&json_data.contract_address)
+            let contract_address = json_data
+                .contract_address
+                .as_deref()
+                .map(Address::from_str)
+                .transpose()
                 .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let contract_id = json_data
+                .contract_id
+                .as_deref()
+                .map(parse_fixed_bytes_32)
+                .transpose()?;
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
                 contract_address,
+                contract_id,
             });
         }
 
@@ -679,31 +692,35 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         // Parse contract chain ID
         let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
 
-        let contract_addresses = &value
+        let contract_addresses = value
             .contract_addresses
             .iter()
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
+        let explicit_contract_ids = value
+            .contract_ids
+            .as_ref()
+            .map(parse_fixed_bytes_32_vec)
+            .transpose()?;
+        let contract_count = explicit_contract_ids
+            .as_ref()
+            .map(|ids| ids.len())
+            .unwrap_or(contract_addresses.len());
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
         let (extra_user_id, extra_contract_ids) = parse_user_decrypt_extra_data_identities(
             extra_data.as_ref(),
-            contract_addresses.len(),
+            contract_count,
         )?;
         let explicit_user_id = value
             .user_id
             .as_deref()
             .map(parse_fixed_bytes_32)
             .transpose()?;
-        let explicit_contract_ids = value
-            .contract_ids
-            .as_ref()
-            .map(parse_fixed_bytes_32_vec)
-            .transpose()?;
 
         if let Some(contract_ids) = explicit_contract_ids.as_ref() {
-            if contract_ids.len() != contract_addresses.len() {
+            if !contract_addresses.is_empty() && contract_ids.len() != contract_addresses.len() {
                 anyhow::bail!(
                     "contractIds length must match contractAddresses length for user decryption"
                 );
@@ -717,13 +734,55 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             extra_contract_ids,
         )?;
 
+        let user_address = value
+            .user_address
+            .as_deref()
+            .map(Address::from_str)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Failed to parse userAddress: {}", e))?;
+
+        let is_native = user_address.is_none() && user_id.is_some();
+
+        if is_native {
+            let Some(contract_ids) = contract_ids.as_ref() else {
+                anyhow::bail!("native user decrypt request requires contractIds");
+            };
+            if contract_ids.is_empty() {
+                anyhow::bail!("native user decrypt request requires at least one contractId");
+            }
+            if !contract_addresses.is_empty() {
+                anyhow::bail!("native user decrypt request must not include contractAddresses");
+            }
+            for pair in &ct_handle_contract_pairs {
+                if pair.contract_id.is_none() || pair.contract_address.is_some() {
+                    anyhow::bail!(
+                        "native user decrypt handleContractPairs must use contractId only"
+                    );
+                }
+            }
+        } else {
+            if user_address.is_none() {
+                anyhow::bail!("user decrypt request requires either userAddress or userId");
+            }
+            if contract_addresses.is_empty() {
+                anyhow::bail!("legacy user decrypt request requires contractAddresses");
+            }
+            for pair in &ct_handle_contract_pairs {
+                if pair.contract_address.is_none() || pair.contract_id.is_some() {
+                    anyhow::bail!(
+                        "legacy user decrypt handleContractPairs must use contractAddress only"
+                    );
+                }
+            }
+        }
+
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
+            contract_addresses,
             contract_ids,
-            user_address: Address::from_str(&value.user_address)?,
+            user_address,
             user_id,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
@@ -747,13 +806,22 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
                 U256::from_str_radix(&json_data.handle, 16)
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
-
-            let contract_address = Address::from_str(&json_data.contract_address)
+            let contract_address = json_data
+                .contract_address
+                .as_deref()
+                .map(Address::from_str)
+                .transpose()
                 .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let contract_id = json_data
+                .contract_id
+                .as_deref()
+                .map(parse_fixed_bytes_32)
+                .transpose()?;
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
                 contract_address,
+                contract_id,
             });
         }
 
@@ -774,18 +842,27 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
         // Parse contract chain ID
         let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
 
-        let contract_addresses = &value
+        let contract_addresses = value
             .contract_addresses
             .iter()
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
+        let explicit_contract_ids = value
+            .contract_ids
+            .as_ref()
+            .map(parse_fixed_bytes_32_vec)
+            .transpose()?;
+        let contract_count = explicit_contract_ids
+            .as_ref()
+            .map(|ids| ids.len())
+            .unwrap_or(contract_addresses.len());
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
         let (extra_delegator_id, extra_delegate_id, extra_contract_ids) =
             parse_delegated_user_decrypt_extra_data_identities(
                 extra_data.as_ref(),
-                contract_addresses.len(),
+                contract_count,
             )?;
         let explicit_delegator_id = value
             .delegator_id
@@ -797,14 +874,8 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
             .as_deref()
             .map(parse_fixed_bytes_32)
             .transpose()?;
-        let explicit_contract_ids = value
-            .contract_ids
-            .as_ref()
-            .map(parse_fixed_bytes_32_vec)
-            .transpose()?;
-
         if let Some(contract_ids) = explicit_contract_ids.as_ref() {
-            if contract_ids.len() != contract_addresses.len() {
+            if !contract_addresses.is_empty() && contract_ids.len() != contract_addresses.len() {
                 anyhow::bail!(
                     "contractIds length must match contractAddresses length for delegated user decryption"
                 );
@@ -821,14 +892,63 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
             extra_contract_ids,
         )?;
 
+        let delegator_address = value
+            .delegator_address
+            .as_deref()
+            .map(Address::from_str)
+            .transpose()?;
+        let delegate_address = value
+            .delegate_address
+            .as_deref()
+            .map(Address::from_str)
+            .transpose()?;
+
+        let is_native =
+            delegator_address.is_none() && delegate_address.is_none() && delegator_id.is_some() && delegate_id.is_some();
+
+        if is_native {
+            let Some(contract_ids) = contract_ids.as_ref() else {
+                anyhow::bail!("native delegated user decrypt request requires contractIds");
+            };
+            if contract_ids.is_empty() {
+                anyhow::bail!("native delegated user decrypt request requires at least one contractId");
+            }
+            if !contract_addresses.is_empty() {
+                anyhow::bail!("native delegated user decrypt request must not include contractAddresses");
+            }
+            for pair in &ct_handle_contract_pairs {
+                if pair.contract_id.is_none() || pair.contract_address.is_some() {
+                    anyhow::bail!(
+                        "native delegated user decrypt handleContractPairs must use contractId only"
+                    );
+                }
+            }
+        } else {
+            if delegator_address.is_none() || delegate_address.is_none() {
+                anyhow::bail!(
+                    "delegated user decrypt request requires delegatorAddress/delegateAddress or delegatorId/delegateId"
+                );
+            }
+            if contract_addresses.is_empty() {
+                anyhow::bail!("legacy delegated user decrypt request requires contractAddresses");
+            }
+            for pair in &ct_handle_contract_pairs {
+                if pair.contract_address.is_none() || pair.contract_id.is_some() {
+                    anyhow::bail!(
+                        "legacy delegated user decrypt handleContractPairs must use contractAddress only"
+                    );
+                }
+            }
+        }
+
         Ok(DelegatedUserDecryptRequest {
             ct_handle_contract_pairs,
             contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
+            contract_addresses,
             contract_ids,
-            delegator_address: Address::from_str(&value.delegator_address)?,
+            delegator_address,
             delegator_id,
-            delegate_address: Address::from_str(&value.delegate_address)?,
+            delegate_address,
             delegate_id,
             start_timestamp: U256::from_str(&value.start_timestamp)?,
             duration_days,
@@ -1022,6 +1142,8 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&json.extra_data)?;
+        let (extra_contract_id, extra_user_id) =
+            parse_input_proof_extra_data_identities(extra_data.as_ref())?;
 
         let contract_address = json
             .contract_address
@@ -1042,15 +1164,37 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             .as_deref()
             .map(parse_fixed_bytes_32)
             .transpose()?;
+        let contract_id =
+            resolve_optional_identity("contractId", contract_id, extra_contract_id)?;
 
         let user_id = json
             .user_id
             .as_deref()
             .map(parse_fixed_bytes_32)
             .transpose()?;
+        let user_id = resolve_optional_identity("userId", user_id, extra_user_id)?;
 
-        if contract_address.is_none() || user_address.is_none() {
-            anyhow::bail!("Input proof requests require contractAddress and userAddress");
+        let has_legacy_addresses = contract_address.is_some() || user_address.is_some();
+        let has_native_ids = contract_id.is_some() || user_id.is_some();
+        let is_native = contract_address.is_none() && user_address.is_none();
+        if has_legacy_addresses && has_native_ids {
+            anyhow::bail!(
+                "input proof requests must use either contractAddress/userAddress or contractId/userId, not both"
+            );
+        }
+        if is_native {
+            if contract_id.is_none() || user_id.is_none() {
+                anyhow::bail!("native input proof requests require contractId and userId");
+            }
+            if extra_contract_id.is_none() || extra_user_id.is_none() {
+                anyhow::bail!(
+                    "native input proof requests require extraData to encode contractId and userId"
+                );
+            }
+        } else if contract_address.is_none() || user_address.is_none() {
+            anyhow::bail!("legacy input proof requests require contractAddress and userAddress");
+        } else if contract_id.is_some() || user_id.is_some() {
+            anyhow::bail!("legacy input proof requests must not include contractId or userId");
         }
 
         Ok(InputProofRequest {
@@ -1063,6 +1207,39 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             extra_data,
         })
     }
+}
+
+fn parse_input_proof_extra_data_identities(
+    extra_data: &[u8],
+) -> anyhow::Result<(Option<FixedBytes<32>>, Option<FixedBytes<32>>)> {
+    if extra_data.is_empty() || extra_data == [0x00] {
+        return Ok((None, None));
+    }
+
+    if extra_data[0] != 0x01 {
+        anyhow::bail!(
+            "invalid input proof extra_data version: expected 0x01, got 0x{:02x}",
+            extra_data[0]
+        );
+    }
+
+    if extra_data.len() != 65 {
+        anyhow::bail!(
+            "invalid input proof extra_data length: expected 65 bytes, got {}",
+            extra_data.len()
+        );
+    }
+
+    let contract_id = FixedBytes::from(
+        <[u8; 32]>::try_from(&extra_data[1..33])
+            .map_err(|_| anyhow::anyhow!("failed to extract contractId from input proof extraData"))?,
+    );
+    let user_id = FixedBytes::from(
+        <[u8; 32]>::try_from(&extra_data[33..65])
+            .map_err(|_| anyhow::anyhow!("failed to extract userId from input proof extraData"))?,
+    );
+
+    Ok((Some(contract_id), Some(user_id)))
 }
 
 fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
@@ -1246,6 +1423,10 @@ fn resolve_optional_identity_vec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http::endpoints::common::types::{HandleContractPairJson, RequestValidityJson};
+    use crate::http::endpoints::v2::types::user_decrypt::{
+        DelegatedUserDecryptRequestJson, UserDecryptRequestJson,
+    };
     use std::convert::TryFrom;
     use std::str::FromStr;
 
@@ -1256,6 +1437,26 @@ mod tests {
     const CIPHERTEXT: &str =
         "12B06C1cc05e9493856a1D637a74FAb30999D17FAAB8c95B2eCD500cFeFc8f658f15dB8453e944bE";
     const EXTRA_DATA: &str = "0x00";
+    const CT_HANDLE: &str =
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CONTRACT_ID: &str =
+        "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const USER_ID: &str =
+        "0x2222222222222222222222222222222222222222222222222222222222222222";
+    const DELEGATOR_ID: &str =
+        "0x3333333333333333333333333333333333333333333333333333333333333333";
+    const DELEGATE_ID: &str =
+        "0x4444444444444444444444444444444444444444444444444444444444444444";
+
+    fn build_decryption_extra_data(identities: &[&str]) -> String {
+        let mut encoded = String::from("0x01");
+        encoded.push_str(&format!("{:064x}", 7));
+        encoded.push_str(&format!("{:02x}", identities.len()));
+        for identity in identities {
+            encoded.push_str(identity.trim_start_matches("0x"));
+        }
+        encoded
+    }
 
     #[test]
     #[ignore]
@@ -1283,5 +1484,163 @@ mod tests {
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_native_input_proof_request_infers_identities_from_extra_data() {
+        let contract_id = format!("0x{}", "11".repeat(32));
+        let user_id = format!("0x{}", "22".repeat(32));
+        let extra_data = format!("0x01{}{}", &contract_id[2..], &user_id[2..]);
+
+        let json = InputProofRequestJson {
+            contract_chain_id: CHAIN_ID.to_string(),
+            contract_address: None,
+            user_address: None,
+            contract_id: None,
+            user_id: None,
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data,
+        };
+
+        let request = InputProofRequest::try_from(json).expect("native request should parse");
+
+        assert_eq!(request.contract_address, None);
+        assert_eq!(request.user_address, None);
+        assert_eq!(
+            request.contract_id,
+            Some(parse_fixed_bytes_32(&contract_id).expect("valid contract id"))
+        );
+        assert_eq!(
+            request.user_id,
+            Some(parse_fixed_bytes_32(&user_id).expect("valid user id"))
+        );
+    }
+
+    #[test]
+    fn test_native_input_proof_request_rejects_mismatched_extra_data() {
+        let contract_id = format!("0x{}", "11".repeat(32));
+        let user_id = format!("0x{}", "22".repeat(32));
+        let extra_data = format!("0x01{}{}", "33".repeat(32), &user_id[2..]);
+
+        let json = InputProofRequestJson {
+            contract_chain_id: CHAIN_ID.to_string(),
+            contract_address: None,
+            user_address: None,
+            contract_id: Some(contract_id),
+            user_id: Some(user_id),
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data,
+        };
+
+        let err = InputProofRequest::try_from(json).expect_err("mismatched native request must fail");
+        assert!(err.to_string().contains("contractId does not match extraData"));
+    }
+
+    #[test]
+    fn test_input_proof_request_rejects_mixed_legacy_and_native_fields() {
+        let contract_id = format!("0x{}", "11".repeat(32));
+        let user_id = format!("0x{}", "22".repeat(32));
+        let extra_data = format!("0x01{}{}", &contract_id[2..], &user_id[2..]);
+
+        let json = InputProofRequestJson {
+            contract_chain_id: CHAIN_ID.to_string(),
+            contract_address: Some(CONTRACT_ADDRESS.to_string()),
+            user_address: Some(USER_ADDRESS.to_string()),
+            contract_id: Some(contract_id),
+            user_id: Some(user_id),
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data,
+        };
+
+        let err = InputProofRequest::try_from(json).expect_err("mixed request must fail");
+        assert!(err
+            .to_string()
+            .contains("either contractAddress/userAddress or contractId/userId"));
+    }
+
+    #[test]
+    fn test_native_user_decrypt_request_binds_user_identity_from_extra_data() {
+        let extra_data = build_decryption_extra_data(&[USER_ID, CONTRACT_ID]);
+
+        let request = UserDecryptRequest::try_from(UserDecryptRequestJson {
+            handle_contract_pairs: vec![HandleContractPairJson {
+                handle: CT_HANDLE.to_string(),
+                contract_address: None,
+                contract_id: Some(CONTRACT_ID.to_string()),
+            }],
+            request_validity: RequestValidityJson {
+                start_timestamp: "1".to_string(),
+                duration_days: "1".to_string(),
+            },
+            contracts_chain_id: CHAIN_ID.to_string(),
+            contract_addresses: vec![],
+            contract_ids: Some(vec![CONTRACT_ID.to_string()]),
+            user_address: None,
+            user_id: None,
+            signature: "0x1234".to_string(),
+            public_key: "0x5678".to_string(),
+            extra_data,
+        })
+        .expect("native user decrypt should parse");
+
+        assert_eq!(request.user_address, None);
+        assert_eq!(
+            request.user_id,
+            Some(parse_fixed_bytes_32(USER_ID).expect("valid user id"))
+        );
+        assert_eq!(request.contract_addresses, Vec::<Address>::new());
+        assert_eq!(
+            request.contract_ids,
+            Some(vec![parse_fixed_bytes_32(CONTRACT_ID).expect("valid contract id")])
+        );
+        assert!(request
+            .ct_handle_contract_pairs
+            .iter()
+            .all(|pair| pair.contract_address.is_none() && pair.contract_id.is_some()));
+    }
+
+    #[test]
+    fn test_native_delegated_user_decrypt_request_binds_identities_from_extra_data() {
+        let extra_data = build_decryption_extra_data(&[DELEGATOR_ID, DELEGATE_ID, CONTRACT_ID]);
+
+        let request = DelegatedUserDecryptRequest::try_from(DelegatedUserDecryptRequestJson {
+            handle_contract_pairs: vec![HandleContractPairJson {
+                handle: CT_HANDLE.to_string(),
+                contract_address: None,
+                contract_id: Some(CONTRACT_ID.to_string()),
+            }],
+            contracts_chain_id: CHAIN_ID.to_string(),
+            contract_addresses: vec![],
+            contract_ids: Some(vec![CONTRACT_ID.to_string()]),
+            delegator_address: None,
+            delegator_id: None,
+            delegate_address: None,
+            delegate_id: None,
+            start_timestamp: "1".to_string(),
+            duration_days: "1".to_string(),
+            signature: "0x1234".to_string(),
+            public_key: "0x5678".to_string(),
+            extra_data,
+        })
+        .expect("native delegated user decrypt should parse");
+
+        assert_eq!(request.delegator_address, None);
+        assert_eq!(request.delegate_address, None);
+        assert_eq!(
+            request.delegator_id,
+            Some(parse_fixed_bytes_32(DELEGATOR_ID).expect("valid delegator id"))
+        );
+        assert_eq!(
+            request.delegate_id,
+            Some(parse_fixed_bytes_32(DELEGATE_ID).expect("valid delegate id"))
+        );
+        assert_eq!(
+            request.contract_ids,
+            Some(vec![parse_fixed_bytes_32(CONTRACT_ID).expect("valid contract id")])
+        );
+        assert!(request
+            .ct_handle_contract_pairs
+            .iter()
+            .all(|pair| pair.contract_address.is_none() && pair.contract_id.is_some()));
     }
 }

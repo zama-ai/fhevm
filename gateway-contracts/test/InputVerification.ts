@@ -17,6 +17,7 @@ import {
   createAndFundRandomWallet,
   createByteInput,
   createCtHandles,
+  createEIP712ResponseNativeZKPoK,
   createEIP712ResponseZKPoK,
   createRandomAddress,
   createRandomWallet,
@@ -49,6 +50,9 @@ describe("InputVerification", function () {
 
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
+  const contractId = `0x${"11".repeat(32)}`;
+  const userId = `0x${"22".repeat(32)}`;
+  const extraDataV1 = `0x01${contractId.slice(2)}${userId.slice(2)}`;
 
   describe("Deployment", function () {
     let inputVerificationFactory: InputVerification__factory;
@@ -111,6 +115,16 @@ describe("InputVerification", function () {
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
         .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
+    });
+
+    it("Should request a native proof verification", async function () {
+      const txResponse = inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequestNative(contractChainId, contractId, userId, ciphertextWithZKProof, extraDataV1);
+
+      await expect(txResponse)
+        .to.emit(inputVerification, "VerifyProofRequestNative")
+        .withArgs(zkProofId, contractChainId, contractId, userId, ciphertextWithZKProof, extraDataV1);
     });
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
@@ -183,6 +197,8 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
+    let nativeEip712Message: EIP712;
+    let nativeSignatures: string[];
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -210,6 +226,17 @@ describe("InputVerification", function () {
       // Get the EIP712 signatures
       signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
+      nativeEip712Message = createEIP712ResponseNativeZKPoK(
+        hre.network.config.chainId!,
+        inputVerificationAddress,
+        ctHandles,
+        userId,
+        contractId,
+        contractChainId,
+        extraDataV1,
+      );
+      nativeSignatures = await getSignaturesZKPoK(nativeEip712Message, coprocessorSigners);
+
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
       await inputVerification
         .connect(tokenFundedTxSender)
@@ -224,6 +251,23 @@ describe("InputVerification", function () {
       )
         .to.emit(inputVerification, "VerifyProofResponseCall")
         .withArgs(zkProofId, ctHandles, signatures[0], coprocessorTxSenders[0].address, extraDataV0);
+    });
+
+    it("Should verify a native proof with 2 valid responses", async function () {
+      await inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequestNative(contractChainId, contractId, userId, ciphertextWithZKProof, extraDataV1);
+
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(zkProofId + 1, ctHandles, nativeSignatures[0], extraDataV1);
+      const txResponse = await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .verifyProofResponse(zkProofId + 1, ctHandles, nativeSignatures[1], extraDataV1);
+
+      await expect(txResponse)
+        .to.emit(inputVerification, "VerifyProofResponse")
+        .withArgs(zkProofId + 1, ctHandles, nativeSignatures.slice(0, 2));
     });
 
     it("Should verify proof with 2 valid responses", async function () {

@@ -170,8 +170,8 @@ impl From<[u8; 32]> for Handle {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub struct ContextUserInputs {
-    pub user_address: EvmAddress,
-    pub contract_address: EvmAddress,
+    pub user_id: Pubkey,
+    pub contract_id: Pubkey,
 }
 
 #[derive(

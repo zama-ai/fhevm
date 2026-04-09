@@ -1,6 +1,4 @@
-use crate::types::{
-    EvmAddress, FheType, Handle, KmsContextId, Operator, Pubkey, SignatureThreshold,
-};
+use crate::types::{EvmAddress, FheType, Handle, KmsContextId, Operator, Pubkey, SignatureThreshold};
 use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -16,7 +14,7 @@ pub enum HostEvent {
     VerifyInput {
         caller: Pubkey,
         input_handle: Handle,
-        user_address: EvmAddress,
+        user_id: Pubkey,
         input_proof_len: u32,
         input_type: FheType,
         result: Handle,

@@ -238,8 +238,21 @@ pub fn validate_handle_contract_pairs(
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
         }
 
-        // Validate contract address
-        validate_blockchain_address(&pair.contract_address)?;
+        match (&pair.contract_address, &pair.contract_id) {
+            (Some(contract_address), None) => validate_blockchain_address(contract_address)?,
+            (None, Some(contract_id)) => {
+                validate_0x_hex(contract_id)?;
+                if contract_id.len() != 66 {
+                    return Err(ValidationError::new("validation_error")
+                        .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
+                }
+            }
+            _ => {
+                return Err(ValidationError::new("validation_error").with_message(
+                    "Each handleContractPair must contain exactly one of contractAddress or contractId".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }

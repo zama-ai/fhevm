@@ -1,8 +1,9 @@
 use crate::error::{HostContractError, Result};
 use crate::input_verifier::{CiphertextVerification, InputProofVerifier};
 use crate::kms_verifier::{KmsProofVerifier, PublicDecryptVerification};
-use crate::types::{EvmAddress, SignatureThreshold};
+use crate::types::{EvmAddress, Pubkey, SignatureThreshold};
 use sha3::{Digest, Keccak256};
+use solana_program::msg;
 use solana_program::secp256k1_recover::secp256k1_recover;
 use std::collections::HashSet;
 
@@ -11,7 +12,7 @@ const EIP712_DOMAIN_TYPE: &str =
 const INPUT_NAME: &str = "InputVerification";
 const INPUT_VERSION: &str = "1";
 const INPUT_TYPE: &str =
-    "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+    "NativeCiphertextVerification(bytes32[] ctHandles,bytes32 userId,bytes32 contractId,uint256 contractChainId,bytes extraData)";
 const KMS_NAME: &str = "Decryption";
 const KMS_VERSION: &str = "1";
 const KMS_TYPE: &str =
@@ -103,10 +104,19 @@ fn verify_signatures(
     let allowed_signers: HashSet<EvmAddress> = signers.iter().copied().collect();
     let mut unique_valid_signers = HashSet::new();
 
+    msg!(
+        "verify_signatures digest={:?} threshold={} allowed_signers={:?}",
+        digest,
+        threshold,
+        signers
+    );
+
     for signature in signatures {
         let signer =
             recover_signer(&digest, signature).map_err(|_| invalid_signer_error(is_kms))?;
+        msg!("verify_signatures recovered_signer={:?}", signer);
         if !allowed_signers.contains(&signer) {
+            msg!("verify_signatures signer_not_allowed recovered={:?} allowed={:?}", signer, signers);
             return Err(invalid_signer_error(is_kms));
         }
         unique_valid_signers.insert(signer);
@@ -160,8 +170,8 @@ fn input_struct_hash(payload: &CiphertextVerification) -> [u8; 32] {
     let mut encoded = Vec::with_capacity(32 * 6);
     encoded.extend_from_slice(&keccak(INPUT_TYPE.as_bytes()));
     encoded.extend_from_slice(&handles_hash(&payload.ct_handles));
-    encoded.extend_from_slice(&address_word(payload.user_address));
-    encoded.extend_from_slice(&address_word(payload.contract_address));
+    encoded.extend_from_slice(&identity_word(payload.user_id));
+    encoded.extend_from_slice(&identity_word(payload.contract_id));
     encoded.extend_from_slice(&u256_word_from_u64(payload.contract_chain_id));
     encoded.extend_from_slice(&keccak(&payload.extra_data));
     keccak(encoded)
@@ -211,6 +221,10 @@ fn address_word(address: EvmAddress) -> [u8; 32] {
     let mut word = [0_u8; 32];
     word[12..].copy_from_slice(address.as_bytes());
     word
+}
+
+fn identity_word(identity: Pubkey) -> [u8; 32] {
+    *identity.as_bytes()
 }
 
 fn u256_word_from_u64(value: u64) -> [u8; 32] {

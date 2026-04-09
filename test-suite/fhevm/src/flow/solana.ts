@@ -34,6 +34,8 @@ const SOLANA_CONFIDENTIAL_TOKEN_PROGRAM_SO = path.join(
 );
 const SOLANA_SOURCE_ROOTS = [
   path.join(SOLANA_ROOT, "crates", "core"),
+  path.join(SOLANA_ROOT, "crates", "test-input-core"),
+  path.join(SOLANA_ROOT, "crates", "confidential-token-core"),
   path.join(SOLANA_ROOT, "programs", "solana-host-contracts"),
   path.join(SOLANA_ROOT, "programs", "solana-test-input-program"),
   path.join(SOLANA_ROOT, "programs", "solana-confidential-token-program"),

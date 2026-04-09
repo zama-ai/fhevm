@@ -1,9 +1,10 @@
 import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
+import { readdirSync } from 'fs';
 import type { HardhatUserConfig } from 'hardhat/config';
 import { task, vars } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 
 const NUM_ACCOUNTS = 120;
 const DEFAULT_NETWORK = 'staging';
@@ -32,6 +33,10 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (taskArgs, hre, runSuper) => {
+  if (!taskArgs.testFiles || taskArgs.testFiles.length === 0) {
+    taskArgs.testFiles = collectEvmTestFiles(resolve(__dirname, 'test'));
+  }
+
   // Run modified test task
   if (network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
@@ -70,6 +75,18 @@ task('test', async (taskArgs, hre, runSuper) => {
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
+
+function collectEvmTestFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const entryPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return entry.name === 'solana' ? [] : collectEvmTestFiles(entryPath);
+      }
+      return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
+    })
+    .sort();
+}
 
 const chainIds = {
   localNative: 8009,

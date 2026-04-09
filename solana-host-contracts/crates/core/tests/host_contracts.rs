@@ -229,8 +229,8 @@ fn input_verifier_parses_host_proof_and_uses_session_cache() {
     let calls = AtomicUsize::new(0);
     let proof_verifier = CountingInputVerifier { calls: &calls };
     let context = ContextUserInputs {
-        user_address: evm(4),
-        contract_address: evm(5),
+        user_id: pubkey(4),
+        contract_id: pubkey(5),
     };
     let mut session = InputVerifierSession::default();
 

@@ -147,12 +147,11 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     ))
                 })?;
                 let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
+                let decoded_call = self
+                    .decryption_processor
+                    .decode_user_decrypt_calldata(&calldata)?;
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_user_decryption(
-                        calldata,
-                        &req.snsCtMaterials,
-                        req.userAddress,
-                    )
+                    .check_ciphertexts_allowed_for_user_decryption(&decoded_call, &req.snsCtMaterials)
                     .await?;
                 self.decryption_processor
                     .prepare_decryption_request(
@@ -160,7 +159,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         &req.snsCtMaterials,
                         &req.extraData,
                         Some(UserDecryptionExtraData::new(
-                            req.userAddress,
+                            decoded_call.client_address()?,
                             req.publicKey.clone(),
                         )),
                     )

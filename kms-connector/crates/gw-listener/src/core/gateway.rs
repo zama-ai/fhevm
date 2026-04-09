@@ -4,8 +4,11 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
+    primitives::Address,
     providers::Provider,
     rpc::types::{Filter, Log},
+    sol,
+    sol_types::SolEvent,
     sol_types::SolEventInterface,
 };
 use anyhow::anyhow;
@@ -14,13 +17,33 @@ use connector_utils::{
     types::{ProtocolEvent, ProtocolEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
+    decryption::Decryption::{DecryptionEvents, SnsCiphertextMaterial, UserDecryptionRequest},
+    kms_generation::KMSGeneration::KMSGenerationEvents,
 };
 use sqlx::{Pool, Postgres, Row};
 use tokio::{select, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+sol! {
+    #[derive(Debug)]
+    struct NativeSnsCiphertextMaterial {
+        bytes32 ctHandle;
+        uint256 keyId;
+        bytes32 snsCiphertextDigest;
+        address[] coprocessorTxSenderAddresses;
+    }
+
+    #[derive(Debug)]
+    event UserDecryptionRequestNative(
+        uint256 indexed decryptionId,
+        NativeSnsCiphertextMaterial[] snsCtMaterials,
+        bytes32 userId,
+        bytes publicKey,
+        bytes extraData
+    );
+}
 
 const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::PublicDecryptionRequest,
@@ -142,6 +165,12 @@ where
         let event_signatures = event_types
             .iter()
             .map(|e| e.signature_hash())
+            .chain(match contract {
+                MonitoredContract::Decryption => {
+                    Some(UserDecryptionRequestNative::SIGNATURE_HASH).into_iter()
+                }
+                MonitoredContract::KmsGeneration => None.into_iter(),
+            })
             .collect::<Vec<_>>();
         let base_filter = Filter::new()
             .address(contract_address)
@@ -214,12 +243,16 @@ where
     fn decode_log(contract: MonitoredContract, log: &Log) -> anyhow::Result<ProtocolEventKind> {
         match contract {
             MonitoredContract::Decryption => {
-                let event = DecryptionEvents::decode_log(&log.inner)
-                    .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
-                match event.data {
-                    DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-                    DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
-                    _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
+                if let Ok(event) = DecryptionEvents::decode_log(&log.inner) {
+                    match event.data {
+                        DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+                        DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+                        _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
+                    }
+                } else if let Ok(event) = UserDecryptionRequestNative::decode_log(&log.inner) {
+                    Ok(native_user_decryption_event_into_protocol(event.data))
+                } else {
+                    Err(anyhow!("Failed to decode Decryption event: {log:?}"))
                 }
             }
             MonitoredContract::KmsGeneration => {
@@ -305,6 +338,27 @@ where
         };
         Ok(Some(block_number as u64))
     }
+}
+
+fn native_user_decryption_event_into_protocol(
+    event: UserDecryptionRequestNative,
+) -> ProtocolEventKind {
+    ProtocolEventKind::UserDecryption(UserDecryptionRequest {
+        decryptionId: event.decryptionId,
+        snsCtMaterials: event
+            .snsCtMaterials
+            .into_iter()
+            .map(|item| SnsCiphertextMaterial {
+                ctHandle: item.ctHandle,
+                keyId: item.keyId,
+                snsCiphertextDigest: item.snsCiphertextDigest,
+                coprocessorTxSenderAddresses: item.coprocessorTxSenderAddresses,
+            })
+            .collect(),
+        userAddress: Address::ZERO,
+        publicKey: event.publicKey,
+        extraData: event.extraData,
+    })
 }
 
 #[cfg(test)]

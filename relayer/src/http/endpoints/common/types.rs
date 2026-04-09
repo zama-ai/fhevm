@@ -22,16 +22,26 @@ pub struct HandleContractPairJson {
     #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")]
     pub handle: String,
     /// Address of the contract that produced this ciphertext handle. `0x` + 40 hex chars.
-    #[schema(example = "0x1234567890123456789012345678901234567890")]
-    pub contract_address: String,
+    /// Required for EVM host chains.
+    #[serde(default)]
+    #[schema(example = "0x1234567890123456789012345678901234567890", nullable = true)]
+    pub contract_address: Option<String>,
+    /// Native host contract identity for this ciphertext handle. `0x` + 64 hex chars.
+    /// Required for native host chains such as Solana.
+    #[serde(default)]
+    #[schema(
+        example = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        nullable = true
+    )]
+    pub contract_id: Option<String>,
 }
 
 impl Display for HandleContractPairJson {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ct-handle: {}, contract-address: {}",
-            self.handle, self.contract_address
+            "ct-handle: {}, contract-address: {:?}, contract-id: {:?}",
+            self.handle, self.contract_address, self.contract_id
         )
     }
 }

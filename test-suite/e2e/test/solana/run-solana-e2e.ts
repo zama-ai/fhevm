@@ -1,6 +1,5 @@
 /// <reference types="bun-types" />
 
-import { beforeAll, describe, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
@@ -22,16 +21,12 @@ import {
 } from './solana.fixture';
 import {
   buildGatewayBackedInputProof,
-  buildSolanaContractIdentityMap,
-  getSolanaContractIdentityByAddress,
   loadCoprocessorSigners,
   requiredEnvValue,
   sleep,
   stripHexPrefix,
 } from './solana.proof-helpers';
 import {
-  createRandomTestWallet,
-  createTestWallet,
   executePublicDecryptRequest,
   executeUserDecryptRequest,
   formatPublicDecryptOutcome,
@@ -39,7 +34,6 @@ import {
   includesPublicDecryptErrorMessage,
   isExpiredUserDecryptRejection,
   isUserDecryptAclRejection,
-  isUserEqualsContractRejection,
 } from './solana.relayer-helpers';
 
 const verbose = process.argv.includes('--verbose') || process.env.VERBOSE === '1';
@@ -50,67 +44,67 @@ let testSuiteEnv: EnvRecord;
 let testChainId: number;
 let testAddressesEnvPath: string;
 
-describe('Solana e2e', () => {
-  beforeAll(async () => {
-    const ctx = await setupSolanaContext();
-    testAddresses = ctx.addresses;
-    testLocalnetEnv = ctx.localnetEnv;
-    testSuiteEnv = ctx.testSuiteEnv;
-    testChainId = ctx.chainId;
-    testAddressesEnvPath = ctx.addressesEnvPath;
+type BunTestApi = typeof import('bun:test');
 
-    sqlScalar('SELECT 1');
-    if (!(await solanaRpcHealthy())) {
-      throw new Error(`Solana RPC ${SOLANA_RPC_URL} is not healthy`);
-    }
+function registerSolanaE2eTests({ beforeAll, describe, it }: BunTestApi) {
+  describe('Solana e2e', () => {
+    beforeAll(async () => {
+      const ctx = await setupSolanaContext();
+      testAddresses = ctx.addresses;
+      testLocalnetEnv = ctx.localnetEnv;
+      testSuiteEnv = ctx.testSuiteEnv;
+      testChainId = ctx.chainId;
+      testAddressesEnvPath = ctx.addressesEnvPath;
+
+      sqlScalar('SELECT 1');
+      if (!(await solanaRpcHealthy())) {
+        throw new Error(`Solana RPC ${SOLANA_RPC_URL} is not healthy`);
+      }
+    });
+
+    it('solana-input-proof', async () => {
+      await resetChainState(testChainId);
+      await runInputProofCase(testAddresses, testLocalnetEnv, testSuiteEnv);
+    }, 300_000);
+
+    it('solana-user-decryption', async () => {
+      await resetChainState(testChainId);
+      await ensureRelayerReachable();
+      await runUserDecryptionCase(testAddresses, testLocalnetEnv, testSuiteEnv);
+    }, 300_000);
+
+    it('solana-public-decrypt-http-ebool', async () => {
+      await resetChainState(testChainId);
+      await runPublicDecryptCase(testAddresses, testLocalnetEnv, 'scenario-public-ebool');
+    }, 300_000);
+
+    it('solana-public-decrypt-http-mixed', async () => {
+      await resetChainState(testChainId);
+      await runPublicDecryptCase(testAddresses, testLocalnetEnv, 'scenario-public-mixed');
+    }, 300_000);
+
+    it('solana-confidential-token', async () => {
+      await resetChainState(testChainId);
+      await runConfidentialTokenCase(testAddresses, testLocalnetEnv, testSuiteEnv);
+    }, 300_000);
   });
+}
 
-  it('solana-input-proof', async () => {
-    await resetChainState(testChainId);
-    await runInputProofCase(testAddresses, testLocalnetEnv, testSuiteEnv);
-  }, 300_000);
-
-  it('solana-user-decryption', async () => {
-    await resetChainState(testChainId);
-    await ensureRelayerReachable();
-    await runUserDecryptionCase(testAddresses, testLocalnetEnv, testSuiteEnv);
-  }, 300_000);
-
-  it('solana-public-decrypt-http-ebool', async () => {
-    await resetChainState(testChainId);
-    await runPublicDecryptCase(testAddresses, testLocalnetEnv, 'scenario-public-ebool');
-  }, 300_000);
-
-  it('solana-public-decrypt-http-mixed', async () => {
-    await resetChainState(testChainId);
-    await runPublicDecryptCase(testAddresses, testLocalnetEnv, 'scenario-public-mixed');
-  }, 300_000);
-
-  it('solana-confidential-token', async () => {
-    await resetChainState(testChainId);
-    await runConfidentialTokenCase(testAddresses, testLocalnetEnv, testSuiteEnv);
-  }, 300_000);
-});
+if (typeof Bun !== 'undefined') {
+  registerSolanaE2eTests(require('bun:test') as BunTestApi);
+}
 
 async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, testSuiteEnv: EnvRecord) {
   await ensureRelayerReachable();
-  const aliceWallet = createTestWallet(
-    requiredEnvValue(testSuiteEnv, 'DEPLOYER_PRIVATE_KEY', 'solana-input-proof'),
-  );
   const identities = runLocalCliJson('runtime-identities', solanaEnv);
-  const contractAddress = requiredScenarioField(
-    identities,
-    'test_input_contract_evm_address',
-    'solana-input-proof',
-  );
   const contractIdentity = requiredScenarioField(
     identities,
-    'test_input_state_pda_hex',
+    'test_input_contract_id_hex',
     'solana-input-proof',
   );
   const userIdentity = requiredScenarioField(
     identities,
-    'payer_pubkey_hex',
+    'payer_user_id_hex',
     'solana-input-proof',
   );
   const aclIdentity = requiredScenarioField(
@@ -118,16 +112,10 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
     'host_program_id_hex',
     'solana-input-proof',
   );
-  const nativeContractIdByAddress = buildSolanaContractIdentityMap(identities);
-  const nativeContractIdentity = getSolanaContractIdentityByAddress(
-    nativeContractIdByAddress,
-    contractAddress,
-  );
   const chainId = Number(addresses.SOLANA_HOST_CHAIN_ID);
 
   const proofBundle = await buildGatewayBackedInputProof({
     relayerUrl: requiredEnvValue(testSuiteEnv, 'RELAYER_URL', 'solana-input-proof'),
-    aclAddress: null,
     inputVerificationAddress: requiredEnvValue(
       testSuiteEnv,
       'INPUT_VERIFICATION_ADDRESS',
@@ -135,8 +123,6 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
     ),
     gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', 'solana-input-proof'),
     hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-    contractAddress,
-    userAddress: aliceWallet.address,
     contractIdentity,
     userIdentity,
     aclIdentity,
@@ -154,8 +140,6 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
     proofBundle.selectedHandle,
     '--input-proof',
     proofBundle.inputProof,
-    '--user-evm-address',
-    aliceWallet.address,
   ]);
   await waitForSolanaTransactionsCommitted(
     scenarioSignatures(scenario),
@@ -168,7 +152,6 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
 
   const add42ProofBundle = await buildGatewayBackedInputProof({
     relayerUrl: requiredEnvValue(testSuiteEnv, 'RELAYER_URL', 'solana-input-proof'),
-    aclAddress: null,
     inputVerificationAddress: requiredEnvValue(
       testSuiteEnv,
       'INPUT_VERIFICATION_ADDRESS',
@@ -176,8 +159,6 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
     ),
     gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', 'solana-input-proof'),
     hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-    contractAddress,
-    userAddress: aliceWallet.address,
     contractIdentity,
     userIdentity,
     aclIdentity,
@@ -195,8 +176,6 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
     add42ProofBundle.selectedHandle,
     '--input-proof',
     add42ProofBundle.inputProof,
-    '--user-evm-address',
-    aliceWallet.address,
   ]);
   await waitForSolanaTransactionsCommitted(
     scenarioSignatures(add42Scenario),
@@ -215,11 +194,10 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
 
   const userDecryptResult = await executeUserDecryptRequest({
     handle: resultHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-input-proof add42',
@@ -258,16 +236,8 @@ async function runInputProofCase(addresses: EnvRecord, solanaEnv: EnvRecord, tes
 }
 
 async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord, testSuiteEnv: EnvRecord) {
-  const aliceWallet = createTestWallet(
-    requiredEnvValue(testSuiteEnv, 'DEPLOYER_PRIVATE_KEY', 'solana-user-decryption'),
-  );
-  const bobWallet = createRandomTestWallet();
   const identities = runLocalCliJson('runtime-identities', solanaEnv);
-  const nativeContractIdByAddress = buildSolanaContractIdentityMap(identities);
-  const scenario = runLocalCliScenario('scenario-user-decrypt', solanaEnv, [
-    '--user-evm-address',
-    aliceWallet.address,
-  ]);
+  const scenario = runLocalCliScenario('scenario-user-decrypt', solanaEnv);
   await waitForSolanaTransactionsCommitted(
     scenarioSignatures(scenario),
     SOLANA_E2E_COMMITMENT,
@@ -278,18 +248,19 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
   );
 
   const chainId = Number(addresses.SOLANA_HOST_CHAIN_ID);
-  const contractAddress = requiredScenarioField(
+  const contractId = requiredScenarioField(
     scenario,
-    'contract_evm_address',
+    'contract_id_hex',
     'solana-user-decryption',
-  );
-  const nativeContractIdentity = getSolanaContractIdentityByAddress(
-    nativeContractIdByAddress,
-    contractAddress,
   );
   const userIdentity = requiredScenarioField(
     identities,
-    'payer_pubkey_hex',
+    'payer_user_id_hex',
+    'solana-user-decryption',
+  );
+  const otherUserIdentity = requiredScenarioField(
+    identities,
+    'token_recipient_user_id_hex',
     'solana-user-decryption',
   );
   const handles = scenarioFinalHandles(scenario);
@@ -312,20 +283,12 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
         )}`,
       );
     }
-    const allowedRows = countAllowedHandleRows(chainId, handle);
-    if (allowedRows < 4) {
-      throw new Error(
-        `solana-user-decryption: expected app + app-evm + user + user-evm allow rows for handle ${handle}, got ${allowedRows}`,
-      );
-    }
-
     const decryptResult = await executeUserDecryptRequest({
       handle,
-      contractAddress,
+      contractId,
       userIdentity,
-      nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+      contractIds: [contractId],
       nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-      userWallet: aliceWallet,
       addresses,
       testSuiteEnv,
       label: `solana-user-decryption ${handle}`,
@@ -360,19 +323,16 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
   );
   const wrongContractAddress = requiredScenarioField(
     identities,
-    'confidential_token_contract_evm_address',
+    'confidential_token_contract_id_hex',
     'solana-user-decryption',
-  );
-  const wrongContractIdentity = getSolanaContractIdentityByAddress(
-    nativeContractIdByAddress,
-    wrongContractAddress,
   );
 
   const unauthorizedDecrypt = await executeUserDecryptRequest({
     handle: boolHandle,
-    contractAddress,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
-    userWallet: bobWallet,
+    contractId,
+    userIdentity: otherUserIdentity,
+    contractIds: [contractId],
+    nativeSignerKeypairPath: tokenRecipientKeypairPath,
     addresses,
     testSuiteEnv,
     label: 'solana-user-decryption unauthorized',
@@ -388,32 +348,12 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
     );
   }
 
-  const userEqualsContract = await executeUserDecryptRequest({
-    handle: boolHandle,
-    contractAddress: aliceWallet.address,
-    userWallet: aliceWallet,
-    addresses,
-    testSuiteEnv,
-    label: 'solana-user-decryption user-equals-contract',
-  });
-  if (
-    userEqualsContract.success ||
-    !isUserEqualsContractRejection(userEqualsContract)
-  ) {
-    throw new Error(
-      `solana-user-decryption: expected userAddress == contractAddress to be rejected, got ${formatUserDecryptOutcome(
-        userEqualsContract,
-      )}`,
-    );
-  }
-
   const wrongContract = await executeUserDecryptRequest({
     handle: boolHandle,
-    contractAddress: wrongContractAddress,
+    contractId: wrongContractAddress,
     userIdentity,
-    nativeContractIdentities: wrongContractIdentity ? [wrongContractIdentity] : null,
+    contractIds: [wrongContractAddress],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-user-decryption wrong-contract',
@@ -431,11 +371,10 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
 
   const expiredRequest = await executeUserDecryptRequest({
     handle: uint8Handle,
-    contractAddress,
+    contractId,
     userIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractId],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-user-decryption expired',
@@ -455,7 +394,7 @@ async function runUserDecryptionCase(addresses: EnvRecord, solanaEnv: EnvRecord,
 
   console.log('Solana user-decryption passed');
   console.log(`Handles: ${handles.join(', ')}`);
-  console.log(`userAddress=${aliceWallet.address}`);
+  console.log(`userId=${userIdentity}`);
   console.log(`clearValues=${JSON.stringify(actualClearValues)}`);
 }
 
@@ -519,11 +458,7 @@ async function runPublicDecryptCase(addresses: EnvRecord, solanaEnv: EnvRecord, 
   }
 
   if (scenarioName === 'scenario-public-ebool') {
-    const identities = runLocalCliJson('runtime-identities', solanaEnv);
-    const nonPublicScenario = runLocalCliScenario('scenario-user-decrypt', solanaEnv, [
-      '--user-evm-address',
-      requiredScenarioField(identities, 'user_evm_address', `${scenarioName} negative`),
-    ]);
+    const nonPublicScenario = runLocalCliScenario('scenario-user-decrypt', solanaEnv);
     await waitForSolanaTransactionsCommitted(
       scenarioSignatures(nonPublicScenario),
       SOLANA_E2E_COMMITMENT,
@@ -564,39 +499,23 @@ async function runPublicDecryptCase(addresses: EnvRecord, solanaEnv: EnvRecord, 
 
 async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvRecord, testSuiteEnv: EnvRecord) {
   await ensureRelayerReachable();
-  const aliceWallet = createTestWallet(
-    requiredEnvValue(testSuiteEnv, 'DEPLOYER_PRIVATE_KEY', 'solana-confidential-token'),
-  );
-  const bobWallet = createRandomTestWallet();
   const identities = runLocalCliJson('runtime-identities', solanaEnv);
-  const contractAddress = requiredScenarioField(
-    identities,
-    'confidential_token_contract_evm_address',
-    'solana-confidential-token',
-  );
   const contractIdentity = requiredScenarioField(
     identities,
-    'confidential_token_state_pda_hex',
+    'confidential_token_contract_id_hex',
     'solana-confidential-token',
-  );
-  const nativeContractIdByAddress = buildSolanaContractIdentityMap(identities);
-  const nativeContractIdentity = getSolanaContractIdentityByAddress(
-    nativeContractIdByAddress,
-    contractAddress,
   );
   const chainId = Number(addresses.SOLANA_HOST_CHAIN_ID);
   const alicePubkey = requiredScenarioField(identities, 'payer_pubkey', 'solana-confidential-token');
-  const aliceIdentity = requiredScenarioField(identities, 'payer_pubkey_hex', 'solana-confidential-token');
-  const aliceUserAddress = requiredScenarioField(
+  const aliceIdentity = requiredScenarioField(
     identities,
-    'user_evm_address',
+    'payer_user_id_hex',
     'solana-confidential-token',
   );
   const bobPubkey = requiredScenarioField(identities, 'token_recipient_pubkey', 'solana-confidential-token');
-  const bobIdentity = requiredScenarioField(identities, 'token_recipient_pubkey_hex', 'solana-confidential-token');
-  const bobUserAddress = requiredScenarioField(
+  const bobIdentity = requiredScenarioField(
     identities,
-    'token_recipient_evm_address',
+    'token_recipient_user_id_hex',
     'solana-confidential-token',
   );
   const aclIdentity = requiredScenarioField(identities, 'host_program_id_hex', 'solana-confidential-token');
@@ -629,10 +548,9 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
     );
   }
 
-  async function buildTokenAmountProof(value: string | number, userIdentity: string, userAddress: string, label: string) {
+  async function buildTokenAmountProof(value: string | number, userIdentity: string, label: string) {
     return buildGatewayBackedInputProof({
       relayerUrl: requiredEnvValue(testSuiteEnv, 'RELAYER_URL', label),
-      aclAddress: null,
       inputVerificationAddress: requiredEnvValue(
         testSuiteEnv,
         'INPUT_VERIFICATION_ADDRESS',
@@ -640,8 +558,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
       ),
       gatewayChainId: requiredEnvValue(testSuiteEnv, 'CHAIN_ID_GATEWAY', label),
       hostChainId: addresses.SOLANA_HOST_CHAIN_ID,
-      contractAddress,
-      userAddress,
       contractIdentity,
       userIdentity,
       aclIdentity,
@@ -678,7 +594,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   await waitForCiphertextPresent(mintBalanceHandle, 'solana-confidential-token mint');
 
   const mintState = queryComputationState(chainId, mintBalanceHandle);
-  const mintAllowRows = countAllowedHandleRows(chainId, mintBalanceHandle);
   const mintPbsRows = countPbsRows(chainId, mintBalanceHandle);
 
   if (!mintState.exists || !mintState.isCompleted || mintState.isError) {
@@ -686,11 +601,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
       `solana-confidential-token: expected mint handle to be fully computed, got ${formatComputationState(
         mintState,
       )}`,
-    );
-  }
-  if (mintAllowRows < 3) {
-    throw new Error(
-      `solana-confidential-token: expected durable contract + owner allow rows for mint balance handle, got ${mintAllowRows}`,
     );
   }
   if (mintPbsRows < 1) {
@@ -706,11 +616,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
 
   const mintDecrypt = await executeUserDecryptRequest({
     handle: mintBalanceHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: aliceIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token mint',
@@ -731,7 +640,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   const successTransferProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
-    aliceUserAddress,
     'solana-confidential-token transfer success',
   );
   const successTransfer = runTokenCommand('token-transfer', [
@@ -812,11 +720,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
 
   const aliceAfterDecrypt = await executeUserDecryptRequest({
     handle: aliceAfterTransferHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: aliceIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token alice-after-transfer',
@@ -831,11 +738,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
 
   const bobAfterDecrypt = await executeUserDecryptRequest({
     handle: bobAfterTransferHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: bobIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: tokenRecipientKeypairPath,
-    userWallet: bobWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token bob-after-transfer',
@@ -850,11 +756,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
 
   const unauthorizedDecrypt = await executeUserDecryptRequest({
     handle: aliceAfterTransferHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: bobIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: tokenRecipientKeypairPath,
-    userWallet: bobWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token unauthorized',
@@ -885,7 +790,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   const failedTransferProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
-    aliceUserAddress,
     'solana-confidential-token transfer failure',
   );
   const failedTransfer = runTokenCommand('token-transfer', [
@@ -922,11 +826,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   );
   const failedAliceDecrypt = await executeUserDecryptRequest({
     handle: failedAliceHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: aliceIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token failed alice',
@@ -940,11 +843,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   }
   const failedBobDecrypt = await executeUserDecryptRequest({
     handle: failedBobHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: bobIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: tokenRecipientKeypairPath,
-    userWallet: bobWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token failed bob',
@@ -965,7 +867,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   const approveProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     aliceIdentity,
-    aliceUserAddress,
     'solana-confidential-token approve',
   );
   const approve = runTokenCommand('token-approve-delegate', [
@@ -979,7 +880,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   const overAllowanceProof = await buildTokenAmountProof(
     '1338',
     bobIdentity,
-    bobUserAddress,
     'solana-confidential-token transferFrom over-allowance',
   );
   const transferFromOver = runTokenCommand(
@@ -1023,11 +923,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   );
   const overAliceDecrypt = await executeUserDecryptRequest({
     handle: overAliceHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: aliceIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token over-allowance alice',
@@ -1041,11 +940,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   }
   const overBobDecrypt = await executeUserDecryptRequest({
     handle: overBobHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: bobIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: tokenRecipientKeypairPath,
-    userWallet: bobWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token over-allowance bob',
@@ -1061,7 +959,6 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   const exactAllowanceProof = await buildTokenAmountProof(
     TOKEN_TRANSFER_INPUT_VALUE,
     bobIdentity,
-    bobUserAddress,
     'solana-confidential-token transferFrom exact-allowance',
   );
   const transferFromExact = runTokenCommand(
@@ -1102,11 +999,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   );
   const exactAliceDecrypt = await executeUserDecryptRequest({
     handle: exactAliceHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: aliceIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: anchorAuthorityKeypairPath,
-    userWallet: aliceWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token exact-allowance alice',
@@ -1120,11 +1016,10 @@ async function runConfidentialTokenCase(addresses: EnvRecord, solanaEnv: EnvReco
   }
   const exactBobDecrypt = await executeUserDecryptRequest({
     handle: exactBobHandle,
-    contractAddress,
+    contractId: contractIdentity,
     userIdentity: bobIdentity,
-    nativeContractIdentities: nativeContractIdentity ? [nativeContractIdentity] : null,
+    contractIds: [contractIdentity],
     nativeSignerKeypairPath: tokenRecipientKeypairPath,
-    userWallet: bobWallet,
     addresses,
     testSuiteEnv,
     label: 'solana-confidential-token exact-allowance bob',
@@ -1542,17 +1437,6 @@ function formatComputationState(state: ComputationState): string {
   )})`;
 }
 
-function countAllowedHandleRows(chainId: number, handle: string): number {
-  return Number(
-    sqlScalar(`
-      SELECT COUNT(*)
-      FROM allowed_handles
-      WHERE host_chain_id = ${chainId}
-        AND handle = decode('${stripHexPrefix(handle)}', 'hex')
-    `),
-  );
-}
-
 function countPublicDecryptAllowRows(chainId: number, handle: string): number {
   return Number(
     sqlScalar(`
@@ -1712,4 +1596,3 @@ function oneLineSql(query: string): string {
     .filter(Boolean)
     .join(' ');
 }
-

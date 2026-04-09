@@ -10,10 +10,21 @@ contract InputVerificationMock {
         bytes extraData;
     }
 
+    struct NativeCiphertextVerification {
+        bytes32[] ctHandles;
+        bytes32 userId;
+        bytes32 contractId;
+        uint256 contractChainId;
+        bytes extraData;
+    }
+
     struct ZKProofInput {
         uint256 contractChainId;
         address contractAddress;
         address userAddress;
+        bytes32 contractId;
+        bytes32 userId;
+        bool isNative;
     }
 
     event VerifyProofRequest(
@@ -21,6 +32,15 @@ contract InputVerificationMock {
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+
+    event VerifyProofRequestNative(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
         bytes ciphertextWithZKProof,
         bytes extraData
     );
@@ -56,6 +76,26 @@ contract InputVerificationMock {
             contractChainId,
             contractAddress,
             userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
+    }
+
+    function verifyProofRequestNative(
+        uint256 contractChainId,
+        bytes32 contractId,
+        bytes32 userId,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external {
+        zkProofIdCounter++;
+        uint256 zkProofId = zkProofIdCounter;
+
+        emit VerifyProofRequestNative(
+            zkProofId,
+            contractChainId,
+            contractId,
+            userId,
             ciphertextWithZKProof,
             extraData
         );

@@ -11,12 +11,13 @@ use alloy::{
     hex,
     primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
+    sol,
     sol_types::SolCall,
 };
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest,
-    extra_data::{parse_extra_data_context, parse_extra_data_identities},
+    extra_data::parse_extra_data_context,
     handle::extract_chain_id_from_handle,
     u256_to_request_id,
 };
@@ -28,9 +29,90 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
+use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
+
+sol! {
+    #[derive(Debug)]
+    struct NativeCtHandleContractPair {
+        bytes32 ctHandle;
+        bytes32 contractId;
+    }
+
+    #[derive(Debug)]
+    struct DecryptionNativeRequestValidity {
+        uint256 startTimestamp;
+        uint256 durationDays;
+    }
+
+    #[derive(Debug)]
+    struct NativeContractsInfo {
+        uint256 chainId;
+        bytes32[] ids;
+    }
+
+    #[derive(Debug)]
+    struct NativeDelegationAccounts {
+        bytes32 delegatorId;
+        bytes32 delegateId;
+    }
+
+    interface DecryptionNative {
+        function userDecryptionRequestNative(
+            NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+            DecryptionNativeRequestValidity calldata requestValidity,
+            NativeContractsInfo calldata contractsInfo,
+            bytes32 userId,
+            bytes calldata publicKey,
+            bytes calldata signature,
+            bytes calldata extraData
+        );
+
+        function delegatedUserDecryptionRequestNative(
+            NativeCtHandleContractPair[] calldata ctHandleContractPairs,
+            DecryptionNativeRequestValidity calldata requestValidity,
+            NativeDelegationAccounts calldata delegationAccounts,
+            NativeContractsInfo calldata contractsInfo,
+            bytes calldata publicKey,
+            bytes calldata signature,
+            bytes calldata extraData
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DecodedHandleContractPair {
+    handle: FixedBytes<32>,
+    contract_address: Option<Address>,
+    contract_identity: Option<SolanaHostPubkey>,
+}
+
+#[derive(Clone)]
+pub(crate) struct DecodedUserDecryptCall {
+    handle_contract_pairs: Vec<DecodedHandleContractPair>,
+    user_address: Option<Address>,
+    user_identity: Option<SolanaHostPubkey>,
+    delegator_address: Option<Address>,
+    delegator_identity: Option<SolanaHostPubkey>,
+}
+
+impl DecodedUserDecryptCall {
+    pub(crate) fn client_address(&self) -> Result<String, ProcessingError> {
+        if let Some(address) = self.user_address {
+            return Ok(address.to_checksum(None));
+        }
+
+        if let Some(identity) = self.user_identity {
+            return Ok(native_client_address_from_identity(identity).to_checksum(None));
+        }
+
+        Err(ProcessingError::Irrecoverable(anyhow!(
+            "decoded user decryption call is missing both user address and native user identity"
+        )))
+    }
+}
 
 #[derive(Clone)]
 pub enum HostAclBackend<HP: Provider> {
@@ -124,51 +206,23 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    pub async fn check_ciphertexts_allowed_for_user_decryption(
+    pub(crate) async fn check_ciphertexts_allowed_for_user_decryption(
         &self,
-        calldata: Vec<u8>,
+        decoded_call: &DecodedUserDecryptCall,
         sns_ciphertexts: &[SnsCiphertextMaterial],
-        user_address: Address,
     ) -> Result<(), ProcessingError> {
         info!(
             "Starting ACL check for {} handles...",
             sns_ciphertexts.len()
         );
-
-        let (ct_handle_contract_pairs, contract_addresses, extra_data, delegator_address) =
-            match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
-                Ok(parsed_calldata) => (
-                    parsed_calldata.ctHandleContractPairs,
-                    parsed_calldata.contractsInfo.addresses,
-                    parsed_calldata.extraData,
-                    Some(parsed_calldata.delegationAccounts.delegatorAddress),
-                ),
-                Err(e) => {
-                    let parsed_calldata = userDecryptionRequestCall::abi_decode(
-                        calldata.as_slice(),
-                    )
-                    .map_err(|e2| {
-                        ProcessingError::Irrecoverable(anyhow!(
-                            "Was not able to parse calldata for both userDecryptionRequestCall {e2} \
-                            and delegatedUserDecryptionRequestCall ({e})!"
-                        ))
-                    })?;
-                    (
-                        parsed_calldata.ctHandleContractPairs,
-                        parsed_calldata.contractsInfo.addresses,
-                        parsed_calldata.extraData,
-                        None,
-                    )
-                }
-            };
-        let identity_overrides =
-            parse_user_identity_overrides(&contract_addresses, extra_data.as_ref())?;
-
-        let contracts_map = HashMap::<FixedBytes<32>, Address, DefaultHashBuilder>::from_iter(
-            ct_handle_contract_pairs
-                .iter()
-                .map(|c| (c.ctHandle, c.contractAddress)),
-        );
+        let contracts_map =
+            HashMap::<FixedBytes<32>, DecodedHandleContractPair, DefaultHashBuilder>::from_iter(
+                decoded_call
+                    .handle_contract_pairs
+                    .iter()
+                    .copied()
+                    .map(|pair| (pair.handle, pair)),
+            );
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
@@ -177,37 +231,33 @@ where
                     "No ACL contract config found for chain id {ct_chain_id}"
                 ))
             })?;
-            let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
+            let pair = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
                 ProcessingError::Irrecoverable(anyhow!(
-                    "Could not find contract address for handle {}",
+                    "Could not find contract identity for handle {}",
                     hex::encode(ct.ctHandle)
                 ))
             })?;
-            let native_contract_identity = identity_overrides
-                .contract_ids
-                .as_ref()
-                .and_then(|overrides| overrides.get(contract_address).copied());
-
-            if let Some(delegator_addr) = delegator_address {
+            if decoded_call.delegator_address.is_some() || decoded_call.delegator_identity.is_some()
+            {
                 self.inner_acl_check_for_delegated_user_decryption(
                     backend,
                     ct.ctHandle,
-                    user_address,
-                    identity_overrides.delegate_id,
-                    *contract_address,
-                    native_contract_identity,
-                    delegator_addr,
-                    identity_overrides.delegator_id,
+                    decoded_call.user_address,
+                    decoded_call.user_identity,
+                    pair.contract_address,
+                    pair.contract_identity,
+                    decoded_call.delegator_address,
+                    decoded_call.delegator_identity,
                 )
                 .await?;
             } else {
                 self.inner_acl_check_for_user_decryption(
                     backend,
                     ct.ctHandle,
-                    user_address,
-                    identity_overrides.user_id,
-                    *contract_address,
-                    native_contract_identity,
+                    decoded_call.user_address,
+                    decoded_call.user_identity,
+                    pair.contract_address,
+                    pair.contract_identity,
                 )
                 .await?;
             }
@@ -221,14 +271,17 @@ where
         &self,
         backend: &HostAclBackend<HP>,
         handle: FixedBytes<32>,
-        user_address: Address,
+        user_address: Option<Address>,
         native_user_identity: Option<SolanaHostPubkey>,
-        contract_address: Address,
+        contract_address: Option<Address>,
         native_contract_identity: Option<SolanaHostPubkey>,
-        delegator_address: Address,
+        delegator_address: Option<Address>,
         native_delegator_identity: Option<SolanaHostPubkey>,
     ) -> Result<(), ProcessingError> {
         let handle_hex = hex::encode(handle);
+        let user_label = format_user_identity(user_address, native_user_identity);
+        let delegator_label = format_user_identity(delegator_address, native_delegator_identity);
+        let contract_label = format_contract_identity(contract_address, native_contract_identity);
         let is_delegated = self
             .is_handle_delegated_for_user_decryption(
                 backend,
@@ -244,8 +297,8 @@ where
 
         if !is_delegated {
             return Err(ProcessingError::Recoverable(anyhow!(
-                "{user_address} is not a delegate of {delegator_address} for contract \
-                    {contract_address} and handle {handle_hex}!",
+                "{user_label} is not a delegate of {delegator_label} for contract \
+                    {contract_label} and handle {handle_hex}!",
             )));
         }
 
@@ -256,12 +309,14 @@ where
         &self,
         backend: &HostAclBackend<HP>,
         handle: FixedBytes<32>,
-        user_address: Address,
+        user_address: Option<Address>,
         native_user_identity: Option<SolanaHostPubkey>,
-        contract_address: Address,
+        contract_address: Option<Address>,
         native_contract_identity: Option<SolanaHostPubkey>,
     ) -> Result<(), ProcessingError> {
         let handle_hex = hex::encode(handle);
+        let user_label = format_user_identity(user_address, native_user_identity);
+        let contract_label = format_contract_identity(contract_address, native_contract_identity);
         let (user_allowed, contract_allowed) = self
             .is_allowed_for_user_decryption(
                 backend,
@@ -275,12 +330,12 @@ where
 
         if !user_allowed {
             return Err(ProcessingError::Recoverable(anyhow!(
-                "{user_address} is not allowed to decrypt {handle_hex}!",
+                "{user_label} is not allowed to decrypt {handle_hex}!",
             )));
         }
         if !contract_allowed {
             return Err(ProcessingError::Recoverable(anyhow!(
-                "{contract_address} is not allowed to decrypt {handle_hex}!",
+                "{contract_label} is not allowed to decrypt {handle_hex}!",
             )));
         }
 
@@ -314,13 +369,23 @@ where
         &self,
         backend: &HostAclBackend<HP>,
         handle: FixedBytes<32>,
-        user_address: Address,
+        user_address: Option<Address>,
         native_user_identity: Option<SolanaHostPubkey>,
-        contract_address: Address,
+        contract_address: Option<Address>,
         native_contract_identity: Option<SolanaHostPubkey>,
     ) -> Result<(bool, bool), ProcessingError> {
         match backend {
             HostAclBackend::Evm(acl_contract) => {
+                let user_address = user_address.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "legacy user decryption ACL check requires user address"
+                    ))
+                })?;
+                let contract_address = contract_address.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "legacy user decryption ACL check requires contract address"
+                    ))
+                })?;
                 let user_allowed_call = acl_contract.isAllowed(handle, user_address);
                 let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
                 tokio::try_join!(user_allowed_call.call(), contract_allowed_call.call())
@@ -332,10 +397,16 @@ where
                     .await
                     .map_err(ProcessingError::Recoverable)?;
                 let handle = SolanaHandle::from(fixed_bytes_to_array(handle));
-                let user_identity = native_user_identity
-                    .unwrap_or_else(|| solana_host_identity_from_evm_address(user_address));
-                let contract_identity = native_contract_identity
-                    .unwrap_or_else(|| solana_host_identity_from_evm_address(contract_address));
+                let user_identity = resolve_solana_identity(
+                    user_address,
+                    native_user_identity,
+                    "user",
+                )?;
+                let contract_identity = resolve_solana_identity(
+                    contract_address,
+                    native_contract_identity,
+                    "contract",
+                )?;
                 Ok((
                     state.acl().persist_allowed(handle, user_identity),
                     state.acl().persist_allowed(handle, contract_identity),
@@ -347,25 +418,42 @@ where
     async fn is_handle_delegated_for_user_decryption(
         &self,
         backend: &HostAclBackend<HP>,
-        delegator_address: Address,
-        user_address: Address,
+        delegator_address: Option<Address>,
+        user_address: Option<Address>,
         native_delegator_identity: Option<SolanaHostPubkey>,
         native_user_identity: Option<SolanaHostPubkey>,
-        contract_address: Address,
+        contract_address: Option<Address>,
         native_contract_identity: Option<SolanaHostPubkey>,
         handle: FixedBytes<32>,
     ) -> Result<bool, ProcessingError> {
         match backend {
-            HostAclBackend::Evm(acl_contract) => acl_contract
-                .isHandleDelegatedForUserDecryption(
-                    delegator_address,
-                    user_address,
-                    contract_address,
-                    handle,
-                )
-                .call()
-                .await
-                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e))),
+            HostAclBackend::Evm(acl_contract) => {
+                let delegator_address = delegator_address.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "legacy delegated user decryption ACL check requires delegator address"
+                    ))
+                })?;
+                let user_address = user_address.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "legacy delegated user decryption ACL check requires user address"
+                    ))
+                })?;
+                let contract_address = contract_address.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "legacy delegated user decryption ACL check requires contract address"
+                    ))
+                })?;
+                acl_contract
+                    .isHandleDelegatedForUserDecryption(
+                        delegator_address,
+                        user_address,
+                        contract_address,
+                        handle,
+                    )
+                    .call()
+                    .await
+                    .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))
+            }
             HostAclBackend::Solana { client } => {
                 let state = client
                     .fetch_state()
@@ -376,17 +464,108 @@ where
                     .map_err(|err| ProcessingError::Recoverable(anyhow!(err)))?
                     .as_secs();
                 Ok(state.acl().is_handle_delegated_for_user_decryption(
-                    native_delegator_identity
-                        .unwrap_or_else(|| solana_host_identity_from_evm_address(delegator_address)),
-                    native_user_identity
-                        .unwrap_or_else(|| solana_host_identity_from_evm_address(user_address)),
-                    native_contract_identity
-                        .unwrap_or_else(|| solana_host_identity_from_evm_address(contract_address)),
+                    resolve_solana_identity(
+                        delegator_address,
+                        native_delegator_identity,
+                        "delegator",
+                    )?,
+                    resolve_solana_identity(user_address, native_user_identity, "user")?,
+                    resolve_solana_identity(
+                        contract_address,
+                        native_contract_identity,
+                        "contract",
+                    )?,
                     SolanaHandle::from(fixed_bytes_to_array(handle)),
                     now,
                 ))
             }
         }
+    }
+
+    pub(crate) fn decode_user_decrypt_calldata(
+        &self,
+        calldata: &[u8],
+    ) -> Result<DecodedUserDecryptCall, ProcessingError> {
+        if let Ok(parsed) =
+            DecryptionNative::delegatedUserDecryptionRequestNativeCall::abi_decode(calldata)
+        {
+            return Ok(DecodedUserDecryptCall {
+                handle_contract_pairs: parsed
+                    .ctHandleContractPairs
+                    .into_iter()
+                    .map(|pair| DecodedHandleContractPair {
+                        handle: pair.ctHandle,
+                        contract_address: None,
+                        contract_identity: Some(SolanaHostPubkey::new(*pair.contractId)),
+                    })
+                    .collect(),
+                user_address: None,
+                user_identity: Some(SolanaHostPubkey::new(*parsed.delegationAccounts.delegateId)),
+                delegator_address: None,
+                delegator_identity: Some(SolanaHostPubkey::new(
+                    *parsed.delegationAccounts.delegatorId,
+                )),
+            });
+        }
+
+        if let Ok(parsed) = delegatedUserDecryptionRequestCall::abi_decode(calldata) {
+            return Ok(DecodedUserDecryptCall {
+                handle_contract_pairs: parsed
+                    .ctHandleContractPairs
+                    .into_iter()
+                    .map(|pair| DecodedHandleContractPair {
+                        handle: pair.ctHandle,
+                        contract_address: Some(pair.contractAddress),
+                        contract_identity: None,
+                    })
+                    .collect(),
+                user_address: Some(parsed.delegationAccounts.delegateAddress),
+                user_identity: None,
+                delegator_address: Some(parsed.delegationAccounts.delegatorAddress),
+                delegator_identity: None,
+            });
+        }
+
+        if let Ok(parsed) = DecryptionNative::userDecryptionRequestNativeCall::abi_decode(calldata)
+        {
+            return Ok(DecodedUserDecryptCall {
+                handle_contract_pairs: parsed
+                    .ctHandleContractPairs
+                    .into_iter()
+                    .map(|pair| DecodedHandleContractPair {
+                        handle: pair.ctHandle,
+                        contract_address: None,
+                        contract_identity: Some(SolanaHostPubkey::new(*pair.contractId)),
+                    })
+                    .collect(),
+                user_address: None,
+                user_identity: Some(SolanaHostPubkey::new(*parsed.userId)),
+                delegator_address: None,
+                delegator_identity: None,
+            });
+        }
+
+        if let Ok(parsed) = userDecryptionRequestCall::abi_decode(calldata) {
+            return Ok(DecodedUserDecryptCall {
+                handle_contract_pairs: parsed
+                    .ctHandleContractPairs
+                    .into_iter()
+                    .map(|pair| DecodedHandleContractPair {
+                        handle: pair.ctHandle,
+                        contract_address: Some(pair.contractAddress),
+                        contract_identity: None,
+                    })
+                    .collect(),
+                user_address: Some(parsed.userAddress),
+                user_identity: None,
+                delegator_address: None,
+                delegator_identity: None,
+            });
+        }
+
+        Err(ProcessingError::Irrecoverable(anyhow!(
+            "was not able to parse calldata for user or delegated user decryption (legacy or native)"
+        )))
     }
 
     pub async fn prepare_decryption_request(
@@ -426,7 +605,7 @@ where
         };
 
         if let Some(user_decrypt_data) = user_decrypt_data {
-            let client_address = user_decrypt_data.user_address.to_checksum(None);
+            let client_address = user_decrypt_data.client_address.clone();
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -523,96 +702,48 @@ fn solana_host_identity_from_evm_address(address: Address) -> SolanaHostPubkey {
     host_identity_from_evm_address(SolanaEvmAddress::from(address.into_array()))
 }
 
-#[derive(Default)]
-struct UserIdentityOverrides {
-    user_id: Option<SolanaHostPubkey>,
-    delegate_id: Option<SolanaHostPubkey>,
-    delegator_id: Option<SolanaHostPubkey>,
-    contract_ids: Option<HashMap<Address, SolanaHostPubkey>>,
-}
-
-fn parse_user_identity_overrides(
-    contract_addresses: &[Address],
-    extra_data: &[u8],
-) -> Result<UserIdentityOverrides, ProcessingError> {
-    let Some(identities) =
-        parse_extra_data_identities(extra_data).map_err(ProcessingError::Irrecoverable)?
-    else {
-        return Ok(UserIdentityOverrides::default());
-    };
-
-    if identities.len() == contract_addresses.len() {
-        return Ok(UserIdentityOverrides {
-            contract_ids: Some(zip_contract_identities(contract_addresses, identities)?),
-            ..UserIdentityOverrides::default()
-        });
+fn resolve_solana_identity(
+    address: Option<Address>,
+    native_identity: Option<SolanaHostPubkey>,
+    label: &str,
+) -> Result<SolanaHostPubkey, ProcessingError> {
+    if let Some(native_identity) = native_identity {
+        return Ok(native_identity);
     }
 
-    if identities.len() == contract_addresses.len() + 1 {
-        let user_id = identities
-            .first()
-            .copied()
-            .map(SolanaHostPubkey::new)
-            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("missing v2 user identity")))?;
-        return Ok(UserIdentityOverrides {
-            user_id: Some(user_id),
-            contract_ids: Some(zip_contract_identities(
-                contract_addresses,
-                identities.into_iter().skip(1).collect(),
-            )?),
-            ..UserIdentityOverrides::default()
-        });
-    }
-
-    if identities.len() == contract_addresses.len() + 2 {
-        let delegator_id = identities
-            .first()
-            .copied()
-            .map(SolanaHostPubkey::new)
-            .ok_or_else(|| {
-                ProcessingError::Irrecoverable(anyhow!("missing v2 delegator identity"))
-            })?;
-        let delegate_id = identities
-            .get(1)
-            .copied()
-            .map(SolanaHostPubkey::new)
-            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("missing v2 delegate identity")))?;
-        return Ok(UserIdentityOverrides {
-            delegator_id: Some(delegator_id),
-            delegate_id: Some(delegate_id),
-            contract_ids: Some(zip_contract_identities(
-                contract_addresses,
-                identities.into_iter().skip(2).collect(),
-            )?),
-            ..UserIdentityOverrides::default()
-        });
+    if let Some(address) = address {
+        return Ok(solana_host_identity_from_evm_address(address));
     }
 
     Err(ProcessingError::Irrecoverable(anyhow!(
-        "v2 decryption extra_data contains {} identities, but calldata contains {} contract addresses",
-        identities.len(),
-        contract_addresses.len()
+        "missing {label} identity for Solana ACL check"
     )))
 }
 
-fn zip_contract_identities(
-    contract_addresses: &[Address],
-    contract_ids: Vec<[u8; 32]>,
-) -> Result<HashMap<Address, SolanaHostPubkey>, ProcessingError> {
-    if contract_ids.len() != contract_addresses.len() {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "v2 decryption extra_data contains {} contract ids, but calldata contains {} contract addresses",
-            contract_ids.len(),
-            contract_addresses.len()
-        )));
+fn format_user_identity(
+    address: Option<Address>,
+    native_identity: Option<SolanaHostPubkey>,
+) -> String {
+    if let Some(address) = address {
+        address.to_string()
+    } else if let Some(identity) = native_identity {
+        format!("0x{}", hex::encode(identity.as_bytes()))
+    } else {
+        "<missing-user-identity>".to_string()
     }
+}
 
-    Ok(HashMap::from_iter(
-        contract_addresses
-            .iter()
-            .copied()
-            .zip(contract_ids.into_iter().map(SolanaHostPubkey::new)),
-    ))
+fn format_contract_identity(
+    address: Option<Address>,
+    native_identity: Option<SolanaHostPubkey>,
+) -> String {
+    if let Some(address) = address {
+        address.to_string()
+    } else if let Some(identity) = native_identity {
+        format!("0x{}", hex::encode(identity.as_bytes()))
+    } else {
+        "<missing-contract-identity>".to_string()
+    }
 }
 
 fn fixed_bytes_to_array(bytes: FixedBytes<32>) -> [u8; 32] {
@@ -622,17 +753,22 @@ fn fixed_bytes_to_array(bytes: FixedBytes<32>) -> [u8; 32] {
 }
 
 pub struct UserDecryptionExtraData {
-    pub user_address: Address,
+    pub client_address: String,
     pub public_key: Bytes,
 }
 
 impl UserDecryptionExtraData {
-    pub fn new(user_address: Address, public_key: Bytes) -> Self {
+    pub fn new(client_address: String, public_key: Bytes) -> Self {
         Self {
-            user_address,
+            client_address,
             public_key,
         }
     }
+}
+
+fn native_client_address_from_identity(identity: SolanaHostPubkey) -> Address {
+    let digest = Keccak256::digest(identity.as_bytes());
+    Address::from_slice(&digest[12..])
 }
 
 #[cfg(test)]
@@ -653,6 +789,17 @@ mod tests {
         Recoverable,
         #[allow(unused)]
         Irrecoverable,
+    }
+
+    #[test]
+    fn native_client_address_from_identity_is_deterministic() {
+        let identity = SolanaHostPubkey::new([0x42; 32]);
+        let derived = native_client_address_from_identity(identity);
+        let digest = Keccak256::digest(identity.as_bytes());
+
+        assert_eq!(derived, Address::from_slice(&digest[12..]));
+        assert_eq!(derived, native_client_address_from_identity(identity));
+        assert_ne!(derived, Address::ZERO);
     }
 
     enum PubDecryptACLMock {
