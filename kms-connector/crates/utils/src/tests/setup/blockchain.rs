@@ -12,8 +12,8 @@ use anyhow::anyhow;
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
+use fhevm_host_bindings::kms_generation::KMSGeneration::{self, KMSGenerationInstance};
 use std::{path::PathBuf, process::Command, str::FromStr, sync::LazyLock, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
