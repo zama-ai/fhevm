@@ -146,6 +146,9 @@ describe("resolve", () => {
     expect(shouldRetryGitHubCliError("gh: HTTP 503")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 502 Bad Gateway")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 504 Gateway Timeout")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: HTTP 429 Too Many Requests")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: API rate limit exceeded for user ID 12345 (HTTP 403)")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)")).toBe(true);
     expect(
       shouldRetryGitHubCliError(
         "gh: No server is currently available to service your request. Sorry about that. Please try resubmitting your request and contact us if the problem persists. (HTTP 503)",

@@ -8,8 +8,10 @@ const FHEVM_REPO = "zama-ai/fhevm";
 const GITOPS_REPO = "zama-zws/gitops";
 const GH_OWNER = "zama-ai";
 const GH_API_TIMEOUT_MS = 20_000;
-const GH_API_RETRIES = 5;
+const GH_API_RETRIES = 7;
 const GH_API_RETRY_DELAY_MS = 1_000;
+const GH_API_RETRY_MAX_DELAY_MS = 16_000;
+const GH_API_RETRY_JITTER_RATIO = 0.2;
 const GH_PACKAGE_VERSION_LIMIT = 5_000;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
@@ -37,6 +39,9 @@ export const explainGitHubCliError = (message: string): string => {
 export const shouldRetryGitHubCliError = (message: string) => {
   const lower = message.toLowerCase();
   return (
+    lower.includes("rate limit") ||
+    lower.includes("secondary rate limit") ||
+    /\bhttp 429\b/.test(lower) ||
     lower.includes("connection refused") ||
     lower.includes("timed out") ||
     lower.includes("tls handshake timeout") ||
@@ -51,6 +56,11 @@ export const shouldRetryGitHubCliError = (message: string) => {
   );
 };
 
+const retryDelayMs = (attempt: number) => {
+  const base = Math.min(GH_API_RETRY_DELAY_MS * 2 ** (attempt - 1), GH_API_RETRY_MAX_DELAY_MS);
+  return base + Math.floor(base * GH_API_RETRY_JITTER_RATIO * Math.random());
+};
+
 const runGhApi = async <T>(apiPath: string): Promise<T> => {
   for (let attempt = 1; attempt <= GH_API_RETRIES; attempt += 1) {
     try {
@@ -59,7 +69,7 @@ const runGhApi = async <T>(apiPath: string): Promise<T> => {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
-        await Bun.sleep(GH_API_RETRY_DELAY_MS * 2 ** (attempt - 1));
+        await Bun.sleep(retryDelayMs(attempt));
         continue;
       }
       throw new GitHubApiError(explainGitHubCliError(raw));
