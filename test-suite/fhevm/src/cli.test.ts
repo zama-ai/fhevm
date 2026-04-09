@@ -111,6 +111,17 @@ describe("cli", () => {
     expect(output).toContain("[TESTNAME]");
   });
 
+  test("prints rollout help", async () => {
+    const result = await execCli(["rollout", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli rollout");
+    expect(output).toContain("--from");
+    expect(output).toContain("--to");
+    expect(output).toContain("--order");
+    expect(output).toContain("--out");
+  });
+
   test("lists bundled test profiles", async () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);

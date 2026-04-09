@@ -189,6 +189,26 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
+## Rollout Lock Generation
+
+For release compatibility matrices, generate ephemeral mixed-version lock files from two pinned bundles and an explicit rollout order:
+
+```sh
+./fhevm-cli rollout \
+  --from .fhevm/state/locks/latest-supported.json \
+  --to .fhevm/state/locks/latest-main.json \
+  --order relayer,contracts,kms-plane,coprocessor,test-suite \
+  --out /tmp/fhevm-rollout
+```
+
+`rollout` requires the full ordered group list exactly once. It writes:
+
+- `00-baseline.lock.json`
+- one cumulative lock file per rollout step (`01-relayer.lock.json`, ...)
+- `matrix.json` for GitHub Actions matrix expansion
+
+The generated lock files are CI artifacts, not checked-in state.
+
 ## Version Override via Environment Variables
 
 After resolving a target bundle, the CLI applies **environment variable overrides**: any

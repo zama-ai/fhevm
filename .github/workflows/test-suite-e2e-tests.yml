@@ -83,7 +83,11 @@ on:
         default: ""
         type: string
       lock-artifact-name:
-        description: "Uploaded lock artifact name used to freeze the baseline bundle"
+        description: "Uploaded lock artifact name used to freeze the resolved bundle"
+        default: ""
+        type: string
+      lock-file-name:
+        description: "Specific lock file to use inside the uploaded lock artifact"
         default: ""
         type: string
       kms-core-version:
@@ -93,6 +97,10 @@ on:
       scenario:
         description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
         default: "two-of-two"
+        type: string
+      test-profile:
+        description: "Named test profile to run instead of the default standard suite"
+        default: "standard"
         type: string
   workflow_call:
     secrets:
@@ -140,6 +148,7 @@ jobs:
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
+      TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -203,9 +212,17 @@ jobs:
         if: ${{ inputs.lock-artifact-name != '' }}
         run: |
           set -euo pipefail
-          lock_file="$(find "${RUNNER_TEMP}/baseline-lock" -maxdepth 1 -name '*.json' -print -quit)"
+          if [ -n "${{ inputs.lock-file-name }}" ]; then
+            lock_file="${RUNNER_TEMP}/baseline-lock/${{ inputs.lock-file-name }}"
+          else
+            lock_file="$(find "${RUNNER_TEMP}/baseline-lock" -maxdepth 1 -name '*.json' -print -quit)"
+          fi
           if [ -z "$lock_file" ]; then
             echo "Could not locate downloaded baseline lock artifact" >&2
+            exit 1
+          fi
+          if [ ! -f "$lock_file" ]; then
+            echo "Could not locate requested lock file: $lock_file" >&2
             exit 1
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
@@ -249,10 +266,10 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
-      - name: Standard e2e suite
+      - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test standard
+          ./fhevm-cli test "$TEST_PROFILE"
 
       - name: Host listener poller test
         working-directory: test-suite/fhevm

@@ -1,0 +1,117 @@
+name: test-suite-compatibility-matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Baseline target or lock file path"
+        default: "latest-supported"
+        type: string
+      to:
+        description: "Upgrade target or lock file path"
+        default: "latest-main"
+        type: string
+      order:
+        description: "Comma-separated rollout group order"
+        default: "relayer,contracts,kms-plane,coprocessor,test-suite"
+        type: string
+      scenario:
+        description: "Deployment scenario"
+        default: "two-of-two"
+        type: string
+      test-profile:
+        description: "Named test profile to run"
+        default: "standard"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.from }}-${{ github.event.inputs.to }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  prepare_rollout:
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+    outputs:
+      artifact_name: ${{ steps.prepare.outputs.artifact_name }}
+      matrix: ${{ steps.prepare.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - id: prepare
+        name: Resolve bundles and generate rollout locks
+        working-directory: test-suite/fhevm
+        env:
+          FROM_INPUT: ${{ inputs.from }}
+          TO_INPUT: ${{ inputs.to }}
+          ORDER_INPUT: ${{ inputs.order }}
+        run: |
+          set -euo pipefail
+          resolve_input() {
+            local value="$1"
+            if [ -f "$value" ]; then
+              printf '%s\n' "$value"
+              return
+            fi
+            ./fhevm-cli resolve --target "$value" | tail -n1
+          }
+          out_dir="${RUNNER_TEMP}/compat-rollout"
+          artifact_name="compat-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          from_lock="$(resolve_input "$FROM_INPUT")"
+          to_lock="$(resolve_input "$TO_INPUT")"
+          ./fhevm-cli rollout --from "$from_lock" --to "$to_lock" --order "$ORDER_INPUT" --out "$out_dir"
+          {
+            echo "artifact_name=$artifact_name"
+            echo "matrix<<EOF"
+            cat "$out_dir/matrix.json"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload rollout locks
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: ${{ steps.prepare.outputs.artifact_name }}
+          path: ${{ runner.temp }}/compat-rollout
+
+  compatibility-e2e:
+    name: compatibility-${{ matrix.name }}
+    needs: [prepare_rollout]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_rollout.outputs.matrix) }}
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      build: false
+      lock-artifact-name: ${{ needs.prepare_rollout.outputs.artifact_name }}
+      lock-file-name: ${{ matrix.lockFile }}
+      scenario: ${{ inputs.scenario }}
+      test-profile: ${{ inputs.test-profile }}
