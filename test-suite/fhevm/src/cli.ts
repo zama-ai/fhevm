@@ -259,18 +259,14 @@ const root = defineCommand({
       },
     }),
     rollout: defineCommand({
-      meta: { name: "rollout", description: "Generate cumulative mixed-version rollout lock files and matrix metadata." },
+      meta: { name: "rollout", description: "Generate cumulative mixed-version rollout lock files from a compat-test definition." },
       args: {
-        from: { type: "string", description: "Baseline lock file path." },
-        to: { type: "string", description: "Upgrade-target lock file path." },
-        order: { type: "string", description: "Comma-separated rollout group order." },
+        "compat-test": { type: "string", description: "Compat-test JSON path." },
         out: { type: "string", description: "Output directory for generated lock files and matrix.json." },
       },
       async run({ args }) {
         await rollout({
-          from: asString(args.from) ?? "",
-          to: asString(args.to) ?? "",
-          order: asString(args.order) ?? "",
+          compatTest: asString(args["compat-test"]) ?? "",
           out: asString(args.out) ?? "",
         });
       },

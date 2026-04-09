@@ -116,9 +116,7 @@ describe("cli", () => {
     const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
     expect(output).toContain("fhevm-cli rollout");
-    expect(output).toContain("--from");
-    expect(output).toContain("--to");
-    expect(output).toContain("--order");
+    expect(output).toContain("--compat-test");
     expect(output).toContain("--out");
   });
 
