@@ -21,7 +21,7 @@ contract KMSGenerationMock {
 
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
 
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
@@ -52,7 +52,7 @@ contract KMSGenerationMock {
 
         emit PrepKeygenResponse(prepKeygenId, signature, kmsTxSender);
 
-        emit KeygenRequest(prepKeygenId, keyId);
+        emit KeygenRequest(prepKeygenId, keyId, "");
     }
 
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {

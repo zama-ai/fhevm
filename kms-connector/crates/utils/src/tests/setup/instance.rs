@@ -8,8 +8,8 @@ use alloy::{primitives::Address, transports::http::reqwest::Url};
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
-    kms_generation::KMSGeneration::KMSGenerationInstance,
 };
+use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage};
