@@ -192,6 +192,8 @@ async fn setup_anvil(block_time: u64) -> anyhow::Result<ContainerAsync<GenericIm
             TEST_MNEMONIC,
             "--block-time",
             &format!("{block_time}"),
+            // Reduce number of slots in an epoch to consider transaction as finalized ASAP.
+            // A tx is generally considered finalized after two epochs.
             "--slots-in-an-epoch",
             "1",
         ])
