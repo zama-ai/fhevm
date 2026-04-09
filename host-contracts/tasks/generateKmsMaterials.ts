@@ -14,6 +14,7 @@ task('task:triggerKeygen')
     await hre.run('compile:specific', { contract: 'contracts' });
     console.log('Trigger key generation in KMSGeneration contract.');
 
+    // Get the deployer wallet.
     const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
@@ -21,9 +22,11 @@ task('task:triggerKeygen')
       loadHostAddresses();
     }
 
+    // Get KMSGeneration contract.
     const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
     const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
 
+    // Request the key generation.
     const keygenTx = await kmsGeneration.keygen(paramsType);
     await keygenTx.wait();
 
@@ -43,6 +46,7 @@ task('task:triggerCrsgen')
     await hre.run('compile:specific', { contract: 'contracts' });
     console.log('Trigger CRS generation in KMSGeneration contract.');
 
+    // Get the deployer wallet.
     const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
@@ -50,9 +54,11 @@ task('task:triggerCrsgen')
       loadHostAddresses();
     }
 
+    // Get KMSGeneration contract.
     const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
     const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
 
+    // Request the CRS generation.
     const crsgenTx = await kmsGeneration.crsgenRequest(maxBitLength, paramsType);
     await crsgenTx.wait();
 
