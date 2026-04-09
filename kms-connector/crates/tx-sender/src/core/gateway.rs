@@ -36,6 +36,17 @@ pub struct GatewaySenderConfig {
     pub gas_multiplier_percent: usize,
 }
 
+impl From<&super::Config> for GatewaySenderConfig {
+    fn from(config: &super::Config) -> Self {
+        Self {
+            tx_retries: config.tx_retries,
+            tx_retry_interval: config.tx_retry_interval,
+            trace_reverted_tx: config.trace_reverted_tx,
+            gas_multiplier_percent: config.gas_multiplier_percent,
+        }
+    }
+}
+
 impl<F, P> GatewayTransactionSender<F, P>
 where
     F: TxFiller,
