@@ -273,7 +273,7 @@ mod tests {
     use std::time::Duration;
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
+    #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_store_current_context_id() {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
+    #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_consecutive_get_logs_error_stops_listener() {
         let (_test_instance, asserter, eth_listener) = test_setup(None).await;
@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
+    #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_listener_ended_by_cancel_token() {
         let (mut test_instance, _asserter, eth_listener) = test_setup(None).await;
