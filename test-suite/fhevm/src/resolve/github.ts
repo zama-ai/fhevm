@@ -11,6 +11,8 @@ const GH_API_TIMEOUT_MS = 20_000;
 const GH_API_RETRIES = 7;
 const GH_API_RETRY_DELAY_MS = 1_000;
 const GH_API_RETRY_MAX_DELAY_MS = 16_000;
+const GH_API_RATE_LIMIT_RETRY_DELAY_MS = 60_000;
+const GH_API_RATE_LIMIT_RETRY_MAX_DELAY_MS = 300_000;
 const GH_API_RETRY_JITTER_RATIO = 0.2;
 const GH_PACKAGE_VERSION_LIMIT = 5_000;
 
@@ -36,12 +38,15 @@ export const explainGitHubCliError = (message: string): string => {
 };
 
 /** Runs `gh api` and parses its JSON payload with CLI-specific error handling. */
+export const isRateLimitGitHubCliError = (message: string) => {
+  const lower = message.toLowerCase();
+  return lower.includes("secondary rate limit") || lower.includes("rate limit") || /\bhttp 429\b/.test(lower);
+};
+
 export const shouldRetryGitHubCliError = (message: string) => {
   const lower = message.toLowerCase();
   return (
-    lower.includes("rate limit") ||
-    lower.includes("secondary rate limit") ||
-    /\bhttp 429\b/.test(lower) ||
+    isRateLimitGitHubCliError(message) ||
     lower.includes("connection refused") ||
     lower.includes("timed out") ||
     lower.includes("tls handshake timeout") ||
@@ -56,8 +61,10 @@ export const shouldRetryGitHubCliError = (message: string) => {
   );
 };
 
-const retryDelayMs = (attempt: number) => {
-  const base = Math.min(GH_API_RETRY_DELAY_MS * 2 ** (attempt - 1), GH_API_RETRY_MAX_DELAY_MS);
+export const retryDelayMs = (attempt: number, rateLimited = false) => {
+  const initialDelay = rateLimited ? GH_API_RATE_LIMIT_RETRY_DELAY_MS : GH_API_RETRY_DELAY_MS;
+  const maxDelay = rateLimited ? GH_API_RATE_LIMIT_RETRY_MAX_DELAY_MS : GH_API_RETRY_MAX_DELAY_MS;
+  const base = Math.min(initialDelay * 2 ** (attempt - 1), maxDelay);
   return base + Math.floor(base * GH_API_RETRY_JITTER_RATIO * Math.random());
 };
 
@@ -81,7 +88,7 @@ const runGhApi = async <T>(apiPath: string): Promise<T> => {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       if (attempt < GH_API_RETRIES && shouldRetryGitHubCliError(raw)) {
-        const delay = retryDelayMs(attempt);
+        const delay = retryDelayMs(attempt, isRateLimitGitHubCliError(raw));
         console.log(
           `[resolve] gh api retry ${attempt}/${GH_API_RETRIES - 1} after ${retryReason(raw)}; waiting ${(delay / 1000).toFixed(1)}s`,
         );
