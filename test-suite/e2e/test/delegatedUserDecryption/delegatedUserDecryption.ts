@@ -6,6 +6,25 @@ import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
 const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
+const DELEGATION_EXPIRY_SECONDS = 75;
+const DELEGATION_EXPIRY_POLL_MS = 2_000;
+
+const relayerErrorLabel = (error: unknown): string | undefined => {
+  if (typeof error !== 'object' || error === null || !('relayerApiError' in error)) {
+    return undefined;
+  }
+  return (error as { relayerApiError?: { label?: string } }).relayerApiError?.label;
+};
+
+const waitForDelegationExpiry = async (expirationTimestamp: number) => {
+  while (true) {
+    const latestBlock = await ethers.provider.getBlock('latest');
+    if (latestBlock && latestBlock.timestamp > expirationTimestamp) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, DELEGATION_EXPIRY_POLL_MS));
+  }
+};
 
 describe('Delegated user decryption', function () {
   before(async function () {
@@ -202,6 +221,8 @@ describe('Delegated user decryption', function () {
 
   describe('negative-acl', function () {
     it('should reject when delegation has been revoked', async function () {
+      // 10min — observed ~6m37s due to two 15-block waits for delegation propagation in sepolia
+      this.timeout(600000); 
       // First, ensure Bob has delegation.
       const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
       const delegateTx = await this.smartWallet
@@ -246,8 +267,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected after revocation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
@@ -267,8 +288,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected without delegation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
@@ -301,26 +322,20 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for wrong contract');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
 
     it('should reject when delegation has expired', async function () {
-      // Expiration must be >1h from chain time (FHE library constraint).
-      // Use block timestamp, not Date.now(), since evm_increaseTime shifts chain clock.
-      const oneHour = 3600;
-      const buffer = 60;
       const latestBlock = await ethers.provider.getBlock('latest');
-      const expirationTimestamp = latestBlock!.timestamp + oneHour + buffer;
+      const expirationTimestamp = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
       const tx = await this.smartWallet
         .connect(this.signers.bob)
         .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, expirationTimestamp);
       await tx.wait();
 
-      // Fast-forward time past the expiration.
-      await ethers.provider.send('evm_increaseTime', [oneHour + buffer + 1]);
-      await ethers.provider.send('evm_mine', []);
+      await waitForDelegationExpiry(expirationTimestamp);
 
       const currentBlock = await ethers.provider.getBlockNumber();
       await waitForBlock(currentBlock + 15);
@@ -340,8 +355,8 @@ describe('Delegated user decryption', function () {
           publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for expired delegation');
-      } catch (err: any) {
-        expect(err.relayerApiError?.label).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
     });
   });

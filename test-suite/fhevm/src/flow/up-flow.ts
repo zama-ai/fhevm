@@ -1,7 +1,6 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
-import fs from "node:fs/promises";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
@@ -173,6 +172,23 @@ const SCHEMA_GUARDS = {
 const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
 export const preflightPorts = (state: Pick<State, "scenario">) =>
   [...new Set([...PORTS, ...state.scenario.hostChains.map((chain) => chain.rpcPort)])];
+
+/** Throws if Docker memory is below the scenario minimum: 16 GB standard, 32 GB for multi-chain + multi-coprocessor.
+ *  Uses a 1 GB slack to account for VM overhead. */
+export const assertDockerMemory = async (scenario: State["scenario"]) => {
+  const result = await run(["docker", "info", "--format", "{{.MemTotal}}"], { allowFailure: true });
+  if (result.code !== 0) return;
+  const memBytes = parseInt(result.stdout.trim(), 10);
+  if (isNaN(memBytes)) return;
+
+  const minGb = scenario.hostChains.length > 1 && scenario.topology.count > 1 ? 32 : 16;
+  if (memBytes >= (minGb - 1) * 1024 ** 3) return;
+
+  const reportedGb = Math.round((memBytes / 1024 ** 3) * 2) / 2;
+  throw new PreflightError(
+    `Docker memory is ${reportedGb.toFixed(1)} GB — at least ${minGb} GB required.\nAllocate at least ${minGb} GB of memory to Docker and retry.`,
+  );
+};
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
 
 const postgresExecOptions = () => ({
@@ -815,6 +831,7 @@ export const previewStateFromBundle = (
 const bootstrapState = async (options: UpOptions) => {
   console.log(`[up] target=${options.target}`);
   const scenario = await resolveScenarioForOptions(options);
+  await assertDockerMemory(scenario);
   const resolveStarted = Date.now();
   const resolved = await resolveBundle(options, process.env);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
@@ -933,6 +950,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   }
   console.log(`[up] target=${options.target}`);
   const scenario = await resolveScenarioForOptions(options);
+  await assertDockerMemory(scenario);
   const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
