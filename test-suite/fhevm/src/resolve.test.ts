@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import { validateBundleCompatibility } from "./compat/compat";
-import { shouldRetryGitHubCliError, shouldStopPackageTagScan } from "./resolve/github";
+import { explainGitHubCliError, shouldRetryGitHubCliError, shouldStopPackageTagScan } from "./resolve/github";
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
@@ -152,6 +152,14 @@ describe("resolve", () => {
       ),
     ).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 404")).toBe(false);
+  });
+
+  test("rewrites missing package scope errors into actionable guidance", () => {
+    expect(
+      explainGitHubCliError(
+        "gh: You need at least read:packages scope to get a package's versions. (HTTP 403)",
+      ),
+    ).toContain("gh auth refresh -s read:packages");
   });
 
   test("stops package tag scans when the requested tag is found", () => {

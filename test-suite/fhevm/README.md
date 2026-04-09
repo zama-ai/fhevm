@@ -62,6 +62,8 @@ Most users should start with `latest-main`.
 
 Use `latest-supported`, network targets, or `sha` when you are reproducing a known supported or deployed bundle rather than validating current mainline behavior.
 
+Live target resolution uses GitHub metadata. For `latest-main`, `sha`, and network targets, install `gh` and authenticate it with package-read access, for example `gh auth refresh -s read:packages`, or provide a `GH_TOKEN` with that scope.
+
 Compat is mainly there to protect those reproduction and cross-era paths. For the common `latest-main` path, the mental model should stay simple: mainline baseline, optional surgical local or CI repo-owned overrides, explicit topology when needed. For the shim/incompatibility decision tree, see `COMPAT.md`.
 
 ## Quick Start
@@ -472,6 +474,14 @@ instances:
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
+
+## Troubleshooting
+
+**Services exit silently shortly after startup (e.g. `coprocessor-zkproof-worker`)**
+
+This is usually a Docker memory limit. The stack requires at least 16 GB allocated to Docker. Scenarios with both multiple chains and multiple coprocessors need 32 GB.
+
+Check your current allocation in Docker Desktop → Settings → Resources → Memory, then restart the stack.
 
 ## Runtime State
 
