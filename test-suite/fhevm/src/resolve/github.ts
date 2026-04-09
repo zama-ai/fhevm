@@ -95,8 +95,9 @@ export const rateLimitRetryDelayMs = (headers: Record<string, string>, attempt: 
   if (Number.isFinite(retryAfter) && retryAfter > 0) {
     return retryAfter * SECOND_MS;
   }
+  const remaining = Number(headers["x-ratelimit-remaining"]);
   const reset = Number(headers["x-ratelimit-reset"]);
-  if (Number.isFinite(reset) && reset > 0) {
+  if (remaining === 0 && Number.isFinite(reset) && reset > 0) {
     return Math.max((reset * SECOND_MS) - now, GH_API_RATE_LIMIT_RETRY_DELAY_MS);
   }
   return retryDelayMs(attempt, true);

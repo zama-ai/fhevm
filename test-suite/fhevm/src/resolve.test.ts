@@ -188,7 +188,17 @@ describe("resolve", () => {
   });
 
   test("falls back to X-RateLimit-Reset for rate-limit cooldowns", () => {
-    expect(rateLimitRetryDelayMs({ "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(150_000);
+    expect(rateLimitRetryDelayMs({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(150_000);
+  });
+
+  test("does not use X-RateLimit-Reset when the primary bucket still has room", () => {
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+      expect(rateLimitRetryDelayMs({ "x-ratelimit-remaining": "42", "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(60_000);
+    } finally {
+      Math.random = random;
+    }
   });
 
   test("rewrites missing package scope errors into actionable guidance", () => {
