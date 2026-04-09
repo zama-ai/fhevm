@@ -3583,7 +3583,9 @@ mod fhe_sum_tests {
 
     #[test]
     fn fhe_sum_scalar_not_supported() {
-        assert!(!does_fhe_operation_support_scalar(&SupportedFheOperations::FheSum));
+        assert!(!does_fhe_operation_support_scalar(
+            &SupportedFheOperations::FheSum
+        ));
         assert!(!SupportedFheOperations::FheSum.does_have_more_than_one_scalar());
     }
 
