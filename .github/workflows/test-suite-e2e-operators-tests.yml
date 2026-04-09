@@ -278,9 +278,9 @@ jobs:
     name: test-suite-e2e-operators-tests/operators-e2e-test-a
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
@@ -416,9 +416,9 @@ jobs:
     name: test-suite-e2e-operators-tests/operators-e2e-test-b
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
