@@ -50,6 +50,7 @@ concurrency:
 jobs:
   setup-instance:
     name: test-suite-e2e-operators-tests/setup-instance
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.grep != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -67,9 +68,49 @@ jobs:
           backend: aws
           profile: bench
 
+  setup-instance-a:
+    name: test-suite-e2e-operators-tests/setup-instance-a
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: bench
+
+  setup-instance-b:
+    name: test-suite-e2e-operators-tests/setup-instance-b
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+    outputs:
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: bench
+
   operators-e2e-test:
     name: test-suite-e2e-operators-tests/operators-e2e-test
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.grep != '' }}
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
@@ -145,10 +186,8 @@ jobs:
         run: |
           args=(
             --target latest-main
-            --coprocessor-tfhe-worker-threads 96
+            --coprocessor-tfhe-worker-threads 64
             --coprocessor-tfhe-worker-tokio-threads 32
-            --coprocessor-tfhe-worker-polling-interval-ms 500
-            --coprocessor-tfhe-worker-work-items-batch-size 64
           )
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
@@ -235,9 +274,321 @@ jobs:
         run: |
           ./fhevm-cli clean
 
+  operators-e2e-test-a:
+    name: test-suite-e2e-operators-tests/operators-e2e-test-a
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      BUILD: ${{ inputs.build && 'true' || 'false' }}
+      SCENARIO: ${{ inputs.scenario }}
+      SHARD_HALF: first
+    runs-on: ${{ needs.setup-instance-a.outputs.runner-name }}
+    needs: setup-instance-a
+    timeout-minutes: 1440
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb
+
+      - name: Install unzip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: |
+          bun install --frozen-lockfile
+
+      - name: Deploy fhevm Stack
+        working-directory: test-suite/fhevm
+        run: |
+          args=(
+            --target latest-main
+            --coprocessor-tfhe-worker-threads 64
+            --coprocessor-tfhe-worker-tokio-threads 32
+          )
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          if [ -n "$SCENARIO" ]; then
+            args+=(--scenario "$SCENARIO")
+          fi
+          ./fhevm-cli deploy "${args[@]}"
+
+      - name: Verify tfhe-worker args
+        run: |
+          echo "BUILD=$BUILD"
+          echo "SHARD_HALF=$SHARD_HALF"
+          for container in coprocessor-tfhe-worker coprocessor1-tfhe-worker; do
+            if docker inspect "$container" >/dev/null 2>&1; then
+              echo "::group::${container} command"
+              docker inspect "$container" --format '{{json .Config.Cmd}}'
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Run operators shard
+        working-directory: test-suite/fhevm
+        run: |
+          mapfile -t host_files < <(rg -l -g '*.ts' 'test operator|FHEVM manual operations' "$GITHUB_WORKSPACE/test-suite/e2e/test" | sort -V)
+          count=${#host_files[@]}
+          if [ "$count" -eq 0 ]; then
+            echo "No operators files found" >&2
+            exit 1
+          fi
+          mid=$(( (count + 1) / 2 ))
+          selected_files=("${host_files[@]:0:$mid}")
+          echo "Running shard $SHARD_HALF with ${#selected_files[@]}/$count files"
+          inner="cd /app/test-suite/e2e && npx hardhat test --parallel --network staging"
+          for file in "${selected_files[@]}"; do
+            container_file="/app/${file#"$GITHUB_WORKSPACE/"}"
+            printf -v inner '%s %q' "$inner" "$container_file"
+          done
+          echo "$inner"
+          docker exec -e npm_config_update_notifier=false -e NPM_CONFIG_UPDATE_NOTIFIER=false fhevm-test-suite-e2e-debug sh -lc "$inner"
+
+      - name: Show logs
+        working-directory: test-suite/fhevm
+        if: failure()
+        run: |
+          snapshot_logs() {
+            local group="$1"
+            local container="$2"
+            local filter="${3:-}"
+            echo "::group::${group}"
+            if [ -n "$filter" ]; then
+              docker logs --tail 120 "${container}" 2>&1 | grep -v "$filter" || true
+            else
+              docker logs --tail 120 "${container}" 2>&1 || true
+            fi
+            echo "::endgroup::"
+          }
+          snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "Host Listener" coprocessor-host-listener
+          snapshot_logs "Gateway Listener" coprocessor-gw-listener
+          snapshot_logs "SNS Worker Logs" coprocessor-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Transaction Sender Logs (filtered)" coprocessor-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "ZKProof Worker" coprocessor-zkproof-worker
+          snapshot_logs "TFHE Worker" coprocessor-tfhe-worker
+
+      - name: Cleanup
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean
+
+  operators-e2e-test-b:
+    name: test-suite-e2e-operators-tests/operators-e2e-test-b
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.grep }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'read'
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      BUILD: ${{ inputs.build && 'true' || 'false' }}
+      SCENARIO: ${{ inputs.scenario }}
+      SHARD_HALF: second
+    runs-on: ${{ needs.setup-instance-b.outputs.runner-name }}
+    needs: setup-instance-b
+    timeout-minutes: 1440
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb
+
+      - name: Install unzip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: |
+          bun install --frozen-lockfile
+
+      - name: Deploy fhevm Stack
+        working-directory: test-suite/fhevm
+        run: |
+          args=(
+            --target latest-main
+            --coprocessor-tfhe-worker-threads 64
+            --coprocessor-tfhe-worker-tokio-threads 32
+          )
+          if [ "$BUILD" = "true" ]; then
+            args+=(--build)
+          fi
+          if [ -n "$SCENARIO" ]; then
+            args+=(--scenario "$SCENARIO")
+          fi
+          ./fhevm-cli deploy "${args[@]}"
+
+      - name: Verify tfhe-worker args
+        run: |
+          echo "BUILD=$BUILD"
+          echo "SHARD_HALF=$SHARD_HALF"
+          for container in coprocessor-tfhe-worker coprocessor1-tfhe-worker; do
+            if docker inspect "$container" >/dev/null 2>&1; then
+              echo "::group::${container} command"
+              docker inspect "$container" --format '{{json .Config.Cmd}}'
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Run operators shard
+        working-directory: test-suite/fhevm
+        run: |
+          mapfile -t host_files < <(rg -l -g '*.ts' 'test operator|FHEVM manual operations' "$GITHUB_WORKSPACE/test-suite/e2e/test" | sort -V)
+          count=${#host_files[@]}
+          if [ "$count" -eq 0 ]; then
+            echo "No operators files found" >&2
+            exit 1
+          fi
+          mid=$(( (count + 1) / 2 ))
+          selected_files=("${host_files[@]:$mid}")
+          echo "Running shard $SHARD_HALF with ${#selected_files[@]}/$count files"
+          inner="cd /app/test-suite/e2e && npx hardhat test --parallel --network staging"
+          for file in "${selected_files[@]}"; do
+            container_file="/app/${file#"$GITHUB_WORKSPACE/"}"
+            printf -v inner '%s %q' "$inner" "$container_file"
+          done
+          echo "$inner"
+          docker exec -e npm_config_update_notifier=false -e NPM_CONFIG_UPDATE_NOTIFIER=false fhevm-test-suite-e2e-debug sh -lc "$inner"
+
+      - name: Show logs
+        working-directory: test-suite/fhevm
+        if: failure()
+        run: |
+          snapshot_logs() {
+            local group="$1"
+            local container="$2"
+            local filter="${3:-}"
+            echo "::group::${group}"
+            if [ -n "$filter" ]; then
+              docker logs --tail 120 "${container}" 2>&1 | grep -v "$filter" || true
+            else
+              docker logs --tail 120 "${container}" 2>&1 || true
+            fi
+            echo "::endgroup::"
+          }
+          snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "Host Listener" coprocessor-host-listener
+          snapshot_logs "Gateway Listener" coprocessor-gw-listener
+          snapshot_logs "SNS Worker Logs" coprocessor-sns-worker "Selected 0 rows to process"
+          snapshot_logs "Transaction Sender Logs (filtered)" coprocessor-transaction-sender "Selected 0 rows to process"
+          snapshot_logs "ZKProof Worker" coprocessor-zkproof-worker
+          snapshot_logs "TFHE Worker" coprocessor-tfhe-worker
+
+      - name: Cleanup
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean
+
+  teardown-instance-a:
+    name: test-suite-e2e-operators-tests/teardown-a
+    if: ${{ always() && !inputs.grep && needs.setup-instance-a.result == 'success' }}
+    needs: [ setup-instance-a, operators-e2e-test-a ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance-a.outputs.runner-name }}
+
+  teardown-instance-b:
+    name: test-suite-e2e-operators-tests/teardown-b
+    if: ${{ always() && !inputs.grep && needs.setup-instance-b.result == 'success' }}
+    needs: [ setup-instance-b, operators-e2e-test-b ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance-b.outputs.runner-name }}
+
   teardown-instance:
     name: test-suite-e2e-operators-tests/teardown
-    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    if: ${{ always() && inputs.grep != '' && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, operators-e2e-test]
     runs-on: ubuntu-latest
     permissions:
