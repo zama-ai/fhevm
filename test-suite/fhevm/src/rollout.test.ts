@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { PreflightError } from "./errors";
-import { ROLLOUT_UNITS, generateRolloutLocks, readCompatTest, rollout, validateCompatSteps } from "./commands/rollout";
+import { generateRolloutLocks, readCompatTest, rollout, validateCompatSteps } from "./commands/rollout";
 import { readJson, remove, writeJson } from "./utils/fs";
 import type { VersionBundle } from "./types";
 import type { CompatTestDefinition } from "./commands/rollout";
@@ -40,9 +40,30 @@ const compatTest = (): CompatTestDefinition => ({
     ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
     ["KMS_CORE", "KMS_CONNECTOR"],
     ["COPROCESSOR"],
-    ["TEST_SUITE"],
+    ["RELAYER_SDK"],
   ],
-  units: Object.fromEntries(Object.entries(ROLLOUT_UNITS).map(([key, value]) => [key, [...value]])),
+  units: {
+    RELAYER: ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
+    GATEWAY_CONTRACTS: ["GATEWAY_VERSION"],
+    HOST_CONTRACTS: ["HOST_VERSION"],
+    KMS_CORE: ["CORE_VERSION"],
+    KMS_CONNECTOR: [
+      "CONNECTOR_DB_MIGRATION_VERSION",
+      "CONNECTOR_GW_LISTENER_VERSION",
+      "CONNECTOR_KMS_WORKER_VERSION",
+      "CONNECTOR_TX_SENDER_VERSION",
+    ],
+    COPROCESSOR: [
+      "COPROCESSOR_DB_MIGRATION_VERSION",
+      "COPROCESSOR_HOST_LISTENER_VERSION",
+      "COPROCESSOR_GW_LISTENER_VERSION",
+      "COPROCESSOR_TX_SENDER_VERSION",
+      "COPROCESSOR_TFHE_WORKER_VERSION",
+      "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+      "COPROCESSOR_SNS_WORKER_VERSION",
+    ],
+    RELAYER_SDK: ["TEST_SUITE_VERSION"],
+  },
   execution: {
     scenario: "two-of-two",
     testProfile: "standard",
@@ -55,18 +76,21 @@ afterEach(async () => {
 
 describe("rollout", () => {
   test("requires each rollout unit exactly once across steps", () => {
-    expect(() => validateCompatSteps([["RELAYER"], ["COPROCESSOR"]])).toThrow(PreflightError);
-    expect(() => validateCompatSteps([["RELAYER"], ["KMS_CORE", "KMS_CORE"]])).toThrow(PreflightError);
-    expect(() => validateCompatSteps([["RELAYER"], ["BOGUS" as never]])).toThrow(PreflightError);
+    const { units } = compatTest();
+    expect(() => validateCompatSteps([["RELAYER"], ["COPROCESSOR"]], units)).toThrow(PreflightError);
+    expect(() => validateCompatSteps([["RELAYER"], ["KMS_CORE", "KMS_CORE"]], units)).toThrow(PreflightError);
+    expect(() => validateCompatSteps([["RELAYER"], ["BOGUS" as never]], units)).toThrow(PreflightError);
   });
 
-  test("validates compat-test units against the fixed definitions", async () => {
+  test("rejects compat-tests that reference unknown or duplicated version keys", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
     await writeJson(file, { ...testDef, units: { ...testDef.units, KMS_CORE: ["CORE_VERSION", "BOGUS"] } });
-    await expect(readCompatTest(file)).rejects.toThrow("compat-test units do not match");
+    await expect(readCompatTest(file)).rejects.toThrow("references unknown version key BOGUS");
+    await writeJson(file, { ...testDef, units: { ...testDef.units, RELAYER_SDK: ["RELAYER_VERSION"] } });
+    await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
   test("generates cumulative mixed-version locks from ordered unit steps", () => {
@@ -77,7 +101,7 @@ describe("rollout", () => {
       "02-gateway-contracts_host-contracts.lock.json",
       "03-kms-core_kms-connector.lock.json",
       "04-coprocessor.lock.json",
-      "05-test-suite.lock.json",
+      "05-relayer-sdk.lock.json",
     ]);
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
@@ -105,7 +129,7 @@ describe("rollout", () => {
       "02-gateway-contracts_host-contracts.lock.json",
       "03-kms-core_kms-connector.lock.json",
       "04-coprocessor.lock.json",
-      "05-test-suite.lock.json",
+      "05-relayer-sdk.lock.json",
     ]);
     const mixed = await readJson<VersionBundle>(path.join(outDir, "03-kms-core_kms-connector.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");

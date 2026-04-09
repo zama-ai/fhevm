@@ -5,31 +5,7 @@ import { PACKAGE_TO_REPOSITORY } from "../resolve/target";
 import type { VersionBundle } from "../types";
 import { ensureDir, readJson, writeJson } from "../utils/fs";
 
-export const ROLLOUT_UNITS = {
-  RELAYER: ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
-  GATEWAY_CONTRACTS: ["GATEWAY_VERSION"],
-  HOST_CONTRACTS: ["HOST_VERSION"],
-  KMS_CORE: ["CORE_VERSION"],
-  KMS_CONNECTOR: [
-    "CONNECTOR_DB_MIGRATION_VERSION",
-    "CONNECTOR_GW_LISTENER_VERSION",
-    "CONNECTOR_KMS_WORKER_VERSION",
-    "CONNECTOR_TX_SENDER_VERSION",
-  ],
-  COPROCESSOR: [
-    "COPROCESSOR_DB_MIGRATION_VERSION",
-    "COPROCESSOR_HOST_LISTENER_VERSION",
-    "COPROCESSOR_GW_LISTENER_VERSION",
-    "COPROCESSOR_TX_SENDER_VERSION",
-    "COPROCESSOR_TFHE_WORKER_VERSION",
-    "COPROCESSOR_ZKPROOF_WORKER_VERSION",
-    "COPROCESSOR_SNS_WORKER_VERSION",
-  ],
-  TEST_SUITE: ["TEST_SUITE_VERSION"],
-} as const;
-
-type RolloutUnit = keyof typeof ROLLOUT_UNITS;
-type RolloutStep = RolloutUnit[];
+type RolloutStep = string[];
 type RolloutMatrix = {
   include: Array<{ step: string; lockFile: string; name: string }>;
 };
@@ -47,12 +23,9 @@ export type CompatTestDefinition = {
 };
 
 const REQUIRED_VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY).sort();
-const UNIT_NAMES = Object.keys(ROLLOUT_UNITS) as RolloutUnit[];
-const normalizeUnitMap = (value: Record<string, string[]>) =>
-  Object.fromEntries(Object.keys(value).sort().map((key) => [key, [...value[key]].sort()]));
 const lockStem = (index: number, label: string) => `${String(index).padStart(2, "0")}-${label}`;
 const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-+|-+$/g, "");
-const stepLabel = (step: readonly RolloutUnit[]) => step.map((unit) => slug(unit)).join("_");
+const stepLabel = (step: readonly string[]) => step.map((unit) => slug(unit)).join("_");
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
 
 /** Validates that a compat-test env map contains every required version key. */
@@ -64,19 +37,35 @@ const validateEnvMap = (label: string, value: Record<string, string>) => {
   return Object.fromEntries(REQUIRED_VERSION_KEYS.map((key) => [key, value[key]]));
 };
 
-/** Validates that the fixed unit map embedded in the compat-test matches the CLI definition. */
-const validateCompatUnits = (units: Record<string, string[]>) => {
-  const expected = normalizeUnitMap(Object.fromEntries(UNIT_NAMES.map((unit) => [unit, [...ROLLOUT_UNITS[unit]]])));
-  const actual = normalizeUnitMap(units);
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new PreflightError("compat-test units do not match the fixed rollout unit definitions");
+/** Validates unit definitions declared by one compat-test. */
+const validateCompatUnits = (units: Record<string, string[]>, env: Record<string, string>) => {
+  const names = Object.keys(units);
+  if (!names.length) {
+    throw new PreflightError("compat-test must define at least one rollout unit");
+  }
+  const referenced = new Set<string>();
+  for (const name of names) {
+    const keys = units[name];
+    if (!Array.isArray(keys) || !keys.length || keys.some((key) => typeof key !== "string" || !key.length)) {
+      throw new PreflightError(`compat-test unit ${name} must list one or more version keys`);
+    }
+    for (const key of keys) {
+      if (!(key in env)) {
+        throw new PreflightError(`compat-test unit ${name} references unknown version key ${key}`);
+      }
+      if (referenced.has(key)) {
+        throw new PreflightError(`compat-test version key ${key} is assigned to multiple units`);
+      }
+      referenced.add(key);
+    }
   }
 };
 
 /** Validates ordered rollout steps, unit names, and duplicate coverage. */
-export const validateCompatSteps = (steps: RolloutStep[]) => {
+export const validateCompatSteps = (steps: RolloutStep[], units: Record<string, string[]>) => {
+  const unitNames = Object.keys(units);
   if (!Array.isArray(steps) || !steps.length) {
-    throw new PreflightError(`compat-test steps must include ${UNIT_NAMES.join(", ")}`);
+    throw new PreflightError(`compat-test steps must include ${unitNames.join(", ")}`);
   }
   const flattened = steps.flatMap((step) => {
     if (!Array.isArray(step) || !step.length) {
@@ -84,17 +73,17 @@ export const validateCompatSteps = (steps: RolloutStep[]) => {
     }
     return step;
   });
-  const unknown = flattened.filter((unit) => !UNIT_NAMES.includes(unit));
+  const unknown = flattened.filter((unit) => !unitNames.includes(unit));
   if (unknown.length) {
-    throw new PreflightError(`Unknown rollout units: ${[...new Set(unknown)].join(", ")}. Valid: ${UNIT_NAMES.join(", ")}`);
+    throw new PreflightError(`Unknown rollout units: ${[...new Set(unknown)].join(", ")}. Valid: ${unitNames.join(", ")}`);
   }
   const duplicates = flattened.filter((unit, index) => flattened.indexOf(unit) !== index);
   if (duplicates.length) {
     throw new PreflightError(`Duplicate rollout units: ${[...new Set(duplicates)].join(", ")}`);
   }
-  const missing = UNIT_NAMES.filter((unit) => !flattened.includes(unit));
-  if (missing.length || flattened.length !== UNIT_NAMES.length) {
-    throw new PreflightError(`compat-test steps must include each unit exactly once: ${UNIT_NAMES.join(", ")}`);
+  const missing = unitNames.filter((unit) => !flattened.includes(unit));
+  if (missing.length || flattened.length !== unitNames.length) {
+    throw new PreflightError(`compat-test steps must include each unit exactly once: ${unitNames.join(", ")}`);
   }
   return steps;
 };
@@ -105,13 +94,15 @@ export const readCompatTest = async (file: string) => {
   if (!test?.name) {
     throw new PreflightError("compat-test must include a non-empty name");
   }
-  validateCompatUnits(test.units);
-  validateCompatSteps(test.steps);
-  return {
+  const validated = {
     ...test,
     from: validateEnvMap("from", test.from),
     to: validateEnvMap("to", test.to),
   } satisfies CompatTestDefinition;
+  validateCompatUnits(validated.units, validated.from);
+  validateCompatUnits(validated.units, validated.to);
+  validateCompatSteps(validated.steps, validated.units);
+  return validated;
 };
 
 const bundleFromEnv = (test: CompatTestDefinition, kind: "from" | "to"): VersionBundle => ({
@@ -135,7 +126,7 @@ export const generateRolloutLocks = (test: CompatTestDefinition) => {
     baseline,
     ...test.steps.map((step, index) => {
       for (const unit of step) {
-        for (const key of ROLLOUT_UNITS[unit]) {
+        for (const key of test.units[unit]) {
           current[key] = to.env[key];
         }
       }
