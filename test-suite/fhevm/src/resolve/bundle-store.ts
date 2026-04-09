@@ -31,7 +31,7 @@ const resolveCachePath = (target: string, sha?: string) => {
 };
 
 /** Validates that a lock bundle has the fields required by the CLI. */
-const validateLockBundleShape = (bundle: unknown): VersionBundle => {
+export const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   if (!bundle || typeof bundle !== "object") {
     throw new GitHubApiError("Lock file must contain a JSON object bundle");
   }
@@ -102,7 +102,7 @@ export const ensureLockSnapshot = async (lockPath: string, bundle: VersionBundle
 };
 
 /** Loads and validates a version bundle from a lock file. */
-const bundleFromFile = async (target: VersionTarget | undefined, lockFile: string) => {
+export const readLockBundle = async (lockFile: string, target?: VersionTarget) => {
   let raw: VersionBundle;
   try {
     raw = await readJson<VersionBundle>(path.resolve(lockFile));
@@ -140,7 +140,7 @@ export const targetUsesCache = (target: VersionTarget) => target === "sha";
 const cachedResolve = async (options: CachedResolveOptions) => {
   if (options.lockFile) {
     console.log(`[resolve] reading lock file ${options.lockFile}`);
-    return bundleFromFile(options.requestedTarget, options.lockFile);
+    return readLockBundle(options.lockFile, options.requestedTarget);
   }
 
   const cachePath = resolveCachePath(options.target, options.sha);

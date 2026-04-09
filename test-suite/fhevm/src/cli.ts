@@ -4,6 +4,7 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
+import { rollout } from "./commands/rollout";
 import { listTestProfiles, test } from "./commands/test";
 import { resolveBundle } from "./resolve/bundle-store";
 import { STEP_NAMES } from "./types";
@@ -255,6 +256,23 @@ const root = defineCommand({
         }
         const { lockPath } = await resolveBundle(parsed, process.env);
         console.log(lockPath);
+      },
+    }),
+    rollout: defineCommand({
+      meta: { name: "rollout", description: "Generate cumulative mixed-version rollout lock files and matrix metadata." },
+      args: {
+        from: { type: "string", description: "Baseline lock file path." },
+        to: { type: "string", description: "Upgrade-target lock file path." },
+        order: { type: "string", description: "Comma-separated rollout group order." },
+        out: { type: "string", description: "Output directory for generated lock files and matrix.json." },
+      },
+      async run({ args }) {
+        await rollout({
+          from: asString(args.from) ?? "",
+          to: asString(args.to) ?? "",
+          order: asString(args.order) ?? "",
+          out: asString(args.out) ?? "",
+        });
       },
     }),
     test: defineCommand({
