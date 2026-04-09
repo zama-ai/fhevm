@@ -156,7 +156,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       GREP: ${{ inputs.grep }}
       SCENARIO: ${{ inputs.scenario }}
@@ -322,7 +322,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario }}
       SHARD_INDEX: 0
@@ -462,7 +462,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario }}
       SHARD_INDEX: 1
@@ -602,7 +602,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario }}
       SHARD_INDEX: 2
@@ -742,7 +742,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.build && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario }}
       SHARD_INDEX: 3
