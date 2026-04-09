@@ -13,10 +13,13 @@ const GH_API_RETRY_DELAY_MS = 1_000;
 const GH_PACKAGE_VERSION_LIMIT = 5_000;
 
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
-const explainGitHubCliError = (message: string): string => {
+export const explainGitHubCliError = (message: string): string => {
   const lower = message.toLowerCase();
   if (lower.includes("enoent") || lower.includes("not found")) {
     return "GitHub CLI `gh` is required. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
+  }
+  if (lower.includes("read:packages") || lower.includes("scope to get a package") || (lower.includes("http 403") && lower.includes("package"))) {
+    return "GitHub API is missing package-read scope. Run `gh auth refresh -s read:packages`, export GH_TOKEN with `read:packages`, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
   }
   if (lower.includes("401") || lower.includes("authentication")) {
     return "GitHub API not authenticated. Run `gh auth login`, export GH_TOKEN, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
