@@ -173,7 +173,7 @@ export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyPauserTaskFlag = (version: string) =>
-  versionLt(version, [0, 12, 0], { unparsed: "modern" });
+  versionLt(version, [0, 13, 0], { unparsed: "modern" });
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
