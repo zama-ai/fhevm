@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {FheType} from "./shared/FheType.sol";
 
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract FHEEvents {
     event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);

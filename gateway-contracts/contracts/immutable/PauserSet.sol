@@ -10,6 +10,7 @@ import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
  * @title PauserSet smart contract
  * @notice See {IPauserSet}
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract PauserSet is IPauserSet, GatewayOwnable {
     /**
      * @dev The following constants are used for versioning the contract. They are made private

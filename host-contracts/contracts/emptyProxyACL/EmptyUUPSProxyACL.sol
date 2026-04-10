@@ -10,6 +10,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
  * deployment, making it independent from nonce to solve circular dependencies. It is owned by
  * the ACL owner and is only used for deploying the ACL contract.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract EmptyUUPSProxyACL is UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
