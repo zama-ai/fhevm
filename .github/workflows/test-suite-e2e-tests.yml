@@ -254,12 +254,19 @@ jobs:
         run: |
           ./fhevm-cli test standard
 
+      - name: Host listener consumer test
+        working-directory: test-suite/fhevm
+        run: |
+          docker stop coprocessor-host-listener coprocessor-host-listener-poller
+          ./fhevm-cli test standard
+          docker start coprocessor-host-listener coprocessor-host-listener-poller
+
       - name: Host listener poller test
         working-directory: test-suite/fhevm
         run: |
-          docker stop coprocessor-host-listener
+          docker stop coprocessor-host-listener coprocessor-host-listener-consumer
           ./fhevm-cli test erc20
-          docker start coprocessor-host-listener
+          docker start coprocessor-host-listener coprocessor-host-listener-consumer
 
       - name: Show logs
         working-directory: test-suite/fhevm

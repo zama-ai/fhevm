@@ -165,6 +165,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-db-migration",
     "coprocessor-host-listener",
     "coprocessor-host-listener-poller",
+    "coprocessor-host-listener-consumer",
     "coprocessor-gw-listener",
     "coprocessor-tfhe-worker",
     "coprocessor-zkproof-worker",
