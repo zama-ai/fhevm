@@ -119,10 +119,109 @@ on:
       CGR_PASSWORD:
         required: true
     inputs:
-      <<: *workflow_inputs
+      orchestrated:
+        description: "Run from the orchestrated image-validation path."
+        default: false
+        type: boolean
+      build:
+        description: "Build repo-owned images from the checked out branch on the runner"
+        default: true
+        type: boolean
+      coprocessor-db-migration-version:
+        description: "Coprocessor DB Migration Image Version"
+        default: ""
+        type: string
+      coprocessor-host-listener-version:
+        description: "Coprocessor Host Listener Image Version"
+        default: ""
+        type: string
+      coprocessor-gw-listener-version:
+        description: "Coprocessor Gateway Listener Image Version"
+        default: ""
+        type: string
+      coprocessor-tx-sender-version:
+        description: "Coprocessor Transaction Sender Image Version"
+        default: ""
+        type: string
+      coprocessor-tfhe-worker-version:
+        description: "Coprocessor TFHE Worker Image Version"
+        default: ""
+        type: string
+      coprocessor-sns-worker-version:
+        description: "Coprocessor SNS Worker Image Version"
+        default: ""
+        type: string
+      coprocessor-zkproof-worker-version:
+        description: "Coprocessor ZKProof Worker Image Version"
+        default: ""
+        type: string
+      gateway-version:
+        description: "Gateway version"
+        default: ""
+        type: string
+      host-version:
+        description: "Host version"
+        default: ""
+        type: string
+      connector-db-migration-version:
+        description: "KMS Connector DB Migration Image Version"
+        default: ""
+        type: string
+      connector-gw-listener-version:
+        description: "KMS Connector Gateway Listener Image Version"
+        default: ""
+        type: string
+      connector-kms-worker-version:
+        description: "KMS Connector KMS Worker Image Version"
+        default: ""
+        type: string
+      connector-tx-sender-version:
+        description: "KMS Connector Transaction Sender Image Version"
+        default: ""
+        type: string
+      test-suite-version:
+        description: "Test suite version"
+        default: ""
+        type: string
+      relayer-migrate-version:
+        description: "Relayer migrate version"
+        default: ""
+        type: string
+      relayer-version:
+        description: "Relayer version"
+        default: ""
+        type: string
+      compat-test:
+        description: "Compat-test JSON path or stem under test-suite/fhevm/compat-tests"
+        default: ""
+        type: string
       compat-overrides:
         description: "Comma-separated local override groups applied cumulatively for compat rollout steps"
         default: ""
+        type: string
+      rollout-step:
+        description: "Compat rollout step index to render locally before boot"
+        default: ""
+        type: string
+      lock-artifact-name:
+        description: "Uploaded lock artifact name used to freeze the resolved bundle"
+        default: ""
+        type: string
+      lock-file-name:
+        description: "Specific lock file to use inside the uploaded lock artifact"
+        default: ""
+        type: string
+      kms-core-version:
+        description: "KMS Core version"
+        default: ""
+        type: string
+      scenario:
+        description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
+        default: "two-of-two"
+        type: string
+      test-profile:
+        description: "Named test profile to run instead of the default standard suite"
+        default: "standard"
         type: string
 
 permissions: {}
