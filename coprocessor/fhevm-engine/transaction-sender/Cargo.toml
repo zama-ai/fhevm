@@ -47,3 +47,6 @@ rstest = "0.25.0"
 serial_test = { workspace = true }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
+
+[lints]
+workspace = true
