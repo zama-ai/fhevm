@@ -11,6 +11,7 @@ const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
+const publicDecryptTimeoutMs = Number(process.env.RELAYER_SDK_PUBLIC_DECRYPT_TIMEOUT_MS) || 125 * 60 * 1000;
 
 export interface ChainConfig {
   rpcUrl: string;
@@ -114,7 +115,7 @@ export function getWallet(chain: ChainConfig, index: number): ManagedWallet {
 }
 
 export async function createInstance(chain: ChainConfig) {
-  return createFhevmInstance({
+  const instance = await createFhevmInstance({
     verifyingContractAddressDecryption: decryptionAddress,
     verifyingContractAddressInputVerification: inputVerificationAddress,
     kmsContractAddress: chain.kmsVerifierAddress,
@@ -125,6 +126,11 @@ export async function createInstance(chain: ChainConfig) {
     gatewayChainId,
     chainId: chain.chainId,
   });
+  return {
+    ...instance,
+    publicDecrypt: (handles, options) =>
+      instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
+  };
 }
 
 export async function deployContract(

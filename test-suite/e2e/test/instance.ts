@@ -54,6 +54,8 @@ if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICAT
 const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
 if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
+const publicDecryptTimeoutMs = Number(process.env.RELAYER_SDK_PUBLIC_DECRYPT_TIMEOUT_MS) || 125 * 60 * 1000;
+
 // API key is a secret - support hardhat vars for secure storage
 // Auth is optional since internal smoke tests don't go through Kong
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
@@ -70,7 +72,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  return createFhevmInstance({
+  const instance = await createFhevmInstance({
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
     kmsContractAddress: kmsVerifierAddress,
@@ -82,6 +84,11 @@ export const createInstance = async () => {
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   });
+  return {
+    ...instance,
+    publicDecrypt: (handles, options) =>
+      instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
+  };
 };
 
 // Export coprocessor config addresses for smoke tests
