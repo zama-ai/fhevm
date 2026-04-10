@@ -86,10 +86,6 @@ on:
         description: "Compat-test JSON path or stem under test-suite/fhevm/compat-tests"
         default: ""
         type: string
-      compat-overrides:
-        description: "Comma-separated local override groups applied cumulatively for compat rollout steps"
-        default: ""
-        type: string
       rollout-step:
         description: "Compat rollout step index to render locally before boot"
         default: ""
@@ -122,7 +118,12 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
-    inputs: *workflow_inputs
+    inputs:
+      <<: *workflow_inputs
+      compat-overrides:
+        description: "Comma-separated local override groups applied cumulatively for compat rollout steps"
+        default: ""
+        type: string
 
 permissions: {}
 
