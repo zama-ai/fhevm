@@ -23,10 +23,11 @@ concurrency:
 
 jobs:
   prepare_rollout:
+    name: prepare-rollout
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'rollout')) }}
     permissions:
-      contents: 'read'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to resolve published GitHub Container Registry package tags
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
@@ -103,9 +104,9 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare_rollout.outputs.matrix) }}
     uses: ./.github/workflows/test-suite-e2e-tests.yml
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'read'
+      contents: 'read' # Required by the called workflow to checkout repository code
+      id-token: 'write' # Required by the called workflow for OIDC-authenticated actions
+      packages: 'read' # Required by the called workflow to pull GitHub Container Registry images
     secrets:
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
