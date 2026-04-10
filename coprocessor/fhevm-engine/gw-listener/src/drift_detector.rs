@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use alloy::primitives::{Address, FixedBytes, B256};
-use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::to_hex;
 use sqlx::{Pool, Postgres, Row};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::metrics::{
     CONSENSUS_LATENCY_BLOCKS_HISTOGRAM, CONSENSUS_TIMEOUT_COUNTER, DRIFT_DETECTED_COUNTER,
@@ -89,7 +88,6 @@ pub(crate) struct DriftDetector {
     /// or `drift_post_consensus_grace` (consensus reached). Steady-state size is
     /// proportional to handle throughput * timeout duration.
     open_handles: HashMap<CiphertextDigest, HandleState>,
-    host_chain_id: ChainId,
     local_node_id: String,
     drift_no_consensus_timeout: Duration,
     drift_post_consensus_grace: Duration,
@@ -102,14 +100,12 @@ pub(crate) struct DriftDetector {
 impl DriftDetector {
     pub(crate) fn new(
         expected_senders: Vec<Address>,
-        host_chain_id: ChainId,
         drift_no_consensus_timeout: Duration,
         drift_post_consensus_grace: Duration,
     ) -> Self {
         Self {
             current_expected_senders: expected_senders,
             open_handles: HashMap::new(),
-            host_chain_id,
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
             drift_no_consensus_timeout,
             drift_post_consensus_grace,
@@ -153,7 +149,7 @@ impl DriftDetector {
             if !self.replaying && existing.digests != digests {
                 warn!(
                     handle = %handle,
-                    host_chain_id = self.host_chain_id.as_i64(),
+                    host_chain_id = chain_id_from_handle(handle),
                     local_node_id = %self.local_node_id,
                     block_number = context.block_number,
                     block_hash = ?context.block_hash,
@@ -190,7 +186,7 @@ impl DriftDetector {
                 .collect();
             warn!(
                 handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
+                host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
@@ -293,7 +289,7 @@ impl DriftDetector {
         let Some((local_ciphertext_digest, local_ciphertext128_digest)) = local_digests else {
             debug!(
                 handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
+                host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 block_number = consensus.context.block_number,
                 tx_hash = ?consensus.context.tx_hash,
@@ -323,7 +319,7 @@ impl DriftDetector {
             let observed_variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
+                host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 block_number = consensus.context.block_number,
                 block_hash = ?consensus.context.block_hash,
@@ -364,7 +360,7 @@ impl DriftDetector {
                     };
                     warn!(
                         handle = %handle,
-                        host_chain_id = self.host_chain_id.as_i64(),
+                        host_chain_id = chain_id_from_handle(*handle),
                         local_node_id = %self.local_node_id,
                         first_seen_block = state.first_seen_block,
                         first_seen_block_hash = ?state.first_seen_block_hash,
@@ -384,7 +380,7 @@ impl DriftDetector {
                     let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
-                        host_chain_id = self.host_chain_id.as_i64(),
+                        host_chain_id = chain_id_from_handle(*handle),
                         local_node_id = %self.local_node_id,
                         first_seen_block = state.first_seen_block,
                         first_seen_block_hash = ?state.first_seen_block_hash,
@@ -411,7 +407,7 @@ impl DriftDetector {
                     let variants = variant_summaries(&state.submissions);
                     warn!(
                         handle = %handle,
-                        host_chain_id = self.host_chain_id.as_i64(),
+                        host_chain_id = chain_id_from_handle(*handle),
                         local_node_id = %self.local_node_id,
                         first_seen_block = state.first_seen_block,
                         first_seen_block_hash = ?state.first_seen_block_hash,
@@ -465,7 +461,7 @@ impl DriftDetector {
             let variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
+                host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
@@ -518,7 +514,7 @@ impl DriftDetector {
             let variants = variant_summaries(&state.submissions);
             warn!(
                 handle = %handle,
-                host_chain_id = self.host_chain_id.as_i64(),
+                host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 first_seen_block = state.first_seen_block,
                 first_seen_block_hash = ?state.first_seen_block_hash,
@@ -604,6 +600,20 @@ impl DriftDetector {
     }
 }
 
+/// Sentinel chain ID for log display when handle extraction fails (unreachable in practice).
+const DEFAULT_CHAIN_ID: i64 = -1;
+
+/// Extracts the host chain ID from a ciphertext handle.
+/// Handles encode the chain ID in bytes 22..30 as a big-endian u64.
+fn chain_id_from_handle(handle: CiphertextDigest) -> i64 {
+    let Ok(bytes): Result<[u8; 8], _> = handle[22..30].try_into() else {
+        // Unreachable in practice: CiphertextDigest is FixedBytes<32>.
+        error!("Failed to extract chain_id from handle: slice len != 8");
+        return DEFAULT_CHAIN_ID;
+    };
+    i64::try_from(u64::from_be_bytes(bytes)).unwrap_or(DEFAULT_CHAIN_ID)
+}
+
 fn has_multiple_variants(submissions: &[Submission]) -> bool {
     let Some(first) = submissions.first() else {
         return false;
@@ -654,6 +664,23 @@ mod tests {
     use alloy::primitives::U256;
 
     #[test]
+    fn chain_id_from_handle_reads_bytes_22_to_30_as_be_i64() {
+        let mut bytes = [0u8; 32];
+        let chain_id: i64 = 137;
+        bytes[22..30].copy_from_slice(&(chain_id as u64).to_be_bytes());
+        assert_eq!(
+            chain_id_from_handle(CiphertextDigest::from(bytes)),
+            chain_id
+        );
+    }
+
+    #[test]
+    fn chain_id_from_handle_does_not_panic_on_extreme_bytes() {
+        let handle = CiphertextDigest::from([0xffu8; 32]);
+        let _ = chain_id_from_handle(handle);
+    }
+
+    #[test]
     fn rebuild_preserves_state_across_batches() {
         let sender_a = Address::from([0x11; 20]);
         let sender_b = Address::from([0x22; 20]);
@@ -665,7 +692,6 @@ mod tests {
         let base = Instant::now();
         let mut detector = DriftDetector::new(
             vec![sender_a, sender_b, sender_c],
-            ChainId::try_from(12345_u64).unwrap(),
             Duration::from_secs(50),
             Duration::from_secs(10),
         );
@@ -795,12 +821,7 @@ mod tests {
     }
 
     fn detector() -> DriftDetector {
-        DriftDetector::new(
-            senders(),
-            ChainId::try_from(12345_u64).unwrap(),
-            Duration::from_secs(5),
-            Duration::from_secs(2),
-        )
+        DriftDetector::new(senders(), Duration::from_secs(5), Duration::from_secs(2))
     }
 
     fn make_consensus_state(

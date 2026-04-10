@@ -1,0 +1,218 @@
+name: relayer-docker-build
+
+on:
+  workflow_call:
+    inputs:
+      is_workflow_call:
+        description: "Indicates if the workflow is called from another workflow"
+        type: boolean
+        default: true
+        required: false
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      GHCR_READ_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    outputs:
+      relayer_migrate_build_result:
+        description: "Result of the build-relayer-migrate job"
+        value: ${{ jobs.build-relayer-migrate.result }}
+      relayer_build_result:
+        description: "Result of the build-relayer job"
+        value: ${{ jobs.build-relayer.result }}
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      build_relayer_migrate:
+        description: "Enable/disable build for Relayer's DB Migration"
+        type: boolean
+        default: true
+      build_relayer:
+        description: "Enable/disable build for the Relayer"
+        type: boolean
+        default: true
+  push:
+    branches: ['main', 'release/*']
+
+permissions: {}
+
+jobs:
+  ########################################################################
+  #                        PRE-BUILD CHECKS                              #
+  ########################################################################
+  is-latest-commit:
+    uses: ./.github/workflows/is-latest-commit.yml
+    if: github.event_name == 'push'
+
+  check-changes-relayer-migrate:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: &check_changes_secrets
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    permissions: &check_changes_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/relayer-migrate
+      filters: |
+        relayer-migrate:
+          - .github/workflows/relayer-docker-build.yml
+          - relayer/docker/relayer-migrate/**
+          - relayer/relayer-migrate/**
+
+  check-changes-relayer:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/relayer
+      filters: |
+        relayer:
+          - .github/workflows/relayer-docker-build.yml
+          - relayer/**
+
+  ########################################################################
+  #                        BUILD DECISIONS                               #
+  # Centralizes all build/re-tag logic in one place for maintainability  #
+  ########################################################################
+  build-decisions:
+    name: build-decisions
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - is-latest-commit
+      - check-changes-relayer-migrate
+      - check-changes-relayer
+    outputs:
+      relayer_migrate: ${{ steps.decide.outputs.relayer_migrate }}
+      relayer: ${{ steps.decide.outputs.relayer }}
+    steps:
+      - id: decide
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+          INPUTS: ${{ toJSON(inputs) }}
+        with:
+          script: |
+            // Decision logic (returns: "build", "retag", or "skip"):
+            // - release: always build
+            // - push: only act if latest commit; build if changes, retag otherwise
+            // - workflow_call: build if changes detected, otherwise skip
+            // - workflow_dispatch: build if input is true, otherwise skip
+            const event = process.env.EVENT_NAME;
+            const needs = JSON.parse(process.env.NEEDS);
+            const inputs = JSON.parse(process.env.INPUTS);
+            const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
+            const isWorkflowCall = inputs.is_workflow_call ?? false;
+
+            const decideAction = (changes, manualInput) => {
+              if (event === 'release') return 'build';
+              if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
+              if (isWorkflowCall) return changes ? 'build' : 'skip';
+              if (!isWorkflowCall && event === 'workflow_dispatch') return manualInput ? 'build' : 'skip';
+              return 'skip';
+            };
+
+            const services = {
+              relayer_migrate: { changes: needs['check-changes-relayer-migrate'].outputs?.changes, build_input: inputs.build_relayer_migrate },
+              relayer: { changes: needs['check-changes-relayer'].outputs?.changes, build_input: inputs.build_relayer },
+            };
+
+            core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
+            for (const [name, { changes, build_input }] of Object.entries(services)) {
+              const action = decideAction(changes === 'true', build_input ?? false);
+              core.setOutput(name, action);
+              core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
+            }
+
+  ########################################################################
+  #                           RELAYER MIGRATE                            #
+  ########################################################################
+  build-relayer-migrate:
+    needs: build-decisions
+    concurrency:
+      group: relayer-build-relayer-migrate-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.relayer_migrate == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    secrets: &docker_secrets
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions: &docker_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/relayer-migrate"
+      docker-file: "relayer/docker/relayer-migrate/Dockerfile"
+      app-cache-dir: "fhevm-relayer-relayer-migrate"
+      rust-toolchain-file-path: relayer/rust-toolchain.toml
+
+  re-tag-relayer-migrate-image:
+    needs: [build-decisions, check-changes-relayer-migrate]
+    if: always() && needs.build-decisions.outputs.relayer_migrate == 'retag'
+    permissions: &re-tag-image-permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/relayer-migrate"
+      previous-tag-or-commit: ${{ needs.check-changes-relayer-migrate.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                               RELAYER                                #
+  ########################################################################
+  build-relayer:
+    needs: build-decisions
+    concurrency:
+      group: relayer-build-relayer-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.relayer == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/relayer"
+      docker-file: "relayer/docker/relayer/Dockerfile"
+      app-cache-dir: "fhevm-relayer"
+      rust-toolchain-file-path: relayer/rust-toolchain.toml
+
+  re-tag-relayer-image:
+    needs: [build-decisions, check-changes-relayer]
+    if: always() && needs.build-decisions.outputs.relayer == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/relayer"
+      previous-tag-or-commit: ${{ needs.check-changes-relayer.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}

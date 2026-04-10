@@ -62,6 +62,7 @@ RUN npm ci && \
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 ARG CARGO_PROFILE=release
+ARG BUILD_ID=unknown
 
 USER root
 WORKDIR /app
@@ -77,9 +78,6 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
 
-# Copy BUILD_ID for version metadata (git commit reference)
-COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
-
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build entire workspace - tfhe compiles ONCE here
@@ -89,7 +87,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} --workspace && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
     cp target/${CARGO_PROFILE}/host_listener /out/ && \
@@ -201,6 +199,7 @@ COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 
 # Copy migrations and initialization script from source
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh /initialize_db.sh
+COPY coprocessor/fhevm-engine/db-migration/insert_test_host_chain.sh /insert_test_host_chain.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations /migrations
 
 # Copy user/group from builder for consistency
@@ -208,7 +207,7 @@ COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 
 # Set ownership
-RUN chown -R fhevm:fhevm /initialize_db.sh /migrations
+RUN chown -R fhevm:fhevm /initialize_db.sh /insert_test_host_chain.sh /migrations
 
 USER fhevm:fhevm
 

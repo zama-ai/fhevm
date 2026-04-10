@@ -17,11 +17,11 @@ WORKDIR /app
 USER root
 RUN apk add --no-cache openssl-dev=3.6.1-r4 clang=22.1.1-r1
 
-RUN --mount=type=bind,source=relayer-migrate/Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=relayer-migrate/Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=relayer-migrate/src,target=src \
-    --mount=type=bind,source=relayer-migrate/migrations,target=migrations \
-    --mount=type=bind,source=relayer-migrate/down,target=down \
+RUN --mount=type=bind,source=relayer/relayer-migrate/Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=relayer/relayer-migrate/Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=relayer/relayer-migrate/src,target=src \
+    --mount=type=bind,source=relayer/relayer-migrate/migrations,target=migrations \
+    --mount=type=bind,source=relayer/relayer-migrate/down,target=down \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
@@ -35,7 +35,7 @@ RUN --mount=type=bind,source=relayer-migrate/Cargo.toml,target=Cargo.toml \
 # runtime dependencies for the application. This often uses a different base
 # image from the build stage where the necessary files are copied from the build
 # stage.
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS runtime
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
 USER root
 RUN apk add --no-cache ca-certificates=20241010-r0
 
@@ -59,3 +59,5 @@ COPY --from=build /bin/down-migrate-v0_8_8-to-v0_8_7 /bin/
 
 # What the container should run when it is started.
 CMD ["/bin/server"]
+
+FROM prod AS dev

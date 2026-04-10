@@ -20,9 +20,9 @@ services:
   relayer-db-migration:
     container_name: relayer-db-migration
     platform: linux/amd64
-    image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}
+    image: ${RELAYER_MIGRATE_IMAGE_REPOSITORY}:${RELAYER_MIGRATE_VERSION}
     env_file:
-      - ../env/staging/.env.relayer.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
     command:
     - /bin/server
     ports:
@@ -34,14 +34,14 @@ services:
   relayer:
     container_name: fhevm-relayer
     platform: linux/amd64
-    image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
+    image: ${RELAYER_IMAGE_REPOSITORY}:${RELAYER_VERSION}
     env_file:
-      - ../env/staging/.env.relayer.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
     volumes:
-      - ../config/relayer/local.yaml:/app/config/local.yaml
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
     depends_on:
