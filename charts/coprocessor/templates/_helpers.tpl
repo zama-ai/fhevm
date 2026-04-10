@@ -105,8 +105,10 @@
 {{- if eq $authMode "iam" }}
 - name: DATABASE_IAM_AUTH_ENABLED
   value: "true"
+{{- if .Values.commonConfig.database.iam.region }}
 - name: DATABASE_IAM_REGION
-  value: {{ required "commonConfig.database.iam.region is required when authMode=iam" .Values.commonConfig.database.iam.region | quote }}
+  value: {{ .Values.commonConfig.database.iam.region | quote }}
+{{- end }}
 - name: DATABASE_SSL_ROOT_CERT_PATH
   value: {{ required "commonConfig.database.iam.sslRootCertPath is required when authMode=iam" .Values.commonConfig.database.iam.sslRootCertPath | quote }}
 {{- end }}
