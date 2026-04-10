@@ -86,6 +86,10 @@ on:
         description: "Compat-test JSON path or stem under test-suite/fhevm/compat-tests"
         default: ""
         type: string
+      compat-overrides:
+        description: "Comma-separated local override groups applied cumulatively for compat rollout steps"
+        default: ""
+        type: string
       rollout-step:
         description: "Compat rollout step index to render locally before boot"
         default: ""
@@ -286,6 +290,8 @@ jobs:
 
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
+        env:
+          COMPAT_OVERRIDES: ${{ inputs.compat-overrides }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
@@ -295,11 +301,19 @@ jobs:
           fi
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
+          fi
+          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
+            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
+            for group in "${override_groups[@]}"; do
+              [ -n "$group" ] && args+=(--override "$group")
+            done
           fi
           ./fhevm-cli up "${args[@]}" --dry-run
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          COMPAT_OVERRIDES: ${{ inputs.compat-overrides }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
@@ -309,6 +323,12 @@ jobs:
           fi
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
+          fi
+          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
+            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
+            for group in "${override_groups[@]}"; do
+              [ -n "$group" ] && args+=(--override "$group")
+            done
           fi
           ./fhevm-cli up "${args[@]}"
 
