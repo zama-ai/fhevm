@@ -600,6 +600,14 @@ export const runStep = async (state: State, step: StepName) => {
       }
       break;
     }
+    case "listener-core":
+      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+      await stepComposeUp("listener-core", state,
+        ["listener-redis", "listener-publisher-for-anvil"]
+      );
+      await waitForContainer("listener-redis", "running");
+      await waitForContainer("listener-publisher-for-anvil", "running");
+      break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
       const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");

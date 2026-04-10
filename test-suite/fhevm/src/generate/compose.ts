@@ -82,6 +82,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "db-migration" }),
     "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
     "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener-consumer" }),
     "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "gw-listener" }),
     "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "tfhe-worker" }),
     "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "zkproof-worker" }),

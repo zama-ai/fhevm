@@ -26,6 +26,7 @@ USER root
 
 WORKDIR /app
 
+COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY host-contracts/contracts/ ./host-contracts/contracts/
@@ -44,7 +45,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
-    cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller \
+    cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \
     cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer
 
 # Stage 2: Runtime image
