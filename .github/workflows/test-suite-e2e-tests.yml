@@ -218,10 +218,12 @@ jobs:
 
       - name: Resolve frozen lock path
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
+        env:
+          LOCK_FILE_NAME_INPUT: ${{ inputs.lock-file-name }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.lock-file-name }}" ]; then
-            lock_file="${RUNNER_TEMP}/baseline-lock/${{ inputs.lock-file-name }}"
+          if [ -n "${LOCK_FILE_NAME_INPUT}" ]; then
+            lock_file="${RUNNER_TEMP}/baseline-lock/${LOCK_FILE_NAME_INPUT}"
           else
             lock_file="$(find "${RUNNER_TEMP}/baseline-lock" -maxdepth 1 -name '*.json' -print -quit)"
           fi
