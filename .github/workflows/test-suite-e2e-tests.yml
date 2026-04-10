@@ -136,7 +136,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
-      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       BUILD: ${{ inputs.orchestrated && 'false' || github.event_name == 'pull_request' && 'true' || inputs.build && 'true' || 'false' }}
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
       COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}

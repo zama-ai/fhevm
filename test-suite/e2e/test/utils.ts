@@ -8,9 +8,8 @@ import { Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
+import { coprocessorAddress } from './instance';
 import { TypedContractMethod } from '../types/common';
-
-const coprocAddress = process.env.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
@@ -287,9 +286,9 @@ export function getTxHCUFromTxReceipt(
   let hcuMap: Record<string, number> = {};
   let handleSet: Set<string> = new Set();
 
-  const contract = new ethers.Contract(coprocAddress!, abi, ethers.provider);
+  const contract = new ethers.Contract(coprocessorAddress, abi, ethers.provider);
   const relevantLogs = receipt.logs.filter((log: Log) => {
-    if (log.address.toLowerCase() !== coprocAddress!.toLowerCase()) {
+    if (log.address.toLowerCase() !== coprocessorAddress.toLowerCase()) {
       return false;
     }
     try {

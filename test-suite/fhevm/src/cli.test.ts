@@ -283,11 +283,19 @@ describe("cli", () => {
     });
   });
 
-  test("drift profile honors the requested network", async () => {
+  test("drift profile rejects shared networks explicitly", async () => {
     await withState(bootstrappedState(), async (env) => {
-      const result = await execCli(["test", "ciphertext-drift", "--network", "custom-net"], env);
+      const result = await execCli(["test", "ciphertext-drift", "--network", "sepolia"], env);
       expect(result.code).toBe(1);
-      expect(result.stderr).not.toContain("staging");
+      expect(result.stderr).toContain("ciphertext-drift is not allowed on sepolia");
+    });
+  });
+
+  test("drift profile honors the requested non-live network", async () => {
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "ciphertext-drift", "--network", "devnet"], env);
+      expect(result.code).toBe(1);
+      expect(result.stderr).not.toContain("not allowed on devnet");
     });
   });
 
