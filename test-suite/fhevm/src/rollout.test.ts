@@ -133,12 +133,12 @@ describe("rollout", () => {
   test("prints matrix metadata without lock file names", () => {
     expect(rolloutMatrix(compatTest())).toEqual({
       include: [
-        { step: "baseline", stepIndex: 0, name: "00-baseline" },
-        { step: "relayer", stepIndex: 1, name: "01-relayer" },
-        { step: "gateway-contracts_host-contracts", stepIndex: 2, name: "02-gateway-contracts_host-contracts" },
-        { step: "kms-core_kms-connector", stepIndex: 3, name: "03-kms-core_kms-connector" },
-        { step: "coprocessor", stepIndex: 4, name: "04-coprocessor" },
-        { step: "relayer-sdk", stepIndex: 5, name: "05-relayer-sdk" },
+        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "" },
+        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "relayer" },
+        { step: "gateway-contracts_host-contracts", stepIndex: 2, name: "02-gateway-contracts_host-contracts", overrides: "relayer,gateway-contracts,host-contracts" },
+        { step: "kms-core_kms-connector", stepIndex: 3, name: "03-kms-core_kms-connector", overrides: "relayer,gateway-contracts,host-contracts,kms-connector" },
+        { step: "coprocessor", stepIndex: 4, name: "04-coprocessor", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor" },
+        { step: "relayer-sdk", stepIndex: 5, name: "05-relayer-sdk", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor,test-suite" },
       ],
     });
   });
