@@ -128,13 +128,12 @@ jobs:
         working-directory: current-fhevm/host-contracts
         run: |
           set -euo pipefail
-          git fetch --depth=1 origin "refs/tags/${UPGRADE_FROM_TAG}:refs/tags/${UPGRADE_FROM_TAG}"
           source addresses/.env.host
 
           before_impl=$(cast implementation "$FHEVM_EXECUTOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
 
           npx hardhat task:prepareUpgradeFHEVMExecutor \
-            --upgrade-from-ref "$UPGRADE_FROM_TAG" \
+            --current-implementation previous-contracts/FHEVMExecutor.sol:FHEVMExecutor \
             --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor \
             --use-internal-proxy-address true \
             --verify-contract false

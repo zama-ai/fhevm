@@ -59,14 +59,14 @@ Then run:
 ```bash
 npx hardhat task:prepareUpgradeFHEVMExecutor \
   --network sepolia \
-  --upgrade-from-ref v0.11.1 \
+  --current-implementation previous-contracts/FHEVMExecutor.sol:FHEVMExecutor \
   --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor \
   --verify-contract true
 ```
 
 Notes:
 - `--network` selects where the implementation deployment transaction is sent.
-- `--upgrade-from-ref` is only used to load the old implementation source for OZ validation.
+- `--current-implementation` points to the old implementation source available on disk.
 - `--new-implementation` comes from your current checkout.
 - if you want the proxy address from `addresses/.env.host`, add `--use-internal-proxy-address true`
 - the task runs `hardhat clean` before recompiling so the implementation is not built from stale
