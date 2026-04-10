@@ -284,6 +284,11 @@ contract InputVerification is
 
     /**
      * @notice See {IInputVerification-rejectProofResponse}.
+     * @dev This function records the rejection under the paired signer address based solely on
+     * the txSender's authority (no signer signature required). Once recorded, the paired signer
+     * cannot submit a valid `verifyProofResponse` for the same `zkProofId`. If a txSender key is
+     * compromised or misbehaves, the GatewayConfig owner can rotate the coprocessor set via
+     * `updateCoprocessors` as a recovery mechanism.
      */
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();

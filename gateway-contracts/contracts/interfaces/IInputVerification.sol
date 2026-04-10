@@ -122,6 +122,13 @@ interface IInputVerification {
      * tracking purposes, so there is no real need to verify the signature anywhere else. Besides, we can
      * easily verify the sender's identity through `msg.sender`.
      *
+     * NOTE: Because this function requires no signer signature, a rejection is recorded under
+     * the paired signer address based solely on the txSender's authority. Once recorded, the
+     * paired signer cannot submit a valid `verifyProofResponse` for the same `zkProofId`.
+     * This means a compromised or misbehaving txSender key could lock out its paired signer
+     * for a given proof without the signer's consent. If this occurs, the GatewayConfig owner
+     * can rotate the coprocessor set via `updateCoprocessors` as a recovery mechanism.
+     *
      * @param zkProofId The ID of the requested ZK Proof.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
