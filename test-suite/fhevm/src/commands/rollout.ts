@@ -7,7 +7,7 @@ import { ensureDir, readJson, writeJson } from "../utils/fs";
 
 type RolloutStep = string[];
 type RolloutMatrix = {
-  include: Array<{ step: string; stepIndex: number; name: string }>;
+  include: Array<{ step: string; stepIndex: number; name: string; overrides: string }>;
 };
 export type CompatTestDefinition = {
   name: string;
@@ -27,6 +27,32 @@ const lockStem = (index: number, label: string) => `${String(index).padStart(2, 
 const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-+|-+$/g, "");
 const stepLabel = (step: readonly string[]) => step.map((unit) => slug(unit)).join("_");
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
+const LOCAL_OVERRIDE_BY_UNIT: Record<string, string[]> = {
+  RELAYER: ["relayer"],
+  GATEWAY_CONTRACTS: ["gateway-contracts"],
+  HOST_CONTRACTS: ["host-contracts"],
+  KMS_CONNECTOR: ["kms-connector"],
+  COPROCESSOR: ["coprocessor"],
+  RELAYER_SDK: ["test-suite"],
+};
+const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
+const unitNeedsLocalOverride = (test: CompatTestDefinition, unit: string) =>
+  (LOCAL_OVERRIDE_BY_UNIT[unit] ?? []).length > 0 &&
+  test.units[unit].some((key) => !parseCompatVersion(test.to[key] ?? ""));
+const stepOverrides = (test: CompatTestDefinition, stepIndex: number) => {
+  const overrides = new Set<string>();
+  for (const step of test.steps.slice(0, stepIndex)) {
+    for (const unit of step) {
+      if (!unitNeedsLocalOverride(test, unit)) {
+        continue;
+      }
+      for (const group of LOCAL_OVERRIDE_BY_UNIT[unit] ?? []) {
+        overrides.add(group);
+      }
+    }
+  }
+  return [...overrides].join(",");
+};
 
 /** Validates that a compat-test env map contains every required version key. */
 const validateEnvMap = (label: string, value: Record<string, string>) => {
@@ -117,10 +143,15 @@ const bundleFromEnv = (test: CompatTestDefinition, kind: "from" | "to"): Version
 });
 
 const rolloutEntries = (test: CompatTestDefinition) => [
-  { step: "baseline", stepIndex: 0, name: lockStem(0, "baseline").replace(/\.lock\.json$/, "") },
+  { step: "baseline", stepIndex: 0, name: lockStem(0, "baseline").replace(/\.lock\.json$/, ""), overrides: stepOverrides(test, 0) },
   ...test.steps.map((step, index) => {
     const label = stepLabel(step);
-    return { step: label, stepIndex: index + 1, name: lockStem(index + 1, label).replace(/\.lock\.json$/, "") };
+    return {
+      step: label,
+      stepIndex: index + 1,
+      name: lockStem(index + 1, label).replace(/\.lock\.json$/, ""),
+      overrides: stepOverrides(test, index + 1),
+    };
   }),
 ] satisfies RolloutMatrix["include"];
 
