@@ -136,6 +136,24 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
   });
 
+  test("renders legacy pauser flags for v0.12.0 contracts", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          HOST_VERSION: "v0.12.0",
+          GATEWAY_VERSION: "v0.12.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+  });
+
   test("routes semver relayer images to the legacy console registry", () => {
     const policy = compatPolicyForState({
       versions: {
