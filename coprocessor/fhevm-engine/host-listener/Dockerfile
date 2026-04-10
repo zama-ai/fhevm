@@ -26,12 +26,15 @@ USER root
 
 WORKDIR /app
 
+# TODO fix
+
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
+COPY listener ./listener
 
 WORKDIR /app/coprocessor/fhevm-engine
 
@@ -44,7 +47,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
-    cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller \
+    cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \
     cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer
 
 # Stage 2: Runtime image

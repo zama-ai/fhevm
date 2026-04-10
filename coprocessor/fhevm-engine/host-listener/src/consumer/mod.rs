@@ -136,8 +136,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let db_errors = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let processed_blocks = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let db_errors_ = db_errors.clone(); // local accessor
-    let processed_blocks_ = processed_blocks.clone(); // local accessor
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
@@ -210,8 +208,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let consumer_result = consumer_run.await;
     info!(
         chain_id = %config.chain_id,
-        db_errors = db_errors_.load(Ordering::Relaxed),
-        processed_blocks = processed_blocks_.load(Ordering::Relaxed),
         "Host listener consumer graceful stop"
     );
     match consumer_result {
