@@ -195,7 +195,7 @@ storage:
     # 60s for interval check
     timeout_cron_interval: "60s"
     # 30 mins timeout logic
-    public_decrypt_timeout: "30m"
+    public_decrypt_timeout: "2h"
     user_decrypt_timeout: "30m"
     input_proof_timeout: "30m"
     # 1 hour interval for cleanup check
