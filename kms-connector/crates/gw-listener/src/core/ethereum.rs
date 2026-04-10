@@ -16,7 +16,7 @@ use connector_utils::{
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationEvents;
 use fhevm_host_bindings::kms_verifier::KMSVerifier::{self, KMSVerifierInstance};
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
@@ -210,19 +210,18 @@ where
             return Ok(from_block);
         }
 
-        let mut min_last_processed_block: Option<u64> = None;
-        for &event_type in event_types {
-            if let Some(last) = self.get_last_block_polled_from_db(event_type).await? {
-                min_last_processed_block = match min_last_processed_block {
-                    Some(current) => Some(std::cmp::min(current, last)),
-                    None => Some(last),
-                };
-            }
-        }
+        info!("Fetching min last block polled from DB for {event_types:?}...");
+        let min_block = sqlx::query_scalar!(
+            "SELECT MIN(block_number) FROM last_block_polled WHERE event_type = ANY($1::event_type[])",
+            event_types as &[EventType],
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
 
-        match min_last_processed_block {
-            Some(last_block_polled) => Ok(last_block_polled.saturating_add(1)),
+        match min_block {
+            Some(last_block_polled) => Ok(last_block_polled as u64 + 1),
             None => {
+                info!("No block polled yet. Listening from finalized block number instead...");
                 let finalized = self
                     .provider
                     .get_block_by_number(BlockNumberOrTag::Finalized)
@@ -233,25 +232,6 @@ where
                 Ok(finalized)
             }
         }
-    }
-
-    async fn get_last_block_polled_from_db(
-        &self,
-        event_type: EventType,
-    ) -> anyhow::Result<Option<u64>> {
-        info!("Fetching last block polled from DB for {event_type}...");
-        let query_result =
-            sqlx::query("SELECT block_number FROM last_block_polled WHERE event_type = $1")
-                .bind(event_type)
-                .fetch_one(&self.db_pool)
-                .await?
-                .try_get::<Option<i64>, _>("block_number")?;
-
-        let Some(block_number) = query_result else {
-            info!("No block number stored in DB yet for {event_type}");
-            return Ok(None);
-        };
-        Ok(Some(block_number as u64))
     }
 }
 
@@ -270,6 +250,7 @@ mod tests {
         sol_types::SolValue,
     };
     use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
+    use sqlx::Row;
     use std::time::Duration;
 
     #[rstest::rstest]
