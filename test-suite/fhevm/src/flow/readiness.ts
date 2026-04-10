@@ -180,6 +180,7 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     }
     await waitForContainer(toServiceName("host-listener", index), "running");
     await waitForContainer(toServiceName("host-listener-poller", index), "running");
+    await waitForContainer(toServiceName("host-listener-consumer", index), "running");
     await waitForContainer(toServiceName("gw-listener", index), "running");
     await waitForContainer(toServiceName("tfhe-worker", index), "running");
     await waitForContainer(toServiceName("zkproof-worker", index), "running");

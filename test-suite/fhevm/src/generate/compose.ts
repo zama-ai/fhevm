@@ -89,6 +89,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "host-listener",
     }),
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
+    }),
     "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "gw-listener",
     }),

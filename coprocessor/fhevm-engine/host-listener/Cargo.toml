@@ -58,7 +58,7 @@ url = "2.5.7"
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 # TODO: integrate github or better path when available
-consumer = { path = "../../../../listener/crates/consumer" }
+consumer = { path = "../../../listener/crates/consumer" }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["node-bindings"] }
