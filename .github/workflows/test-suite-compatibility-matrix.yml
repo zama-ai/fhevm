@@ -85,7 +85,7 @@ jobs:
             exit 1
           }
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
-          compat_test_rel="${compat_test#${GITHUB_WORKSPACE}/}"
+          compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
           {
             echo "compat_test=$compat_test_rel"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
