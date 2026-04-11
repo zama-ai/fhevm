@@ -6,7 +6,6 @@ import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInst
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { loadMergedComposeDoc } from "../generate/compose";
 import { hostReachableRpcUrl } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
@@ -544,10 +543,11 @@ const waitForDbRevertRecovery = async (
   }
 };
 
-const serviceImageRef = async (component: string, service: string) => {
-  const image = (await loadMergedComposeDoc(component)).services[service]?.image;
-  if (typeof image !== "string" || !image) {
-    throw new PreflightError(`Could not resolve image for ${service} from ${component} compose`);
+const runtimeImageRef = async (container: string) => {
+  const result = await run(["docker", "inspect", "--format", "{{.Config.Image}}", container], { allowFailure: true });
+  const image = result.stdout.trim();
+  if (result.code !== 0 || !image) {
+    throw new PreflightError(`Could not resolve runtime image for ${container}`);
   }
   return image;
 };
@@ -575,11 +575,7 @@ const runDbStateRevert = async (
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
   const containers = coprocessorRuntimeContainers(topologyForState(state).count);
-  const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
-  if (!migrationVersion) {
-    throw new PreflightError("db-state-revert requires COPROCESSOR_DB_MIGRATION_VERSION in the active stack state");
-  }
-  const revertImage = await serviceImageRef("coprocessor", "coprocessor-db-migration");
+  const revertImage = await runtimeImageRef("coprocessor-db-migration");
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
