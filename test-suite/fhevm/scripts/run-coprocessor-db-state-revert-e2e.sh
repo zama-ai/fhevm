@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REVERT_IMAGE="ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}"
+REVERT_IMAGE="${REVERT_IMAGE:-ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}}"
 
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-coprocessor-and-kms-db}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
