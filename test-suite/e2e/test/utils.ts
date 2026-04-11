@@ -262,6 +262,7 @@ const abi = [
   'event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result)',
   'event FheRand(address indexed caller, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
+  'event FheSum(address indexed caller, bytes32[] values, bytes32 result)',
 ];
 
 export function getTxHCUFromTxReceipt(
@@ -963,6 +964,26 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+
+      case 'FheSum': {
+        handleResult = ethers.toBeHex(event.args[2], 32);
+        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
+        type = FheTypes.find((t) => t.value === typeIndex)?.type;
+        if (!type) {
+          throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
+        }
+        const nBucketedPrices = (ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<string, { le10: number; le30?: number; le60?: number; le100?: number }>)[type];
+        const n = (event.args[1] as string[]).length;
+        if (n <= 10) hcuConsumed = nBucketedPrices.le10;
+        else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        const maxInputHCU = Math.max(...(event.args[1] as string[]).map((v) => readFromHCUMap(ethers.toBeHex(v, 32))));
+        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        handleSet.add(handleResult);
+        totalHCUConsumed += hcuConsumed;
+        break;
+      }
     }
   }
 

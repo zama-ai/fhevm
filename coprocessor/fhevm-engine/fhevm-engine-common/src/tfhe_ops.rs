@@ -703,7 +703,6 @@ pub fn check_fhe_operand_types(
                 }
                 SupportedFheOperations::FheSum => {
                     const FHE_SUM_MIN_INPUTS: usize = 2;
-                    // Wide types require more GPU memory per element; matches FHEVMExecutor.sol limits.
                     const FHE_SUM_MAX_INPUTS_WIDE: usize = 60;
                     const FHE_SUM_MAX_INPUTS_NARROW: usize = 100;
 
