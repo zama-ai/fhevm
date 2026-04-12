@@ -1,0 +1,5 @@
+contracts
+docs
+*.md
+src/wasm
+test/fheTest/.keys
