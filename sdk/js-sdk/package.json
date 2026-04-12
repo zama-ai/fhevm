@@ -1,0 +1,139 @@
+{
+  "name": "@fhevm/sdk",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run clean && npm run prettier:check && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",
+    "build:tests": "tsc --project ./test/tsconfig.json --noEmit",
+    "build:cjs": "tsc --project ./tsconfig.build.cjs.json --module commonjs --moduleResolution node --outDir ./src/_cjs --removeComments --verbatimModuleSyntax false && printf '{\"type\":\"commonjs\"}' > ./src/_cjs/package.json && npm run build:cjs:wasm",
+    "build:cjs:wasm": "node -e \"require('fs').cpSync('src/wasm','src/_cjs/wasm',{recursive:true})\"",
+    "build:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./src/_esm && printf '{\"type\": \"module\",\"sideEffects\":false}' > ./src/_esm/package.json && npm run build:esm:wasm",
+    "build:esm:wasm": "node -e \"require('fs').cpSync('src/wasm','src/_esm/wasm',{recursive:true})\"",
+    "build:types": "tsc --project ./tsconfig.build.esm.json --declarationDir ./src/_types --emitDeclarationOnly --declaration --declarationMap",
+    "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo src/_esm src/_cjs src/_types",
+    "size-limit": "size-limit",
+    "lint": "eslint && tsc --project ./tsconfig.json --noEmit",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
+    "test:browser": "npx playwright test --config test/browser/playwright.config.ts",
+    "test:browser:manual": "npx vite --config test/browser/vite.config.ts",
+    "fhevm:restart": "./scripts/fhevm-cli-restart.sh",
+    "fhevm:stop": "./scripts/fhevm-cli-stop.sh",
+    "fhevm:clean": "./scripts/fhevm-cli-clean.sh"
+  },
+  "devDependencies": {
+    "@noble/hashes": "2.0.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
+    "@size-limit/preset-big-lib": "^12.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.2",
+    "ethers": "^6.15.0",
+    "size-limit": "^12.0.1",
+    "test": "vitest -c ./test/vitest.config.ts",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.3",
+    "wasm-feature-detect": "^1.8.0",
+    "typescript-eslint": "^8.56.1",
+    "viem": "^2.46.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  },
+  "imports": {
+    "#wasm/baseUrl": {
+      "import": "./src/wasm/wasmBaseUrl.js",
+      "require": "./src/wasm/wasmBaseUrl.cjs"
+    }
+  },
+  "size-limit": [
+    {
+      "name": "import * from '@fhevm/sdk/actions/base'",
+      "path": "./src/_esm/core/actions/base/index.js",
+      "limit": "15 kB",
+      "import": "*"
+    },
+    {
+      "name": "import * from '@fhevm/sdk/actions/host'",
+      "path": "./src/_esm/core/actions/host/index.js",
+      "limit": "10 kB",
+      "import": "*"
+    },
+    {
+      "name": "import * from '@fhevm/sdk/actions/chain'",
+      "path": "./src/_esm/core/actions/chain/index.js",
+      "limit": "12 kB",
+      "import": "*"
+    },
+    {
+      "name": "import * from '@fhevm/sdk/actions/encrypt'",
+      "path": "./src/_esm/core/actions/encrypt/index.js",
+      "limit": "13 kB",
+      "import": "*"
+    },
+    {
+      "name": "import * from '@fhevm/sdk/actions/decrypt'",
+      "path": "./src/_esm/core/actions/decrypt/index.js",
+      "limit": "12 kB",
+      "import": "*"
+    },
+    {
+      "name": "import { createFhevmBaseClient } from '@fhevm/sdk/ethers'",
+      "path": "./src/_esm/ethers/clients/createFhevmBaseClient.js",
+      "limit": "50 kB",
+      "import": "{ createFhevmBaseClient }"
+    },
+    {
+      "name": "import { createFhevmDecryptClient } from '@fhevm/sdk/ethers'",
+      "path": "./src/_esm/ethers/clients/createFhevmDecryptClient.js",
+      "limit": "60 kB",
+      "import": "{ createFhevmDecryptClient }",
+      "ignore": [
+        "node:buffer",
+        "node:fs/promises",
+        "node:url"
+      ]
+    },
+    {
+      "name": "import { createFhevmEncryptClient } from '@fhevm/sdk/ethers'",
+      "path": "./src/_esm/ethers/clients/createFhevmEncryptClient.js",
+      "limit": "82 kB",
+      "import": "{ createFhevmEncryptClient }",
+      "ignore": [
+        "node:buffer",
+        "node:fs/promises",
+        "node:url"
+      ]
+    },
+    {
+      "name": "import { createFhevmClient } from '@fhevm/sdk/ethers'",
+      "path": "./src/_esm/ethers/clients/createFhevmClient.js",
+      "limit": "86 kB",
+      "import": "{ createFhevmClient }",
+      "ignore": [
+        "node:buffer",
+        "node:fs/promises",
+        "node:url"
+      ]
+    },
+    {
+      "name": "import * from from '@fhevm/sdk/ethers'",
+      "path": "./src/_esm/ethers/index.js",
+      "limit": "92 kB",
+      "import": "*",
+      "ignore": [
+        "node:buffer",
+        "node:fs/promises",
+        "node:url"
+      ]
+    }
+  ],
+  "overrides": {
+    "//": "@types/eslint-scope@3.7.7 has a broken writeExpr typing that fails with skipLibCheck:false. Pin to 3.7.6.",
+    "webpack": {
+      "@types/eslint-scope": "3.7.6"
+    }
+  },
+  "engines": {
+    "node": ">=22.0"
+  }
+}

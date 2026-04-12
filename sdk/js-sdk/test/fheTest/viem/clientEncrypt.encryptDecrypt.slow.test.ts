@@ -1,0 +1,229 @@
+//
+// Sepolia Testnet:
+// ----------------
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+//
+// Devnet:
+// -------
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+//
+// localhost fhevm:
+// ----------------
+// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+//
+import { describe, it, expect, beforeAll } from 'vitest';
+import {
+  createFhevmDecryptClient,
+  createFhevmEncryptClient,
+  setFhevmRuntimeConfig,
+} from '@fhevm/sdk/viem';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { isV2, getBaseEnv } from '../setupCommon.js';
+import { FHETestABI } from '../abi-v2.js';
+import type {
+  ChecksummedAddress,
+  TypedValue,
+} from '../../../src/core/types/primitives.js';
+import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+import { createWalletClient, http, type Hex } from 'viem';
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Map FHE type to: contract function name, value type name, test value
+const encryptTestCases: TypedValue[] = createTypedValueArray([
+  {
+    value: true,
+    type: 'bool' as const,
+  },
+  {
+    type: 'uint8' as const,
+    value: 42,
+  },
+  {
+    type: 'uint16' as const,
+    value: 1234,
+  },
+  {
+    type: 'uint32' as const,
+    value: 123456,
+  },
+  {
+    type: 'uint64' as const,
+    value: 123456789n,
+  },
+  {
+    type: 'uint128' as const,
+    value: 123456789012345n,
+  },
+  {
+    type: 'uint256' as const,
+    value: 123456789012345678901234567890n,
+  },
+  {
+    type: 'address' as const,
+    value: '0x37AC010c1c566696326813b840319B58Bb5840E4',
+  },
+]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe.runIf(isV2(getViemTestConfig().chainName))(
+  'Encrypt-Decrypt',
+  () => {
+    let config: FheTestViemConfig;
+
+    beforeAll(() => {
+      config = getViemTestConfig();
+      setFhevmRuntimeConfig({
+        auth: {
+          type: 'ApiKeyHeader',
+          value: config.zamaApiKey,
+        },
+        logger: {
+          debug: (message: string) => console.log(message),
+          error: (message: string) => console.log(message),
+        },
+      });
+    });
+
+    it('should encrypt, submit on-chain, and decrypt all types', async () => {
+      // ┌─────────────────────────────────────────────────────────────────────┐
+      // │  Phase 1: ENCRYPT                                                   │
+      // │  Client-side encryption of all FHE types into external handles      │
+      // └─────────────────────────────────────────────────────────────────────┘
+      const client = createFhevmEncryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+      await client.ready;
+
+      const result = await client.encrypt({
+        contractAddress: config.fheTestAddress,
+        userAddress: config.account.address,
+        values: encryptTestCases,
+      });
+
+      expect(result.externalEncryptedValues).toHaveLength(
+        encryptTestCases.length,
+      );
+      expect(result.inputProof).toBeDefined();
+      expect(result.inputProof.startsWith('0x')).toBe(true);
+
+      for (let i = 0; i < encryptTestCases.length; i++) {
+        const tc = encryptTestCases[i]!;
+        const ev = result.externalEncryptedValues[i]!;
+        console.log(`  ${tc.type}: handle=${ev.bytes32Hex.slice(0, 20)}...`);
+        expect(ev.bytes32Hex).toBeDefined();
+      }
+
+      // ┌─────────────────────────────────────────────────────────────────────┐
+      // │  Phase 2: SUBMIT ON-CHAIN                                           │
+      // │  Send encrypted handles + input proof to FHETest contract           │
+      // └─────────────────────────────────────────────────────────────────────┘
+      const walletClient = createWalletClient({
+        account: config.account,
+        chain: config.publicClient.chain,
+        transport: http(getBaseEnv().rpcUrl),
+      });
+
+      for (let i = 0; i < encryptTestCases.length; i++) {
+        const enc = result.externalEncryptedValues[i]!;
+        const ct = encryptTestCases[i]!.value;
+
+        const inputHandle = enc.bytes32Hex;
+        const inputProof = result.inputProof;
+        const makePublic = true;
+
+        // Compute function name from fheType: ebool → setEbool, euint8 → setEuint8, etc.
+        const functionName = `set${enc.fheType.charAt(0).toUpperCase()}${enc.fheType.slice(1)}`;
+        console.log(`${functionName}(${inputHandle})...`);
+
+        const hash = await walletClient.writeContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: functionName as
+            | 'setEbool'
+            | 'setEuint8'
+            | 'setEuint16'
+            | 'setEuint32'
+            | 'setEuint64'
+            | 'setEuint128'
+            | 'setEuint256'
+            | 'setEaddress',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          args: [inputHandle, inputProof, ct, makePublic] as any,
+        });
+
+        const receipt = await config.publicClient.waitForTransactionReceipt({
+          hash,
+        });
+        expect(receipt.status).toBe('success');
+      }
+
+      // ┌─────────────────────────────────────────────────────────────────────┐
+      // │  Phase 3: PRIVATE DECRYPT                                           │
+      // │  Decrypt via signed permit + e2e transport keypair                  │
+      // └─────────────────────────────────────────────────────────────────────┘
+      const decryptClient = createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+
+      await decryptClient.ready;
+
+      const e2eTransportKeypair =
+        await decryptClient.generateE2eTransportKeypair();
+      const signedPermit = await decryptClient.signDecryptionPermit({
+        e2eTransportKeypair,
+        contractAddresses: [config.fheTestAddress],
+        durationDays: 1,
+        startTimestamp: Math.floor(Date.now() / 1000),
+        signerAddress: config.account.address,
+        signer: config.account,
+      });
+
+      const encryptedValues = result.externalEncryptedValues.map((ev) => {
+        return {
+          encryptedValue: ev.bytes32Hex,
+          contractAddress: config.fheTestAddress as ChecksummedAddress,
+        };
+      });
+
+      console.log('decrypt...');
+
+      const clearValues = await decryptClient.decrypt({
+        encryptedValues,
+        signedPermit,
+        e2eTransportKeypair,
+      });
+
+      for (let i = 0; i < encryptTestCases.length; i++) {
+        console.log(clearValues[i]?.value);
+        expect(clearValues[i]?.type).toBe(encryptTestCases[i]?.type);
+        expect(clearValues[i]?.value).toBe(encryptTestCases[i]?.value);
+      }
+
+      // ┌─────────────────────────────────────────────────────────────────────┐
+      // │  Phase 4: PUBLIC DECRYPT                                            │
+      // │  Verify the same clear values via readPublicValue (no permit)       │
+      // └─────────────────────────────────────────────────────────────────────┘
+      console.log('publicDecrypt...');
+
+      const publicProof = await decryptClient.readPublicValue({
+        encryptedValues: result.externalEncryptedValues,
+      });
+
+      expect(publicProof.orderedClearValues).toHaveLength(
+        encryptTestCases.length,
+      );
+
+      for (let i = 0; i < encryptTestCases.length; i++) {
+        const expected = encryptTestCases[i]!;
+        const actual = publicProof.orderedClearValues[i]!;
+        console.log(`  readPublicValue ${expected.type}: ${actual.value}`);
+        expect(actual.value).toBe(expected.value);
+      }
+    });
+  },
+  5 * 60_000,
+);

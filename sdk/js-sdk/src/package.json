@@ -1,0 +1,98 @@
+{
+  "name": "@fhevm/sdk",
+  "description": "TypeScript Interface for FHEVM",
+  "version": "1.0.0-0",
+  "type": "module",
+  "main": "./_cjs/index.js",
+  "module": "./_esm/index.js",
+  "types": "./_types/index.d.ts",
+  "typings": "./_types/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "*",
+    "!**/*.test.ts",
+    "!**/*.tsbuildinfo",
+    "!tsconfig.build.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./_types/index.d.ts",
+      "import": "./_esm/index.js",
+      "default": "./_cjs/index.js"
+    },
+    "./chains": {
+      "types": "./_types/core/chains/index.d.ts",
+      "import": "./_esm/core/chains/index.js",
+      "default": "./_cjs/core/chains/index.js"
+    },
+    "./ethers": {
+      "types": "./_types/ethers/index.d.ts",
+      "import": "./_esm/ethers/index.js",
+      "default": "./_cjs/ethers/index.js"
+    },
+    "./viem": {
+      "types": "./_types/viem/index.d.ts",
+      "import": "./_esm/viem/index.js",
+      "default": "./_cjs/viem/index.js"
+    },
+    "./actions/base": {
+      "types": "./_types/core/actions/base/index.d.ts",
+      "import": "./_esm/core/actions/base/index.js",
+      "default": "./_cjs/core/actions/base/index.js"
+    },
+    "./actions/chain": {
+      "types": "./_types/core/actions/chain/index.d.ts",
+      "import": "./_esm/core/actions/chain/index.js",
+      "default": "./_cjs/core/actions/chain/index.js"
+    },
+    "./actions/decrypt": {
+      "types": "./_types/core/actions/decrypt/index.d.ts",
+      "import": "./_esm/core/actions/decrypt/index.js",
+      "default": "./_cjs/core/actions/decrypt/index.js"
+    },
+    "./actions/encrypt": {
+      "types": "./_types/core/actions/encrypt/index.d.ts",
+      "import": "./_esm/core/actions/encrypt/index.js",
+      "default": "./_cjs/core/actions/encrypt/index.js"
+    },
+    "./actions/host": {
+      "types": "./_types/core/actions/host/index.d.ts",
+      "import": "./_esm/core/actions/host/index.js",
+      "default": "./_cjs/core/actions/host/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "ethers": ">=6",
+    "typescript": ">=5.0.4",
+    "viem": ">=2"
+  },
+  "peerDependenciesMeta": {
+    "ethers": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    },
+    "viem": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@noble/hashes": "2.0.1",
+    "wasm-feature-detect": "^1.8.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git"
+  },
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "homepage": "https://github.com/zama-ai/fhevm/sdk/#readme",
+  "bugs": {
+    "url": "https://github.com/zama-ai/fhevm/sdk/js/issues"
+  },
+  "engines": {
+    "node": ">=22.0"
+  }
+}
