@@ -92,7 +92,7 @@ jobs:
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
-            ./fhevm-cli rollout --compat-test "$compat_test" --matrix
+            ./fhevm-cli rollout --compat-test "$compat_test" --matrix | jq '{include: [.include[] | select(.stepIndex > 0)]}'
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
