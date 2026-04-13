@@ -11,6 +11,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --no-default-features --features postgres --locked
 
 # Copy migrations and initialization script
+COPY listener ./listener
 COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine
 COPY coprocessor/proto/ ./coprocessor/proto/
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
