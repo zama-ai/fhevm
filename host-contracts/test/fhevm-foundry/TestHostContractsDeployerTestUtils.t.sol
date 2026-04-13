@@ -4,13 +4,17 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
 import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
+import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
@@ -170,6 +174,69 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         vm.prank(fhevmExecutorAdd);
         aclProxy.allowTransient(bytes32(uint256(1)), address(this));
         assertTrue(aclProxy.allowedTransient(bytes32(uint256(1)), address(this)), "Transient allow failed");
+    }
+
+    function test_DeployProtocolConfig_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        KmsNode[] memory nodes = new KmsNode[](2);
+        nodes[0] = KmsNode({
+            txSenderAddress: address(0x1111),
+            signerAddress: address(0x2222),
+            ipAddress: "127.0.0.1",
+            storageUrl: "https://s0.example.com"
+        });
+        nodes[1] = KmsNode({
+            txSenderAddress: address(0x3333),
+            signerAddress: address(0x4444),
+            ipAddress: "127.0.0.2",
+            storageUrl: "https://s1.example.com"
+        });
+        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 1,
+            mpc: 1
+        });
+
+        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(OWNER, nodes, thresholds);
+
+        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
+        assertNotEq(pcImplementation, address(0), "Implementation not deployed");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.1.0", "Version mismatch");
+        assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
+        assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
+        assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");
+        assertEq(pcProxy.getMpcThreshold(), 1, "Mpc threshold mismatch");
+        assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
+    }
+
+    function test_DeployKMSGeneration_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        // KMSGeneration reads from ProtocolConfig so we need it deployed
+        KmsNode[] memory nodes = new KmsNode[](1);
+        nodes[0] = KmsNode({
+            txSenderAddress: address(0x1111),
+            signerAddress: address(0x2222),
+            ipAddress: "127.0.0.1",
+            storageUrl: "https://s0.example.com"
+        });
+        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 1,
+            mpc: 1
+        });
+        _deployProtocolConfig(OWNER, nodes, thresholds);
+
+        (KMSGeneration kgProxy, address kgImplementation) = _deployKMSGeneration(OWNER);
+
+        assertEq(address(kgProxy), kmsGenerationAdd, "KMSGeneration proxy address mismatch");
+        assertNotEq(kgImplementation, address(0), "Implementation not deployed");
+        assertEq(kgProxy.getVersion(), "KMSGeneration v0.1.0", "Version mismatch");
+        assertFalse(kgProxy.hasPendingKeyManagementRequest(), "No pending requests expected");
+        assertEq(_readImplementationSlot(kmsGenerationAdd), kgImplementation, "Implementation slot mismatch");
     }
 
     function _readImplementationSlot(address proxy) private view returns (address) {
