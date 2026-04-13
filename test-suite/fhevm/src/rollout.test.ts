@@ -40,7 +40,7 @@ const compatTest = (): CompatTestDefinition => ({
     ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
     ["KMS_CORE", "KMS_CONNECTOR"],
     ["COPROCESSOR"],
-    ["RELAYER_SDK"],
+    ["TEST_SUITE"],
   ],
   units: {
     RELAYER: ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -62,7 +62,7 @@ const compatTest = (): CompatTestDefinition => ({
       "COPROCESSOR_ZKPROOF_WORKER_VERSION",
       "COPROCESSOR_SNS_WORKER_VERSION",
     ],
-    RELAYER_SDK: ["TEST_SUITE_VERSION"],
+    TEST_SUITE: ["TEST_SUITE_VERSION"],
   },
   execution: {
     scenario: "two-of-two",
@@ -89,7 +89,7 @@ describe("rollout", () => {
     const testDef = compatTest();
     await writeJson(file, { ...testDef, units: { ...testDef.units, KMS_CORE: ["CORE_VERSION", "BOGUS"] } });
     await expect(readCompatTest(file)).rejects.toThrow("references unknown version key BOGUS");
-    await writeJson(file, { ...testDef, units: { ...testDef.units, RELAYER_SDK: ["RELAYER_VERSION"] } });
+    await writeJson(file, { ...testDef, units: { ...testDef.units, TEST_SUITE: ["RELAYER_VERSION"] } });
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
@@ -98,7 +98,7 @@ describe("rollout", () => {
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
-    const { RELAYER_SDK: _relayerSdk, ...units } = testDef.units;
+    const { TEST_SUITE: _testSuite, ...units } = testDef.units;
     await writeJson(file, { ...testDef, units });
     await expect(readCompatTest(file)).rejects.toThrow("do not cover required version keys: TEST_SUITE_VERSION");
   });
@@ -111,7 +111,7 @@ describe("rollout", () => {
       "02-gateway-contracts_host-contracts.lock.json",
       "03-kms-core_kms-connector.lock.json",
       "04-coprocessor.lock.json",
-      "05-relayer-sdk.lock.json",
+      "05-test-suite.lock.json",
     ]);
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
@@ -138,7 +138,7 @@ describe("rollout", () => {
         { step: "gateway-contracts_host-contracts", stepIndex: 2, name: "02-gateway-contracts_host-contracts", overrides: "relayer,gateway-contracts,host-contracts" },
         { step: "kms-core_kms-connector", stepIndex: 3, name: "03-kms-core_kms-connector", overrides: "relayer,gateway-contracts,host-contracts,kms-connector" },
         { step: "coprocessor", stepIndex: 4, name: "04-coprocessor", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor" },
-        { step: "relayer-sdk", stepIndex: 5, name: "05-relayer-sdk", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor,test-suite" },
+        { step: "test-suite", stepIndex: 5, name: "05-test-suite", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor,test-suite" },
       ],
     });
   });
@@ -160,7 +160,7 @@ describe("rollout", () => {
       "02-gateway-contracts_host-contracts",
       "03-kms-core_kms-connector",
       "04-coprocessor",
-      "05-relayer-sdk",
+      "05-test-suite",
     ]);
     const mixed = await readJson<VersionBundle>(path.join(outDir, "03-kms-core_kms-connector.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");

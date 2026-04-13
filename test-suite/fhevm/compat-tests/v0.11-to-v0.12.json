@@ -43,7 +43,7 @@
     ["RELAYER"],
     ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
     ["KMS_CORE", "KMS_CONNECTOR"],
-    ["COPROCESSOR", "RELAYER_SDK"]
+    ["COPROCESSOR", "TEST_SUITE"]
   ],
   "units": {
     "RELAYER": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -65,7 +65,7 @@
       "COPROCESSOR_ZKPROOF_WORKER_VERSION",
       "COPROCESSOR_SNS_WORKER_VERSION"
     ],
-    "RELAYER_SDK": ["TEST_SUITE_VERSION"]
+    "TEST_SUITE": ["TEST_SUITE_VERSION"]
   },
   "execution": {
     "scenario": "two-of-two",

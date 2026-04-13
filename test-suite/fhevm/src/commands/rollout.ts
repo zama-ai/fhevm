@@ -33,7 +33,7 @@ const LOCAL_OVERRIDE_BY_UNIT: Record<string, string[]> = {
   HOST_CONTRACTS: ["host-contracts"],
   KMS_CONNECTOR: ["kms-connector"],
   COPROCESSOR: ["coprocessor"],
-  RELAYER_SDK: ["test-suite"],
+  TEST_SUITE: ["test-suite"],
 };
 const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
 const unitNeedsLocalOverride = (test: CompatTestDefinition, unit: string) =>
