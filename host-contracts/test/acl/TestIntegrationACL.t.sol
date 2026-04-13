@@ -9,6 +9,7 @@ import {FHE} from "../../lib/FHE.sol";
 import {FHEEvents} from "../../contracts/FHEEvents.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
 contract TestIntegrationACL is HostContractsDeployerTestUtils {
     ACL internal acl;
@@ -17,16 +18,25 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
 
     address private constant OWNER = address(0xBEEF);
     address private constant PAUSER = address(0xCAFE);
-    address[] private kmsSigners;
     address[] private inputSigners;
 
     function setUp() public {
-        kmsSigners = new address[](1);
-        kmsSigners[0] = address(0x7777);
+        KmsNode[] memory initialKmsNodes = new KmsNode[](1);
+        initialKmsNodes[0] = _makeTestNode(address(0x7777), 1);
         inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
 
-        _deployFullHostStack(OWNER, PAUSER, address(0x1234), address(0x5678), 31337, kmsSigners, 1, inputSigners, 1);
+        _deployFullHostStack(
+            OWNER,
+            PAUSER,
+            address(0x1234),
+            address(0x5678),
+            31337,
+            initialKmsNodes,
+            _defaultThresholds(),
+            inputSigners,
+            1
+        );
 
         acl = ACL(aclAdd);
         pauserSet = PauserSet(pauserSetAdd);

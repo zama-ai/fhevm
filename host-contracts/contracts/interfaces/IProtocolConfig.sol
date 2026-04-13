@@ -114,11 +114,24 @@ interface IProtocolConfig {
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
 
     /**
+     * @notice Returns the signer addresses for the current active context.
+     * @return The list of signer addresses.
+     */
+    function getKmsSigners() external view returns (address[] memory);
+
+    /**
      * @notice Returns the signer addresses for a given context.
      * @param kmsContextId The context ID.
      * @return The list of signer addresses.
      */
     function getKmsSignersForContext(uint256 kmsContextId) external view returns (address[] memory);
+
+    /**
+     * @notice Checks whether an address is a signer in the current active context.
+     * @param signer The address to check.
+     * @return True if the address is a signer in the current context.
+     */
+    function isKmsSigner(address signer) external view returns (bool);
 
     /**
      * @notice Checks whether an address is a signer in the given context.
@@ -156,6 +169,13 @@ interface IProtocolConfig {
      * @return The public decryption threshold.
      */
     function getPublicDecryptionThreshold() external view returns (uint256);
+
+    /**
+     * @notice Returns the public decryption threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The public decryption threshold for the context.
+     */
+    function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the current user decryption threshold (for the active context).

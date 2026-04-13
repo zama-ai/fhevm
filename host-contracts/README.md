@@ -103,19 +103,15 @@ KMSVerifier context (ProtocolConfig) or a frozen Gateway contract (KMSGeneration
 
 ### ProtocolConfig migration
 
-Requires one additional env var:
-
-| Variable              | Description                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------- |
-| `EXISTING_CONTEXT_ID` | The context ID from the old KMSVerifier to preserve. Must be `>= KMS_CONTEXT_COUNTER_BASE + 1`. |
+Uses `MIGRATION_CONTEXT_ID` (shared with KMSGeneration — see table below).
 
 ```bash
-EXISTING_CONTEXT_ID="<context_id>" \
+MIGRATION_CONTEXT_ID="<context_id>" \
 npx hardhat task:deployProtocolConfigFromMigration --network <network>
 ```
 
 The migrated ProtocolConfig seeds its internal counter so that the first context it creates
-has exactly `EXISTING_CONTEXT_ID`, preserving context continuity for downstream consumers.
+has exactly `MIGRATION_CONTEXT_ID`, preserving context continuity for downstream consumers.
 
 ### KMSGeneration migration
 
@@ -148,3 +144,16 @@ MIGRATION_KEY_COUNTER="…" \
 # … (all variables above) …
 npx hardhat task:deployKMSGenerationFromMigration --network <network>
 ```
+
+`task:deployProtocolConfigFromMigration` must run before `task:deployKMSGenerationFromMigration`.
+`task:deployKMSGenerationFromMigration` validates the migrated signer / tx-sender consensus sets
+against the canonical `ProtocolConfig` state during initialization.
+
+### Breaking changes for event consumers
+
+`KMSVerifier` no longer emits context-lifecycle events after the migration to canonical
+`ProtocolConfig` state. Off-chain consumers should move to the `ProtocolConfig` emitter at
+`protocolConfigAdd` (`addresses/FHEVMHostAddresses.sol`):
+
+- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
+- `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
