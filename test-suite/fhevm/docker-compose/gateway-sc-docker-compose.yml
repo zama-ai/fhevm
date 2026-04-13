@@ -17,11 +17,11 @@ services:
     command:
       - >-
         sh -lc
-        "npx hardhat task:upgradeGatewayConfig --current-implementation contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig --use-internal-proxy-address true --verify-contract false &&
-        npx hardhat task:upgradeInputVerification --current-implementation contracts/InputVerification.sol:InputVerification --new-implementation contracts/InputVerification.sol:InputVerification --use-internal-proxy-address true --verify-contract false &&
-        npx hardhat task:upgradeKMSGeneration --current-implementation contracts/KMSGeneration.sol:KMSGeneration --new-implementation contracts/KMSGeneration.sol:KMSGeneration --use-internal-proxy-address true --verify-contract false &&
-        npx hardhat task:upgradeCiphertextCommits --current-implementation contracts/CiphertextCommits.sol:CiphertextCommits --new-implementation contracts/CiphertextCommits.sol:CiphertextCommits --use-internal-proxy-address true --verify-contract false &&
-        npx hardhat task:upgradeDecryption --current-implementation contracts/Decryption.sol:Decryption --new-implementation contracts/Decryption.sol:Decryption --use-internal-proxy-address true --verify-contract false"
+        "npx hardhat task:upgradeGatewayConfig --current-implementation contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig --upgrade-from-ref ${GATEWAY_UPGRADE_FROM_REF} --use-internal-proxy-address true --verify-contract false &&
+        npx hardhat task:upgradeInputVerification --current-implementation contracts/InputVerification.sol:InputVerification --new-implementation contracts/InputVerification.sol:InputVerification --upgrade-from-ref ${GATEWAY_UPGRADE_FROM_REF} --use-internal-proxy-address true --verify-contract false &&
+        npx hardhat task:upgradeKMSGeneration --current-implementation contracts/KMSGeneration.sol:KMSGeneration --new-implementation contracts/KMSGeneration.sol:KMSGeneration --upgrade-from-ref ${GATEWAY_UPGRADE_FROM_REF} --use-internal-proxy-address true --verify-contract false &&
+        npx hardhat task:upgradeCiphertextCommits --current-implementation contracts/CiphertextCommits.sol:CiphertextCommits --new-implementation contracts/CiphertextCommits.sol:CiphertextCommits --upgrade-from-ref ${GATEWAY_UPGRADE_FROM_REF} --use-internal-proxy-address true --verify-contract false &&
+        npx hardhat task:upgradeDecryption --current-implementation contracts/Decryption.sol:Decryption --new-implementation contracts/Decryption.sol:Decryption --upgrade-from-ref ${GATEWAY_UPGRADE_FROM_REF} --use-internal-proxy-address true --verify-contract false"
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
 

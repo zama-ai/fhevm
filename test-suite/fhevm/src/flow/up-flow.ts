@@ -533,7 +533,9 @@ export const runStep = async (state: State, step: StepName) => {
           env: legacyGatewayEnv,
         });
         await waitForContainer("gateway-sc-deploy", "complete");
-        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"]);
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"], {
+          env: { GATEWAY_UPGRADE_FROM_REF: legacyGatewayEnv.GATEWAY_VERSION },
+        });
         await waitForContainer("gateway-sc-upgrade", "complete");
       } else {
         await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
