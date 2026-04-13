@@ -24,7 +24,7 @@ services:
         npx hardhat task:upgradeDecryption --current-implementation generated-upgrade-from-contracts/Decryption.sol:Decryption --new-implementation contracts/Decryption.sol:Decryption --use-internal-proxy-address true --verify-contract false"
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/generated-upgrade-from-contracts:ro
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/generated-upgrade-from-contracts
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
