@@ -1,3 +1,4 @@
+import path from "node:path";
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
@@ -51,6 +52,7 @@ import {
   PORTS,
   PROJECT,
   REPO_ROOT,
+  RUNTIME_DIR,
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
@@ -75,6 +77,7 @@ import type {
 import { STEP_NAMES } from "../types";
 import {
   exists,
+  ensureDir,
   hostReachableMaterialUrl,
   hostReachableRpcUrl,
   predictedCrsId,
@@ -262,6 +265,22 @@ const compatSourceVersion = (state: Pick<State, "versions">, key: string) => {
 const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY_VERSION" | "HOST_VERSION") => {
   const fromVersion = compatSourceVersion(state, key);
   return fromVersion && fromVersion !== state.versions.env[key] ? { [key]: fromVersion } : undefined;
+};
+
+const gatewayCompatUpgradeFromDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-from");
+
+const materializeGatewayContractsFromRef = async (ref: string) => {
+  const targetDir = gatewayCompatUpgradeFromDir();
+  await remove(targetDir);
+  await ensureDir(targetDir);
+  await run(
+    [
+      "sh",
+      "-lc",
+      `git archive --format=tar ${shellEscape(ref)} gateway-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=2`,
+    ],
+    { cwd: REPO_ROOT },
+  );
 };
 
 /** Prints the resolved version bundle in compact or detailed form. */
@@ -533,9 +552,8 @@ export const runStep = async (state: State, step: StepName) => {
           env: legacyGatewayEnv,
         });
         await waitForContainer("gateway-sc-deploy", "complete");
-        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"], {
-          env: { GATEWAY_UPGRADE_FROM_REF: legacyGatewayEnv.GATEWAY_VERSION },
-        });
+        await materializeGatewayContractsFromRef(legacyGatewayEnv.GATEWAY_VERSION);
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"]);
         await waitForContainer("gateway-sc-upgrade", "complete");
       } else {
         await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);

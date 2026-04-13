@@ -13,7 +13,6 @@ type AbiFunction = {
   name?: string;
   inputs?: { type?: string }[];
 };
-
 function getImplementationDirectory(input: string): string {
   const colonIndex = input.lastIndexOf("/");
   if (colonIndex !== -1) {
