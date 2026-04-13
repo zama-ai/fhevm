@@ -1,7 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState } from "../compat/compat";
+import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -705,6 +705,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
+  const dbStateRevertSkipReason = () =>
+    supportsCoprocessorDbStateRevert(state)
+      ? undefined
+      : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
+
   const runProfile = async (name: string) => {
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
@@ -819,6 +824,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           const skipReason = ciphertextDriftSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ciphertext-drift: ${skipReason}`);
+            continue;
+          }
+        }
+        if (profile === "coprocessor-db-state-revert") {
+          const skipReason = dbStateRevertSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
             continue;
           }
         }

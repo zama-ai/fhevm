@@ -8,6 +8,7 @@ import {
   compatPolicyForState,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
+  supportsCoprocessorDbStateRevert,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
@@ -188,5 +189,28 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
+
+  test("requires coprocessor db-migration v0.12.0+ for db state revert", () => {
+    expect(
+      supportsCoprocessorDbStateRevert({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: { COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      supportsCoprocessorDbStateRevert({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: { COPROCESSOR_DB_MIGRATION_VERSION: "v0.12.0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
   });
 });
