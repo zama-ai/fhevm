@@ -79,14 +79,14 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
 });
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "db-migration" }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "gw-listener" }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "tfhe-worker" }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "zkproof-worker" }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "sns-worker" }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "transaction-sender" }),
+    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/db-migration/Dockerfile"),
+    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile"),
+    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile"),
+    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/gw-listener/Dockerfile"),
+    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/tfhe-worker/Dockerfile"),
+    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/zkproof-worker/Dockerfile"),
+    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/sns-worker/Dockerfile"),
+    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/transaction-sender/Dockerfile"),
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", { args: { RUST_IMAGE_VERSION: "1.91.0" } }),
