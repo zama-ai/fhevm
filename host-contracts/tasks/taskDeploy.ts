@@ -51,6 +51,8 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
+  await hre.run('task:deployProtocolConfig');
+  await hre.run('task:deployKMSGeneration');
 
   console.log('Contract deployment done!');
 });
@@ -117,6 +119,14 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   // Set HCULimit Address
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
+
+  // Set ProtocolConfig Address
+  const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
+
+  // Set KMSGeneration Address
+  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -289,6 +299,191 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig helpers
+////////////////////////////////////////////////////////////////////////////////
+
+function buildKmsNodes(
+  useAddress: boolean,
+): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+  const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  for (let idx = 0; idx < numNodes; idx++) {
+    const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
+    let signerAddress: string;
+    if (!useAddress) {
+      const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
+      signerAddress = new Wallet(privKeySigner).address;
+    } else {
+      signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
+    }
+    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
+    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+  }
+  return nodes;
+}
+
+function buildKmsThresholds() {
+  return {
+    publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
+    userDecryption: +getRequiredEnvVar('USER_DECRYPTION_THRESHOLD'),
+    kmsGen: +getRequiredEnvVar('KMS_GEN_THRESHOLD'),
+    mpc: +getRequiredEnvVar('MPC_THRESHOLD'),
+  };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployProtocolConfig')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+    const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
+    const thresholds = buildKmsThresholds();
+
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [initialKmsNodes, thresholds],
+      },
+    });
+    console.log('ProtocolConfig code set successfully at address:', proxyAddress);
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig (migration)
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployProtocolConfigFromMigration')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+    const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
+    const thresholds = buildKmsThresholds();
+    const existingContextId = BigInt(getRequiredEnvVar('EXISTING_CONTEXT_ID'));
+
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: {
+        fn: 'initializeFromMigration',
+        args: [existingContextId, initialKmsNodes, thresholds],
+      },
+    });
+    console.log('ProtocolConfig (migration) code set successfully at address:', proxyAddress);
+    console.log('Migrated context ID:', existingContextId.toString());
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration helpers
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Parses a comma-separated list of addresses from a required env var.
+ * Throws if the env var is missing or empty (via getRequiredEnvVar).
+ */
+function parseAddressList(envVarName: string): string[] {
+  const raw = getRequiredEnvVar(envVarName);
+  return raw.split(',').map((a) => a.trim());
+}
+
+/**
+ * Builds the KMSGeneration.MigrationState struct from environment variables.
+ *
+ * Scalar fields  → one env var each (uint / bytes32 / enum ordinal).
+ * Address arrays → comma-separated env vars.
+ * KeyDigest[]    → JSON env var, e.g. `[{"keyType":0,"digest":"0x…"},{"keyType":1,"digest":"0x…"}]`
+ */
+function buildKMSGenerationMigrationState() {
+  return {
+    prepKeygenCounter: BigInt(getRequiredEnvVar('MIGRATION_PREP_KEYGEN_COUNTER')),
+    keyCounter: BigInt(getRequiredEnvVar('MIGRATION_KEY_COUNTER')),
+    crsCounter: BigInt(getRequiredEnvVar('MIGRATION_CRS_COUNTER')),
+    activeKeyId: BigInt(getRequiredEnvVar('MIGRATION_ACTIVE_KEY_ID')),
+    activeCrsId: BigInt(getRequiredEnvVar('MIGRATION_ACTIVE_CRS_ID')),
+    activePrepKeygenId: BigInt(getRequiredEnvVar('MIGRATION_ACTIVE_PREP_KEYGEN_ID')),
+    activeKeyDigests: JSON.parse(getRequiredEnvVar('MIGRATION_ACTIVE_KEY_DIGESTS')),
+    activeCrsDigest: getRequiredEnvVar('MIGRATION_ACTIVE_CRS_DIGEST'),
+    keyConsensusTxSenders: parseAddressList('MIGRATION_KEY_CONSENSUS_TX_SENDERS'),
+    keyConsensusDigest: getRequiredEnvVar('MIGRATION_KEY_CONSENSUS_DIGEST'),
+    crsConsensusTxSenders: parseAddressList('MIGRATION_CRS_CONSENSUS_TX_SENDERS'),
+    crsConsensusDigest: getRequiredEnvVar('MIGRATION_CRS_CONSENSUS_DIGEST'),
+    prepKeygenConsensusTxSenders: parseAddressList('MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS'),
+    prepKeygenConsensusDigest: getRequiredEnvVar('MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST'),
+    crsMaxBitLength: BigInt(getRequiredEnvVar('MIGRATION_CRS_MAX_BIT_LENGTH')),
+    prepKeygenParamsType: +getRequiredEnvVar('MIGRATION_PREP_KEYGEN_PARAMS_TYPE'),
+    crsParamsType: +getRequiredEnvVar('MIGRATION_CRS_PARAMS_TYPE'),
+    contextId: BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID')),
+  };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration (host-side)
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: { fn: 'initializeFromEmptyProxy' },
+  });
+  console.log('KMSGeneration code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration (migration)
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployKMSGenerationFromMigration').setAction(async function (
+  taskArguments: TaskArguments,
+  { ethers, upgrades },
+) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const migrationState = buildKMSGenerationMigrationState();
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromMigration',
+      args: [migrationState],
+    },
+  });
+  console.log('KMSGeneration (migration) code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
 // Setup ACL Address
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -451,5 +646,59 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
       console.log(`${HOST_ADDRESSES_FILE} appended with pauserSetAdd successfully!`);
     } catch (error) {
       console.error(`Failed to write ${HOST_ADDRESSES_FILE}`, error);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ProtocolConfig Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setProtocolConfigAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
+    const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ProtocolConfig address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ProtocolConfig address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant protocolConfigAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with protocolConfigAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup KMSGeneration Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setKMSGenerationAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
+    const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`KMSGeneration address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write KMSGeneration address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant kmsGenerationAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with kmsGenerationAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
   });

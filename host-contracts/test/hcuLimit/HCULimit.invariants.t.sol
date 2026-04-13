@@ -92,8 +92,7 @@ contract HCULimitInvariantHandler is Test {
 
         vm.startPrank(fhevmExecutor);
         for (uint256 i; i < ops; ++i) {
-            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {}
-            catch {
+            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {} catch {
                 if (isWhitelisted) {
                     whitelistViolation = true;
                 }
@@ -155,13 +154,17 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
-        address proxy =
-            UnsafeUpgrades.deployUUPSProxy(address(new EmptyUUPSProxy()), abi.encodeCall(EmptyUUPSProxy.initialize, ()));
+        address proxy = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
 
         address implementation = address(new HCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
-            proxy, implementation, abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
+            proxy,
+            implementation,
+            abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
 
@@ -183,7 +186,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
 
     function invariant_blockMeterMatchesCurrentBlock() public view {
         // Invariant: getBlockMeter must always report the current block number.
-        (uint48 blockNumber,) = hcuLimit.getBlockMeter();
+        (uint48 blockNumber, ) = hcuLimit.getBlockMeter();
         assertEq(blockNumber, uint48(block.number));
     }
 

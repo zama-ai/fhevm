@@ -1,25 +1,28 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
+import { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } from 'hardhat/builtin-tasks/task-names';
+import { subtask, task } from 'hardhat/config';
 import { type HardhatUserConfig, extendProvider } from 'hardhat/config';
-import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
-
-export const ADDRESSES_DIR = resolve(__dirname, 'addresses');
-export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
 
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/generateKmsMaterials';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
+
+export const ADDRESSES_DIR = resolve(__dirname, 'addresses');
+export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
 
 const NUM_ACCOUNTS = 15;
 
@@ -28,13 +31,36 @@ extendProvider(async (provider, config, network) => {
   return newProvider;
 });
 
+// Let compile:specific target either a directory or a single .sol file.
+subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async ({ sourcePath }, hre, runSuper) => {
+  const resolvedSourcePath = resolve(hre.config.paths.root, sourcePath);
+
+  let sourcePathStats: fs.Stats;
+  try {
+    sourcePathStats = fs.statSync(resolvedSourcePath);
+  } catch {
+    throw new Error(`Invalid source path ${sourcePath}`);
+  }
+
+  if (sourcePathStats.isFile()) {
+    return [resolvedSourcePath];
+  }
+
+  return runSuper({ sourcePath: resolvedSourcePath });
+});
+
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
   .setAction(async ({ contract }, hre) => {
-    // Adjust the configuration to include only the specified contract
-    hre.config.paths.sources = contract;
+    const previousSourcesPath = hre.config.paths.sources;
+    const resolvedSourcePath = resolve(hre.config.paths.root, contract);
 
-    await hre.run('compile');
+    hre.config.paths.sources = resolvedSourcePath;
+    try {
+      await hre.run('compile');
+    } finally {
+      hre.config.paths.sources = previousSourcesPath;
+    }
   });
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
