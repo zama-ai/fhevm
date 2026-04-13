@@ -92,6 +92,9 @@ jobs:
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
+            # Skip baseline in CI: historical rollout baselines can fail before step 1
+            # because old relayer releases only serve the v1 API while current test-suite
+            # images expect the v2 API shape. Baseline rendering is still available locally.
             ./fhevm-cli rollout --compat-test "$compat_test" --matrix | jq '{include: [.include[] | select(.stepIndex > 0)]}'
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
