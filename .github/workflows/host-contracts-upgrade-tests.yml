@@ -120,26 +120,77 @@ jobs:
           cp -r ../../previous-fhevm/host-contracts/contracts ./previous-contracts
           docker cp fhevm-sc-deploy:/app/addresses ./
 
-      # The regular upgrade loop below only exercises task:upgrade<Contract>, which upgrades the proxy in place.
-      # We also rely on task:prepareUpgradeFHEVMExecutor operationally to deploy a new implementation without
-      # mutating the proxy. This smoke step covers that prepare-only path and guards against regressions where
-      # the task stops deploying correctly or accidentally upgrades the proxy instead of just preparing it.
-      - name: Smoke test prepare-only FHEVMExecutor deployment
+      - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts
         run: |
           set -euo pipefail
           source addresses/.env.host
 
-          before_impl=$(cast implementation "$FHEVM_EXECUTOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
+          PREPARED=0
+          SKIPPED=0
 
-          npx hardhat task:prepareUpgradeFHEVMExecutor \
-            --current-implementation previous-contracts/FHEVMExecutor.sol:FHEVMExecutor \
-            --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor \
-            --use-internal-proxy-address true \
-            --verify-contract false
+          for name in $(jq -r '.[]' upgrade-manifest.json); do
+            if [ ! -f "contracts/${name}.sol" ]; then
+              echo "::error::$name listed in upgrade-manifest.json but contracts/${name}.sol not found"
+              exit 1
+            fi
 
-          after_impl=$(cast implementation "$FHEVM_EXECUTOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
-          test "$before_impl" = "$after_impl"
+            if [ ! -f "previous-contracts/${name}.sol" ]; then
+              echo "Skipping prepare-only check for $name (not present in previous release)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            old_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+              "previous-contracts/${name}.sol")
+            new_ver=$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' \
+              "contracts/${name}.sol")
+            if [ -z "$old_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from previous-contracts/${name}.sol"
+              exit 1
+            fi
+            if [ -z "$new_ver" ]; then
+              echo "::error::Failed to parse REINITIALIZER_VERSION from contracts/${name}.sol"
+              exit 1
+            fi
+
+            if [ "$old_ver" = "$new_ver" ]; then
+              echo "Skipping prepare-only check for $name (reinitializer unchanged: $old_ver)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            case "$name" in
+              ACL) proxy_address="$ACL_CONTRACT_ADDRESS" ;;
+              FHEVMExecutor) proxy_address="$FHEVM_EXECUTOR_CONTRACT_ADDRESS" ;;
+              KMSVerifier) proxy_address="$KMS_VERIFIER_CONTRACT_ADDRESS" ;;
+              InputVerifier) proxy_address="$INPUT_VERIFIER_CONTRACT_ADDRESS" ;;
+              HCULimit) proxy_address="$HCU_LIMIT_CONTRACT_ADDRESS" ;;
+              *)
+                echo "::error::Unsupported host upgrade manifest entry: $name"
+                exit 1
+                ;;
+            esac
+
+            echo "::group::Preparing $name (reinitializer $old_ver → $new_ver)"
+            before_impl=$(cast implementation "$proxy_address" --rpc-url "$RPC_URL")
+
+            npx hardhat "task:prepareUpgrade${name}" \
+              --current-implementation "previous-contracts/${name}.sol:${name}" \
+              --new-implementation "contracts/${name}.sol:${name}" \
+              --use-internal-proxy-address true \
+              --verify-contract false
+
+            after_impl=$(cast implementation "$proxy_address" --rpc-url "$RPC_URL")
+            test "$before_impl" = "$after_impl"
+            echo "::endgroup::"
+            PREPARED=$((PREPARED + 1))
+          done
+
+          echo "::notice::Prepare-upgrade summary: $PREPARED prepared, $SKIPPED skipped"
+          if [ "$PREPARED" -eq 0 ]; then
+            echo "::warning::No contracts needed preparing — consider bumping UPGRADE_FROM_TAG"
+          fi
 
       - name: Run contract upgrades
         working-directory: current-fhevm/host-contracts
