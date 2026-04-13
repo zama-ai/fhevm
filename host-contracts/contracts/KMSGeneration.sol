@@ -123,7 +123,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
-    uint8 private constant EXTRA_DATA_VERSION_V2 = 0x02;
+
+    /**
+     * @dev Extra data versions
+     */
+    uint8 private constant EXTRA_DATA_V1 = 0x01;
+    uint8 private constant EXTRA_DATA_V2 = 0x02;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
@@ -829,7 +834,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         uint8 version = uint8(extraData[0]);
-        if (version == 0x01 || version == EXTRA_DATA_VERSION_V2) {
+        if (version == EXTRA_DATA_V1 || version == EXTRA_DATA_V2) {
             if (extraData.length < 33) {
                 revert DeserializingExtraDataFail();
             }
@@ -1045,6 +1050,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
         // epochId is hardcoded to 0 until resharing (key rotation across epochs) is implemented.
-        return abi.encodePacked(EXTRA_DATA_VERSION_V2, contextId, uint256(0));
+        return abi.encodePacked(EXTRA_DATA_V2, contextId, uint256(0));
     }
 }
