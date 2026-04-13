@@ -227,7 +227,7 @@ jobs:
           snapshot_logs "Coprocessor 2 - ZKProof Worker" coprocessor1-zkproof-worker
           snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor1-tfhe-worker
 
-      - name: Show relayer public decrypt DB state
+      - name: Show relayer request DB state
         if: failure()
         run: |
           echo "::group::Relayer public_decrypt_req counts"
@@ -246,6 +246,24 @@ jobs:
           docker exec -e PGPASSWORD=postgres fhevm-relayer-db \
             psql -U postgres -d relayer_db -c \
             "SELECT req_status, err_reason, updated_at FROM public_decrypt_req WHERE req_status = 'timed_out' ORDER BY updated_at DESC LIMIT 10;" || true
+          echo "::endgroup::"
+
+          echo "::group::Relayer input_proof_req counts"
+          docker exec -e PGPASSWORD=postgres fhevm-relayer-db \
+            psql -U postgres -d relayer_db -c \
+            "SELECT req_status, COUNT(*) AS count FROM input_proof_req GROUP BY req_status ORDER BY req_status;" || true
+          echo "::endgroup::"
+
+          echo "::group::Relayer oldest input_proof receipt_received requests"
+          docker exec -e PGPASSWORD=postgres fhevm-relayer-db \
+            psql -U postgres -d relayer_db -c \
+            "SELECT NOW() - MIN(updated_at) AS oldest_receipt_received_age, COUNT(*) AS receipt_received_count FROM input_proof_req WHERE req_status = 'receipt_received';" || true
+          echo "::endgroup::"
+
+          echo "::group::Relayer recent input_proof timed_out reasons"
+          docker exec -e PGPASSWORD=postgres fhevm-relayer-db \
+            psql -U postgres -d relayer_db -c \
+            "SELECT req_status, err_reason, updated_at FROM input_proof_req WHERE req_status = 'timed_out' ORDER BY updated_at DESC LIMIT 10;" || true
           echo "::endgroup::"
 
       - name: Cleanup
