@@ -212,5 +212,15 @@ describe("compat", () => {
         },
       }),
     ).toBe(true);
+    expect(
+      supportsCoprocessorDbStateRevert({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: { COPROCESSOR_DB_MIGRATION_VERSION: "v0.12.0-0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
   });
 });
