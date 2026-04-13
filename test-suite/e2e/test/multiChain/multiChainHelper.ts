@@ -12,6 +12,7 @@ const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
 const publicDecryptTimeoutMs = Number(process.env.RELAYER_SDK_PUBLIC_DECRYPT_TIMEOUT_MS) || 125 * 60 * 1000;
+const inputProofTimeoutMs = Number(process.env.RELAYER_SDK_INPUT_PROOF_TIMEOUT_MS) || 125 * 60 * 1000;
 
 export interface ChainConfig {
   rpcUrl: string;
@@ -126,8 +127,17 @@ export async function createInstance(chain: ChainConfig) {
     gatewayChainId,
     chainId: chain.chainId,
   });
+  const createEncryptedInput = (contractAddress: string, userAddress: string) => {
+    const input = instance.createEncryptedInput(contractAddress, userAddress);
+    return {
+      ...input,
+      encrypt: (options) =>
+        input.encrypt({ timeout: inputProofTimeoutMs, ...options }),
+    };
+  };
   return {
     ...instance,
+    createEncryptedInput,
     publicDecrypt: (handles, options) =>
       instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
   };
