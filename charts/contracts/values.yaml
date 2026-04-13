@@ -211,6 +211,14 @@ persistence:
     create: true
     storageClassName: ""
     storageCapacity: 1Gi
+    # Restore the PVC from a CSI VolumeSnapshot.
+    # storageCapacity must be >= snapshot restoreSize.
+    # See https://kubernetes.io/docs/concepts/storage/volume-snapshots/
+    dataSource:
+      enabled: false
+      name: ""
+      kind: VolumeSnapshot
+      apiGroup: snapshot.storage.k8s.io
 
 # -----------------------------------------------------------------------------
 # Global Pod Configuration
