@@ -195,11 +195,11 @@ For release compatibility matrices, check in a compat-test definition under `com
 
 ```sh
 ./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.11-to-v0.12.json \
+  --compat-test ./compat-tests/v0.12-to-main.json \
   --out /tmp/fhevm-rollout
 
 ./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.11-to-v0.12.json \
+  --compat-test ./compat-tests/v0.12-to-main.json \
   --step 3 \
   --out /tmp/fhevm-step.lock.json
 ```

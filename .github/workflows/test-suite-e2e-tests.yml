@@ -9,7 +9,7 @@ on:
       - labeled
       - unlabeled
   workflow_dispatch:
-    inputs: &workflow_inputs
+    inputs:
       orchestrated:
         description: "Run from the orchestrated image-validation path."
         default: false
