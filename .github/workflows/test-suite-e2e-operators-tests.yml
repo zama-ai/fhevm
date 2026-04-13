@@ -105,23 +105,23 @@ jobs:
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      - name: Ensure unzip
+      - name: Ensure system tools
         run: |
-          if command -v unzip >/dev/null 2>&1; then
+          if command -v unzip >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
             exit 0
           fi
-          for attempt in 1 2 3 4 5; do
-            if sudo apt-get update && sudo apt-get install -y unzip; then
-              exit 0
+
+          for _ in $(seq 1 40); do
+            if ! pgrep -x unattended-upgr >/dev/null 2>&1 \
+              && sudo test ! -e /var/lib/dpkg/lock-frontend \
+              && sudo test ! -e /var/lib/apt/lists/lock; then
+              break
             fi
             sleep 15
           done
-          exit 1
 
-      - name: Install GitHub CLI
-        run: |
           sudo apt-get update
-          sudo apt-get install -y gh
+          sudo apt-get install -y unzip gh
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
@@ -278,6 +278,9 @@ jobs:
         working-directory: test-suite/fhevm
         if: always()
         run: |
+          if ! command -v bun >/dev/null 2>&1; then
+            exit 0
+          fi
           ./fhevm-cli clean
 
   teardown-instance:
