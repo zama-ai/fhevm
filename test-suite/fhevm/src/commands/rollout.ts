@@ -27,6 +27,8 @@ const lockStem = (index: number, label: string) => `${String(index).padStart(2, 
 const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-+|-+$/g, "");
 const stepLabel = (step: readonly string[]) => step.map((unit) => slug(unit)).join("_");
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
+const compatContractsFromSources = (test: CompatTestDefinition) =>
+  ["GATEWAY_VERSION", "HOST_VERSION"].map((key) => `compat-from:${key}=${test.from[key]}`);
 const LOCAL_OVERRIDE_BY_UNIT: Record<string, string[]> = {
   RELAYER: ["relayer"],
   GATEWAY_CONTRACTS: ["gateway-contracts"],
@@ -163,7 +165,7 @@ export const generateRolloutLocks = (test: CompatTestDefinition) => {
   const baseline: VersionBundle = {
     ...from,
     lockName: `${lockStem(0, "baseline")}.lock.json`,
-    sources: [...from.sources, ...rolloutSources(test, "baseline")],
+    sources: [...from.sources, ...compatContractsFromSources(test), ...rolloutSources(test, "baseline")],
   };
   return [
     baseline,
@@ -178,7 +180,7 @@ export const generateRolloutLocks = (test: CompatTestDefinition) => {
         ...to,
         env: { ...current },
         lockName: `${lockStem(index + 1, label)}.lock.json`,
-        sources: [...to.sources, ...rolloutSources(test, label)],
+        sources: [...to.sources, ...compatContractsFromSources(test), ...rolloutSources(test, label)],
       } satisfies VersionBundle;
     }),
   ];

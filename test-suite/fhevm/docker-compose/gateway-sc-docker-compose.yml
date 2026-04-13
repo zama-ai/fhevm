@@ -9,6 +9,16 @@ services:
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
 
+  gateway-sc-upgrade:
+    container_name: gateway-sc-upgrade
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
+    command:
+      - npx hardhat task:deployImplementationContracts
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
+
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}

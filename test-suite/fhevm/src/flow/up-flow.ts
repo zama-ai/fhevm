@@ -254,6 +254,16 @@ const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
   return warnings;
 };
 
+const compatSourceVersion = (state: Pick<State, "versions">, key: string) => {
+  const prefix = `compat-from:${key}=`;
+  return state.versions.sources.find((source) => source.startsWith(prefix))?.slice(prefix.length);
+};
+
+const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY_VERSION" | "HOST_VERSION") => {
+  const fromVersion = compatSourceVersion(state, key);
+  return fromVersion && fromVersion !== state.versions.env[key] ? { [key]: fromVersion } : undefined;
+};
+
 /** Prints the resolved version bundle in compact or detailed form. */
 const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
   console.log(`[resolve] ${bundle.lockName}`);
@@ -515,11 +525,21 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "gateway-deploy":
+      const legacyGatewayEnv = compatContractsUpgradeEnv(state, "GATEWAY_VERSION");
       await stepComposeTask("gateway-mocked-payment", state, ["gateway-deploy-mocked-zama-oft"]);
       await waitForContainer("gateway-deploy-mocked-zama-oft", "complete");
-      await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
-      await waitForContainer("gateway-sc-deploy", "complete");
-      await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy", [
+      if (legacyGatewayEnv) {
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"], {
+          env: legacyGatewayEnv,
+        });
+        await waitForContainer("gateway-sc-deploy", "complete");
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"]);
+        await waitForContainer("gateway-sc-upgrade", "complete");
+      } else {
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
+        await waitForContainer("gateway-sc-deploy", "complete");
+      }
+      await ensureGeneratedAddressFile(gatewayAddressesPath, legacyGatewayEnv ? "gateway-sc-upgrade" : "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
         "INPUT_VERIFICATION_ADDRESS",
         "KMS_GENERATION_ADDRESS",
@@ -532,12 +552,25 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("gateway-set-relayer-mocked-payment", "complete");
       break;
     case "host-deploy":
+      const legacyHostEnv = compatContractsUpgradeEnv(state, "HOST_VERSION");
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
-      await waitForContainer("host-sc-deploy", "complete");
-      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
+      if (legacyHostEnv) {
+        if (extraHostChains(state).length) {
+          throw new PreflightError("Compat contract upgrades do not support multi-chain host deployments yet");
+        }
+        await stepComposeTask("host-sc", state, ["host-sc-deploy"], {
+          env: legacyHostEnv,
+        });
+        await waitForContainer("host-sc-deploy", "complete");
+        await stepComposeTask("host-sc", state, ["host-sc-upgrade"]);
+        await waitForContainer("host-sc-upgrade", "complete");
+      } else {
+        await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
+        await waitForContainer("host-sc-deploy", "complete");
+      }
+      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), legacyHostEnv ? "host-sc-upgrade" : "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
         "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
         "KMS_VERIFIER_CONTRACT_ADDRESS",

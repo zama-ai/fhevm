@@ -120,6 +120,8 @@ describe("rollout", () => {
     expect(locks[3].env.CONNECTOR_KMS_WORKER_VERSION).toBe("to-connector_kms_worker_version");
     expect(locks[3].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
     expect(locks[5].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
+    expect(locks[2].sources).toContain("compat-from:GATEWAY_VERSION=from-gateway_version");
+    expect(locks[2].sources).toContain("compat-from:HOST_VERSION=from-host_version");
   });
 
   test("renders one rollout step on demand", () => {

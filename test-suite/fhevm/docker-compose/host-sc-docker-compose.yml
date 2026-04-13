@@ -9,6 +9,23 @@ services:
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
 
+  host-sc-upgrade:
+    container_name: host-sc-upgrade
+    image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
+    command:
+      - >-
+        sh -lc
+        "npx hardhat compile &&
+        npx hardhat task:deployACL &&
+        npx hardhat task:deployFHEVMExecutor &&
+        npx hardhat task:deployKMSVerifier &&
+        npx hardhat task:deployInputVerifier &&
+        npx hardhat task:deployHCULimit"
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
+
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
