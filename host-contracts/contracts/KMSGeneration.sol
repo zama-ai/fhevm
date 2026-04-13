@@ -1036,7 +1036,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         bytes32 digest,
         uint256 contextId
     ) internal view virtual {
-        if (digest == bytes32(0) || txSenders.length == 0) {
+        if (digest == bytes32(0) || txSenders.length < PROTOCOL_CONFIG.getKmsGenThreshold()) {
             revert InvalidMigrationConsensusState(requestId);
         }
 

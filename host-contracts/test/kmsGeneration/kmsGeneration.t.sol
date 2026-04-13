@@ -1094,6 +1094,46 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
+    function test_migrationRejectsBelowKmsGenThresholdQuorum() public {
+        // Raise kmsGen threshold to 3 on a freshly-defined context before building migration state.
+        _switchToMultiSignerContext();
+
+        (
+            address migrateProxy,
+            address kmsGenImpl,
+            KMSGeneration.MigrationState memory state
+        ) = _deployMigrationProxyAndState();
+        // _defaultMigrationState ships only 1 tx sender per request, below the kmsGen threshold of 3.
+        // The first validated request (the active key) is the one that reverts.
+        vm.expectRevert(
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+        );
+        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+    }
+
+    function test_migrationAcceptsExactlyKmsGenThresholdQuorum() public {
+        _switchToMultiSignerContext();
+
+        (
+            address migrateProxy,
+            address kmsGenImpl,
+            KMSGeneration.MigrationState memory state
+        ) = _deployMigrationProxyAndState();
+
+        address[] memory threeSenders = new address[](3);
+        threeSenders[0] = kmsTxSender0;
+        threeSenders[1] = kmsTxSender1;
+        threeSenders[2] = kmsTxSender2;
+        state.keyConsensusTxSenders = threeSenders;
+        state.crsConsensusTxSenders = threeSenders;
+        state.prepKeygenConsensusTxSenders = threeSenders;
+
+        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+
+        address[] memory recorded = KMSGeneration(migrateProxy).getConsensusTxSenders(state.activeKeyId);
+        assertEq(recorded.length, 3);
+    }
+
     function test_migrationRejectsUnknownConsensusTxSender() public {
         (
             address migrateProxy,
