@@ -1113,6 +1113,7 @@ pub mod FHEEvents {
                 > as alloy_sol_types::SolType>::abi_encoded_size(self)
             }
         }
+        #[automatically_derived]
         impl FheType {
             /// The Solidity type name.
             pub const NAME: &'static str = stringify!(@ name);
@@ -5050,7 +5051,6 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         }
     };
     ///Container for all the [`FHEEvents`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum FHEEventsEvents {
@@ -5111,6 +5111,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         #[allow(missing_docs)]
         VerifyInput(VerifyInput),
     }
+    #[automatically_derived]
     impl FHEEventsEvents {
         /// All the selectors of this enum.
         ///
@@ -5261,88 +5262,6 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(TrivialEncrypt),
-            ::core::stringify!(FheRand),
-            ::core::stringify!(FheLt),
-            ::core::stringify!(FheRem),
-            ::core::stringify!(FheMul),
-            ::core::stringify!(Cast),
-            ::core::stringify!(FheShr),
-            ::core::stringify!(FheGe),
-            ::core::stringify!(FheDiv),
-            ::core::stringify!(FheBitXor),
-            ::core::stringify!(FheRandBounded),
-            ::core::stringify!(FheNot),
-            ::core::stringify!(FheBitOr),
-            ::core::stringify!(FheIfThenElse),
-            ::core::stringify!(FheNe),
-            ::core::stringify!(FheNeg),
-            ::core::stringify!(FheEq),
-            ::core::stringify!(FheMin),
-            ::core::stringify!(FheRotr),
-            ::core::stringify!(FheGt),
-            ::core::stringify!(FheAdd),
-            ::core::stringify!(VerifyInput),
-            ::core::stringify!(FheLe),
-            ::core::stringify!(FheBitAnd),
-            ::core::stringify!(FheShl),
-            ::core::stringify!(FheRotl),
-            ::core::stringify!(FheSub),
-            ::core::stringify!(FheMax),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheRand as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheLt as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheRem as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheMul as alloy_sol_types::SolEvent>::SIGNATURE,
-            <Cast as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheShr as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheGe as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheDiv as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheBitXor as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheRandBounded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheNot as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheNe as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheNeg as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheEq as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheMin as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheRotr as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheGt as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheAdd as alloy_sol_types::SolEvent>::SIGNATURE,
-            <VerifyInput as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheLe as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheBitAnd as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheShl as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheRotl as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheSub as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FheMax as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for FHEEventsEvents {
@@ -5686,9 +5605,9 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> FHEEventsInstance<P, N> {
-        FHEEventsInstance::<P, N>::new(address, __provider)
+        FHEEventsInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -5700,11 +5619,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<FHEEventsInstance<P, N>>,
     > {
-        FHEEventsInstance::<P, N>::deploy(__provider)
+        FHEEventsInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -5715,8 +5634,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        FHEEventsInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        FHEEventsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`FHEEvents`](self) instance.
 
@@ -5743,6 +5662,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -5753,11 +5673,11 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -5768,9 +5688,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<FHEEventsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -5780,9 +5700,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -5819,6 +5739,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -5835,6 +5756,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
