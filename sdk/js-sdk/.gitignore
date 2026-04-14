@@ -3,6 +3,7 @@ src/_types
 src/_esm
 
 *.local.test.ts
+test/fheTest/.keys
 
 .env
 
