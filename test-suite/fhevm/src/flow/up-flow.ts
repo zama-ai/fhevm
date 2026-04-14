@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
@@ -273,6 +274,7 @@ const materializeGatewayContractsFromRef = async (ref: string) => {
   const targetDir = gatewayCompatUpgradeFromDir();
   await remove(targetDir);
   await ensureDir(targetDir);
+  await fs.chmod(targetDir, 0o777);
   await run(
     [
       "sh",
