@@ -688,7 +688,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             if (i > 0 && _typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
 
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheSum, values, acl, block.chainid, blockhash(block.number - 1), block.timestamp));
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                Operators.fheSum,
+                values,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
         result = _appendMetadataToPrehandle(result, resultType);
         acl.allowTransient(result, msg.sender);
         hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
