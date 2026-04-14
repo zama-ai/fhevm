@@ -97,7 +97,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.2.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.3.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1351,7 +1351,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV2SetsBlockCapOnUpgradePathWithoutInitCall() public {
+    function test_reinitializeV3SetsBlockCapOnUpgradePathWithoutInitCall() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -1364,7 +1364,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
         assertEq(upgraded.getGlobalHCUCapPerBlock(), 0);
 
-        upgraded.reinitializeV2(type(uint48).max, 5_000_000, 20_000_000);
+        upgraded.reinitializeV3(type(uint48).max, 5_000_000, 20_000_000);
         assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint48).max);
         vm.stopPrank();
     }

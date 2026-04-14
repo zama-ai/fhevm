@@ -435,7 +435,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.3.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.4.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.

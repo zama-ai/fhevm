@@ -21,6 +21,7 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
    * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
@@ -79,7 +80,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -106,7 +107,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -137,14 +138,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      * @param hcuCapPerBlock New global HCU cap per block.
      * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
      * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV3(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual reinitializer(REINITIALIZER_VERSION) {
         _setHCUPerBlock(hcuCapPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
