@@ -11,6 +11,10 @@ UPDATE keygen_requests SET extra_data = NULL;
 ALTER TABLE crsgen_requests ADD COLUMN extra_data BYTEA;
 UPDATE crsgen_requests SET extra_data = NULL;
 
+
+-- Remove epoch_id column from prep keygen event table (embedded in extra_data).
+ALTER TABLE prep_keygen_requests DROP COLUMN epoch_id;
+
 -- prss_init and key_reshare_same_set tables will be removed in next release (v0.14.0).
 -- We keep them for now for compatibility of the DB migration with v0.12 release.
 -- Tracking issue: https://github.com/zama-ai/fhevm-internal/issues/1256.

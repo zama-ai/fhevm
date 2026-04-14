@@ -75,3 +75,4 @@ impl DbInstance {
 }
 
 pub const TESTING_KMS_CONTEXT: U256 = U256::ONE;
+pub const TESTING_KMS_EPOCH: U256 = U256::ONE;

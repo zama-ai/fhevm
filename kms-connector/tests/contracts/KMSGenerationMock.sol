@@ -17,7 +17,7 @@ contract KMSGenerationMock {
         Public
     }
 
-    event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
@@ -40,9 +40,8 @@ contract KMSGenerationMock {
     function keygen(ParamsType paramsType) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
-        uint256 epochId;
 
-        emit PrepKeygenRequest(prepKeygenId, epochId, paramsType, "");
+        emit PrepKeygenRequest(prepKeygenId, paramsType, "");
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {

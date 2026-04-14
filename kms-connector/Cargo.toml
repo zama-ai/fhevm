@@ -19,9 +19,7 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
-# TODO: switch back to path deps ASAP
-# fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "66a83815ae92f14edd70e5e0f9bfa6b910a8bd13", default-features = false }
+fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.10", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.10", default-features = true }
 tfhe = "=1.5.4"

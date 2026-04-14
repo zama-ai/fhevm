@@ -1,11 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO prep_keygen_requests(prep_keygen_id, epoch_id, params_type, extra_data, tx_hash, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO prep_keygen_requests(prep_keygen_id, params_type, extra_data, tx_hash, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Bytea",
         "Bytea",
         {
           "Custom": {
@@ -26,5 +25,5 @@
     },
     "nullable": []
   },
-  "hash": "6e7d4af83c3a317bd606fc88dafe13e98263fef36ec8aa8875797d9c874ce67d"
+  "hash": "f69cb308c6774232416366a1e506061f9d77c01fd73b8cb6821f9d96e786da5a"
 }

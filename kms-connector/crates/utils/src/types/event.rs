@@ -154,7 +154,6 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
