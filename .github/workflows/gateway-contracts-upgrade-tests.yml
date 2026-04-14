@@ -16,7 +16,7 @@ concurrency:
 # - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
 env:
   # Bump this tag each release cycle to test upgrades from the previous version
-  UPGRADE_FROM_TAG: v0.11.1
+  UPGRADE_FROM_TAG: v0.12.1
   DOTENV_CONFIG_PATH: .env.example
   HARDHAT_NETWORK: staging
   CHAIN_ID_GATEWAY: 54321

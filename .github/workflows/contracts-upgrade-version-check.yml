@@ -9,7 +9,7 @@ on:
 # This avoids unnecessary reinitializer bumps when multiple PRs modify
 # the same contract between deployments. Keep in sync with *-upgrade-tests.yml.
 env:
-  UPGRADE_FROM_TAG: v0.11.1
+  UPGRADE_FROM_TAG: v0.12.1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
