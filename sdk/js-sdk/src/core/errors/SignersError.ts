@@ -35,9 +35,7 @@ export type ThresholdSignerErrorType = ThresholdSignerError & {
   name: 'ThresholdSignerError';
 };
 
-export type ThresholdSignerErrorParams = Prettify<
-  Omit<FhevmErrorBaseParams, 'name'> & { type: 'coprocessor' | 'kms' }
->;
+export type ThresholdSignerErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name'> & { type: 'coprocessor' | 'kms' }>;
 
 export class ThresholdSignerError extends FhevmErrorBase {
   constructor(params: ThresholdSignerErrorParams) {

@@ -9,10 +9,7 @@ import { decryptActions } from '../decorators/decrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createFhevmClient<
-  chain extends FhevmChain,
-  provider extends EthersT.ContractRunner,
->(parameters: {
+export function createFhevmClient<chain extends FhevmChain, provider extends EthersT.ContractRunner>(parameters: {
   readonly provider: provider;
   readonly chain: chain;
   readonly options?: FhevmOptions | undefined;

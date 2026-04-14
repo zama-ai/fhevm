@@ -1,23 +1,9 @@
-import {
-  init_panic_hook,
-  initThreadPool,
-  setWorkerUrlConfig,
-  getWasmInfo,
-} from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
 import init_tfhe_lib from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
-import {
-  isomorphicCompileWasm,
-  isomorphicCompileWasmFromBase64,
-} from '../../../base/wasm.js';
-import {
-  isBlobWorkerSupported,
-  isBrowserLike,
-} from '../../../base/isomorphicWorker.js';
+import { init_panic_hook, initThreadPool, setWorkerUrlConfig, getWasmInfo } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+import { isomorphicCompileWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
+import { isBlobWorkerSupported, isBrowserLike } from '../../../base/isomorphicWorker.js';
 import { threads } from 'wasm-feature-detect';
-import type {
-  FhevmRuntime,
-  FhevmRuntimeConfig,
-} from '../../../types/coreFhevmRuntime.js';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -53,12 +39,7 @@ const nodeDefaultLocateFile = (file: string): URL => {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type TfheInitInput =
-  | RequestInfo
-  | URL
-  | Response
-  | BufferSource
-  | WebAssembly.Module;
+type TfheInitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 type InitTfheModuleParameters = {
   readonly module_or_path: TfheInitInput | Promise<TfheInitInput>;
@@ -87,9 +68,7 @@ let resolvedTfheModuleConfig: ResolvedTfheModuleConfig | undefined = undefined;
  * @internal
  * Returns the existing resolved config, or resolves it from the runtime config.
  */
-async function _getOrResolveTfheModuleConfig(
-  runtime: FhevmRuntime,
-): Promise<ResolvedTfheModuleConfig> {
+async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<ResolvedTfheModuleConfig> {
   if (resolvedTfheModuleConfig !== undefined) return resolvedTfheModuleConfig;
 
   resolvedTfheModuleConfig = await _resolveTfheModuleConfig(runtime.config);
@@ -101,18 +80,12 @@ async function _getOrResolveTfheModuleConfig(
  * Resolves user-provided {@link FhevmRuntimeConfig} into a fully resolved config
  * (thread count, worker URL, WASM URL). Must be called before WASM initialization.
  */
-async function _resolveTfheModuleConfig(
-  parameters: FhevmRuntimeConfig,
-): Promise<ResolvedTfheModuleConfig> {
+async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise<ResolvedTfheModuleConfig> {
   if (cachedTfheModulePromise !== undefined) {
     throw new Error('Cannot configure module after initialization has started');
   }
 
-  const {
-    locateFile,
-    singleThread: singleThreadConfig,
-    numberOfThreads: numberOfThreadsConfig,
-  } = parameters;
+  const { locateFile, singleThread: singleThreadConfig, numberOfThreads: numberOfThreadsConfig } = parameters;
 
   let singleThread = false;
   if (singleThreadConfig !== undefined) {

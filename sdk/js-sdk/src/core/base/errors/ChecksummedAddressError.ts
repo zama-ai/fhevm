@@ -10,10 +10,7 @@ export type ChecksummedAddressErrorParams = Readonly<{
 }>;
 
 export class ChecksummedAddressError extends ErrorBase {
-  constructor(
-    params: ChecksummedAddressErrorParams,
-    options: ErrorMetadataParams,
-  ) {
+  constructor(params: ChecksummedAddressErrorParams, options: ErrorMetadataParams) {
     super({
       ...options,
       message:

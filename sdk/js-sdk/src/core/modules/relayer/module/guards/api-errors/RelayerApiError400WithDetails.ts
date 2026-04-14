@@ -1,19 +1,11 @@
 import type { ErrorMetadataParams } from '../../../../../base/errors/ErrorBase.js';
 import type { RelayerApiError400WithDetails } from '../../../../../types/relayer-p.js';
 import { InvalidPropertyError } from '../../../../../base/errors/InvalidPropertyError.js';
-import {
-  assertRecordArrayProperty,
-  isRecordArrayProperty,
-} from '../../../../../base/record.js';
-import {
-  assertRecordStringProperty,
-  isRecordStringProperty,
-} from '../../../../../base/string.js';
+import { assertRecordArrayProperty, isRecordArrayProperty } from '../../../../../base/record.js';
+import { assertRecordStringProperty, isRecordStringProperty } from '../../../../../base/string.js';
 
 /** @see {@link assertIsRelayerApiError400WithDetails} */
-export function isRelayerApiError400WithDetails(
-  error: unknown,
-): error is RelayerApiError400WithDetails {
+export function isRelayerApiError400WithDetails(error: unknown): error is RelayerApiError400WithDetails {
   type T = RelayerApiError400WithDetails;
   type DetailItem = T['details'][number];
   if (!isRecordStringProperty(error, 'label' satisfies keyof T)) {
@@ -77,10 +69,7 @@ export function assertIsRelayerApiError400WithDetails(
         subject: name,
         property: 'label' satisfies keyof T,
         expectedType: 'string',
-        expectedValue: [
-          'missing_fields' satisfies T['label'],
-          'validation_failed' satisfies T['label'],
-        ],
+        expectedValue: ['missing_fields' satisfies T['label'], 'validation_failed' satisfies T['label']],
         type: typeof value.label,
         value: value.label,
       },
@@ -92,17 +81,7 @@ export function assertIsRelayerApiError400WithDetails(
   const arr = value.details;
   for (let i = 0; i < arr.length; ++i) {
     const detail = arr[i];
-    assertRecordStringProperty(
-      detail,
-      'field' satisfies keyof DetailItem,
-      `${name}.details[${i}]`,
-      options,
-    );
-    assertRecordStringProperty(
-      detail,
-      'issue' satisfies keyof DetailItem,
-      `${name}.details[${i}]`,
-      options,
-    );
+    assertRecordStringProperty(detail, 'field' satisfies keyof DetailItem, `${name}.details[${i}]`, options);
+    assertRecordStringProperty(detail, 'issue' satisfies keyof DetailItem, `${name}.details[${i}]`, options);
   }
 }

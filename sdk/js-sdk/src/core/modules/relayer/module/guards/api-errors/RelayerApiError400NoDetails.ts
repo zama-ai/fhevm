@@ -1,13 +1,11 @@
 import type { ErrorMetadataParams } from '../../../../../base/errors/ErrorBase.js';
-import { isRecordStringProperty } from '../../../../../base/string.js';
 import type { RelayerApiError400NoDetails } from '../../../../../types/relayer-p.js';
+import { isRecordStringProperty } from '../../../../../base/string.js';
 import { assertRecordStringProperty } from '../../../../../base/string.js';
 import { InvalidPropertyError } from '../../../../../base/errors/InvalidPropertyError.js';
 
 /** @see {@link assertIsRelayerApiError400NoDetails} */
-export function isRelayerApiError400NoDetails(
-  error: unknown,
-): error is RelayerApiError400NoDetails {
+export function isRelayerApiError400NoDetails(error: unknown): error is RelayerApiError400NoDetails {
   type T = RelayerApiError400NoDetails;
   if (!isRecordStringProperty(error, 'label' satisfies keyof T)) {
     return false;

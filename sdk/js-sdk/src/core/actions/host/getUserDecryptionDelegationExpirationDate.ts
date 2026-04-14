@@ -1,11 +1,8 @@
+import type { Fhevm } from '../../types/coreFhevmClient.js';
+import type { ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
 import { isUint64 } from '../../base/uint.js';
 import { getUserDecryptionDelegationExpirationDateAbi } from '../../host-contracts/abi-fragments/fragments.js';
 import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
-import type { Fhevm } from '../../types/coreFhevmClient.js';
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-} from '../../types/primitives.js';
 
 export type GetUserDecryptionDelegationExpirationDateParameters = {
   readonly address: ChecksummedAddress;
@@ -33,4 +30,3 @@ export async function getUserDecryptionDelegationExpirationDate(
 
   return BigInt(res) as Uint64BigInt;
 }
-//isHandleDelegatedForUserDecryption

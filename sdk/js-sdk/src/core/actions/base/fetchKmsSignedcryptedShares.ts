@@ -1,36 +1,23 @@
-import {
-  assertHandlesBelongToSameChainId,
-  assertIsEncryptedValueLike,
-  toHandle,
-} from '../../handle/FhevmHandle.js';
-import { toArray } from '../../base/object.js';
-import { createKmsSigncryptedShares } from '../../kms/KmsSigncryptedShares-p.js';
-import { assertKmsDecryptionBitLimit } from '../../kms/utils.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
-import type {
-  KmsSigncryptedShare,
-  KmsSigncryptedSharesMetadata,
-} from '../../types/kms-p.js';
+import type { KmsSigncryptedShare, KmsSigncryptedSharesMetadata } from '../../types/kms-p.js';
 import type { KmsSigncryptedShares } from '../../types/kms.js';
 import type { KmsSignersContext } from '../../types/kmsSignersContext.js';
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-} from '../../types/primitives.js';
-import { readKmsSignersContext } from './readKmsSignersContext.js';
-import { checkUserAllowedForDecryption } from './checkUserAllowedForDecryption.js';
-import { createKmsEIP712Domain } from '../chain/createKmsEIP712Domain.js';
+import type { ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type {
-  RelayerDelegatedUserDecryptOptions,
-  RelayerUserDecryptOptions,
-} from '../../types/relayer.js';
+import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../../types/relayer.js';
 import type {
   SignedDelegatedDecryptionPermit,
   SignedSelfDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
-import { assertIsSignedDecryptionPermit } from '../../kms/SignedDecryptionPermit-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
+import { assertHandlesBelongToSameChainId, assertIsEncryptedValueLike, toHandle } from '../../handle/FhevmHandle.js';
+import { toArray } from '../../base/object.js';
+import { createKmsSigncryptedShares } from '../../kms/KmsSigncryptedShares-p.js';
+import { assertKmsDecryptionBitLimit } from '../../kms/utils.js';
+import { readKmsSignersContext } from './readKmsSignersContext.js';
+import { checkUserAllowedForDecryption } from './checkUserAllowedForDecryption.js';
+import { createKmsEIP712Domain } from '../chain/createKmsEip712Domain.js';
+import { assertIsSignedDecryptionPermit } from '../../kms/SignedDecryptionPermit-p.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../../host-contracts/KmsSignersContext-p.js';
 
 /*
@@ -125,17 +112,14 @@ export async function fetchKmsSignedcryptedShares(
   }
 
   // 2. Check: At least one contract
-  const contractAddressesLength =
-    signedPermit.eip712.message.contractAddresses.length;
+  const contractAddressesLength = signedPermit.eip712.message.contractAddresses.length;
   if (contractAddressesLength === 0) {
     throw Error('contractAddresses is empty');
   }
 
   // 3. Check: No more that 10 contract addresses
   if (contractAddressesLength > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-    throw Error(
-      `contractAddresses max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`,
-    );
+    throw Error(`contractAddresses max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
   }
 
   const handleContractPairs = encryptedValueEntryArray.map((pair) => ({
@@ -147,10 +131,7 @@ export async function fetchKmsSignedcryptedShares(
   Object.freeze(fhevmHandles);
 
   // 4. Check: All handles belong to the host chainId
-  assertHandlesBelongToSameChainId(
-    fhevmHandles,
-    BigInt(fhevm.chain.id) as Uint64BigInt,
-  );
+  assertHandlesBelongToSameChainId(fhevmHandles, BigInt(fhevm.chain.id) as Uint64BigInt);
 
   // 5. Check: 2048 bits limit
   assertKmsDecryptionBitLimit(fhevmHandles);
@@ -181,8 +162,7 @@ export async function fetchKmsSignedcryptedShares(
   // (e.g. a version change in the serialization scheme) will be rejected even
   // though the context ID matches. Consider comparing the decoded `kmsContextId`
   // instead of the raw `extraData` bytes.
-  const requestedKmsSignersContext: KmsSignersContext =
-    await readKmsSignersContext(fhevm);
+  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContext(fhevm);
 
   assertExtraDataMatchesKmsSingersContext(
     {

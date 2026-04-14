@@ -1,13 +1,7 @@
-import type {
-  Fhevm,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import {
-  toE2eTransportKeypair,
-  type E2eTransportKeypair,
-} from '../../kms/E2eTransportKeypair-p.js';
+import { toE2eTransportKeypair, type E2eTransportKeypair } from '../../kms/E2eTransportKeypair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -23,9 +17,7 @@ export async function parseE2eTransportKeypair(
   parameters: ParseE2eTransportKeypairParameters,
 ): Promise<ParseE2eTransportKeypairReturnType> {
   const parsed =
-    typeof parameters.serialized === 'string'
-      ? (JSON.parse(parameters.serialized) as unknown)
-      : parameters.serialized;
+    typeof parameters.serialized === 'string' ? (JSON.parse(parameters.serialized) as unknown) : parameters.serialized;
   return toE2eTransportKeypair(fhevm, parsed);
 }
 

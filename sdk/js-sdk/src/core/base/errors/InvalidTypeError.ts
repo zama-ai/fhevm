@@ -60,12 +60,9 @@ export class InvalidTypeError extends ErrorBase {
     } & ExpectedTypeParams,
     options: ErrorMetadataParams,
   ) {
-    const noType =
-      type === undefined || type === 'unknown' || type === 'undefined';
+    const noType = type === undefined || type === 'unknown' || type === 'undefined';
 
-    const actualExpectedType = Array.isArray(expectedType)
-      ? expectedType.join('|')
-      : expectedType;
+    const actualExpectedType = Array.isArray(expectedType) ? expectedType.join('|') : expectedType;
 
     let message = '';
     if (subject !== undefined) {

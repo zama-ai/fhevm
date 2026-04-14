@@ -1,19 +1,16 @@
-import type {
-  Fhevm,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import {
-  verifyKmsDelegatedUserDecryptEIP712 as verifyKmsDelegatedUserDecryptEIP712_,
-  type VerifyKmsDelegatedUserDecryptEIP712Parameters,
-} from '../../utils-p/decrypt/verifyKmsDelegatedUserDecryptEIP712.js';
+  verifyKmsDelegatedUserDecryptEip712 as verifyKmsDelegatedUserDecryptEip712_,
+  type VerifyKmsDelegatedUserDecryptEip712Parameters,
+} from '../../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712.js';
 
-export type { VerifyKmsDelegatedUserDecryptEIP712Parameters };
+export type { VerifyKmsDelegatedUserDecryptEip712Parameters as VerifyKmsDelegatedUserDecryptEIP712Parameters };
 
-export async function verifyKmsDelegatedUserDecryptEIP712(
+export async function verifyKmsDelegatedUserDecryptEip712(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
-  parameters: VerifyKmsDelegatedUserDecryptEIP712Parameters,
+  parameters: VerifyKmsDelegatedUserDecryptEip712Parameters,
 ): Promise<void> {
-  await verifyKmsDelegatedUserDecryptEIP712_(fhevm, parameters);
+  await verifyKmsDelegatedUserDecryptEip712_(fhevm, parameters);
 }

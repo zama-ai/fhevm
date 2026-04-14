@@ -1,7 +1,4 @@
-import type {
-  KmsDelegatedUserDecryptEIP712,
-  KmsUserDecryptEIP712,
-} from './kms.js';
+import type { KmsDelegatedUserDecryptEip712, KmsUserDecryptEip712 } from './kms.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from './primitives.js';
 
 /**
@@ -39,17 +36,15 @@ export type SignedDecryptionPermitBase = {
 };
 
 export type SignedSelfDecryptionPermit = SignedDecryptionPermitBase & {
-  readonly eip712: KmsUserDecryptEIP712;
+  readonly eip712: KmsUserDecryptEip712;
   /** Always `false` for non-delegated permits. `encryptedDataOwnerAddress === signerAddress`. */
   readonly isDelegated: false;
 };
 
 export type SignedDelegatedDecryptionPermit = SignedDecryptionPermitBase & {
-  readonly eip712: KmsDelegatedUserDecryptEIP712;
+  readonly eip712: KmsDelegatedUserDecryptEip712;
   /** Always `true` for delegated permits. `v` is the delegated account. (see `SenderCannotBeDelegate` is ACL.sol) */
   readonly isDelegated: true;
 };
 
-export type SignedDecryptionPermit =
-  | SignedSelfDecryptionPermit
-  | SignedDelegatedDecryptionPermit;
+export type SignedDecryptionPermit = SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;

@@ -1,18 +1,5 @@
-import type {
-  EncryptionBits,
-  FheType,
-  FheTypeId,
-  FheTypeToIdMap,
-  SolidityPrimitiveTypeName,
-} from './fheType.js';
-import type {
-  Bytes21Hex,
-  Bytes32,
-  Bytes32Hex,
-  Bytes32HexNo0x,
-  Uint64BigInt,
-  Uint8Number,
-} from './primitives.js';
+import type { EncryptionBits, FheType, FheTypeId, FheTypeToIdMap, SolidityPrimitiveTypeName } from './fheType.js';
+import type { Bytes21Hex, Bytes32, Bytes32Hex, Bytes32HexNo0x, Uint64BigInt, Uint8Number } from './primitives.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,33 +15,21 @@ export type ComputedBrand = { readonly [computedBrand]: never };
 ////////////////////////////////////////////////////////////////////////////////
 
 export type InputHandleBytes32 = Bytes32 & EncryptedValueBrand & ExternalBrand;
-export type InputHandleBytes32Hex = Bytes32Hex &
-  EncryptedValueBrand &
-  ExternalBrand;
-export type InputHandleBytes32HexNo0x = Bytes32HexNo0x &
-  EncryptedValueBrand &
-  ExternalBrand;
+export type InputHandleBytes32Hex = Bytes32Hex & EncryptedValueBrand & ExternalBrand;
+export type InputHandleBytes32HexNo0x = Bytes32HexNo0x & EncryptedValueBrand & ExternalBrand;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ComputedHandleBytes32 = Bytes32 &
-  EncryptedValueBrand &
-  ComputedBrand;
-export type ComputedHandleBytes32Hex = Bytes32Hex &
-  EncryptedValueBrand &
-  ExternalBrand;
-export type ComputedHandleBytes32HexNo0x = Bytes32HexNo0x &
-  EncryptedValueBrand &
-  ExternalBrand;
+export type ComputedHandleBytes32 = Bytes32 & EncryptedValueBrand & ComputedBrand;
+export type ComputedHandleBytes32Hex = Bytes32Hex & EncryptedValueBrand & ExternalBrand;
+export type ComputedHandleBytes32HexNo0x = Bytes32HexNo0x & EncryptedValueBrand & ExternalBrand;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Branded bytes
 export type HandleBytes32 = ComputedHandleBytes32 | InputHandleBytes32;
 export type HandleBytes32Hex = ComputedHandleBytes32Hex | InputHandleBytes32Hex;
-export type HandleBytes32HexNo0x =
-  | ComputedHandleBytes32HexNo0x
-  | InputHandleBytes32HexNo0x;
+export type HandleBytes32HexNo0x = ComputedHandleBytes32HexNo0x | InputHandleBytes32HexNo0x;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -78,17 +53,13 @@ export interface EncryptedValueBase {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Typed base
-export interface EncryptedValueOfTypeBase<
-  etype extends FheType,
-> extends EncryptedValueBase {
+export interface EncryptedValueOfTypeBase<etype extends FheType> extends EncryptedValueBase {
   readonly fheTypeId: FheTypeToIdMap[etype];
   readonly fheType: etype;
 }
 
 // Computed typed base
-export interface ComputedEncryptedValueOfTypeBase<
-  etype extends FheType,
-> extends EncryptedValueOfTypeBase<etype> {
+export interface ComputedEncryptedValueOfTypeBase<etype extends FheType> extends EncryptedValueOfTypeBase<etype> {
   readonly bytes32Hex: ComputedHandleBytes32Hex;
   readonly bytes32: ComputedHandleBytes32;
   readonly bytes32HexNo0x: ComputedHandleBytes32HexNo0x;
@@ -97,9 +68,7 @@ export interface ComputedEncryptedValueOfTypeBase<
 }
 
 // External typed base
-export interface ExternalEncryptedValueOfTypeBase<
-  etype extends FheType,
-> extends EncryptedValueOfTypeBase<etype> {
+export interface ExternalEncryptedValueOfTypeBase<etype extends FheType> extends EncryptedValueOfTypeBase<etype> {
   readonly bytes32Hex: InputHandleBytes32Hex;
   readonly bytes32: InputHandleBytes32;
   readonly bytes32HexNo0x: InputHandleBytes32HexNo0x;

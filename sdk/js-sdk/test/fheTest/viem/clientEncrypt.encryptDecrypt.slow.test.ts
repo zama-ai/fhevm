@@ -1,3 +1,13 @@
+import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { isV2, getBaseEnv } from '../setupCommon.js';
+import { FHETestABI } from '../abi-v2.js';
+import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+import { createWalletClient, http, type Hex } from 'viem';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,22 +21,6 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmDecryptClient,
-  createFhevmEncryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { isV2, getBaseEnv } from '../setupCommon.js';
-import { FHETestABI } from '../abi-v2.js';
-import type {
-  ChecksummedAddress,
-  TypedValue,
-} from '../../../src/core/types/primitives.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-import { createWalletClient, http, type Hex } from 'viem';
-
 ////////////////////////////////////////////////////////////////////////////////
 
 // Map FHE type to: contract function name, value type name, test value
@@ -103,9 +97,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
         values: encryptTestCases,
       });
 
-      expect(result.externalEncryptedValues).toHaveLength(
-        encryptTestCases.length,
-      );
+      expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
       expect(result.inputProof).toBeDefined();
       expect(result.inputProof.startsWith('0x')).toBe(true);
 
@@ -171,8 +163,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
 
       await decryptClient.ready;
 
-      const e2eTransportKeypair =
-        await decryptClient.generateE2eTransportKeypair();
+      const e2eTransportKeypair = await decryptClient.generateE2eTransportKeypair();
       const signedPermit = await decryptClient.signDecryptionPermit({
         e2eTransportKeypair,
         contractAddresses: [config.fheTestAddress],
@@ -213,9 +204,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
         encryptedValues: result.externalEncryptedValues,
       });
 
-      expect(publicProof.orderedClearValues).toHaveLength(
-        encryptTestCases.length,
-      );
+      expect(publicProof.orderedClearValues).toHaveLength(encryptTestCases.length);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const expected = encryptTestCases[i]!;

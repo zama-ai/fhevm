@@ -1,4 +1,3 @@
-import { createInputProofFromComponents } from '../../coprocessor/InputProof-p.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { VerifiedInputProof } from '../../types/inputProof.js';
@@ -11,13 +10,13 @@ import type {
   ChecksummedAddress,
 } from '../../types/primitives.js';
 import { verifyInputProof } from './verifyInputProof.js';
+import { createInputProofFromComponents } from '../../coprocessor/InputProof-p.js';
+
+////////////////////////////////////////////////////////////////////////////////
 
 export type CreateVerifiedInputProofFromComponentsParameters = {
-  readonly coprocessorEIP712Signatures: readonly Bytes65Hex[];
-  readonly inputHandles:
-    | readonly Bytes32Hex[]
-    | readonly Bytes32[]
-    | readonly Bytes32HexAble[];
+  readonly coprocessorEip712Signatures: readonly Bytes65Hex[];
+  readonly inputHandles: readonly Bytes32Hex[] | readonly Bytes32[] | readonly Bytes32HexAble[];
   readonly extraData: BytesHex;
   readonly signedHandleAccess: {
     readonly userAddress: ChecksummedAddress;
@@ -25,8 +24,9 @@ export type CreateVerifiedInputProofFromComponentsParameters = {
   };
 };
 
-export type CreateVerifiedInputProofFromComponentsReturnType =
-  VerifiedInputProof;
+export type CreateVerifiedInputProofFromComponentsReturnType = VerifiedInputProof;
+
+////////////////////////////////////////////////////////////////////////////////
 
 export async function createVerifiedInputProofFromComponents(
   fhevm: Fhevm<FhevmChain>,

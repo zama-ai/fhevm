@@ -1,9 +1,4 @@
-import type {
-  FhevmRuntime,
-  WithAll,
-  WithDecrypt,
-  WithEncrypt,
-} from './coreFhevmRuntime.js';
+import type { FhevmRuntime, WithAll, WithDecrypt, WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { BaseActions } from '../clients/decorators/base.js';
 import type { EncryptActions } from '../clients/decorators/encrypt.js';
@@ -20,10 +15,7 @@ export type FhevmClient<
   chain extends FhevmChain = FhevmChain,
   runtime extends WithAll = WithAll,
   client extends NativeClient = NativeClient,
-> = Fhevm<chain, runtime, client> &
-  BaseActions &
-  DecryptActions &
-  EncryptActions;
+> = Fhevm<chain, runtime, client> & BaseActions & DecryptActions & EncryptActions;
 
 export type FhevmDecryptClient<
   chain extends FhevmChain = FhevmChain,

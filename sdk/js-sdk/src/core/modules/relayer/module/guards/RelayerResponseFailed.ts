@@ -40,12 +40,7 @@ export function assertIsRelayerResponseFailed(
     expectedValue: 'failed' satisfies T['status'],
     ...options,
   });
-  assertRecordNonNullableProperty(
-    value,
-    'error' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordNonNullableProperty(value, 'error' satisfies keyof T, name, options);
   assertIsRelayerApiError(value.error, `${name}.error`, options);
 }
 
@@ -66,28 +61,21 @@ export function assertIsRelayerApiError(
   assertRecordStringProperty(value, 'label', name, {});
   // 400
   if (
-    value.label ===
-      ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
-    value.label ===
-      ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
-    value.label ===
-      ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
+    value.label === ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
+    value.label === ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
+    value.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
   ) {
     assertIsRelayerApiError400NoDetails(value, name, options);
   }
   // 400 (with details)
   else if (
-    value.label ===
-      ('missing_fields' satisfies RelayerApiError400WithDetails['label']) ||
-    value.label ===
-      ('validation_failed' satisfies RelayerApiError400WithDetails['label'])
+    value.label === ('missing_fields' satisfies RelayerApiError400WithDetails['label']) ||
+    value.label === ('validation_failed' satisfies RelayerApiError400WithDetails['label'])
   ) {
     assertIsRelayerApiError400WithDetails(value, name, options);
   }
   // 404
-  else if (
-    value.label === ('not_found' satisfies RelayerApiError404['label'])
-  ) {
+  else if (value.label === ('not_found' satisfies RelayerApiError404['label'])) {
     assertIsRelayerApiError404(value, name, options);
   }
   // 429
@@ -98,21 +86,15 @@ export function assertIsRelayerApiError(
     assertIsRelayerApiError429(value, name, options);
   }
   // 500
-  else if (
-    value.label ===
-    ('internal_server_error' satisfies RelayerApiError500['label'])
-  ) {
+  else if (value.label === ('internal_server_error' satisfies RelayerApiError500['label'])) {
     assertIsRelayerApiError500(value, name, options);
   }
   // 503
   else if (
-    value.label ===
-      ('readiness_check_timed_out' satisfies RelayerApiError503['label']) ||
-    value.label ===
-      ('response_timed_out' satisfies RelayerApiError503['label']) ||
+    value.label === ('readiness_check_timed_out' satisfies RelayerApiError503['label']) ||
+    value.label === ('response_timed_out' satisfies RelayerApiError503['label']) ||
     value.label === ('protocol_paused' satisfies RelayerApiError503['label']) ||
-    value.label ===
-      ('gateway_not_reachable' satisfies RelayerApiError503['label'])
+    value.label === ('gateway_not_reachable' satisfies RelayerApiError503['label'])
   ) {
     assertIsRelayerApiError503(value, name, options);
   }
@@ -166,25 +148,16 @@ export function assertIsRelayerResponseFailedWithError400(
 } {
   assertIsRelayerResponseFailed(value, name, options);
   if (
-    value.error.label ===
-      ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
-    value.error.label ===
-      ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
-    value.error.label ===
-      ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
+    value.error.label === ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
+    value.error.label === ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
+    value.error.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
   ) {
     assertIsRelayerApiError400NoDetails(value.error, `${name}.error`, options);
   } else if (
-    value.error.label ===
-      ('missing_fields' satisfies RelayerApiError400WithDetails['label']) ||
-    value.error.label ===
-      ('validation_failed' satisfies RelayerApiError400WithDetails['label'])
+    value.error.label === ('missing_fields' satisfies RelayerApiError400WithDetails['label']) ||
+    value.error.label === ('validation_failed' satisfies RelayerApiError400WithDetails['label'])
   ) {
-    assertIsRelayerApiError400WithDetails(
-      value.error,
-      `${name}.error`,
-      options,
-    );
+    assertIsRelayerApiError400WithDetails(value.error, `${name}.error`, options);
   } else {
     throw new InvalidPropertyError(
       {

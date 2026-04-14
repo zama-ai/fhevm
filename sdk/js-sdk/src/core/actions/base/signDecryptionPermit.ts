@@ -3,7 +3,6 @@ import type {
   SignSelfDecryptionPermitParameters,
   SignDelegatedDecryptionPermitParameters,
 } from '../../kms/SignedDecryptionPermit-p.js';
-import { signDecryptionPermit as signDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type {
@@ -11,6 +10,7 @@ import type {
   SignedDelegatedDecryptionPermit,
   SignedSelfDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
+import { signDecryptionPermit as signDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 
 export type {
   SignDecryptionPermitParameters,

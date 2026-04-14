@@ -6,10 +6,7 @@ type CacheEntry<T> = {
 
 type CachedFetchOptions<TContext, TParams, TResult> = {
   /** The function that performs the actual async work. */
-  readonly executeFn: (
-    context: TContext,
-    parameters: TParams,
-  ) => Promise<TResult>;
+  readonly executeFn: (context: TContext, parameters: TParams) => Promise<TResult>;
   /** Derives the cache key from context and parameters. */
   readonly cacheKeyFn: (context: TContext, parameters: TParams) => string;
   /** TTL in milliseconds. `0` disables caching. Omit for permanent cache. */
@@ -77,10 +74,7 @@ type CachedFetchResult<TContext, TParams, TResult> = {
    * cached.clear({ key: 'uid:0xABC', includeInflight: true }); // evict one entry regardless
    * ```
    */
-  readonly clear: (options?: {
-    readonly key?: string;
-    readonly includeInflight?: boolean;
-  }) => void;
+  readonly clear: (options?: { readonly key?: string; readonly includeInflight?: boolean }) => void;
 };
 
 export function createCachedFetch<TContext, TParams, TResult>(
@@ -88,13 +82,7 @@ export function createCachedFetch<TContext, TParams, TResult>(
 ): CachedFetchResult<TContext, TParams, TResult> {
   let cache = new Map<string, CacheEntry<TResult>>();
 
-  const {
-    executeFn,
-    cacheKeyFn,
-    ttlMs,
-    maxSize = 100,
-    nowFn = Date.now,
-  } = options;
+  const { executeFn, cacheKeyFn, ttlMs, maxSize = 100, nowFn = Date.now } = options;
 
   function execute(
     context: TContext,
@@ -158,10 +146,7 @@ export function createCachedFetch<TContext, TParams, TResult>(
     return inflightPromise;
   }
 
-  function clear(clearOptions?: {
-    readonly key?: string;
-    readonly includeInflight?: boolean;
-  }): void {
+  function clear(clearOptions?: { readonly key?: string; readonly includeInflight?: boolean }): void {
     const includeInflight = clearOptions?.includeInflight === true;
     const key = clearOptions?.key;
 
@@ -188,9 +173,7 @@ export function createCachedFetch<TContext, TParams, TResult>(
  * Creates a new Map to reclaim the internal hash table memory that
  * would otherwise stay inflated after deletions.
  */
-function rebuildWithoutSettled<T>(
-  cache: Map<string, CacheEntry<T>>,
-): Map<string, CacheEntry<T>> {
+function rebuildWithoutSettled<T>(cache: Map<string, CacheEntry<T>>): Map<string, CacheEntry<T>> {
   const next = new Map<string, CacheEntry<T>>();
   for (const [key, entry] of cache) {
     if (!entry.settled) {

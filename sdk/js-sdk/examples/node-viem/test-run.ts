@@ -14,12 +14,7 @@
  * Usage: npx tsx ./examples/node-viem/test-run.ts
  */
 
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  getContract,
-} from 'viem';
+import { createPublicClient, createWalletClient, http, getContract } from 'viem';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { sepolia as viemSepolia } from 'viem/chains';
 import { readFileSync } from 'node:fs';
@@ -47,10 +42,7 @@ function loadEnv(): Record<string, string> {
 
 const env = loadEnv();
 
-import {
-  setFhevmRuntimeConfig,
-  createFhevmClient,
-} from '../../src/viem/index.js';
+import { setFhevmRuntimeConfig, createFhevmClient } from '../../src/viem/index.js';
 import { sepolia } from '../../src/core/chains/index.js';
 import { asChecksummedAddress } from '../../src/core/base/address.js';
 import type { Bytes65Hex } from '../../src/core/types/primitives.js';
@@ -83,8 +75,7 @@ const PUBLIC_ENCRYPTED_VALUES = [
 ];
 
 // FHECounter contract on Sepolia (deployed by the Next.js example)
-const FHE_COUNTER_ADDRESS =
-  '0xef6c6230bF565015f8B37f2966d200C8804b409a' as const;
+const FHE_COUNTER_ADDRESS = '0xef6c6230bF565015f8B37f2966d200C8804b409a' as const;
 const FHE_COUNTER_ABI = [
   {
     inputs: [],
@@ -117,13 +108,10 @@ async function main(): Promise<void> {
     transport,
   });
 
-  const privateKey = env.WALLET_PRIVATE_KEY
-    ? (`0x${env.WALLET_PRIVATE_KEY}` as `0x${string}`)
-    : generatePrivateKey();
+  const privateKey = env.WALLET_PRIVATE_KEY ? (`0x${env.WALLET_PRIVATE_KEY}` as `0x${string}`) : generatePrivateKey();
   const account = privateKeyToAccount(privateKey);
 
-  if (!env.WALLET_PRIVATE_KEY)
-    console.log('  (using random wallet — no .env.local found)');
+  if (!env.WALLET_PRIVATE_KEY) console.log('  (using random wallet — no .env.local found)');
 
   const walletClient = createWalletClient({
     account,
@@ -161,9 +149,7 @@ async function main(): Promise<void> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log('  Encryption failed (relayer issue):', msg.split('\n')[0]);
-    console.log(
-      '  (ZK proof generation succeeded — relayer coprocessor signing unavailable)',
-    );
+    console.log('  (ZK proof generation succeeded — relayer coprocessor signing unavailable)');
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -181,9 +167,7 @@ async function main(): Promise<void> {
       if (d === undefined) continue;
       const expected = PUBLIC_ENCRYPTED_VALUES[i]?.expected;
       const match = d.value === expected ? 'OK' : 'MISMATCH';
-      console.log(
-        `  [${match}] ${d.encryptedValue.fheType}: ${d.value} (expected: ${expected})`,
-      );
+      console.log(`  [${match}] ${d.encryptedValue.fheType}: ${d.value} (expected: ${expected})`);
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -207,17 +191,10 @@ async function main(): Promise<void> {
   console.log('  Count handle (hex):', countHex);
 
   if (rawCount === 0n) {
-    console.log(
-      '  Count is zero — no encrypted value stored yet. Skipping decrypt.',
-    );
+    console.log('  Count is zero — no encrypted value stored yet. Skipping decrypt.');
   } else {
     const countHandle = toHandle(countHex);
-    console.log(
-      '  Parsed handle — chainId:',
-      countHandle.chainId.toString(),
-      'fheType:',
-      countHandle.fheType,
-    );
+    console.log('  Parsed handle — chainId:', countHandle.chainId.toString(), 'fheType:', countHandle.fheType);
 
     step('Generate E2E transport key pair');
     const e2eTransportKeypair = await fhevm.generateE2eTransportKeypair();
@@ -281,9 +258,7 @@ async function main(): Promise<void> {
       });
       const decrypted = results[0];
       console.log('  Decryption succeeded!');
-      console.log(
-        `  Value: ${decrypted?.value} (${decrypted?.encryptedValue.fheType})`,
-      );
+      console.log(`  Value: ${decrypted?.value} (${decrypted?.encryptedValue.fheType})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log('  Decryption failed:', msg.slice(0, 200));

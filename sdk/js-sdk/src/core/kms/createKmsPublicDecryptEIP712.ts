@@ -1,20 +1,13 @@
-//////////////////////////////////////////////////////////////////////////////
-// createKmsPublicDecryptEIP712
-//////////////////////////////////////////////////////////////////////////////
-
 import type { HandleLike } from '../types/encryptedTypes.js';
+import type { KmsPublicDecryptEip712 } from '../types/kms.js';
 import { assertIsBytesHex } from '../base/bytes.js';
-import {
-  assertIsHandleLikeArray,
-  handleLikeToHandle,
-} from '../handle/FhevmHandle.js';
-import type { KmsPublicDecryptEIP712 } from '../types/kms.js';
-import { createKmsEIP712Domain } from './createKmsEIP712Domain.js';
-import { kmsPublicDecryptEIP712Types } from './kmsPublicDecryptEIP712Types.js';
+import { assertIsHandleLikeArray, handleLikeToHandle } from '../handle/FhevmHandle.js';
+import { createKmsEip712Domain } from './createKmsEip712Domain.js';
+import { kmsPublicDecryptEip712Types } from './kmsPublicDecryptEip712Types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CreateKmsPublicDecryptEIP712Parameters = {
+export type CreateKmsPublicDecryptEip712Parameters = {
   readonly verifyingContractAddressDecryption: string;
   readonly chainId: number | bigint;
   readonly handles: readonly HandleLike[];
@@ -26,27 +19,23 @@ export type CreateKmsPublicDecryptEIP712Parameters = {
 // createKmsPublicDecryptEIP712
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createKmsPublicDecryptEIP712({
-  verifyingContractAddressDecryption,
-  chainId,
-  handles,
-  decryptedResult,
-  extraData,
-}: CreateKmsPublicDecryptEIP712Parameters): KmsPublicDecryptEIP712 {
+export function createKmsPublicDecryptEip712(
+  parameters: CreateKmsPublicDecryptEip712Parameters,
+): KmsPublicDecryptEip712 {
+  const { verifyingContractAddressDecryption, chainId, handles, decryptedResult, extraData } = parameters;
   assertIsHandleLikeArray(handles, {});
   assertIsBytesHex(decryptedResult, {});
   assertIsBytesHex(extraData, {});
 
-  const primaryType: KmsPublicDecryptEIP712['primaryType'] =
-    'PublicDecryptVerification';
+  const primaryType: KmsPublicDecryptEip712['primaryType'] = 'PublicDecryptVerification';
 
-  const domain = createKmsEIP712Domain({
+  const domain = createKmsEip712Domain({
     chainId,
     verifyingContractAddressDecryption,
   });
 
-  const eip712: KmsPublicDecryptEIP712 = {
-    types: kmsPublicDecryptEIP712Types,
+  const eip712: KmsPublicDecryptEip712 = {
+    types: kmsPublicDecryptEip712Types,
     primaryType,
     domain,
     message: {

@@ -1,9 +1,9 @@
 import type { HandleLike } from '../../types/encryptedTypes.js';
-import { ACLPublicDecryptionError } from '../../errors/ACLError.js';
-import { toHandle } from '../../handle/FhevmHandle.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { ChecksummedAddress } from '../../types/primitives.js';
+import { AclPublicDecryptionError } from '../../errors/AclError.js';
+import { toHandle } from '../../handle/FhevmHandle.js';
 import { isAllowedForDecryption } from './isAllowedForDecryption.js';
 
 export type CheckAllowedForDecryptionParameters = {
@@ -15,7 +15,7 @@ export type CheckAllowedForDecryptionParameters = {
  * Throws ACLPublicDecryptionError if any handle is not allowed for decryption.
  *
  * @throws A {@link FhevmHandleError} If checkArguments is true and any handle is not a valid Bytes32Hex
- * @throws A {@link ACLPublicDecryptionError} If any handle is not allowed for public decryption
+ * @throws A {@link AclPublicDecryptionError} If any handle is not allowed for public decryption
  */
 export async function checkAllowedForDecryption(
   fhevm: Fhevm<FhevmChain>,
@@ -29,13 +29,10 @@ export async function checkAllowedForDecryption(
     options,
   });
 
-  const failedHandles = handlesArray
-    .filter((_, i) => results[i] !== true)
-    .map((h) => toHandle(h).bytes32Hex);
+  const failedHandles = handlesArray.filter((_, i) => results[i] !== true).map((h) => toHandle(h).bytes32Hex);
   if (failedHandles.length > 0) {
-    throw new ACLPublicDecryptionError({
-      contractAddress: fhevm.chain.fhevm.contracts.acl
-        .address as ChecksummedAddress,
+    throw new AclPublicDecryptionError({
+      contractAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       handles: failedHandles,
     });
   }

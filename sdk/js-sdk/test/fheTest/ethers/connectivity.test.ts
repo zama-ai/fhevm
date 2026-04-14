@@ -37,27 +37,21 @@ describe('Connectivity', () => {
   });
 
   it('should read CONTRACT_NAME from FHETest.sol', async () => {
-    const name: string =
-      await config.fheTestContract.getFunction('CONTRACT_NAME')();
+    const name: string = await config.fheTestContract.getFunction('CONTRACT_NAME')();
     console.log(`  CONTRACT_NAME: ${name}`);
     expect(typeof name).toBe('string');
     expect(name.length).toBeGreaterThan(0);
   });
 
   it('should read confidentialProtocolId', async () => {
-    const protocolId: bigint = await config.fheTestContract.getFunction(
-      'confidentialProtocolId',
-    )();
+    const protocolId: bigint = await config.fheTestContract.getFunction('confidentialProtocolId')();
     console.log(`  confidentialProtocolId: ${protocolId}`);
     expect(protocolId).toBeDefined();
   });
 
   it('should read getCoprocessorConfig with valid addresses', async () => {
-    const coprocessorConfig = await config.fheTestContract.getFunction(
-      'getCoprocessorConfig',
-    )();
-    const [aclAddress, coprocessorAddress, kmsVerifierAddress] =
-      coprocessorConfig;
+    const coprocessorConfig = await config.fheTestContract.getFunction('getCoprocessorConfig')();
+    const [aclAddress, coprocessorAddress, kmsVerifierAddress] = coprocessorConfig;
     console.log(`  ACL: ${aclAddress}`);
     console.log(`  Coprocessor: ${coprocessorAddress}`);
     console.log(`  KMS Verifier: ${kmsVerifierAddress}`);

@@ -1,10 +1,6 @@
 import type { InputVerifierContractData } from './coprocessor.js';
 import type { KmsVerifierContractData } from './kms.js';
-import type {
-  ChecksummedAddress,
-  Uint32BigInt,
-  Uint64BigInt,
-} from './primitives.js';
+import type { ChecksummedAddress, Uint32BigInt, Uint64BigInt } from './primitives.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

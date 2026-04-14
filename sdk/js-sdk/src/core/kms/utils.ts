@@ -11,9 +11,7 @@ const MAX_KMS_DECRYPT_DECRYPTION_BIT_LIMIT = 2048 as UintNumber;
  * @returns The total encrypted bits across all handles
  * @throws {Error} If the total exceeds the limit
  */
-export function assertKmsDecryptionBitLimit(
-  handles: readonly Handle[],
-): UintNumber {
+export function assertKmsDecryptionBitLimit(handles: readonly Handle[]): UintNumber {
   let total: number = 0;
 
   for (const handle of handles) {

@@ -1,7 +1,4 @@
-import type {
-  RelayerPublicDecryptSucceeded,
-  RelayerResult200PublicDecrypt,
-} from '../../../../types/relayer-p.js';
+import type { RelayerPublicDecryptSucceeded, RelayerResult200PublicDecrypt } from '../../../../types/relayer-p.js';
 import type { ErrorMetadataParams } from '../../../../base/errors/ErrorBase.js';
 import { assertRecordNonNullableProperty } from '../../../../base/record.js';
 import { assertRecordStringProperty } from '../../../../base/string.js';
@@ -35,23 +32,9 @@ export function assertIsRelayerPublicDecryptSucceeded(
     expectedValue: 'succeeded' satisfies T['status'],
     ...options,
   });
-  assertRecordStringProperty(
-    value,
-    'requestId' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordNonNullableProperty(
-    value,
-    'result' satisfies keyof T,
-    name,
-    options,
-  );
-  _assertIsRelayerResult200PublicDecrypt(
-    value.result,
-    `${name}.result`,
-    options,
-  );
+  assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
+  assertRecordNonNullableProperty(value, 'result' satisfies keyof T, name, options);
+  _assertIsRelayerResult200PublicDecrypt(value.result, `${name}.result`, options);
 }
 
 /**
@@ -70,22 +53,7 @@ function _assertIsRelayerResult200PublicDecrypt(
   options: ErrorMetadataParams,
 ): asserts value is RelayerResult200PublicDecrypt {
   type T = RelayerResult200PublicDecrypt;
-  assertRecordBytesHexNo0xArrayProperty(
-    value,
-    'signatures' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordBytesHexNo0xProperty(
-    value,
-    'decryptedValue' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordBytesHexProperty(
-    value,
-    'extraData' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordBytesHexNo0xArrayProperty(value, 'signatures' satisfies keyof T, name, options);
+  assertRecordBytesHexNo0xProperty(value, 'decryptedValue' satisfies keyof T, name, options);
+  assertRecordBytesHexProperty(value, 'extraData' satisfies keyof T, name, options);
 }

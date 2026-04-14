@@ -18,10 +18,7 @@ export function assertIsRelayerApiError429(
 ): asserts error is RelayerApiError429 {
   type T = RelayerApiError429;
   assertRecordStringProperty(error, 'label' satisfies keyof T, name, {
-    expectedValue: [
-      'rate_limited' satisfies T['label'],
-      'protocol_overload' satisfies T['label'],
-    ],
+    expectedValue: ['rate_limited' satisfies T['label'], 'protocol_overload' satisfies T['label']],
     ...options,
   });
   assertRecordStringProperty(error, 'message' satisfies keyof T, name, options);

@@ -1,10 +1,7 @@
 import type { ErrorMetadataParams } from '../../../../base/errors/ErrorBase.js';
+import type { RelayerGetResponse202Queued, RelayerPostResponse202Queued } from '../../../../types/relayer-p.js';
 import { assertRecordNonNullableProperty } from '../../../../base/record.js';
 import { assertRecordStringProperty } from '../../../../base/string.js';
-import type {
-  RelayerGetResponse202Queued,
-  RelayerPostResponse202Queued,
-} from '../../../../types/relayer-p.js';
 
 /**
  * Asserts that `value` matches the {@link RelayerPostResponseQueued} schema:
@@ -26,18 +23,8 @@ export function assertIsRelayerPostResponse202Queued(
     expectedValue: 'queued' satisfies T['status'],
     ...options,
   });
-  assertRecordStringProperty(
-    value,
-    'requestId' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordNonNullableProperty(
-    value,
-    'result' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
+  assertRecordNonNullableProperty(value, 'result' satisfies keyof T, name, options);
   assertRecordStringProperty(value.result, 'jobId', `${name}.result`, options);
 }
 
@@ -60,10 +47,5 @@ export function assertIsRelayerGetResponse202Queued(
     expectedValue: 'queued' satisfies T['status'],
     ...options,
   });
-  assertRecordStringProperty(
-    value,
-    'requestId' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
 }

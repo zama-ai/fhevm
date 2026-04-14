@@ -1,25 +1,14 @@
-import { recoverSigners } from '../../utils-p/runtime/recoverSigners.js';
-import {
-  coprocessorEIP712PrimaryType,
-  coprocessorEIP712Types,
-} from '../../coprocessor/coprocessorEIP712Types.js';
-import { createCoprocessorEIP712Domain } from '../../coprocessor/createCoprocessorEIP712Domain.js';
-import { assertCoprocessorSignerThreshold } from '../../host-contracts/CoprocessorSignersContext-p.js';
-import type {
-  CoprocessorEIP712Domain,
-  CoprocessorEIP712Message,
-} from '../../types/coprocessor.js';
+import type { CoprocessorEip712Domain, CoprocessorEip712Message } from '../../types/coprocessor.js';
 import type { CoprocessorSignersContext } from '../../types/coprocessorSignersContext.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-  Uint64BigInt,
-} from '../../types/primitives.js';
-import { readCoprocessorSignersContext } from './readCoprocessorSignersContext.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
 import type { InputHandle } from '../../types/encryptedTypes.js';
+import { recoverSigners } from '../../utils-p/runtime/recoverSigners.js';
+import { coprocessorEip712PrimaryType, coprocessorEip712Types } from '../../coprocessor/coprocessorEip712Types.js';
+import { createCoprocessorEip712Domain } from '../../coprocessor/createCoprocessorEip712Domain.js';
+import { assertCoprocessorSignerThreshold } from '../../host-contracts/CoprocessorSignersContext-p.js';
+import { readCoprocessorSignersContext } from './readCoprocessorSignersContext.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,7 +31,7 @@ export async function verifyHandlesCoprocessorSignatures(
 ): Promise<void> {
   // Use hex strings (not Uint8Array) for EIP-712 message fields.
   // viem's hashTypedData expects hex strings for bytes32 fields.
-  const message: CoprocessorEIP712Message = {
+  const message: CoprocessorEip712Message = {
     ctHandles: parameters.handles.map((h) => h.bytes32Hex),
     userAddress: parameters.userAddress,
     contractAddress: parameters.contractAddress,
@@ -50,27 +39,22 @@ export async function verifyHandlesCoprocessorSignatures(
     extraData: parameters.extraData,
   };
 
-  const domain: CoprocessorEIP712Domain = createCoprocessorEIP712Domain({
+  const domain: CoprocessorEip712Domain = createCoprocessorEip712Domain({
     gatewayChainId: fhevm.chain.fhevm.gateway.id,
-    verifyingContractAddressInputVerification:
-      fhevm.chain.fhevm.gateway.contracts.inputVerification.address,
+    verifyingContractAddressInputVerification: fhevm.chain.fhevm.gateway.contracts.inputVerification.address,
   });
 
   // 1. Verify signatures
   const recoveredAddresses = await recoverSigners(fhevm, {
     domain,
-    primaryType: coprocessorEIP712PrimaryType,
-    types: coprocessorEIP712Types,
+    primaryType: coprocessorEip712PrimaryType,
+    types: coprocessorEip712Types,
     signatures: parameters.coprocessorSignatures,
     message,
   });
 
-  const coprocessorSignersContext: CoprocessorSignersContext =
-    await readCoprocessorSignersContext(fhevm);
+  const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(fhevm);
 
   // 2. Verify signature theshold is reached
-  assertCoprocessorSignerThreshold(
-    coprocessorSignersContext,
-    recoveredAddresses,
-  );
+  assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
 }

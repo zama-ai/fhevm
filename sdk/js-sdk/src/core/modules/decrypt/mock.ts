@@ -32,9 +32,7 @@ export async function decryptAndReconstruct(
 // generateTkmsPrivateKey
 //////////////////////////////////////////////////////////////////////////////
 
-export async function generateTkmsPrivateKey(
-  _runtime: FhevmRuntime,
-): Promise<GenerateTkmsPrivateKeyReturnType> {
+export async function generateTkmsPrivateKey(_runtime: FhevmRuntime): Promise<GenerateTkmsPrivateKeyReturnType> {
   throw new Error('Not yet implemented');
 }
 
@@ -75,10 +73,7 @@ export async function deserializeTkmsPrivateKey(
 // verifyTkmsPrivateKey
 //////////////////////////////////////////////////////////////////////////////
 
-export function verifyTkmsPrivateKey(
-  _runtime: FhevmRuntime,
-  _parameters: VerifyTkmsPrivateKeyParameters,
-): void {
+export function verifyTkmsPrivateKey(_runtime: FhevmRuntime, _parameters: VerifyTkmsPrivateKeyParameters): void {
   throw new Error('Not yet implemented');
 }
 
@@ -94,17 +89,14 @@ export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
         throw new Error('Not yet implemented');
       },
       generateTkmsPrivateKey: () => generateTkmsPrivateKey(runtime),
-      decryptAndReconstruct: (args: DecryptAndReconstructParameters) =>
-        decryptAndReconstruct(runtime, args),
-      serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) =>
-        serializeTkmsPrivateKey(runtime, args),
+      decryptAndReconstruct: (args: DecryptAndReconstructParameters) => decryptAndReconstruct(runtime, args),
+      serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) => serializeTkmsPrivateKey(runtime, args),
       deserializeTkmsPrivateKey: (args: DeserializeTkmsPrivateKeyParameters) =>
         deserializeTkmsPrivateKey(runtime, args),
       verifyTkmsPrivateKey: (args: VerifyTkmsPrivateKeyParameters) => {
         verifyTkmsPrivateKey(runtime, args);
       },
-      getTkmsPublicKeyHex: (args: GetTkmsPublicKeyHexParameters) =>
-        getTkmsPublicKeyHex(runtime, args),
+      getTkmsPublicKeyHex: (args: GetTkmsPublicKeyHexParameters) => getTkmsPublicKeyHex(runtime, args),
     }),
   });
 };

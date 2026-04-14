@@ -1,16 +1,10 @@
+import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
+import type { GetTkmsModuleInfoReturnType, TkmsModuleInfo } from '../types.js';
 import init_kms_lib from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
 import { getWasmInfo } from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
 import { isBrowserLike } from '../../../base/isomorphicWorker.js';
-import {
-  isomorphicCompileWasm,
-  isomorphicCompileWasmFromBase64,
-} from '../../../base/wasm.js';
+import { isomorphicCompileWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
-import type {
-  FhevmRuntime,
-  FhevmRuntimeConfig,
-} from '../../../types/coreFhevmRuntime.js';
-import type { GetTkmsModuleInfoReturnType, TkmsModuleInfo } from '../types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,18 +47,14 @@ let resolvedTkmsModuleConfig: ResolvedTkmsModuleConfig | undefined = undefined;
  * @internal
  * Returns the existing resolved config, or resolves it from the runtime config.
  */
-function _getOrResolveTkmsModuleConfig(
-  runtime: FhevmRuntime,
-): ResolvedTkmsModuleConfig {
+function _getOrResolveTkmsModuleConfig(runtime: FhevmRuntime): ResolvedTkmsModuleConfig {
   if (resolvedTkmsModuleConfig !== undefined) return resolvedTkmsModuleConfig;
 
   resolvedTkmsModuleConfig = _resolveTkmsModuleConfig(runtime.config);
   return resolvedTkmsModuleConfig;
 }
 
-function _resolveTkmsModuleConfig(
-  parameters: FhevmRuntimeConfig,
-): ResolvedTkmsModuleConfig {
+function _resolveTkmsModuleConfig(parameters: FhevmRuntimeConfig): ResolvedTkmsModuleConfig {
   if (cachedTkmsModulePromise !== undefined) {
     throw new Error('Cannot configure module after initialization has started');
   }
@@ -99,12 +89,7 @@ function _resolveTkmsModuleConfig(
 // initTkmsModule
 ////////////////////////////////////////////////////////////////////////////////
 
-type TkmsInitInput =
-  | RequestInfo
-  | URL
-  | Response
-  | BufferSource
-  | WebAssembly.Module;
+type TkmsInitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 type InitTkmsModuleParameters = {
   readonly module_or_path: TkmsInitInput | Promise<TkmsInitInput>;

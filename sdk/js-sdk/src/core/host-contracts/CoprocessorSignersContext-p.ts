@@ -1,17 +1,10 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { coprocessorBrand } from '../types/coprocessor.js';
-import {
-  DuplicateSignerError,
-  ThresholdSignerError,
-  UnknownSignerError,
-} from '../errors/SignersError.js';
-import type {
-  CoprocessorSignersContext,
-  CoprocessorSignersContextJson,
-} from '../types/coprocessorSignersContext.js';
+import type { CoprocessorSignersContext, CoprocessorSignersContextJson } from '../types/coprocessorSignersContext.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
+import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 const PRIVATE_TOKEN = Symbol('CoprocessorSignersContext.token');
@@ -46,9 +39,7 @@ class CoprocessorSignersContextImpl implements CoprocessorSignersContext {
     this.#address = parameters.address;
     this.#coprocessorSigners = [...parameters.coprocessorSigners];
     this.#coprocessorSignerThreshold = parameters.coprocessorSignerThreshold;
-    this.#coprocessorSignersSet = new Set(
-      this.#coprocessorSigners.map((addr) => addr.toLowerCase()),
-    );
+    this.#coprocessorSignersSet = new Set(this.#coprocessorSigners.map((addr) => addr.toLowerCase()));
 
     Object.freeze(this.#coprocessorSigners);
     Object.freeze(this);
@@ -113,10 +104,7 @@ export function createCoprocessorSignersContext(
  * Verifies that the given `CoprocessorSignersContext` instance was created
  * by the given runtime. Throws if not.
  */
-export function assertCoprocessorSignersContextOwnedBy(
-  data: CoprocessorSignersContext,
-  owner: FhevmRuntime,
-): void {
+export function assertCoprocessorSignersContextOwnedBy(data: CoprocessorSignersContext, owner: FhevmRuntime): void {
   CoprocessorSignersContextImpl[VERIFY_FUNC](data, owner);
 }
 
@@ -156,9 +144,7 @@ export function assertCoprocessorSignerThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isCoprocessorSignersContext(
-  value: unknown,
-): value is CoprocessorSignersContext {
+export function isCoprocessorSignersContext(value: unknown): value is CoprocessorSignersContext {
   return value instanceof CoprocessorSignersContextImpl;
 }
 

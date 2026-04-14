@@ -1,13 +1,13 @@
-import { InputProofError } from '../../errors/InputProofError.js';
-import { assertHandleArrayEquals } from '../../handle/FhevmHandle.js';
 import type { RelayerInputProofOptions } from '../../types/relayer.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { VerifiedInputProof } from '../../types/inputProof.js';
 import type { BytesHex } from '../../types/primitives.js';
 import type { ZkProof } from '../../types/zkProof.js';
-import { createVerifiedInputProofFromComponents } from './createVerifiedInputProofFromComponents.js';
 import type { ExternalEncryptedValue } from '../../types/encryptedTypes.js';
+import { InputProofError } from '../../errors/InputProofError.js';
+import { assertHandleArrayEquals } from '../../handle/FhevmHandle.js';
+import { createVerifiedInputProofFromComponents } from './createVerifiedInputProofFromComponents.js';
 
 export type FetchVerifiedInputProofParameters = {
   readonly zkProof: ZkProof;
@@ -30,8 +30,7 @@ export async function fetchVerifiedInputProof(
   };
 
   // 1. extract FhevmHandles from the given ZK proof
-  const fhevmHandles: readonly ExternalEncryptedValue[] =
-    zkProof.getExternalEncryptedValues();
+  const fhevmHandles: readonly ExternalEncryptedValue[] = zkProof.getExternalEncryptedValues();
 
   if (fhevmHandles.length === 0) {
     throw new InputProofError({
@@ -40,19 +39,17 @@ export async function fetchVerifiedInputProof(
   }
 
   // 2. Request coprocessor signatures from the relayer for the given ZK proof
-  const {
-    handles: coprocessorSignedHandles,
-    coprocessorEIP712Signatures: coprocessorSignatures,
-  } = await fhevm.runtime.relayer.fetchCoprocessorSignatures(
-    { relayerUrl: fhevm.chain.fhevm.relayerUrl, chainId: fhevm.chain.id },
-    {
-      payload: {
-        zkProof,
-        extraData,
+  const { handles: coprocessorSignedHandles, coprocessorEip712Signatures: coprocessorSignatures } =
+    await fhevm.runtime.relayer.fetchCoprocessorSignatures(
+      { relayerUrl: fhevm.chain.fhevm.relayerUrl, chainId: fhevm.chain.id },
+      {
+        payload: {
+          zkProof,
+          extraData,
+        },
+        options: relayerOptions,
       },
-      options: relayerOptions,
-    },
-  );
+    );
 
   // 3. Check that the handles and the one in the fetch result
   // Note: this check is theoretically unecessary
@@ -62,7 +59,7 @@ export async function fetchVerifiedInputProof(
 
   // 4. Verify ZK proof and Compute the final Input proof
   return await createVerifiedInputProofFromComponents(fhevm, {
-    coprocessorEIP712Signatures: coprocessorSignatures,
+    coprocessorEip712Signatures: coprocessorSignatures,
     inputHandles: fhevmHandles,
     extraData: extraData,
     signedHandleAccess: {

@@ -10,9 +10,7 @@ export type FhevmConfigErrorType = FhevmConfigError & {
   name: 'FhevmConfigError';
 };
 
-export type FhevmConfigErrorParams = Prettify<
-  Omit<FhevmErrorBaseParams, 'name'>
->;
+export type FhevmConfigErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name'>>;
 
 export class FhevmConfigError extends FhevmErrorBase {
   constructor(params: FhevmConfigErrorParams) {

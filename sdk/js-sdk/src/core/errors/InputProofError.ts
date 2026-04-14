@@ -10,9 +10,7 @@ export type InputProofErrorType = InputProofError & {
   name: 'InputProofError';
 };
 
-export type InputProofErrorParams = Prettify<
-  Omit<FhevmErrorBaseParams, 'name'>
->;
+export type InputProofErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name'>>;
 
 export class InputProofError extends FhevmErrorBase {
   constructor(params: InputProofErrorParams) {
@@ -32,9 +30,7 @@ export type TooManyHandlesErrorType = TooManyHandlesError & {
   name: 'TooManyHandlesError';
 };
 
-export type TooManyHandlesErrorParams = Prettify<
-  Omit<FhevmErrorBaseParams, 'name'> & { numberOfHandles: number }
->;
+export type TooManyHandlesErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name'> & { numberOfHandles: number }>;
 
 export class TooManyHandlesError extends FhevmErrorBase {
   constructor(params: TooManyHandlesErrorParams) {

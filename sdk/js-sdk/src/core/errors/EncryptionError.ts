@@ -10,9 +10,7 @@ export type EncryptionErrorType = EncryptionError & {
   name: 'EncryptionError';
 };
 
-export type EncryptionErrorParams = Prettify<
-  Omit<FhevmErrorBaseParams, 'name'>
->;
+export type EncryptionErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name'>>;
 
 export class EncryptionError extends FhevmErrorBase {
   constructor(params: EncryptionErrorParams) {

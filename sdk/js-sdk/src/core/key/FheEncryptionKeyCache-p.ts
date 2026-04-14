@@ -61,10 +61,7 @@ export class CacheEntryImpl implements CacheEntry {
  * Asserts that two relayerUrls match.
  * Prevents mixing keys from different relayers in the same cache slot.
  */
-function _assertRelayerUrlMatch(
-  actualRelayerUrl: string,
-  expectedRelayerUrl: string,
-): void {
+function _assertRelayerUrlMatch(actualRelayerUrl: string, expectedRelayerUrl: string): void {
   if (actualRelayerUrl !== expectedRelayerUrl) {
     throw new Error(
       `FheEncryptionKey relayerUrl mismatch: expected "${expectedRelayerUrl}" but got "${actualRelayerUrl}". ` +
@@ -76,10 +73,7 @@ function _assertRelayerUrlMatch(
 /** Debug: if resolvedKind is "wasm", there must be no pending operation. */
 function _assertWasmIsTerminal(entry: CacheEntry): void {
   if (entry.resolvedKind === 'wasm' && entry.pendingKind !== undefined) {
-    throw new Error(
-      "Debug: resolvedKind is 'wasm' but pendingKind is " +
-        JSON.stringify(entry.pendingKind),
-    );
+    throw new Error("Debug: resolvedKind is 'wasm' but pendingKind is " + JSON.stringify(entry.pendingKind));
   }
 }
 
@@ -128,11 +122,7 @@ export class FheEncryptionKeyCache {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  setBytes(
-    owner: FhevmRuntime,
-    relayerUrl: string,
-    bytes: FheEncryptionKeyBytes,
-  ): void {
+  setBytes(owner: FhevmRuntime, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
     // First write wins: if an entry already exists (resolved or in-flight),
     // skip to avoid creating a closure over the 50MB bytes unnecessarily.
     if (this.#cache.has(relayerUrl)) {
@@ -194,9 +184,7 @@ export class FheEncryptionKeyCache {
   ensureWasm(parameters: {
     readonly owner: FhevmRuntime;
     readonly relayerUrl: string;
-    readonly deserializeFn: (
-      bytes: FheEncryptionKeyBytes,
-    ) => Promise<FheEncryptionKeyWasm>;
+    readonly deserializeFn: (bytes: FheEncryptionKeyBytes) => Promise<FheEncryptionKeyWasm>;
   }): void {
     const { relayerUrl, deserializeFn } = parameters;
 
@@ -238,9 +226,7 @@ export class FheEncryptionKeyCache {
    */
   async resolveBytes(parameters: {
     readonly relayerUrl: string;
-    readonly serializeFn?:
-      | ((parameters: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>)
-      | undefined;
+    readonly serializeFn?: ((parameters: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined;
   }): Promise<FheEncryptionKeyBytes | undefined> {
     const { relayerUrl, serializeFn } = parameters;
 
@@ -257,9 +243,7 @@ export class FheEncryptionKeyCache {
     // Wasm already available — serialize to bytes
     if (entry.resolvedKind === 'wasm') {
       if (serializeFn === undefined) {
-        throw new Error(
-          'Cannot convert wasm to bytes: serialize function not provided',
-        );
+        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
       }
       return serializeFn(entry.value as FheEncryptionKeyWasm);
     }
@@ -281,9 +265,7 @@ export class FheEncryptionKeyCache {
 
     if (kind === 'wasm') {
       if (serializeFn === undefined) {
-        throw new Error(
-          'Cannot convert wasm to bytes: serialize function not provided',
-        );
+        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
       }
       return serializeFn(entry.value as FheEncryptionKeyWasm);
     }

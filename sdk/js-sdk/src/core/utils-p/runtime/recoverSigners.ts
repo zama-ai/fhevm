@@ -1,18 +1,12 @@
-import { assertIsBytes65HexArray } from '../../base/bytes.js';
 import type { RecoverTypedDataAddressModuleFunction } from '../../modules/ethereum/types.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
-
 import type { Bytes65Hex, ChecksummedAddress } from '../../types/primitives.js';
+import { assertIsBytes65HexArray } from '../../base/bytes.js';
 
-type EIP712TypesType = Record<
-  string,
-  ReadonlyArray<{ name: string; type: string }>
->;
+type EIP712TypesType = Record<string, ReadonlyArray<{ name: string; type: string }>>;
 
 export type RecoverSignersParameters<T extends EIP712TypesType> = {
-  readonly domain: Parameters<
-    RecoverTypedDataAddressModuleFunction['recoverTypedDataAddress']
-  >[0]['domain'];
+  readonly domain: Parameters<RecoverTypedDataAddressModuleFunction['recoverTypedDataAddress']>[0]['domain'];
   readonly types: T;
   readonly primaryType: string & keyof T;
   readonly signatures: readonly string[];
@@ -21,9 +15,7 @@ export type RecoverSignersParameters<T extends EIP712TypesType> = {
 
 export type RecoverSignersReturnType = ChecksummedAddress[];
 
-export async function recoverSigners<
-  T extends Record<string, ReadonlyArray<{ name: string; type: string }>>,
->(
+export async function recoverSigners<T extends Record<string, ReadonlyArray<{ name: string; type: string }>>>(
   context: { readonly runtime: FhevmRuntime },
   parameters: RecoverSignersParameters<T>,
 ): Promise<RecoverSignersReturnType> {

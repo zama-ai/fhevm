@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run clean && npm run prettier:check && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",
+    "build": "npm run clean && npm run prettier:check && npm run prettier:ext && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",
     "build:tests": "tsc --project ./test/tsconfig.json --noEmit",
     "build:cjs": "tsc --project ./tsconfig.build.cjs.json --module commonjs --moduleResolution node --outDir ./src/_cjs --removeComments --verbatimModuleSyntax false && printf '{\"type\":\"commonjs\"}' > ./src/_cjs/package.json && npm run build:cjs:wasm",
     "build:cjs:wasm": "node -e \"require('fs').cpSync('src/wasm','src/_cjs/wasm',{recursive:true})\"",
@@ -13,6 +13,8 @@
     "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo src/_esm src/_cjs src/_types",
     "size-limit": "size-limit",
     "lint": "eslint && tsc --project ./tsconfig.json --noEmit",
+    "lint:jsdoc": "eslint --config eslint.jsdoc.config.js",
+    "prettier:ext": "./scripts/prettier/check-file-casing.sh && ./scripts/prettier/check-import-order.sh ./scripts/prettier/check-no-leading-comment.sh",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test:browser": "npx playwright test --config test/browser/playwright.config.ts",
@@ -22,22 +24,23 @@
     "fhevm:clean": "./scripts/fhevm-cli-clean.sh"
   },
   "devDependencies": {
-    "@noble/hashes": "2.0.1",
     "@eslint/js": "^10.0.1",
+    "@noble/hashes": "2.0.1",
     "@playwright/test": "^1.58.2",
     "@size-limit/preset-big-lib": "^12.0.1",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.2",
+    "eslint-plugin-jsdoc": "^62.9.0",
     "ethers": "^6.15.0",
     "size-limit": "^12.0.1",
     "test": "vitest -c ./test/vitest.config.ts",
     "tsx": "^4.21.0",
-    "typescript": "5.9.3",
-    "wasm-feature-detect": "^1.8.0",
-    "typescript-eslint": "^8.56.1",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2",
     "viem": "^2.46.3",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wasm-feature-detect": "^1.8.0"
   },
   "imports": {
     "#wasm/baseUrl": {

@@ -26,13 +26,7 @@ export type FhevmExtension<
   readonly actions: actions;
   readonly runtime: runtime;
   readonly init?:
-    | ((
-        client: FhevmBase<
-          FhevmChain | undefined,
-          FhevmRuntime,
-          OptionalNativeClient
-        >,
-      ) => Promise<void>)
+    | ((client: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>) => Promise<void>)
     | undefined;
 };
 
@@ -53,13 +47,8 @@ export interface Fhevm<
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = NativeClient,
 > extends FhevmBase<chain, runtime, client> {
-  readonly extend: <
-    const actions extends Record<string, unknown>,
-    extendedRuntime extends FhevmRuntime,
-  >(
-    actionsFactory: (
-      client: FhevmBase<chain, FhevmRuntime, client>,
-    ) => FhevmExtension<actions, extendedRuntime>,
+  readonly extend: <const actions extends Record<string, unknown>, extendedRuntime extends FhevmRuntime>(
+    actionsFactory: (client: FhevmBase<chain, FhevmRuntime, client>) => FhevmExtension<actions, extendedRuntime>,
   ) => this & actions & { readonly runtime: extendedRuntime };
   readonly init: () => Promise<void>;
   readonly ready: Promise<void>;

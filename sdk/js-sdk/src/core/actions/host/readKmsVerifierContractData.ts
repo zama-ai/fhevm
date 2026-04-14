@@ -1,15 +1,16 @@
 import type { HostContractVersion } from '../../types/hostContract.js';
-import { executeWithBatching } from '../../base/promise.js';
-import { createKmsVerifierContractData } from '../../host-contracts/KmsVerifierContractData-p.js';
-import { assertIsKmsEIP712Domain } from '../../kms/createKmsEIP712Domain.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { KmsVerifierContractData } from '../../types/kms.js';
 import type { ChecksummedAddress } from '../../types/primitives.js';
-import { eip712Domain, type Eip712DomainReturnType } from './eip712Domain.js';
-import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
-import { getVersion } from './getVersion.js';
-import { readKmsSignersContext } from '../../host-contracts/readKmsSignersContext-p.js';
+import type { Eip712DomainReturnType } from '../../host-contracts/eip712Domain-p.js';
 import type { KmsSignersContext } from '../../types/kmsSignersContext.js';
+import { executeWithBatching } from '../../base/promise.js';
+import { createKmsVerifierContractData } from '../../host-contracts/KmsVerifierContractData-p.js';
+import { assertIsKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
+import { eip712Domain } from '../../host-contracts/eip712Domain-p.js';
+import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
+import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { readKmsSignersContext } from '../../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,10 +45,7 @@ export async function readKmsVerifierContractData(
     () => readKmsSignersContext(fhevm, parameters),
   ];
 
-  const res = await executeWithBatching<unknown>(
-    rpcCalls,
-    fhevm.options.batchRpcCalls,
-  );
+  const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
 
   const contractVersion = res[0] as HostContractVersion;
   const eip712DomainRes = res[1] as Eip712DomainReturnType;
@@ -56,18 +54,13 @@ export async function readKmsVerifierContractData(
   assertIsHostContractVersionOf(contractVersion, 'KMSVerifier');
 
   try {
-    assertIsKmsEIP712Domain(eip712DomainRes, 'KMSVerifier.eip712Domain()', {});
+    assertIsKmsEip712Domain(eip712DomainRes, 'KMSVerifier.eip712Domain()', {});
   } catch (e) {
     throw new Error(`Invalid KMSVerifier EIP-712 domain.`, { cause: e });
   }
 
-  if (
-    eip712DomainRes.verifyingContract.toLowerCase() ===
-    kmsVerifierContractAddress.toLowerCase()
-  ) {
-    throw new Error(
-      `Invalid KMSVerifier EIP-712 domain. Unexpected verifyingContract.`,
-    );
+  if (eip712DomainRes.verifyingContract.toLowerCase() === kmsVerifierContractAddress.toLowerCase()) {
+    throw new Error(`Invalid KMSVerifier EIP-712 domain. Unexpected verifyingContract.`);
   }
 
   const data = createKmsVerifierContractData(new WeakRef(fhevm.runtime), {

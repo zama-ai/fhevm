@@ -1,9 +1,4 @@
-import type {
-  Bytes65Hex,
-  Bytes65HexNo0x,
-  BytesHex,
-  BytesHexNo0x,
-} from './primitives.js';
+import type { Bytes65Hex, Bytes65HexNo0x, BytesHex, BytesHexNo0x } from './primitives.js';
 import type { Prettify } from './utils.js';
 import type { Auth } from './auth.js';
 import type { InputHandle } from './encryptedTypes.js';
@@ -31,8 +26,7 @@ export type FetchUserDecryptResultItem = {
   readonly extraData: BytesHex;
 };
 export type FetchUserDecryptResult = readonly FetchUserDecryptResultItem[];
-export type FetchDelegatedUserDecryptResult =
-  readonly FetchUserDecryptResultItem[];
+export type FetchDelegatedUserDecryptResult = readonly FetchUserDecryptResultItem[];
 
 ////////////////////////////////////////////////////////////////////////////////
 // Options
@@ -67,9 +61,7 @@ export type RelayerUserDecryptOptions = Prettify<
 
 export type RelayerDelegatedUserDecryptOptions = Prettify<
   RelayerCommonOptions & {
-    onProgress?:
-      | ((args: RelayerDelegatedUserDecryptProgressArgs) => void)
-      | undefined;
+    onProgress?: ((args: RelayerDelegatedUserDecryptProgressArgs) => void) | undefined;
   }
 >;
 
@@ -83,26 +75,15 @@ export type RelayerPublicDecryptOptions = Prettify<
 // Progress
 ////////////////////////////////////////////////////////////////////////////////
 
-export type RelayerProgressTypeValue =
-  | 'abort'
-  | 'queued'
-  | 'failed'
-  | 'timeout'
-  | 'succeeded'
-  | 'throttled';
+export type RelayerProgressTypeValue = 'abort' | 'queued' | 'failed' | 'timeout' | 'succeeded' | 'throttled';
 
-export type RelayerPostOperation =
-  | 'INPUT_PROOF'
-  | 'PUBLIC_DECRYPT'
-  | 'USER_DECRYPT'
-  | 'DELEGATED_USER_DECRYPT';
+export type RelayerPostOperation = 'INPUT_PROOF' | 'PUBLIC_DECRYPT' | 'USER_DECRYPT' | 'DELEGATED_USER_DECRYPT';
 
-export type FetchResultOf<O extends RelayerPostOperation> =
-  O extends 'INPUT_PROOF'
-    ? FetchInputProofResult
-    : O extends 'PUBLIC_DECRYPT'
-      ? FetchPublicDecryptResult
-      : FetchUserDecryptResult;
+export type FetchResultOf<O extends RelayerPostOperation> = O extends 'INPUT_PROOF'
+  ? FetchInputProofResult
+  : O extends 'PUBLIC_DECRYPT'
+    ? FetchPublicDecryptResult
+    : FetchUserDecryptResult;
 
 export type RelayerProgressArgs<O extends RelayerPostOperation> =
   | RelayerProgressQueued<O>
@@ -119,17 +100,11 @@ export type RelayerKeyUrlProgressArgs = {
   readonly method: 'GET';
 };
 export type RelayerInputProofProgressArgs = RelayerProgressArgs<'INPUT_PROOF'>;
-export type RelayerUserDecryptProgressArgs =
-  RelayerProgressArgs<'USER_DECRYPT'>;
-export type RelayerDelegatedUserDecryptProgressArgs =
-  RelayerProgressArgs<'DELEGATED_USER_DECRYPT'>;
-export type RelayerPublicDecryptProgressArgs =
-  RelayerProgressArgs<'PUBLIC_DECRYPT'>;
+export type RelayerUserDecryptProgressArgs = RelayerProgressArgs<'USER_DECRYPT'>;
+export type RelayerDelegatedUserDecryptProgressArgs = RelayerProgressArgs<'DELEGATED_USER_DECRYPT'>;
+export type RelayerPublicDecryptProgressArgs = RelayerProgressArgs<'PUBLIC_DECRYPT'>;
 
-export type RelayerProgressBase<
-  T extends RelayerProgressTypeValue,
-  O extends RelayerPostOperation,
-> = {
+export type RelayerProgressBase<T extends RelayerProgressTypeValue, O extends RelayerPostOperation> = {
   readonly type: T;
   readonly url: string;
   readonly method?: 'POST' | 'GET';
@@ -203,10 +178,6 @@ export type RelayerProgressFailed<
   }
 >;
 
-export type RelayerProgressTimeout<O extends RelayerPostOperation> = Prettify<
-  RelayerProgressBase<'timeout', O>
->;
+export type RelayerProgressTimeout<O extends RelayerPostOperation> = Prettify<RelayerProgressBase<'timeout', O>>;
 
-export type RelayerProgressAbort<O extends RelayerPostOperation> = Prettify<
-  RelayerProgressBase<'abort', O>
->;
+export type RelayerProgressAbort<O extends RelayerPostOperation> = Prettify<RelayerProgressBase<'abort', O>>;

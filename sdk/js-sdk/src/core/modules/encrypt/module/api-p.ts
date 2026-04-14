@@ -24,6 +24,9 @@ import type {
   FheEncryptionPublicKeyBytes,
 } from '../../../types/fheEncryptionKey.js';
 import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+import type { Bytes, UintNumber } from '../../../types/primitives.js';
+import type { FheTypeId } from '../../../types/fheType.js';
+import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import {
   TfheCompactPublicKey,
   CompactPkeCrs,
@@ -31,18 +34,12 @@ import {
   CompactCiphertextList,
   ZkComputeLoad,
 } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
-import type { Bytes, UintNumber } from '../../../types/primitives.js';
 import { isNonEmptyString } from '../../../base/string.js';
 import { hexToBytesFaster } from '../../../base/bytes.js';
-import type { FheTypeId } from '../../../types/fheType.js';
-import {
-  encryptionBitsFromFheTypeId,
-  isFheTypeId,
-} from '../../../handle/FheType.js';
+import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheType.js';
 import { EncryptionError } from '../../../errors/EncryptionError.js';
 import { getErrorMessage } from '../../../base/errors/utils.js';
 import { initTfheModule } from './init-p.js';
-import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -69,11 +66,7 @@ class TfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
   readonly #id: string;
   readonly #tfheCompactPublicKeyWasmType: TfheCompactPublicKey;
 
-  constructor(
-    token: symbol,
-    id: string,
-    publicEncKeyMlKem512Wasm: TfheCompactPublicKey,
-  ) {
+  constructor(token: symbol, id: string, publicEncKeyMlKem512Wasm: TfheCompactPublicKey) {
     if (token !== PRIVATE_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -85,10 +78,7 @@ class TfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
     return this.#id;
   }
 
-  public static [GET_NATIVE_FUNC](
-    key: unknown,
-    token: symbol,
-  ): TfheCompactPublicKey {
+  public static [GET_NATIVE_FUNC](key: unknown, token: symbol): TfheCompactPublicKey {
     if (token !== PRIVATE_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -110,12 +100,7 @@ class TfheCompactPkeCrsImpl implements FheEncryptionCrs {
   readonly #capacity: UintNumber;
   readonly #compactPublicKeyWasmType: CompactPkeCrs;
 
-  constructor(
-    token: symbol,
-    id: string,
-    capacity: UintNumber,
-    compactPublicKeyWasmType: CompactPkeCrs,
-  ) {
+  constructor(token: symbol, id: string, capacity: UintNumber, compactPublicKeyWasmType: CompactPkeCrs) {
     if (token !== PRIVATE_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -159,10 +144,7 @@ export async function parseTFHEProvenCompactCiphertextList(
       message: `ciphertextWithZKProof argument is null or undefined.`,
     });
   }
-  if (
-    !(ciphertextWithZKProof instanceof Uint8Array) &&
-    !isNonEmptyString(ciphertextWithZKProof)
-  ) {
+  if (!(ciphertextWithZKProof instanceof Uint8Array) && !isNonEmptyString(ciphertextWithZKProof)) {
     throw new EncryptionError({
       message: `Invalid ciphertextWithZKProof argument.`,
     });
@@ -175,10 +157,7 @@ export async function parseTFHEProvenCompactCiphertextList(
 
   let listWasm: ProvenCompactCiphertextList;
   try {
-    listWasm = ProvenCompactCiphertextList.safe_deserialize(
-      ciphertext,
-      SERIALIZED_SIZE_LIMIT_CIPHERTEXT,
-    );
+    listWasm = ProvenCompactCiphertextList.safe_deserialize(ciphertext, SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
   } catch (e) {
     throw new EncryptionError({
       message: `Invalid ciphertextWithZKProof bytes. ${getErrorMessage(e)}.`,
@@ -219,11 +198,7 @@ export async function buildWithProofPacked(
 ): Promise<BuildWithProofPackedReturnType> {
   await initTfheModule(runtime);
 
-  const {
-    fheEncryptionKey: publicEncryptionParams,
-    metaData,
-    typedValues,
-  } = parameters;
+  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues } = parameters;
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -238,23 +213,19 @@ export async function buildWithProofPacked(
   let tfheProvenCompactCiphertextList: ProvenCompactCiphertextList | undefined;
 
   let ciphertextWithZKProofBytes: Uint8Array | undefined;
-  let fheCompactCiphertextListBuilderWasm:
-    | CompactCiphertextListBuilder
-    | undefined;
+  let fheCompactCiphertextListBuilderWasm: CompactCiphertextListBuilder | undefined;
 
   try {
-    const tfheCompactPublicKeyWasm: TfheCompactPublicKey =
-      TfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
-        tfheCompactPublicKeyImpl,
-        PRIVATE_TFHE_LIB_TOKEN,
-      );
-    const compactPkeCrsWasm: CompactPkeCrs = TfheCompactPkeCrsImpl[
-      GET_NATIVE_FUNC
-    ](tfheCompactPkeCrsImpl, PRIVATE_TFHE_LIB_TOKEN);
-
-    fheCompactCiphertextListBuilderWasm = CompactCiphertextList.builder(
-      tfheCompactPublicKeyWasm,
+    const tfheCompactPublicKeyWasm: TfheCompactPublicKey = TfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
+      tfheCompactPublicKeyImpl,
+      PRIVATE_TFHE_LIB_TOKEN,
     );
+    const compactPkeCrsWasm: CompactPkeCrs = TfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
+      tfheCompactPkeCrsImpl,
+      PRIVATE_TFHE_LIB_TOKEN,
+    );
+
+    fheCompactCiphertextListBuilderWasm = CompactCiphertextList.builder(tfheCompactPublicKeyWasm);
 
     for (const typedValue of typedValues) {
       switch (typedValue.type) {
@@ -280,23 +251,18 @@ export async function buildWithProofPacked(
           fheCompactCiphertextListBuilderWasm.push_boolean(typedValue.value);
           break;
         case 'address':
-          fheCompactCiphertextListBuilderWasm.push_u160(
-            BigInt(typedValue.value),
-          );
+          fheCompactCiphertextListBuilderWasm.push_u160(BigInt(typedValue.value));
           break;
       }
     }
 
-    tfheProvenCompactCiphertextList =
-      fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
-        compactPkeCrsWasm,
-        metaData,
-        ZkComputeLoad.Verify,
-      );
-
-    ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(
-      SERIALIZED_SIZE_LIMIT_CIPHERTEXT,
+    tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
+      compactPkeCrsWasm,
+      metaData,
+      ZkComputeLoad.Verify,
     );
+
+    ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
 
     return ciphertextWithZKProofBytes;
   } finally {
@@ -458,15 +424,10 @@ export async function deserializeFheEncryptionPublicKey(
 
   const { publicKeyBytes: globalFhePublicKeyBytes } = parameters;
 
-  const tfheCompactPublicKeyWasm: TfheCompactPublicKey =
-    TfheCompactPublicKey.safe_deserialize(
-      globalFhePublicKeyBytes.bytes,
-      SERIALIZED_SIZE_LIMIT_PK,
-    );
-
-  return new TfheCompactPublicKeyImpl(
-    PRIVATE_TFHE_LIB_TOKEN,
-    globalFhePublicKeyBytes.id,
-    tfheCompactPublicKeyWasm,
+  const tfheCompactPublicKeyWasm: TfheCompactPublicKey = TfheCompactPublicKey.safe_deserialize(
+    globalFhePublicKeyBytes.bytes,
+    SERIALIZED_SIZE_LIMIT_PK,
   );
+
+  return new TfheCompactPublicKeyImpl(PRIVATE_TFHE_LIB_TOKEN, globalFhePublicKeyBytes.id, tfheCompactPublicKeyWasm);
 }

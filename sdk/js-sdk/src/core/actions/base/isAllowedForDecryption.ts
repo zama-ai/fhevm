@@ -1,10 +1,10 @@
-import { assertIsHandleLikeArray, toHandle } from '../../handle/FhevmHandle.js';
-import { executeWithBatching } from '../../base/promise.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
-import { isAllowedForDecryption as isAllowedForDecryption_ } from '../host/isAllowedForDecryption.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { ChecksummedAddress } from '../../types/primitives.js';
 import type { HandleLike } from '../../types/encryptedTypes.js';
+import { assertIsHandleLikeArray, toHandle } from '../../handle/FhevmHandle.js';
+import { executeWithBatching } from '../../base/promise.js';
+import { isAllowedForDecryption as isAllowedForDecryption_ } from '../host/isAllowedForDecryption.js';
 
 export type IsAllowedForDecryptionArrayParameters = {
   readonly handles: readonly HandleLike[];
@@ -37,12 +37,8 @@ export async function isAllowedForDecryption(
 
 export async function isAllowedForDecryption(
   fhevm: Fhevm<FhevmChain>,
-  parameters:
-    | IsAllowedForDecryptionArrayParameters
-    | IsAllowedForDecryptionSingleParameters,
-): Promise<
-  IsAllowedForDecryptionArrayReturnType | IsAllowedForDecryptionSingleReturnType
-> {
+  parameters: IsAllowedForDecryptionArrayParameters | IsAllowedForDecryptionSingleParameters,
+): Promise<IsAllowedForDecryptionArrayReturnType | IsAllowedForDecryptionSingleReturnType> {
   const { handles, options } = parameters;
   const isArray = Array.isArray(handles);
   const handlesArray = isArray ? handles : [handles];
@@ -60,10 +56,7 @@ export async function isAllowedForDecryption(
       }),
   );
 
-  const results = await executeWithBatching(
-    rpcCalls,
-    fhevm.options.batchRpcCalls,
-  );
+  const results = await executeWithBatching(rpcCalls, fhevm.options.batchRpcCalls);
 
   return isArray ? results : (results[0] as unknown as boolean);
 }

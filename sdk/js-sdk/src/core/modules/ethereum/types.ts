@@ -1,10 +1,5 @@
 import type { TrustedValue } from '../../base/trustedValue.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-  Uint256,
-} from '../../types/primitives.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256 } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,9 +34,7 @@ export type RecoverTypedDataAddressParameters = Readonly<{
 export type RecoverTypedDataAddressReturnType = ChecksummedAddress;
 
 export type RecoverTypedDataAddressModuleFunction = {
-  recoverTypedDataAddress(
-    parameters: RecoverTypedDataAddressParameters,
-  ): Promise<RecoverTypedDataAddressReturnType>;
+  recoverTypedDataAddress(parameters: RecoverTypedDataAddressParameters): Promise<RecoverTypedDataAddressReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,9 +49,7 @@ export type SignTypedDataParameters = {
     readonly verifyingContract: ChecksummedAddress;
     readonly version: string;
   };
-  readonly types: Readonly<
-    Record<string, ReadonlyArray<{ name: string; type: string }>>
-  >;
+  readonly types: Readonly<Record<string, ReadonlyArray<{ name: string; type: string }>>>;
   readonly primaryType: string;
   readonly message: Readonly<Record<string, unknown>>;
 };
@@ -67,10 +58,7 @@ export type SignTypedDataReturnType = Bytes65Hex;
 export type NativeSigner = unknown;
 
 export type SignTypedDataModuleFunction = {
-  signTypedData(
-    signer: NativeSigner,
-    parameters: SignTypedDataParameters,
-  ): Promise<SignTypedDataReturnType>;
+  signTypedData(signer: NativeSigner, parameters: SignTypedDataParameters): Promise<SignTypedDataReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,10 +130,7 @@ export type ReadContractParameters = {
 export type ReadContractReturnType = unknown;
 
 export type ReadContractModuleFunction = {
-  readContract(
-    hostPublicClient: TrustedClient,
-    parameters: ReadContractParameters,
-  ): Promise<ReadContractReturnType>;
+  readContract(hostPublicClient: TrustedClient, parameters: ReadContractParameters): Promise<ReadContractReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

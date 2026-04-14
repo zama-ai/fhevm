@@ -1,9 +1,5 @@
 import type { Kms } from './kms.js';
-import type {
-  ChecksummedAddress,
-  Uint256BigInt,
-  Uint8Number,
-} from './primitives.js';
+import type { ChecksummedAddress, Uint256BigInt, Uint8Number } from './primitives.js';
 
 /**
  * A snapshot of the KMS signers configuration for a given context, as defined

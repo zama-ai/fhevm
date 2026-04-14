@@ -3,24 +3,24 @@ import type { Prettify } from '../types/utils.js';
 import { FhevmErrorBase } from './FhevmErrorBase.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// TFHEError
+// TfheError
 ////////////////////////////////////////////////////////////////////////////////
 
-export type TFHEErrorType = TFHEError & {
+export type TfheErrorType = TfheError & {
   name: 'TFHEError';
 };
 
-export type TFHEErrorParams = Prettify<
+export type TfheErrorParams = Prettify<
   Omit<FhevmErrorBaseParams, 'name' | 'message'> & {
     readonly message: string;
   }
 >;
 
-export class TFHEError extends FhevmErrorBase {
-  constructor(params: TFHEErrorParams) {
+export class TfheError extends FhevmErrorBase {
+  constructor(params: TfheErrorParams) {
     super({
       ...params,
-      name: 'TFHEError',
+      name: 'TfheError',
     });
   }
 }

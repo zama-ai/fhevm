@@ -18,10 +18,7 @@
  *  const resultsConcurrent = await executeWithBatching(rpcCalls, true);
  * ```
  */
-export async function executeWithBatching<T>(
-  factories: Array<() => Promise<T>>,
-  parallel?: boolean,
-): Promise<T[]> {
+export async function executeWithBatching<T>(factories: Array<() => Promise<T>>, parallel?: boolean): Promise<T[]> {
   if (parallel === true) {
     return Promise.all(factories.map((f) => f()));
   }

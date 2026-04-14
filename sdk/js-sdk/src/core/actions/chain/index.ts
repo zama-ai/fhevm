@@ -1,12 +1,9 @@
 export {
   type VerifyKmsDelegatedUserDecryptEIP712Parameters,
-  verifyKmsDelegatedUserDecryptEIP712,
-} from './verifyKmsDelegatedUserDecryptEIP712.js';
+  verifyKmsDelegatedUserDecryptEip712 as verifyKmsDelegatedUserDecryptEIP712,
+} from './verifyKmsDelegatedUserDecryptEip712.js';
 
-export {
-  type CreateKmsEIP712DomainReturnType,
-  createKmsEIP712Domain,
-} from './createKmsEIP712Domain.js';
+export { type CreateKmsEIP712DomainReturnType, createKmsEIP712Domain } from './createKmsEip712Domain.js';
 
 export {
   type FetchFheEncryptionKeyBytesParameters,
@@ -27,20 +24,17 @@ export {
 } from './serializeE2eTransportKeypair.js';
 
 export {
-  type CreateKmsDelegatedUserDecryptEIP712Parameters,
-  type CreateKmsDelegatedUserDecryptEIP712ReturnType,
-  createKmsDelegatedUserDecryptEIP712,
-} from './createKmsDelegatedUserDecryptEIP712.js';
+  type CreateKmsDelegatedUserDecryptEip712Parameters,
+  type CreateKmsDelegatedUserDecryptEip712ReturnType,
+  createKmsDelegatedUserDecryptEip712,
+} from './createKmsDelegatedUserDecryptEip712.js';
+
+export { type VerifyKmsUserDecryptEip712Parameters, verifyKmsUserDecryptEip712 } from './verifyKmsUserDecryptEip712.js';
 
 export {
-  type VerifyKmsUserDecryptEIP712Parameters,
-  verifyKmsUserDecryptEIP712,
-} from './verifyKmsUserDecryptEIP712.js';
-
-export {
-  type CreateCoprocessorEIP712DomainReturnType,
-  createCoprocessorEIP712Domain,
-} from './createCoprocessorEIP712Domain.js';
+  type CreateCoprocessorEip712DomainReturnType,
+  createCoprocessorEip712Domain,
+} from './createCoprocessorEip712Domain.js';
 
 export {
   type SignDecryptionPermitParameters,
@@ -51,10 +45,10 @@ export {
 } from '../base/signDecryptionPermit.js';
 
 export {
-  type CreateKmsUserDecryptEIP712Parameters,
-  type CreateKmsUserDecryptEIP712ReturnType,
-  createKmsUserDecryptEIP712,
-} from './createKmsUserDecryptEIP712.js';
+  type CreateKmsUserDecryptEip712Parameters as CreateKmsUserDecryptEIP712Parameters,
+  type CreateKmsUserDecryptEip712ReturnType as CreateKmsUserDecryptEIP712ReturnType,
+  createKmsUserDecryptEip712 as createKmsUserDecryptEIP712,
+} from './createKmsUserDecryptEip712.js';
 
 export {
   type SerializeSignedDecryptionPermitParameters,

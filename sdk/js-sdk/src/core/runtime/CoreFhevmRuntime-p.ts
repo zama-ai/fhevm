@@ -1,15 +1,11 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import { uid } from '../base/uid.js';
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { EncryptModule } from '../modules/encrypt/types.js';
-import type {
-  FhevmRuntime,
-  FhevmRuntimeConfig,
-  WithModuleMap,
-} from '../types/coreFhevmRuntime.js';
+import type { FhevmRuntime, FhevmRuntimeConfig, WithModuleMap } from '../types/coreFhevmRuntime.js';
 import type { DecryptModule } from '../modules/decrypt/types.js';
+import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { uid } from '../base/uid.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -19,10 +15,7 @@ const PRIVATE_TOKEN = Symbol('CoreFhevmClient.token');
 
 type ModulePlaceholder<T> = Record<string, never> | T;
 
-function asModule<Module extends object>(
-  placeholder: ModulePlaceholder<Module>,
-  name: string,
-): Module {
+function asModule<Module extends object>(placeholder: ModulePlaceholder<Module>, name: string): Module {
   if (Object.keys(placeholder).length === 0) {
     throw new Error(`Missing ${name} module`);
   }
@@ -35,10 +28,7 @@ type ModuleName = keyof WithModuleMap;
 type FactoryFn = (runtime: FhevmRuntime) => Record<string, object>;
 type ExtendFn<T> = (factory: FactoryFn) => T;
 
-function createExtendFn<T extends FhevmRuntime>(
-  selfRuntime: T,
-  moduleSlots: Map<ModuleName, Slot>,
-): ExtendFn<T> {
+function createExtendFn<T extends FhevmRuntime>(selfRuntime: T, moduleSlots: Map<ModuleName, Slot>): ExtendFn<T> {
   const factories = new Set<unknown>();
   return (moduleFactory: FactoryFn) => {
     // Same factory reference → idempotent no-op
@@ -128,11 +118,7 @@ class CoreFhevmRuntimeImpl {
   declare readonly hasModule: (moduleName: ModuleName) => boolean;
   declare readonly extend: FhevmRuntime['extend'];
 
-  constructor(
-    privateToken: symbol,
-    ownerToken: symbol,
-    parameters: CreateFhevmRuntimeParameters,
-  ) {
+  constructor(privateToken: symbol, ownerToken: symbol, parameters: CreateFhevmRuntimeParameters) {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -143,9 +129,7 @@ class CoreFhevmRuntimeImpl {
     this.#uid = uid();
     this.#config = {
       ...parameters.config,
-      logger: parameters.config.logger
-        ? { ...parameters.config.logger }
-        : undefined,
+      logger: parameters.config.logger ? { ...parameters.config.logger } : undefined,
       auth: parameters.config.auth ? { ...parameters.config.auth } : undefined,
     };
     const decrypt = this.#decrypt;
@@ -157,18 +141,12 @@ class CoreFhevmRuntimeImpl {
       }
     };
 
-    const slots = new Map<
-      ModuleName,
-      { placeholder: object; factory?: unknown }
-    >([
+    const slots = new Map<ModuleName, { placeholder: object; factory?: unknown }>([
       ['decrypt', { placeholder: decrypt }],
       ['encrypt', { placeholder: encrypt }],
     ]);
 
-    this.extend = createExtendFn(
-      this,
-      slots,
-    ) as unknown as FhevmRuntime['extend'];
+    this.extend = createExtendFn(this, slots) as unknown as FhevmRuntime['extend'];
 
     this.hasModule = (moduleName: ModuleName) => {
       return slots.get(moduleName)?.factory !== undefined;
@@ -217,10 +195,7 @@ export type CreateFhevmRuntimeParameters = {
   readonly config: FhevmRuntimeConfig;
 };
 
-export function createFhevmRuntime(
-  ownerToken: symbol,
-  parameters: CreateFhevmRuntimeParameters,
-): FhevmRuntime {
+export function createFhevmRuntime(ownerToken: symbol, parameters: CreateFhevmRuntimeParameters): FhevmRuntime {
   return new CoreFhevmRuntimeImpl(PRIVATE_TOKEN, ownerToken, parameters);
 }
 
@@ -250,10 +225,7 @@ export function assertIsFhevmRuntime(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function verifyFhevmRuntime(
-  value: unknown,
-  ownerToken: symbol,
-): asserts value is FhevmRuntime {
+export function verifyFhevmRuntime(value: unknown, ownerToken: symbol): asserts value is FhevmRuntime {
   assertIsFhevmRuntime(value, {});
   (value as CoreFhevmRuntimeImpl).verify(ownerToken);
 }
@@ -282,11 +254,7 @@ export function assertIsFhevmRuntimeWith<K extends keyof WithModuleMap>(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function assertOwnedBy(parameters: {
-  actualOwner: WeakRef<object>;
-  expectedOwner: object;
-  name: string;
-}): void {
+export function assertOwnedBy(parameters: { actualOwner: WeakRef<object>; expectedOwner: object; name: string }): void {
   const { actualOwner: actual, expectedOwner: expected, name } = parameters;
   const owner = actual.deref();
   if (owner === undefined) {

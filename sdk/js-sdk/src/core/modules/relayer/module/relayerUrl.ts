@@ -7,11 +7,7 @@ export const ZamaSepoliaRelayerBaseUrl = 'https://relayer.testnet.zama.org';
 export const ZamaSepoliaRelayerUrlV2 = `${ZamaSepoliaRelayerBaseUrl}/v2`;
 
 export function parseZamaRelayerUrl(relayerUrl: unknown): string | null {
-  if (
-    relayerUrl === undefined ||
-    relayerUrl === null ||
-    typeof relayerUrl !== 'string'
-  ) {
+  if (relayerUrl === undefined || relayerUrl === null || typeof relayerUrl !== 'string') {
     return null;
   }
 
@@ -20,10 +16,7 @@ export function parseZamaRelayerUrl(relayerUrl: unknown): string | null {
     return null;
   }
 
-  if (
-    urlNoSlash.startsWith(ZamaMainnetRelayerBaseUrl) ||
-    urlNoSlash.startsWith(ZamaSepoliaRelayerBaseUrl)
-  ) {
+  if (urlNoSlash.startsWith(ZamaMainnetRelayerBaseUrl) || urlNoSlash.startsWith(ZamaSepoliaRelayerBaseUrl)) {
     const zamaUrls = [
       ZamaSepoliaRelayerBaseUrl,
       ZamaSepoliaRelayerUrlV2,

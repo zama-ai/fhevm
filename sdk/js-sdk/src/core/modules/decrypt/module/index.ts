@@ -29,15 +29,12 @@ export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
     decrypt: Object.freeze({
       initTkmsModule: () => initTkmsModule(runtime),
       getTkmsModuleInfo: () => getTkmsModuleInfo(),
-      decryptAndReconstruct: (args: DecryptAndReconstructParameters) =>
-        decryptAndReconstruct(runtime, args),
+      decryptAndReconstruct: (args: DecryptAndReconstructParameters) => decryptAndReconstruct(runtime, args),
       generateTkmsPrivateKey: () => generateTkmsPrivateKey(runtime),
-      serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) =>
-        serializeTkmsPrivateKey(runtime, args),
+      serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) => serializeTkmsPrivateKey(runtime, args),
       deserializeTkmsPrivateKey: (args: DeserializeTkmsPrivateKeyParameters) =>
         deserializeTkmsPrivateKey(runtime, args),
-      getTkmsPublicKeyHex: (args: GetTkmsPublicKeyHexParameters) =>
-        getTkmsPublicKeyHex(runtime, args),
+      getTkmsPublicKeyHex: (args: GetTkmsPublicKeyHexParameters) => getTkmsPublicKeyHex(runtime, args),
       verifyTkmsPrivateKey: (args: VerifyTkmsPrivateKeyParameters) => {
         verifyTkmsPrivateKey(runtime, args);
       },

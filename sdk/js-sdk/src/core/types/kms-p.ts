@@ -1,16 +1,11 @@
 import type { Handle } from './encryptedTypes.js';
-import type { KmsEIP712Domain } from './kms.js';
+import type { KmsEip712Domain } from './kms.js';
 import type { KmsSignersContext } from './kmsSignersContext.js';
-import type {
-  Bytes65Hex,
-  Bytes65HexNo0x,
-  BytesHexNo0x,
-  ChecksummedAddress,
-} from './primitives.js';
+import type { Bytes65Hex, Bytes65HexNo0x, BytesHexNo0x, ChecksummedAddress } from './primitives.js';
 
 export interface KmsSigncryptedSharesMetadata {
   readonly kmsSignersContext: KmsSignersContext;
-  readonly eip712Domain: KmsEIP712Domain;
+  readonly eip712Domain: KmsEip712Domain;
   readonly eip712Signature: Bytes65Hex;
   readonly eip712SignerAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];

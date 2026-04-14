@@ -1,10 +1,10 @@
+import type { KmsUserDecryptEip712Types } from '../types/kms.js';
+
 ////////////////////////////////////////////////////////////////////////////////
 // KmsUserDecryptEIP712Types
 ////////////////////////////////////////////////////////////////////////////////
 
-import type { KmsUserDecryptEIP712Types } from '../types/kms.js';
-
-export const kmsUserDecryptEIP712Types: KmsUserDecryptEIP712Types = {
+export const kmsUserDecryptEip712Types: KmsUserDecryptEip712Types = {
   EIP712Domain: [
     { name: 'name', type: 'string' },
     { name: 'version', type: 'string' },
@@ -23,8 +23,8 @@ export const kmsUserDecryptEIP712Types: KmsUserDecryptEIP712Types = {
   ] as const,
 } as const;
 
-Object.freeze(kmsUserDecryptEIP712Types);
-Object.freeze(kmsUserDecryptEIP712Types.EIP712Domain);
-Object.freeze(kmsUserDecryptEIP712Types.UserDecryptRequestVerification);
-kmsUserDecryptEIP712Types.EIP712Domain.forEach(Object.freeze);
-kmsUserDecryptEIP712Types.UserDecryptRequestVerification.forEach(Object.freeze);
+Object.freeze(kmsUserDecryptEip712Types);
+Object.freeze(kmsUserDecryptEip712Types.EIP712Domain);
+Object.freeze(kmsUserDecryptEip712Types.UserDecryptRequestVerification);
+kmsUserDecryptEip712Types.EIP712Domain.forEach(Object.freeze);
+kmsUserDecryptEip712Types.UserDecryptRequestVerification.forEach(Object.freeze);

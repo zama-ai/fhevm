@@ -1,3 +1,13 @@
+import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+import type { ethers } from 'ethers';
+import type { FheType } from '../../../src/core/types/fheType.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
+import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,17 +21,7 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.readPublicValue.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmBaseClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import type { FheType } from '../../../src/core/types/fheType.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
-import type { Handle } from '../../../src/core/types/encryptedTypes.js';
-import type { ethers } from 'ethers';
+////////////////////////////////////////////////////////////////////////////////
 
 // Each FHE type to public-decrypt
 const decryptTestCases: readonly FheType[] = [
@@ -62,26 +62,16 @@ describe('Base client — readPublicValue', () => {
   for (const fheType of decryptTestCases) {
     it(`should readPublicValue ${fheType} and match on-chain clear text`, async () => {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const fheTest = config.fheTestContract.connect(
-        config.signer,
-      ) as ethers.Contract;
+      const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
       // Read handle from FHETest contract
-      const handle: Handle = toHandle(
-        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
-      );
-      expect(handle.bytes32Hex).not.toBe(
-        '0x0000000000000000000000000000000000000000000000000000000000000000',
-      );
+      const handle: Handle = toHandle(await fheTest.getHandleOf!(config.wallet.address, fheTypeId));
+      expect(handle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(handle.fheType).toBe(fheType);
 
       // Read expected clear value from FHETest._db
-      const expectedRaw: bigint = await fheTest.getClearText!(
-        handle.bytes32Hex,
-      );
-      console.log(
-        `  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`,
-      );
+      const expectedRaw: bigint = await fheTest.getClearText!(handle.bytes32Hex);
+      console.log(`  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
 
       // Public decrypt via SDK
       const client = createFhevmBaseClient({
@@ -97,17 +87,13 @@ describe('Base client — readPublicValue', () => {
       expect(proof.orderedClearValues).toHaveLength(1);
 
       const decrypted = proof.orderedClearValues[0]!;
-      console.log(
-        `  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`,
-      );
+      console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
 
       if (fheType === 'ebool') {
         expect(decrypted.value).toBe(expectedRaw !== 0n);
       } else if (fheType === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-        expect(String(decrypted.value).toLowerCase()).toBe(
-          expectedAddr.toLowerCase(),
-        );
+        expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {
         expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
       }
@@ -120,9 +106,7 @@ describe('Base client — readPublicValue', () => {
   // └─────────────────────────────────────────────────────────────────────┘
 
   it('should readPublicValue all types in a single call', async () => {
-    const fheTest = config.fheTestContract.connect(
-      config.signer,
-    ) as ethers.Contract;
+    const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
     // Read all handles and their expected clear values
     const entries: {
@@ -132,20 +116,12 @@ describe('Base client — readPublicValue', () => {
 
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const handle: Handle = toHandle(
-        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
-      );
-      expect(handle.bytes32Hex).not.toBe(
-        '0x0000000000000000000000000000000000000000000000000000000000000000',
-      );
+      const handle: Handle = toHandle(await fheTest.getHandleOf!(config.wallet.address, fheTypeId));
+      expect(handle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(handle.fheType).toBe(fheType);
-      const expectedRaw: bigint = await fheTest.getClearText!(
-        handle.bytes32Hex,
-      );
+      const expectedRaw: bigint = await fheTest.getClearText!(handle.bytes32Hex);
       entries.push({ handle, expectedRaw });
-      console.log(
-        `  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`,
-      );
+      console.log(`  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
     }
 
     // Public decrypt all in a single call
@@ -165,17 +141,13 @@ describe('Base client — readPublicValue', () => {
     for (let i = 0; i < entries.length; i++) {
       const { handle, expectedRaw } = entries[i]!;
       const decrypted = proof.orderedClearValues[i]!;
-      console.log(
-        `  ${handle.fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`,
-      );
+      console.log(`  ${handle.fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
 
       if (handle.fheType === 'ebool') {
         expect(decrypted.value).toBe(expectedRaw !== 0n);
       } else if (handle.fheType === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-        expect(String(decrypted.value).toLowerCase()).toBe(
-          expectedAddr.toLowerCase(),
-        );
+        expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {
         expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
       }

@@ -117,9 +117,7 @@ export type BuildWithProofPackedReturnTypeParameters = {
 export type BuildWithProofPackedReturnType = Uint8Array;
 
 export type BuildWithProofPackedModuleFunction = {
-  buildWithProofPacked(
-    parameters: BuildWithProofPackedReturnTypeParameters,
-  ): Promise<BuildWithProofPackedReturnType>;
+  buildWithProofPacked(parameters: BuildWithProofPackedReturnTypeParameters): Promise<BuildWithProofPackedReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -146,8 +144,7 @@ export type SerializeFheEncryptionPublicKeyParameters = {
   readonly publicKey: FheEncryptionPublicKey;
 };
 
-export type SerializeFheEncryptionPublicKeyReturnType =
-  FheEncryptionPublicKeyBytes;
+export type SerializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKeyBytes;
 
 export type SerializeFheEncryptionPublicKeyModuleFunction = {
   serializeFheEncryptionPublicKey(
@@ -179,8 +176,7 @@ export type DeserializeFheEncryptionPublicKeyParameters = {
   readonly publicKeyBytes: FheEncryptionPublicKeyBytes;
 };
 
-export type DeserializeFheEncryptionPublicKeyReturnType =
-  FheEncryptionPublicKey;
+export type DeserializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKey;
 
 export type DeserializeFheEncryptionPublicKeyModuleFunction = {
   deserializeFheEncryptionPublicKey(

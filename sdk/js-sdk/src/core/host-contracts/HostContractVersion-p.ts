@@ -1,14 +1,10 @@
+import type { ChecksummedAddress } from '../types/primitives.js';
+import type { HostContractName, HostContractVersion, HostContractVersionString } from '../types/hostContract.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsNonEmptyString } from '../base/string.js';
 import { getVersionAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import type { ChecksummedAddress } from '../types/primitives.js';
-import type {
-  HostContractName,
-  HostContractVersion,
-  HostContractVersionString,
-} from '../types/hostContract.js';
 import { assertIsUintNumber } from '../base/uint.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -28,8 +24,7 @@ type ReturnType = HostContractVersion;
 
 const cachedGetVersion = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getVersion,
-  cacheKeyFn: (context, params) =>
-    `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
   ttlMs: CACHE_TTL_24H,
 });
@@ -58,10 +53,7 @@ export function getVersion(
   return cachedGetVersion.execute(context, parameters);
 }
 
-async function _getVersion(
-  context: Context,
-  parameters: Parameters,
-): Promise<HostContractVersion> {
+async function _getVersion(context: Context, parameters: Parameters): Promise<HostContractVersion> {
   const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 
@@ -153,15 +145,11 @@ export function isVersionStrictlyBefore(
  *
  * @throws If `v.contractName` does not match the expected name.
  */
-export function assertIsHostContractVersionOf<
-  hostContractName extends HostContractName,
->(
+export function assertIsHostContractVersionOf<hostContractName extends HostContractName>(
   v: HostContractVersion,
   hostContractName: hostContractName,
 ): asserts v is HostContractVersion<hostContractName> {
   if (v.contractName !== hostContractName) {
-    throw new Error(
-      `Invalid contract name. Expecting '${hostContractName}', got ${v.contractName}.`,
-    );
+    throw new Error(`Invalid contract name. Expecting '${hostContractName}', got ${v.contractName}.`);
   }
 }

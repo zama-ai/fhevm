@@ -1,15 +1,12 @@
+import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { asUint8Number, isUint8 } from '../base/uint.js';
-import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import { getVersion } from './HostContractVersion-p.js';
 import { isVersionStrictlyBefore } from '../host-contracts/HostContractVersion-p.js';
 import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import {
-  getKmsSignersAbi,
-  getThresholdAbi,
-} from './abi-fragments/fragments.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { getKmsSignersAbi, getThresholdAbi } from './abi-fragments/fragments.js';
 import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -31,14 +28,9 @@ type ReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const cachedGetKmsContextSignersAndThreshold = createCachedFetch<
-  Context,
-  Parameters,
-  ReturnType
->({
+const cachedGetKmsContextSignersAndThreshold = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getKmsContextSignersAndThreshold,
-  cacheKeyFn: (context, params) =>
-    `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
   ttlMs: CACHE_TTL_24H,
 });
@@ -71,15 +63,10 @@ export function getKmsSignersAndThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _getKmsContextSignersAndThreshold(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+async function _getKmsContextSignersAndThreshold(context: Context, parameters: Parameters): Promise<ReturnType> {
   const version = await getVersion(context, { address: parameters.address });
   if (!isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
-    throw new Error(
-      'getContextSignersAndThreshold requires KMSVerifier < v0.2.0',
-    );
+    throw new Error('getContextSignersAndThreshold requires KMSVerifier < v0.2.0');
   }
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -92,15 +79,9 @@ async function _getKmsContextSignersAndThreshold(
   //
   ////////////////////////////////////////////////////////////////////////////
 
-  const rpcCalls = [
-    () => _getThreshold(context, parameters),
-    () => _getKmsSigners(context, parameters),
-  ];
+  const rpcCalls = [() => _getThreshold(context, parameters), () => _getKmsSigners(context, parameters)];
 
-  const res = await executeWithBatching<unknown>(
-    rpcCalls,
-    context.options.batchRpcCalls,
-  );
+  const res = await executeWithBatching<unknown>(rpcCalls, context.options.batchRpcCalls);
 
   const threshold = res[0];
   const kmsSigners = res[1];
@@ -125,10 +106,7 @@ async function _getKmsContextSignersAndThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _getThreshold(
-  context: Context,
-  parameters: Parameters,
-): Promise<Uint8Number> {
+async function _getThreshold(context: Context, parameters: Parameters): Promise<Uint8Number> {
   const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 
@@ -148,10 +126,7 @@ async function _getThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _getKmsSigners(
-  context: Context,
-  parameters: Parameters,
-): Promise<ChecksummedAddress[]> {
+async function _getKmsSigners(context: Context, parameters: Parameters): Promise<ChecksummedAddress[]> {
   const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 

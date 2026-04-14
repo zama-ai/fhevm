@@ -1,14 +1,9 @@
 import type { ethers as EthersT } from 'ethers';
-import { verifyTrustedValue } from '../../core/base/trustedValue.js';
 import type { TrustedClient } from '../../core/modules/ethereum/types.js';
-import {
-  createFhevmRuntime as createFhevmRuntime_,
-  type CreateFhevmRuntimeParameters,
-} from '../../core/runtime/CoreFhevmRuntime-p.js';
-import type {
-  FhevmRuntime,
-  FhevmRuntimeConfig,
-} from '../../core/types/coreFhevmRuntime.js';
+import type { FhevmRuntime, FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
+import type { CreateFhevmRuntimeParameters } from '../../core/runtime/CoreFhevmRuntime-p.js';
+import { createFhevmRuntime as createFhevmRuntime_ } from '../../core/runtime/CoreFhevmRuntime-p.js';
+import { verifyTrustedValue } from '../../core/base/trustedValue.js';
 import { createTrustedClient } from '../../core/modules/ethereum/createTrustedClient.js';
 import { ethereumModule } from './ethereum.js';
 import { relayerModule } from '../../core/modules/relayer/module/index.js';
@@ -83,9 +78,9 @@ export function getEthersRuntime(): FhevmRuntime {
  * @param runner - The ethers contract runner to seal.
  * @returns An opaque {@link TrustedClient} bound to the ethers origin token.
  */
-export function ethersContractRunnerToTrustedClient<
-  client extends EthersT.ContractRunner,
->(runner: client): TrustedClient<client> {
+export function ethersContractRunnerToTrustedClient<client extends EthersT.ContractRunner>(
+  runner: client,
+): TrustedClient<client> {
   return createTrustedClient(runner, PRIVATE_ETHERS_TOKEN);
 }
 
@@ -97,16 +92,14 @@ export function ethersContractRunnerToTrustedClient<
  * @returns The original ethers `ContractRunner`.
  * @throws {Error} If the client was not created by {@link ethersContractRunnerToTrustedClient}.
  */
-export function trustedClientToEthersContractRunner<
-  client extends EthersT.ContractRunner,
->(trustedClient: TrustedClient<client>): client {
+export function trustedClientToEthersContractRunner<client extends EthersT.ContractRunner>(
+  trustedClient: TrustedClient<client>,
+): client {
   return verifyTrustedValue(trustedClient, PRIVATE_ETHERS_TOKEN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createFhevmRuntime(
-  parameters: CreateFhevmRuntimeParameters,
-): FhevmRuntime {
+export function createFhevmRuntime(parameters: CreateFhevmRuntimeParameters): FhevmRuntime {
   return createFhevmRuntime_(PRIVATE_ETHERS_TOKEN, parameters);
 }

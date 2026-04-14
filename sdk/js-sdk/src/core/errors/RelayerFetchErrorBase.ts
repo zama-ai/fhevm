@@ -1,10 +1,7 @@
 import type { RelayerErrorBaseParams } from './RelayerErrorBase.js';
 import type { Prettify } from '../types/utils.js';
+import type { RelayerAsyncRequestState, RelayerOperation } from '../types/relayer-p.js';
 import { RelayerErrorBase } from './RelayerErrorBase.js';
-import type {
-  RelayerAsyncRequestState,
-  RelayerOperation,
-} from '../types/relayer-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // RelayerFetchErrorBase
@@ -88,8 +85,6 @@ export abstract class RelayerFetchErrorBase extends RelayerErrorBase {
 
   public get isAbort(): boolean {
     // AbortError is not an instance of Error!
-    return this.cause !== undefined
-      ? (this.cause as { name: string }).name === 'AbortError'
-      : false;
+    return this.cause !== undefined ? (this.cause as { name: string }).name === 'AbortError' : false;
   }
 }

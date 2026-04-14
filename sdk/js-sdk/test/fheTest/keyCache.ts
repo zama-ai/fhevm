@@ -1,13 +1,7 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { resolve } from 'node:path';
 import type { FetchFheEncryptionKeyBytesReturnType as FheEncryptionKeyBytes } from '@fhevm/sdk/actions/chain';
 import type { FheTestChainName } from './ethers/setup.js';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -25,9 +19,7 @@ export function hasKeyInCache(chain: FheTestChainName): boolean {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function readKeyFromCache(
-  chain: FheTestChainName,
-): FheEncryptionKeyBytes | undefined {
+export function readKeyFromCache(chain: FheTestChainName): FheEncryptionKeyBytes | undefined {
   const path = keyPath(chain);
   if (!existsSync(path)) {
     return undefined;
@@ -55,10 +47,7 @@ export function readKeyFromCache(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function writeKeyToCache(
-  chain: FheTestChainName,
-  bytes: FheEncryptionKeyBytes,
-): void {
+export function writeKeyToCache(chain: FheTestChainName, bytes: FheEncryptionKeyBytes): void {
   const path = keyPath(chain);
   const dir = resolve(KEYS_DIR, chain);
 

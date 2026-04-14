@@ -1,50 +1,31 @@
-import { verifyKmsUserDecryptEIP712 } from '../utils-p/decrypt/verifyKmsUserDecryptEIP712.js';
 import type {
   SignedDecryptionPermit,
   SignedDelegatedDecryptionPermit,
   SignedSelfDecryptionPermit,
 } from '../types/signedDecryptionPermit.js';
-import type {
-  KmsDelegatedUserDecryptEIP712,
-  KmsUserDecryptEIP712,
-} from '../types/kms.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-  Uint256BigInt,
-  UintNumber,
-} from '../types/primitives.js';
+import type { KmsDelegatedUserDecryptEip712, KmsUserDecryptEip712 } from '../types/kms.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256BigInt, UintNumber } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { verifyKmsDelegatedUserDecryptEIP712 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEIP712.js';
+import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { NativeSigner } from '../modules/ethereum/types.js';
+import type { KmsSignersContext } from '../types/kmsSignersContext.js';
+import { verifyKmsUserDecryptEip712 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712.js';
+import { verifyKmsDelegatedUserDecryptEip712 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
-import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
+import { assertIsKmsUserDecryptEip712, createKmsUserDecryptEip712 } from './createKmsUserDecryptEip712.js';
 import {
-  addressToChecksummedAddress,
-  assertIsAddress,
-  assertRecordAddressProperty,
-} from '../base/address.js';
-import {
-  assertIsKmsUserDecryptEIP712,
-  createKmsUserDecryptEIP712,
-} from './createKmsUserDecryptEIP712.js';
-import {
-  assertIsKmsDelegatedUserDecryptEIP712,
-  createKmsDelegatedUserDecryptEIP712,
-} from './createKmsDelegatedUserDecryptEIP712.js';
+  assertIsKmsDelegatedUserDecryptEip712,
+  createKmsDelegatedUserDecryptEip712,
+} from './createKmsDelegatedUserDecryptEip712.js';
 import { assertRecordStringProperty } from '../base/string.js';
-import {
-  assertIsE2eTransportKeypair,
-  type E2eTransportKeypair,
-} from './E2eTransportKeypair-p.js';
-import type { NativeSigner } from '../modules/ethereum/types.js';
+import { assertIsE2eTransportKeypair, type E2eTransportKeypair } from './E2eTransportKeypair-p.js';
 import { assertKmsEIP712DeadlineValidity } from './utils.js';
 import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import { fromKmsExtraData } from './kmsExtraData.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,14 +52,14 @@ const MAX_USER_DECRYPT_DURATION_DAYS = 365 as UintNumber;
  * its contents without re-verification.
  */
 abstract class SignedDecryptionPermitBaseImpl {
-  readonly #eip712: KmsUserDecryptEIP712 | KmsDelegatedUserDecryptEIP712;
+  readonly #eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
   readonly #signature: Bytes65Hex;
   readonly #signerAddress: ChecksummedAddress;
 
   constructor(
     privateToken: symbol,
     parameters: {
-      readonly eip712: KmsUserDecryptEIP712 | KmsDelegatedUserDecryptEIP712;
+      readonly eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
       readonly signature: Bytes65Hex;
       readonly signerAddress: ChecksummedAddress;
     },
@@ -91,7 +72,7 @@ abstract class SignedDecryptionPermitBaseImpl {
     this.#signerAddress = parameters.signerAddress;
   }
 
-  public get eip712(): KmsUserDecryptEIP712 | KmsDelegatedUserDecryptEIP712 {
+  public get eip712(): KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712 {
     return this.#eip712;
   }
 
@@ -107,10 +88,7 @@ abstract class SignedDecryptionPermitBaseImpl {
   public abstract get isDelegated(): boolean;
 
   public assertNotExpired(): void {
-    assertKmsEIP712DeadlineValidity(
-      this.#eip712.message,
-      MAX_USER_DECRYPT_DURATION_DAYS,
-    );
+    assertKmsEIP712DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
   }
 
   /**
@@ -157,10 +135,8 @@ abstract class SignedDecryptionPermitBaseImpl {
  * `toJSON()` is intentionally not on the class to prevent accidental
  * serialization of sensitive data via `JSON.stringify(permit)`.
  */
-export function serializeSignedDecryptionPermitToJSON(
-  permit: SignedDecryptionPermit,
-): {
-  eip712: KmsUserDecryptEIP712 | KmsDelegatedUserDecryptEIP712;
+export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPermit): {
+  eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
   signature: string;
   signerAddress: string;
 } {
@@ -176,12 +152,9 @@ export function serializeSignedDecryptionPermitToJSON(
 // SignedUserDecryptionPermitImpl
 ////////////////////////////////////////////////////////////////////////////////
 
-class SignedSelfDecryptionPermitImpl
-  extends SignedDecryptionPermitBaseImpl
-  implements SignedSelfDecryptionPermit
-{
-  public override get eip712(): KmsUserDecryptEIP712 {
-    return super.eip712 as KmsUserDecryptEIP712;
+class SignedSelfDecryptionPermitImpl extends SignedDecryptionPermitBaseImpl implements SignedSelfDecryptionPermit {
+  public override get eip712(): KmsUserDecryptEip712 {
+    return super.eip712 as KmsUserDecryptEip712;
   }
 
   public override get encryptedDataOwnerAddress(): ChecksummedAddress {
@@ -201,8 +174,8 @@ class SignedDelegatedDecryptionPermitImpl
   extends SignedDecryptionPermitBaseImpl
   implements SignedDelegatedDecryptionPermit
 {
-  public override get eip712(): KmsDelegatedUserDecryptEIP712 {
-    return super.eip712 as KmsDelegatedUserDecryptEIP712;
+  public override get eip712(): KmsDelegatedUserDecryptEip712 {
+    return super.eip712 as KmsDelegatedUserDecryptEip712;
   }
 
   public override get encryptedDataOwnerAddress(): ChecksummedAddress {
@@ -227,9 +200,7 @@ Object.freeze(SignedDelegatedDecryptionPermitImpl.prototype);
 // isSignedDecryptionPermit
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isSignedDecryptionPermit(
-  value: unknown,
-): value is SignedDecryptionPermit {
+export function isSignedDecryptionPermit(value: unknown): value is SignedDecryptionPermit {
   return value instanceof SignedDecryptionPermitBaseImpl;
 }
 
@@ -258,21 +229,21 @@ async function createSignedDecryptionPermit(
   context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
   parameters: {
     readonly signerAddress: ChecksummedAddress;
-    readonly eip712: KmsUserDecryptEIP712 | KmsDelegatedUserDecryptEIP712;
+    readonly eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
     readonly signature: Bytes65Hex;
   },
 ): Promise<SignedDecryptionPermit> {
   const { signerAddress, eip712, signature } = parameters;
 
   if (eip712.primaryType === 'UserDecryptRequestVerification') {
-    await verifyKmsUserDecryptEIP712(context, {
+    await verifyKmsUserDecryptEip712(context, {
       signer: signerAddress,
       message: eip712.message,
       signature,
     });
     return new SignedSelfDecryptionPermitImpl(PRIVATE_TOKEN, parameters);
   } else {
-    await verifyKmsDelegatedUserDecryptEIP712(context, {
+    await verifyKmsDelegatedUserDecryptEip712(context, {
       signer: signerAddress,
       message: eip712.message,
       signature,
@@ -297,15 +268,13 @@ type SignDecryptionPermitCommonParameters = {
   readonly e2eTransportKeypair: E2eTransportKeypair;
 };
 
-export type SignSelfDecryptionPermitParameters =
-  SignDecryptionPermitCommonParameters & {
-    readonly delegatorAddress?: undefined;
-  };
+export type SignSelfDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
+  readonly delegatorAddress?: undefined;
+};
 
-export type SignDelegatedDecryptionPermitParameters =
-  SignDecryptionPermitCommonParameters & {
-    readonly delegatorAddress: string;
-  };
+export type SignDelegatedDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
+  readonly delegatorAddress: string;
+};
 
 export type SignDecryptionPermitParameters =
   | SignSelfDecryptionPermitParameters
@@ -338,8 +307,7 @@ export async function signDecryptionPermit(
   parameters: SignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
   const kmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier
-      .address as ChecksummedAddress,
+    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
   });
 
   const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
@@ -370,8 +338,7 @@ export async function signDecryptionPermit(
   const signerAddress = addressToChecksummedAddress(signerAddressArg);
 
   const commonMessage = {
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts
-      .decryption.address as ChecksummedAddress,
+    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
     chainId: context.chain.id,
     contractAddresses,
     durationDays,
@@ -382,11 +349,11 @@ export async function signDecryptionPermit(
 
   const eip712 =
     delegatorAddress !== undefined
-      ? createKmsDelegatedUserDecryptEIP712({
+      ? createKmsDelegatedUserDecryptEip712({
           ...commonMessage,
           delegatorAddress,
         })
-      : createKmsUserDecryptEIP712(commonMessage);
+      : createKmsUserDecryptEip712(commonMessage);
 
   const signature = await context.runtime.ethereum.signTypedData(signer, {
     account: signerAddress,
@@ -424,30 +391,18 @@ export async function parseSignedDecryptionPermit(
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
 
   const eip712 = permit.eip712;
-  assertRecordStringProperty(
-    eip712,
-    'primaryType',
-    `${permitName}.eip712`,
-    options,
-  );
+  assertRecordStringProperty(eip712, 'primaryType', `${permitName}.eip712`, options);
   const primaryType = (eip712 as Record<string, unknown>).primaryType;
 
   if (primaryType === 'UserDecryptRequestVerification') {
-    assertIsKmsUserDecryptEIP712(eip712, `${permitName}.eip712`, options);
+    assertIsKmsUserDecryptEip712(eip712, `${permitName}.eip712`, options);
   } else if (primaryType === 'DelegatedUserDecryptRequestVerification') {
-    assertIsKmsDelegatedUserDecryptEIP712(
-      eip712,
-      `${permitName}.eip712`,
-      options,
-    );
+    assertIsKmsDelegatedUserDecryptEip712(eip712, `${permitName}.eip712`, options);
   } else {
     throw new Error(`Unknown permit primaryType: ${primaryType}`);
   }
 
-  if (
-    eip712.message.publicKey.toLowerCase() !==
-    e2eTransportKeypair.publicKey.toLowerCase()
-  ) {
+  if (eip712.message.publicKey.toLowerCase() !== e2eTransportKeypair.publicKey.toLowerCase()) {
     throw new Error(
       "The permit's publicKey does not match the E2eTransportKeypair's publicKey. " +
         'Ensure the permit was signed with the same keypair.',

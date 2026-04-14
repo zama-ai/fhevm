@@ -5,9 +5,7 @@ export function ensureError(e: unknown): Error {
     return e;
   }
 
-  const message =
-    (e as { message?: string }).message ??
-    'Non-Error value caught in exception handler';
+  const message = (e as { message?: string }).message ?? 'Non-Error value caught in exception handler';
   const name = (e as { name?: string }).name ?? 'ErrorWrapper';
   const cause = (e as { cause: unknown }).cause ?? e;
 

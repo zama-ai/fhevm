@@ -24,10 +24,8 @@ export type RelayerErrorBaseParams = Prettify<
 export abstract class RelayerErrorBase extends ErrorBase {
   private static readonly PKG_NAME = sdkName;
   private static readonly VERSION = version;
-  private static readonly DEFAULT_DOCS_BASE_URL =
-    'https//docs.zama.org' as const;
-  private static readonly FULL_VERSION =
-    `${RelayerErrorBase.PKG_NAME}@${RelayerErrorBase.VERSION}` as const;
+  private static readonly DEFAULT_DOCS_BASE_URL = 'https//docs.zama.org' as const;
+  private static readonly FULL_VERSION = `${RelayerErrorBase.PKG_NAME}@${RelayerErrorBase.VERSION}` as const;
 
   readonly #docsPath: string | undefined;
 
@@ -64,10 +62,7 @@ export abstract class RelayerErrorBase extends ErrorBase {
 // humanReadableOperation
 ////////////////////////////////////////////////////////////////////////////////
 
-export function humanReadableOperation(
-  relayerOperation: RelayerOperation,
-  capitalize: boolean,
-): string {
+export function humanReadableOperation(relayerOperation: RelayerOperation, capitalize: boolean): string {
   switch (relayerOperation) {
     case 'INPUT_PROOF':
       return capitalize ? 'Input proof' : 'input proof';
@@ -76,9 +71,7 @@ export function humanReadableOperation(
     case 'USER_DECRYPT':
       return capitalize ? 'User decryption' : 'user decryption';
     case 'DELEGATED_USER_DECRYPT':
-      return capitalize
-        ? 'Delegated user decryption'
-        : 'delegated user decryption';
+      return capitalize ? 'Delegated user decryption' : 'delegated user decryption';
     case 'KEY_URL':
       return capitalize ? 'Key url' : 'key url';
     default: {

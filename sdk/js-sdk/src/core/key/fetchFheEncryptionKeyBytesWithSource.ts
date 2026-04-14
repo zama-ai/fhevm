@@ -1,14 +1,7 @@
-import { FetchError } from '../base/errors/FetchError.js';
-import {
-  fetchWithRetry,
-  getResponseBytes,
-  type FetchWithRetryParameters,
-} from '../base/fetch.js';
-import type {
-  FheEncryptionKeyBytes,
-  FheEncryptionKeySource,
-} from '../types/fheEncryptionKey.js';
+import type { FheEncryptionKeyBytes, FheEncryptionKeySource } from '../types/fheEncryptionKey.js';
 import type { Bytes } from '../types/primitives.js';
+import { FetchError } from '../base/errors/FetchError.js';
+import { fetchWithRetry, getResponseBytes, type FetchWithRetryParameters } from '../base/fetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // fetchFheEncryptionKeyBytesWithSource
@@ -48,9 +41,7 @@ export async function fetchFheEncryptionKeyBytesWithSource(
 // _fetchBytes
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _fetchBytes(
-  params: { url: string } & FetchWithRetryParameters,
-): Promise<Bytes> {
+async function _fetchBytes(params: { url: string } & FetchWithRetryParameters): Promise<Bytes> {
   const url = params.url;
 
   // Fetching a public key must use GET (the default method)

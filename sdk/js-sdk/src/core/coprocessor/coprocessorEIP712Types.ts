@@ -1,7 +1,7 @@
-import type { CoprocessorEIP712Types } from '../types/coprocessor.js';
+import type { CoprocessorEip712Types } from '../types/coprocessor.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// CoprocessorEIP712Types
+// CoprocessorEip712Types
 ////////////////////////////////////////////////////////////////////////////////
 
 /*
@@ -13,9 +13,9 @@ import type { CoprocessorEIP712Types } from '../types/coprocessor.js';
     ];
 */
 
-export const coprocessorEIP712PrimaryType =
-  'CiphertextVerification' satisfies keyof CoprocessorEIP712Types;
-export const coprocessorEIP712Types: CoprocessorEIP712Types = {
+export const coprocessorEip712PrimaryType = 'CiphertextVerification' satisfies keyof CoprocessorEip712Types;
+
+export const coprocessorEip712Types: CoprocessorEip712Types = {
   // EIP712Domain: [
   //   { name: 'name', type: 'string' },
   //   { name: 'version', type: 'string' },
@@ -33,6 +33,7 @@ export const coprocessorEIP712Types: CoprocessorEIP712Types = {
     { name: 'extraData', type: 'bytes' },
   ],
 } as const;
-Object.freeze(coprocessorEIP712Types);
-Object.freeze(coprocessorEIP712Types.CiphertextVerification);
-coprocessorEIP712Types.CiphertextVerification.forEach(Object.freeze);
+
+Object.freeze(coprocessorEip712Types);
+Object.freeze(coprocessorEip712Types.CiphertextVerification);
+coprocessorEip712Types.CiphertextVerification.forEach(Object.freeze);

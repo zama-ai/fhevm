@@ -27,14 +27,8 @@ export interface Flavoring<FlavorT> {
 export type Flavor<T, FlavorT> = T & Flavoring<FlavorT>;
 
 export type NonEmptyExtract<T, U> =
-  Extract<T, U> extends never
-    ? { error: 'Extract produced never - no matching types found' }
-    : Extract<T, U>;
+  Extract<T, U> extends never ? { error: 'Extract produced never - no matching types found' } : Extract<T, U>;
 
-export type StrictEquals<A, B> = [A] extends [B]
-  ? [B] extends [A]
-    ? true
-    : false
-  : false;
+export type StrictEquals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 export type NonEmptyReadonlyArray<T> = readonly [T, ...T[]];

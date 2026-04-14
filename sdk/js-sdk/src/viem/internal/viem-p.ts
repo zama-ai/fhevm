@@ -1,14 +1,9 @@
 import type { PublicClient } from 'viem';
-import { verifyTrustedValue } from '../../core/base/trustedValue.js';
 import type { TrustedClient } from '../../core/modules/ethereum/types.js';
-import {
-  createFhevmRuntime as createFhevmRuntime_,
-  type CreateFhevmRuntimeParameters,
-} from '../../core/runtime/CoreFhevmRuntime-p.js';
-import type {
-  FhevmRuntime,
-  FhevmRuntimeConfig,
-} from '../../core/types/coreFhevmRuntime.js';
+import type { FhevmRuntime, FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
+import type { CreateFhevmRuntimeParameters } from '../../core/runtime/CoreFhevmRuntime-p.js';
+import { verifyTrustedValue } from '../../core/base/trustedValue.js';
+import { createFhevmRuntime as createFhevmRuntime_ } from '../../core/runtime/CoreFhevmRuntime-p.js';
 import { createTrustedClient } from '../../core/modules/ethereum/createTrustedClient.js';
 import { ethereumModule } from './ethereum.js';
 import { relayerModule } from '../../core/modules/relayer/module/index.js';
@@ -105,8 +100,6 @@ export function trustedClientToViemPublicClient<client extends PublicClient>(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createFhevmRuntime(
-  parameters: CreateFhevmRuntimeParameters,
-): FhevmRuntime {
+export function createFhevmRuntime(parameters: CreateFhevmRuntimeParameters): FhevmRuntime {
   return createFhevmRuntime_(PRIVATE_VIEM_TOKEN, parameters);
 }

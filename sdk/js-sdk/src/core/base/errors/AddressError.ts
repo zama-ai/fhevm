@@ -13,10 +13,7 @@ export class AddressError extends ErrorBase {
   constructor(params: AddressErrorParams, options: ErrorMetadataParams) {
     super({
       ...options,
-      message:
-        params.address !== undefined
-          ? `Address "${params.address}" is invalid.`
-          : 'Address is invalid.',
+      message: params.address !== undefined ? `Address "${params.address}" is invalid.` : 'Address is invalid.',
       name: 'AddressError',
     });
   }

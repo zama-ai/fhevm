@@ -99,9 +99,7 @@ describe('hello', () => {
       // Create a full client (with encryption and decryption features)
       const fhevmFullClient = createFhevmClient({
         chain: sepolia,
-        provider: new ethers.JsonRpcProvider(
-          'https://ethereum-sepolia-rpc.publicnode.com',
-        ),
+        provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),
       });
 
       // Initialize the full client
@@ -112,9 +110,7 @@ describe('hello', () => {
 
       const fhevmBaseClient = createFhevmBaseClient({
         chain: sepolia,
-        provider: new ethers.JsonRpcProvider(
-          'https://ethereum-sepolia-rpc.publicnode.com',
-        ),
+        provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),
       });
       await fhevmBaseClient.ready;
       // Naming: GlobalEncryptionKey, FheEncryptionKey, PublicEncryptionKey, EncryptionKey
@@ -128,8 +124,7 @@ describe('hello', () => {
       // Get the FheEncru
       // fhevmBaseClient.fetchFheEncryptionKey;
 
-      const fheEncryptionKeyBytes =
-        await fhevmFullClient.fetchFheEncryptionKeyBytes();
+      const fheEncryptionKeyBytes = await fhevmFullClient.fetchFheEncryptionKeyBytes();
 
       const fhevmBaseClient2 = createFhevmBaseClient({
         chain: fhevmBaseClient.chain,
@@ -145,9 +140,7 @@ describe('hello', () => {
       // Only using the lightweight tkms.wasm
       const fhevmDecryptClient = createFhevmDecryptClient({
         chain: sepolia,
-        provider: new ethers.JsonRpcProvider(
-          'https://ethereum-sepolia-rpc.publicnode.com',
-        ),
+        provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),
       });
 
       // since the full client has already been initialized, the new partial client will be instantly initialized
@@ -209,14 +202,11 @@ describe('hello', () => {
       // Let's create a new encrypt client (cost is zero, modules and keys are globaly shared)
       const fhevmEncryptClient = createFhevmEncryptClient({
         chain: sepolia,
-        provider: new ethers.JsonRpcProvider(
-          'https://ethereum-sepolia-rpc.publicnode.com',
-        ),
+        provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),
       });
 
       // Let's xform the encryptClient by extending it with decryption features
-      const encryptClientWithDecryptFeatures =
-        fhevmEncryptClient.extend(decryptActions);
+      const encryptClientWithDecryptFeatures = fhevmEncryptClient.extend(decryptActions);
 
       // call init() - instant (modules are already initialized)
       await encryptClientWithDecryptFeatures.init();

@@ -1,3 +1,10 @@
+import type { TypedValue } from '../../../src/core/types/primitives.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,15 +18,6 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmEncryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import type { TypedValue } from '../../../src/core/types/primitives.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-
 ////////////////////////////////////////////////////////////////////////////////
 
 const encryptTestCases: TypedValue[] = createTypedValueArray([
@@ -90,9 +88,7 @@ describe('Encrypt', () => {
       values: encryptTestCases,
     });
 
-    expect(result.externalEncryptedValues).toHaveLength(
-      encryptTestCases.length,
-    );
+    expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
     expect(result.inputProof).toBeDefined();
     expect(result.inputProof.startsWith('0x')).toBe(true);
 

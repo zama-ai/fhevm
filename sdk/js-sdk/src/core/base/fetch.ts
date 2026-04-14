@@ -10,9 +10,7 @@ import { abortableSleep } from './timeout.js';
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Response/bytes
  */
-export async function getResponseBytes(
-  response: Response,
-): Promise<Uint8Array> {
+export async function getResponseBytes(response: Response): Promise<Uint8Array> {
   const bytes: Uint8Array =
     typeof response.bytes === 'function'
       ? normalizeBytes(await response.bytes())
@@ -179,17 +177,11 @@ export function formatFetchErrorMetaMessages(error: unknown): string[] {
 
     if (isRoot) {
       // Root error: "TypeError: fetch failed [props...]" or "TypeError: fetch failed"
-      const propsStr =
-        propEntries.length > 0
-          ? ` [${propEntries.map(([k, v]) => `${k}=${v}`).join(', ')}]`
-          : '';
+      const propsStr = propEntries.length > 0 ? ` [${propEntries.map(([k, v]) => `${k}=${v}`).join(', ')}]` : '';
       return `${info.name}: ${info.message}${propsStr}`;
     } else {
       // Cause errors: "Cause: message [name=Error, props...]"
-      const allProps: Array<[string, string | number]> = [
-        ['name', info.name],
-        ...propEntries,
-      ];
+      const allProps: Array<[string, string | number]> = [['name', info.name], ...propEntries];
       const propsStr = ` [${allProps.map(([k, v]) => `${k}=${v}`).join(', ')}]`;
       return `Cause: ${info.message}${propsStr}`;
     }

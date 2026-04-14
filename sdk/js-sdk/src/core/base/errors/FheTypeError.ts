@@ -24,10 +24,7 @@ export class FheTypeError extends ErrorBase {
     });
   }
 
-  public static throwFheTypeIdError(
-    id: unknown,
-    options: ErrorMetadataParams,
-  ): never {
+  public static throwFheTypeIdError(id: unknown, options: ErrorMetadataParams): never {
     let message: string;
     if (id === undefined) {
       message = 'FheTypeId is invalid.';
@@ -45,10 +42,7 @@ export class FheTypeError extends ErrorBase {
     );
   }
 
-  public static throwFheTypeNameError(
-    name: unknown,
-    options: ErrorMetadataParams,
-  ): never {
+  public static throwFheTypeNameError(name: unknown, options: ErrorMetadataParams): never {
     let message: string;
     if (name === undefined) {
       message = 'FheTypeName is invalid.';

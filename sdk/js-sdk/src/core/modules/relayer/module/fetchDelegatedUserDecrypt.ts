@@ -5,9 +5,9 @@ import type {
   FetchDelegatedUserDecryptReturnType,
   RelayerClient,
 } from '../types.js';
+import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
 import { remove0x, removeSuffix } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
-import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
 
 //////////////////////////////////////////////////////////////////////////////
 // fetchDelegatedUserDecrypt
@@ -52,8 +52,7 @@ export async function fetchDelegatedUserDecrypt(
     options,
   });
 
-  const result: FetchDelegatedUserDecryptResult =
-    (await request.run()) as FetchDelegatedUserDecryptResult;
+  const result: FetchDelegatedUserDecryptResult = (await request.run()) as FetchDelegatedUserDecryptResult;
 
   const shares: KmsSigncryptedShare[] = result.map((r) => {
     const share: KmsSigncryptedShare = {

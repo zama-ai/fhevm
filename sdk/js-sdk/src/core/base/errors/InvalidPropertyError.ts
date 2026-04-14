@@ -115,9 +115,7 @@ export class InvalidPropertyError extends ErrorBase {
     const missing: boolean = type === 'undefined';
 
     // Compute expected type
-    const actualExpectedType = Array.isArray(expectedType)
-      ? expectedType.join('|')
-      : expectedType;
+    const actualExpectedType = Array.isArray(expectedType) ? expectedType.join('|') : expectedType;
 
     // Compute expected value
     const actualExpectedValue =
@@ -129,17 +127,10 @@ export class InvalidPropertyError extends ErrorBase {
 
     // Compute subject
     let actualSubject;
-    if (
-      (property as unknown) === undefined ||
-      (property as unknown) === null ||
-      property === ''
-    ) {
+    if ((property as unknown) === undefined || (property as unknown) === null || property === '') {
       actualSubject = index !== undefined ? `${subject}[${index}]` : subject;
     } else {
-      actualSubject =
-        index !== undefined
-          ? `${subject}.${property}[${index}]`
-          : `${subject}.${property}`;
+      actualSubject = index !== undefined ? `${subject}.${property}[${index}]` : `${subject}.${property}`;
     }
 
     // Build message
@@ -153,20 +144,14 @@ export class InvalidPropertyError extends ErrorBase {
     } else {
       message = actualSubject;
 
-      const noType =
-        type === undefined || type === 'unknown' || type === 'undefined';
+      const noType = type === undefined || type === 'unknown' || type === 'undefined';
 
       const typeMatchesExpected =
-        type !== undefined &&
-        (Array.isArray(expectedType)
-          ? expectedType.includes(type)
-          : type === expectedType);
+        type !== undefined && (Array.isArray(expectedType) ? expectedType.includes(type) : type === expectedType);
 
       // Type error: no value/expectedValue provided AND (no type OR type mismatch)
       const unexpectedTypeError =
-        actualExpectedValue === undefined &&
-        value === undefined &&
-        (noType || !typeMatchesExpected);
+        actualExpectedValue === undefined && value === undefined && (noType || !typeMatchesExpected);
 
       if (unexpectedTypeError) {
         message += ` has unexpected type, expected ${actualExpectedType}`;
@@ -242,9 +227,6 @@ export function missingPropertyError(
  * // => throws "missing config.apiKey, expected string"
  * ```
  */
-export function throwMissingPropertyError(
-  params: MissingPropertyParams,
-  options: ErrorMetadataParams,
-): never {
+export function throwMissingPropertyError(params: MissingPropertyParams, options: ErrorMetadataParams): never {
   throw missingPropertyError(params, options);
 }

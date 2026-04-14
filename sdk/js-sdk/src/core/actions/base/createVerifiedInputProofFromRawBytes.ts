@@ -1,8 +1,8 @@
-import { createInputProofFromRawBytes } from '../../coprocessor/InputProof-p.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { VerifiedInputProof } from '../../types/inputProof.js';
 import type { Bytes, ChecksummedAddress } from '../../types/primitives.js';
+import { createInputProofFromRawBytes } from '../../coprocessor/InputProof-p.js';
 import { verifyInputProof } from './verifyInputProof.js';
 
 export type CreateVerifiedInputProofFromRawBytesParameters = {

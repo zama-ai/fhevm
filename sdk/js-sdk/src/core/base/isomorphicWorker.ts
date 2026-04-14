@@ -8,14 +8,8 @@ interface NodeMessagePort {
 }
 
 interface BrowserMessagePort {
-  addEventListener(
-    event: string,
-    listener: (event: MessageEvent<MessageData>) => void,
-  ): void;
-  removeEventListener(
-    event: string,
-    listener: (event: MessageEvent<MessageData>) => void,
-  ): void;
+  addEventListener(event: string, listener: (event: MessageEvent<MessageData>) => void): void;
+  removeEventListener(event: string, listener: (event: MessageEvent<MessageData>) => void): void;
   postMessage(value: unknown): void;
   terminate(): void;
 }
@@ -27,20 +21,14 @@ interface MessageData {
   [key: string]: unknown;
 }
 
-type NodeWorkerConstructor = new (
-  code: string | URL,
-  options?: Record<string, unknown>,
-) => NodeMessagePort;
+type NodeWorkerConstructor = new (code: string | URL, options?: Record<string, unknown>) => NodeMessagePort;
 
 function isNodePort(target: IsomorphicMessagePort): target is NodeMessagePort {
   return typeof (target as NodeMessagePort).on === 'function';
 }
 
 export function isBrowserLike(): boolean {
-  return (
-    typeof addEventListener === 'function' &&
-    typeof removeEventListener === 'function'
-  );
+  return typeof addEventListener === 'function' && typeof removeEventListener === 'function';
 }
 
 /**
@@ -51,9 +39,7 @@ export async function getIsomorphicTarget(): Promise<IsomorphicMessagePort> {
   if (isBrowserLike()) return self as unknown as BrowserMessagePort;
   const nodeWorkerModuleName = 'worker_threads';
   const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { parentPort: nodeParentPort } = (await import(
-    /* @vite-ignore */ nodeWorkerModuleId
-  )) as {
+  const { parentPort: nodeParentPort } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
     parentPort: NodeMessagePort | null;
   };
   if (!nodeParentPort) {
@@ -62,18 +48,14 @@ export async function getIsomorphicTarget(): Promise<IsomorphicMessagePort> {
   return nodeParentPort;
 }
 
-export async function createIsomorphicWorker(
-  url: string,
-): Promise<Worker | NodeMessagePort> {
+export async function createIsomorphicWorker(url: string): Promise<Worker | NodeMessagePort> {
   if (isBrowserLike()) {
     return createBrowserLikeWorker(url);
   }
   return createNodeLikeWorker(url);
 }
 
-export async function createIsomorphicWorkerFromCode(
-  jsCode: string,
-): Promise<Worker | NodeMessagePort> {
+export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | NodeMessagePort> {
   if (isBrowserLike()) {
     const blob = new Blob([jsCode], { type: 'application/javascript' });
     const blobUrl = URL.createObjectURL(blob);
@@ -86,9 +68,7 @@ export async function createIsomorphicWorkerFromCode(
   }
   const nodeWorkerModuleName = 'worker_threads';
   const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { Worker: NodeWorker } = (await import(
-    /* @vite-ignore */ nodeWorkerModuleId
-  )) as {
+  const { Worker: NodeWorker } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
     Worker: NodeWorkerConstructor;
   };
   return new NodeWorker(jsCode, { eval: true });
@@ -171,13 +151,7 @@ export async function runCodeInIsomorphicWorker<T>(
     const handle = (msg: Record<string, unknown>): void => {
       cleanup();
       if (msg.error !== undefined) {
-        reject(
-          new Error(
-            typeof msg.error === 'string'
-              ? msg.error
-              : JSON.stringify(msg.error),
-          ),
-        );
+        reject(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)));
       } else {
         resolve(msg.result as T);
       }
@@ -186,8 +160,7 @@ export async function runCodeInIsomorphicWorker<T>(
     // Rejects if the worker takes too long (e.g. infinite loop, hung fetch)
     // Declared after fail/handle so all references are resolved before the timer can fire
     const timer = setTimeout(() => {
-      if (!settled)
-        fail(new Error(`Worker timed out after ${String(timeoutMs)}ms`));
+      if (!settled) fail(new Error(`Worker timed out after ${String(timeoutMs)}ms`));
     }, timeoutMs);
 
     // Bind listeners and send input to the worker
@@ -200,8 +173,7 @@ export async function runCodeInIsomorphicWorker<T>(
         fail(e);
       });
       worker.on('exit', (exitCode: number) => {
-        if (!settled)
-          fail(new Error(`Worker exited with code ${String(exitCode)}`));
+        if (!settled) fail(new Error(`Worker exited with code ${String(exitCode)}`));
       });
       worker.postMessage(input);
     } else {
@@ -248,11 +220,7 @@ export async function runCodeInIsomorphicWorker<T>(
 let _blobWorkerSupportedPromise: Promise<boolean> | undefined;
 export function isBlobWorkerSupported(): Promise<boolean> {
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-arguments
-  _blobWorkerSupportedPromise ??= runCodeInIsomorphicWorker<string>(
-    `return data + " world!";`,
-    'hello',
-    5000,
-  ).then(
+  _blobWorkerSupportedPromise ??= runCodeInIsomorphicWorker<string>(`return data + " world!";`, 'hello', 5000).then(
     (res) => res === 'hello world!',
     () => false,
   );
@@ -269,9 +237,7 @@ function createBrowserLikeWorker(url: string): Worker {
 async function createNodeLikeWorker(url: string): Promise<NodeMessagePort> {
   const nodeWorkerModuleName = 'worker_threads';
   const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { Worker: NodeWorker } = (await import(
-    /* @vite-ignore */ nodeWorkerModuleId
-  )) as {
+  const { Worker: NodeWorker } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
     Worker: NodeWorkerConstructor;
   };
   // Node's Worker doesn't support data: or blob: URLs.
@@ -284,9 +250,7 @@ async function createNodeLikeWorker(url: string): Promise<NodeMessagePort> {
 
     const nodeBufferModuleName = 'buffer';
     const nodeBufferModuleId = `node:${nodeBufferModuleName}`;
-    const { Buffer: NodeBuffer } = (await import(
-      /* @vite-ignore */ nodeBufferModuleId
-    )) as {
+    const { Buffer: NodeBuffer } = (await import(/* @vite-ignore */ nodeBufferModuleId)) as {
       Buffer: {
         from(str: string, encoding: string): { toString(enc: string): string };
       };
@@ -298,10 +262,7 @@ async function createNodeLikeWorker(url: string): Promise<NodeMessagePort> {
   return new NodeWorker(url);
 }
 
-export function waitForMsgType(
-  target: IsomorphicMessagePort,
-  type: string,
-): Promise<MessageData> {
+export function waitForMsgType(target: IsomorphicMessagePort, type: string): Promise<MessageData> {
   return new Promise((resolve) => {
     if (isNodePort(target)) {
       // Node: EventEmitter, data passed directly
@@ -312,14 +273,11 @@ export function waitForMsgType(
       });
     } else {
       // Browser: DOM events, data wrapped in MessageEvent
-      target.addEventListener(
-        'message',
-        function onMsg({ data }: MessageEvent<MessageData>) {
-          if (data.type !== type) return;
-          target.removeEventListener('message', onMsg);
-          resolve(data);
-        },
-      );
+      target.addEventListener('message', function onMsg({ data }: MessageEvent<MessageData>) {
+        if (data.type !== type) return;
+        target.removeEventListener('message', onMsg);
+        resolve(data);
+      });
     }
   });
 }

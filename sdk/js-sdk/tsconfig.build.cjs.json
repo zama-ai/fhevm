@@ -1,10 +1,8 @@
 {
   "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  },
   "include": ["src/**/*.ts", "src/wasm/wasmBaseUrl.cts"],
-  "exclude": [
-    "src/**/*.bench.ts",
-    "src/**/*.bench-d.ts",
-    "src/**/*.test.ts",
-    "src/**/*.test-d.ts"
-  ]
+  "exclude": ["src/**/*.bench.ts", "src/**/*.bench-d.ts", "src/**/*.test.ts", "src/**/*.test-d.ts"]
 }
