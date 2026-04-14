@@ -68,7 +68,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
-            proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
+            proxy,
+            implementation,
+            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
@@ -1312,13 +1314,27 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedAfterWhitelisted, 0);
 
         // Then switch to non-whitelisted caller in the same tx: meter should apply.
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), nonWhitelistedCaller);
+        hcuLimit.checkHCUForFheAdd(
+            FheType.Uint8,
+            0x01,
+            mockLHS,
+            mockRHS,
+            bytes32(uint256(0x1002)),
+            nonWhitelistedCaller
+        );
         (, uint48 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterNonWhitelisted, 84_000);
 
         // A second non-whitelisted op in same block should exceed cap.
         vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1003)), nonWhitelistedCaller);
+        hcuLimit.checkHCUForFheAdd(
+            FheType.Uint8,
+            0x01,
+            mockLHS,
+            mockRHS,
+            bytes32(uint256(0x1003)),
+            nonWhitelistedCaller
+        );
 
         vm.stopPrank();
     }
@@ -1336,8 +1352,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function test_reinitializeV2SetsBlockCapOnUpgradePathWithoutInitCall() public {
-        address proxyWithoutInitCall =
-            UnsafeUpgrades.deployUUPSProxy(address(new EmptyUUPSProxy()), abi.encodeCall(EmptyUUPSProxy.initialize, ()));
+        address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
 
         address implementationWithoutInitCall = address(new MockHCULimit());
         vm.startPrank(owner);
