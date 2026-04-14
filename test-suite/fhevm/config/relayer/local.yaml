@@ -197,7 +197,7 @@ storage:
     # 30 mins timeout logic
     public_decrypt_timeout: "2h"
     user_decrypt_timeout: "30m"
-    input_proof_timeout: "2h"
+    input_proof_timeout: "4h"
     # 1 hour interval for cleanup check
     expiry_cron_interval: "5m"
     # Retention Policies
