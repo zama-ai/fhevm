@@ -23,6 +23,7 @@ Use `task:prepareUpgradeFHEVMExecutor` when you need to deploy a new `FHEVMExecu
 implementation without upgrading the proxy yet.
 
 This task is meant for DAO-driven upgrades:
+
 - it imports the existing proxy into the OpenZeppelin manifest
 - it deploys the new implementation with `prepareUpgrade`
 - it prints the implementation address and `reinitializeV*` calldata
@@ -47,6 +48,7 @@ npx hardhat task:setPauserSetAddress --address <pauser-set>
 ```
 
 Those commands generate:
+
 - `addresses/.env.host`
 - `addresses/FHEVMHostAddresses.sol`
 
@@ -65,6 +67,7 @@ npx hardhat task:prepareUpgradeFHEVMExecutor \
 ```
 
 Notes:
+
 - `--network` selects where the implementation deployment transaction is sent.
 - `--current-implementation` points to the old implementation source available on disk.
 - `--new-implementation` comes from your current checkout.

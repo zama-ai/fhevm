@@ -321,10 +321,7 @@ task('task:prepareUpgradeACL')
     'currentImplementation',
     'The currently deployed implementation solidity contract path and name, eg: contracts/ACL.sol:ACL',
   )
-  .addParam(
-    'newImplementation',
-    'The new implementation solidity contract path and name, eg: contracts/ACL.sol:ACL',
-  )
+  .addParam('newImplementation', 'The new implementation solidity contract path and name, eg: contracts/ACL.sol:ACL')
   .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
@@ -494,12 +491,7 @@ task('task:upgradeHCULimit')
     '5000000',
     types.string,
   )
-  .addOptionalParam(
-    'maxHcuPerTx',
-    'Max total HCU per transaction (default: 20000000)',
-    '20000000',
-    types.string,
-  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
       BigInt(taskArgs.hcuCapPerBlock),
@@ -541,12 +533,7 @@ task('task:prepareUpgradeHCULimit')
     '5000000',
     types.string,
   )
-  .addOptionalParam(
-    'maxHcuPerTx',
-    'Max total HCU per transaction (default: 20000000)',
-    '20000000',
-    types.string,
-  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
       BigInt(taskArgs.hcuCapPerBlock),
