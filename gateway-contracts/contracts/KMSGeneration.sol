@@ -62,10 +62,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @Deprecated. No longer written to.
         mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
         /// @notice Whether a request has reached consensus
+        /// @dev No longer written to.
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
         /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
+        /// @dev No longer written to.
         mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
         /// @notice The digest of the signed struct on which consensus was reached for a request
+        /// @dev No longer written to.
         mapping(uint256 requestId => bytes32 digest) consensusDigest;
         // ----------------------------------------------------------------------------------------------
         // Pre-processing keygen state variables:
@@ -80,8 +83,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @Deprecated. No longer written to.
         uint256 keyCounter;
         /// @notice Bidirectional mapping between preprocessing request IDs and key IDs
+        /// @dev No longer written to.
         mapping(uint256 id => uint256 pairedId) keygenIdPairs;
         /// @notice The digests of the generated keys
+        /// @dev No longer written to.
         mapping(uint256 keyId => KeyDigest[] keyDigests) keyDigests;
         /// @notice The ID of the currently active key
         /// @Deprecated. No longer written to.
@@ -96,6 +101,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @Deprecated. No longer written to.
         mapping(uint256 crsId => uint256 maxBitLength) crsMaxBitLength;
         /// @notice The digests of the generated CRS
+        /// @dev No longer written to.
         mapping(uint256 crsId => bytes crsDigest) crsDigests;
         /// @notice The ID of the currently active CRS
         /// @Deprecated. No longer written to.
@@ -104,6 +110,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // Parameters variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
+        /// @dev No longer written to.
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
         /// @notice The number of key resharing, used to generate the keyReshareIds.
         /// @Deprecated. No longer written to.
