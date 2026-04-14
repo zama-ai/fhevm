@@ -31,13 +31,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.tfheWorker.affinity .Values.tfheWorker.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.tfheWorker.affinity "enabled") | indent 8 }}
+      {{- with .Values.tfheWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.tfheWorker.tolerations .Values.tfheWorker.tolerations.enabled }}
+      {{- with .Values.tfheWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tfheWorker.tolerations }}
       tolerations:
-{{ toYaml .Values.tfheWorker.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.tfheWorker.serviceAccountName }}
       serviceAccountName: {{ .Values.tfheWorker.serviceAccountName }}
@@ -47,15 +51,45 @@ spec:
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
           command: ["tfhe_worker"]
           args:
-{{ toYaml .Values.tfheWorker.args | nindent 12 }}
+            - --database-url=$(DATABASE_URL)
+            - --metrics-addr=0.0.0.0:{{ .Values.tfheWorker.ports.metrics }}
+            - --log-level={{ .Values.tfheWorker.args.logLevel }}
+            - --service-name={{ .Values.tfheWorker.args.serviceName }}
+            - --run-bg-worker={{ .Values.tfheWorker.args.runBgWorker }}
+            - --worker-polling-interval-ms={{ .Values.tfheWorker.args.workerPollingIntervalMs }}
+            - --work-items-batch-size={{ .Values.tfheWorker.args.workItemsBatchSize }}
+            - --dependence-chains-per-batch={{ .Values.tfheWorker.args.dependenceChainsPerBatch }}
+            - --key-cache-size={{ .Values.tfheWorker.args.keyCacheSize }}
+            - --coprocessor-fhe-threads={{ .Values.tfheWorker.args.coprocessorFheThreads }}
+            - --tokio-threads={{ .Values.tfheWorker.args.tokioThreads }}
+            - --pg-pool-max-connections={{ .Values.tfheWorker.args.pgPoolMaxConnections }}
+            - --generate-fhe-keys={{ .Values.tfheWorker.args.generateFheKeys }}
+            - --dcid-ttl-sec={{ .Values.tfheWorker.args.dcidTtlSec }}
+            - --disable-dcid-locking={{ .Values.tfheWorker.args.disableDcidLocking }}
+            - --dcid-timeslice-sec={{ .Values.tfheWorker.args.dcidTimesliceSec }}
+            - --processed-dcid-ttl-sec={{ .Values.tfheWorker.args.processedDcidTtlSec }}
+            - --dcid-cleanup-interval-sec={{ .Values.tfheWorker.args.dcidCleanupIntervalSec }}
+            - --dcid-max-no-progress-cycles={{ .Values.tfheWorker.args.dcidMaxNoProgressCycles }}
+            {{- with .Values.tfheWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.tfheWorker.env | nindent 12 }}
-          {{- if .Values.tfheWorker.tracing.enabled }}
+            - name: DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: ACL_CONTRACT_ADDRESS
+              value: {{ .Values.commonConfig.aclContractAddress | quote }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.tfheWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.tfheWorker.tracing.endpoint | quote }}
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.tfheWorker.tracing.service | quote }}
-            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tfheWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.tfheWorker.ports }}
             - name: {{ $portName }}
@@ -71,11 +105,11 @@ spec:
               memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.tfheWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.tfheWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
       {{- if .Values.config.enabled }}
           volumeMounts:

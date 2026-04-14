@@ -35,5 +35,5 @@
 
 {{- define "snsWorkerName" -}}
 {{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
-{{- default $snsWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

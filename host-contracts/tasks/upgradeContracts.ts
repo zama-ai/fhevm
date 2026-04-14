@@ -1,9 +1,9 @@
+import { execFileSync } from 'child_process';
 import { Wallet } from 'ethers';
 import fs from 'fs';
-import path from 'path';
-import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
+import path from 'path';
 
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
@@ -11,10 +11,11 @@ const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize
 
 // This file defines generic tasks that can be used to upgrade the implementation of already deployed contracts.
 
-function getImplementationDirectory(input: string): string {
-  const colonIndex = input.lastIndexOf('/');
-  if (colonIndex !== -1) {
-    return input.substring(0, colonIndex);
+// Strip the contract name from a qualified path.
+function getImplementationSourcePath(input: string): string {
+  const contractNameSeparatorIndex = input.lastIndexOf(':');
+  if (contractNameSeparatorIndex !== -1) {
+    return input.substring(0, contractNameSeparatorIndex);
   }
   return input;
 }
@@ -28,15 +29,15 @@ function materializeContractsFromGit(gitRef: string, relativeDir: string) {
     'sh',
     [
       '-c',
-      'git archive --format=tar "$1" '
-        + 'host-contracts/contracts/FHEVMExecutor.sol '
-        + 'host-contracts/contracts/ACL.sol '
-        + 'host-contracts/contracts/HCULimit.sol '
-        + 'host-contracts/contracts/FHEEvents.sol '
-        + 'host-contracts/contracts/ACLEvents.sol '
-        + 'host-contracts/contracts/interfaces/IPauserSet.sol '
-        + 'host-contracts/contracts/shared '
-        + '| tar -x -C "$2" --strip-components=2',
+      'git archive --format=tar "$1" ' +
+        'host-contracts/contracts/FHEVMExecutor.sol ' +
+        'host-contracts/contracts/ACL.sol ' +
+        'host-contracts/contracts/HCULimit.sol ' +
+        'host-contracts/contracts/FHEEvents.sol ' +
+        'host-contracts/contracts/ACLEvents.sol ' +
+        'host-contracts/contracts/interfaces/IPauserSet.sol ' +
+        'host-contracts/contracts/shared ' +
+        '| tar -x -C "$2" --strip-components=2',
       'sh',
       gitRef,
       absoluteDir,
@@ -110,8 +111,8 @@ async function deployImplementationForPreparedUpgrade(
   // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
   // reusing artifacts compiled against another environment.
   await hre.run('clean');
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
 
   await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
 
@@ -154,8 +155,8 @@ async function compileImplementations(
   newImplementation: string,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
 }
 
 async function checkImplementationArtifacts(
@@ -285,29 +286,33 @@ task('task:prepareUpgradeFHEVMExecutor')
     true,
     types.boolean,
   )
-  .setAction(
-    async function ({ upgradeFromRef, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments, hre) {
-      const generatedCurrentImplementation = materializeContractsFromGit(upgradeFromRef, 'generated-upgrade-from-contracts');
-      const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
-      if (useInternalProxyAddress) {
-        loadHostAddresses();
-      }
-      const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
+  .setAction(async function (
+    { upgradeFromRef, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments,
+    hre,
+  ) {
+    const generatedCurrentImplementation = materializeContractsFromGit(
+      upgradeFromRef,
+      'generated-upgrade-from-contracts',
+    );
+    const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
-      try {
-        await deployImplementationForPreparedUpgrade(
-          proxyAddress,
-          'FHEVMExecutor',
-          currentImplementation,
-          newImplementation,
-          verifyContract,
-          hre,
-        );
-      } finally {
-        generatedCurrentImplementation.cleanup();
-      }
-    },
-  );
+    try {
+      await deployImplementationForPreparedUpgrade(
+        proxyAddress,
+        'FHEVMExecutor',
+        currentImplementation,
+        newImplementation,
+        verifyContract,
+        hre,
+      );
+    } finally {
+      generatedCurrentImplementation.cleanup();
+    }
+  });
 
 task('task:upgradeKMSVerifier')
   .addParam(
@@ -406,12 +411,7 @@ task('task:upgradeHCULimit')
     '5000000',
     types.string,
   )
-  .addOptionalParam(
-    'maxHcuPerTx',
-    'Max total HCU per transaction (default: 20000000)',
-    '20000000',
-    types.string,
-  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
       BigInt(taskArgs.hcuCapPerBlock),
