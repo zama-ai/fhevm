@@ -9,6 +9,7 @@ import { GatewayOwnable } from "../shared/GatewayOwnable.sol";
  * making it independent from nonce to solve circular dependencies. It is owned by the Gateway owner,
  * defined as the owner of the GatewayConfig contract.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract EmptyUUPSProxy is UUPSUpgradeable, GatewayOwnable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

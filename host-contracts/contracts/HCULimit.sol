@@ -14,6 +14,7 @@ import {FheType} from "./shared/FheType.sol";
  * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();

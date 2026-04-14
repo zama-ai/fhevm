@@ -30,6 +30,7 @@ interface IInputVerifier {
  *           main responsibilities is to deterministically generate ciphertext handles.
  * @dev      This contract is deployed using an UUPS proxy.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice         Returned when the handle is not allowed in the ACL for the account.
     /// @param handle   Handle.

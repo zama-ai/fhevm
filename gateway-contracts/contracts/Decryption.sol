@@ -23,6 +23,7 @@ import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared
  * @title Decryption contract
  * @notice See {IDecryption}.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract Decryption is
     IDecryption,
     EIP712Upgradeable,

@@ -17,6 +17,7 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ACL is
     UUPSUpgradeableEmptyProxy,
     Ownable2StepUpgradeable,
