@@ -13,10 +13,10 @@ import {FHETestScript} from "./FHETestScript.s.sol";
 // FORCE=1 forge script script/InitFHETest.s.sol --rpc-url http://localhost:8545
 //
 // # Testnet
-// CHAIN=testnet && export CHAIN && source ../test/.env && export MNEMONIC && forge script script/InitFHETest.s.sol --rpc-url https://ethereum-sepolia-rpc.publicnode.com
+// export CHAIN=testnet && source ../test/.env && export MNEMONIC && forge script script/InitFHETest.s.sol --rpc-url https://ethereum-sepolia-rpc.publicnode.com
 //
 // # Devnet
-// CHAIN=devnet && export CHAIN && source ../test/.env && export MNEMONIC && forge script script/InitFHETest.s.sol --rpc-url https://ethereum-sepolia-rpc.publicnode.com
+// export CHAIN=devnet && source ../test/.env && export MNEMONIC && forge script script/InitFHETest.s.sol --rpc-url https://ethereum-sepolia-rpc.publicnode.com
 //
 // Broadcast:
 // ----------
