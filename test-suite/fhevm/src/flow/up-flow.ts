@@ -279,7 +279,7 @@ const materializeGatewayContractsFromRef = async (ref: string) => {
     [
       "sh",
       "-lc",
-      `git archive --format=tar ${shellEscape(ref)} gateway-contracts/contracts gateway-contracts/addresses | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
+      `git archive --format=tar ${shellEscape(ref)} gateway-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
     ],
     { cwd: REPO_ROOT },
   );

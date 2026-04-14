@@ -19,6 +19,8 @@ services:
         sh -lc
         "rm -rf /app/upgrade-from &&
         cp -R /app/generated-upgrade-from /app/upgrade-from &&
+        mkdir -p /app/upgrade-from/addresses &&
+        cp /app/addresses/GatewayAddresses.sol /app/upgrade-from/addresses/GatewayAddresses.sol &&
         npx hardhat task:upgradeGatewayConfig --current-implementation upgrade-from/contracts/GatewayConfig.sol:GatewayConfig --new-implementation contracts/GatewayConfig.sol:GatewayConfig --use-internal-proxy-address true --verify-contract false &&
         npx hardhat task:upgradeInputVerification --current-implementation upgrade-from/contracts/InputVerification.sol:InputVerification --new-implementation contracts/InputVerification.sol:InputVerification --use-internal-proxy-address true --verify-contract false &&
         npx hardhat task:upgradeKMSGeneration --current-implementation upgrade-from/contracts/KMSGeneration.sol:KMSGeneration --new-implementation contracts/KMSGeneration.sol:KMSGeneration --use-internal-proxy-address true --verify-contract false &&
