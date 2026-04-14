@@ -2,9 +2,7 @@
 // <AnyHostContract>.getVersion()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getVersionAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getVersion' },
-] = [
+export const getVersionAbi: readonly [Record<string, unknown> & { readonly name: 'getVersion' }] = [
   {
     inputs: [],
     name: 'getVersion',
@@ -91,9 +89,7 @@ export const isHandleDelegatedForUserDecryptionAbi: readonly [
 // FHEVMExecutor.getACLAddress()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getACLAddressAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getACLAddress' },
-] = [
+export const getACLAddressAbi: readonly [Record<string, unknown> & { readonly name: 'getACLAddress' }] = [
   {
     inputs: [],
     name: 'getACLAddress',
@@ -113,9 +109,7 @@ export const getACLAddressAbi: readonly [
 // FHEVMExecutor.getHCULimitAddress()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getHCULimitAddressAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getHCULimitAddress' },
-] = [
+export const getHCULimitAddressAbi: readonly [Record<string, unknown> & { readonly name: 'getHCULimitAddress' }] = [
   {
     inputs: [],
     name: 'getHCULimitAddress',
@@ -135,9 +129,7 @@ export const getHCULimitAddressAbi: readonly [
 // FHEVMExecutor.getHandleVersion()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getHandleVersionAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getHandleVersion' },
-] = [
+export const getHandleVersionAbi: readonly [Record<string, unknown> & { readonly name: 'getHandleVersion' }] = [
   {
     inputs: [],
     name: 'getHandleVersion',
@@ -180,9 +172,7 @@ export const getInputVerifierAddressAbi: readonly [
 // InputVerifier.eip712Domain()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const eip712DomainAbi: readonly [
-  Record<string, unknown> & { readonly name: 'eip712Domain' },
-] = [
+export const eip712DomainAbi: readonly [Record<string, unknown> & { readonly name: 'eip712Domain' }] = [
   {
     inputs: [],
     name: 'eip712Domain',
@@ -233,9 +223,7 @@ export const eip712DomainAbi: readonly [
 // InputVerifier.getThreshold()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getThresholdAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getThreshold' },
-] = [
+export const getThresholdAbi: readonly [Record<string, unknown> & { readonly name: 'getThreshold' }] = [
   {
     inputs: [],
     name: 'getThreshold',
@@ -255,9 +243,7 @@ export const getThresholdAbi: readonly [
 // KMSVerifier.getKmsSigners()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getKmsSignersAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getKmsSigners' },
-] = [
+export const getKmsSignersAbi: readonly [Record<string, unknown> & { readonly name: 'getKmsSigners' }] = [
   {
     inputs: [],
     name: 'getKmsSigners',
@@ -328,31 +314,28 @@ export const getSignersForKmsContextAbi: readonly [
 // InputVerifier.getCoprocessorSigners()
 ////////////////////////////////////////////////////////////////////////////////
 
-export const getCoprocessorSignersAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getCoprocessorSigners' },
-] = [
-  {
-    inputs: [],
-    name: 'getCoprocessorSigners',
-    outputs: [
-      {
-        internalType: 'address[]',
-        name: '',
-        type: 'address[]',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
+export const getCoprocessorSignersAbi: readonly [Record<string, unknown> & { readonly name: 'getCoprocessorSigners' }] =
+  [
+    {
+      inputs: [],
+      name: 'getCoprocessorSigners',
+      outputs: [
+        {
+          internalType: 'address[]',
+          name: '',
+          type: 'address[]',
+        },
+      ],
+      stateMutability: 'view',
+      type: 'function',
+    },
+  ] as const;
 
 ////////////////////////////////////////////////////////////////////////////////
 // ACL.persistAllowed(handle, account)
 ////////////////////////////////////////////////////////////////////////////////
 
-export const persistAllowedAbi: readonly [
-  Record<string, unknown> & { readonly name: 'persistAllowed' },
-] = [
+export const persistAllowedAbi: readonly [Record<string, unknown> & { readonly name: 'persistAllowed' }] = [
   {
     inputs: [
       {

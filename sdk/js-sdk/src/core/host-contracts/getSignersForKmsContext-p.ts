@@ -1,14 +1,8 @@
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import {
-  getVersion,
-  isVersionStrictlyBefore,
-} from './HostContractVersion-p.js';
+import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import {
-  getKmsSignersAbi,
-  getSignersForKmsContextAbi,
-} from './abi-fragments/fragments.js';
+import { getKmsSignersAbi, getSignersForKmsContextAbi } from './abi-fragments/fragments.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,10 +33,7 @@ type ReturnType = ChecksummedAddress[];
  * @param parameters.address - The checksummed address of the KMSVerifier contract.
  * @param parameters.kmsContextId - The context ID to query signers for.
  */
-export async function getSignersForKmsContext(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+export async function getSignersForKmsContext(context: Context, parameters: Parameters): Promise<ReturnType> {
   const version = await getVersion(context, parameters);
   // getCurrentKmsContextId has been introduced in KMSVerifier.sol v0.2.0
   if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
@@ -65,12 +56,9 @@ export async function getSignersForKmsContext(
   try {
     assertIsChecksummedAddressArray(res, {});
   } catch (e) {
-    throw new Error(
-      `Invalid signers for KMS Context Id ${parameters.kmsContextId}.`,
-      {
-        cause: e,
-      },
-    );
+    throw new Error(`Invalid signers for KMS Context Id ${parameters.kmsContextId}.`, {
+      cause: e,
+    });
   }
 
   return res;

@@ -1,12 +1,9 @@
+import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { getCurrentKmsContextIdAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
+import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsUint256 } from '../base/uint.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import {
-  getVersion,
-  isVersionStrictlyBefore,
-} from './HostContractVersion-p.js';
 import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -24,14 +21,9 @@ type ReturnType = Uint256BigInt;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const cachedGetCurrentKmsContextId = createCachedFetch<
-  Context,
-  Parameters,
-  ReturnType
->({
+const cachedGetCurrentKmsContextId = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getCurrentKmsContextId,
-  cacheKeyFn: (context, params) =>
-    `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
   ttlMs: CACHE_TTL_24H,
 });
@@ -53,10 +45,7 @@ export function getCurrentKmsContextId(
   return cachedGetCurrentKmsContextId.execute(context, parameters);
 }
 
-async function _getCurrentKmsContextId(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+async function _getCurrentKmsContextId(context: Context, parameters: Parameters): Promise<ReturnType> {
   const version = await getVersion(context, parameters);
   // getCurrentKmsContextId has been introduced in KMSVerifier.sol v0.2.0
   if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {

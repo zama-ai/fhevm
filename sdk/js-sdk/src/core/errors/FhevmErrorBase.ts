@@ -1,7 +1,6 @@
-import { version, sdkName } from '../_version.js';
-
 import type { Prettify } from '../types/utils.js';
 import type { ErrorBaseParams } from '../base/errors/ErrorBase.js';
+import { version, sdkName } from '../_version.js';
 import { ErrorBase } from '../base/errors/ErrorBase.js';
 
 export type FhevmErrorBaseType = FhevmErrorBase & {
@@ -19,10 +18,8 @@ export type FhevmErrorBaseParams = Prettify<
 export abstract class FhevmErrorBase extends ErrorBase {
   private static readonly PKG_NAME = sdkName;
   private static readonly VERSION = version;
-  private static readonly DEFAULT_DOCS_BASE_URL =
-    'https//docs.zama.org' as const;
-  private static readonly FULL_VERSION =
-    `${FhevmErrorBase.PKG_NAME}@${FhevmErrorBase.VERSION}` as const;
+  private static readonly DEFAULT_DOCS_BASE_URL = 'https//docs.zama.org' as const;
+  private static readonly FULL_VERSION = `${FhevmErrorBase.PKG_NAME}@${FhevmErrorBase.VERSION}` as const;
 
   readonly #docsPath: string | undefined;
 

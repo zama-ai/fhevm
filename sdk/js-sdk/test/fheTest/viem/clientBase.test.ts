@@ -16,11 +16,7 @@ import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createPublicClient, http } from 'viem';
 import { sepolia as viemSepolia } from 'viem/chains';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import {
-  clearKeyCache,
-  readKeyFromCache,
-  writeKeyToCache,
-} from '../keyCache.js';
+import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 
 describe('createFhevmBaseClient', () => {
   let config: FheTestViemConfig;
@@ -129,24 +125,16 @@ describe('createFhevmBaseClient', () => {
 
     // metadata
     expect(fheEncryptionKeyBytes.metadata).toBeDefined();
-    expect(fheEncryptionKeyBytes.metadata.relayerUrl).toBe(
-      config.fhevmChain.fhevm.relayerUrl,
-    );
+    expect(fheEncryptionKeyBytes.metadata.relayerUrl).toBe(config.fhevmChain.fhevm.relayerUrl);
     expect(fheEncryptionKeyBytes.metadata.chainId).toBe(config.fhevmChain.id);
 
     // publicKeyBytes
     expect(fheEncryptionKeyBytes.publicKeyBytes).toBeDefined();
     expect(fheEncryptionKeyBytes.publicKeyBytes.id).toBeDefined();
     expect(typeof fheEncryptionKeyBytes.publicKeyBytes.id).toBe('string');
-    expect(fheEncryptionKeyBytes.publicKeyBytes.bytes).toBeInstanceOf(
-      Uint8Array,
-    );
-    expect(fheEncryptionKeyBytes.publicKeyBytes.bytes.length).toBeGreaterThan(
-      33_000,
-    );
-    console.log(
-      `  publicKeyBytes: ${fheEncryptionKeyBytes.publicKeyBytes.bytes.length} bytes`,
-    );
+    expect(fheEncryptionKeyBytes.publicKeyBytes.bytes).toBeInstanceOf(Uint8Array);
+    expect(fheEncryptionKeyBytes.publicKeyBytes.bytes.length).toBeGreaterThan(33_000);
+    console.log(`  publicKeyBytes: ${fheEncryptionKeyBytes.publicKeyBytes.bytes.length} bytes`);
 
     // crsBytes
     expect(fheEncryptionKeyBytes.crsBytes).toBeDefined();
@@ -154,33 +142,17 @@ describe('createFhevmBaseClient', () => {
     expect(typeof fheEncryptionKeyBytes.crsBytes.id).toBe('string');
     expect(fheEncryptionKeyBytes.crsBytes.capacity).toBe(2048);
     expect(fheEncryptionKeyBytes.crsBytes.bytes).toBeInstanceOf(Uint8Array);
-    expect(fheEncryptionKeyBytes.crsBytes.bytes.length).toBeGreaterThan(
-      4_500_000,
-    );
-    console.log(
-      `  crsBytes: ${fheEncryptionKeyBytes.crsBytes.bytes.length} bytes`,
-    );
+    expect(fheEncryptionKeyBytes.crsBytes.bytes.length).toBeGreaterThan(4_500_000);
+    console.log(`  crsBytes: ${fheEncryptionKeyBytes.crsBytes.bytes.length} bytes`);
 
     writeKeyToCache('sepolia', fheEncryptionKeyBytes);
     const cachedFheEncryptionKeyBytes = readKeyFromCache('sepolia');
     expect(cachedFheEncryptionKeyBytes).toBeDefined();
-    expect(cachedFheEncryptionKeyBytes!.metadata).toEqual(
-      fheEncryptionKeyBytes.metadata,
-    );
-    expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.id).toBe(
-      fheEncryptionKeyBytes.publicKeyBytes.id,
-    );
-    expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.bytes).toEqual(
-      fheEncryptionKeyBytes.publicKeyBytes.bytes,
-    );
-    expect(cachedFheEncryptionKeyBytes!.crsBytes.id).toBe(
-      fheEncryptionKeyBytes.crsBytes.id,
-    );
-    expect(cachedFheEncryptionKeyBytes!.crsBytes.capacity).toBe(
-      fheEncryptionKeyBytes.crsBytes.capacity,
-    );
-    expect(cachedFheEncryptionKeyBytes!.crsBytes.bytes).toEqual(
-      fheEncryptionKeyBytes.crsBytes.bytes,
-    );
+    expect(cachedFheEncryptionKeyBytes!.metadata).toEqual(fheEncryptionKeyBytes.metadata);
+    expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.id).toBe(fheEncryptionKeyBytes.publicKeyBytes.id);
+    expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.bytes).toEqual(fheEncryptionKeyBytes.publicKeyBytes.bytes);
+    expect(cachedFheEncryptionKeyBytes!.crsBytes.id).toBe(fheEncryptionKeyBytes.crsBytes.id);
+    expect(cachedFheEncryptionKeyBytes!.crsBytes.capacity).toBe(fheEncryptionKeyBytes.crsBytes.capacity);
+    expect(cachedFheEncryptionKeyBytes!.crsBytes.bytes).toEqual(fheEncryptionKeyBytes.crsBytes.bytes);
   });
 });

@@ -1,3 +1,11 @@
+import type { ethers } from 'ethers';
+import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,20 +19,6 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmDecryptClient,
-  createFhevmEncryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import type { ethers } from 'ethers';
-import type {
-  ChecksummedAddress,
-  TypedValue,
-} from '../../../src/core/types/primitives.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-
 ////////////////////////////////////////////////////////////////////////////////
 
 // Map FHE type to: contract function name, value type name, test value
@@ -101,9 +95,7 @@ describe(
         values: encryptTestCases,
       });
 
-      expect(result.externalEncryptedValues).toHaveLength(
-        encryptTestCases.length,
-      );
+      expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
       expect(result.inputProof).toBeDefined();
       expect(result.inputProof.startsWith('0x')).toBe(true);
 
@@ -118,9 +110,7 @@ describe(
       // │  Phase 2: SUBMIT ON-CHAIN                                           │
       // │  Send encrypted handles + input proof to FHETest contract           │
       // └─────────────────────────────────────────────────────────────────────┘
-      const fheTest = config.fheTestContract.connect(
-        config.signer,
-      ) as ethers.Contract;
+      const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const enc = result.externalEncryptedValues[i]!;
@@ -136,68 +126,28 @@ describe(
 
         switch (enc.fheType) {
           case 'ebool':
-            tx = await fheTest.setEbool!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint8':
-            tx = await fheTest.setEuint8!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint8!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint16':
-            tx = await fheTest.setEuint16!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint16!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint32':
-            tx = await fheTest.setEuint32!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint32!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint64':
-            tx = await fheTest.setEuint64!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint64!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint128':
-            tx = await fheTest.setEuint128!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint128!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'euint256':
-            tx = await fheTest.setEuint256!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEuint256!(inputHandle, inputProof, ct, makePublic);
             break;
           case 'eaddress':
-            tx = await fheTest.setEaddress!(
-              inputHandle,
-              inputProof,
-              ct,
-              makePublic,
-            );
+            tx = await fheTest.setEaddress!(inputHandle, inputProof, ct, makePublic);
             break;
           default:
             throw new Error(`Unsupported fheType`);
@@ -218,8 +168,7 @@ describe(
 
       await decryptClient.ready;
 
-      const e2eTransportKeypair =
-        await decryptClient.generateE2eTransportKeypair();
+      const e2eTransportKeypair = await decryptClient.generateE2eTransportKeypair();
       const signedPermit = await decryptClient.signDecryptionPermit({
         e2eTransportKeypair,
         contractAddresses: [config.fheTestAddress],
@@ -260,9 +209,7 @@ describe(
         encryptedValues: result.externalEncryptedValues,
       });
 
-      expect(publicProof.orderedClearValues).toHaveLength(
-        encryptTestCases.length,
-      );
+      expect(publicProof.orderedClearValues).toHaveLength(encryptTestCases.length);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const expected = encryptTestCases[i]!;

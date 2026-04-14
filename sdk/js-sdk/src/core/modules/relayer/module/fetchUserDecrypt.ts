@@ -1,13 +1,9 @@
-import { remove0x, removeSuffix } from '../../../base/string.js';
 import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
 import type { Bytes65HexNo0x } from '../../../types/primitives.js';
 import type { FetchUserDecryptPayload } from '../../../types/relayer-p.js';
 import type { FetchUserDecryptResult } from '../../../types/relayer.js';
-import type {
-  FetchUserDecryptParameters,
-  FetchUserDecryptReturnType,
-  RelayerClient,
-} from '../types.js';
+import type { FetchUserDecryptParameters, FetchUserDecryptReturnType, RelayerClient } from '../types.js';
+import { remove0x, removeSuffix } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
 
 //////////////////////////////////////////////////////////////////////////////

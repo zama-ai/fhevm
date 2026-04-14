@@ -7,11 +7,7 @@ import type {
   ChecksummedAddress,
 } from './primitives.js';
 import type { NonEmptyExtract } from './utils.js';
-import type {
-  FetchInputProofResult,
-  FetchPublicDecryptResult,
-  FetchUserDecryptResult,
-} from './relayer.js';
+import type { FetchInputProofResult, FetchPublicDecryptResult, FetchUserDecryptResult } from './relayer.js';
 import type { HandleBytes32Hex } from './encryptedTypes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -122,11 +118,7 @@ export type RelayerAsyncRequestState = {
   timeout: boolean;
 };
 
-export type RelayerTerminateReason =
-  | 'succeeded'
-  | 'failed'
-  | 'timeout'
-  | 'abort';
+export type RelayerTerminateReason = 'succeeded' | 'failed' | 'timeout' | 'abort';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Relayer Status Codes
@@ -154,9 +146,7 @@ export type RelayerGetResponseStatus =
 ////////////////////////////////////////////////////////////////////////////////
 
 export interface RelayerGetResponse200Map {
-  INPUT_PROOF:
-    | RelayerResult200InputProofAccepted
-    | RelayerResult200InputProofRejected;
+  INPUT_PROOF: RelayerResult200InputProofAccepted | RelayerResult200InputProofRejected;
   PUBLIC_DECRYPT: RelayerResult200PublicDecrypt;
   USER_DECRYPT: RelayerResult200UserDecrypt;
 }
@@ -229,8 +219,7 @@ export type RelayerInputProofSucceeded = RelayerGetResponse200<'INPUT_PROOF'>;
  * }
  * ```
  */
-export type RelayerPublicDecryptSucceeded =
-  RelayerGetResponse200<'PUBLIC_DECRYPT'>;
+export type RelayerPublicDecryptSucceeded = RelayerGetResponse200<'PUBLIC_DECRYPT'>;
 
 /**
  * Relayer 200 response for user decrypt requests:
@@ -323,9 +312,7 @@ export type RelayerApiError =
 /**
  * Status: 400
  */
-export type RelayerApiError400 =
-  | RelayerApiError400NoDetails
-  | RelayerApiError400WithDetails;
+export type RelayerApiError400 = RelayerApiError400NoDetails | RelayerApiError400WithDetails;
 
 /**
  * Status: 400 (no details)
@@ -385,11 +372,7 @@ export type RelayerApiError500 = {
  * Status: 503
  */
 export type RelayerApiError503 = {
-  label:
-    | 'protocol_paused'
-    | 'gateway_not_reachable'
-    | 'readiness_check_timed_out'
-    | 'response_timed_out';
+  label: 'protocol_paused' | 'gateway_not_reachable' | 'readiness_check_timed_out' | 'response_timed_out';
   message: string;
 };
 

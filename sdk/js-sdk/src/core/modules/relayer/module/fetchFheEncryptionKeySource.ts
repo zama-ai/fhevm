@@ -1,7 +1,3 @@
-////////////////////////////////////////////////////////////////////////////////
-// fetchKeyUrl
-////////////////////////////////////////////////////////////////////////////////
-
 import type {
   FetchFheEncryptionKeySourceParameters,
   FetchFheEncryptionKeySourceReturnType,
@@ -10,17 +6,10 @@ import type {
 import type { FetchKeyUrlResult } from '../../../types/relayer-p.js';
 import { setAuth } from '../../../base/auth.js';
 import { RelayerFetchError } from '../../../errors/RelayerFetchError.js';
-import {
-  assertRecordArrayProperty,
-  assertRecordNonNullableProperty,
-} from '../../../base/record.js';
+import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../base/record.js';
 import { fetchWithRetry } from '../../../base/fetch.js';
 import { sdkName, version } from '../../../_version.js';
-import {
-  assertRecordStringArrayProperty,
-  assertRecordStringProperty,
-  removeSuffix,
-} from '../../../base/string.js';
+import { assertRecordStringArrayProperty, assertRecordStringProperty, removeSuffix } from '../../../base/string.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // fetchFheEncryptionKeySource
@@ -106,11 +95,7 @@ export async function fetchFheEncryptionKeySource(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function _throwFetchError(params: {
-  url: string;
-  message: string;
-  cause?: unknown;
-}): never {
+function _throwFetchError(params: { url: string; message: string; cause?: unknown }): never {
   throw new RelayerFetchError({
     url: params.url,
     fetchMethod: 'GET',
@@ -126,23 +111,14 @@ function _throwFetchError(params: {
 // Asserts
 ////////////////////////////////////////////////////////////////////////////////
 
-function _assertIsRelayerFetchResponseJson(
-  url: string,
-  json: unknown,
-): asserts json is { response: unknown } {
+function _assertIsRelayerFetchResponseJson(url: string, json: unknown): asserts json is { response: unknown } {
   if (json === undefined || json === null || typeof json !== 'object') {
     _throwFetchError({
       url,
       message: 'Unexpected response JSON.',
     });
   }
-  if (
-    !(
-      'response' in json &&
-      json.response !== null &&
-      json.response !== undefined
-    )
-  ) {
+  if (!('response' in json && json.response !== null && json.response !== undefined)) {
     _throwFetchError({
       url,
       message: "Unexpected response JSON format: missing 'response' property.",
@@ -150,10 +126,7 @@ function _assertIsRelayerFetchResponseJson(
   }
 }
 
-function _assertIsFetchKeyUrlResult(
-  value: unknown,
-  valueName: string,
-): asserts value is FetchKeyUrlResult {
+function _assertIsFetchKeyUrlResult(value: unknown, valueName: string): asserts value is FetchKeyUrlResult {
   // value.fheKeyInfo (array)
   assertRecordArrayProperty(value, 'fheKeyInfo', valueName, {});
   if (value.fheKeyInfo.length !== 1) {
@@ -164,12 +137,7 @@ function _assertIsFetchKeyUrlResult(
   const fheKeyInfoName = `${valueName}.fheKeyInfo[0]`;
 
   // value.fheKeyInfo[0].fhePublicKey (record)
-  assertRecordNonNullableProperty(
-    fheKeyInfo,
-    'fhePublicKey',
-    fheKeyInfoName,
-    {},
-  );
+  assertRecordNonNullableProperty(fheKeyInfo, 'fhePublicKey', fheKeyInfoName, {});
 
   const fhePublicKey = fheKeyInfo.fhePublicKey;
   const fhePublicKeyName = `${fheKeyInfoName}.fhePublicKey`;
@@ -187,19 +155,9 @@ function _assertIsFetchKeyUrlResult(
   // value.crs[2048] (record)
   assertRecordNonNullableProperty(value.crs, '2048', `${valueName}.crs`, {});
   // value.crs[2048].dataId (record)
-  assertRecordStringProperty(
-    value.crs[2048],
-    'dataId',
-    `${valueName}.crs[2048]`,
-    {},
-  );
+  assertRecordStringProperty(value.crs[2048], 'dataId', `${valueName}.crs[2048]`, {});
   // value.crs[2048].urls (string[])
-  assertRecordStringArrayProperty(
-    value.crs[2048],
-    'urls',
-    `${valueName}.crs[2048]`,
-    {},
-  );
+  assertRecordStringArrayProperty(value.crs[2048], 'urls', `${valueName}.crs[2048]`, {});
   if (value.crs[2048].urls.length !== 1) {
     throw new Error(`Unexpected '${valueName}.crs[2048].urls' array length.`);
   }

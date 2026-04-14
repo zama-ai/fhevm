@@ -1,7 +1,4 @@
-import type {
-  Fhevm,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes } from '../../types/fheEncryptionKey.js';

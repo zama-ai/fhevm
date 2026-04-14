@@ -1,20 +1,16 @@
-import { createCoprocessorEIP712Domain as createCoprocessorEIP712Domain_ } from '../../coprocessor/createCoprocessorEIP712Domain.js';
-import type { CoprocessorEIP712Domain } from '../../types/coprocessor.js';
-import type {
-  Fhevm,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { CoprocessorEip712Domain } from '../../types/coprocessor.js';
+import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
+import { createCoprocessorEip712Domain as createCoprocessorEip712Domain_ } from '../../coprocessor/createCoprocessorEip712Domain.js';
 
-export type CreateCoprocessorEIP712DomainReturnType = CoprocessorEIP712Domain;
+export type CreateCoprocessorEip712DomainReturnType = CoprocessorEip712Domain;
 
-export function createCoprocessorEIP712Domain(
+export function createCoprocessorEip712Domain(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
-): CreateCoprocessorEIP712DomainReturnType {
-  return createCoprocessorEIP712Domain_({
+): CreateCoprocessorEip712DomainReturnType {
+  return createCoprocessorEip712Domain_({
     gatewayChainId: fhevm.chain.fhevm.gateway.id,
-    verifyingContractAddressInputVerification:
-      fhevm.chain.fhevm.gateway.contracts.inputVerification.address,
+    verifyingContractAddressInputVerification: fhevm.chain.fhevm.gateway.contracts.inputVerification.address,
   });
 }

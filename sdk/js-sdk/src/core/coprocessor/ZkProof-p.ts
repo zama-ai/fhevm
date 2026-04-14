@@ -10,36 +10,22 @@ import type {
 } from '../types/primitives.js';
 import type { ZkProofLike, ZkProof } from '../types/zkProof.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
+import type { ParseTFHEProvenCompactCiphertextListModuleFunction } from '../modules/encrypt/types.js';
+import type { ExternalEncryptedValue } from '../types/encryptedTypes.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
   assertIsChecksummedAddress,
   checksummedAddressToBytes20,
 } from '../base/address.js';
-import {
-  bytes32ToHex,
-  bytesToHexLarge,
-  concatBytes,
-  hexToBytes32,
-  toBytes,
-} from '../base/bytes.js';
-import {
-  assertIsUint64,
-  assertIsUint8,
-  asUint64BigInt,
-  uint64ToBytes32,
-} from '../base/uint.js';
+import { bytes32ToHex, bytesToHexLarge, concatBytes, hexToBytes32, toBytes } from '../base/bytes.js';
+import { assertIsUint64, assertIsUint8, asUint64BigInt, uint64ToBytes32 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
-import {
-  assertIsEncryptionBitsArray,
-  fheTypeIdFromEncryptionBits,
-} from '../handle/FheType.js';
+import { assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
 import { buildHandle } from '../handle/FhevmHandle.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
-import type { ParseTFHEProvenCompactCiphertextListModuleFunction } from '../modules/encrypt/types.js';
-import type { ExternalEncryptedValue } from '../types/encryptedTypes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -83,9 +69,7 @@ class ZkProofImpl implements ZkProof {
     this.#userAddress = params.userAddress;
     this.#ciphertextWithZkProof = params.ciphertextWithZkProof;
     this.#encryptionBits = Object.freeze([...params.encryptionBits]);
-    this.#fheTypeIds = Object.freeze(
-      this.#encryptionBits.map(fheTypeIdFromEncryptionBits),
-    );
+    this.#fheTypeIds = Object.freeze(this.#encryptionBits.map(fheTypeIdFromEncryptionBits));
     Object.freeze(this);
   }
 
@@ -175,10 +159,7 @@ class ZkProofImpl implements ZkProof {
     encryptionBits: readonly EncryptionBits[];
   } {
     return {
-      chainId:
-        this.#chainId <= Number.MAX_SAFE_INTEGER
-          ? Number(this.#chainId)
-          : this.#chainId,
+      chainId: this.#chainId <= Number.MAX_SAFE_INTEGER ? Number(this.#chainId) : this.#chainId,
       aclContractAddress: this.#aclContractAddress,
       contractAddress: this.#contractAddress,
       userAddress: this.#userAddress,
@@ -254,15 +235,9 @@ export async function toZkProof(
   assertIsAddress(zkProofLike.contractAddress, {});
   assertIsAddress(zkProofLike.userAddress, {});
 
-  const aclContractAddress: ChecksummedAddress = addressToChecksummedAddress(
-    zkProofLike.aclContractAddress,
-  );
-  const contractAddress: ChecksummedAddress = addressToChecksummedAddress(
-    zkProofLike.contractAddress,
-  );
-  const userAddress: ChecksummedAddress = addressToChecksummedAddress(
-    zkProofLike.userAddress,
-  );
+  const aclContractAddress: ChecksummedAddress = addressToChecksummedAddress(zkProofLike.aclContractAddress);
+  const contractAddress: ChecksummedAddress = addressToChecksummedAddress(zkProofLike.contractAddress);
+  const userAddress: ChecksummedAddress = addressToChecksummedAddress(zkProofLike.userAddress);
 
   // Validate and normalize ciphertextWithZkProof
   const ciphertextWithZkProof = toBytes(zkProofLike.ciphertextWithZkProof, {
@@ -346,10 +321,7 @@ export async function zkProofToExternalEncryptedValues(
  * @param expected - The expected encryption bits array.
  * @throws ZkProofError if there's a count or type mismatch.
  */
-function _assertEncryptionBitsMatch(
-  actual: readonly EncryptionBits[],
-  expected: readonly EncryptionBits[],
-): void {
+function _assertEncryptionBitsMatch(actual: readonly EncryptionBits[], expected: readonly EncryptionBits[]): void {
   if (actual.length !== expected.length) {
     throw new ZkProofError({
       message: `Encryption count mismatch, expected ${expected.length}, got ${actual.length}.`,
@@ -379,9 +351,7 @@ function _zkProofToExternalEncryptedValues(
   },
 ): ExternalEncryptedValue[] {
   const encoder = new TextEncoder();
-  const domainSepBytes = encoder.encode(
-    FHEVM_HANDLE_RAW_CT_HASH_DOMAIN_SEPARATOR,
-  );
+  const domainSepBytes = encoder.encode(FHEVM_HANDLE_RAW_CT_HASH_DOMAIN_SEPARATOR);
 
   const blobHashBytes32Hex: Bytes32Hex = bytes32ToHex(
     keccak_256(concatBytes(domainSepBytes, args.ciphertextWithZkProof)),
@@ -389,12 +359,7 @@ function _zkProofToExternalEncryptedValues(
 
   const handles: ExternalEncryptedValue[] = [];
   for (const [i, fheTypeId] of args.fheTypeIds.entries()) {
-    const hash21 = _computeInputHash21(
-      hexToBytes32(blobHashBytes32Hex),
-      args.aclContractAddress,
-      args.chainId,
-      i,
-    );
+    const hash21 = _computeInputHash21(hexToBytes32(blobHashBytes32Hex), args.aclContractAddress, args.chainId, i);
 
     handles.push(
       buildHandle({
@@ -493,13 +458,7 @@ function _computeInputHash21(
 
   const hashBytes32Hex = bytes32ToHex(
     keccak_256(
-      concatBytes(
-        domainSepBytes,
-        blobHashBytes32,
-        encryptionIndexByte1,
-        aclContractAddressBytes20,
-        chainIdBytes32,
-      ),
+      concatBytes(domainSepBytes, blobHashBytes32, encryptionIndexByte1, aclContractAddressBytes20, chainIdBytes32),
     ),
   );
 

@@ -1,20 +1,11 @@
-import type {
-  BytesHex,
-  ChecksummedAddress,
-  Uint256BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
+import type { BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import type { kmsBrand } from '../types/kms.js';
-import { addressToChecksummedAddress } from '../base/address.js';
-import {
-  DuplicateSignerError,
-  ThresholdSignerError,
-  UnknownSignerError,
-} from '../errors/SignersError.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { addressToChecksummedAddress } from '../base/address.js';
+import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 import { assertIsKmsExtraData, toKmsExtraData } from '../kms/kmsExtraData.js';
 import { assertIsNonEmptyString, ensure0x } from '../base/string.js';
@@ -56,9 +47,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
     this.#kmsContextId = parameters.kmsContextId;
     this.#kmsSigners = [...parameters.kmsSigners];
     this.#kmsSignerThreshold = parameters.kmsSignerThreshold;
-    this.#kmsSignersSet = new Set(
-      this.#kmsSigners.map((addr) => addr.toLowerCase()),
-    );
+    this.#kmsSignersSet = new Set(this.#kmsSigners.map((addr) => addr.toLowerCase()));
 
     Object.freeze(this.#kmsSigners);
     Object.freeze(this);
@@ -130,9 +119,7 @@ export function createKmsSignersContext(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function kmsSignersContextToExtraData(
-  kmsSignersContext: KmsSignersContext,
-): BytesHex {
+export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): BytesHex {
   assertIsKmsSignersContext(kmsSignersContext, {});
   if (kmsSignersContext.id === 0n) {
     return '0x00' as BytesHex;
@@ -166,9 +153,7 @@ export function assertExtraDataMatchesKmsSingersContext(
   const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   if (sanitizedExtraData !== expectedExtraData) {
-    throw new Error(
-      `extraData "${extraData}" does not match KmsSignersContext extraData "${expectedExtraData}".`,
-    );
+    throw new Error(`extraData "${extraData}" does not match KmsSignersContext extraData "${expectedExtraData}".`);
   }
 }
 
@@ -190,10 +175,7 @@ export function extraDataMatchesKmsSingersContext(parameters: {
  * Verifies that the given `KmsSignersContext` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertKmsSignersContextOwnedBy(
-  data: KmsSignersContext,
-  owner: FhevmRuntime,
-): void {
+export function assertKmsSignersContextOwnedBy(data: KmsSignersContext, owner: FhevmRuntime): void {
   KmsSignersContextImpl[VERIFY_FUNC](data, owner);
 }
 
@@ -233,9 +215,7 @@ export function assertKmsSignerThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isKmsSignersContext(
-  value: unknown,
-): value is KmsSignersContext {
+export function isKmsSignersContext(value: unknown): value is KmsSignersContext {
   return value instanceof KmsSignersContextImpl;
 }
 

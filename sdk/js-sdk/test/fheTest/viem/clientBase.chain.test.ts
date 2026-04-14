@@ -40,29 +40,17 @@ describe('Base client — chain resolution', () => {
     console.log(safeJSONstringify(cfg, 2));
 
     expect(cfg.id).toBe(BigInt(chain.id));
-    expect(cfg.acl.toLowerCase()).toBe(
-      chain.fhevm.contracts.acl.address.toLowerCase(),
-    );
+    expect(cfg.acl.toLowerCase()).toBe(chain.fhevm.contracts.acl.address.toLowerCase());
     expect(cfg.kmsVerifier).toBeDefined();
-    expect(cfg.kmsVerifier.address.toLowerCase()).toBe(
-      chain.fhevm.contracts.kmsVerifier.address.toLowerCase(),
-    );
+    expect(cfg.kmsVerifier.address.toLowerCase()).toBe(chain.fhevm.contracts.kmsVerifier.address.toLowerCase());
     expect(cfg.inputVerifier).toBeDefined();
-    expect(cfg.inputVerifier.address.toLowerCase()).toBe(
-      chain.fhevm.contracts.inputVerifier.address.toLowerCase(),
-    );
+    expect(cfg.inputVerifier.address.toLowerCase()).toBe(chain.fhevm.contracts.inputVerifier.address.toLowerCase());
     expect(cfg.fhevmExecutor).toBeDefined();
-    expect(Number(cfg.inputVerifier.gatewayChainId)).toBe(
-      Number(cfg.kmsVerifier.gatewayChainId),
-    );
-    expect(Number(cfg.inputVerifier.gatewayChainId)).toBe(
-      Number(chain.fhevm.gateway.id),
-    );
+    expect(Number(cfg.inputVerifier.gatewayChainId)).toBe(Number(cfg.kmsVerifier.gatewayChainId));
+    expect(Number(cfg.inputVerifier.gatewayChainId)).toBe(Number(chain.fhevm.gateway.id));
     expect(cfg.inputVerifier.verifyingContractAddressInputVerification).toBe(
       chain.fhevm.gateway.contracts.inputVerification.address,
     );
-    expect(cfg.kmsVerifier.verifyingContractAddressDecryption).toBe(
-      chain.fhevm.gateway.contracts.decryption.address,
-    );
+    expect(cfg.kmsVerifier.verifyingContractAddressDecryption).toBe(chain.fhevm.gateway.contracts.decryption.address);
   });
 });

@@ -23,11 +23,7 @@ import type {
   UintTypeName,
   ValueTypeName,
 } from '../types/primitives.js';
-import type {
-  RecordWithPropertyType,
-  RecordUintPropertyType,
-  RecordUint256PropertyType,
-} from '../types/record-p.js';
+import type { RecordWithPropertyType, RecordUintPropertyType, RecordUint256PropertyType } from '../types/record-p.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import { isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
@@ -56,14 +52,11 @@ export const MAX_UINT128 = 0xffffffffffffffffffffffffffffffffn;
 export const MAX_UINT160 = 0xffffffffffffffffffffffffffffffffffffffffn;
 
 // 2^256 - 1 = 115792089237316195423570985008687907853269984665640564039457584007913129639935
-export const MAX_UINT256 =
-  0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
+export const MAX_UINT256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const MAX_UINT_FOR_TYPE: Readonly<
-  Record<ValueTypeName | 'uint160', number | bigint>
-> = {
+export const MAX_UINT_FOR_TYPE: Readonly<Record<ValueTypeName | 'uint160', number | bigint>> = {
   bool: 1,
   uint8: MAX_UINT8,
   uint16: MAX_UINT16,
@@ -89,16 +82,12 @@ const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
  * @returns The value as a `number`
  * @throws If the value exceeds the safe integer range
  */
-export function bigIntToNumber(
-  value: number | bigint,
-  options?: { readonly subject?: string },
-): number {
+export function bigIntToNumber(value: number | bigint, options?: { readonly subject?: string }): number {
   if (typeof value === 'number') {
     return value;
   }
   if (value > MAX_SAFE_INTEGER_BIGINT) {
-    const subject =
-      options?.subject !== undefined ? ` (${options.subject})` : '';
+    const subject = options?.subject !== undefined ? ` (${options.subject})` : '';
     throw new Error(`Value${subject} ${value} exceeds Number.MAX_SAFE_INTEGER`);
   }
   return Number(value);
@@ -106,9 +95,7 @@ export function bigIntToNumber(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const MAX_UINT_FOR_BYTE_LENGTH: Readonly<
-  Record<1 | 2 | 4 | 8 | 16 | 20 | 32, Uint>
-> = {
+const MAX_UINT_FOR_BYTE_LENGTH: Readonly<Record<1 | 2 | 4 | 8 | 16 | 20 | 32, Uint>> = {
   1: MAX_UINT8 as Uint,
   2: MAX_UINT16 as Uint,
   4: MAX_UINT32 as Uint,
@@ -121,47 +108,20 @@ Object.freeze(MAX_UINT_FOR_BYTE_LENGTH);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isUintNumber(
-  value: unknown,
-  max?: number | bigint,
-): value is UintNumber {
-  return (
-    typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value >= 0 &&
-    (max === undefined || value <= max)
-  );
+export function isUintNumber(value: unknown, max?: number | bigint): value is UintNumber {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && (max === undefined || value <= max);
 }
 
-export function isUintBigInt(
-  value: unknown,
-  max?: bigint | number,
-): value is UintBigInt {
-  return (
-    typeof value === 'bigint' &&
-    value >= 0 &&
-    (max === undefined || value <= max)
-  );
+export function isUintBigInt(value: unknown, max?: bigint | number): value is UintBigInt {
+  return typeof value === 'bigint' && value >= 0 && (max === undefined || value <= max);
 }
 
-export function isUintForType(
-  value: unknown,
-  typeName?: UintTypeName,
-): value is Uint {
-  return isUint(
-    value,
-    typeName !== undefined ? MAX_UINT_FOR_TYPE[typeName] : undefined,
-  );
+export function isUintForType(value: unknown, typeName?: UintTypeName): value is Uint {
+  return isUint(value, typeName !== undefined ? MAX_UINT_FOR_TYPE[typeName] : undefined);
 }
 
-export function isUintForByteLength(
-  value: unknown,
-  byteLength?: keyof typeof MAX_UINT_FOR_BYTE_LENGTH,
-): value is Uint {
-  return isUint(
-    value,
-    byteLength !== undefined ? MAX_UINT_FOR_BYTE_LENGTH[byteLength] : undefined,
-  );
+export function isUintForByteLength(value: unknown, byteLength?: keyof typeof MAX_UINT_FOR_BYTE_LENGTH): value is Uint {
+  return isUint(value, byteLength !== undefined ? MAX_UINT_FOR_BYTE_LENGTH[byteLength] : undefined);
 }
 
 export function isUint(value: unknown, max?: number | bigint): value is Uint {
@@ -470,10 +430,7 @@ export function assertIsUint256(
 // normalizeUintForType
 ////////////////////////////////////////////////////////////////////////////////
 
-export function normalizeUintForType<T extends UintTypeName>(
-  value: Uint,
-  typeName: T,
-): UintNormalizedMap[T] {
+export function normalizeUintForType<T extends UintTypeName>(value: Uint, typeName: T): UintNormalizedMap[T] {
   switch (typeName) {
     case 'uint8':
     case 'uint16':
@@ -513,92 +470,59 @@ export function asUint(
   return value;
 }
 
-export function asUint8(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint8 {
+export function asUint8(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint8 {
   assertIsUint8(value, options ?? {});
   return value;
 }
 
-export function asUint16(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint16 {
+export function asUint16(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint16 {
   assertIsUint16(value, options ?? {});
   return value;
 }
 
-export function asUint32(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint32 {
+export function asUint32(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint32 {
   assertIsUint32(value, options ?? {});
   return value;
 }
 
-export function asUint64(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint64 {
+export function asUint64(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint64 {
   assertIsUint64(value, options ?? {});
   return value;
 }
 
-export function asUint128(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint128 {
+export function asUint128(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint128 {
   assertIsUint128(value, options ?? {});
   return value;
 }
 
-export function asUint256(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint256 {
+export function asUint256(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint256 {
   assertIsUint256(value, options ?? {});
   return value;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function asUint8Number(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint8Number {
+export function asUint8Number(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint8Number {
   assertIsUintNumber(value, { max: MAX_UINT8, ...options });
   return value as Uint8Number;
 }
 
-export function asUint32Number(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint32Number {
+export function asUint32Number(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint32Number {
   assertIsUintNumber(value, { max: MAX_UINT32, ...options });
   return value as Uint32Number;
 }
 
-export function asUint32BigInt(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint32BigInt {
+export function asUint32BigInt(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint32BigInt {
   assertIsUintBigInt(value, { max: MAX_UINT32, ...options });
   return value as Uint32BigInt;
 }
 
-export function asUint64BigInt(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint64BigInt {
+export function asUint64BigInt(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint64BigInt {
   assertIsUintBigInt(value, { max: MAX_UINT64, ...options });
   return value as Uint64BigInt;
 }
 
-export function asUint256BigInt(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Uint256BigInt {
+export function asUint256BigInt(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Uint256BigInt {
   assertIsUintBigInt(value, { max: MAX_UINT256, ...options });
   return value as Uint256BigInt;
 }
@@ -673,10 +597,7 @@ export function assertRecordUintNumberProperty<K extends string>(
   recordName: string,
   options: ErrorMetadataParams,
 ): asserts record is RecordWithPropertyType<K, number> {
-  if (
-    typeofProperty(record, property) !== 'number' ||
-    !isUintNumber((record as Record<string, unknown>)[property])
-  ) {
+  if (typeofProperty(record, property) !== 'number' || !isUintNumber((record as Record<string, unknown>)[property])) {
     throw new InvalidPropertyError(
       {
         subject: recordName,
@@ -695,10 +616,7 @@ export function assertRecordUintBigIntProperty<K extends string>(
   recordName: string,
   options: ErrorMetadataParams,
 ): asserts record is RecordWithPropertyType<K, number> {
-  if (
-    typeofProperty(record, property) !== 'bigint' ||
-    !isUintBigInt((record as Record<string, unknown>)[property])
-  ) {
+  if (typeofProperty(record, property) !== 'bigint' || !isUintBigInt((record as Record<string, unknown>)[property])) {
     throw new InvalidPropertyError(
       {
         subject: recordName,

@@ -1,3 +1,71 @@
+import type { Auth } from '../../../types/auth.js';
+import type {
+  RelayerApiError,
+  RelayerAsyncRequestState,
+  RelayerFetchMethod,
+  RelayerGetResponseStatus,
+  RelayerPostResponseStatus,
+  RelayerResult200InputProofAccepted,
+  RelayerResult200InputProofRejected,
+  RelayerResult200PublicDecrypt,
+  RelayerResult200UserDecrypt,
+  RelayerTerminateReason,
+} from '../../../types/relayer-p.js';
+import type {
+  FetchDelegatedUserDecryptResult,
+  FetchInputProofResult,
+  FetchPublicDecryptResult,
+  FetchUserDecryptResult,
+  RelayerDelegatedUserDecryptOptions,
+  RelayerDelegatedUserDecryptProgressArgs,
+  RelayerFailureStatus,
+  RelayerInputProofOptions,
+  RelayerInputProofProgressArgs,
+  RelayerPostOperation,
+  RelayerProgressAbort,
+  RelayerProgressFailed,
+  RelayerProgressQueued,
+  RelayerProgressSucceeded,
+  RelayerProgressThrottled,
+  RelayerProgressTimeout,
+  RelayerPublicDecryptOptions,
+  RelayerPublicDecryptProgressArgs,
+  RelayerUserDecryptOptions,
+  RelayerUserDecryptProgressArgs,
+} from '../../../types/relayer.js';
+import { sdkName, version } from '../../../_version.js';
+import { setAuth } from '../../../base/auth.js';
+import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
+import { assertNever } from '../../../base/errors/utils.js';
+import { formatFetchErrorMetaMessages } from '../../../base/fetch.js';
+import { isNonEmptyString, safeJSONstringify } from '../../../base/string.js';
+import { isUint } from '../../../base/uint.js';
+import { RelayerAbortError } from '../../../errors/RelayerAbortError.js';
+import { RelayerFetchError } from '../../../errors/RelayerFetchError.js';
+import { RelayerMaxRetryError } from '../../../errors/RelayerMaxRetryError.js';
+import { RelayerRequestInternalError } from '../../../errors/RelayerRequestInternalError.js';
+import { RelayerResponseApiError } from '../../../errors/RelayerResponseApiError.js';
+import { RelayerResponseInputProofRejectedError } from '../../../errors/RelayerResponseInputProofRejectedError.js';
+import { RelayerResponseInvalidBodyError } from '../../../errors/RelayerResponseInvalidBodyError.js';
+import { RelayerResponseStatusError } from '../../../errors/RelayerResponseStatusError.js';
+import { RelayerStateError } from '../../../errors/RelayerStateError.js';
+import { RelayerTimeoutError } from '../../../errors/RelayerTimeoutError.js';
+import { bytes32HexToInputHandle } from '../../../handle/FhevmHandle.js';
+import { assertIsRelayerInputProofSucceeded } from './guards/RelayerInputProofSucceeded.js';
+import { assertIsRelayerPublicDecryptSucceeded } from './guards/RelayerPublicDecryptSucceeded.js';
+import {
+  assertIsRelayerResponseFailedWithError400,
+  assertIsRelayerResponseFailedWithError404,
+  assertIsRelayerResponseFailedWithError429,
+  assertIsRelayerResponseFailedWithError500,
+  assertIsRelayerResponseFailedWithError503,
+} from './guards/RelayerResponseFailed.js';
+import {
+  assertIsRelayerGetResponse202Queued,
+  assertIsRelayerPostResponse202Queued,
+} from './guards/RelayerResponseQueued.js';
+import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
+
 /*
     Actions:
     ========
@@ -35,74 +103,6 @@
     CANCELED    ---SignalAbort---> Error! or Nothing
 */
 
-import { sdkName, version } from '../../../_version.js';
-import { setAuth } from '../../../base/auth.js';
-import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
-import { assertNever } from '../../../base/errors/utils.js';
-import { formatFetchErrorMetaMessages } from '../../../base/fetch.js';
-import { isNonEmptyString, safeJSONstringify } from '../../../base/string.js';
-import { isUint } from '../../../base/uint.js';
-import { RelayerAbortError } from '../../../errors/RelayerAbortError.js';
-import { RelayerFetchError } from '../../../errors/RelayerFetchError.js';
-import { RelayerMaxRetryError } from '../../../errors/RelayerMaxRetryError.js';
-import { RelayerRequestInternalError } from '../../../errors/RelayerRequestInternalError.js';
-import { RelayerResponseApiError } from '../../../errors/RelayerResponseApiError.js';
-import { RelayerResponseInputProofRejectedError } from '../../../errors/RelayerResponseInputProofRejectedError.js';
-import { RelayerResponseInvalidBodyError } from '../../../errors/RelayerResponseInvalidBodyError.js';
-import { RelayerResponseStatusError } from '../../../errors/RelayerResponseStatusError.js';
-import { RelayerStateError } from '../../../errors/RelayerStateError.js';
-import { RelayerTimeoutError } from '../../../errors/RelayerTimeoutError.js';
-import { bytes32HexToInputHandle } from '../../../handle/FhevmHandle.js';
-import type { Auth } from '../../../types/auth.js';
-import type {
-  RelayerApiError,
-  RelayerAsyncRequestState,
-  RelayerFetchMethod,
-  RelayerGetResponseStatus,
-  RelayerPostResponseStatus,
-  RelayerResult200InputProofAccepted,
-  RelayerResult200InputProofRejected,
-  RelayerResult200PublicDecrypt,
-  RelayerResult200UserDecrypt,
-  RelayerTerminateReason,
-} from '../../../types/relayer-p.js';
-import type {
-  FetchDelegatedUserDecryptResult,
-  FetchInputProofResult,
-  FetchPublicDecryptResult,
-  FetchUserDecryptResult,
-  RelayerDelegatedUserDecryptOptions,
-  RelayerDelegatedUserDecryptProgressArgs,
-  RelayerFailureStatus,
-  RelayerInputProofOptions,
-  RelayerInputProofProgressArgs,
-  RelayerPostOperation,
-  RelayerProgressAbort,
-  RelayerProgressFailed,
-  RelayerProgressQueued,
-  RelayerProgressSucceeded,
-  RelayerProgressThrottled,
-  RelayerProgressTimeout,
-  RelayerPublicDecryptOptions,
-  RelayerPublicDecryptProgressArgs,
-  RelayerUserDecryptOptions,
-  RelayerUserDecryptProgressArgs,
-} from '../../../types/relayer.js';
-import { assertIsRelayerInputProofSucceeded } from './guards/RelayerInputProofSucceeded.js';
-import { assertIsRelayerPublicDecryptSucceeded } from './guards/RelayerPublicDecryptSucceeded.js';
-import {
-  assertIsRelayerResponseFailedWithError400,
-  assertIsRelayerResponseFailedWithError404,
-  assertIsRelayerResponseFailedWithError429,
-  assertIsRelayerResponseFailedWithError500,
-  assertIsRelayerResponseFailedWithError503,
-} from './guards/RelayerResponseFailed.js';
-import {
-  assertIsRelayerGetResponse202Queued,
-  assertIsRelayerPostResponse202Queued,
-} from './guards/RelayerResponseQueued.js';
-import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
-
 type RelayerAsyncRequestParams = {
   relayerOperation: RelayerPostOperation;
   url: string;
@@ -139,9 +139,7 @@ export class RelayerAsyncRequest {
   private readonly _url: string;
   private readonly _payload: Record<string, unknown>;
   private readonly _fhevmAuth: Auth | undefined;
-  private _retryAfterTimeoutPromiseFuncReject?:
-    | ((reason?: unknown) => void)
-    | undefined;
+  private _retryAfterTimeoutPromiseFuncReject?: ((reason?: unknown) => void) | undefined;
   private readonly _onProgress?:
     | ((
         args:
@@ -182,18 +180,15 @@ export class RelayerAsyncRequest {
           property: 'relayerOperation',
           expectedType: 'string',
           value: params.relayerOperation,
-          expectedValue:
-            'INPUT_PROOF | PUBLIC_DECRYPT | USER_DECRYPT | DELEGATED_USER_DECRYPT',
+          expectedValue: 'INPUT_PROOF | PUBLIC_DECRYPT | USER_DECRYPT | DELEGATED_USER_DECRYPT',
         },
         {},
       );
     }
 
-    this._fetchRetries =
-      params.options?.fetchRetries ?? RelayerAsyncRequest.FETCH_RETRY;
+    this._fetchRetries = params.options?.fetchRetries ?? RelayerAsyncRequest.FETCH_RETRY;
     this._fetchRetryDelayInMilliseconds =
-      params.options?.fetchRetryDelayInMilliseconds ??
-      RelayerAsyncRequest.FETCH_RETRY_AFTER_MS;
+      params.options?.fetchRetryDelayInMilliseconds ?? RelayerAsyncRequest.FETCH_RETRY_AFTER_MS;
 
     this._step = 0;
     this._totalSteps = 1;
@@ -201,16 +196,10 @@ export class RelayerAsyncRequest {
     this._relayerOperation = params.relayerOperation;
     this._internalAbortController = new AbortController();
     this._internalAbortSignal = this._internalAbortController.signal;
-    this._internalAbortSignal.addEventListener(
-      'abort',
-      this._handleInternalSignalAbort,
-    );
+    this._internalAbortSignal.addEventListener('abort', this._handleInternalSignalAbort);
     this._externalAbortSignal = params.options?.signal;
     if (this._externalAbortSignal) {
-      this._externalAbortSignal.addEventListener(
-        'abort',
-        this._handleExternalSignalAbort,
-      );
+      this._externalAbortSignal.addEventListener('abort', this._handleExternalSignalAbort);
     }
 
     this._url = params.url;
@@ -233,9 +222,7 @@ export class RelayerAsyncRequest {
     this._requestGlobalTimeoutID = undefined;
     this._terminateReason = undefined;
     this._throwErrorIfNoRetryAfter = params.throwErrorIfNoRetryAfter ?? false;
-    this._requestMaxDurationInMs =
-      params.options?.timeout ??
-      RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
+    this._requestMaxDurationInMs = params.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
 
     this._trace(
       'constructor()',
@@ -265,9 +252,7 @@ export class RelayerAsyncRequest {
    */
   public async run(params?: {
     existingJobId: string;
-  }): Promise<
-    FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult
-  > {
+  }): Promise<FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult> {
     this._trace('run', `existingJobId=${params?.existingJobId}`);
 
     if (this._state.terminated) {
@@ -365,12 +350,7 @@ export class RelayerAsyncRequest {
   //////////////////////////////////////////////////////////////////////////////
 
   private _canContinue(): boolean {
-    return !(
-      this._state.canceled ||
-      this._state.terminated ||
-      this._state.succeeded ||
-      this._state.aborted
-    );
+    return !(this._state.canceled || this._state.terminated || this._state.succeeded || this._state.aborted);
   }
 
   public cancel(): void {
@@ -457,13 +437,8 @@ export class RelayerAsyncRequest {
   // POST : 202 | 400 | 401 | 429 | 500 | 503
   private async _runPostLoop(params?: {
     existingJobId: string;
-  }): Promise<
-    FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult
-  > {
-    this._assert(
-      this._fetchMethod === undefined,
-      'this._fetchMethod === undefined',
-    );
+  }): Promise<FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult> {
+    this._assert(this._fetchMethod === undefined, 'this._fetchMethod === undefined');
     this._fetchMethod = 'POST';
 
     // Until it is implemented. Silence linter.
@@ -499,10 +474,7 @@ export class RelayerAsyncRequest {
       fetchAttempts++;
 
       // Execute the native fetch
-      const response = await this._fetchWithRetry(
-        () => this._fetchPost(),
-        fetchAttempts,
-      );
+      const response = await this._fetchWithRetry(() => this._fetchPost(), fetchAttempts);
 
       // Failure: retry if no response
       if (response === undefined) {
@@ -516,8 +488,7 @@ export class RelayerAsyncRequest {
 
       // At this stage: `terminated` is guaranteed to be `false`.
 
-      const responseStatus: RelayerPostResponseStatus =
-        response.status as RelayerPostResponseStatus;
+      const responseStatus: RelayerPostResponseStatus = response.status as RelayerPostResponseStatus;
 
       switch (responseStatus) {
         // RelayerResponseQueued
@@ -716,15 +687,10 @@ export class RelayerAsyncRequest {
 
   // GET: 200 | 202 | 401 | 404 | 500 | 503
   // GET is not rate-limited, therefore there is not 429 error
-  private async _runGetLoop(): Promise<
-    FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult
-  > {
+  private async _runGetLoop(): Promise<FetchInputProofResult | FetchPublicDecryptResult | FetchUserDecryptResult> {
     this._assert(this._fetchMethod === 'POST', "this._fetchMethod === 'POST'");
     this._assert(this._jobId !== undefined, 'this._jobId !== undefined');
-    this._assert(
-      this._jobIdTimestamp !== undefined,
-      'this._jobIdTimestamp !== undefined',
-    );
+    this._assert(this._jobIdTimestamp !== undefined, 'this._jobIdTimestamp !== undefined');
     this._fetchMethod = 'GET';
 
     let fetchAttempts = 0;
@@ -742,10 +708,7 @@ export class RelayerAsyncRequest {
       fetchAttempts++;
 
       // Execute the native fetch
-      const response = await this._fetchWithRetry(
-        () => this._fetchGet(),
-        fetchAttempts,
-      );
+      const response = await this._fetchWithRetry(() => this._fetchGet(), fetchAttempts);
 
       // Failure: retry if no response
       if (response === undefined) {
@@ -759,8 +722,7 @@ export class RelayerAsyncRequest {
 
       // At this stage: `terminated` is guaranteed to be `false`.
 
-      const responseStatus: RelayerGetResponseStatus =
-        response.status as RelayerGetResponseStatus;
+      const responseStatus: RelayerGetResponseStatus = response.status as RelayerGetResponseStatus;
 
       switch (responseStatus) {
         // RelayerGetResponseSucceeded
@@ -777,9 +739,8 @@ export class RelayerAsyncRequest {
             if (this._relayerOperation === 'INPUT_PROOF') {
               assertIsRelayerInputProofSucceeded(bodyJson, 'body', {});
 
-              const inputProofBodyResult:
-                | RelayerResult200InputProofAccepted
-                | RelayerResult200InputProofRejected = bodyJson.result;
+              const inputProofBodyResult: RelayerResult200InputProofAccepted | RelayerResult200InputProofRejected =
+                bodyJson.result;
 
               // InputProof rejected
               if (!inputProofBodyResult.accepted) {
@@ -797,12 +758,9 @@ export class RelayerAsyncRequest {
               }
 
               // InputProof accepted
-              const inputProofAccepted: RelayerResult200InputProofAccepted =
-                inputProofBodyResult;
+              const inputProofAccepted: RelayerResult200InputProofAccepted = inputProofBodyResult;
 
-              const inputHandles = inputProofAccepted.handles.map(
-                bytes32HexToInputHandle,
-              );
+              const inputHandles = inputProofAccepted.handles.map(bytes32HexToInputHandle);
 
               const returnValue: FetchInputProofResult = {
                 extraData: inputProofAccepted.extraData,
@@ -834,12 +792,10 @@ export class RelayerAsyncRequest {
             else if (this._relayerOperation === 'PUBLIC_DECRYPT') {
               assertIsRelayerPublicDecryptSucceeded(bodyJson, 'body', {});
 
-              const publicDecryptBodyResult: RelayerResult200PublicDecrypt =
-                bodyJson.result;
+              const publicDecryptBodyResult: RelayerResult200PublicDecrypt = bodyJson.result;
 
               // The final return value is exactly the body json result field
-              const returnValue: FetchPublicDecryptResult =
-                publicDecryptBodyResult;
+              const returnValue: FetchPublicDecryptResult = publicDecryptBodyResult;
 
               // Async onProgress callback
               this._postAsyncOnProgressCallback({
@@ -865,12 +821,10 @@ export class RelayerAsyncRequest {
             else if (this._relayerOperation === 'USER_DECRYPT') {
               assertIsRelayerUserDecryptSucceeded(bodyJson, 'body', {});
 
-              const userDecryptBodyResult: RelayerResult200UserDecrypt =
-                bodyJson.result;
+              const userDecryptBodyResult: RelayerResult200UserDecrypt = bodyJson.result;
 
               // The final return value is exactly the body json result.result field (x2 result!)
-              const returnValue: FetchUserDecryptResult =
-                userDecryptBodyResult.result;
+              const returnValue: FetchUserDecryptResult = userDecryptBodyResult.result;
 
               // Async onProgress callback
               this._postAsyncOnProgressCallback({
@@ -898,12 +852,10 @@ export class RelayerAsyncRequest {
               // DELEGATED_USER_DECRYPT and USER_DECRYPT use the same body json
               assertIsRelayerUserDecryptSucceeded(bodyJson, 'body', {});
 
-              const userDecryptBodyResult: RelayerResult200UserDecrypt =
-                bodyJson.result;
+              const userDecryptBodyResult: RelayerResult200UserDecrypt = bodyJson.result;
 
               // The final return value is exactly the body json result.result field (x2 result!)
-              const returnValue: FetchDelegatedUserDecryptResult =
-                userDecryptBodyResult.result;
+              const returnValue: FetchDelegatedUserDecryptResult = userDecryptBodyResult.result;
 
               // Async onProgress callback
               this._postAsyncOnProgressCallback({
@@ -928,10 +880,7 @@ export class RelayerAsyncRequest {
             // Unkown operation, assert failed
             //
             else {
-              assertNever(
-                this._relayerOperation,
-                `Unkown operation: ${this._relayerOperation}`,
-              );
+              assertNever(this._relayerOperation, `Unkown operation: ${this._relayerOperation}`);
             }
           } catch (cause) {
             // Special case for InputProof rejected
@@ -1143,9 +1092,7 @@ export class RelayerAsyncRequest {
       );
       if (isUint(n)) {
         const ms = n * 1000;
-        return ms < RelayerAsyncRequest.MINIMUM_RETRY_AFTER_MS
-          ? RelayerAsyncRequest.MINIMUM_RETRY_AFTER_MS
-          : ms;
+        return ms < RelayerAsyncRequest.MINIMUM_RETRY_AFTER_MS ? RelayerAsyncRequest.MINIMUM_RETRY_AFTER_MS : ms;
       }
     } catch {
       //
@@ -1201,10 +1148,7 @@ export class RelayerAsyncRequest {
    * @throws {Error} AbortError if the fetch was aborted
    * @throws {RelayerFetchError} If max retries exhausted
    */
-  private async _fetchWithRetry(
-    fetchFn: () => Promise<Response>,
-    attempts: number,
-  ): Promise<Response | undefined> {
+  private async _fetchWithRetry(fetchFn: () => Promise<Response>, attempts: number): Promise<Response | undefined> {
     try {
       return await fetchFn();
     } catch (fetchError) {
@@ -1258,9 +1202,7 @@ export class RelayerAsyncRequest {
           'ZAMA-SDK-NAME': sdkName,
         },
         body: JSON.stringify(this._payload),
-        ...(this._internalAbortSignal
-          ? { signal: this._internalAbortSignal }
-          : {}),
+        ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
       } satisfies RequestInit,
       this._fhevmAuth, // -> the API key
     );
@@ -1334,9 +1276,7 @@ export class RelayerAsyncRequest {
         'ZAMA-SDK-VERSION': version,
         'ZAMA-SDK-NAME': sdkName,
       },
-      ...(this._internalAbortSignal
-        ? { signal: this._internalAbortSignal }
-        : {}),
+      ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
     };
 
     this._state.fetching = true;
@@ -1348,10 +1288,7 @@ export class RelayerAsyncRequest {
       this._state.fetching = false;
       // Warning: `terminated` can be `true` here!
       // (ex: if `controller.abort()` has been called from the outside while still executing `fetch`)
-      this._trace(
-        '_fetchGet',
-        `jobId=${this.jobId}, ${formatFetchErrorMetaMessages(cause).join('. ')}`,
-      );
+      this._trace('_fetchGet', `jobId=${this.jobId}, ${formatFetchErrorMetaMessages(cause).join('. ')}`);
 
       // Keep the standard 'AbortError'
       if ((cause as { name: string }).name === 'AbortError') {
@@ -1374,10 +1311,7 @@ export class RelayerAsyncRequest {
     // Debug
     this._assertCanContinueAfterAwait();
 
-    this._trace(
-      '_fetchGet',
-      `jobId=${this.jobId}, return response Ok, status=${response.status}`,
-    );
+    this._trace('_fetchGet', `jobId=${this.jobId}, return response Ok, status=${response.status}`);
     return response;
   }
 
@@ -1405,14 +1339,8 @@ export class RelayerAsyncRequest {
     // 2. externalSignal.abort();
 
     // Debug state-check guards:
-    this._assert(
-      this instanceof RelayerAsyncRequest,
-      `this instanceof RelayerAsyncRequest`,
-    );
-    this._assert(
-      signal === this._externalAbortSignal,
-      'signal === this._externalAbortSignal',
-    );
+    this._assert(this instanceof RelayerAsyncRequest, `this instanceof RelayerAsyncRequest`);
+    this._assert(signal === this._externalAbortSignal, 'signal === this._externalAbortSignal');
     this._assert(!this._state.terminated, `!this._state.terminated`);
     this._assert(!this._state.aborted, '!this._state.aborted');
     this._assert(!this._state.canceled, '!this._state.canceled');
@@ -1425,14 +1353,8 @@ export class RelayerAsyncRequest {
     const signal = ev.currentTarget as AbortSignal;
 
     // Debug state-check guards:
-    this._assert(
-      this instanceof RelayerAsyncRequest,
-      `this instanceof RelayerAsyncRequest`,
-    );
-    this._assert(
-      signal === this._internalAbortSignal,
-      'signal === this._internalAbortSignal',
-    );
+    this._assert(this instanceof RelayerAsyncRequest, `this instanceof RelayerAsyncRequest`);
+    this._assert(signal === this._internalAbortSignal, 'signal === this._internalAbortSignal');
     this._assert(!this._state.terminated, `!this._state.terminated`);
     this._assert(!this._state.aborted, '!this._state.aborted');
 
@@ -1475,26 +1397,11 @@ export class RelayerAsyncRequest {
     // ex: call cancel while fetch is running
 
     if (this._state.terminated) {
-      this._trace(
-        `_terminate`,
-        `reason=${reason}. Already terminated with reason='${this._terminateReason}'. IGNORE`,
-      );
-      this._assert(
-        this._terminateReason !== undefined,
-        'this._terminateReason !== undefined',
-      );
-      this._assert(
-        this._internalAbortSignal === undefined,
-        'this._signal === undefined',
-      );
-      this._assert(
-        this._requestGlobalTimeoutID === undefined,
-        'this._requestGlobalTimeoutID === undefined',
-      );
-      this._assert(
-        this._retryAfterTimeoutID === undefined,
-        'this._retryAfterTimeoutID === undefined',
-      );
+      this._trace(`_terminate`, `reason=${reason}. Already terminated with reason='${this._terminateReason}'. IGNORE`);
+      this._assert(this._terminateReason !== undefined, 'this._terminateReason !== undefined');
+      this._assert(this._internalAbortSignal === undefined, 'this._signal === undefined');
+      this._assert(this._requestGlobalTimeoutID === undefined, 'this._requestGlobalTimeoutID === undefined');
+      this._assert(this._retryAfterTimeoutID === undefined, 'this._retryAfterTimeoutID === undefined');
       this._assert(
         this._retryAfterTimeoutPromiseFuncReject === undefined,
         'this._retryAfterTimeoutPromiseFuncReject === undefined',
@@ -1532,18 +1439,12 @@ export class RelayerAsyncRequest {
   // Retry-After timeout
   //////////////////////////////////////////////////////////////////////////////
 
-  private async _setRetryAfterTimeout(
-    delayMs: number,
-    options?: { skipIncrementRetryCount?: boolean },
-  ): Promise<void> {
+  private async _setRetryAfterTimeout(delayMs: number, options?: { skipIncrementRetryCount?: boolean }): Promise<void> {
     const { skipIncrementRetryCount = false } = options ?? {};
 
     // Debug
     this._assert(!this._state.terminated, '!this._state.terminated');
-    this._assert(
-      this._retryAfterTimeoutID === undefined,
-      'this._retryAfterTimeoutID === undefined',
-    );
+    this._assert(this._retryAfterTimeoutID === undefined, 'this._retryAfterTimeoutID === undefined');
 
     this._trace('_setRetryAfterTimeout', `delayMs=${delayMs}`);
 
@@ -1568,10 +1469,7 @@ export class RelayerAsyncRequest {
     });
 
     // Keep the assertion (defensive)
-    this._assert(
-      (this._retryAfterTimeoutID as unknown) !== undefined,
-      'this._retryAfterTimeoutID !== undefined',
-    );
+    this._assert((this._retryAfterTimeoutID as unknown) !== undefined, 'this._retryAfterTimeoutID !== undefined');
     this._assert(
       this._retryAfterTimeoutPromiseFuncReject !== undefined,
       'this._retryAfterTimeoutPromiseFuncReject !== undefined',
@@ -1615,10 +1513,7 @@ export class RelayerAsyncRequest {
 
   private _setGlobalRequestTimeout(delayMs: number): void {
     // Debug
-    this._assert(
-      this._requestGlobalTimeoutID === undefined,
-      'this._requestGlobalTimeoutID === undefined',
-    );
+    this._assert(this._requestGlobalTimeoutID === undefined, 'this._requestGlobalTimeoutID === undefined');
 
     const callback = (): void => {
       this._requestGlobalTimeoutID = undefined;
@@ -1630,10 +1525,7 @@ export class RelayerAsyncRequest {
 
   private _handleGlobalRequestTimeout(): void {
     // Debug state-check guards:
-    this._assert(
-      this instanceof RelayerAsyncRequest,
-      `this instanceof RelayerAsyncRequest`,
-    );
+    this._assert(this instanceof RelayerAsyncRequest, `this instanceof RelayerAsyncRequest`);
     this._assert(!this._state.terminated, `!this._state.terminated`);
     this._assert(!this._state.timeout, '!this._state.timeout');
 
@@ -1709,9 +1601,7 @@ export class RelayerAsyncRequest {
    * Throws an unauthorized error for 401 responses.
    * @throws {RelayerResponseApiError} Always throws with 'unauthorized' label.
    */
-  private _throwUnauthorizedError(
-    status: Extract<RelayerFailureStatus, 401>,
-  ): never {
+  private _throwUnauthorizedError(status: Extract<RelayerFailureStatus, 401>): never {
     this._throwRelayerResponseApiError({
       status,
       relayerApiError: {
@@ -1730,9 +1620,7 @@ export class RelayerAsyncRequest {
     relayerApiError: RelayerApiError;
   }): never {
     // Clone
-    const clonedRelayerApiError = JSON.parse(
-      JSON.stringify(params.relayerApiError),
-    ) as RelayerApiError;
+    const clonedRelayerApiError = JSON.parse(JSON.stringify(params.relayerApiError)) as RelayerApiError;
 
     const args: RelayerProgressFailed<RelayerPostOperation> = {
       type: 'failed',
@@ -1797,10 +1685,7 @@ export class RelayerAsyncRequest {
    * @throws {RelayerMaxRetryError} Always throws.
    */
   private _throwMaxRetryError(params: { fetchMethod: 'GET' | 'POST' }): never {
-    const elapsed =
-      this._jobIdTimestamp !== undefined
-        ? Date.now() - this._jobIdTimestamp
-        : 0;
+    const elapsed = this._jobIdTimestamp !== undefined ? Date.now() - this._jobIdTimestamp : 0;
     throw new RelayerMaxRetryError({
       operation: this._relayerOperation,
       url: this._url,

@@ -38,9 +38,7 @@ async function isomorphicDecodeBase64(base64: string): Promise<BufferSource> {
  * - Browser + streaming: uses `WebAssembly.compileStreaming` (fastest path)
  * - Fallback: `fetch` + `arrayBuffer` + `WebAssembly.compile`
  */
-export async function isomorphicCompileWasm(
-  wasmUrl: URL,
-): Promise<WebAssembly.Module> {
+export async function isomorphicCompileWasm(wasmUrl: URL): Promise<WebAssembly.Module> {
   const isBrowser = isBrowserLike();
 
   let bytes: BufferSource;
@@ -93,9 +91,7 @@ export async function isomorphicCompileWasm(
  * @param wasmAsBase64 - The WASM binary encoded as a base64 string
  * @returns A compiled WebAssembly.Module ready to be instantiated
  */
-export async function isomorphicCompileWasmFromBase64(
-  wasmAsBase64: string,
-): Promise<WebAssembly.Module> {
+export async function isomorphicCompileWasmFromBase64(wasmAsBase64: string): Promise<WebAssembly.Module> {
   const bytes = await isomorphicDecodeBase64(wasmAsBase64);
   return WebAssembly.compile(bytes);
 }

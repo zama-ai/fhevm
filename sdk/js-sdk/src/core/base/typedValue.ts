@@ -1,7 +1,4 @@
-import { asAddress } from './address.js';
-import { toBoolean } from './boolean.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
-import { InvalidTypeError } from './errors/InvalidTypeError.js';
 import type {
   AddressValueLike,
   BoolValueLike,
@@ -19,6 +16,9 @@ import type {
   ValueTypeMap,
   ValueTypeName,
 } from '../types/primitives.js';
+import { asAddress } from './address.js';
+import { toBoolean } from './boolean.js';
+import { InvalidTypeError } from './errors/InvalidTypeError.js';
 import { asUintForType, normalizeUintForType } from './uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -79,10 +79,7 @@ export function isTypedValue<T extends ValueTypeName>(
   options: { type: T },
 ): value is TypedValue & { readonly type: T };
 export function isTypedValue(value: unknown): value is TypedValue;
-export function isTypedValue(
-  value: unknown,
-  options?: { type: ValueTypeName },
-): value is TypedValue {
+export function isTypedValue(value: unknown, options?: { type: ValueTypeName }): value is TypedValue {
   if (!(value instanceof TypedValueImpl)) {
     return false;
   }
@@ -109,13 +106,9 @@ export function assertIsTypedValue(
   value: unknown,
   options: { type?: ValueTypeName; subject?: string } & ErrorMetadataParams,
 ): asserts value is TypedValue {
-  const expectedType =
-    options.type !== undefined ? `TypedValue<${options.type}>` : 'TypedValue';
+  const expectedType = options.type !== undefined ? `TypedValue<${options.type}>` : 'TypedValue';
 
-  const isValid =
-    options.type !== undefined
-      ? isTypedValue(value, { type: options.type })
-      : isTypedValue(value);
+  const isValid = options.type !== undefined ? isTypedValue(value, { type: options.type }) : isTypedValue(value);
 
   if (!isValid) {
     throw new InvalidTypeError(
@@ -216,16 +209,10 @@ export function createTypedValue<InputType extends TypedValueLike>(
   } else if (expectedType === 'address') {
     validatedValue = asAddress(input.value);
   } else {
-    validatedValue = normalizeUintForType(
-      asUintForType(input.value, expectedType, {}),
-      expectedType,
-    );
+    validatedValue = normalizeUintForType(asUintForType(input.value, expectedType, {}), expectedType);
   }
 
-  const v: TypedValueOfBase<typeof expectedType> = new TypedValueImpl(
-    validatedValue,
-    expectedType,
-  );
+  const v: TypedValueOfBase<typeof expectedType> = new TypedValueImpl(validatedValue, expectedType);
   Object.freeze(v);
   return v as TypedValueFrom<InputType>;
 }
@@ -250,18 +237,14 @@ type TypedValueArrayFrom<T extends readonly TypedValueLike[]> = {
  * // b: BoolValue, n: Uint8Value
  * ```
  */
-export function createTypedValueArray<T extends readonly TypedValueLike[]>(
-  inputs: [...T],
-): TypedValueArrayFrom<T> {
+export function createTypedValueArray<T extends readonly TypedValueLike[]>(inputs: [...T]): TypedValueArrayFrom<T> {
   return inputs.map(createTypedValue) as unknown as TypedValueArrayFrom<T>;
 }
 
 /**
  * Returns `true` if every element was created via {@link createTypedValue}.
  */
-export function isTypedValueArray(
-  arr: readonly unknown[],
-): arr is TypedValue[] {
+export function isTypedValueArray(arr: readonly unknown[]): arr is TypedValue[] {
   return arr.every((v) => isTypedValue(v));
 }
 
@@ -330,13 +313,9 @@ export class TypedValueArrayBuilder {
           {},
         );
       }
-      this.#arr.push(
-        createTypedValue({ type: typeName, value: tv.value } as TypedValueLike),
-      );
+      this.#arr.push(createTypedValue({ type: typeName, value: tv.value } as TypedValueLike));
     } else {
-      this.#arr.push(
-        createTypedValue({ type: typeName, value } as TypedValueLike),
-      );
+      this.#arr.push(createTypedValue({ type: typeName, value } as TypedValueLike));
     }
     return this;
   }

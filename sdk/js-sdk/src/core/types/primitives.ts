@@ -572,8 +572,7 @@ export type ValueLikeMap = Readonly<{
   address: string;
 }>;
 
-export type ValueType<T extends keyof ValueTypeMap = keyof ValueTypeMap> =
-  ValueTypeMap[T];
+export type ValueType<T extends keyof ValueTypeMap = keyof ValueTypeMap> = ValueTypeMap[T];
 export type ValueTypeName = Prettify<keyof ValueTypeMap>;
 
 export interface TypedValueOfBase<T extends ValueTypeName> {

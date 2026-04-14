@@ -6,10 +6,9 @@ import { RelayerResponseErrorBase } from './RelayerResponseErrorBase.js';
 // RelayerResponseInputProofRejectedError
 ////////////////////////////////////////////////////////////////////////////////
 
-export type RelayerResponseInputProofRejectedErrorType =
-  RelayerResponseInputProofRejectedError & {
-    name: 'RelayerResponseInputProofRejectedError';
-  };
+export type RelayerResponseInputProofRejectedErrorType = RelayerResponseInputProofRejectedError & {
+  name: 'RelayerResponseInputProofRejectedError';
+};
 
 export type RelayerResponseInputProofRejectedErrorParams = Prettify<
   Omit<RelayerResponseErrorBaseParams, 'name' | 'message'>

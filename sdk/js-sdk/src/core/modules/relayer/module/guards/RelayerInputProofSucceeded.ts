@@ -41,40 +41,17 @@ export function assertIsRelayerInputProofSucceeded(
     expectedValue: 'succeeded' satisfies T['status'],
     ...options,
   });
-  assertRecordStringProperty(
-    value,
-    'requestId' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordNonNullableProperty(
-    value,
-    'result' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
+  assertRecordNonNullableProperty(value, 'result' satisfies keyof T, name, options);
 
   type R = RelayerInputProofSucceeded['result'];
 
-  assertRecordBooleanProperty(
-    value.result,
-    'accepted' satisfies keyof R,
-    `${name}.result`,
-    options,
-  );
+  assertRecordBooleanProperty(value.result, 'accepted' satisfies keyof R, `${name}.result`, options);
 
   if (value.result.accepted) {
-    _assertIsRelayerResult200InputProofAccepted(
-      value.result,
-      `${name}.result`,
-      options,
-    );
+    _assertIsRelayerResult200InputProofAccepted(value.result, `${name}.result`, options);
   } else {
-    _assertIsRelayerResult200InputProofRejected(
-      value.result,
-      `${name}.result`,
-      options,
-    );
+    _assertIsRelayerResult200InputProofRejected(value.result, `${name}.result`, options);
   }
 }
 
@@ -100,24 +77,9 @@ function _assertIsRelayerResult200InputProofAccepted(
     expectedValue: true,
     ...options,
   });
-  assertRecordBytesHexProperty(
-    value,
-    'extraData' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordBytes32HexArrayProperty(
-    value,
-    'handles' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordBytesHexArrayProperty(
-    value,
-    'signatures' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordBytesHexProperty(value, 'extraData' satisfies keyof T, name, options);
+  assertRecordBytes32HexArrayProperty(value, 'handles' satisfies keyof T, name, options);
+  assertRecordBytesHexArrayProperty(value, 'signatures' satisfies keyof T, name, options);
 }
 
 /**
@@ -140,10 +102,5 @@ function _assertIsRelayerResult200InputProofRejected(
     expectedValue: false,
     ...options,
   });
-  assertRecordBytesHexProperty(
-    value,
-    'extraData' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordBytesHexProperty(value, 'extraData' satisfies keyof T, name, options);
 }

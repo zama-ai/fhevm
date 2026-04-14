@@ -1,8 +1,8 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
-import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 import type { E2eTransportKeypair } from '../../kms/E2eTransportKeypair-p.js';
+import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,10 +29,7 @@ export async function parseSignedDecryptionPermit(
 ): Promise<ParseSignedDecryptionPermitReturnType> {
   const { serialized, e2eTransportKeypair } = parameters;
 
-  const parsed =
-    typeof serialized === 'string'
-      ? (JSON.parse(serialized) as unknown)
-      : serialized;
+  const parsed = typeof serialized === 'string' ? (JSON.parse(serialized) as unknown) : serialized;
 
   return parseSignedDecryptionPermit_(fhevm, e2eTransportKeypair, parsed);
 }

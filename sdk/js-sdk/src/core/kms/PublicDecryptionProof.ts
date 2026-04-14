@@ -5,8 +5,6 @@ import { PublicDecryptionProofImpl } from './PublicDecryptionProof-p.js';
 // isPublicDecryptionProof
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isPublicDecryptionProof(
-  value: unknown,
-): value is PublicDecryptionProof {
+export function isPublicDecryptionProof(value: unknown): value is PublicDecryptionProof {
   return value instanceof PublicDecryptionProofImpl;
 }

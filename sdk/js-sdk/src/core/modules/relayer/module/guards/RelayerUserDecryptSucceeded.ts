@@ -1,17 +1,8 @@
-import {
-  assertRecordBytesHexNo0xProperty,
-  assertRecordBytesHexProperty,
-} from '../../../../base/bytes.js';
 import type { ErrorMetadataParams } from '../../../../base/errors/ErrorBase.js';
-import {
-  assertRecordArrayProperty,
-  assertRecordNonNullableProperty,
-} from '../../../../base/record.js';
+import type { RelayerResult200UserDecrypt, RelayerUserDecryptSucceeded } from '../../../../types/relayer-p.js';
+import { assertRecordBytesHexNo0xProperty, assertRecordBytesHexProperty } from '../../../../base/bytes.js';
+import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../../base/record.js';
 import { assertRecordStringProperty } from '../../../../base/string.js';
-import type {
-  RelayerResult200UserDecrypt,
-  RelayerUserDecryptSucceeded,
-} from '../../../../types/relayer-p.js';
 
 /**
  * Asserts that `value` matches the {@link RelayerUserDecryptSucceeded} schema:
@@ -39,18 +30,8 @@ export function assertIsRelayerUserDecryptSucceeded(
     expectedValue: 'succeeded' satisfies T['status'],
     ...options,
   });
-  assertRecordStringProperty(
-    value,
-    'requestId' satisfies keyof T,
-    name,
-    options,
-  );
-  assertRecordNonNullableProperty(
-    value,
-    'result' satisfies keyof T,
-    name,
-    options,
-  );
+  assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
+  assertRecordNonNullableProperty(value, 'result' satisfies keyof T, name, options);
   _assertIsRelayerResult200UserDecrypt(value.result, `${name}.result`, options);
 }
 
@@ -82,12 +63,10 @@ function _assertIsRelayerResult200UserDecrypt(
       `${name}.result[${i}]`,
       options,
     );
-    assertRecordBytesHexNo0xProperty(
-      value.result[i],
-      'signature' satisfies keyof ResultItem,
-      `${name}.result[${i}]`,
-      { ...options, byteLength: 65 },
-    );
+    assertRecordBytesHexNo0xProperty(value.result[i], 'signature' satisfies keyof ResultItem, `${name}.result[${i}]`, {
+      ...options,
+      byteLength: 65,
+    });
     assertRecordBytesHexProperty(
       value.result[i],
       'extraData' satisfies keyof ResultItem,

@@ -1,11 +1,15 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { Bytes21Hex, Bytes32, Bytes32Hex, Uint64BigInt, Uint8Number } from '../types/primitives.js';
+import type { EncryptionBits, FheType, FheTypeId, SolidityPrimitiveTypeName } from '../types/fheType.js';
+import type { EncryptedValueLike, Handle, HandleLike, InputHandle, InputHandleLike } from '../types/encryptedTypes.js';
 import type {
-  Bytes21Hex,
-  Bytes32,
-  Bytes32Hex,
-  Uint64BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
+  EncryptedValueBase,
+  HandleBytes32,
+  HandleBytes32Hex,
+  HandleBytes32HexNo0x,
+  InputHandleBytes32,
+  InputHandleBytes32Hex,
+} from '../types/encryptedTypes-p.js';
 import { FhevmHandleError } from '../errors/FhevmHandleError.js';
 import {
   asBytes21,
@@ -32,27 +36,6 @@ import {
 import { remove0x } from '../base/string.js';
 import { asUint8Number, uint64ToBytes32 } from '../base/uint.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import type {
-  EncryptionBits,
-  FheType,
-  FheTypeId,
-  SolidityPrimitiveTypeName,
-} from '../types/fheType.js';
-import type {
-  EncryptedValueLike,
-  Handle,
-  HandleLike,
-  InputHandle,
-  InputHandleLike,
-} from '../types/encryptedTypes.js';
-import type {
-  EncryptedValueBase,
-  HandleBytes32,
-  HandleBytes32Hex,
-  HandleBytes32HexNo0x,
-  InputHandleBytes32,
-  InputHandleBytes32Hex,
-} from '../types/encryptedTypes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -111,36 +94,24 @@ class FhevmHandleImpl implements EncryptedValueBase {
 
   public get bytes32(): HandleBytes32 {
     if (this.#handleBytes32 === undefined) {
-      this.#handleBytes32 = hexToBytes32(
-        this.#handleBytes32Hex,
-      ) as HandleBytes32;
+      this.#handleBytes32 = hexToBytes32(this.#handleBytes32Hex) as HandleBytes32;
     }
     return new Uint8Array(this.#handleBytes32) as HandleBytes32;
   }
 
   public get hash21(): Bytes21Hex {
     // Extract hash21 (bytes 0-20)
-    return bytesHexSlice(
-      this.#handleBytes32Hex,
-      FHEVM_HANDLE_HASH21_BYTE_OFFSET,
-      21,
-    );
+    return bytesHexSlice(this.#handleBytes32Hex, FHEVM_HANDLE_HASH21_BYTE_OFFSET, 21);
   }
 
   public get chainId(): Uint64BigInt {
     // Extract chainId (bytes 22-29, 8 bytes as big-endian uint64)
-    return bytesHexUint64At(
-      this.#handleBytes32Hex,
-      FHEVM_HANDLE_CHAINID_BYTE_OFFSET,
-    );
+    return bytesHexUint64At(this.#handleBytes32Hex, FHEVM_HANDLE_CHAINID_BYTE_OFFSET);
   }
 
   public get fheTypeId(): FheTypeId {
     // Extract fheTypeId (byte 30)
-    return bytesHexUint8At(
-      this.#handleBytes32Hex,
-      FHEVM_HANDLE_FHETYPEID_BYTE_OFFSET,
-    ) as FheTypeId;
+    return bytesHexUint8At(this.#handleBytes32Hex, FHEVM_HANDLE_FHETYPEID_BYTE_OFFSET) as FheTypeId;
   }
 
   public get fheType(): FheType {
@@ -149,10 +120,7 @@ class FhevmHandleImpl implements EncryptedValueBase {
 
   public get version(): Uint8Number {
     // Extract version (byte 31)
-    return bytesHexUint8At(
-      this.#handleBytes32Hex,
-      FHEVM_HANDLE_VERSION_BYTE_OFFSET,
-    );
+    return bytesHexUint8At(this.#handleBytes32Hex, FHEVM_HANDLE_VERSION_BYTE_OFFSET);
   }
 
   public get isComputed(): boolean {
@@ -161,10 +129,7 @@ class FhevmHandleImpl implements EncryptedValueBase {
 
   public get index(): Uint8Number {
     // Extract index (byte 21) - 255 means computed
-    const indexUint8: Uint8Number = bytesHexUint8At(
-      this.#handleBytes32Hex,
-      FHEVM_HANDLE_INDEX_BYTE_OFFSET,
-    );
+    const indexUint8: Uint8Number = bytesHexUint8At(this.#handleBytes32Hex, FHEVM_HANDLE_INDEX_BYTE_OFFSET);
     return indexUint8;
   }
 
@@ -376,12 +341,7 @@ export function isHandle(value: unknown): value is Handle {
 }
 
 export function isInputHandle(value: unknown): value is InputHandle {
-  return (
-    isHandle(value) &&
-    value.isExternal &&
-    value.index !== 255 &&
-    !value.isComputed
-  );
+  return isHandle(value) && value.isExternal && value.index !== 255 && !value.isComputed;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -414,9 +374,7 @@ export function asHandleBytes32Hex(value: unknown): HandleBytes32Hex {
  * @param handleBytes32Hex - A valid 32-byte hex string (typed as `HandleBytes32Hex`)
  * @returns A `Handle` instance
  */
-export function handleBytes32HexToHandle(
-  handleBytes32Hex: HandleBytes32Hex,
-): Handle {
+export function handleBytes32HexToHandle(handleBytes32Hex: HandleBytes32Hex): Handle {
   return new FhevmHandleImpl(PRIVATE_TOKEN, {
     handleBytes32Hex,
   }) as Handle;
@@ -440,9 +398,7 @@ export function bytes32HexToHandle(handleBytes32Hex: Bytes32Hex): Handle {
   }) as Handle;
 }
 
-export function bytes32HexToInputHandle(
-  handleBytes32Hex: Bytes32Hex,
-): InputHandle {
+export function bytes32HexToInputHandle(handleBytes32Hex: Bytes32Hex): InputHandle {
   _assertIsInputHandleBytes32Hex(handleBytes32Hex);
 
   return new FhevmHandleImpl(PRIVATE_TOKEN, {
@@ -564,10 +520,8 @@ export function assertHandleArrayEquals(
     expectedName?: string | undefined;
   },
 ): void {
-  const actualTxt =
-    options?.actualName !== undefined ? ` (${options.actualName})` : '';
-  const expectedTxt =
-    options?.expectedName !== undefined ? ` (${options.expectedName})` : '';
+  const actualTxt = options?.actualName !== undefined ? ` (${options.actualName})` : '';
+  const expectedTxt = options?.expectedName !== undefined ? ` (${options.expectedName})` : '';
 
   if (actual.length !== expected.length) {
     throw new FhevmHandleError({
@@ -617,9 +571,7 @@ export function buildHandle({
   fheTypeId: number;
   version?: number;
 }): Handle | InputHandle {
-  const theVersion = asUint8Number(
-    version ?? FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION,
-  );
+  const theVersion = asUint8Number(version ?? FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION);
   const chainId32Bytes = uint64ToBytes32(chainId);
   const chainId8Bytes = chainId32Bytes.subarray(24, 32);
 
@@ -693,10 +645,7 @@ export function assertIsInputHandleLikeArray(
   }
 }
 
-export function assertHandlesBelongToSameChainId(
-  fhevmHandles: readonly Handle[],
-  chainId?: Uint64BigInt,
-): void {
+export function assertHandlesBelongToSameChainId(fhevmHandles: readonly Handle[], chainId?: Uint64BigInt): void {
   if (fhevmHandles.length === 0) {
     return;
   }

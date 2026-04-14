@@ -1,11 +1,10 @@
 import type { Bytes20, Bytes32, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof.js';
-import { assert } from '../base/errors/InternalError.js';
-import { isUint64, uint256ToBytes32 } from '../base/uint.js';
-import { isAddress } from '../base/address.js';
-import { hexToBytes20 } from '../base/bytes.js';
-import { ZkProofError } from '../errors/ZkProofError.js';
-import { TypedValueArrayBuilder } from '../base/typedValue.js';
+import type { EncryptionBits, FheType } from '../types/fheType.js';
+import type { Fhevm } from '../types/coreFhevmClient.js';
+import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
+import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
+import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
   TypedValue,
   Uint32ValueLike,
@@ -17,16 +16,14 @@ import type {
   BoolValueLike,
   AddressValueLike,
 } from '../types/primitives.js';
+import { assert } from '../base/errors/InternalError.js';
+import { isUint64, uint256ToBytes32 } from '../base/uint.js';
+import { isAddress } from '../base/address.js';
+import { hexToBytes20 } from '../base/bytes.js';
+import { ZkProofError } from '../errors/ZkProofError.js';
+import { TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
-import {
-  encryptionBitsFromFheType,
-  fheTypeNameFromTypeName,
-} from '../handle/FheType.js';
-import type { EncryptionBits, FheType } from '../types/fheType.js';
-import type { Fhevm } from '../types/coreFhevmClient.js';
-import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
-import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
-import type { FhevmChain } from '../types/fhevmChain.js';
+import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,12 +205,11 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
 
     assert(metaData.length - chainIdBytes32.length === 60);
 
-    const ciphertextWithZKProofBytes: Uint8Array =
-      await fhevm.runtime.encrypt.buildWithProofPacked({
-        typedValues: [...this.#builder.build()],
-        fheEncryptionKey: fheEncryptionKeyWasm,
-        metaData,
-      });
+    const ciphertextWithZKProofBytes: Uint8Array = await fhevm.runtime.encrypt.buildWithProofPacked({
+      typedValues: [...this.#builder.build()],
+      fheEncryptionKey: fheEncryptionKeyWasm,
+      metaData,
+    });
 
     return toZkProof(
       {

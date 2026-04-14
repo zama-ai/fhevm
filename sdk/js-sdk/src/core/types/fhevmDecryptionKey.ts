@@ -5,6 +5,4 @@ import type {
 
 // Use interface instead of type to keep the type name instead of its expansion
 export interface FhevmDecryptionKey
-  extends
-    GetTkmsPublicKeyHexUserModuleFunction,
-    DecryptAndReconstructUserModuleFunction {}
+  extends GetTkmsPublicKeyHexUserModuleFunction, DecryptAndReconstructUserModuleFunction {}

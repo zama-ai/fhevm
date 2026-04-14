@@ -33,22 +33,13 @@ export const relayerModule: RelayerModuleFactory = () => {
       ) => {
         throw new Error('Not yet implemented');
       },
-      fetchPublicDecrypt: (
-        _relayerClient: RelayerClient,
-        _parameters: FetchPublicDecryptParameters,
-      ) => {
+      fetchPublicDecrypt: (_relayerClient: RelayerClient, _parameters: FetchPublicDecryptParameters) => {
         throw new Error('Not yet implemented');
       },
-      fetchUserDecrypt: (
-        _relayerClient: RelayerClient,
-        _parameters: FetchUserDecryptParameters,
-      ) => {
+      fetchUserDecrypt: (_relayerClient: RelayerClient, _parameters: FetchUserDecryptParameters) => {
         throw new Error('Not yet implemented');
       },
-      fetchDelegatedUserDecrypt: (
-        _relayerClient: RelayerClient,
-        _parameters: FetchDelegatedUserDecryptParameters,
-      ) => {
+      fetchDelegatedUserDecrypt: (_relayerClient: RelayerClient, _parameters: FetchDelegatedUserDecryptParameters) => {
         throw new Error('Not yet implemented');
       },
     }),

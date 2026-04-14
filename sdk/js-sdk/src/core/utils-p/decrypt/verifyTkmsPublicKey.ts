@@ -1,8 +1,5 @@
 import type { TkmsPrivateKey } from '../../types/tkms-p.js';
-import type {
-  FhevmRuntime,
-  WithDecrypt,
-} from '../../types/coreFhevmRuntime.js';
+import type { FhevmRuntime, WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { BytesHex } from '../../types/primitives.js';
 
 /**
@@ -20,10 +17,9 @@ export async function verifyTkmsPublicKey(
 ): Promise<void> {
   const { tkmsPrivateKey, tkmsPublicKeyBytesHex } = parameters;
 
-  const expectedTkmsPublicKeyBytesHex =
-    await context.runtime.decrypt.getTkmsPublicKeyHex({
-      tkmsPrivateKey,
-    });
+  const expectedTkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
+    tkmsPrivateKey,
+  });
 
   if (expectedTkmsPublicKeyBytesHex !== tkmsPublicKeyBytesHex) {
     throw new Error('invalid E2eTransportKeypair');

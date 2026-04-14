@@ -5,20 +5,10 @@ import type {
   RelayerPublicDecryptOptions,
   RelayerUserDecryptOptions,
 } from '../../types/relayer.js';
-import type {
-  FheEncryptionKeyBytes,
-  FheEncryptionKeySource,
-} from '../../types/fheEncryptionKey.js';
+import type { FheEncryptionKeyBytes, FheEncryptionKeySource } from '../../types/fheEncryptionKey.js';
 import type { KmsSigncryptedShare } from '../../types/kms-p.js';
-import type {
-  KmsDelegatedUserDecryptEIP712Message,
-  KmsUserDecryptEIP712Message,
-} from '../../types/kms.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-} from '../../types/primitives.js';
+import type { KmsDelegatedUserDecryptEip712Message, KmsUserDecryptEip712Message } from '../../types/kms.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { ZkProof } from '../../types/zkProof.js';
 import type { Handle, InputHandle } from '../../types/encryptedTypes.js';
@@ -82,7 +72,7 @@ export type FetchCoprocessorSignaturesParameters = {
 
 export type FetchCoprocessorSignaturesReturnType = {
   readonly handles: readonly InputHandle[];
-  readonly coprocessorEIP712Signatures: readonly Bytes65Hex[];
+  readonly coprocessorEip712Signatures: readonly Bytes65Hex[];
   readonly extraData: BytesHex;
 };
 
@@ -129,7 +119,7 @@ export type FetchUserDecryptParameters = {
       readonly contractAddress: ChecksummedAddress;
     }>;
     readonly kmsDecryptEip712Signer: ChecksummedAddress;
-    readonly kmsDecryptEip712Message: KmsUserDecryptEIP712Message;
+    readonly kmsDecryptEip712Message: KmsUserDecryptEip712Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
   readonly options?: RelayerUserDecryptOptions | undefined;
@@ -155,14 +145,13 @@ export type FetchDelegatedUserDecryptParameters = {
       readonly contractAddress: ChecksummedAddress;
     }>;
     readonly kmsDecryptEip712Signer: ChecksummedAddress;
-    readonly kmsDecryptEip712Message: KmsDelegatedUserDecryptEIP712Message;
+    readonly kmsDecryptEip712Message: KmsDelegatedUserDecryptEip712Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
   readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
 };
 
-export type FetchDelegatedUserDecryptReturnType =
-  readonly KmsSigncryptedShare[];
+export type FetchDelegatedUserDecryptReturnType = readonly KmsSigncryptedShare[];
 
 export type FetchDelegatedUserDecryptModuleFunction = {
   fetchDelegatedUserDecrypt(

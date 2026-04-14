@@ -1,7 +1,7 @@
 import type { ChecksummedAddress } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { createCoprocessorSignersContext } from './CoprocessorSignersContext-p.js';
 import type { CoprocessorSignersContext } from '../types/coprocessorSignersContext.js';
+import { createCoprocessorSignersContext } from './CoprocessorSignersContext-p.js';
 import { getCoprocessorContextSignersAndThreshold } from './getCoprocessorContextSignersAndThreshold-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -20,10 +20,7 @@ type ReturnType = CoprocessorSignersContext;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function readCoprocessorSignersContext(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+export async function readCoprocessorSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
   // TTL-Cached
   const c = await getCoprocessorContextSignersAndThreshold(context, parameters);
 

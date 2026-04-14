@@ -1,8 +1,8 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmExecutorContractData } from '../types/coprocessor.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 import type { HostContractVersion } from '../types/hostContract.js';
+import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,8 +42,7 @@ class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
     this.#address = parameters.address;
     this.#handleVersion = parameters.handleVersion;
     this.#aclContractAddress = parameters.aclContractAddress;
-    this.#inputVerifierContractAddress =
-      parameters.inputVerifierContractAddress;
+    this.#inputVerifierContractAddress = parameters.inputVerifierContractAddress;
     this.#hcuLimitContractAddress = parameters.hcuLimitContractAddress;
     Object.freeze(this);
   }
@@ -112,14 +111,8 @@ export function createFhevmExecutorContractData(
     readonly handleVersion: Uint8Number;
   },
 ): FhevmExecutorContractData {
-  const {
-    version,
-    address,
-    aclContractAddress,
-    inputVerifierContractAddress,
-    hcuLimitContractAddress,
-    handleVersion,
-  } = parameters;
+  const { version, address, aclContractAddress, inputVerifierContractAddress, hcuLimitContractAddress, handleVersion } =
+    parameters;
 
   return new FhevmExecutorContractDataImpl(PRIVATE_TOKEN, owner, {
     version,
@@ -135,9 +128,6 @@ export function createFhevmExecutorContractData(
  * Verifies that the given `FHEVMExecutorContractData` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertFHEVMExecutorContractDataOwnedBy(
-  data: FhevmExecutorContractData,
-  owner: FhevmRuntime,
-): void {
+export function assertFHEVMExecutorContractDataOwnedBy(data: FhevmExecutorContractData, owner: FhevmRuntime): void {
   FhevmExecutorContractDataImpl[VERIFY_FUNC](data, owner);
 }

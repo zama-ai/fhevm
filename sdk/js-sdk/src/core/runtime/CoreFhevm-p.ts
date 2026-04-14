@@ -1,11 +1,5 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import { verifyTrustedValue } from '../base/trustedValue.js';
-import { uid } from '../base/uid.js';
-import type {
-  EthereumModule,
-  TrustedClient,
-} from '../modules/ethereum/types.js';
+import type { EthereumModule, TrustedClient } from '../modules/ethereum/types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
   Fhevm,
@@ -16,17 +10,12 @@ import type {
   OptionalNativeClient,
   ResolvedFhevmOptions,
 } from '../types/coreFhevmClient.js';
-import type {
-  FhevmRuntime,
-  WithModule,
-  WithModuleMap,
-} from '../types/coreFhevmRuntime.js';
+import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevmRuntime.js';
+import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { verifyTrustedValue } from '../base/trustedValue.js';
+import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
-import {
-  asFhevmRuntimeWith,
-  assertIsFhevmRuntime,
-  assertIsFhevmRuntimeWith,
-} from './CoreFhevmRuntime-p.js';
+import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -49,13 +38,7 @@ class CoreFhevmImpl<
   readonly #chain: chain | undefined;
   readonly #options: ResolvedFhevmOptions;
   readonly #initFns: Set<
-    (
-      client: FhevmBase<
-        FhevmChain | undefined,
-        FhevmRuntime,
-        OptionalNativeClient
-      >,
-    ) => Promise<void>
+    (client: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>) => Promise<void>
   >;
   #readyPromise: Promise<void> | undefined;
 
@@ -63,20 +46,13 @@ class CoreFhevmImpl<
   declare readonly uid: string;
   declare readonly chain: chain;
   declare readonly options: ResolvedFhevmOptions;
-  declare readonly trustedClient: client extends NativeClient
-    ? TrustedClient<client>
-    : undefined;
+  declare readonly trustedClient: client extends NativeClient ? TrustedClient<client> : undefined;
   declare readonly client: client;
   declare readonly runtime: runtime;
   declare readonly ethereum: EthereumModule;
   declare readonly verify: (token: symbol) => void;
-  declare readonly extend: <
-    const A extends Record<string, unknown>,
-    RT extends FhevmRuntime,
-  >(
-    actionsFactory: (
-      client: FhevmBase<chain, FhevmRuntime, client>,
-    ) => FhevmExtension<A, RT>,
+  declare readonly extend: <const A extends Record<string, unknown>, RT extends FhevmRuntime>(
+    actionsFactory: (client: FhevmBase<chain, FhevmRuntime, client>) => FhevmExtension<A, RT>,
   ) => this & A & { readonly runtime: RT };
   declare readonly init: () => Promise<void>;
   declare readonly ready: Promise<void>;
@@ -98,18 +74,14 @@ class CoreFhevmImpl<
     this.#runtime = parameters.runtime;
     this.#uid = uid();
     this.#trustedClient =
-      parameters.client !== undefined
-        ? createTrustedClient(parameters.client, ownerToken)
-        : undefined;
+      parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
     this.#options = Object.freeze(resolveOptions(parameters.options));
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
     // verify runtime
-    (this.#runtime as unknown as { verify: (token: symbol) => void }).verify(
-      ownerToken,
-    );
+    (this.#runtime as unknown as { verify: (token: symbol) => void }).verify(ownerToken);
 
     // Instance-level getters — configurable: false prevents shadowing/redefinition
     Object.defineProperties(this, {
@@ -135,9 +107,7 @@ class CoreFhevmImpl<
       },
       client: {
         get: () =>
-          this.#trustedClient !== undefined
-            ? verifyTrustedValue(this.#trustedClient, ownerToken)
-            : undefined,
+          this.#trustedClient !== undefined ? verifyTrustedValue(this.#trustedClient, ownerToken) : undefined,
         configurable: false,
         enumerable: true,
       },
@@ -210,9 +180,7 @@ type CoreClientFhevm<
 type CoreFhevm<
   chain extends FhevmChain | undefined = FhevmChain | undefined,
   runtime extends FhevmRuntime = FhevmRuntime,
-  client extends NonNullable<object> | undefined =
-    | NonNullable<object>
-    | undefined,
+  client extends NonNullable<object> | undefined = NonNullable<object> | undefined,
 > = Fhevm<chain, runtime, client> &
   (client extends NonNullable<object>
     ? { readonly trustedClient: TrustedClient<client> }
@@ -257,10 +225,7 @@ export function asFhevmWith<
   chain extends FhevmChain | undefined = FhevmChain | undefined,
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = NativeClient,
->(
-  fhevm: FhevmBase<chain, runtime, client>,
-  moduleName: module,
-): Fhevm<chain, runtime & WithModule<module>, client> {
+>(fhevm: FhevmBase<chain, runtime, client>, moduleName: module): Fhevm<chain, runtime & WithModule<module>, client> {
   const f = asCoreFhevm(fhevm);
   asFhevmRuntimeWith(f.runtime, moduleName);
   return fhevm as Fhevm<chain, runtime & WithModule<module>, client>;
@@ -283,11 +248,7 @@ export function asFhevmClientWith<
 >(
   fhevm: FhevmBase<chain, runtime, client>,
   moduleName: module,
-): Fhevm<
-  chain & FhevmChain,
-  runtime & WithModule<module>,
-  client & NativeClient
-> {
+): Fhevm<chain & FhevmChain, runtime & WithModule<module>, client & NativeClient> {
   assertIsFhevmClientWith(fhevm, moduleName);
   return fhevm;
 }
@@ -302,11 +263,7 @@ export function assertIsFhevmClientWith<
 >(
   fhevm: FhevmBase<chain, runtime, client>,
   moduleName: module,
-): asserts fhevm is Fhevm<
-  chain & FhevmChain,
-  runtime & WithModule<module>,
-  client & NativeClient
-> {
+): asserts fhevm is Fhevm<chain & FhevmChain, runtime & WithModule<module>, client & NativeClient> {
   const f = asCoreClientFhevm(fhevm);
   if (f.chain === undefined) {
     throw new Error('Fhevm client chain is undefined');
@@ -392,10 +349,7 @@ export function createCoreFhevm<
   chain extends FhevmChain | undefined = FhevmChain | undefined,
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = OptionalNativeClient,
->(
-  ownerToken: symbol,
-  parameters: CreateCoreFhevmParameters<chain, runtime, client>,
-): Fhevm<chain, runtime, client> {
+>(ownerToken: symbol, parameters: CreateCoreFhevmParameters<chain, runtime, client>): Fhevm<chain, runtime, client> {
   // Pre-populate the global FheEncryptionKey cache if the caller provided one.
   // Avoids a 50MB fetch later when encrypt is first called.
   // No-op if an entry already exists for this relayerUrl (first write wins).
@@ -414,27 +368,17 @@ export function createCoreFhevm<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function extendCoreFhevm<
-  T extends Fhevm<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
->(
+function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>>(
   client: T,
   actionsFactory: (client: T) => FhevmExtension,
   pushInitFn: (
-    fn: (
-      client: FhevmBase<
-        FhevmChain | undefined,
-        FhevmRuntime,
-        OptionalNativeClient
-      >,
-    ) => Promise<void>,
+    fn: (client: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>) => Promise<void>,
   ) => void,
 ): T {
   const { actions, runtime, init } = actionsFactory(client);
 
   if (runtime !== client.runtime) {
-    throw new Error(
-      `actionsFactory must return the same runtime instance (id=${client.uid})`,
-    );
+    throw new Error(`actionsFactory must return the same runtime instance (id=${client.uid})`);
   }
 
   if (init !== undefined) {
@@ -458,9 +402,7 @@ function extendCoreFhevm<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function resolveOptions(
-  options: FhevmOptions | undefined,
-): ResolvedFhevmOptions {
+function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
   return {
     batchRpcCalls: options?.batchRpcCalls ?? false,
   };

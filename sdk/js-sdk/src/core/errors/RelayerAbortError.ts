@@ -11,9 +11,7 @@ export type RelayerAbortErrorType = RelayerAbortError & {
   name: 'RelayerAbortError';
 };
 
-export type RelayerAbortErrorParams = Prettify<
-  Omit<RelayerRequestErrorBaseParams, 'name' | 'message'>
->;
+export type RelayerAbortErrorParams = Prettify<Omit<RelayerRequestErrorBaseParams, 'name' | 'message'>>;
 
 /**
  * Request was aborted.

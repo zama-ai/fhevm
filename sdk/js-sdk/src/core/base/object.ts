@@ -9,12 +9,7 @@ export function toArray<T>(value: T | readonly T[]): readonly T[] {
 export function simpleDeepFreeze<T extends object>(obj: T): Readonly<T> {
   Object.freeze(obj);
   for (const value of Object.values(obj)) {
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      !Object.isFrozen(value)
-    ) {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !Object.isFrozen(value)) {
       simpleDeepFreeze(value);
     }
   }
@@ -31,11 +26,11 @@ export function simpleDeepFreeze<T extends object>(obj: T): Readonly<T> {
  * @param fn - The value to assign.
  * @returns The target object, typed with the added property.
  */
-export function addInternalFunction<
-  T extends object,
-  FnName extends string,
-  Fn extends (...args: never[]) => unknown,
->(target: T, fnName: FnName, fn: Fn): T & Readonly<Record<FnName, Fn>> {
+export function addInternalFunction<T extends object, FnName extends string, Fn extends (...args: never[]) => unknown>(
+  target: T,
+  fnName: FnName,
+  fn: Fn,
+): T & Readonly<Record<FnName, Fn>> {
   Object.defineProperty(target, fnName, {
     value: fn,
     writable: false,

@@ -29,9 +29,7 @@ export class RelayerFetchError extends RelayerFetchErrorBase {
       name: 'RelayerFetchError',
       message: params.message,
       ...(cause !== undefined ? { cause: ensureError(cause) } : {}),
-      ...(cause !== undefined
-        ? { metaMessages: formatFetchErrorMetaMessages(cause) }
-        : {}),
+      ...(cause !== undefined ? { metaMessages: formatFetchErrorMetaMessages(cause) } : {}),
     });
   }
 }

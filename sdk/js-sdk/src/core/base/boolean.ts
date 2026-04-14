@@ -35,10 +35,7 @@ export function assertIsBoolean(
  * @returns The validated `boolean`.
  * @throws {InvalidTypeError} If `value` is not a `boolean`.
  */
-export function asBoolean(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): boolean {
+export function asBoolean(value: unknown, options?: { subject?: string } & ErrorMetadataParams): boolean {
   assertIsBoolean(value, options ?? {});
   return value;
 }
@@ -59,10 +56,7 @@ export function asBoolean(
  * @returns The coerced `boolean`.
  * @throws {InvalidTypeError} If `value` cannot be coerced to a `boolean`.
  */
-export function toBoolean(
-  value: unknown,
-  options: { subject?: string } & ErrorMetadataParams,
-): boolean {
+export function toBoolean(value: unknown, options: { subject?: string } & ErrorMetadataParams): boolean {
   if (typeof value === 'boolean') return value;
   if (value === 1 || value === 1n || value === 'true') return true;
   if (value === 0 || value === 0n || value === 'false') return false;

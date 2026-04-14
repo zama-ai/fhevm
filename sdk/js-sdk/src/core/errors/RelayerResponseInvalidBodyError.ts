@@ -9,10 +9,9 @@ import { humanReadableOperation } from './RelayerErrorBase.js';
 // RelayerResponseInvalidBodyError
 ////////////////////////////////////////////////////////////////////////////////
 
-export type RelayerResponseInvalidBodyErrorType =
-  RelayerResponseInvalidBodyError & {
-    name: 'RelayerResponseInvalidBodyError';
-  };
+export type RelayerResponseInvalidBodyErrorType = RelayerResponseInvalidBodyError & {
+  name: 'RelayerResponseInvalidBodyError';
+};
 
 export type RelayerResponseInvalidBodyErrorParams = Prettify<
   Omit<RelayerResponseErrorBaseParams, 'cause' | 'name' | 'message'> & {

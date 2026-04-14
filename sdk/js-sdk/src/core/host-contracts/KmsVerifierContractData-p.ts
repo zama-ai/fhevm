@@ -1,12 +1,8 @@
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
-import type { KmsEIP712Domain, KmsVerifierContractData } from '../types/kms.js';
+import type { ChecksummedAddress, Uint64BigInt, Uint8Number } from '../types/primitives.js';
+import type { KmsEip712Domain, KmsVerifierContractData } from '../types/kms.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 import type { HostContractVersion } from '../types/hostContract.js';
+import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -21,7 +17,7 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
   readonly #owner: WeakRef<FhevmRuntime>;
   readonly #version: HostContractVersion<'KMSVerifier'>;
   readonly #address: ChecksummedAddress;
-  readonly #eip712Domain: KmsEIP712Domain;
+  readonly #eip712Domain: KmsEip712Domain;
 
   constructor(
     privateToken: symbol,
@@ -29,7 +25,7 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
     parameters: {
       readonly version: HostContractVersion<'KMSVerifier'>;
       readonly address: ChecksummedAddress;
-      readonly eip712Domain: KmsEIP712Domain;
+      readonly eip712Domain: KmsEip712Domain;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -52,7 +48,7 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
     return this.#address;
   }
 
-  public get eip712Domain(): KmsEIP712Domain {
+  public get eip712Domain(): KmsEip712Domain {
     return this.#eip712Domain;
   }
 
@@ -95,7 +91,7 @@ export function createKmsVerifierContractData(
   parameters: {
     readonly version: HostContractVersion<'KMSVerifier'>;
     readonly address: ChecksummedAddress;
-    readonly eip712Domain: KmsEIP712Domain;
+    readonly eip712Domain: KmsEip712Domain;
     readonly kmsSigners: readonly ChecksummedAddress[];
     readonly kmsSignerThreshold: Uint8Number;
   },
@@ -109,9 +105,6 @@ export function createKmsVerifierContractData(
  * Verifies that the given `KmsVerifierContractData` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertKmsVerifierContractDataOwnedBy(
-  data: KmsVerifierContractData,
-  owner: FhevmRuntime,
-): void {
+export function assertKmsVerifierContractDataOwnedBy(data: KmsVerifierContractData, owner: FhevmRuntime): void {
   KmsVerifierContractDataImpl[VERIFY_FUNC](data, owner);
 }

@@ -1,8 +1,8 @@
+import type { FhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
 import { FHETestABI as FHETestABIv1 } from '../abi-v1.js';
 import { FHETestABI as FHETestABIv2 } from '../abi-v2.js';
 import { getBaseEnv, isV2, type FheTestChainName } from '../setupCommon.js';
-import type { FhevmChain } from '@fhevm/sdk/chains';
 
 // Re-export for convenience
 export type { FheTestChainName } from '../setupCommon.js';
@@ -38,14 +38,9 @@ function buildConfig(): FheTestEthersConfig {
   const env = getBaseEnv();
 
   const provider = new ethers.JsonRpcProvider(env.rpcUrl);
-  const wallet = ethers.HDNodeWallet.fromMnemonic(
-    ethers.Mnemonic.fromPhrase(env.mnemonic),
-  );
+  const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic));
 
-  const bobWallet = ethers.HDNodeWallet.fromMnemonic(
-    ethers.Mnemonic.fromPhrase(env.mnemonic),
-    "m/44'/60'/0'/0/1",
-  );
+  const bobWallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic), "m/44'/60'/0'/0/1");
 
   const signer = wallet.connect(provider);
   const fheTestContract = isV2(env.chainName)

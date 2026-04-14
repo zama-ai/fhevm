@@ -36,9 +36,7 @@ export class RelayerRequestInternalError extends RelayerRequestErrorBase {
       ...params,
       metaMessages,
       name: 'RelayerRequestInternalError',
-      message:
-        params.message ??
-        `${humanReadableOperation(params.operation, true)}: Relayer SDK internal error`,
+      message: params.message ?? `${humanReadableOperation(params.operation, true)}: Relayer SDK internal error`,
     });
     this.#status = params.status;
     this.#state = params.state;

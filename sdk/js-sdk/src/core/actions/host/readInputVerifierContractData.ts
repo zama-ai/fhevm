@@ -1,15 +1,15 @@
 import type { HostContractVersion } from '../../types/hostContract.js';
-import { executeWithBatching } from '../../base/promise.js';
-import { assertIsCoprocessorEIP712Domain } from '../../coprocessor/assertIsCoprocessorEIP712Domain.js';
-import { createInputVerifierContractData } from '../../host-contracts/InputVerifierContractData-p.js';
 import type { InputVerifierContractData } from '../../types/coprocessor.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { ChecksummedAddress } from '../../types/primitives.js';
-import { eip712Domain, type Eip712DomainReturnType } from './eip712Domain.js';
-import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
-import { getVersion } from './getVersion.js';
-import { readCoprocessorSignersContext } from '../../host-contracts/readCoprocessorSignersContext-p.js';
 import type { CoprocessorSignersContext } from '../../types/coprocessorSignersContext.js';
+import { eip712Domain, type Eip712DomainReturnType } from '../../host-contracts/eip712Domain-p.js';
+import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
+import { readCoprocessorSignersContext } from '../../host-contracts/readCoprocessorSignersContext-p.js';
+import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { executeWithBatching } from '../../base/promise.js';
+import { assertIsCoprocessorEip712Domain } from '../../coprocessor/assertIsCoprocessorEip712Domain.js';
+import { createInputVerifierContractData } from '../../host-contracts/InputVerifierContractData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,10 +44,7 @@ export async function readInputVerifierContractData(
     () => readCoprocessorSignersContext(fhevm, parameters),
   ];
 
-  const res = await executeWithBatching<unknown>(
-    rpcCalls,
-    fhevm.options.batchRpcCalls,
-  );
+  const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
 
   const contractVersion = res[0] as HostContractVersion;
   const eip712DomainRes = res[1] as Eip712DomainReturnType;
@@ -56,22 +53,13 @@ export async function readInputVerifierContractData(
   assertIsHostContractVersionOf(contractVersion, 'InputVerifier');
 
   try {
-    assertIsCoprocessorEIP712Domain(
-      eip712DomainRes,
-      'InputVerifier.eip712Domain()',
-      {},
-    );
+    assertIsCoprocessorEip712Domain(eip712DomainRes, 'InputVerifier.eip712Domain()', {});
   } catch (e) {
     throw new Error(`Invalid InputVerifier EIP-712 domain.`, { cause: e });
   }
 
-  if (
-    eip712DomainRes.verifyingContract.toLowerCase() ===
-    inputVerifierContractAddress.toLowerCase()
-  ) {
-    throw new Error(
-      `Invalid InputVerifier EIP-712 domain. Unexpected verifyingContract.`,
-    );
+  if (eip712DomainRes.verifyingContract.toLowerCase() === inputVerifierContractAddress.toLowerCase()) {
+    throw new Error(`Invalid InputVerifier EIP-712 domain. Unexpected verifyingContract.`);
   }
 
   const data = createInputVerifierContractData(new WeakRef(fhevm.runtime), {

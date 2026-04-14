@@ -8,10 +8,7 @@ import { encryptActions } from '../decorators/encrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createFhevmEncryptClient<
-  chain extends FhevmChain,
-  publicClient extends PublicClient,
->(parameters: {
+export function createFhevmEncryptClient<chain extends FhevmChain, publicClient extends PublicClient>(parameters: {
   readonly publicClient: publicClient;
   readonly chain: chain;
   readonly options?: FhevmOptions | undefined;

@@ -1,16 +1,15 @@
-import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
-import {
-  assertKmsSignerThreshold,
-  kmsSignersContextToExtraData,
-} from '../host-contracts/KmsSignersContext-p.js';
-import { createKmsEIP712Domain } from './createKmsEIP712Domain.js';
-import { kmsPublicDecryptEIP712Types } from './kmsPublicDecryptEIP712Types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { KmsPublicDecryptEIP712Message } from '../types/kms.js';
+import type { KmsPublicDecryptEip712Message } from '../types/kms.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { Bytes32Hex, Bytes65Hex, BytesHex } from '../types/primitives.js';
 import type { EncryptedValue } from '../types/encryptedTypes.js';
+import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
+import { assertKmsSignerThreshold, kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
+import { createKmsEip712Domain } from './createKmsEip712Domain.js';
+import { kmsPublicDecryptEip712Types } from './kmsPublicDecryptEip712Types.js';
+
+////////////////////////////////////////////////////////////////////////////////
 
 type Context = {
   readonly chain: FhevmChain;
@@ -24,15 +23,10 @@ type Parameters = {
   readonly kmsSignersContext: KmsSignersContext;
 };
 
-export async function verifyKmsPublicDecryptEIP712(
-  context: Context,
-  parameters: Parameters,
-): Promise<void> {
-  const {
-    kmsSignersContext,
-    orderedEncryptedValues,
-    orderedAbiEncodedClearValues,
-  } = parameters;
+////////////////////////////////////////////////////////////////////////////////
+
+export async function verifyKmsPublicDecryptEip712(context: Context, parameters: Parameters): Promise<void> {
+  const { kmsSignersContext, orderedEncryptedValues, orderedAbiEncodedClearValues } = parameters;
 
   // TODO:  use createKmsPublicDecryptEIP712 instead!
 
@@ -48,11 +42,9 @@ export async function verifyKmsPublicDecryptEIP712(
     signedExtraData = '0x' as BytesHex;
   }
 
-  const handlesBytes32Hex: readonly Bytes32Hex[] = orderedEncryptedValues.map(
-    (h) => h.bytes32Hex,
-  );
+  const handlesBytes32Hex: readonly Bytes32Hex[] = orderedEncryptedValues.map((h) => h.bytes32Hex);
 
-  const message: KmsPublicDecryptEIP712Message = {
+  const message: KmsPublicDecryptEip712Message = {
     ctHandles: handlesBytes32Hex,
     decryptedResult: orderedAbiEncodedClearValues,
     extraData: signedExtraData,
@@ -61,19 +53,18 @@ export async function verifyKmsPublicDecryptEIP712(
   //////////////////////////////////////////////////////////////////////////////
   //
   // Warning!
-  // A 'PublicDecryptVerification' KmsEIP712Domain uses the gateway chainId!
+  // A 'PublicDecryptVerification' KmsEip712Domain uses the gateway chainId!
   //
   //////////////////////////////////////////////////////////////////////////////
-  const domain = createKmsEIP712Domain({
+  const domain = createKmsEip712Domain({
     chainId: context.chain.fhevm.gateway.id,
-    verifyingContractAddressDecryption:
-      context.chain.fhevm.gateway.contracts.decryption.address,
+    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,
   });
 
   // 1. Verify signatures
   const recoveredAddresses = await recoverSigners(context, {
     domain,
-    types: kmsPublicDecryptEIP712Types,
+    types: kmsPublicDecryptEip712Types,
     primaryType: 'PublicDecryptVerification',
     signatures: parameters.kmsPublicDecryptEIP712Signatures,
     message,

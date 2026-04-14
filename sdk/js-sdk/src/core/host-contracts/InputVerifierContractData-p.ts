@@ -1,15 +1,8 @@
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
-import type {
-  CoprocessorEIP712Domain,
-  InputVerifierContractData,
-} from '../types/coprocessor.js';
+import type { ChecksummedAddress, Uint64BigInt, Uint8Number } from '../types/primitives.js';
+import type { CoprocessorEip712Domain, InputVerifierContractData } from '../types/coprocessor.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 import type { HostContractVersion } from '../types/hostContract.js';
+import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,7 +17,7 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
   readonly #owner: WeakRef<FhevmRuntime>;
   readonly #version: HostContractVersion<'InputVerifier'>;
   readonly #address: ChecksummedAddress;
-  readonly #eip712Domain: CoprocessorEIP712Domain;
+  readonly #eip712Domain: CoprocessorEip712Domain;
   readonly #coprocessorSigners: ChecksummedAddress[];
   readonly #coprocessorSignerThreshold: Uint8Number;
   readonly #coprocessorSignersSet: Set<string>;
@@ -35,7 +28,7 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
     parameters: {
       readonly version: HostContractVersion<'InputVerifier'>;
       readonly address: ChecksummedAddress;
-      readonly eip712Domain: CoprocessorEIP712Domain;
+      readonly eip712Domain: CoprocessorEip712Domain;
       readonly coprocessorSigners: readonly ChecksummedAddress[];
       readonly coprocessorSignerThreshold: Uint8Number;
     },
@@ -49,9 +42,7 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
     this.#eip712Domain = { ...parameters.eip712Domain };
     this.#coprocessorSigners = [...parameters.coprocessorSigners];
     this.#coprocessorSignerThreshold = parameters.coprocessorSignerThreshold;
-    this.#coprocessorSignersSet = new Set(
-      this.#coprocessorSigners.map((addr) => addr.toLowerCase()),
-    );
+    this.#coprocessorSignersSet = new Set(this.#coprocessorSigners.map((addr) => addr.toLowerCase()));
 
     Object.freeze(this.#eip712Domain);
     Object.freeze(this.#coprocessorSigners);
@@ -66,7 +57,7 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
     return this.#address;
   }
 
-  public get eip712Domain(): CoprocessorEIP712Domain {
+  public get eip712Domain(): CoprocessorEip712Domain {
     return this.#eip712Domain;
   }
 
@@ -123,7 +114,7 @@ export function createInputVerifierContractData(
   parameters: {
     readonly version: HostContractVersion<'InputVerifier'>;
     readonly address: ChecksummedAddress;
-    readonly eip712Domain: CoprocessorEIP712Domain;
+    readonly eip712Domain: CoprocessorEip712Domain;
     readonly coprocessorSigners: readonly ChecksummedAddress[];
     readonly coprocessorSignerThreshold: Uint8Number;
   },
@@ -137,9 +128,6 @@ export function createInputVerifierContractData(
  * Verifies that the given `InputVerifierContractData` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertInputVerifierContractDataOwnedBy(
-  data: InputVerifierContractData,
-  owner: FhevmRuntime,
-): void {
+export function assertInputVerifierContractDataOwnedBy(data: InputVerifierContractData, owner: FhevmRuntime): void {
   InputVerifierContractDataImpl[VERIFY_FUNC](data, owner);
 }

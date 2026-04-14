@@ -1,14 +1,11 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type {
-  FheEncryptionKeyBytes,
-  FheEncryptionKeyWasm,
-} from '../types/fheEncryptionKey.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import type { FheEncryptionKeyBytes, FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
+import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
+import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { serializeFheEncryptionKeyWasm } from './serializeFheEncryptionKey.js';
 import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
-import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,10 +30,7 @@ export async function fetchFheEncryptionKeyBytes(
     owner: runtime,
     relayerUrl,
     fetcher: () =>
-      runtime.relayer.fetchFheEncryptionKeyBytes(
-        { relayerUrl, chainId: context.chain.id },
-        relayerParameters,
-      ),
+      runtime.relayer.fetchFheEncryptionKeyBytes({ relayerUrl, chainId: context.chain.id }, relayerParameters),
     metadata: { chainId: context.chain.id, relayerUrl },
   });
 
@@ -59,13 +53,9 @@ export async function fetchFheEncryptionKeyBytes(
 function _getSerializeFn(context: {
   readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
-}):
-  | ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>)
-  | undefined {
+}): ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined {
   // Try to get a serialize fn if the encrypt module is available
-  let serializeFn:
-    | ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>)
-    | undefined;
+  let serializeFn: ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined;
 
   try {
     // check if the 'encrypt' module is available

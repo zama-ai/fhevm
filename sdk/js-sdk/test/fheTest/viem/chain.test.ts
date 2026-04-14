@@ -1,3 +1,9 @@
+import type { Hex } from 'viem';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { FHETestABI } from '../abi-v2.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,10 +17,7 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/chain.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { FHETestABI } from '../abi-v2.js';
-import type { Hex } from 'viem';
+////////////////////////////////////////////////////////////////////////////////
 
 describe('Chain — SDK chain config vs on-chain', () => {
   let config: FheTestViemConfig;
@@ -30,9 +33,7 @@ describe('Chain — SDK chain config vs on-chain', () => {
       functionName: 'getCoprocessorConfig',
     });
     console.log(`  On-chain ACL: ${coprocessorConfig.ACLAddress}`);
-    console.log(
-      `  SDK ACL:      ${config.fhevmChain.fhevm.contracts.acl.address}`,
-    );
+    console.log(`  SDK ACL:      ${config.fhevmChain.fhevm.contracts.acl.address}`);
     expect(coprocessorConfig.ACLAddress.toLowerCase()).toBe(
       config.fhevmChain.fhevm.contracts.acl.address.toLowerCase(),
     );
@@ -44,12 +45,8 @@ describe('Chain — SDK chain config vs on-chain', () => {
       abi: FHETestABI,
       functionName: 'getCoprocessorConfig',
     });
-    console.log(
-      `  On-chain KMS Verifier: ${coprocessorConfig.KMSVerifierAddress}`,
-    );
-    console.log(
-      `  SDK KMS Verifier:      ${config.fhevmChain.fhevm.contracts.kmsVerifier.address}`,
-    );
+    console.log(`  On-chain KMS Verifier: ${coprocessorConfig.KMSVerifierAddress}`);
+    console.log(`  SDK KMS Verifier:      ${config.fhevmChain.fhevm.contracts.kmsVerifier.address}`);
     expect(coprocessorConfig.KMSVerifierAddress.toLowerCase()).toBe(
       config.fhevmChain.fhevm.contracts.kmsVerifier.address.toLowerCase(),
     );

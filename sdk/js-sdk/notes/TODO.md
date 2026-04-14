@@ -17,3 +17,48 @@
 - Must call close threads for tests: example node-ethers example
 - missing toEncryptedValues toExternalEncryptedValue ?
 - Critical: verify domain hash on-chain to make sure EIP712 are correct
+- Missing a README / ARCHITECTURE.md
+- uid to rewrite
+- 32-bits -> 32-bit
+- confusing UnsignedIntNumber UnsignedInt UintNumber ...
+- 120 columns
+- logger.error not used
+- logger global ?
+- fix fheType array ascii art
+- remove E2e in E2eTransportKeypair
+- OK EIP712 -> Eip712 etc.
+- ClearValueTypeMap is unused!
+- handle : euint8
+- verifyKmsPublicDecryptEIP712 should use createKmsPublicDecryptEIP712
+- handle = Bytes32Hex (0x....)
+- object { } FhevmHandleImpl implement
+
+FhevmHandle { bytes32Hex, fheType }
+const h: FhevmHandleImpl;
+h.handle
+
+handle = encrypt(123)
+123 === decrypt(handle)
+
+- Check Error names
+
+```ts
+export type TfheErrorType = TfheError & {
+  name: 'TFHEError';
+};
+
+export type TfheErrorParams = Prettify<
+  Omit<FhevmErrorBaseParams, 'name' | 'message'> & {
+    readonly message: string;
+  }
+>;
+
+export class TfheError extends FhevmErrorBase {
+  constructor(params: TfheErrorParams) {
+    super({
+      ...params,
+      name: 'TfheError',
+    });
+  }
+}
+```

@@ -1,29 +1,3 @@
-/*
- * ============================================================================
- * Naming convention
- * ============================================================================
- *
- * Standard (no user variant):
- *
- *   type [FuncName]Parameters  = ...
- *   type [FuncName]ReturnType  = ...
- *
- *   [FuncName]ModuleFunction           [funcName](parameters)      => Promise<ReturnType>
- *
- * With user variant (privateKey in closure vs explicit):
- *
- *   type [FuncName]Parameters  = ... (core params, no privateKey)
- *   type [FuncName]ReturnType  = ...
- *
- *   User (FhevmUserClient — privateKey bound in closure):
- *   [FuncName]UserModuleFunction       [funcName](parameters: [FuncName]Parameters)
- *
- *   Standalone (privateKey explicit):
- *   [FuncName]ModuleFunction           [funcName](parameters: WithTkmsPrivateKey & [FuncName]Parameters)
- *
- * ============================================================================
- */
-
 import type { TkmsPrivateKey } from '../../types/tkms-p.js';
 import type { KmsSigncryptedShares } from '../../types/kms.js';
 import type { Bytes, BytesHex } from '../../types/primitives.js';
@@ -94,27 +68,21 @@ type DecryptAndReconstructBaseParameters = {
   readonly shares: KmsSigncryptedShares;
 };
 
-export type DecryptAndReconstructParameters = WithTkmsPrivateKey &
-  DecryptAndReconstructBaseParameters;
+export type DecryptAndReconstructParameters = WithTkmsPrivateKey & DecryptAndReconstructBaseParameters;
 export type DecryptAndReconstructReturnType = readonly ClearValue[];
 
 export type DecryptAndReconstructModuleFunction = {
-  decryptAndReconstruct(
-    parameters: DecryptAndReconstructParameters,
-  ): Promise<DecryptAndReconstructReturnType>;
+  decryptAndReconstruct(parameters: DecryptAndReconstructParameters): Promise<DecryptAndReconstructReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // 1. (User) decryptAndReconstruct
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DecryptAndReconstructUserParameters =
-  DecryptAndReconstructBaseParameters;
+export type DecryptAndReconstructUserParameters = DecryptAndReconstructBaseParameters;
 
 export type DecryptAndReconstructUserModuleFunction = {
-  decryptAndReconstruct(
-    parameters: DecryptAndReconstructUserParameters,
-  ): Promise<DecryptAndReconstructReturnType>;
+  decryptAndReconstruct(parameters: DecryptAndReconstructUserParameters): Promise<DecryptAndReconstructReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -135,9 +103,7 @@ export type GetTkmsPublicKeyHexParameters = WithTkmsPrivateKey;
 export type GetTkmsPublicKeyHexReturnType = BytesHex;
 
 export type GetTkmsPublicKeyHexModuleFunction = {
-  getTkmsPublicKeyHex(
-    parameters: GetTkmsPublicKeyHexParameters,
-  ): Promise<GetTkmsPublicKeyHexReturnType>;
+  getTkmsPublicKeyHex(parameters: GetTkmsPublicKeyHexParameters): Promise<GetTkmsPublicKeyHexReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -159,9 +125,7 @@ export type SerializeTkmsPrivateKeyParameters = {
 export type SerializeTkmsPrivateKeyReturnType = Bytes;
 
 export type SerializeTkmsPrivateKeyModuleFunction = {
-  serializeTkmsPrivateKey(
-    parameters: SerializeTkmsPrivateKeyParameters,
-  ): Promise<SerializeTkmsPrivateKeyReturnType>;
+  serializeTkmsPrivateKey(parameters: SerializeTkmsPrivateKeyParameters): Promise<SerializeTkmsPrivateKeyReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

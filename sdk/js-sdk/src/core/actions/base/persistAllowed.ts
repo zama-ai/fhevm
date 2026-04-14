@@ -1,10 +1,10 @@
 import type { HandleLike } from '../../types/encryptedTypes.js';
-import { assertIsChecksummedAddress } from '../../base/address.js';
-import { executeWithBatching } from '../../base/promise.js';
-import { assertIsHandleLike, toHandle } from '../../handle/FhevmHandle.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { ChecksummedAddress } from '../../types/primitives.js';
+import { assertIsChecksummedAddress } from '../../base/address.js';
+import { executeWithBatching } from '../../base/promise.js';
+import { assertIsHandleLike, toHandle } from '../../handle/FhevmHandle.js';
 import { persistAllowed as persistAllowed_ } from '../host/persistAllowed.js';
 
 type HandleAddressPair = {
@@ -48,9 +48,7 @@ export async function persistAllowed(
 ): Promise<PersistAllowedArrayReturnType | PersistAllowedSingleReturnType> {
   const { handleAddressPairs, options } = parameters;
   const isArray = Array.isArray(handleAddressPairs);
-  const pairsArray: readonly HandleAddressPair[] = isArray
-    ? handleAddressPairs
-    : [handleAddressPairs];
+  const pairsArray: readonly HandleAddressPair[] = isArray ? handleAddressPairs : [handleAddressPairs];
 
   // By default, always check arguments
   if (options?.checkArguments !== false) {
@@ -71,10 +69,7 @@ export async function persistAllowed(
       }),
   );
 
-  const results = await executeWithBatching(
-    rpcCalls,
-    fhevm.options.batchRpcCalls,
-  );
+  const results = await executeWithBatching(rpcCalls, fhevm.options.batchRpcCalls);
 
   return isArray ? results : (results[0] as unknown as boolean);
 }

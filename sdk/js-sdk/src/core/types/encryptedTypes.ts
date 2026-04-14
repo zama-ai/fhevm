@@ -1,9 +1,6 @@
 import type { FheType, FheTypeToValueTypeNameMap } from './fheType.js';
 import type { TypedValueOfBase } from './primitives.js';
-import type {
-  ComputedEncryptedValueOfTypeBase,
-  ExternalEncryptedValueOfTypeBase,
-} from './encryptedTypes-p.js';
+import type { ComputedEncryptedValueOfTypeBase, ExternalEncryptedValueOfTypeBase } from './encryptedTypes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public types
@@ -39,12 +36,10 @@ export type Handle<etype extends FheType = FheType> = EncryptedValue<etype>;
  * In `FHE.sol`, an `inputHandle` is an encrypted value that has not yet been
  * verified on-chain via `InputVerifier.sol`.
  */
-export type InputHandle<etype extends FheType = FheType> =
-  ExternalEncryptedValue<etype>;
+export type InputHandle<etype extends FheType = FheType> = ExternalEncryptedValue<etype>;
 
 /** Alias for {@link ComputedEncryptedValue} using `FHE.sol` terminology. */
-export type ComputedHandle<etype extends FheType = FheType> =
-  ComputedEncryptedValue<etype>;
+export type ComputedHandle<etype extends FheType = FheType> = ComputedEncryptedValue<etype>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Typed shortcuts
@@ -94,11 +89,7 @@ export type ExternalEaddress = ExternalEncryptedValue<'eaddress'>;
  * - `{ bytes32Hex: string }` — object with a hex-encoded handle property
  * - `EncryptedValue` — an already-parsed encrypted value
  */
-export type EncryptedValueLike =
-  | Uint8Array
-  | string
-  | { readonly bytes32Hex: string }
-  | EncryptedValue;
+export type EncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string } | EncryptedValue;
 
 export type HandleLike = EncryptedValueLike;
 
@@ -111,19 +102,13 @@ export type HandleLike = EncryptedValueLike;
  * - `{ bytes32Hex: string }` — object with a hex-encoded handle property
  * - `ExternalEncryptedValue` — an already-parsed external encrypted value
  */
-export type ExternalEncryptedValueLike =
-  | Uint8Array
-  | string
-  | { readonly bytes32Hex: string }
-  | ExternalEncryptedValue;
+export type ExternalEncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string } | ExternalEncryptedValue;
 
 export type InputHandleLike = ExternalEncryptedValueLike;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ClearValueOfFheType<etype extends FheType> = TypedValueOfBase<
-  ClearValueTypeName<etype>
-> & {
+export type ClearValueOfFheType<etype extends FheType> = TypedValueOfBase<ClearValueTypeName<etype>> & {
   readonly encryptedValue: EncryptedValue<etype>;
 };
 
@@ -135,8 +120,7 @@ export type ClearValue<etype extends FheType = FheType> = {
   [K in etype]: ClearValueOfFheType<K>;
 }[etype];
 
-export type ClearValueTypeName<etype extends FheType = FheType> =
-  FheTypeToValueTypeNameMap[etype];
+export type ClearValueTypeName<etype extends FheType = FheType> = FheTypeToValueTypeNameMap[etype];
 
 export type ClearBool = ClearValue<'ebool'>;
 export type ClearUint8 = ClearValue<'euint8'>;

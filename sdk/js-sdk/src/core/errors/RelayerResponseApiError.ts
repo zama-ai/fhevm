@@ -25,10 +25,7 @@ export class RelayerResponseApiError extends RelayerResponseErrorBase {
   readonly #relayerApiError: RelayerApiError;
 
   constructor(params: RelayerResponseApiErrorParams) {
-    const metaMessages = [
-      `label: ${params.relayerApiError.label}`,
-      `message: ${params.relayerApiError.message}`,
-    ];
+    const metaMessages = [`label: ${params.relayerApiError.label}`, `message: ${params.relayerApiError.message}`];
 
     super({
       ...params,

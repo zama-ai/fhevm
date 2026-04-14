@@ -1,14 +1,7 @@
-import type {
-  RecordStringArrayPropertyType,
-  RecordStringPropertyType,
-} from '../types/record-p.js';
+import type { RecordStringArrayPropertyType, RecordStringPropertyType } from '../types/record-p.js';
 import type { BytesHex, BytesHexNo0x } from '../types/primitives.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
-import {
-  assertRecordArrayProperty,
-  isRecordNonNullableProperty,
-  typeofProperty,
-} from './record.js';
+import { assertRecordArrayProperty, isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { InternalError } from './errors/InternalError.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
 
@@ -35,9 +28,7 @@ export function isNo0x(s: unknown): s is string {
  * variant like `Bytes65HexNo0x`), the return type preserves the size brand via
  * generic inference — no per-size overload needed.
  */
-export function ensure0x<T extends BytesHexNo0x>(
-  s: T,
-): BytesHex & Omit<T, keyof BytesHexNo0x>;
+export function ensure0x<T extends BytesHexNo0x>(s: T): BytesHex & Omit<T, keyof BytesHexNo0x>;
 export function ensure0x(s: string): `0x${string}`;
 export function ensure0x(s: string): `0x${string}` {
   return !s.startsWith('0x') ? `0x${s}` : (s as `0x${string}`);
@@ -48,9 +39,7 @@ export function ensure0x(s: string): `0x${string}` {
  * variant like `Bytes65Hex`), the return type preserves the size brand via
  * generic inference — no per-size overload needed.
  */
-export function remove0x<T extends BytesHex>(
-  s: T,
-): BytesHexNo0x & Omit<T, keyof BytesHex>;
+export function remove0x<T extends BytesHex>(s: T): BytesHexNo0x & Omit<T, keyof BytesHex>;
 export function remove0x(s: string): string;
 export function remove0x(s: string): string {
   return s.startsWith('0x') ? s.substring(2) : s;
@@ -93,10 +82,7 @@ export function assertIsNonEmptyString(s: unknown): asserts s is string {
  * }
  * ```
  */
-export function isRecordStringProperty<K extends string>(
-  o: unknown,
-  property: K,
-): o is RecordStringPropertyType<K> {
+export function isRecordStringProperty<K extends string>(o: unknown, property: K): o is RecordStringPropertyType<K> {
   if (!isRecordNonNullableProperty(o, property)) {
     return false;
   }
@@ -221,11 +207,7 @@ export function capitalizeFirstLetter(s: string): string {
 
 export function safeJSONstringify(o: unknown, space?: string | number): string {
   try {
-    return JSON.stringify(
-      o,
-      (_, v: unknown) => (typeof v === 'bigint' ? v.toString() : v),
-      space,
-    );
+    return JSON.stringify(o, (_, v: unknown) => (typeof v === 'bigint' ? v.toString() : v), space);
   } catch {
     return '';
   }

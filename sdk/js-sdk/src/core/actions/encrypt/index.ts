@@ -1,8 +1,4 @@
-export {
-  type GenerateZkProofParameters,
-  type GenerateZkProofReturnType,
-  generateZkProof,
-} from './generateZkProof.js';
+export { type GenerateZkProofParameters, type GenerateZkProofReturnType, generateZkProof } from './generateZkProof.js';
 
 export {
   type EncryptParameters,

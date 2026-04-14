@@ -1,28 +1,25 @@
+import type { ReadPublicValueParameters, ReadPublicValueReturnType } from '../../actions/base/readPublicValue.js';
+import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
+import type { FhevmChain } from '../../types/fhevmChain.js';
+import type {
+  SignedSelfDecryptionPermit,
+  SignedDelegatedDecryptionPermit,
+} from '../../types/signedDecryptionPermit.js';
+import type {
+  SerializeE2eTransportKeypairParameters,
+  SerializeE2eTransportKeypairReturnType,
+} from '../../actions/chain/serializeE2eTransportKeypair.js';
 import {
   publicDecrypt,
   type PublicDecryptParameters,
   type PublicDecryptReturnType,
 } from '../../actions/base/publicDecrypt.js';
-import type {
-  ReadPublicValueParameters,
-  ReadPublicValueReturnType,
-} from '../../actions/base/readPublicValue.js';
-import type {
-  Fhevm,
-  FhevmBase,
-  FhevmExtension,
-} from '../../types/coreFhevmClient.js';
-import type { FhevmChain } from '../../types/fhevmChain.js';
 import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
 import {
   signDecryptionPermit,
   type SignSelfDecryptionPermitParameters,
   type SignDelegatedDecryptionPermitParameters,
 } from '../../actions/base/signDecryptionPermit.js';
-import type {
-  SignedSelfDecryptionPermit,
-  SignedDelegatedDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
 import {
   parseE2eTransportKeypair,
   type ParseE2eTransportKeypairParameters,
@@ -33,10 +30,6 @@ import {
   type FetchFheEncryptionKeyBytesParameters,
   type FetchFheEncryptionKeyBytesReturnType,
 } from '../../actions/chain/fetchFheEncryptionKeyBytes.js';
-import type {
-  SerializeE2eTransportKeypairParameters,
-  SerializeE2eTransportKeypairReturnType,
-} from '../../actions/chain/serializeE2eTransportKeypair.js';
 import { serializeE2eTransportKeypair } from '../../actions/chain/serializeE2eTransportKeypair.js';
 import {
   serializeSignedDecryptionPermit,
@@ -53,9 +46,7 @@ import {
 
 export type BaseActions = {
   /** Alias for {@link readPublicValue}. */
-  readonly publicDecrypt: (
-    parameters: PublicDecryptParameters,
-  ) => Promise<PublicDecryptReturnType>;
+  readonly publicDecrypt: (parameters: PublicDecryptParameters) => Promise<PublicDecryptReturnType>;
   /**
    * Reads the decrypted (clear) value of an encrypted value that was made public.
    *
@@ -84,9 +75,7 @@ export type BaseActions = {
    * await contract.verify(handles, result.orderedAbiEncodedClearValues, result.decryptionProof);
    * ```
    */
-  readonly readPublicValue: (
-    parameters: ReadPublicValueParameters,
-  ) => Promise<ReadPublicValueReturnType>;
+  readonly readPublicValue: (parameters: ReadPublicValueParameters) => Promise<ReadPublicValueReturnType>;
   readonly signDecryptionPermit: {
     /**
      * Signs a self decryption permit — Alice decrypts her own encrypted values.
@@ -97,9 +86,7 @@ export type BaseActions = {
      *
      * No `delegatorAddress` needed — the signer is the owner.
      */
-    (
-      parameters: SignSelfDecryptionPermitParameters,
-    ): Promise<SignedSelfDecryptionPermit>;
+    (parameters: SignSelfDecryptionPermitParameters): Promise<SignedSelfDecryptionPermit>;
     /**
      * Signs a delegated decryption permit — Bob decrypts Alice's (`delegatorAddress`) encrypted values.
      *
@@ -108,9 +95,7 @@ export type BaseActions = {
      * 3. Bob calls `decrypt` with this permit.
      * 4. The KMS authenticates Bob via his signature, then checks the on-chain ACL to verify Alice delegated to Bob.
      */
-    (
-      parameters: SignDelegatedDecryptionPermitParameters,
-    ): Promise<SignedDelegatedDecryptionPermit>;
+    (parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>;
   };
   /** Deserializes a previously serialized e2e transport keypair back into a usable keypair. */
   readonly parseE2eTransportKeypair: (
@@ -141,33 +126,24 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     publicDecrypt: (parameters) => publicDecrypt(fhevm, parameters),
     readPublicValue: (parameters) => publicDecrypt(fhevm, parameters),
     signDecryptionPermit: ((
-      parameters:
-        | SignSelfDecryptionPermitParameters
-        | SignDelegatedDecryptionPermitParameters,
+      parameters: SignSelfDecryptionPermitParameters | SignDelegatedDecryptionPermitParameters,
     ) => {
       if (parameters.delegatorAddress !== undefined) {
         return signDecryptionPermit(fhevm, parameters);
       }
       return signDecryptionPermit(fhevm, parameters);
     }) as BaseActions['signDecryptionPermit'],
-    parseE2eTransportKeypair: (parameters) =>
-      parseE2eTransportKeypair(fhevm, parameters),
-    serializeE2eTransportKeypair: (parameters) =>
-      serializeE2eTransportKeypair(fhevm, parameters),
-    serializeSignedDecryptionPermit: (parameters) =>
-      serializeSignedDecryptionPermit(fhevm, parameters),
-    parseSignedDecryptionPermit: (parameters) =>
-      parseSignedDecryptionPermit(fhevm, parameters),
-    fetchFheEncryptionKeyBytes: (parameters) =>
-      fetchFheEncryptionKeyBytes(fhevm, parameters),
+    parseE2eTransportKeypair: (parameters) => parseE2eTransportKeypair(fhevm, parameters),
+    serializeE2eTransportKeypair: (parameters) => serializeE2eTransportKeypair(fhevm, parameters),
+    serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
+    parseSignedDecryptionPermit: (parameters) => parseSignedDecryptionPermit(fhevm, parameters),
+    fetchFheEncryptionKeyBytes: (parameters) => fetchFheEncryptionKeyBytes(fhevm, parameters),
   };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function baseActions(
-  fhevm: FhevmBase<FhevmChain>,
-): FhevmExtension<BaseActions> {
+export function baseActions(fhevm: FhevmBase<FhevmChain>): FhevmExtension<BaseActions> {
   assertIsFhevmBaseClient(fhevm);
   return {
     actions: _baseActions(fhevm),

@@ -40,10 +40,7 @@ function loadEnv(): Record<string, string> {
 
 const env = loadEnv();
 
-import {
-  setFhevmRuntimeConfig,
-  createFhevmClient,
-} from '../../src/ethers/index.js';
+import { setFhevmRuntimeConfig, createFhevmClient } from '../../src/ethers/index.js';
 import { sepolia } from '../../src/core/chains/index.js';
 import { asChecksummedAddress } from '../../src/core/base/address.js';
 import { toHandle } from '../../src/core/handle/FhevmHandle.js';
@@ -95,12 +92,8 @@ async function main(): Promise<void> {
   // ── 2. Provider + wallet ────────────────────────────────────────────────
   step('Create provider and wallet');
   const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const privateKey = env.WALLET_PRIVATE_KEY
-    ? `0x${env.WALLET_PRIVATE_KEY}`
-    : undefined;
-  const wallet = privateKey
-    ? new ethers.Wallet(privateKey, provider)
-    : ethers.Wallet.createRandom().connect(provider);
+  const privateKey = env.WALLET_PRIVATE_KEY ? `0x${env.WALLET_PRIVATE_KEY}` : undefined;
+  const wallet = privateKey ? new ethers.Wallet(privateKey, provider) : ethers.Wallet.createRandom().connect(provider);
   if (!privateKey) console.log('  (using random wallet — no .env.local found)');
   const userAddress = asChecksummedAddress(wallet.address);
   console.log('  User address:', userAddress);
@@ -132,9 +125,7 @@ async function main(): Promise<void> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log('  Encryption failed (relayer issue):', msg.split('\n')[0]);
-    console.log(
-      '  (ZK proof generation succeeded — relayer coprocessor signing unavailable)',
-    );
+    console.log('  (ZK proof generation succeeded — relayer coprocessor signing unavailable)');
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -152,9 +143,7 @@ async function main(): Promise<void> {
       if (d === undefined) continue;
       const expected = PUBLIC_ENCRYPTED_VALUES[i]?.expected;
       const match = d.value === expected ? 'OK' : 'MISMATCH';
-      console.log(
-        `  [${match}] ${d.encryptedValue.fheType}: ${d.value} (expected: ${expected})`,
-      );
+      console.log(`  [${match}] ${d.encryptedValue.fheType}: ${d.value} (expected: ${expected})`);
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -167,28 +156,17 @@ async function main(): Promise<void> {
 
   // Read the FHECounter's encrypted count from the contract
   step('Read encrypted count from FHECounter contract');
-  const counter = new ethers.Contract(
-    FHE_COUNTER_ADDRESS,
-    FHE_COUNTER_ABI,
-    provider,
-  );
+  const counter = new ethers.Contract(FHE_COUNTER_ADDRESS, FHE_COUNTER_ABI, provider);
   const rawCount = await counter.getCount();
   const countHex = '0x' + BigInt(rawCount).toString(16).padStart(64, '0');
   console.log('  Raw count (bigint):', rawCount.toString());
   console.log('  Count handle (hex):', countHex);
 
   if (rawCount === 0n) {
-    console.log(
-      '  Count is zero — no encrypted value stored yet. Skipping decrypt.',
-    );
+    console.log('  Count is zero — no encrypted value stored yet. Skipping decrypt.');
   } else {
     const countHandle = toHandle(countHex);
-    console.log(
-      '  Parsed handle — chainId:',
-      countHandle.chainId.toString(),
-      'fheType:',
-      countHandle.fheType,
-    );
+    console.log('  Parsed handle — chainId:', countHandle.chainId.toString(), 'fheType:', countHandle.fheType);
 
     step('Generate E2E transport key pair');
     const e2eTransportKeypair = await client.generateE2eTransportKeypair();
@@ -205,11 +183,7 @@ async function main(): Promise<void> {
       signerAddress: wallet.address,
       signer: wallet,
     });
-    console.log(
-      '  Domain:',
-      signedPermit.eip712.domain.name,
-      'v' + signedPermit.eip712.domain.version,
-    );
+    console.log('  Domain:', signedPermit.eip712.domain.name, 'v' + signedPermit.eip712.domain.version);
     console.log('  Signature:', signedPermit.signature.slice(0, 20) + '...');
 
     step('Decrypt the FHECounter count');
@@ -226,9 +200,7 @@ async function main(): Promise<void> {
       });
       const decrypted = results[0];
       console.log('  Decryption succeeded!');
-      console.log(
-        `  Value: ${decrypted?.value} (${decrypted?.encryptedValue.fheType})`,
-      );
+      console.log(`  Value: ${decrypted?.value} (${decrypted?.encryptedValue.fheType})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log('  Decryption failed:', msg.slice(0, 200));

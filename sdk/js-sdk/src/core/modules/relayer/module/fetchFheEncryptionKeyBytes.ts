@@ -1,7 +1,3 @@
-////////////////////////////////////////////////////////////////////////////////
-// fetchKeyUrl
-////////////////////////////////////////////////////////////////////////////////
-
 import type {
   FetchFheEncryptionKeyBytesParameters,
   FetchFheEncryptionKeyBytesReturnType,
@@ -25,8 +21,7 @@ export async function fetchFheEncryptionKeyBytes(
     options,
   });
 
-  const init: RequestInit | undefined =
-    options?.signal !== undefined ? { signal: options.signal } : undefined;
+  const init: RequestInit | undefined = options?.signal !== undefined ? { signal: options.signal } : undefined;
 
   // 2. Download the actual keys from those URLs
   const paramsBytes = await fetchFheEncryptionKeyBytesWithSource_(source, {

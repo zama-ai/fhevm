@@ -11,9 +11,7 @@ export type RelayerMaxRetryErrorType = RelayerMaxRetryError & {
   name: 'RelayerMaxRetryError';
 };
 
-export type RelayerMaxRetryErrorParams = Prettify<
-  Omit<RelayerFetchErrorBaseParams, 'name' | 'message' | 'details'>
->;
+export type RelayerMaxRetryErrorParams = Prettify<Omit<RelayerFetchErrorBaseParams, 'name' | 'message' | 'details'>>;
 
 /**
  * The maximum number of retries is exceeded.

@@ -1,9 +1,4 @@
-import type {
-  Address,
-  Bytes20,
-  Bytes20HexNo0x,
-  ChecksummedAddress,
-} from '../types/primitives.js';
+import type { Address, Bytes20, Bytes20HexNo0x, ChecksummedAddress } from '../types/primitives.js';
 import type {
   RecordAddressPropertyType,
   RecordChecksummedAddressArrayPropertyType,
@@ -11,11 +6,7 @@ import type {
 } from '../types/record-p.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import {
-  assertRecordArrayProperty,
-  isRecordNonNullableProperty,
-  typeofProperty,
-} from './record.js';
+import { assertRecordArrayProperty, isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { remove0x } from './string.js';
 import { AddressError } from './errors/AddressError.js';
 import { ChecksummedAddressError } from './errors/ChecksummedAddressError.js';
@@ -25,8 +16,7 @@ import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const ZERO_ADDRESS =
-  '0x0000000000000000000000000000000000000000' as ChecksummedAddress;
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as ChecksummedAddress;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,9 +26,7 @@ export const ZERO_ADDRESS =
  * @param address - A valid EIP-55 checksummed address
  * @returns The 20-byte Uint8Array representation
  */
-export function checksummedAddressToBytes20(
-  address: ChecksummedAddress,
-): Bytes20 {
+export function checksummedAddressToBytes20(address: ChecksummedAddress): Bytes20 {
   const hex = remove0x(address);
   const bytes = new Uint8Array(20);
   for (let i = 0; i < 20; i++) {
@@ -56,9 +44,7 @@ export function checksummedAddressToBytes20(
  * @param value - The value to check
  * @returns True if the value is a valid checksummed address
  */
-export function isChecksummedAddress(
-  value: unknown,
-): value is ChecksummedAddress {
+export function isChecksummedAddress(value: unknown): value is ChecksummedAddress {
   try {
     const a = toChecksummedAddress(value);
     return a === value;
@@ -96,10 +82,7 @@ export function assertIsChecksummedAddress(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function asChecksummedAddress(
-  value: unknown,
-  options?: ErrorMetadataParams,
-): ChecksummedAddress {
+export function asChecksummedAddress(value: unknown, options?: ErrorMetadataParams): ChecksummedAddress {
   assertIsChecksummedAddress(value, options ?? {});
   return value;
 }
@@ -147,20 +130,14 @@ export function isAddress(value: unknown): value is Address {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function asAddress(
-  value: unknown,
-  options?: ErrorMetadataParams,
-): Address {
+export function asAddress(value: unknown, options?: ErrorMetadataParams): Address {
   assertIsAddress(value, options ?? {});
   return value;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function assertIsAddress(
-  value: unknown,
-  options: ErrorMetadataParams,
-): asserts value is Address {
+export function assertIsAddress(value: unknown, options: ErrorMetadataParams): asserts value is Address {
   if (!isAddress(value)) {
     throw new AddressError({ address: String(value) }, options);
   }
@@ -217,10 +194,7 @@ export function assertRecordAddressProperty<K extends string>(
         property,
         type,
         expectedType: 'address',
-        value:
-          type === 'string'
-            ? String((record as Record<string, unknown>)[property])
-            : undefined,
+        value: type === 'string' ? String((record as Record<string, unknown>)[property]) : undefined,
       },
       options,
     );
@@ -255,10 +229,7 @@ export function assertRecordChecksummedAddressProperty<K extends string>(
         property,
         type,
         expectedType: 'checksummedAddress',
-        value:
-          type === 'string'
-            ? String((record as Record<string, unknown>)[property])
-            : undefined,
+        value: type === 'string' ? String((record as Record<string, unknown>)[property]) : undefined,
       },
       options,
     );
@@ -288,9 +259,7 @@ export function assertRecordChecksummedAddressArrayProperty<K extends string>(
  * @param value - The 0x-prefixed address to checksum
  * @returns The checksummed address, or undefined if invalid
  */
-export function toChecksummedAddress(
-  value: unknown,
-): ChecksummedAddress | undefined {
+export function toChecksummedAddress(value: unknown): ChecksummedAddress | undefined {
   if (!isBytes20Hex(value)) {
     return undefined;
   }
@@ -304,21 +273,15 @@ export function toChecksummedAddress(
  * @param address - The 0x-prefixed address to checksum
  * @returns The checksummed address, or undefined if invalid
  */
-export function addressToChecksummedAddress(
-  address: Address,
-): ChecksummedAddress {
+export function addressToChecksummedAddress(address: Address): ChecksummedAddress {
   return _toChecksummedAddress(remove0x(address).toLowerCase());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function _toChecksummedAddress(
-  bytes20No0xLowerCase: string,
-): ChecksummedAddress {
+export function _toChecksummedAddress(bytes20No0xLowerCase: string): ChecksummedAddress {
   // Hash the lowercase hex string as UTF-8 bytes (EIP-55)
-  const hash = bytesToHex(
-    keccak_256(new TextEncoder().encode(bytes20No0xLowerCase)),
-  );
+  const hash = bytesToHex(keccak_256(new TextEncoder().encode(bytes20No0xLowerCase)));
 
   // Apply checksum: uppercase if hash nibble >= 8
   let checksummed = '0x';

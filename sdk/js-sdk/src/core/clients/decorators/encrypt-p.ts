@@ -1,10 +1,7 @@
-import { asFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
-import type {
-  FhevmBase,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { FhevmBase, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
+import { asFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
 import { fetchFheEncryptionKeyBytes } from '../../key/fetchFheEncryptionKeyBytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////

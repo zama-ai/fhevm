@@ -1,7 +1,4 @@
-import {
-  setFhevmRuntimeConfig,
-  createFhevmClient,
-} from '../../../src/ethers/index.js';
+import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/index.js';
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
 
@@ -57,9 +54,7 @@ async function run() {
     log('Creating client...');
     const client = createFhevmClient({
       chain: sepolia,
-      provider: new ethers.JsonRpcProvider(
-        'https://ethereum-sepolia-rpc.publicnode.com',
-      ),
+      provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),
     });
     log('[PASS] Client created');
 
@@ -77,9 +72,7 @@ async function run() {
     if (!tfheInfo) {
       throw new Error('TFHE module not initialized after client.init()');
     }
-    log(
-      `  [TFHE Module] threads: ${tfheInfo.numberOfThreads} (available: ${tfheInfo.threadsAvailable})`,
-    );
+    log(`  [TFHE Module] threads: ${tfheInfo.numberOfThreads} (available: ${tfheInfo.threadsAvailable})`);
     log(`  [TFHE Module] wasmUrl: ${tfheInfo.wasmUrl ?? 'base64'}`);
     log(`  [TFHE Module] workerUrl: ${tfheInfo.workerUrl ?? 'base64'}`);
 

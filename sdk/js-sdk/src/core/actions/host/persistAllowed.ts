@@ -1,7 +1,7 @@
-import { persistAllowedAbi } from '../../host-contracts/abi-fragments/fragments.js';
-import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { Bytes32Hex, ChecksummedAddress } from '../../types/primitives.js';
+import { persistAllowedAbi } from '../../host-contracts/abi-fragments/fragments.js';
+import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
 
 export type PersistAllowedParameters = {
   readonly address: ChecksummedAddress;

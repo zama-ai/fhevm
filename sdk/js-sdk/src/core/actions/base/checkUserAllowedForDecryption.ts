@@ -1,10 +1,10 @@
 import type { HandleLike } from '../../types/encryptedTypes.js';
-import { assertIsChecksummedAddress } from '../../base/address.js';
-import { ACLUserDecryptionError } from '../../errors/ACLError.js';
-import { assertIsHandleLike, toHandle } from '../../handle/FhevmHandle.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { Bytes32Hex, ChecksummedAddress } from '../../types/primitives.js';
+import { assertIsChecksummedAddress } from '../../base/address.js';
+import { AclUserDecryptionError } from '../../errors/AclError.js';
+import { assertIsHandleLike, toHandle } from '../../handle/FhevmHandle.js';
 import { persistAllowed } from './persistAllowed.js';
 
 export type CheckUserAllowedForDecryptionParameters = {
@@ -31,9 +31,9 @@ export type CheckUserAllowedForDecryptionParameters = {
  *
  * @throws A {@link FhevmHandleError} If checkArguments is true and any handle is not a valid Bytes32Hex
  * @throws A {@link ChecksummedAddressError} If checkArguments is true and any address is not a valid checksummed address
- * @throws A {@link ACLUserDecryptionError} If userAddress equals any contractAddress
- * @throws A {@link ACLUserDecryptionError} If user is not authorized to decrypt any handle
- * @throws A {@link ACLUserDecryptionError} If any contract is not authorized to decrypt its handle
+ * @throws A {@link AclUserDecryptionError} If userAddress equals any contractAddress
+ * @throws A {@link AclUserDecryptionError} If user is not authorized to decrypt any handle
+ * @throws A {@link AclUserDecryptionError} If any contract is not authorized to decrypt its handle
  */
 export async function checkUserAllowedForDecryption(
   fhevm: Fhevm<FhevmChain>,
@@ -63,13 +63,9 @@ export async function checkUserAllowedForDecryption(
 
   // 3. Verify rule: userAddress !== contractAddress
   for (const pair of pairsArray) {
-    if (
-      parameters.userAddress.toLowerCase() ===
-      pair.contractAddress.toLowerCase()
-    ) {
-      throw new ACLUserDecryptionError({
-        contractAddress: fhevm.chain.fhevm.contracts.acl
-          .address as ChecksummedAddress,
+    if (parameters.userAddress.toLowerCase() === pair.contractAddress.toLowerCase()) {
+      throw new AclUserDecryptionError({
+        contractAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
         message: `userAddress ${parameters.userAddress} should not be equal to contractAddress when requesting user decryption!`,
       });
     }
@@ -132,9 +128,8 @@ export async function checkUserAllowedForDecryption(
     // 7. Verify user permissions
     const userKey = getKey(parameters.userAddress, pair.handleBytes32Hex);
     if (resultMap.get(userKey) !== true) {
-      throw new ACLUserDecryptionError({
-        contractAddress: fhevm.chain.fhevm.contracts.acl
-          .address as ChecksummedAddress,
+      throw new AclUserDecryptionError({
+        contractAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
         message: `User ${parameters.userAddress} is not authorized to decrypt handle ${pair.handleBytes32Hex}!`,
       });
     }
@@ -142,9 +137,8 @@ export async function checkUserAllowedForDecryption(
     // 8. Verify contract permissions
     const contractKey = getKey(pair.contractAddress, pair.handleBytes32Hex);
     if (resultMap.get(contractKey) !== true) {
-      throw new ACLUserDecryptionError({
-        contractAddress: fhevm.chain.fhevm.contracts.acl
-          .address as ChecksummedAddress,
+      throw new AclUserDecryptionError({
+        contractAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
         message: `Dapp contract ${pair.contractAddress} is not authorized to user decrypt handle ${pair.handleBytes32Hex}!`,
       });
     }

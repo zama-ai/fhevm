@@ -12,14 +12,8 @@
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.e2eTransportKeypair.test.ts
 //
 import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmDecryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/ethers';
-import {
-  serializeE2eTransportKeypair,
-  parseE2eTransportKeypair,
-} from '@fhevm/sdk/actions/chain';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 
 describe('Decrypt client — e2e transport keypair', () => {
@@ -67,12 +61,8 @@ describe('Decrypt client — e2e transport keypair', () => {
     expect(serialized.privateKey.startsWith('0x')).toBe(true);
     expect(serialized.publicKey.length).toBeGreaterThan(2);
     expect(serialized.privateKey.length).toBeGreaterThan(2);
-    console.log(
-      `  publicKey: ${serialized.publicKey.slice(0, 20)}... (${serialized.publicKey.length} chars)`,
-    );
-    console.log(
-      `  privateKey: ${serialized.privateKey.slice(0, 20)}... (${serialized.privateKey.length} chars)`,
-    );
+    console.log(`  publicKey: ${serialized.publicKey.slice(0, 20)}... (${serialized.publicKey.length} chars)`);
+    console.log(`  privateKey: ${serialized.privateKey.slice(0, 20)}... (${serialized.privateKey.length} chars)`);
   });
 
   it('should round-trip: generate → serialize → parse', async () => {

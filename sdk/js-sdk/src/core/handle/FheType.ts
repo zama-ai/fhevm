@@ -22,6 +22,7 @@ import type {
   Uint8Number,
 } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { ValueTypeName } from '../types/primitives.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { assert } from '../base/errors/InternalError.js';
 import {
@@ -37,14 +38,9 @@ import {
   MAX_UINT_FOR_TYPE,
 } from '../base/uint.js';
 import { bigIntToBytesHex, bytesToBigInt } from '../base/bytes.js';
-import {
-  addressToChecksummedAddress,
-  asAddress,
-  assertIsAddress,
-} from '../base/address.js';
+import { addressToChecksummedAddress, asAddress, assertIsAddress } from '../base/address.js';
 import { assertNever } from '../base/errors/utils.js';
 import { asBoolean } from '../base/boolean.js';
-import type { ValueTypeName } from '../types/primitives.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -117,9 +113,7 @@ const EncryptionBitwidthToFheTypeId: EncryptionBitsToFheTypeIdMap = {
   256: 8,
 } as const;
 
-const FheTypeIdToSolidityPrimitiveTypeName: Readonly<
-  Record<FheTypeId, SolidityPrimitiveTypeName>
-> = {
+const FheTypeIdToSolidityPrimitiveTypeName: Readonly<Record<FheTypeId, SolidityPrimitiveTypeName>> = {
   0: 'bool',
   //1:'uint256', euint4 has been deprecated
   2: 'uint256',
@@ -326,9 +320,7 @@ export function assertIsEncryptionBitsArray(
  * @throws A {@link FheTypeError} If bitwidth is not a valid encryption bit width.
  * @example fheTypeIdFromEncryptionBits(8) // 2 (euint8)
  */
-export function fheTypeIdFromEncryptionBits(
-  bitwidth: EncryptionBits,
-): FheTypeId {
+export function fheTypeIdFromEncryptionBits(bitwidth: EncryptionBits): FheTypeId {
   return EncryptionBitwidthToFheTypeId[bitwidth];
 }
 
@@ -371,9 +363,7 @@ export function fheTypeNameFromTypeName(typeName: ValueTypeName): FheType {
  * @example solidityPrimitiveTypeNameFromFheTypeId(7) // 'address'
  * @example solidityPrimitiveTypeNameFromFheTypeId(2) // 'uint256'
  */
-export function solidityPrimitiveTypeNameFromFheTypeId(
-  typeId: FheTypeId,
-): SolidityPrimitiveTypeName {
+export function solidityPrimitiveTypeNameFromFheTypeId(typeId: FheTypeId): SolidityPrimitiveTypeName {
   return FheTypeIdToSolidityPrimitiveTypeName[typeId];
 }
 
@@ -421,10 +411,7 @@ function _assertMinimumEncryptionBitWidth(bw: number): void {
   );
 }
 
-export function bytesToClearValueType<etype extends FheType>(
-  fheType: etype,
-  bytes: Bytes,
-): ClearValueType<etype> {
+export function bytesToClearValueType<etype extends FheType>(fheType: etype, bytes: Bytes): ClearValueType<etype> {
   const bn = bytesToBigInt(bytes);
   // needed to type narrowing
   const ft: FheType = fheType;

@@ -1,15 +1,10 @@
+import type { UintNormalizedMap, UintValueTypeMap, ValueTypeBitsMap, ValueTypeMap } from './primitives.js';
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // FheType
 //
 ////////////////////////////////////////////////////////////////////////////////
-
-import type {
-  UintNormalizedMap,
-  UintValueTypeMap,
-  ValueTypeBitsMap,
-  ValueTypeMap,
-} from './primitives.js';
 
 export type FheTypeToValueTypeMap = {
   readonly ebool: 'bool';
@@ -89,8 +84,7 @@ export type ValueTypeNameToFheTypeMap = {
  *
  * @typeParam T - The FHE type. Defaults to the union of all clear value types.
  */
-export type ClearValueType<etype extends FheType = FheType> =
-  ValueTypeMap[FheTypeToValueTypeMap[etype]];
+export type ClearValueType<etype extends FheType = FheType> = ValueTypeMap[FheTypeToValueTypeMap[etype]];
 
 // Same as ClearValueType but as a full map: "ebool" → boolean, "euint8" → Uint8Number, etc.
 export type ClearValueTypeMap = {
@@ -122,14 +116,11 @@ export type FheTypeIdToNameMap = {
 
 // ebool is encrypted on 2 bits (not 1)
 export type EncryptionBitsMap = Readonly<{
-  [etype in FheType]: etype extends 'ebool'
-    ? 2
-    : ValueTypeBitsMap[FheTypeToValueTypeMap[etype]];
+  [etype in FheType]: etype extends 'ebool' ? 2 : ValueTypeBitsMap[FheTypeToValueTypeMap[etype]];
 }>;
 
 export type EncryptionBits = EncryptionBitsMap[keyof EncryptionBitsMap];
-export type EncryptionBitsOf<etype extends keyof EncryptionBitsMap> =
-  EncryptionBitsMap[etype];
+export type EncryptionBitsOf<etype extends keyof EncryptionBitsMap> = EncryptionBitsMap[etype];
 
 export type FheTypeIdToEncryptionBitsMap = {
   [etype in keyof FheTypeToIdMap as FheTypeToIdMap[etype]]: EncryptionBitsMap[etype];

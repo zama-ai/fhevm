@@ -1,13 +1,13 @@
-////////////////////////////////////////////////////////////////////////////////
-// verifyZKProofCoprocessorSignatures
-////////////////////////////////////////////////////////////////////////////////
-
-import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { Bytes65Hex, BytesHex } from '../../types/primitives.js';
 import type { ZkProof } from '../../types/zkProof.js';
+import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
 import { verifyHandlesCoprocessorSignatures } from './verifyHandlesCoprocessorSignatures.js';
+
+////////////////////////////////////////////////////////////////////////////////
+// verifyZKProofCoprocessorSignatures
+////////////////////////////////////////////////////////////////////////////////
 
 export type VerifyZkProofCoprocessorSignaturesParameters = {
   readonly zkProof: ZkProof;

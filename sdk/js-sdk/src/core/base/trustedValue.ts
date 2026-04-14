@@ -89,10 +89,7 @@ Object.freeze(TrustedValueImpl);
  * @param token - A `symbol` that acts as the authenticity key.
  * @returns A frozen, opaque {@link TrustedValue} instance.
  */
-export function createTrustedValue<T>(
-  value: T,
-  token: symbol,
-): TrustedValue<T> {
+export function createTrustedValue<T>(value: T, token: symbol): TrustedValue<T> {
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-arguments
   return new TrustedValueImpl<T>(value, token);
 }
@@ -108,9 +105,6 @@ export function createTrustedValue<T>(
  * @throws {Error} `"Token mismatch"` if the token does not match the one
  *   used at creation time.
  */
-export function verifyTrustedValue<T>(
-  trustedValue: TrustedValue<T>,
-  token: symbol,
-): T {
+export function verifyTrustedValue<T>(trustedValue: TrustedValue<T>, token: symbol): T {
   return TrustedValueImpl.verify(trustedValue, token);
 }

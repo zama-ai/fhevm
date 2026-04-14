@@ -1,13 +1,7 @@
-import { asUint256BigInt, asUint8Number } from '../base/uint.js';
-import type {
-  ByteLength,
-  Bytes32Hex,
-  BytesHex,
-  Uint256BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
-import { asBytes32Hex, assertIsBytesHex } from '../base/bytes.js';
+import type { ByteLength, Bytes32Hex, BytesHex, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import { asUint256BigInt, asUint8Number } from '../base/uint.js';
+import { asBytes32Hex, assertIsBytesHex } from '../base/bytes.js';
 
 const EXTRA_DATA_V1 = 0x01;
 
@@ -21,14 +15,10 @@ export function fromKmsExtraData(extraData: BytesHex): {
   if (version === EXTRA_DATA_V1) {
     // 1 version byte + 32 contextId bytes = 33 bytes = 66 hex chars + 2 for '0x' = 68
     if (extraData.length < 68) {
-      throw new Error(
-        `extraData too short for v1: expected at least 33 bytes, got ${(extraData.length - 2) / 2}`,
-      );
+      throw new Error(`extraData too short for v1: expected at least 33 bytes, got ${(extraData.length - 2) / 2}`);
     }
     // 32-byte contextId starts at byte 1 (hex chars 4..67)
-    const contextIdBytes32Hex: Bytes32Hex = asBytes32Hex(
-      `0x${extraData.slice(4, 68)}`,
-    );
+    const contextIdBytes32Hex: Bytes32Hex = asBytes32Hex(`0x${extraData.slice(4, 68)}`);
     const kmsContextId = asUint256BigInt(BigInt(contextIdBytes32Hex));
     return { version, kmsContextId };
   }

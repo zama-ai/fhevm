@@ -1,31 +1,24 @@
-////////////////////////////////////////////////////////////////////////////////
-// resolveFhevmConfig
-////////////////////////////////////////////////////////////////////////////////
-
-import {
-  addressToChecksummedAddress,
-  assertIsAddress,
-} from '../../base/address.js';
-import { executeWithBatching } from '../../base/promise.js';
-import type {
-  FhevmExecutorContractData,
-  InputVerifierContractData,
-} from '../../types/coprocessor.js';
+import type { FhevmExecutorContractData, InputVerifierContractData } from '../../types/coprocessor.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { KmsVerifierContractData } from '../../types/kms.js';
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-} from '../../types/primitives.js';
-import { getFHEVMExecutorAddress } from './getFHEVMExecutorAddress.js';
+import type { ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
+import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
+import { executeWithBatching } from '../../base/promise.js';
+import { getFhevmExecutorAddress } from '../../host-contracts/getFhevmExecutorAddress-p.js';
 import { readFhevmExecutorContractData } from './readFhevmExecutorContractData.js';
 import { readInputVerifierContractData } from './readInputVerifierContractData.js';
 import { readKmsVerifierContractData } from './readKmsVerifierContractData.js';
 import { resolveChainId } from './resolveChainId.js';
 
+////////////////////////////////////////////////////////////////////////////////
+// resolveFhevmConfig
+////////////////////////////////////////////////////////////////////////////////
+
 type OptionalChainContract = {
   readonly address?: string;
 };
+
+////////////////////////////////////////////////////////////////////////////////
 
 export type ResolveFhevmConfigParameters = {
   readonly id?: number | bigint | undefined;
@@ -51,6 +44,8 @@ export type ResolveFhevmConfigParameters = {
   };
 };
 
+////////////////////////////////////////////////////////////////////////////////
+
 export type ResolveFhevmConfigReturnType = {
   readonly id: Uint64BigInt;
   readonly acl: ChecksummedAddress;
@@ -58,6 +53,8 @@ export type ResolveFhevmConfigReturnType = {
   readonly inputVerifier: InputVerifierContractData;
   readonly kmsVerifier: KmsVerifierContractData;
 };
+
+////////////////////////////////////////////////////////////////////////////////
 
 export async function resolveFhevmConfig(
   fhevm: Fhevm,
@@ -68,10 +65,7 @@ export async function resolveFhevmConfig(
   assertIsAddress(kmsVerifierAddress, {});
 
   const id: Uint64BigInt = await resolveChainId(fhevm, parameters);
-  const fhevmExecutorData = await _resolveFhevmExecutor(
-    fhevm,
-    parameters.fhevm.contracts,
-  );
+  const fhevmExecutorData = await _resolveFhevmExecutor(fhevm, parameters.fhevm.contracts);
 
   _assertOptionalAddressMatch(
     parameters.fhevm.contracts.inputVerifier?.address,
@@ -95,10 +89,7 @@ export async function resolveFhevmConfig(
       }),
   ];
 
-  const res = await executeWithBatching<unknown>(
-    rpcCalls,
-    fhevm.options.batchRpcCalls,
-  );
+  const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
 
   const inputVerifierData = res[0] as InputVerifierContractData;
   const kmsVerifierData = res[1] as KmsVerifierContractData;
@@ -121,11 +112,7 @@ export async function resolveFhevmConfig(
     'gatewayChainId',
   );
 
-  _assertOptionalNumericMatch(
-    parameters.fhevm.gateway?.id,
-    inputVerifierData.eip712Domain.chainId,
-    'gatewayChainId',
-  );
+  _assertOptionalNumericMatch(parameters.fhevm.gateway?.id, inputVerifierData.eip712Domain.chainId, 'gatewayChainId');
 
   const returnValue: ResolveFhevmConfigReturnType = {
     id,
@@ -162,7 +149,7 @@ async function _resolveFhevmExecutor(
   let address;
 
   if (acl !== undefined) {
-    const aclFhevmExecutor = await getFHEVMExecutorAddress(fhevm, {
+    const aclFhevmExecutor = await getFhevmExecutorAddress(fhevm, {
       address: addressToChecksummedAddress(acl),
     });
     if (fhevmExecutor !== undefined) {
@@ -175,9 +162,7 @@ async function _resolveFhevmExecutor(
     address = aclFhevmExecutor;
   } else {
     if (fhevmExecutor === undefined) {
-      throw new Error(
-        'Cannot resolve: either acl or fhevmExecutor address must be provided',
-      );
+      throw new Error('Cannot resolve: either acl or fhevmExecutor address must be provided');
     }
     address = addressToChecksummedAddress(fhevmExecutor);
   }
@@ -185,30 +170,22 @@ async function _resolveFhevmExecutor(
   return await readFhevmExecutorContractData(fhevm, { address });
 }
 
-function _assertOptionalAddressMatch(
-  actual: string | undefined,
-  expected: string,
-  label: string,
-): void {
+////////////////////////////////////////////////////////////////////////////////
+
+function _assertOptionalAddressMatch(actual: string | undefined, expected: string, label: string): void {
   if (actual !== undefined) {
     if (actual.toLowerCase() !== expected.toLowerCase()) {
-      throw new Error(
-        `${label} address mismatch: expected ${expected}, but ${actual} was provided`,
-      );
+      throw new Error(`${label} address mismatch: expected ${expected}, but ${actual} was provided`);
     }
   }
 }
 
-function _assertOptionalNumericMatch(
-  actual: number | bigint | undefined,
-  expected: bigint,
-  label: string,
-): void {
+////////////////////////////////////////////////////////////////////////////////
+
+function _assertOptionalNumericMatch(actual: number | bigint | undefined, expected: bigint, label: string): void {
   if (actual !== undefined) {
     if (BigInt(actual) !== expected) {
-      throw new Error(
-        `${label} mismatch: expected ${expected}, but ${actual} was provided`,
-      );
+      throw new Error(`${label} mismatch: expected ${expected}, but ${actual} was provided`);
     }
   }
 }

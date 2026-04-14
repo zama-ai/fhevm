@@ -1,28 +1,16 @@
+import type { KmsSignersContext } from '../types/kmsSignersContext.js';
+import type { BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import {
   assertIsKmsSignersContext,
   createKmsSignersContext,
   kmsSignersContextToExtraData,
 } from './KmsSignersContext-p.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import type {
-  BytesHex,
-  ChecksummedAddress,
-  Uint256BigInt,
-  Uint8Number,
-} from '../types/primitives.js';
 import { getCurrentKmsContextId } from './getCurrentKmsContextId-p.js';
-import {
-  getVersion,
-  isVersionStrictlyBefore,
-} from './HostContractVersion-p.js';
-import {
-  assertIsKmsExtraData,
-  fromKmsExtraData,
-  toKmsExtraData,
-} from '../kms/kmsExtraData.js';
+import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { assertIsKmsExtraData, fromKmsExtraData, toKmsExtraData } from '../kms/kmsExtraData.js';
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
 import { getKmsSignersAndThreshold } from './getKmsContextSignersAndThreshold-p.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,10 +30,7 @@ type ReturnType = KmsSignersContext;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function readKmsSignersContext(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+export async function readKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
   const kmsVerifierContractAddress = parameters.address;
 
   // TTL-cached
@@ -62,10 +47,7 @@ export async function readKmsSignersContext(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _readKmsSignersContextV1(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+async function _readKmsSignersContextV1(context: Context, parameters: Parameters): Promise<ReturnType> {
   if (parameters.kmsContextId !== undefined && parameters.kmsContextId !== 0n) {
     throw new Error('Impossible on v1');
   }
@@ -85,10 +67,7 @@ async function _readKmsSignersContextV1(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _readKmsSignersContext(
-  context: Context,
-  parameters: Parameters,
-): Promise<ReturnType> {
+async function _readKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
   let kmsContextId: Uint256BigInt;
   if (parameters.kmsContextId !== undefined) {
     if (parameters.kmsContextId === 0n) {
@@ -184,15 +163,12 @@ export async function reconcileKmsSignersContext(
     readonly mode: ReconcileMode;
   },
 ): Promise<KmsSignersContext> {
-  const { address, requestedKmsSignersContext, relayerExtraData, mode } =
-    parameters;
+  const { address, requestedKmsSignersContext, relayerExtraData, mode } = parameters;
 
   assertIsKmsExtraData(relayerExtraData, {});
   assertIsKmsSignersContext(requestedKmsSignersContext, {});
 
-  const requestedExtraData = kmsSignersContextToExtraData(
-    requestedKmsSignersContext,
-  );
+  const requestedExtraData = kmsSignersContextToExtraData(requestedKmsSignersContext);
 
   // 1. Exact match — the relayer used the same context as the SDK.
   if (relayerExtraData === requestedExtraData) {

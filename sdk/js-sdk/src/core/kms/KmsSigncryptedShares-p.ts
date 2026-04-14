@@ -1,30 +1,17 @@
-import { assertIsKmsSignersContext } from '../host-contracts/KmsSignersContext-p.js';
-import { ensure0x } from '../base/string.js';
-import type {
-  KmsSigncryptedSharesMetadata,
-  KmsSigncryptedShare,
-} from '../types/kms-p.js';
-
-import type {
-  KmsSigncryptedShares,
-  KmsSigncryptedSharesBrand,
-} from '../types/kms.js';
-import type {
-  BytesHex,
-  BytesHexNo0x,
-  ChecksummedAddress,
-} from '../types/primitives.js';
-import { assertIsKmsExtraData } from './kmsExtraData.js';
+import type { KmsSigncryptedSharesMetadata, KmsSigncryptedShare } from '../types/kms-p.js';
+import type { KmsSigncryptedShares, KmsSigncryptedSharesBrand } from '../types/kms.js';
+import type { BytesHex, BytesHexNo0x, ChecksummedAddress } from '../types/primitives.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import { reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import { assertIsKmsSignersContext } from '../host-contracts/KmsSignersContext-p.js';
+import { ensure0x } from '../base/string.js';
+import { assertIsKmsExtraData } from './kmsExtraData.js';
+import { reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN = Symbol(
-  'KmsSigncryptedShares.token',
-);
+const PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN = Symbol('KmsSigncryptedShares.token');
 
 const GET_METADATA_FUNC = Symbol('KmsSigncryptedShares.getMetadata');
 const GET_SHARES_FUNC = Symbol('KmsSigncryptedShares.getShares');
@@ -46,10 +33,7 @@ class KmsSigncryptedSharesImpl implements KmsSigncryptedShares {
   readonly #metadata: KmsSigncryptedSharesMetadata;
   readonly #shares: readonly KmsSigncryptedShare[];
 
-  constructor(
-    metadata: KmsSigncryptedSharesMetadata,
-    shares: readonly KmsSigncryptedShare[],
-  ) {
+  constructor(metadata: KmsSigncryptedSharesMetadata, shares: readonly KmsSigncryptedShare[]) {
     this.#metadata = {
       kmsSignersContext: metadata.kmsSignersContext,
       eip712Domain: metadata.eip712Domain,
@@ -91,9 +75,7 @@ type Context = {
  * Asserts that at least one share exists and that all shares carry the same
  * `extraData`. Returns the common `extraData` value.
  */
-function assertUniformExtraData(
-  shares: readonly KmsSigncryptedShare[],
-): BytesHexNo0x {
+function assertUniformExtraData(shares: readonly KmsSigncryptedShare[]): BytesHexNo0x {
   const firstShare = shares[0];
   if (firstShare === undefined) {
     throw new Error('Expected at least one signcrypted share.');
@@ -153,19 +135,14 @@ export async function createKmsSigncryptedShares(
   assertIsKmsExtraData(relayerExtraData, {});
 
   // Reconcile KMS signer context using 'loose' mode.
-  const reconciledKmsSignersContext: KmsSignersContext =
-    await reconcileKmsSignersContext(context, {
-      address: context.chain.fhevm.contracts.kmsVerifier
-        .address as ChecksummedAddress,
-      relayerExtraData,
-      requestedKmsSignersContext: metadata.kmsSignersContext,
-      mode: 'loose',
-    });
+  const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
+    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    relayerExtraData,
+    requestedKmsSignersContext: metadata.kmsSignersContext,
+    mode: 'loose',
+  });
 
-  return new KmsSigncryptedSharesImpl(
-    { ...metadata, kmsSignersContext: reconciledKmsSignersContext },
-    shares,
-  );
+  return new KmsSigncryptedSharesImpl({ ...metadata, kmsSignersContext: reconciledKmsSignersContext }, shares);
 }
 
 /**
@@ -174,27 +151,19 @@ export async function createKmsSigncryptedShares(
  *
  * @internal
  */
-export function getShares(
-  signcryptedShares: KmsSigncryptedShares,
-): readonly KmsSigncryptedShare[] {
+export function getShares(signcryptedShares: KmsSigncryptedShares): readonly KmsSigncryptedShare[] {
   if (!(signcryptedShares instanceof KmsSigncryptedSharesImpl)) {
     throw new Error('Invalid KmsSigncryptedShares');
   }
-  return signcryptedShares[GET_SHARES_FUNC](
-    PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN,
-  );
+  return signcryptedShares[GET_SHARES_FUNC](PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN);
 }
 
 /**
  * @internal
  */
-export function getMetadata(
-  signcryptedShares: KmsSigncryptedShares,
-): KmsSigncryptedSharesMetadata {
+export function getMetadata(signcryptedShares: KmsSigncryptedShares): KmsSigncryptedSharesMetadata {
   if (!(signcryptedShares instanceof KmsSigncryptedSharesImpl)) {
     throw new Error('Invalid KmsSigncryptedShares');
   }
-  return signcryptedShares[GET_METADATA_FUNC](
-    PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN,
-  );
+  return signcryptedShares[GET_METADATA_FUNC](PRIVATE_KMS_SIGNCRYPTED_SHARES_TOKEN);
 }

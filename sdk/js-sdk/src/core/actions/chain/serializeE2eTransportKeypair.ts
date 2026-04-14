@@ -1,14 +1,11 @@
-import type {
-  Fhevm,
-  OptionalNativeClient,
-} from '../../types/coreFhevmClient.js';
+import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
+import type { BytesHex } from '../../types/primitives.js';
 import {
   serializeE2eTransportKeypair as serializeE2eTransportKeypair_,
   type E2eTransportKeypair,
 } from '../../kms/E2eTransportKeypair-p.js';
-import type { BytesHex } from '../../types/primitives.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

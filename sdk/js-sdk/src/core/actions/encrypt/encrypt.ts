@@ -3,11 +3,11 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { WithEncrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { BytesHex, TypedValueLike } from '../../types/primitives.js';
+import type { ExternalEncryptedValue } from '../../types/encryptedTypes.js';
 import { fetchVerifiedInputProof } from '../base/fetchVerifiedInputProof.js';
 import { generateZkProof } from './generateZkProof.js';
 import { asBytesHex } from '../../base/bytes.js';
 import { toArray } from '../../base/object.js';
-import type { ExternalEncryptedValue } from '../../types/encryptedTypes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -39,12 +39,8 @@ export type EncryptMultipleReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type EncryptParameters =
-  | EncryptSingleParameters
-  | EncryptMultipleParameters;
-export type EncryptReturnType =
-  | EncryptSingleReturnType
-  | EncryptMultipleReturnType;
+export type EncryptParameters = EncryptSingleParameters | EncryptMultipleParameters;
+export type EncryptReturnType = EncryptSingleReturnType | EncryptMultipleReturnType;
 
 ////////////////////////////////////////////////////////////////////////////////
 

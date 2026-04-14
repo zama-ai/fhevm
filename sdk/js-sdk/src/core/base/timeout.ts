@@ -13,10 +13,7 @@ function createAbortError(reason?: unknown): Error {
  *
  * @throws {Error} An error with name 'AbortError' if the signal is aborted
  */
-export function abortableSleep(
-  ms: number,
-  signal?: AbortSignal,
-): Promise<void> {
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   // Check if already aborted before creating the Promise
   signal?.throwIfAborted();
 

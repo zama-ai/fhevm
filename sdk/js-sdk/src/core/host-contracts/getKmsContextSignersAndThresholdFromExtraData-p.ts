@@ -1,19 +1,12 @@
+import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { createCachedFetch } from '../base/cachedFetch.js';
 import { assertIsKmsExtraData, fromKmsExtraData } from '../kms/kmsExtraData.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { isUint8 } from '../base/uint.js';
 import { getContextSignersAndThresholdFromExtraDataAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import type {
-  BytesHex,
-  ChecksummedAddress,
-  Uint8Number,
-} from '../types/primitives.js';
-import {
-  getVersion,
-  isVersionStrictlyBefore,
-} from './HostContractVersion-p.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -34,11 +27,7 @@ type ReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<
-  Context,
-  Parameters,
-  ReturnType
->({
+const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getKmsContextSignersAndThresholdFromExtraData,
   cacheKeyFn: (context, params) => {
     const { kmsContextId } = fromKmsExtraData(params.extraData);
@@ -71,10 +60,7 @@ export function getKmsContextSignersAndThresholdFromExtraData(
 ): Promise<ReturnType> {
   assertIsKmsExtraData(parameters.extraData, {});
 
-  return cachedGetKmsContextSignersAndThresholdFromExtraData.execute(
-    context,
-    parameters,
-  );
+  return cachedGetKmsContextSignersAndThresholdFromExtraData.execute(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,9 +71,7 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
 ): Promise<ReturnType> {
   const version = await getVersion(context, { address: parameters.address });
   if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
-    throw new Error(
-      'getContextSignersAndThresholdFromExtraData requires KMSVerifier >= v0.2.0',
-    );
+    throw new Error('getContextSignersAndThresholdFromExtraData requires KMSVerifier >= v0.2.0');
   }
 
   const trustedClient = getTrustedClient(context);
@@ -101,9 +85,7 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
   });
 
   if (!Array.isArray(res) || res.length < 2) {
-    throw new Error(
-      `Invalid getContextSignersAndThresholdFromExtraData result.`,
-    );
+    throw new Error(`Invalid getContextSignersAndThresholdFromExtraData result.`);
   }
 
   const unknownSigners = res[0] as unknown;

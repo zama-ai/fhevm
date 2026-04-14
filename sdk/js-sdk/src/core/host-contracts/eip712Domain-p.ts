@@ -1,14 +1,18 @@
-import { isChecksummedAddress } from '../../base/address.js';
-import { isUint64BigInt } from '../../base/uint.js';
-import { eip712DomainAbi } from '../../host-contracts/abi-fragments/fragments.js';
-import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
-import type { Fhevm } from '../../types/coreFhevmClient.js';
-import type {
-  ChecksummedAddress,
-  Uint64BigInt,
-} from '../../types/primitives.js';
+import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { isChecksummedAddress } from '../base/address.js';
+import { isUint64BigInt } from '../base/uint.js';
+import { eip712DomainAbi } from './abi-fragments/fragments.js';
+import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 
-export type Eip712DomainParameters = {
+////////////////////////////////////////////////////////////////////////////////
+
+type Context = {
+  readonly runtime: FhevmRuntime;
+  readonly client: NonNullable<object>;
+};
+
+type Parameters = {
   readonly address: ChecksummedAddress;
 };
 
@@ -19,14 +23,18 @@ export type Eip712DomainReturnType = {
   verifyingContract: ChecksummedAddress;
 };
 
-export async function eip712Domain(
-  fhevm: Fhevm,
-  parameters: Eip712DomainParameters,
-): Promise<Eip712DomainReturnType> {
-  const trustedClient = getTrustedClient(fhevm);
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @internal
+ * Reads the EIP-712 domain from the given contract.
+ * The result is not cached; each call performs a fresh on-chain read.
+ */
+export async function eip712Domain(context: Context, parameters: Parameters): Promise<Eip712DomainReturnType> {
+  const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 
-  const res = await fhevm.runtime.ethereum.readContract(trustedClient, {
+  const res = await context.runtime.ethereum.readContract(trustedClient, {
     address: address,
     abi: eip712DomainAbi,
     args: [],

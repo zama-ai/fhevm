@@ -1,13 +1,10 @@
+import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { asUint8Number, isUint8 } from '../base/uint.js';
-import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import {
-  getCoprocessorSignersAbi,
-  getThresholdAbi,
-} from './abi-fragments/fragments.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import { getCoprocessorSignersAbi, getThresholdAbi } from './abi-fragments/fragments.js';
 import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,14 +26,9 @@ type ReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const cachedGetCoprocessorContextSignersAndThreshold = createCachedFetch<
-  Context,
-  Parameters,
-  ReturnType
->({
+const cachedGetCoprocessorContextSignersAndThreshold = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getCoprocessorContextSignersAndThreshold,
-  cacheKeyFn: (context, params) =>
-    `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
   // Signers are not Use long TTL
   ttlMs: CACHE_TTL_24H,
 });
@@ -54,10 +46,7 @@ export function getCoprocessorContextSignersAndThreshold(
   context: Context,
   parameters: Parameters & { readonly forceRefresh?: boolean },
 ): Promise<ReturnType> {
-  return cachedGetCoprocessorContextSignersAndThreshold.execute(
-    context,
-    parameters,
-  );
+  return cachedGetCoprocessorContextSignersAndThreshold.execute(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,15 +66,9 @@ async function _getCoprocessorContextSignersAndThreshold(
   //
   ////////////////////////////////////////////////////////////////////////////
 
-  const rpcCalls = [
-    () => _getThreshold(context, parameters),
-    () => _getCoprocessorSigners(context, parameters),
-  ];
+  const rpcCalls = [() => _getThreshold(context, parameters), () => _getCoprocessorSigners(context, parameters)];
 
-  const res = await executeWithBatching<unknown>(
-    rpcCalls,
-    context.options.batchRpcCalls,
-  );
+  const res = await executeWithBatching<unknown>(rpcCalls, context.options.batchRpcCalls);
 
   const threshold = res[0];
   const coprocessorSigners = res[1];
@@ -110,10 +93,7 @@ async function _getCoprocessorContextSignersAndThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _getThreshold(
-  context: Context,
-  parameters: Parameters,
-): Promise<Uint8Number> {
+async function _getThreshold(context: Context, parameters: Parameters): Promise<Uint8Number> {
   const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 
@@ -133,10 +113,7 @@ async function _getThreshold(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _getCoprocessorSigners(
-  context: Context,
-  parameters: Parameters,
-): Promise<ChecksummedAddress[]> {
+async function _getCoprocessorSigners(context: Context, parameters: Parameters): Promise<ChecksummedAddress[]> {
   const trustedClient = getTrustedClient(context);
   const address = parameters.address;
 

@@ -1,9 +1,9 @@
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
-import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt },
@@ -20,10 +20,7 @@ export async function fetchFheEncryptionKeyWasm(
     owner: runtime,
     relayerUrl,
     fetcher: () =>
-      runtime.relayer.fetchFheEncryptionKeyBytes(
-        { relayerUrl, chainId: context.chain.id },
-        parameters ?? {},
-      ),
+      runtime.relayer.fetchFheEncryptionKeyBytes({ relayerUrl, chainId: context.chain.id }, parameters ?? {}),
     metadata: { chainId: context.chain.id, relayerUrl },
   });
 
@@ -42,9 +39,7 @@ export async function fetchFheEncryptionKeyWasm(
   await entry.ready;
 
   if (entry.resolvedKind !== 'wasm') {
-    throw new Error(
-      'Expected wasm params but got ' + JSON.stringify(entry.resolvedKind),
-    );
+    throw new Error('Expected wasm params but got ' + JSON.stringify(entry.resolvedKind));
   }
 
   return entry.value as FheEncryptionKeyWasm;

@@ -1,3 +1,14 @@
+import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
+import type { FheType } from '../../../src/core/types/fheType.js';
+import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
+import { ethers } from 'ethers';
+import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,18 +22,7 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmDecryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
-import type { FheType } from '../../../src/core/types/fheType.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { ethers } from 'ethers';
-import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
-import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+////////////////////////////////////////////////////////////////////////////////
 
 // Each FHE type to decrypt
 const decryptTestCases: readonly FheType[] = [
@@ -75,14 +75,9 @@ async function delegateForUserDecryption(parameters: {
   readonly contractAddress: string;
   readonly durationSeconds: number;
 }): Promise<ethers.TransactionReceipt> {
-  const aclContract = new ethers.Contract(
-    parameters.aclAddress,
-    ACL_DELEGATE_ABI,
-    parameters.delegatorSigner,
-  );
+  const aclContract = new ethers.Contract(parameters.aclAddress, ACL_DELEGATE_ABI, parameters.delegatorSigner);
 
-  const expirationDate =
-    Math.floor(Date.now() / 1000) + parameters.durationSeconds;
+  const expirationDate = Math.floor(Date.now() / 1000) + parameters.durationSeconds;
 
   const tx = await aclContract.getFunction('delegateForUserDecryption')(
     parameters.delegateAddress,
@@ -103,11 +98,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   readonly delegateAddress: string;
   readonly contractAddress: string;
 }): Promise<bigint> {
-  const aclContract = new ethers.Contract(
-    parameters.aclAddress,
-    ACL_DELEGATE_ABI,
-    parameters.provider,
-  );
+  const aclContract = new ethers.Contract(parameters.aclAddress, ACL_DELEGATE_ABI, parameters.provider);
 
   return aclContract.getFunction('getUserDecryptionDelegationExpirationDate')(
     parameters.delegatorAddress,
@@ -133,27 +124,22 @@ describe(
       console.log(`  Bob:   ${config.bob.wallet.address}`);
 
       // Check if delegation already exists
-      const existingExpiration =
-        await getUserDecryptionDelegationExpirationDate({
-          aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
-          provider: config.provider,
-          delegatorAddress: config.alice.wallet.address,
-          delegateAddress: config.bob.wallet.address,
-          contractAddress: config.fheTestAddress,
-        });
+      const existingExpiration = await getUserDecryptionDelegationExpirationDate({
+        aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
+        provider: config.provider,
+        delegatorAddress: config.alice.wallet.address,
+        delegateAddress: config.bob.wallet.address,
+        contractAddress: config.fheTestAddress,
+      });
 
       // Use block.timestamp instead of Date.now() — the expiration is based on
       // block.timestamp when the delegation tx was mined, not wall-clock time.
       const block = await config.provider.getBlock('latest');
       const blockTimestamp = BigInt(block!.timestamp);
       if (existingExpiration > blockTimestamp) {
-        console.log(
-          `  Delegation already active (expires ${existingExpiration}), skipping tx`,
-        );
+        console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
       } else {
-        console.log(
-          `  Delegation not yet active, calling delegateForUserDecryption()...`,
-        );
+        console.log(`  Delegation not yet active, calling delegateForUserDecryption()...`);
         // Alice delegates decryption to Bob
         const receipt = await delegateForUserDecryption({
           aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
@@ -191,12 +177,8 @@ describe(
 
       expect(signedPermit).toBeDefined();
       expect(signedPermit.isDelegated).toBe(true);
-      expect(signedPermit.signerAddress.toLowerCase()).toBe(
-        config.bob.wallet.address.toLowerCase(),
-      );
-      expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(
-        config.alice.wallet.address.toLowerCase(),
-      );
+      expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
+      expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
     });
 
     // ┌─────────────────────────────────────────────────────────────────────┐
@@ -211,25 +193,15 @@ describe(
     for (const fheType of decryptTestCases) {
       it(`should decrypt ${fheType} via delegated decrypt`, async () => {
         const fheTypeId = fheTypeIdFromName(fheType);
-        const fheTest = config.fheTestContract.connect(
-          config.alice.signer,
-        ) as ethers.Contract;
+        const fheTest = config.fheTestContract.connect(config.alice.signer) as ethers.Contract;
 
         // Read Alice's handle from FHETest contract
-        const aliceHandle: Handle = toHandle(
-          await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId),
-        );
-        expect(aliceHandle.bytes32Hex).not.toBe(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        );
+        const aliceHandle: Handle = toHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
+        expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
 
         // Read expected clear value from FHETest._db
-        const expectedRaw: bigint = await fheTest.getClearText!(
-          aliceHandle.bytes32Hex,
-        );
-        console.log(
-          `  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`,
-        );
+        const expectedRaw: bigint = await fheTest.getClearText!(aliceHandle.bytes32Hex);
+        console.log(`  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
 
         // Bob decrypts Alice's handle via delegated permit
         const client = createFhevmDecryptClient({
@@ -260,18 +232,13 @@ describe(
 
         expect(clearValues).toHaveLength(1);
         const decrypted = clearValues[0]!;
-        console.log(
-          `  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`,
-        );
+        console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
 
         if (fheType === 'ebool') {
           expect(decrypted.value).toBe(expectedRaw !== 0n);
         } else if (fheType === 'eaddress') {
-          const expectedAddr =
-            '0x' + expectedRaw.toString(16).padStart(40, '0');
-          expect(String(decrypted.value).toLowerCase()).toBe(
-            expectedAddr.toLowerCase(),
-          );
+          const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
+          expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
         } else {
           expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
         }
@@ -284,9 +251,7 @@ describe(
     // └─────────────────────────────────────────────────────────────────────┘
 
     it('should decrypt all types in a single delegated call', async () => {
-      const fheTest = config.fheTestContract.connect(
-        config.alice.signer,
-      ) as ethers.Contract;
+      const fheTest = config.fheTestContract.connect(config.alice.signer) as ethers.Contract;
 
       // Read all of Alice's handles and their expected clear values
       const aliceEntries: {
@@ -296,20 +261,12 @@ describe(
 
       for (const fheType of decryptTestCases) {
         const fheTypeId = fheTypeIdFromName(fheType);
-        const aliceHandle: Handle = toHandle(
-          await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId),
-        );
-        expect(aliceHandle.bytes32Hex).not.toBe(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        );
+        const aliceHandle: Handle = toHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
+        expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
         expect(aliceHandle.fheType).toBe(fheType);
-        const aliceClearValue: bigint = await fheTest.getClearText!(
-          aliceHandle.bytes32Hex,
-        );
+        const aliceClearValue: bigint = await fheTest.getClearText!(aliceHandle.bytes32Hex);
         aliceEntries.push({ aliceHandle, aliceClearValue });
-        console.log(
-          `  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${aliceClearValue}`,
-        );
+        console.log(`  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${aliceClearValue}`);
       }
 
       // Bob decrypts all of Alice's handles in a single call
@@ -346,26 +303,17 @@ describe(
       for (let i = 0; i < aliceEntries.length; i++) {
         const { aliceHandle, aliceClearValue } = aliceEntries[i]!;
         const bobDecrypted = bobDecryptedValues[i]!;
-        console.log(
-          `  ${aliceHandle.fheType}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`,
-        );
+        console.log(`  ${aliceHandle.fheType}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`);
 
-        expect(bobDecrypted.encryptedValue.bytes32Hex).toBe(
-          aliceHandle.bytes32Hex,
-        );
+        expect(bobDecrypted.encryptedValue.bytes32Hex).toBe(aliceHandle.bytes32Hex);
 
         if (aliceHandle.fheType === 'ebool') {
           expect(bobDecrypted.value).toBe(aliceClearValue !== 0n);
         } else if (aliceHandle.fheType === 'eaddress') {
-          const expectedAddr =
-            '0x' + aliceClearValue.toString(16).padStart(40, '0');
-          expect(String(bobDecrypted.value).toLowerCase()).toBe(
-            expectedAddr.toLowerCase(),
-          );
+          const expectedAddr = '0x' + aliceClearValue.toString(16).padStart(40, '0');
+          expect(String(bobDecrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
         } else {
-          expect(BigInt(bobDecrypted.value as number | bigint)).toBe(
-            aliceClearValue,
-          );
+          expect(BigInt(bobDecrypted.value as number | bigint)).toBe(aliceClearValue);
         }
       }
     });

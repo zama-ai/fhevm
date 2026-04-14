@@ -30,16 +30,9 @@ import type {
   BytesTypeName,
   BytesNMap,
 } from '../types/primitives.js';
-import type {
-  RecordUint8ArrayPropertyType,
-  RecordWithPropertyType,
-} from '../types/record-p.js';
+import type { RecordUint8ArrayPropertyType, RecordWithPropertyType } from '../types/record-p.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
-import {
-  assertRecordArrayProperty,
-  isRecordNonNullableProperty,
-  typeofProperty,
-} from './record.js';
+import { assertRecordArrayProperty, isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { is0x, isNo0x, remove0x } from './string.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
 import { InvalidTypeError } from './errors/InvalidTypeError.js';
@@ -72,10 +65,7 @@ const bytesHexNo0xRegex = /^[a-fA-F0-9]*$/;
 // isBytesXX
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isBytes(
-  value: unknown,
-  byteLength?: ByteLength,
-): value is Bytes {
+export function isBytes(value: unknown, byteLength?: ByteLength): value is Bytes {
   if (value === undefined || value === null) {
     return false;
   }
@@ -93,10 +83,7 @@ export function isBytesForType<T extends BytesTypeName>(
   value: unknown,
   typeName?: T,
 ): value is BytesTypeNameToTypeMap[T] {
-  return isBytes(
-    value,
-    typeName !== undefined ? ByteLengthForType[typeName] : undefined,
-  );
+  return isBytes(value, typeName !== undefined ? ByteLengthForType[typeName] : undefined);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -129,10 +116,7 @@ export function isBytes65(value: unknown): value is Bytes65 {
 // isBytesXXHex
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isBytesHex(
-  value: unknown,
-  byteLength?: ByteLength,
-): value is BytesHex {
+export function isBytesHex(value: unknown, byteLength?: ByteLength): value is BytesHex {
   if (!is0x(value)) {
     return false;
   }
@@ -178,10 +162,7 @@ export function isBytes65Hex(value: unknown): value is Bytes65Hex {
 // isBytesXXHexNo0x
 ////////////////////////////////////////////////////////////////////////////////
 
-export function isBytesHexNo0x(
-  value: unknown,
-  byteLength?: ByteLength,
-): value is BytesHexNo0x {
+export function isBytesHexNo0x(value: unknown, byteLength?: ByteLength): value is BytesHexNo0x {
   if (!isNo0x(value)) {
     return false;
   }
@@ -330,50 +311,32 @@ export function asBytes(
   return value;
 }
 
-export function asBytes1(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes1 {
+export function asBytes1(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes1 {
   assertIsBytes(value, { byteLength: 1, ...options });
   return value as Bytes1;
 }
 
-export function asBytes8(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes8 {
+export function asBytes8(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes8 {
   assertIsBytes(value, { byteLength: 8, ...options });
   return value as Bytes8;
 }
 
-export function asBytes20(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes20 {
+export function asBytes20(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes20 {
   assertIsBytes(value, { byteLength: 20, ...options });
   return value as Bytes20;
 }
 
-export function asBytes21(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes21 {
+export function asBytes21(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes21 {
   assertIsBytes(value, { byteLength: 21, ...options });
   return value as Bytes21;
 }
 
-export function asBytes32(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes32 {
+export function asBytes32(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes32 {
   assertIsBytes(value, { byteLength: 32, ...options });
   return value as Bytes32;
 }
 
-export function asBytes65(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes65 {
+export function asBytes65(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes65 {
   assertIsBytes(value, { byteLength: 65, ...options });
   return value as Bytes65;
 }
@@ -491,58 +454,37 @@ export function assertIsBytes65Hex(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function asBytesHex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): BytesHex {
+export function asBytesHex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): BytesHex {
   assertIsBytesHex(value, options ?? {});
   return value;
 }
 
-export function asBytes1Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes1Hex {
+export function asBytes1Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes1Hex {
   assertIsBytesHex(value, { byteLength: 1, ...options });
   return value as Bytes1Hex;
 }
 
-export function asBytes8Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes8Hex {
+export function asBytes8Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes8Hex {
   assertIsBytesHex(value, { byteLength: 8, ...options });
   return value as Bytes8Hex;
 }
 
-export function asBytes20Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes20Hex {
+export function asBytes20Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes20Hex {
   assertIsBytesHex(value, { byteLength: 20, ...options });
   return value as Bytes20Hex;
 }
 
-export function asBytes21Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes21Hex {
+export function asBytes21Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes21Hex {
   assertIsBytesHex(value, { byteLength: 21, ...options });
   return value as Bytes21Hex;
 }
 
-export function asBytes32Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes32Hex {
+export function asBytes32Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes32Hex {
   assertIsBytesHex(value, { byteLength: 32, ...options });
   return value as Bytes32Hex;
 }
 
-export function asBytes65Hex(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes65Hex {
+export function asBytes65Hex(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes65Hex {
   assertIsBytesHex(value, { byteLength: 65, ...options });
   return value as Bytes65Hex;
 }
@@ -643,50 +585,32 @@ export function asBytesHexNo0x(
   return value;
 }
 
-export function asBytes1HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes1HexNo0x {
+export function asBytes1HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes1HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 1, ...options });
   return value as Bytes1HexNo0x;
 }
 
-export function asBytes8HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes8HexNo0x {
+export function asBytes8HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes8HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 8, ...options });
   return value as Bytes8HexNo0x;
 }
 
-export function asBytes20HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes20HexNo0x {
+export function asBytes20HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes20HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 20, ...options });
   return value as Bytes20HexNo0x;
 }
 
-export function asBytes21HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes21HexNo0x {
+export function asBytes21HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes21HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 21, ...options });
   return value as Bytes21HexNo0x;
 }
 
-export function asBytes32HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes32HexNo0x {
+export function asBytes32HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes32HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 32, ...options });
   return value as Bytes32HexNo0x;
 }
 
-export function asBytes65HexNo0x(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): Bytes65HexNo0x {
+export function asBytes65HexNo0x(value: unknown, options?: { subject?: string } & ErrorMetadataParams): Bytes65HexNo0x {
   assertIsBytesHexNo0x(value, { byteLength: 65, ...options });
   return value as Bytes65HexNo0x;
 }
@@ -1334,9 +1258,7 @@ const HEX_CHARS: Record<string, number> = {
 } as const;
 Object.freeze(HEX_CHARS);
 
-const HEX_BYTES: string[] = Array.from({ length: 256 }, (_, i) =>
-  i.toString(16).padStart(2, '0'),
-);
+const HEX_BYTES: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 Object.freeze(HEX_BYTES);
 
 const HEX_CHARS_CODES = new Uint8Array([
@@ -1479,10 +1401,7 @@ export function bytes65ToHex(bytes: Uint8Array | undefined): Bytes65Hex {
  */
 export function bytesToHexLarge(bytes: Uint8Array, no0x: true): BytesHexNo0x;
 export function bytesToHexLarge(bytes: Uint8Array, no0x?: false): BytesHex;
-export function bytesToHexLarge(
-  bytes: Uint8Array,
-  no0x?: boolean,
-): BytesHex | BytesHexNo0x {
+export function bytesToHexLarge(bytes: Uint8Array, no0x?: boolean): BytesHex | BytesHexNo0x {
   const len = no0x === true ? bytes.length * 2 : bytes.length * 2 + 2;
   const out = new Uint8Array(len);
 
@@ -1749,9 +1668,7 @@ export function hexToBytesFaster(
         {
           subject: options.subject,
           expectedType: 'bytesHex',
-          metaMessages: [
-            `expected ${options.byteLength} bytes, got ${len / 2}`,
-          ],
+          metaMessages: [`expected ${options.byteLength} bytes, got ${len / 2}`],
         },
         options,
       );
@@ -1772,9 +1689,7 @@ export function hexToBytesFaster(
           {
             subject: options.subject,
             expectedType: 'bytesHex',
-            metaMessages: [
-              `invalid hex character at position ${offset + i * 2}`,
-            ],
+            metaMessages: [`invalid hex character at position ${offset + i * 2}`],
           },
           options,
         );
@@ -2095,9 +2010,7 @@ export function normalizeBytes(value: unknown): Bytes {
  */
 export function bytesUint8At(bytes: Bytes, position: Uint8Number): Uint8Number {
   if (position >= bytes.length) {
-    throw new RangeError(
-      `Position ${position} out of bounds for bytes of length ${bytes.length}`,
-    );
+    throw new RangeError(`Position ${position} out of bounds for bytes of length ${bytes.length}`);
   }
   return bytes[position] as Uint8Number;
 }
@@ -2108,10 +2021,7 @@ export function bytesUint8At(bytes: Bytes, position: Uint8Number): Uint8Number {
  * @param position - Byte position (0-indexed)
  * @throws `RangeError` if position is out of bounds
  */
-export function bytesHexUint8At(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-): Uint8Number {
+export function bytesHexUint8At(bytesHex: BytesHex, position: Uint8Number): Uint8Number {
   const bytes1Hex: Bytes1Hex = bytesHexSlice(bytesHex, position, 1);
   return parseInt(bytes1Hex, 16) as Uint8Number;
 }
@@ -2122,10 +2032,7 @@ export function bytesHexUint8At(
  * @param position - Byte position (0-indexed)
  * @throws `RangeError` if position is out of bounds
  */
-export function bytesHexUint64At(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-): Uint64BigInt {
+export function bytesHexUint64At(bytesHex: BytesHex, position: Uint8Number): Uint64BigInt {
   const bytes8Hex: Bytes8Hex = bytesHexSlice(bytesHex, position, 8);
   return BigInt(bytes8Hex) as Uint64BigInt;
 }
@@ -2137,51 +2044,17 @@ export function bytesHexUint64At(
  * @param length - Number of bytes to extract (1, 8, 20, 21, 32, 65 for typed result, or any number for BytesHex)
  * @throws `RangeError` if position + length is out of bounds
  */
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 1,
-): Bytes1Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 8,
-): Bytes8Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 20,
-): Bytes20Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 21,
-): Bytes21Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 32,
-): Bytes32Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: 65,
-): Bytes65Hex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: UintNumber,
-): BytesHex;
-export function bytesHexSlice(
-  bytesHex: BytesHex,
-  position: Uint8Number,
-  length: number,
-): BytesHex {
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 1): Bytes1Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 8): Bytes8Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 20): Bytes20Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 21): Bytes21Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 32): Bytes32Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: 65): Bytes65Hex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: UintNumber): BytesHex;
+export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length: number): BytesHex {
   const index = 2 + position * 2;
   if (index + 2 * length > bytesHex.length) {
-    throw new RangeError(
-      `Position ${position} with length ${length} out of bounds`,
-    );
+    throw new RangeError(`Position ${position} with length ${length} out of bounds`);
   }
   return `0x${bytesHex.slice(index, index + 2 * length)}` as BytesHex;
 }

@@ -1,4 +1,3 @@
-import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type {
   FheEncryptionCrs,
@@ -6,6 +5,7 @@ import type {
   FheEncryptionKeyWasm,
   FheEncryptionPublicKey,
 } from '../types/fheEncryptionKey.js';
+import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -54,11 +54,7 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
     return this.#metadata;
   }
 
-  public static [VERIFY_FUNC](
-    privateToken: symbol,
-    instance: unknown,
-    owner: FhevmRuntime,
-  ): void {
+  public static [VERIFY_FUNC](privateToken: symbol, instance: unknown, owner: FhevmRuntime): void {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -96,9 +92,6 @@ export function createFheEncryptionKeyWasm(
  * Verifies that the given `FheEncryptionKeyWasm` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertFheEncryptionKeyWasmOwnedBy(
-  data: FheEncryptionKeyWasm,
-  owner: FhevmRuntime,
-): void {
+export function assertFheEncryptionKeyWasmOwnedBy(data: FheEncryptionKeyWasm, owner: FhevmRuntime): void {
   FheEncryptionKeyWasmImpl[VERIFY_FUNC](PRIVATE_TOKEN, data, owner);
 }

@@ -120,10 +120,7 @@ export default [
         'error',
         { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
       ],
-      '@typescript-eslint/consistent-type-exports': [
-        'error',
-        { fixMixedExportsWithInlineTypeSpecifier: false },
-      ],
+      '@typescript-eslint/consistent-type-exports': ['error', { fixMixedExportsWithInlineTypeSpecifier: false }],
       '@typescript-eslint/consistent-type-definitions': 'off', // Allow both interface and type
       '@typescript-eslint/array-type': ['error', { default: 'array-simple' }],
       '@typescript-eslint/consistent-indexed-object-style': ['error', 'record'],
@@ -189,30 +186,34 @@ export default [
         'error',
         {
           name: 'process',
-          message:
-            'process is Node.js specific and not available in browsers. Use a browser-compatible alternative.',
+          message: 'process is Node.js specific and not available in browsers. Use a browser-compatible alternative.',
         },
         {
           name: 'Buffer',
-          message:
-            'Buffer is Node.js specific. Use Uint8Array or TextEncoder/TextDecoder instead.',
+          message: 'Buffer is Node.js specific. Use Uint8Array or TextEncoder/TextDecoder instead.',
         },
         {
           name: '__dirname',
-          message:
-            '__dirname is Node.js specific. Use import.meta.url instead.',
+          message: '__dirname is Node.js specific. Use import.meta.url instead.',
         },
         {
           name: '__filename',
-          message:
-            '__filename is Node.js specific. Use import.meta.url instead.',
+          message: '__filename is Node.js specific. Use import.meta.url instead.',
         },
         {
           name: 'global',
-          message:
-            'global is Node.js specific. Use globalThis for cross-platform compatibility.',
+          message: 'global is Node.js specific. Use globalThis for cross-platform compatibility.',
         },
       ],
+    },
+  },
+
+  // Suppress "unused eslint-disable directive" in files where CLI and IDE
+  // disagree on @typescript-eslint/no-unnecessary-type-arguments (TS version mismatch).
+  {
+    files: ['src/core/base/trustedValue.ts', 'src/core/base/isomorphicWorker.ts'],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
     },
   },
 ];

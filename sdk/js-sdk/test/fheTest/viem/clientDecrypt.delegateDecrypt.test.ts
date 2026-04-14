@@ -1,3 +1,17 @@
+import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
+import type { FheType } from '../../../src/core/types/fheType.js';
+import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { isV2, getBaseEnv } from '../setupCommon.js';
+import { FHETestABI } from '../abi-v2.js';
+import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
+import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { createWalletClient, http } from 'viem';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,28 +25,7 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  createFhevmDecryptClient,
-  setFhevmRuntimeConfig,
-} from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { isV2, getBaseEnv } from '../setupCommon.js';
-import { FHETestABI } from '../abi-v2.js';
-import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
-import type { FheType } from '../../../src/core/types/fheType.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
-import type { Handle } from '../../../src/core/types/encryptedTypes.js';
-import {
-  createWalletClient,
-  http,
-  type Account,
-  type Hex,
-  type PublicClient,
-  type Transport,
-  type Chain,
-} from 'viem';
+////////////////////////////////////////////////////////////////////////////////
 
 // Each FHE type to decrypt
 const decryptTestCases: readonly FheType[] = [
@@ -92,19 +85,13 @@ async function delegateForUserDecryption(parameters: {
     transport: http(getBaseEnv().rpcUrl),
   });
 
-  const expirationDate = BigInt(
-    Math.floor(Date.now() / 1000) + parameters.durationSeconds,
-  );
+  const expirationDate = BigInt(Math.floor(Date.now() / 1000) + parameters.durationSeconds);
 
   const hash = await walletClient.writeContract({
     address: parameters.aclAddress,
     abi: ACL_DELEGATE_ABI,
     functionName: 'delegateForUserDecryption',
-    args: [
-      parameters.delegateAddress,
-      parameters.contractAddress,
-      expirationDate,
-    ],
+    args: [parameters.delegateAddress, parameters.contractAddress, expirationDate],
   });
 
   return parameters.publicClient.waitForTransactionReceipt({ hash });
@@ -125,11 +112,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
     address: parameters.aclAddress,
     abi: ACL_DELEGATE_ABI,
     functionName: 'getUserDecryptionDelegationExpirationDate',
-    args: [
-      parameters.delegatorAddress,
-      parameters.delegateAddress,
-      parameters.contractAddress,
-    ],
+    args: [parameters.delegatorAddress, parameters.delegateAddress, parameters.contractAddress],
   });
 }
 
@@ -151,27 +134,22 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
 
       // Check if delegation already exists
       const aclAddress = config.fhevmChain.fhevm.contracts.acl.address as Hex;
-      const existingExpiration =
-        await getUserDecryptionDelegationExpirationDate({
-          aclAddress,
-          publicClient: config.publicClient,
-          delegatorAddress: config.alice.account.address,
-          delegateAddress: config.bob.account.address,
-          contractAddress: config.fheTestAddress as Hex,
-        });
+      const existingExpiration = await getUserDecryptionDelegationExpirationDate({
+        aclAddress,
+        publicClient: config.publicClient,
+        delegatorAddress: config.alice.account.address,
+        delegateAddress: config.bob.account.address,
+        contractAddress: config.fheTestAddress as Hex,
+      });
 
       // Use block.timestamp instead of Date.now() — the expiration is based on
       // block.timestamp when the delegation tx was mined, not wall-clock time.
       const block = await config.publicClient.getBlock();
       const blockTimestamp = block.timestamp;
       if (existingExpiration > blockTimestamp) {
-        console.log(
-          `  Delegation already active (expires ${existingExpiration}), skipping tx`,
-        );
+        console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
       } else {
-        console.log(
-          `  Delegation not yet active, calling delegateForUserDecryption()...`,
-        );
+        console.log(`  Delegation not yet active, calling delegateForUserDecryption()...`);
         // Alice delegates decryption to Bob
         const receipt = await delegateForUserDecryption({
           aclAddress,
@@ -210,12 +188,8 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
 
       expect(signedPermit).toBeDefined();
       expect(signedPermit.isDelegated).toBe(true);
-      expect(signedPermit.signerAddress.toLowerCase()).toBe(
-        config.bob.account.address.toLowerCase(),
-      );
-      expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(
-        config.alice.account.address.toLowerCase(),
-      );
+      expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
+      expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
     });
 
     // ┌─────────────────────────────────────────────────────────────────────┐
@@ -240,9 +214,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
             args: [config.alice.account.address, fheTypeId],
           }),
         );
-        expect(aliceHandle.bytes32Hex).not.toBe(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        );
+        expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
 
         // Read expected clear value from FHETest._db
         const expectedRaw = await config.publicClient.readContract({
@@ -251,9 +223,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
           functionName: 'getClearText',
           args: [aliceHandle.bytes32Hex],
         });
-        console.log(
-          `  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`,
-        );
+        console.log(`  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
 
         // Bob decrypts Alice's handle via delegated permit
         const client = createFhevmDecryptClient({
@@ -284,18 +254,13 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
 
         expect(clearValues).toHaveLength(1);
         const decrypted = clearValues[0]!;
-        console.log(
-          `  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`,
-        );
+        console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
 
         if (fheType === 'ebool') {
           expect(decrypted.value).toBe(expectedRaw !== 0n);
         } else if (fheType === 'eaddress') {
-          const expectedAddr =
-            '0x' + expectedRaw.toString(16).padStart(40, '0');
-          expect(String(decrypted.value).toLowerCase()).toBe(
-            expectedAddr.toLowerCase(),
-          );
+          const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
+          expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
         } else {
           expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
         }
@@ -324,9 +289,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
             args: [config.alice.account.address, fheTypeId],
           }),
         );
-        expect(aliceHandle.bytes32Hex).not.toBe(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        );
+        expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
         expect(aliceHandle.fheType).toBe(fheType);
         const aliceClearValue = await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
@@ -335,9 +298,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
           args: [aliceHandle.bytes32Hex],
         });
         aliceEntries.push({ aliceHandle, aliceClearValue });
-        console.log(
-          `  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${aliceClearValue}`,
-        );
+        console.log(`  ${fheType}: handle=${aliceHandle.bytes32Hex.slice(0, 20)}... expected=${aliceClearValue}`);
       }
 
       // Bob decrypts all of Alice's handles in a single call
@@ -374,26 +335,17 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
       for (let i = 0; i < aliceEntries.length; i++) {
         const { aliceHandle, aliceClearValue } = aliceEntries[i]!;
         const bobDecrypted = bobDecryptedValues[i]!;
-        console.log(
-          `  ${aliceHandle.fheType}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`,
-        );
+        console.log(`  ${aliceHandle.fheType}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`);
 
-        expect(bobDecrypted.encryptedValue.bytes32Hex).toBe(
-          aliceHandle.bytes32Hex,
-        );
+        expect(bobDecrypted.encryptedValue.bytes32Hex).toBe(aliceHandle.bytes32Hex);
 
         if (aliceHandle.fheType === 'ebool') {
           expect(bobDecrypted.value).toBe(aliceClearValue !== 0n);
         } else if (aliceHandle.fheType === 'eaddress') {
-          const expectedAddr =
-            '0x' + aliceClearValue.toString(16).padStart(40, '0');
-          expect(String(bobDecrypted.value).toLowerCase()).toBe(
-            expectedAddr.toLowerCase(),
-          );
+          const expectedAddr = '0x' + aliceClearValue.toString(16).padStart(40, '0');
+          expect(String(bobDecrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
         } else {
-          expect(BigInt(bobDecrypted.value as number | bigint)).toBe(
-            aliceClearValue,
-          );
+          expect(BigInt(bobDecrypted.value as number | bigint)).toBe(aliceClearValue);
         }
       }
     });

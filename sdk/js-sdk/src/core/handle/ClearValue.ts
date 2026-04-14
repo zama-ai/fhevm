@@ -1,16 +1,11 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { BytesHex, ValueType } from '../types/primitives.js';
 import type { FheTypeId, FheType, ClearValueType } from '../types/fheType.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { ClearValue, ClearValueOfFheType, ClearValueTypeName, EncryptedValue } from '../types/encryptedTypes.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { asClearValueType } from './FheType.js';
 import { assertNever } from '../base/errors/utils.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type {
-  ClearValue,
-  ClearValueOfFheType,
-  ClearValueTypeName,
-  EncryptedValue,
-} from '../types/encryptedTypes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,9 +30,7 @@ const VERIFY_ORIGIN_FUNC = Symbol('ClearValue.verifyOrigin');
  * - `Object.freeze` on prototype (no prototype pollution)
  * - Symbol-keyed `[VERIFY_ORIGIN]` method invisible to IDE and external code
  */
-class ClearValueImpl<
-  etype extends FheType,
-> implements ClearValueOfFheType<etype> {
+class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype> {
   readonly #value: ClearValueType<etype>;
   readonly #encryptedValue: EncryptedValue<etype>;
   readonly #originToken: symbol;
@@ -65,9 +58,7 @@ class ClearValueImpl<
 
   public get type(): ClearValueTypeName<etype> {
     // FheType is always "e" + ValueTypeName (e.g. "euint8" → "uint8")
-    return this.#encryptedValue.fheType.substring(
-      1,
-    ) as ClearValueTypeName<etype>;
+    return this.#encryptedValue.fheType.substring(1) as ClearValueTypeName<etype>;
   }
 
   public get encryptedValue(): EncryptedValue<etype> {
@@ -117,10 +108,7 @@ Object.freeze(ClearValueImpl.prototype);
  * @param value - The value to check
  * @param originToken - Origin symbol held privately by the decrypt flow
  */
-export function isClearValue(
-  value: unknown,
-  originToken: symbol,
-): value is ClearValue {
+export function isClearValue(value: unknown, originToken: symbol): value is ClearValue {
   if (!(value instanceof ClearValueImpl)) return false;
   return value[VERIFY_ORIGIN_FUNC](originToken);
 }
@@ -153,10 +141,7 @@ export function assertIsClearValue(
  * {@link createClearValue} and its origin matches the given
  * `originToken`.
  */
-export function isClearValueArray(
-  values: readonly unknown[],
-  originToken: symbol,
-): values is readonly ClearValue[] {
+export function isClearValueArray(values: readonly unknown[], originToken: symbol): values is readonly ClearValue[] {
   return values.every((v) => isClearValue(v, originToken));
 }
 
@@ -221,10 +206,7 @@ export function createClearValue<etype extends FheType>(parameters: {
 }): ClearValue<etype> {
   const v = new ClearValueImpl<etype>(PRIVATE_TOKEN, {
     encryptedValue: parameters.encryptedValue,
-    value: asClearValueType(
-      parameters.encryptedValue.fheType,
-      parameters.value,
-    ),
+    value: asClearValueType(parameters.encryptedValue.fheType, parameters.value),
     originToken: parameters.originToken,
   });
   Object.freeze(v);
@@ -245,11 +227,7 @@ export function createClearValueArray(parameters: {
   readonly orderedEncryptedValues: readonly EncryptedValue[];
   readonly originToken: symbol;
 }): readonly ClearValue[] {
-  const {
-    orderedValues: orderedClearValues,
-    orderedEncryptedValues,
-    originToken,
-  } = parameters;
+  const { orderedValues: orderedClearValues, orderedEncryptedValues, originToken } = parameters;
   if (orderedEncryptedValues.length !== orderedClearValues.length) {
     throw new InvalidTypeError(
       {
@@ -306,21 +284,14 @@ export function abiEncodeClearValues(
       // eaddress
       case 7: {
         // string
-        abiValues.push(
-          `0x${clearTextValueBigInt.toString(16).padStart(40, '0')}`,
-        );
+        abiValues.push(`0x${clearTextValueBigInt.toString(16).padStart(40, '0')}`);
         break;
       }
       // ebool
       case 0: {
         // bigint (0 or 1)
-        if (
-          clearTextValueBigInt !== BigInt(0) &&
-          clearTextValueBigInt !== BigInt(1)
-        ) {
-          throw new Error(
-            `Invalid ebool clear text value ${clearTextValueBigInt}. Expecting 0 or 1.`,
-          );
+        if (clearTextValueBigInt !== BigInt(0) && clearTextValueBigInt !== BigInt(1)) {
+          throw new Error(`Invalid ebool clear text value ${clearTextValueBigInt}. Expecting 0 or 1.`);
         }
         abiValues.push(clearTextValueBigInt);
         break;
@@ -337,10 +308,7 @@ export function abiEncodeClearValues(
         break;
       }
       default: {
-        assertNever(
-          handleType,
-          `Unsupported Fhevm primitive type id: ${handleType}`,
-        );
+        assertNever(handleType, `Unsupported Fhevm primitive type id: ${handleType}`);
       }
     }
   }

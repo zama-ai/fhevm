@@ -17,9 +17,9 @@ import type {
 } from '../../core/modules/ethereum/types.js';
 import type { ethers as EthersT } from 'ethers';
 import type { TypedDataField } from 'ethers';
+import type { BytesHex } from '../../core/types/primitives.js';
 import { asChecksummedAddress } from '../../core/base/address.js';
 import { AbiCoder, solidityPacked, verifyTypedData } from 'ethers';
-import type { BytesHex } from '../../core/types/primitives.js';
 import { getEthersContract, getNetwork } from './utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -46,12 +46,7 @@ export async function recoverTypedDataAddress(
     typesToSign = types;
   }
 
-  const recoveredAddress = verifyTypedData(
-    domain,
-    typesToSign,
-    message,
-    signature,
-  );
+  const recoveredAddress = verifyTypedData(domain, typesToSign, message, signature);
 
   return asChecksummedAddress(recoveredAddress);
 }
@@ -60,9 +55,7 @@ export async function recoverTypedDataAddress(
 // encodePacked
 ////////////////////////////////////////////////////////////////////////////////
 
-export function encodePacked(
-  parameters: EncodePackedParameters,
-): EncodePackedReturnType {
+export function encodePacked(parameters: EncodePackedParameters): EncodePackedReturnType {
   // Ethers impl
   return solidityPacked(parameters.types, parameters.values) as BytesHex;
 }
@@ -93,14 +86,8 @@ export async function readContract(
   hostPublicClient: TrustedClient<EthersT.ContractRunner>,
   parameters: ReadContractParameters,
 ): Promise<unknown> {
-  const contract = getEthersContract<EthersT.Contract>(
-    hostPublicClient,
-    parameters.address,
-    parameters.abi,
-  );
-  const result = (await contract
-    .getFunction(parameters.functionName)
-    .staticCall(...parameters.args)) as unknown;
+  const contract = getEthersContract<EthersT.Contract>(hostPublicClient, parameters.address, parameters.abi);
+  const result = (await contract.getFunction(parameters.functionName).staticCall(...parameters.args)) as unknown;
   return result;
 }
 
@@ -154,11 +141,7 @@ export async function signTypedData(
     [primaryType]: [...primaryTypeFields],
   };
 
-  const signature = await ethersSigner.signTypedData(
-    domain,
-    typesToSign,
-    message,
-  );
+  const signature = await ethersSigner.signTypedData(domain, typesToSign, message);
 
   return signature as SignTypedDataReturnType;
 }

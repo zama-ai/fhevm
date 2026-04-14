@@ -14,8 +14,7 @@ export async function readCoprocessorSignersContext(
   fhevm: Fhevm<FhevmChain>,
 ): Promise<ReadCoprocessorSignersContextReturnType> {
   return readCoprocessorSignersContext_(fhevm, {
-    address: fhevm.chain.fhevm.contracts.inputVerifier
-      .address as ChecksummedAddress,
+    address: fhevm.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
   });
 }
 

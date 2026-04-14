@@ -1,10 +1,4 @@
 import type { PublicClient, WalletClient } from 'viem';
-import { recoverTypedDataAddress as viemRecoverTypedDataAddress } from 'viem';
-import {
-  encodePacked as viemEncodePacked,
-  encodeAbiParameters,
-  decodeAbiParameters,
-} from 'viem';
 import type {
   DecodeParameters,
   DecodeReturnType,
@@ -22,8 +16,10 @@ import type {
   SignTypedDataReturnType,
   NativeSigner,
 } from '../../core/modules/ethereum/types.js';
-import { asChecksummedAddress } from '../../core/base/address.js';
 import type { BytesHex } from '../../core/types/primitives.js';
+import { recoverTypedDataAddress as viemRecoverTypedDataAddress } from 'viem';
+import { encodePacked as viemEncodePacked, encodeAbiParameters, decodeAbiParameters } from 'viem';
+import { asChecksummedAddress } from '../../core/base/address.js';
 import { trustedClientToViemPublicClient } from './viem-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,9 +37,7 @@ export async function recoverTypedDataAddress(
 // encodePacked
 ////////////////////////////////////////////////////////////////////////////////
 
-export function encodePacked(
-  parameters: EncodePackedParameters,
-): EncodePackedReturnType {
+export function encodePacked(parameters: EncodePackedParameters): EncodePackedReturnType {
   return viemEncodePacked(parameters.types, parameters.values) as BytesHex;
 }
 
@@ -62,12 +56,7 @@ export function encode(parameters: EncodeParameters): EncodeReturnType {
 
 export function decode(parameters: DecodeParameters): DecodeReturnType {
   const abiParameters = parameters.types.map((type) => ({ type }));
-  return [
-    ...decodeAbiParameters(
-      abiParameters,
-      parameters.encodedData as `0x${string}`,
-    ),
-  ];
+  return [...decodeAbiParameters(abiParameters, parameters.encodedData as `0x${string}`)];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -86,9 +75,7 @@ export async function readContract(
 // getChainId
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function getChainId(
-  hostPublicClient: TrustedClient<PublicClient>,
-): Promise<GetChainIdReturnType> {
+export async function getChainId(hostPublicClient: TrustedClient<PublicClient>): Promise<GetChainIdReturnType> {
   const publicClient = trustedClientToViemPublicClient(hostPublicClient);
   const chainId = await publicClient.getChainId();
   return BigInt(chainId);

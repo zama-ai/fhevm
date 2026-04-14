@@ -1,3 +1,9 @@
+import type { Hex } from 'viem';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { FHETestABI } from '../abi-v2.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,10 +17,7 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/connectivity.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { FHETestABI } from '../abi-v2.js';
-import type { Hex } from 'viem';
+////////////////////////////////////////////////////////////////////////////////
 
 describe('Connectivity', () => {
   let config: FheTestViemConfig;
@@ -66,8 +69,7 @@ describe('Connectivity', () => {
       abi: FHETestABI,
       functionName: 'getCoprocessorConfig',
     });
-    const { ACLAddress, CoprocessorAddress, KMSVerifierAddress } =
-      coprocessorConfig;
+    const { ACLAddress, CoprocessorAddress, KMSVerifierAddress } = coprocessorConfig;
     console.log(`  ACL: ${ACLAddress}`);
     console.log(`  Coprocessor: ${CoprocessorAddress}`);
     console.log(`  KMS Verifier: ${KMSVerifierAddress}`);
