@@ -18,6 +18,7 @@ import { Coprocessor } from "./shared/Structs.sol";
  * @title InputVerification smart contract
  * @notice See {IInputVerification}
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract InputVerification is
     IInputVerification,
     EIP712Upgradeable,

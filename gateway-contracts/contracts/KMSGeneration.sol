@@ -21,6 +21,7 @@ import {
  * @title KMSGeneration contract
  * @notice See {IKMSGeneration}.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract KMSGeneration is
     IKMSGeneration,
     EIP712Upgradeable,

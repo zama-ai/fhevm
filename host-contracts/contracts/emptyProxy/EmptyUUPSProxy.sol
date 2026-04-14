@@ -9,6 +9,7 @@ import {ACLOwnable} from "../shared/ACLOwnable.sol";
  * @notice EmptyUUPSProxy is an empty UUPS Proxy containing only upgrade logic,
  *         to simplify deployment, making it independent from nonce to solve circular dependencies
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract EmptyUUPSProxy is UUPSUpgradeable, ACLOwnable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

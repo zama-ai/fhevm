@@ -14,6 +14,7 @@ import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol"
  * @title CiphertextCommits smart contract
  * @notice See {ICiphertextCommits}.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
     /**
      * @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.

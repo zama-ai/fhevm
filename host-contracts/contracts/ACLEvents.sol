@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ACLEvents {
     /// @notice         Emitted when a handle is allowed.
     /// @param caller   account calling the allow function.

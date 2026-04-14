@@ -18,6 +18,7 @@ import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
     /**
      * @notice The maximum chain ID.
