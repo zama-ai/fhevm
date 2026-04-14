@@ -1324,12 +1324,18 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheType index: ${typeIndex}`);
         }
-        const nBucketedPrices = (ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<string, { le10: number; le30?: number; le60?: number; le100?: number }>)[type];
+        const nBucketedPrices = (
+          ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<
+            string,
+            { le10: number; le30?: number; le60?: number; le100?: number }
+          >
+        )[type];
         const n = (event.args[1] as string[]).length;
         if (n <= 10) hcuConsumed = nBucketedPrices.le10;
         else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
         else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
-        else hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else
+          hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
         const maxInputHCU = Math.max(...(event.args[1] as string[]).map((v) => readFromHCUMap(ethers.toBeHex(v, 32))));
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
         handleSet.add(handleResult);
