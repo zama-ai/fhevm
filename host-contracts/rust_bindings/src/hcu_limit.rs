@@ -1600,7 +1600,6 @@ pub mod HCULimit {
                 > as alloy_sol_types::SolType>::abi_encoded_size(self)
             }
         }
-        #[automatically_derived]
         impl FheType {
             /// The Solidity type name.
             pub const NAME: &'static str = stringify!(@ name);
@@ -1717,6 +1716,7 @@ error AddressEmptyCode(address target);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1797,6 +1797,7 @@ error AlreadyBlockHCUWhitelisted(address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1876,6 +1877,7 @@ error CallerMustBeFHEVMExecutorContract();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1954,6 +1956,7 @@ error ERC1967InvalidImplementation(address implementation);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -2033,6 +2036,7 @@ error ERC1967NonPayable();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2106,6 +2110,7 @@ error FailedCall();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2179,6 +2184,7 @@ error HCUBlockLimitExceeded();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2252,6 +2258,7 @@ error HCUPerBlockBelowMaxPerTx();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2327,6 +2334,7 @@ error HCUTransactionDepthLimitExceeded();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2402,6 +2410,7 @@ error HCUTransactionLimitExceeded();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2477,6 +2486,7 @@ error InvalidInitialization();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2550,6 +2560,7 @@ error MaxHCUPerTxBelowDepth();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2626,6 +2637,7 @@ error NotBlockHCUWhitelisted(address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -2706,6 +2718,7 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -2783,6 +2796,7 @@ error NotInitializing();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2856,6 +2870,7 @@ error NotInitializingFromEmptyProxy();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2931,6 +2946,7 @@ error OnlyScalarOperationsAreSupported();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3006,6 +3022,7 @@ error UUPSUnauthorizedCallContext();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3084,6 +3101,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -3163,6 +3181,7 @@ error UnsupportedOperation();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3972,6 +3991,7 @@ constructor();
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4047,6 +4067,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4080,6 +4101,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -4192,6 +4214,7 @@ function addToBlockHCUWhitelist(address account) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -4225,6 +4248,7 @@ function addToBlockHCUWhitelist(address account) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4346,6 +4370,7 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -4392,6 +4417,7 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4527,6 +4553,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -4588,6 +4615,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4731,6 +4759,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -4792,6 +4821,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4937,6 +4967,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -4998,6 +5029,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5141,6 +5173,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -5202,6 +5235,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5347,6 +5381,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -5408,6 +5443,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5551,6 +5587,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -5612,6 +5649,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5755,6 +5793,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -5816,6 +5855,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5959,6 +5999,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -6020,6 +6061,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6163,6 +6205,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -6224,6 +6267,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6367,6 +6411,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -6428,6 +6473,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6571,6 +6617,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -6632,6 +6679,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6775,6 +6823,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -6836,6 +6885,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6979,6 +7029,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -7040,6 +7091,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7183,6 +7235,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -7244,6 +7297,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7383,6 +7437,7 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -7431,6 +7486,7 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7562,6 +7618,7 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -7610,6 +7667,7 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7739,6 +7797,7 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -7784,6 +7843,7 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7909,6 +7969,7 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -7954,6 +8015,7 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8087,6 +8149,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -8148,6 +8211,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8291,6 +8355,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -8352,6 +8417,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8495,6 +8561,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -8556,6 +8623,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8699,6 +8767,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -8760,6 +8829,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8903,6 +8973,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -8964,6 +9035,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9107,6 +9179,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<1>,
@@ -9168,6 +9241,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9311,6 +9385,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9372,6 +9447,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9511,6 +9587,7 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9556,6 +9633,7 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9683,6 +9761,7 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9714,6 +9793,7 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<48>,
                 alloy::sol_types::sol_data::Uint<48>,
@@ -9842,6 +9922,7 @@ function getFHEVMExecutorAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9875,6 +9956,7 @@ function getFHEVMExecutorAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -9989,6 +10071,7 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10022,6 +10105,7 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -10138,6 +10222,7 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10171,6 +10256,7 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -10287,6 +10373,7 @@ function getMaxHCUPerTx() external view returns (uint48);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10318,6 +10405,7 @@ function getMaxHCUPerTx() external view returns (uint48);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -10434,6 +10522,7 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10465,6 +10554,7 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -10579,6 +10669,7 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<48>,
                 alloy::sol_types::sol_data::Uint<48>,
@@ -10624,6 +10715,7 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10754,6 +10846,7 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -10787,6 +10880,7 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -10905,6 +10999,7 @@ function proxiableUUID() external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10936,6 +11031,7 @@ function proxiableUUID() external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11050,6 +11146,7 @@ function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 m
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<48>,
                 alloy::sol_types::sol_data::Uint<48>,
@@ -11093,6 +11190,7 @@ function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 m
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11216,6 +11314,7 @@ function removeFromBlockHCUWhitelist(address account) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -11249,6 +11348,7 @@ function removeFromBlockHCUWhitelist(address account) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11364,6 +11464,7 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -11397,6 +11498,7 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11510,6 +11612,7 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -11545,6 +11648,7 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11658,6 +11762,7 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -11691,6 +11796,7 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11806,6 +11912,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
@@ -11848,6 +11955,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11942,6 +12050,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     };
     ///Container for all the [`HCULimit`](self) function calls.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum HCULimitCalls {
@@ -12034,7 +12143,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         upgradeToAndCall(upgradeToAndCallCall),
     }
-    #[automatically_derived]
     impl HCULimitCalls {
         /// All the selectors of this enum.
         ///
@@ -12088,6 +12196,120 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             [237u8, 232u8, 119u8, 110u8],
             [247u8, 209u8, 152u8, 248u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(checkHCUForFheMin),
+            ::core::stringify!(checkHCUForFheShr),
+            ::core::stringify!(getVersion),
+            ::core::stringify!(initializeFromEmptyProxy),
+            ::core::stringify!(getMaxHCUDepthPerTx),
+            ::core::stringify!(getFHEVMExecutorAddress),
+            ::core::stringify!(removeFromBlockHCUWhitelist),
+            ::core::stringify!(checkHCUForFheNot),
+            ::core::stringify!(checkHCUForIfThenElse),
+            ::core::stringify!(checkHCUForFheRem),
+            ::core::stringify!(checkHCUForFheLe),
+            ::core::stringify!(checkHCUForFheLt),
+            ::core::stringify!(checkHCUForFheGt),
+            ::core::stringify!(checkHCUForFheNeg),
+            ::core::stringify!(upgradeToAndCall),
+            ::core::stringify!(proxiableUUID),
+            ::core::stringify!(setMaxHCUDepthPerTx),
+            ::core::stringify!(checkHCUForFheRotl),
+            ::core::stringify!(checkHCUForFheEq),
+            ::core::stringify!(checkHCUForCast),
+            ::core::stringify!(checkHCUForFheNe),
+            ::core::stringify!(checkHCUForFheRandBounded),
+            ::core::stringify!(addToBlockHCUWhitelist),
+            ::core::stringify!(reinitializeV2),
+            ::core::stringify!(checkHCUForFheMul),
+            ::core::stringify!(checkHCUForFheRotr),
+            ::core::stringify!(checkHCUForFheMax),
+            ::core::stringify!(checkHCUForFheDiv),
+            ::core::stringify!(getBlockMeter),
+            ::core::stringify!(checkHCUForFheBitXor),
+            ::core::stringify!(setHCUPerBlock),
+            ::core::stringify!(setMaxHCUPerTx),
+            ::core::stringify!(UPGRADE_INTERFACE_VERSION),
+            ::core::stringify!(getGlobalHCUCapPerBlock),
+            ::core::stringify!(checkHCUForTrivialEncrypt),
+            ::core::stringify!(checkHCUForFheBitOr),
+            ::core::stringify!(checkHCUForFheAdd),
+            ::core::stringify!(getMaxHCUPerTx),
+            ::core::stringify!(checkHCUForFheGe),
+            ::core::stringify!(checkHCUForFheBitAnd),
+            ::core::stringify!(checkHCUForFheRand),
+            ::core::stringify!(checkHCUForFheSub),
+            ::core::stringify!(isBlockHCUWhitelisted),
+            ::core::stringify!(checkHCUForFheShl),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <checkHCUForFheMinCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheShrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheNotCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheRemCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheLeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheLtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheGtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheNegCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <upgradeToAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <proxiableUUIDCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheEqCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForCastCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheNeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <reinitializeV2Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheMulCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheDivCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getBlockMeterCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setHCUPerBlockCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheAddCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheGeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheRandCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheSubCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <checkHCUForFheShlCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for HCULimitCalls {
@@ -13741,6 +13963,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     }
     ///Container for all the [`HCULimit`](self) custom errors.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HCULimitErrors {
@@ -13785,7 +14008,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         UnsupportedOperation(UnsupportedOperation),
     }
-    #[automatically_derived]
     impl HCULimitErrors {
         /// All the selectors of this enum.
         ///
@@ -13815,6 +14037,72 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             [249u8, 156u8, 79u8, 209u8],
             [252u8, 52u8, 72u8, 112u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(HCUPerBlockBelowMaxPerTx),
+            ::core::stringify!(NotHostOwner),
+            ::core::stringify!(CallerMustBeFHEVMExecutorContract),
+            ::core::stringify!(ERC1967InvalidImplementation),
+            ::core::stringify!(OnlyScalarOperationsAreSupported),
+            ::core::stringify!(NotInitializingFromEmptyProxy),
+            ::core::stringify!(HCUTransactionLimitExceeded),
+            ::core::stringify!(AddressEmptyCode),
+            ::core::stringify!(UnsupportedOperation),
+            ::core::stringify!(UUPSUnsupportedProxiableUUID),
+            ::core::stringify!(HCUBlockLimitExceeded),
+            ::core::stringify!(MaxHCUPerTxBelowDepth),
+            ::core::stringify!(ERC1967NonPayable),
+            ::core::stringify!(FailedCall),
+            ::core::stringify!(NotInitializing),
+            ::core::stringify!(UUPSUnauthorizedCallContext),
+            ::core::stringify!(NotBlockHCUWhitelisted),
+            ::core::stringify!(InvalidInitialization),
+            ::core::stringify!(AlreadyBlockHCUWhitelisted),
+            ::core::stringify!(HCUTransactionDepthLimitExceeded),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::SIGNATURE,
+            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
+            <CallerMustBeFHEVMExecutorContract as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SIGNATURE,
+            <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUTransactionLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
+            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
+            <UnsupportedOperation as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUBlockLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
+            <MaxHCUPerTxBelowDepth as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
+            <FailedCall as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
+            <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
+            <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUTransactionDepthLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for HCULimitErrors {
@@ -14595,6 +14883,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
     }
     ///Container for all the [`HCULimit`](self) events.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HCULimitEvents {
@@ -14613,7 +14902,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         Upgraded(Upgraded),
     }
-    #[automatically_derived]
     impl HCULimitEvents {
         /// All the selectors of this enum.
         ///
@@ -14658,6 +14946,46 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 24u8, 216u8, 103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
             ],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(MaxHCUDepthPerTxSet),
+            ::core::stringify!(MaxHCUPerTxSet),
+            ::core::stringify!(BlockHCUWhitelistRemoved),
+            ::core::stringify!(Upgraded),
+            ::core::stringify!(HCUPerBlockSet),
+            ::core::stringify!(Initialized),
+            ::core::stringify!(BlockHCUWhitelistAdded),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE,
+            <MaxHCUPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE,
+            <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Upgraded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <HCUPerBlockSet as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
+            <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for HCULimitEvents {
@@ -14797,9 +15125,9 @@ See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> HCULimitInstance<P, N> {
-        HCULimitInstance::<P, N>::new(address, provider)
+        HCULimitInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -14811,11 +15139,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        provider: P,
+        __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<HCULimitInstance<P, N>>,
     > {
-        HCULimitInstance::<P, N>::deploy(provider)
+        HCULimitInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -14826,8 +15154,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        HCULimitInstance::<P, N>::deploy_builder(provider)
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        HCULimitInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`HCULimit`](self) instance.
 
@@ -14854,7 +15182,6 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -14865,11 +15192,11 @@ See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            provider: P,
+            __provider: P,
         ) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -14880,9 +15207,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            provider: P,
+            __provider: P,
         ) -> alloy_contract::Result<HCULimitInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -14892,9 +15219,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -14931,7 +15258,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -15634,7 +15960,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,

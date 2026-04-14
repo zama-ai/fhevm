@@ -47,6 +47,8 @@ These events are crucial for triggering coprocessor state updates and ensuring p
 
 → See the full guide of [ACL](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl).
 
+For user-decryption delegation semantics on-chain (including wildcard delegation), see [allow and delegation](completed_intercomponent_flows/allow.md).
+
 ### Security role
 
 Although the FHE computation happens off-chain, host contracts play a critical role in protocol security by:

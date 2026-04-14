@@ -155,6 +155,14 @@ contract ACL is
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
 
+    /**
+     * @notice Sentinel address for user-decryption delegation that applies to every app contract.
+     * @dev `type(uint160).max` (EIP-55: 0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF). No contract can be deployed here.
+     *      Pass as `contractAddress` in `delegateForUserDecryption` / `revokeDelegationForUserDecryption` to grant or
+     *      revoke blanket delegation. This is a high-trust grant: SDKs should warn users explicitly.
+     */
+    address public constant WILDCARD_CONTRACT = address(type(uint160).max);
+
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 4;
@@ -261,7 +269,8 @@ contract ACL is
      * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
      * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to.
+     * @param contractAddress The contract address to delegate access to, or `WILDCARD_CONTRACT` for delegation across
+     *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed but redundant.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     function delegateForUserDecryption(
@@ -445,9 +454,13 @@ contract ACL is
 
     /**
      * @notice Returns whether an account is delegated to access the handle for user decryption.
+     * @dev Succeeds when the delegator and `contractAddress` are both persistently allowed on the handle, and either
+     *      a non-expired delegation exists for `(delegator, delegate, contractAddress)` or for
+     *      `(delegator, delegate, WILDCARD_CONTRACT)`. Wildcard does not bypass `allow`; it only avoids per-contract
+     *      delegation entries.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to.
+     * @param contractAddress The app contract associated with the handle for this check.
      * @param handle The handle to check for delegated user decryption.
      * @return isDelegatedForUserDecryption Whether the handle can be accessed for delegated user decryption.
      */
@@ -458,13 +471,12 @@ contract ACL is
         bytes32 handle
     ) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[delegator][delegate][
-            contractAddress
-        ];
+        if (!$.persistedAllowedPairs[handle][delegator] || !$.persistedAllowedPairs[handle][contractAddress]) {
+            return false;
+        }
         return
-            $.persistedAllowedPairs[handle][delegator] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            userDecryptionDelegation.expirationDate >= block.timestamp;
+            _isUserDecryptionDelegationActive($, delegator, delegate, contractAddress) ||
+            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_CONTRACT);
     }
 
     /**
@@ -566,6 +578,15 @@ contract ACL is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+
+    function _isUserDecryptionDelegationActive(
+        ACLStorage storage $,
+        address delegator,
+        address delegate,
+        address contractKey
+    ) private view returns (bool) {
+        return $.userDecryptionDelegations[delegator][delegate][contractKey].expirationDate >= block.timestamp;
+    }
 
     /**
      * @dev Returns the ACL storage location.

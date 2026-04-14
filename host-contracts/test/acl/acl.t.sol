@@ -225,6 +225,125 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
+     * @dev Wildcard delegation: `delegateForUserDecryption(delegate, WILDCARD_CONTRACT, ...)` authorizes the pair for
+     *      any app contract once delegator and that contract are both allowed on the handle (no per-app delegation row).
+     */
+    function test_WildcardDelegationSatisfiesIsHandleDelegatedWithoutPerContractRow(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        vm.assume(sender != acl.WILDCARD_CONTRACT());
+        vm.assume(contractAddress != acl.WILDCARD_CONTRACT());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
+        vm.assume(block.timestamp < type(uint64).max - 8 hours);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_CONTRACT();
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+        _allowHandle(handle, sender);
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+        _allowHandle(handle, contractAddress);
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
+     * @dev Revoking wildcard removes blanket access when there is no per-contract delegation row.
+     */
+    function test_RevokeWildcardRemovesDelegationWhenNoSpecificRow(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        test_WildcardDelegationSatisfiesIsHandleDelegatedWithoutPerContractRow(
+            handle,
+            sender,
+            delegate,
+            contractAddress
+        );
+
+        vm.roll(block.number + 1);
+        address wildcardForRevoke = acl.WILDCARD_CONTRACT();
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, wildcardForRevoke);
+
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
+     * @dev After revoking wildcard, an existing per-contract delegation row still authorizes the handle.
+     */
+    function test_AfterRevokeWildcardSpecificDelegationStillValid(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        vm.assume(sender != acl.WILDCARD_CONTRACT());
+        vm.assume(contractAddress != acl.WILDCARD_CONTRACT());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
+        vm.assume(block.timestamp < type(uint64).max - 8 hours);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_CONTRACT();
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+        vm.roll(block.number + 1);
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+
+        _allowHandle(handle, sender);
+        _allowHandle(handle, contractAddress);
+
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+
+        vm.roll(block.number + 1);
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, wildcardDelegation);
+
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
+     * @dev Wildcard does not bypass the requirement that the app contract is persistently allowed on the handle.
+     */
+    function test_WildcardDelegationStillRequiresContractAllowedOnHandle(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        vm.assume(sender != acl.WILDCARD_CONTRACT());
+        vm.assume(contractAddress != acl.WILDCARD_CONTRACT());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
+        vm.assume(block.timestamp < type(uint64).max - 8 hours);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_CONTRACT();
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        _allowHandle(handle, sender);
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
      * @dev Tests that the sender cannot delegate in the same block twice.
      */
     function test_CannotDelegateForUserDecryptionInSameBlockTwice(
