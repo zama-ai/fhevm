@@ -221,6 +221,36 @@ contract FHEVMManualTestSuite {
         resEuint8 = result;
     }
 
+    function test_sum_euint16(
+        externalEuint16 a,
+        externalEuint16 b,
+        externalEuint16 c,
+        bytes calldata inputProof
+    ) public {
+        euint16[] memory values = new euint16[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint16 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint16 = result;
+    }
+
+    function test_sum_euint32(
+        externalEuint32 a,
+        externalEuint32 b,
+        externalEuint32 c,
+        bytes calldata inputProof
+    ) public {
+        euint32[] memory values = new euint32[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint32 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint32 = result;
+    }
+
     function test_sum_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
         euint64[] memory values = new euint64[](2);
         values[0] = FHE.fromExternal(a, inputProof);
@@ -228,5 +258,14 @@ contract FHEVMManualTestSuite {
         euint64 result = FHE.sum(values);
         FHE.allowThis(result);
         resEuint64 = result;
+    }
+
+    function test_sum_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128[] memory values = new euint128[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        euint128 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint128 = result;
     }
 }

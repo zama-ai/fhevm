@@ -400,8 +400,21 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
     }
 
-    function _computeExpectedResultFheSum(bytes32[] memory values, FheType resultType) internal view returns (bytes32 result) {
-        result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, FHEVMExecutor.Operators.fheSum, values, acl, block.chainid, blockhash(block.number - 1), block.timestamp));
+    function _computeExpectedResultFheSum(
+        bytes32[] memory values,
+        FheType resultType
+    ) internal view returns (bytes32 result) {
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.fheSum,
+                values,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
         result = _appendMetadataToPrehandle(resultType, result, block.chainid, HANDLE_VERSION);
     }
 
