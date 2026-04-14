@@ -40,10 +40,10 @@
     "TEST_SUITE_VERSION": "v0.12.0"
   },
   "steps": [
-    ["RELAYER"],
+    ["RELAYER", "TEST_SUITE"],
     ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
     ["KMS_CORE", "KMS_CONNECTOR"],
-    ["COPROCESSOR", "TEST_SUITE"]
+    ["COPROCESSOR"]
   ],
   "units": {
     "RELAYER": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
