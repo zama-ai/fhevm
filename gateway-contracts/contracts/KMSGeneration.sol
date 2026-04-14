@@ -15,16 +15,6 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
  * All state-changing functions have been removed as part of RFC 013 (Move Key Generation
  * to Ethereum). This contract remains deployed for historical queries of previously
  * generated keys and CRS materials.
- * @dev The following state-changing functions were removed:
- * - keygen, prepKeygenResponse, keygenResponse
- * - crsgenRequest, crsgenResponse
- * - prssInit, keyReshareSameSet
- *
- * Retained view functions for historical queries:
- * - getActiveKeyId, getActiveCrsId
- * - getKeyMaterials, getCrsMaterials
- * - getKeyParamsType, getCrsParamsType
- * - getConsensusTxSenders
  */
 contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmptyProxy, GatewayOwnable {
     // ----------------------------------------------------------------------------------------------
@@ -69,6 +59,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // Common consensus variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice Whether a KMS node has signed for a response
+        /// @Deprecated. No longer written to.
         mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
         /// @notice Whether a request has reached consensus
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
@@ -80,28 +71,34 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // Pre-processing keygen state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The number of preprocessing keygen, used to generate the prepKeygenIds.
+        /// @Deprecated. No longer written to.
         uint256 prepKeygenCounter;
         // ----------------------------------------------------------------------------------------------
         // Keygen state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The number of keygen, used to generate the keyIds.
+        /// @Deprecated. No longer written to.
         uint256 keyCounter;
         /// @notice Bidirectional mapping between preprocessing request IDs and key IDs
         mapping(uint256 id => uint256 pairedId) keygenIdPairs;
         /// @notice The digests of the generated keys
         mapping(uint256 keyId => KeyDigest[] keyDigests) keyDigests;
         /// @notice The ID of the currently active key
+        /// @Deprecated. No longer written to.
         uint256 activeKeyId;
         // ----------------------------------------------------------------------------------------------
         // Crsgen state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The number of crsgen, used to generate the crsIds.
+        /// @Deprecated. No longer written to.
         uint256 crsCounter;
         /// @notice The max bit length used for the CRS generation
+        /// @Deprecated. No longer written to.
         mapping(uint256 crsId => uint256 maxBitLength) crsMaxBitLength;
         /// @notice The digests of the generated CRS
         mapping(uint256 crsId => bytes crsDigest) crsDigests;
         /// @notice The ID of the currently active CRS
+        /// @Deprecated. No longer written to.
         uint256 activeCrsId;
         // ----------------------------------------------------------------------------------------------
         // Parameters variables:
@@ -109,6 +106,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
         /// @notice The number of key resharing, used to generate the keyReshareIds.
+        /// @Deprecated. No longer written to.
         uint256 keyReshareCounter;
     }
 
@@ -174,22 +172,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         return $.requestParamsType[crsId];
-    }
-
-    /**
-     * @notice See {IKMSGeneration-getActiveKeyId}.
-     */
-    function getActiveKeyId() external view virtual returns (uint256) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        return $.activeKeyId;
-    }
-
-    /**
-     * @notice See {IKMSGeneration-getActiveCrsId}.
-     */
-    function getActiveCrsId() external view virtual returns (uint256) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        return $.activeCrsId;
     }
 
     /**

@@ -4,7 +4,7 @@ import { Wallet } from "ethers";
 import hre from "hardhat";
 
 import { KMSGeneration, KMSGeneration__factory } from "../typechain-types";
-import { getCrsId, getKeyId, loadTestVariablesFixture } from "./utils";
+import { loadTestVariablesFixture } from "./utils";
 
 describe("KMSGeneration", function () {
   describe("Deployment", function () {
@@ -33,6 +33,10 @@ describe("KMSGeneration", function () {
   describe("View functions on fresh deployment (no historical data)", function () {
     let kmsGeneration: KMSGeneration;
 
+    // Arbitrary non-zero IDs for testing reverts on a fresh (empty) deployment
+    const fakeKeyId = 1n;
+    const fakeCrsId = 2n;
+
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       kmsGeneration = fixtureData.kmsGeneration;
@@ -42,42 +46,29 @@ describe("KMSGeneration", function () {
       expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.5.0");
     });
 
-    it("Should return zero for active key ID when no key has been generated", async function () {
-      expect(await kmsGeneration.getActiveKeyId()).to.equal(0n);
-    });
-
-    it("Should return zero for active CRS ID when no CRS has been generated", async function () {
-      expect(await kmsGeneration.getActiveCrsId()).to.equal(0n);
-    });
-
     it("Should return empty array for consensus tx senders when no request exists", async function () {
-      const fakeRequestId = getKeyId(1);
-      expect(await kmsGeneration.getConsensusTxSenders(fakeRequestId)).to.deep.equal([]);
+      expect(await kmsGeneration.getConsensusTxSenders(fakeKeyId)).to.deep.equal([]);
     });
 
     it("Should revert on getKeyParamsType for non-existent key", async function () {
-      const fakeKeyId = getKeyId(1);
       await expect(kmsGeneration.getKeyParamsType(fakeKeyId))
         .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
         .withArgs(fakeKeyId);
     });
 
     it("Should revert on getCrsParamsType for non-existent CRS", async function () {
-      const fakeCrsId = getCrsId(1);
       await expect(kmsGeneration.getCrsParamsType(fakeCrsId))
         .to.be.revertedWithCustomError(kmsGeneration, "CrsNotGenerated")
         .withArgs(fakeCrsId);
     });
 
     it("Should revert on getKeyMaterials for non-existent key", async function () {
-      const fakeKeyId = getKeyId(1);
       await expect(kmsGeneration.getKeyMaterials(fakeKeyId))
         .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
         .withArgs(fakeKeyId);
     });
 
     it("Should revert on getCrsMaterials for non-existent CRS", async function () {
-      const fakeCrsId = getCrsId(1);
       await expect(kmsGeneration.getCrsMaterials(fakeCrsId))
         .to.be.revertedWithCustomError(kmsGeneration, "CrsNotGenerated")
         .withArgs(fakeCrsId);
