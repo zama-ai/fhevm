@@ -34,7 +34,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     decryption_processor: DecryptionProcessor<GP, HP, C>,
 
     /// The entity used to process key management requests.
-    kms_generation_processor: KMSGenerationProcessor,
+    kms_generation_processor: KMSGenerationProcessor<C>,
 
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
@@ -97,7 +97,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
     pub fn new(
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<GP, HP, C>,
-        kms_generation_processor: KMSGenerationProcessor,
+        kms_generation_processor: KMSGenerationProcessor<C>,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
@@ -116,7 +116,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
         &self,
         event: &mut ProtocolEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let request = match &event.kind {
+        match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
@@ -129,7 +129,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         &req.extraData,
                         None,
                     )
-                    .await?
+                    .await
             }
             ProtocolEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
@@ -158,19 +158,24 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                             req.publicKey.clone(),
                         )),
                     )
-                    .await?
+                    .await
             }
-            ProtocolEventKind::PrepKeygen(req) => self
-                .kms_generation_processor
-                .prepare_prep_keygen_request(req),
+            ProtocolEventKind::PrepKeygen(req) => {
+                self.kms_generation_processor
+                    .prepare_prep_keygen_request(req)
+                    .await
+            }
             ProtocolEventKind::Keygen(req) => {
-                self.kms_generation_processor.prepare_keygen_request(req)
+                self.kms_generation_processor
+                    .prepare_keygen_request(req)
+                    .await
             }
             ProtocolEventKind::Crsgen(req) => {
-                self.kms_generation_processor.prepare_crsgen_request(req)
+                self.kms_generation_processor
+                    .prepare_crsgen_request(req)
+                    .await
             }
-        };
-        Ok(request)
+        }
     }
 
     /// Core event processing logic function.
