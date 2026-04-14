@@ -279,9 +279,6 @@ contract ACL is
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
 
-        // Set the last block where the delegation happened.
-        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
-
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
         }
@@ -300,6 +297,9 @@ contract ACL is
         if (oldExpirationDate == newExpirationDate) {
             revert ExpirationDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpirationDate);
         }
+
+        // Set the last block where the delegation happened.
+        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
         // Set the delegation expiration date.
         userDecryptionDelegation.expirationDate = newExpirationDate;
