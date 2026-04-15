@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE blocks SET status = 'UNCLE'::block_status\n            WHERE chain_id = $1 AND block_number = $2 AND block_hash != $3 AND status = 'CANONICAL'::block_status\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a18b47e762618babf483fd3ce24b29416397ae5551b1b6a8d649b6f0cdf6f02c"
+}

@@ -1,0 +1,10 @@
+chart-dirs:
+  - charts
+target-branch: main
+helm-extra-args: --timeout 600s
+validate-maintainers: false
+# Fail if chart content changed but Chart.yaml version was not bumped
+check-version-increment: true
+# Extra validation scripts run per changed chart ($1 = chart path)
+additional-commands:
+  - scripts/ct-lint-extras.sh {{ .Path }}

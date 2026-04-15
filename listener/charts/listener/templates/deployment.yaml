@@ -1,0 +1,171 @@
+{{- if .Values.listeners }}
+{{- range $listener := .Values.listeners }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "listener.instanceName" (dict "root" $ "listener" $listener) }}
+  labels:
+    {{- include "listener.instanceLabels" (dict "root" $ "listener" $listener) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "listener.instanceSelectorLabels" (dict "root" $ "listener" $listener) | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ printf "%s%s%s" ($.Files.Get "configs/listener-default.yaml") (toYaml $.Values.commonConfig) (toYaml ($listener.config | default dict)) | sha256sum }}
+        {{- with $.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "listener.instanceLabels" (dict "root" $ "listener" $listener) | nindent 8 }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "listener.serviceAccountName" $ }}
+      {{- with (default $.Values.podSecurityContext $listener.podSecurityContext) }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: listener
+          {{- with (default $.Values.securityContext $listener.securityContext) }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- if $.Values.metrics.enabled }}
+          ports:
+            - name: metrics
+              containerPort: {{ include "listener.metricsPort" (dict "root" $ "listener" $listener) }}
+              protocol: TCP
+          {{- end }}
+          args:
+            - "--config"
+            - "/config/config.yaml"
+          env:
+            {{- include "listener.mergedEnv" (dict "root" $ "listener" $listener) | nindent 12 }}
+          {{- with $.Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with (default $.Values.resources $listener.resources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "listener.instanceName" (dict "root" $ "listener" $listener) }}
+      {{- with (default $.Values.nodeSelector $listener.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (default $.Values.affinity $listener.affinity) }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (default $.Values.tolerations $listener.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
+
+{{/* ── eRPC Deployment ──────────────────────────────────────────────── */}}
+{{- if .Values.erpc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "listener.erpcName" . }}
+  labels:
+    {{- include "listener.erpcLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.erpc.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "listener.erpcSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Files.Get (printf "configs/%s" .Values.erpc.baseConfig) | sha256sum }}
+      labels:
+        {{- include "listener.erpcLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.erpc.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.erpc.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.erpc.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.erpc.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: erpc
+          {{- with .Values.erpc.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.erpc.image.repository }}:{{ .Values.erpc.image.tag }}"
+          imagePullPolicy: {{ .Values.erpc.image.pullPolicy }}
+          {{- with .Values.erpc.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.erpc.service.httpPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.erpc.service.metricsPort }}
+              protocol: TCP
+          {{- with .Values.erpc.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.erpc.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.erpc.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: erpc-config
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: erpc-config
+          configMap:
+            name: {{ include "listener.erpcName" . }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

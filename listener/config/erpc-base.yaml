@@ -1,0 +1,81 @@
+# =============================================================================
+# erpc-base.yaml — Minimal eRPC configuration
+# =============================================================================
+# Baseline config with sane defaults for server, metrics, and rate limiting.
+# No networks or upstreams defined — those are added by profile-specific
+# configs (erpc-public.yaml, erpc-gateway.yaml) or via Helm value overrides.
+#
+# This file is the default baseConfig in the Helm chart.
+# =============================================================================
+
+# =============================================================================
+# SERVER
+# =============================================================================
+server:
+  httpHostV4: 0.0.0.0
+  httpPortV4: 4000
+  maxTimeout: 30s
+  enableGzip: true
+
+# =============================================================================
+# METRICS (Prometheus)
+# =============================================================================
+metrics:
+  enabled: true
+  hostV4: 0.0.0.0
+  port: 4001
+
+# =============================================================================
+# RATE LIMITERS
+# =============================================================================
+rateLimiters:
+  store:
+    driver: memory
+  budgets:
+    - id: default-budget
+      rules:
+        - method: "*"
+          maxCount: 10000000
+          period: second
+
+# =============================================================================
+# PROJECT
+# =============================================================================
+# Single project with generic defaults. Override via Helm values (.erpc.config)
+# or use a profile-specific config (--set erpc.baseConfig=erpc-public.yaml).
+# =============================================================================
+projects:
+  - id: main
+    networkDefaults:
+      directiveDefaults:
+        retryEmpty: true
+        retryPending: false
+      failsafe:
+        - matchMethod: "*"
+          timeout:
+            duration: 15s
+          retry:
+            maxAttempts: 3
+            delay: 500ms
+            backoffMaxDelay: 5s
+            backoffFactor: 2.0
+            jitter: 200ms
+    upstreamDefaults:
+      jsonRpc:
+        supportsBatch: true
+        batchMaxSize: 100
+        batchMaxWait: 50ms
+      failsafe:
+        - matchMethod: "*"
+          timeout:
+            duration: 10s
+          retry:
+            maxAttempts: 2
+            delay: 300ms
+          circuitBreaker:
+            failureThresholdCount: 10
+            failureThresholdCapacity: 20
+            halfOpenAfter: 30s
+            successThresholdCount: 3
+            successThresholdCapacity: 5
+    networks: []

@@ -1,0 +1,142 @@
+# Unified Docker Compose for the listener project.
+
+x-listener-base: &listener-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+
+services:
+  # ── Base infrastructure (always starts) ──────────────────────────────
+
+  # ── Message brokers (always start) ───────────────────────────────────
+
+  redis:
+    image: redis:7-alpine
+    container_name: listener-redis
+    ports:
+      - "6379:6379"
+    # networks:
+    #   - listener
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - listener
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: listener-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: pass
+    # networks:
+    #   - listener
+    restart: unless-stopped
+    networks:
+      - listener
+
+  # ── RPC proxy (optional) ─────────────────────────────────────────────
+
+  erpc:
+    image: ghcr.io/erpc/erpc:0.0.63
+    container_name: listener-erpc
+    profiles: [erpc, listener-1, listener-2]
+    volumes:
+      - ./config/erpc-public.yaml:/erpc.yaml
+    ports:
+      - "4000:4000"  # HTTP API
+      - "4001:4001"  # Metrics
+    networks:
+      - listener
+
+  # ── Listener instances (one per chain, pick via --profile) ───────────
+
+  listener-1:
+    <<: *listener-base
+    container_name: listener-1
+    profiles: [listener-1]
+    depends_on:
+      rabbitmq:  { condition: service_started }
+      erpc:      { condition: service_started }
+    networks:
+      - listener
+      - fhevm_default
+    volumes:
+      - ./config/listener-1.yaml:/config.yaml:ro
+
+  listener-2:
+    <<: *listener-base
+    container_name: listener-2
+    profiles: [listener-2]
+    depends_on:
+      redis:    { condition: service_started }
+      erpc:     { condition: service_started }
+    networks:
+      - listener
+      - fhevm_default
+    volumes:
+      - ./config/listener-2.yaml:/config.yaml:ro
+
+  # ── Monitoring (optional) ────────────────────────────────────────────
+  # Note: Prometheus scrapes erpc:4001 — combine with --profile erpc
+  # for full metrics. Without eRPC, Prometheus still starts but that
+  # target shows as down.
+
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    container_name: listener-prometheus
+    profiles: [monitoring]
+    ports:
+      - "9090:9090"
+    networks:
+      - listener
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert.rules:/etc/prometheus/alert.rules:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.2
+    container_name: listener-grafana
+    profiles: [monitoring]
+    ports:
+      - "3000:3000"
+    networks:
+      - listener
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./monitoring/grafana/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./monitoring/grafana/dashboards/default.yml:/etc/grafana/provisioning/dashboards/default.yml:ro
+      - ./monitoring/grafana/dashboards/erpc.json:/etc/grafana/dashboards/erpc.json:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+
+networks:
+  listener:
+    driver: bridge
+  fhevm_default:
+    external: true
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:

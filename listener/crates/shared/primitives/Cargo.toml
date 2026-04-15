@@ -1,0 +1,12 @@
+[package]
+name    = "primitives"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+alloy = { version = "1.6.1", features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

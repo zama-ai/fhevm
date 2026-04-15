@@ -1,0 +1,1133 @@
+logLevel: warn
+
+# =============================================================================
+# erpc-public.yaml — PUBLIC NODES ONLY (repository provider)
+# =============================================================================
+# Uses exclusively the eRPC public endpoints repository @
+# https://evm-public-endpoints.erpc.cloud (chainlist.org, chainid.network, viem)
+#
+# Tuned for listener-indexer: timeouts ≤ 10s to match SemEvmRpcProvider HTTP
+# client timeout. Conservative hedges (quantile 0.98, maxCount 1) to avoid
+# rate-limit cascade on public nodes; no hedge for eth_blockNumber (55% volume).
+# =============================================================================
+
+# =============================================================================
+# SERVER
+# =============================================================================
+server:
+  httpHostV4: 0.0.0.0
+  httpPortV4: 4000
+  maxTimeout: 20s       # Must cover ethereum receipt budget: 3 upstreams × 5s = 15s + overhead
+  enableGzip: true
+
+# =============================================================================
+# METRICS (Prometheus)
+# =============================================================================
+metrics:
+  enabled: true
+  hostV4: 0.0.0.0
+  port: 4001
+
+# =============================================================================
+# NO DATABASE / NO CACHE
+# =============================================================================
+# Same as erpc.yaml — every request goes directly to upstreams.
+# =============================================================================
+
+# =============================================================================
+# RATE LIMITERS
+# =============================================================================
+# Public nodes only — eRPC not the bottleneck; upstream limits drive backoff.
+# =============================================================================
+rateLimiters:
+  store:
+    driver: memory
+
+  budgets:
+    # Very high limits - eRPC should not be the bottleneck
+    # Let the public nodes' own rate limits be the constraint
+    - id: very-high-limits
+      rules:
+        - method: "*"
+          maxCount: 10000000    # Effectively unlimited, let upstream responses drive backoff
+          period: second
+
+# =============================================================================
+# PROJECT — listener-indexer (PUBLIC ONLY)
+# =============================================================================
+projects:
+  - id: listener-indexer
+
+    # =========================================================================
+    # SCORING / ROUTING REACTIVITY
+    # =========================================================================
+    # Public endpoints degrade quickly under shared load, so routing must react fast.
+    scoreMetricsWindowSize: 5m
+    scoreGranularity: method
+    scoreRefreshInterval: 10s
+    scorePenaltyDecayRate: 0.80
+    scoreSwitchHysteresis: 0.02
+    scoreMinSwitchInterval: 20s
+
+    # =========================================================================
+    # NETWORK DEFAULTS
+    # =========================================================================
+    networkDefaults:
+      directiveDefaults:
+        retryEmpty: true
+        retryPending: false
+        skipCacheRead: true
+
+      # =====================================================================
+      # NETWORK-LEVEL FAILSAFE — Tuned for listener (10s HTTP client timeout)
+      # =====================================================================
+      failsafe:
+        # No hedge for eth_blockNumber — highest volume (55%), retries sufficient
+        - matchMethod: "eth_blockNumber"
+          timeout:
+            duration: 7s      # Network budget across retries; still under listener 10s
+          retry:
+            maxAttempts: 4
+            delay: 100ms
+            jitter: 50ms
+
+        - matchMethod: "eth_getBlockByNumber"
+          timeout:
+            duration: 10s    # Match listener HTTP timeout
+          retry:
+            maxAttempts: 3
+            delay: 500ms
+            backoffMaxDelay: 3s
+            backoffFactor: 2.0
+            jitter: 150ms
+
+        - matchMethod: "eth_getBlockByHash"
+          timeout:
+            duration: 10s    # Match listener HTTP timeout
+          hedge:
+            quantile: 0.98
+            minDelay: 400ms
+            maxDelay: 3s
+            maxCount: 1
+          retry:
+            maxAttempts: 4
+            delay: 150ms    # Give block time to propagate before next upstream
+            jitter: 50ms
+
+        - matchMethod: "eth_getBlockReceipts"
+          timeout:
+            duration: 10s    # Match listener HTTP timeout
+          hedge:
+            quantile: 0.98   # Heavier call — hedge only when clearly slow
+            minDelay: 800ms
+            maxDelay: 5s
+            maxCount: 1
+          retry:
+            maxAttempts: 4
+            delay: 500ms
+            backoffMaxDelay: 5s
+            backoffFactor: 1.5
+
+        - matchMethod: "eth_getTransactionReceipt"
+          timeout:
+            duration: 10s    # Match listener HTTP timeout
+          hedge:
+            quantile: 0.98
+            minDelay: 500ms
+            maxDelay: 3s
+            maxCount: 1
+          retry:
+            maxAttempts: 4
+            delay: 0ms
+
+        - matchMethod: "*"
+          timeout:
+            duration: 10s    # Match listener HTTP timeout
+          hedge:
+            quantile: 0.99
+            minDelay: 500ms
+            maxDelay: 3s
+            maxCount: 1
+          retry:
+            maxAttempts: 4
+            delay: 500ms
+
+    # =========================================================================
+    # UPSTREAM DEFAULTS — Tuned for public nodes
+    # =========================================================================
+    upstreamDefaults:
+      jsonRpc:
+        supportsBatch: true
+        batchMaxSize: 100     # Match listener batch_receipts_size_range usage
+        batchMaxWait: 50ms
+
+      routing:
+        scoreLatencyQuantile: 0.75
+        scoreMultipliers:
+          - respLatency: 10.0
+            errorRate: 6.0
+            throttledRate: 5.0
+            blockHeadLag: 8.0
+            totalRequests: 0.5
+            finalizationLag: 3.0
+
+      failsafe:
+        # >>>>>>>>>> BEGIN CHAOS-RESILIENT CB (2026-03-20) >>>>>>>>>>
+        # Previous: eth_blockNumber had NO CB, receipts CB was 80/100 (never tripped
+        # during chaos test — only 32 TransportFailure < 80 threshold).
+        # Fix: uniform 10/20 CB on ALL methods. Ejects dead upstream in ~2s.
+        # Rollback: restore failureThresholdCount/Capacity to original values below,
+        # remove CB from eth_blockNumber, restore halfOpenAfter to original values.
+        # Original values: eth_getBlockByNumber 25/50/20s, eth_getBlockReceipts 80/100/5m,
+        #   eth_getBlockByHash 80/100/3m, eth_getTransactionReceipt 80/100/3m, * 80/100/5m
+        # ──────────────────────────────────────────────────────────
+        - matchMethod: "eth_blockNumber"
+          timeout:
+            duration: 3s
+          retry:
+            maxAttempts: 1
+          circuitBreaker:                       # NEW — was missing
+            failureThresholdCount: 10
+            failureThresholdCapacity: 20
+            halfOpenAfter: 15s
+            successThresholdCount: 3
+            successThresholdCapacity: 5
+
+        - matchMethod: "eth_getBlockByNumber"
+          timeout:
+            duration: 5s
+          retry:
+            maxAttempts: 1
+          circuitBreaker:
+            failureThresholdCount: 10           # Was 25
+            failureThresholdCapacity: 20        # Was 50
+            halfOpenAfter: 15s                  # Was 20s
+            successThresholdCount: 3
+            successThresholdCapacity: 5         # Was 10
+
+        - matchMethod: "eth_getBlockByHash"
+          timeout:
+            duration: 10s
+          retry:
+            maxAttempts: 3
+            delay: 300ms
+            jitter: 100ms
+          circuitBreaker:
+            failureThresholdCount: 10           # Was 80
+            failureThresholdCapacity: 20        # Was 100
+            halfOpenAfter: 15s                  # Was 3m
+            successThresholdCount: 3            # Was 5
+            successThresholdCapacity: 5         # Was 10
+
+        - matchMethod: "eth_getBlockReceipts"
+          timeout:
+            duration: 5s
+          retry:
+            maxAttempts: 1
+          circuitBreaker:
+            failureThresholdCount: 10           # Was 80 — never tripped in chaos test
+            failureThresholdCapacity: 20        # Was 100
+            halfOpenAfter: 15s                  # Was 5m
+            successThresholdCount: 3
+            successThresholdCapacity: 5         # Was 10
+
+        - matchMethod: "eth_getTransactionReceipt"
+          timeout:
+            duration: 5s
+          retry:
+            maxAttempts: 1
+          circuitBreaker:
+            failureThresholdCount: 10           # Was 80
+            failureThresholdCapacity: 20        # Was 100
+            halfOpenAfter: 15s                  # Was 3m
+            successThresholdCount: 3            # Was 5
+            successThresholdCapacity: 5         # Was 10
+
+        - matchMethod: "*"
+          timeout:
+            duration: 5s
+          retry:
+            maxAttempts: 1
+          circuitBreaker:
+            failureThresholdCount: 10           # Was 80
+            failureThresholdCapacity: 20        # Was 100
+            halfOpenAfter: 15s                  # Was 5m
+            successThresholdCount: 3
+            successThresholdCapacity: 5         # Was 10
+        # <<<<<<<<<< END CHAOS-RESILIENT CB (2026-03-20) <<<<<<<<<<
+
+    # =========================================================================
+    # NETWORKS — Same chains as erpc.yaml
+    # =========================================================================
+    networks:
+      - architecture: evm
+        evm:
+          chainId: 43114
+          fallbackFinalityDepth: 1024
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: avalanche
+        directiveDefaults:
+          retryEmpty: true
+
+      - architecture: evm
+        evm:
+          chainId: 56
+          fallbackFinalityDepth: 1024
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: binance
+        directiveDefaults:
+          retryEmpty: true
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Ethereum mainnet — publicnode primary, 7 fallbacks, ZERO amplification
+      # ─────────────────────────────────────────────────────────────────────
+      # Root cause of all previous failures: eRPC retries amplify load.
+      # Direct to publicnode = 3,207 calls. Through eRPC = 11,320 calls (3.5x).
+      #
+      # Fix: NO hedge + NO network retry. One pass through upstreams in score
+      # order: publicnode (100) → drpc (7) → nodies (6) → ... → blockpi (1).
+      # If publicnode succeeds (90%+ of requests): done, no extra calls.
+      # If publicnode fails: fallbacks handle it, publicnode NOT retried.
+      #
+      # Per eRPC docs: defining failsafe here REPLACES networkDefaults.
+      # ─────────────────────────────────────────────────────────────────────
+      - architecture: evm
+        evm:
+          chainId: 1
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: ethereum
+        directiveDefaults:
+          retryEmpty: true
+        failsafe:
+          - matchMethod: "eth_blockNumber"
+            timeout:
+              duration: 10s
+            retry:
+              maxAttempts: 1    # No network retry — 8 upstreams is enough
+              delay: 100ms
+
+          - matchMethod: "eth_getBlockByNumber"
+            timeout:
+              duration: 15s     # 8 upstreams × ~1.5s each worst case
+            retry:
+              maxAttempts: 1
+
+          - matchMethod: "eth_getBlockByHash"
+            timeout:
+              duration: 10s
+            retry:
+              maxAttempts: 1
+
+          - matchMethod: "eth_getBlockReceipts"
+            timeout:
+              duration: 15s     # 8 upstreams × ~5s timeout, but most succeed in <1s
+            retry:
+              maxAttempts: 1    # CRITICAL: no retry = no amplification
+
+          - matchMethod: "eth_getTransactionReceipt"
+            timeout:
+              duration: 10s
+            retry:
+              maxAttempts: 1
+
+          - matchMethod: "*"
+            timeout:
+              duration: 10s
+            retry:
+              maxAttempts: 1
+
+      - architecture: evm
+        evm:
+          chainId: 137
+          fallbackFinalityDepth: 128
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: polygon
+        directiveDefaults:
+          retryEmpty: true
+
+      - architecture: evm
+        evm:
+          chainId: 8453
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: base
+        directiveDefaults:
+          retryEmpty: true
+
+      # Testnets
+      - architecture: evm
+        evm:
+          chainId: 11155111
+          fallbackFinalityDepth: 64
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: sepolia
+        directiveDefaults:
+          retryEmpty: true
+        # Sepolia: metrics-based selection policy for eth_getBlockByNumber to avoid
+        # rate-limit exhaustion. Excludes upstreams with high error/throttle rates;
+        # when they recover, they re-enter automatically (no hardcoded providers).
+        # Tighter thresholds + blockHeadLag to exclude degraded upstreams faster.
+        selectionPolicy:
+          evalInterval: 3s
+          evalPerMethod: true
+          evalFunction: |
+            (upstreams, method) => {
+              if (method !== 'eth_getBlockByNumber') return upstreams
+              const maxErrorRate = 0.10
+              const maxThrottledRate = 0.08
+              const maxBlockHeadLag = 8
+              const healthy = upstreams.filter(u => {
+                const err = u.metrics.errorRate ?? 0
+                const thr = u.metrics.throttledRate ?? 0
+                const lag = u.metrics.blockHeadLag ?? 999
+                return err <= maxErrorRate && thr <= maxThrottledRate && lag <= maxBlockHeadLag
+              })
+              return healthy.length > 0 ? healthy : upstreams
+            }
+          resampleExcluded: true
+          resampleInterval: 20s
+          resampleCount: 3
+        failsafe:
+          - matchMethod: "eth_blockNumber"
+            timeout:
+              duration: 7s
+            retry:
+              maxAttempts: 4
+              delay: 100ms
+              jitter: 50ms
+
+          - matchMethod: "eth_getBlockByNumber"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.95
+              minDelay: 1500ms
+              maxDelay: 4s
+              maxCount: 1
+            retry:
+              maxAttempts: 10
+              delay: 120ms
+              jitter: 80ms
+              backoffMaxDelay: 2s
+              backoffFactor: 2.0
+
+          - matchMethod: "eth_getBlockByHash"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 400ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 150ms
+              jitter: 50ms
+
+          - matchMethod: "eth_getBlockReceipts"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 800ms
+              maxDelay: 5s
+              maxCount: 1
+            retry:
+              maxAttempts: 5
+              delay: 500ms
+              backoffMaxDelay: 5s
+              backoffFactor: 1.5
+
+          - matchMethod: "eth_getTransactionReceipt"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 0ms
+
+          - matchMethod: "*"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.99
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 500ms
+
+      - architecture: evm
+        evm:
+          chainId: 43113
+          fallbackFinalityDepth: 1024
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: fuji
+        directiveDefaults:
+          retryEmpty: true
+
+      - architecture: evm
+        evm:
+          chainId: 97
+          fallbackFinalityDepth: 1024
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: bsc-testnet
+        directiveDefaults:
+          retryEmpty: true
+        # BSC testnet-specific network strategy:
+        # - keep retries short to avoid long tails on public endpoints
+        # - keep hedging conservative for heavy receipts calls
+        failsafe:
+          - matchMethod: "eth_blockNumber"
+            timeout:
+              duration: 7s
+            retry:
+              maxAttempts: 3
+              delay: 150ms
+              jitter: 75ms
+
+          - matchMethod: "eth_getBlockByNumber"
+            timeout:
+              duration: 8s
+            retry:
+              maxAttempts: 3
+              delay: 250ms
+              jitter: 100ms
+              backoffMaxDelay: 2s
+              backoffFactor: 1.5
+
+          - matchMethod: "eth_getBlockByHash"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 400ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 150ms
+              jitter: 50ms
+
+          - matchMethod: "eth_getBlockReceipts"
+            timeout:
+              duration: 8s
+            hedge:
+              quantile: 0.995
+              minDelay: 1200ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 2
+              delay: 200ms
+              backoffMaxDelay: 1200ms
+              backoffFactor: 1.3
+              blockUnavailableDelay: 800ms
+
+          - matchMethod: "eth_getTransactionReceipt"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 0ms
+
+          - matchMethod: "*"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.99
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 500ms
+        selectionPolicy:
+          evalInterval: 10s
+          evalPerMethod: true
+          evalFunction: |
+            (upstreams, method) => {
+              const hotMethods = ['eth_blockNumber', 'eth_getBlockByNumber', 'eth_getBlockReceipts']
+              const primaryIdHint = 'bsc-testnet-rpc.publicnode.com'
+              const getId = (u) => (u.config.id || '').toLowerCase()
+              const isPrimary = (u) => getId(u).includes(primaryIdHint)
+              const isZan = (u) => getId(u).includes('zan.top')
+              const isOnfinality = (u) => getId(u).includes('onfinality.io')
+              const isBnbSeed = (u) => getId(u).includes('prebsc')
+              const isHealthy = (u, maxErr, maxLag) => (
+                u.metrics.errorRate < maxErr && u.metrics.blockHeadLag <= maxLag
+              )
+              const byReliability = (a, b) => {
+                if (a.metrics.errorRate === b.metrics.errorRate) {
+                  return a.metrics.p90ResponseSeconds - b.metrics.p90ResponseSeconds
+                }
+                return a.metrics.errorRate - b.metrics.errorRate
+              }
+
+              const sorted = [...upstreams].sort(byReliability)
+              const strictHealthy = sorted.filter(u => isHealthy(u, 0.15, 2))
+              const relaxedHealthy = sorted.filter(u => isHealthy(u, 0.30, 8))
+              const primaryStrict = strictHealthy.filter(isPrimary)
+              const primaryRelaxed = relaxedHealthy.filter(isPrimary)
+
+              // Throttled providers observed in BSC tests for hot methods.
+              const hotPool = sorted.filter(u => !isZan(u) && !isOnfinality(u))
+              const hotStrict = hotPool.filter(u => isHealthy(u, 0.20, 4))
+              const hotRelaxed = hotPool.filter(u => isHealthy(u, 0.35, 10))
+              const hotPrimaryStrict = hotStrict.filter(isPrimary)
+              const hotPrimaryRelaxed = hotRelaxed.filter(isPrimary)
+
+              // Receipt calls often return "block unavailable" on some public seed endpoints.
+              const receiptsPool = sorted.filter(
+                u => !isZan(u) && !isOnfinality(u) && !isBnbSeed(u)
+              )
+              const receiptsStrict = receiptsPool.filter(u => isHealthy(u, 0.25, 6))
+              const receiptsRelaxed = receiptsPool.filter(u => isHealthy(u, 0.40, 12))
+              const receiptsPrimaryStrict = receiptsStrict.filter(isPrimary)
+              const receiptsPrimaryRelaxed = receiptsRelaxed.filter(isPrimary)
+
+              if (hotMethods.includes(method)) {
+                if (method === 'eth_getBlockReceipts') {
+                  const result = []
+                  if (receiptsPrimaryStrict.length > 0) {
+                    result.push(...receiptsPrimaryStrict)
+                  } else if (receiptsPrimaryRelaxed.length > 0) {
+                    result.push(...receiptsPrimaryRelaxed)
+                  }
+                  for (const u of receiptsStrict) {
+                    if (!result.includes(u)) result.push(u)
+                  }
+                  for (const u of receiptsRelaxed) {
+                    if (!result.includes(u)) result.push(u)
+                  }
+                  if (result.length > 0) return result
+                  if (receiptsPool.length > 0) return receiptsPool
+                  return upstreams
+                }
+
+                const result = []
+                if (hotPrimaryStrict.length > 0) {
+                  result.push(...hotPrimaryStrict)
+                } else if (hotPrimaryRelaxed.length > 0) {
+                  result.push(...hotPrimaryRelaxed)
+                }
+                for (const u of hotStrict) {
+                  if (!result.includes(u)) result.push(u)
+                }
+                for (const u of hotRelaxed) {
+                  if (!result.includes(u)) result.push(u)
+                }
+                if (result.length > 0) return result
+                if (hotPool.length > 0) return hotPool
+                return upstreams
+              }
+
+              if (strictHealthy.length > 0) return strictHealthy
+              if (relaxedHealthy.length > 0) return relaxedHealthy
+              return upstreams
+            }
+          resampleExcluded: true
+          resampleInterval: 1m
+          resampleCount: 3
+
+      - architecture: evm
+        evm:
+          chainId: 80002
+          fallbackFinalityDepth: 128
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: amoy
+        directiveDefaults:
+          retryEmpty: true
+
+      - architecture: evm
+        evm:
+          chainId: 84532
+          fallbackFinalityDepth: 64
+          integrity:
+            enforceHighestBlock: true
+            enforceGetLogsBlockRange: true
+            enforceNonNullTaggedBlocks: true
+        alias: base-sepolia
+        directiveDefaults:
+          retryEmpty: true
+        # Base Sepolia: generic metrics-based strategy (no provider names).
+        # - selection policy filters by errorRate, throttledRate, blockHeadLag for hot methods
+        # - hedge + more retries for eth_blockNumber and eth_getBlockByNumber
+        failsafe:
+          - matchMethod: "eth_blockNumber"
+            timeout:
+              duration: 7s
+            hedge:
+              quantile: 0.95
+              minDelay: 1500ms
+              maxDelay: 4s
+              maxCount: 1
+            retry:
+              maxAttempts: 6
+              delay: 120ms
+              jitter: 80ms
+
+          - matchMethod: "eth_getBlockByNumber"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.95
+              minDelay: 1000ms
+              maxDelay: 4s
+              maxCount: 1
+            retry:
+              maxAttempts: 6
+              delay: 80ms
+              jitter: 40ms
+              backoffMaxDelay: 1s
+              backoffFactor: 1.5
+
+          - matchMethod: "eth_getBlockByHash"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 400ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 150ms
+              jitter: 50ms
+
+          - matchMethod: "eth_getBlockReceipts"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.95
+              minDelay: 1000ms
+              maxDelay: 4s
+              maxCount: 1
+            retry:
+              maxAttempts: 7
+              delay: 200ms
+              jitter: 100ms
+              backoffMaxDelay: 2s
+              backoffFactor: 1.5
+              blockUnavailableDelay: 800ms
+
+          - matchMethod: "eth_getTransactionReceipt"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.98
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 0ms
+
+          - matchMethod: "*"
+            timeout:
+              duration: 10s
+            hedge:
+              quantile: 0.99
+              minDelay: 500ms
+              maxDelay: 3s
+              maxCount: 1
+            retry:
+              maxAttempts: 4
+              delay: 500ms
+        selectionPolicy:
+          evalInterval: 3s
+          evalPerMethod: true
+          evalFunction: |
+            (upstreams, method) => {
+              const hotMethods = ['eth_blockNumber', 'eth_getBlockByNumber', 'eth_getBlockReceipts']
+              if (!hotMethods.includes(method)) return upstreams
+
+              const maxBlockHeadLag = 10
+              const maxErrorRate = method === 'eth_getBlockByNumber' ? 0.12 : (method === 'eth_getBlockReceipts' ? 0.10 : 0.15)
+              const maxThrottledRate = method === 'eth_getBlockByNumber' ? 0.10 : (method === 'eth_getBlockReceipts' ? 0.08 : 0.12)
+
+              const healthy = upstreams.filter(u => {
+                const err = u.metrics.errorRate ?? 0
+                const thr = u.metrics.throttledRate ?? 0
+                const lag = u.metrics.blockHeadLag ?? 999
+                return err <= maxErrorRate && thr <= maxThrottledRate && lag <= maxBlockHeadLag
+              })
+
+              return healthy.length > 0 ? healthy : upstreams
+            }
+          resampleExcluded: true
+          resampleInterval: 20s
+          resampleCount: 3
+
+    # =========================================================================
+    # PROVIDERS — Repository only (public nodes from evm-public-endpoints.erpc.cloud)
+    # =========================================================================
+    providers:
+      - id: public
+        vendor: repository
+        settings:
+          repositoryUrl: https://evm-public-endpoints.erpc.cloud
+          recheckInterval: 2h   # doubled from 1h default
+        onlyNetworks:
+          # evm:1 removed — repository discovers 28+ garbage endpoints that
+          # cause request amplification. Ethereum uses explicit upstreams below.
+          - evm:56
+          - evm:137
+          - evm:8453
+          - evm:43114
+          - evm:11155111
+          - evm:43113
+          - evm:97
+          - evm:80002
+          - evm:84532
+        overrides:
+          "evm:*":
+            rateLimitBudget: very-high-limits
+            evm:
+              statePollerInterval: 60s    # doubled from 30s
+              statePollerDebounce: 10s   # doubled (5s for Ethereum, 2s for others; use max)
+            routing:
+              scoreLatencyQuantile: 0.10      # Use almost ALL upstreams (was 0.50)
+              scoreMultipliers:
+                - overall: 0.1                # Minimal overall weight = near round-robin
+                - errorRate: 20.0             # Heavily penalize errors
+                - throttledRate: 30.0         # MAXIMUM penalty for rate-limited nodes
+                - respLatency: 0.5            # Almost ignore latency
+                - blockHeadLag: 5.0
+                - totalRequests: 10.0         # STRONGLY prefer less-used nodes (round-robin effect)
+            rateLimitAutoTune:
+              enabled: true
+              adjustmentPeriod: 1m            # Reduce oscillation in auto-tuning
+              errorRateThreshold: 0.10        # Avoid overreacting to short 429 bursts
+              increaseFactor: 1.03            # Recover budget faster when healthy
+              decreaseFactor: 0.90            # Smoother backoff to reduce hard clamping
+              minBudget: 50                   # Preserve baseline throughput during spikes
+              maxBudget: 200                  # Avoid local budget becoming bottleneck
+          # Sepolia-specific upstream routing: aggressively penalize throttled/errored nodes.
+          "evm:11155111":
+            rateLimitBudget: very-high-limits
+            evm:
+              statePollerInterval: 30s
+              statePollerDebounce: 5s
+            failsafe:
+              - matchMethod: "eth_getBlockByNumber"
+                timeout:
+                  duration: 1500ms
+                retry:
+                  maxAttempts: 1
+                circuitBreaker:
+                  failureThresholdCount: 20
+                  failureThresholdCapacity: 40
+                  halfOpenAfter: 15s
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+            routing:
+              scoreLatencyQuantile: 0.75
+              scoreMultipliers:
+                - overall: 1.0
+                  errorRate: 50.0
+                  throttledRate: 100.0
+                  respLatency: 4.0
+                  blockHeadLag: 20.0
+                  finalizationLag: 10.0
+                  totalRequests: 1.5
+                - method: "eth_getBlockByNumber"
+                  errorRate: 120.0
+                  throttledRate: 200.0
+                  respLatency: 2.0
+                  blockHeadLag: 30.0
+                  totalRequests: 10.0
+            rateLimitAutoTune:
+              enabled: true
+              adjustmentPeriod: 1m
+              errorRateThreshold: 0.08
+              increaseFactor: 1.02
+              decreaseFactor: 0.75
+              minBudget: 20
+              maxBudget: 200
+          # BSC testnet-specific upstream routing: reliability-first over load spreading.
+          "evm:97":
+            rateLimitBudget: very-high-limits
+            evm:
+              statePollerInterval: 30s
+              statePollerDebounce: 2s
+            routing:
+              scoreLatencyQuantile: 0.75
+              scoreMultipliers:
+                - overall: 1.0
+                  errorRate: 30.0
+                  throttledRate: 45.0
+                  respLatency: 4.0
+                  blockHeadLag: 15.0
+                  finalizationLag: 10.0
+                  totalRequests: 0.2
+            rateLimitAutoTune:
+              enabled: true
+              adjustmentPeriod: 1m
+              errorRateThreshold: 0.10
+              increaseFactor: 1.03
+              decreaseFactor: 0.90
+              minBudget: 50
+              maxBudget: 200
+          # Base Sepolia: generic strategy — circuit breaker for hot methods.
+          "evm:84532":
+            rateLimitBudget: very-high-limits
+            evm:
+              statePollerInterval: 30s
+              statePollerDebounce: 2s
+            failsafe:
+              - matchMethod: "eth_blockNumber"
+                timeout:
+                  duration: 1500ms
+                retry:
+                  maxAttempts: 1
+                circuitBreaker:
+                  failureThresholdCount: 20
+                  failureThresholdCapacity: 40
+                  halfOpenAfter: 15s
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+              - matchMethod: "eth_getBlockByNumber"
+                timeout:
+                  duration: 1200ms
+                retry:
+                  maxAttempts: 1
+                circuitBreaker:
+                  failureThresholdCount: 15
+                  failureThresholdCapacity: 30
+                  halfOpenAfter: 12s
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+              - matchMethod: "eth_getBlockReceipts"
+                timeout:
+                  duration: 8s
+                retry:
+                  maxAttempts: 1
+                circuitBreaker:
+                  failureThresholdCount: 15
+                  failureThresholdCapacity: 30
+                  halfOpenAfter: 20s
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+            routing:
+              scoreLatencyQuantile: 0.75
+              scoreMultipliers:
+                - overall: 1.0
+                  errorRate: 40.0
+                  throttledRate: 60.0
+                  respLatency: 5.0
+                  blockHeadLag: 12.0
+                  finalizationLag: 10.0
+                  totalRequests: 1.5
+                - method: "eth_blockNumber"
+                  errorRate: 80.0
+                  throttledRate: 120.0
+                  totalRequests: 8.0
+                - method: "eth_getBlockByNumber"
+                  errorRate: 120.0
+                  throttledRate: 200.0
+                  respLatency: 2.0
+                  blockHeadLag: 30.0
+                  totalRequests: 10.0
+                - method: "eth_getBlockReceipts"
+                  errorRate: 100.0
+                  throttledRate: 150.0
+                  totalRequests: 10.0
+            rateLimitAutoTune:
+              enabled: true
+              adjustmentPeriod: 1m
+              errorRateThreshold: 0.08
+              increaseFactor: 1.02
+              decreaseFactor: 0.85
+              minBudget: 20
+              maxBudget: 200
+          # Amoy-specific upstream behavior: pin upstream defaults for tested chain.
+          "evm:80002":
+            jsonRpc:
+              supportsBatch: true
+              batchMaxSize: 100
+              batchMaxWait: 50ms
+            routing:
+              scoreLatencyQuantile: 0.75
+              scoreMultipliers:
+                - respLatency: 10.0
+                  errorRate: 6.0
+                  throttledRate: 5.0
+                  blockHeadLag: 8.0
+                  totalRequests: 0.5
+                  finalizationLag: 3.0
+            failsafe:
+              - matchMethod: "eth_blockNumber"
+                timeout:
+                  duration: 1500ms
+                retry:
+                  maxAttempts: 1
+
+              - matchMethod: "eth_getBlockByNumber"
+                timeout:
+                  duration: 1500ms
+                retry:
+                  maxAttempts: 1
+                circuitBreaker:
+                  failureThresholdCount: 40
+                  failureThresholdCapacity: 80
+                  halfOpenAfter: 30s
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+
+              - matchMethod: "eth_getBlockByHash"
+                timeout:
+                  duration: 10s
+                retry:
+                  maxAttempts: 3
+                  delay: 300ms
+                  jitter: 100ms
+                circuitBreaker:
+                  failureThresholdCount: 80
+                  failureThresholdCapacity: 100
+                  halfOpenAfter: 3m
+                  successThresholdCount: 5
+                  successThresholdCapacity: 10
+
+              - matchMethod: "eth_getBlockReceipts"
+                timeout:
+                  duration: 10s
+                retry:
+                  maxAttempts: 3
+                  delay: 500ms
+                  jitter: 200ms
+                circuitBreaker:
+                  failureThresholdCount: 80
+                  failureThresholdCapacity: 100
+                  halfOpenAfter: 5m
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+
+              - matchMethod: "eth_getTransactionReceipt"
+                timeout:
+                  duration: 10s
+                retry:
+                  maxAttempts: 3
+                  delay: 200ms
+                  jitter: 100ms
+                circuitBreaker:
+                  failureThresholdCount: 80
+                  failureThresholdCapacity: 100
+                  halfOpenAfter: 3m
+                  successThresholdCount: 5
+                  successThresholdCapacity: 10
+
+              - matchMethod: "*"
+                timeout:
+                  duration: 10s
+                retry:
+                  maxAttempts: 3
+                  delay: 1000ms
+                  backoffMaxDelay: 10s
+                  backoffFactor: 1.3
+                  jitter: 500ms
+                circuitBreaker:
+                  failureThresholdCount: 80
+                  failureThresholdCapacity: 100
+                  halfOpenAfter: 5m
+                  successThresholdCount: 3
+                  successThresholdCapacity: 10
+
+    # =========================================================================
+    # UPSTREAMS — Ethereum mainnet
+    # =========================================================================
+    # All verified with curl: eth_getBlockReceipts returns 153 receipts for
+    # block 0x13B6740 with <330ms latency. No API keys needed.
+    #
+    # Score determines try order. publicnode (100) always first.
+    # Fallbacks scored 1-7 — eRPC tries them sequentially if publicnode fails.
+    # With network retry=1, publicnode is tried ONCE then fallbacks take over.
+    #
+    # Upstream failsafe from upstreamDefaults: 5s timeout, 1 attempt each.
+    # =========================================================================
+    # >>>>>>>>>> BEGIN UPSTREAM CLEANUP (2026-03-20) >>>>>>>>>>
+    # Removed 4 dead-weight upstreams based on metrics analysis:
+    #   - drpc-eth:     100% ServerSideException (86/86 receipts, 81/81 blocks)
+    #   - gatewayfm-eth: 79% CapacityExceeded (355/449 receipts, 80/159 blocks)
+    #   - meowrpc-eth:  100% ServerSideException (86/86 receipts, 62/62 blocks)
+    #   - blockpi-eth:  100% ServerSideException (86/86 receipts)
+    # Kept 4 upstreams with proven success rates:
+    #   - publicnode (primary), nodies (1.8% err), blockrazor (1.4% err), 0xrpc (24% err)
+    # Rollback: re-add the removed upstreams from git history.
+    # ──────────────────────────────────────────────────────────
+    upstreams:
+      # ── Primary ─────────────────────────────────────────────────────────
+      - endpoint: https://ethereum-rpc.publicnode.com
+        id: publicnode-eth
+        evm:
+          chainId: 1
+          nodeType: archive
+        rateLimitBudget: very-high-limits
+        routing:
+          scoreMultipliers:
+            - overall: 100.0    # Always tried first
+
+      # ── Fallbacks (tried in descending score order after publicnode) ──
+      - endpoint: https://ethereum-public.nodies.app
+        id: nodies-eth
+        evm:
+          chainId: 1
+        rateLimitBudget: very-high-limits
+        routing:
+          scoreMultipliers:
+            - overall: 3.0      # Best fallback: 1.8% error rate, 94ms latency
+
+      - endpoint: https://eth.blockrazor.xyz
+        id: blockrazor-eth
+        evm:
+          chainId: 1
+        rateLimitBudget: very-high-limits
+        routing:
+          scoreMultipliers:
+            - overall: 2.0      # 1.4% error rate, 262ms latency
+
+      - endpoint: https://0xrpc.io/eth
+        id: 0xrpc-eth
+        evm:
+          chainId: 1
+        rateLimitBudget: very-high-limits
+        routing:
+          scoreMultipliers:
+            - overall: 1.0      # 24% error rate (heavy blocks), 271ms latency
+    # <<<<<<<<<< END UPSTREAM CLEANUP (2026-03-20) <<<<<<<<<<
