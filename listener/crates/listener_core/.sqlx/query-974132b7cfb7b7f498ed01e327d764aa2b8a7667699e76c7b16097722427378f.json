@@ -1,0 +1,63 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO filters (id, chain_id, consumer_id, \"from\", \"to\", \"log_address\")\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (chain_id, consumer_id, COALESCE(\"from\", ''), COALESCE(\"to\", ''), COALESCE(\"log_address\", ''))\n            DO NOTHING\n            RETURNING id, chain_id, consumer_id, \"from\", \"to\", \"log_address\", created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "consumer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "from",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "to",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "log_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "974132b7cfb7b7f498ed01e327d764aa2b8a7667699e76c7b16097722427378f"
+}

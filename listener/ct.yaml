@@ -1,0 +1,5 @@
+chart-dirs:
+  - charts
+target-branch: main
+helm-extra-args: --timeout 600s
+validate-maintainers: false

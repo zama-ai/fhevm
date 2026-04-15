@@ -119,6 +119,7 @@ einput = "einput"         # encrypted input
 reencrypt = "reencrypt"   # re-encryption operation
 reencryption = "reencryption"
 decryptor = "decryptor"   # entity that decrypts
+bimap = "bimap"           # Rust crate name
 ciphertext = "ciphertext" # encrypted data
 ciphertexts = "ciphertexts"
 plaintext = "plaintext"   # unencrypted data

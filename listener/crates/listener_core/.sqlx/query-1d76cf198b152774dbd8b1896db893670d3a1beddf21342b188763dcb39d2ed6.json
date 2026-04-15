@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM filters\n            WHERE chain_id = $1\n              AND consumer_id = $2\n              AND COALESCE(\"from\", '') = COALESCE($3, '')\n              AND COALESCE(\"to\", '') = COALESCE($4, '')\n              AND COALESCE(\"log_address\", '') = COALESCE($5, '')\n            RETURNING id, chain_id, consumer_id, \"from\", \"to\", \"log_address\", created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "consumer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "from",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "to",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "log_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "1d76cf198b152774dbd8b1896db893670d3a1beddf21342b188763dcb39d2ed6"
+}

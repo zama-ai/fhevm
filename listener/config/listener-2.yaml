@@ -1,0 +1,45 @@
+# Example configuration template.
+#
+# For ready-to-use configs, see:
+#   config/listener-amqp.yaml   — RabbitMQ backend
+#   config/listener-redis.yaml  — Redis Streams backend
+#
+# Values can be overridden via environment variables:
+#   APP_BROKER__BROKER_TYPE=redis APP_BROKER__BROKER_URL=redis://localhost:6379 cargo run
+
+name: listener
+database:
+  db_url: postgres://postgres:postgres@listener-postgres:5432/listener
+  migration_max_attempts: 5
+  pool:
+    max_connections: 10
+    min_connections: 2
+    # acquire_timeout_secs: 30
+    # idle_timeout_secs: 600
+    # max_lifetime_secs: 1800
+broker:
+  broker_type: amqp
+  broker_url: amqp://user:pass@listener-rabbitmq:5672/%2f
+
+blockchain:
+  type: evm
+  chain_id: 84532
+  rpc_url: http://listener-erpc:4000/listener-indexer/evm/84532
+  network: base-sepolia
+  finality_depth: 64
+  # cleaner:
+  #   enabled: true
+  #   blocks_to_keep: 1000
+  strategy:
+    automatic_startup: true
+    block_start: 38342520
+    range_size: 100
+    loop_delay_ms: 1000
+    max_parallel_requests: 50
+    # block_receipts | batch_receipts_full | batch_receipts_range | transaction_receipts_parallel | transaction_receipts_seqential
+    block_fetcher: block_receipts
+    # taken into account only for batch_receipts_range
+    batch_receipts_size_range: 10
+    compute_block: false
+    # Maximum backoff in ms for rate-limit retries (exponential backoff cap, default: 20000)
+    max_exponential_backoff_ms: 20000
