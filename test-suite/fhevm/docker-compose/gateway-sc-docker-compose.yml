@@ -16,7 +16,7 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/previous-contracts:ro
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/previous-contracts
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
