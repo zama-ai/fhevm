@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, chain_id, block_number, block_hash, parent_hash, status as \"status: BlockStatus\", created_at\n            FROM blocks\n            WHERE chain_id = $1 AND block_number = $2 AND status = 'CANONICAL'::block_status\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "parent_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: BlockStatus",
+        "type_info": {
+          "Custom": {
+            "name": "block_status",
+            "kind": {
+              "Enum": [
+                "CANONICAL",
+                "FINALIZED",
+                "UNCLE"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "32e737d4319646733dfa5fae0b24e47c8570cac4210a66fd73ad6f98427ba0e6"
+}

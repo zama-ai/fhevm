@@ -1,0 +1,16 @@
+name: setup-rust
+description: Install pinned Rust toolchain for CI jobs
+
+inputs:
+  components:
+    description: Comma-separated list of rustup components to install
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+      with:
+        toolchain: 1.91.1
+        components: ${{ inputs.components }}
