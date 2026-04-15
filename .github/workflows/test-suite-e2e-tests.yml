@@ -381,6 +381,8 @@ jobs:
             fi
             echo "::endgroup::"
           }
+          snapshot_logs "Listener Publisher" listener-publisher-for-anvil
+          snapshot_logs "Listener Redis" listener-redis
           snapshot_logs "Relayer Logs" fhevm-relayer
           snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
