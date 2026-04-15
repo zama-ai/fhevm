@@ -571,13 +571,13 @@ export const runStep = async (state: State, step: StepName) => {
         });
         await waitForContainer("gateway-sc-deploy", "complete");
         await materializeGatewayContractsFromRef(legacyGatewayEnv.GATEWAY_VERSION);
-        await stepComposeTask("gateway-sc", state, ["gateway-sc-upgrade"]);
-        await waitForContainer("gateway-sc-upgrade", "complete");
+        await stepComposeTask("gateway-sc", state, ["gateway-sc-compat-upgrade"]);
+        await waitForContainer("gateway-sc-compat-upgrade", "complete");
       } else {
         await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
         await waitForContainer("gateway-sc-deploy", "complete");
       }
-      await ensureGeneratedAddressFile(gatewayAddressesPath, legacyGatewayEnv ? "gateway-sc-upgrade" : "gateway-sc-deploy", [
+      await ensureGeneratedAddressFile(gatewayAddressesPath, legacyGatewayEnv ? "gateway-sc-compat-upgrade" : "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
         "INPUT_VERIFICATION_ADDRESS",
         "KMS_GENERATION_ADDRESS",
@@ -603,13 +603,13 @@ export const runStep = async (state: State, step: StepName) => {
         });
         await waitForContainer("host-sc-deploy", "complete");
         await materializeHostContractsFromRef(legacyHostEnv.HOST_VERSION);
-        await stepComposeTask("host-sc", state, ["host-sc-upgrade"]);
-        await waitForContainer("host-sc-upgrade", "complete");
+        await stepComposeTask("host-sc", state, ["host-sc-compat-upgrade"]);
+        await waitForContainer("host-sc-compat-upgrade", "complete");
       } else {
         await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
         await waitForContainer("host-sc-deploy", "complete");
       }
-      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), legacyHostEnv ? "host-sc-upgrade" : "host-sc-deploy", [
+      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), legacyHostEnv ? "host-sc-compat-upgrade" : "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
         "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
         "KMS_VERIFIER_CONTRACT_ADDRESS",
