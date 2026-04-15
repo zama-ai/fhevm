@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { type CompatPolicy, compatPolicyForState } from "../compat/compat";
+import { type CompatPolicy, compatPolicyForState, supportsHostListenerConsumer } from "../compat/compat";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,

@@ -195,6 +195,12 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
   !versionLt(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
   sameCompatBase(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0]);
 
+/** Detects when the resolved host-listener bundle includes the listener-core consumer topology. */
+export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions">) => {
+  const version = state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "";
+  return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
+};
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });

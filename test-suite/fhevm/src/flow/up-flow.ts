@@ -624,6 +624,9 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "listener-core":
+      if (!supportsHostListenerConsumer(state)) {
+        break;
+      }
       await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
       await stepComposeUp("listener-core", state,
         ["listener-redis", "listener-publisher-for-anvil"]

@@ -1,3 +1,4 @@
+import { supportsHostListenerConsumer } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import { requiresModernHostAddressArtifacts } from "../compat/compat";
 import {
@@ -159,9 +160,13 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 };
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
-export const coprocessorHealthContainers = (state: Pick<State, "scenario">) => {
+export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
   const topology = topologyForState(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter((suffix) => !suffix.includes("migration"));
+  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+    (suffix) =>
+      !suffix.includes("migration") &&
+      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)),
+  );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -180,7 +185,9 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     }
     await waitForContainer(toServiceName("host-listener", index), "running");
     await waitForContainer(toServiceName("host-listener-poller", index), "running");
-    await waitForContainer(toServiceName("host-listener-consumer", index), "running");
+    if (supportsHostListenerConsumer(state)) {
+      await waitForContainer(toServiceName("host-listener-consumer", index), "running");
+    }
     await waitForContainer(toServiceName("gw-listener", index), "running");
     await waitForContainer(toServiceName("tfhe-worker", index), "running");
     await waitForContainer(toServiceName("zkproof-worker", index), "running");
