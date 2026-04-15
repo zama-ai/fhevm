@@ -120,6 +120,37 @@ jobs:
           cp -r ../../previous-fhevm/host-contracts/contracts ./previous-contracts
           docker cp fhevm-sc-deploy:/app/addresses ./
 
+      - name: Bootstrap host contracts missing from UPGRADE_FROM_TAG
+        working-directory: current-fhevm/host-contracts
+        run: |
+          set -euo pipefail
+
+          needs_protocol_config_bootstrap=false
+          needs_kms_generation_bootstrap=false
+
+          if ! grep -q '^PROTOCOL_CONFIG_CONTRACT_ADDRESS=' addresses/.env.host; then
+            needs_protocol_config_bootstrap=true
+          fi
+          if ! grep -q '^KMS_GENERATION_CONTRACT_ADDRESS=' addresses/.env.host; then
+            needs_kms_generation_bootstrap=true
+          fi
+
+          npx hardhat task:ensureMigrationProxyAddresses
+
+          if [ "$needs_protocol_config_bootstrap" = false ] && [ "$needs_kms_generation_bootstrap" = false ]; then
+            echo "ProtocolConfig and KMSGeneration already present; skipping bootstrap"
+            exit 0
+          fi
+
+          npx hardhat compile:specific --contract contracts
+
+          if [ "$needs_protocol_config_bootstrap" = true ]; then
+            npx hardhat task:deployProtocolConfig
+          fi
+          if [ "$needs_kms_generation_bootstrap" = true ]; then
+            npx hardhat task:deployKMSGeneration
+          fi
+
       - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts
         run: |

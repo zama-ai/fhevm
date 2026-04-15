@@ -28,6 +28,13 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
+function readExistingHostEnv(): Record<string, string> {
+  if (!fs.existsSync(HOST_ENV_FILE)) {
+    return {};
+  }
+  return readHostEnv();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +134,30 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   // Set KMSGeneration Address
   const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
+});
+
+task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const existingEnv = readExistingHostEnv();
+
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  const targets = [
+    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
+    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+  ] as const;
+
+  for (const { envKey, setterTask } of targets) {
+    if (existingEnv[envKey]) {
+      console.log(`${envKey} already present; skipping.`);
+      continue;
+    }
+    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run(setterTask, { address: proxyAddress });
+  }
 });
 
 ////////////////////////////////////////////////////////////////////////////////
