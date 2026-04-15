@@ -226,7 +226,10 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /**
      * @notice                  Verifies multiple signatures for a given handlesList and a given decryptedResult.
-     * @dev                     Calls verifySignaturesDigest internally.
+     * @dev                     Calls _verifySignaturesDigestForContext internally.
+     *                           This function is a stateless oracle: it performs no state changes and will return
+     *                           true for the same inputs on every call. Replay protection (e.g., marking a request
+     *                           as fulfilled) is entirely the caller's responsibility.
      * @param handlesList       The list of handles, which where requested to be decrypted.
      * @param decryptedResult   A bytes array representing the abi-encoding of all requested decrypted values.
      * @param decryptionProof   Decryption proof containing KMS signatures and extra data.
