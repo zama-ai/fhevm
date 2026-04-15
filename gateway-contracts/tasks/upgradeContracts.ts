@@ -355,8 +355,7 @@ task("task:upgradeGatewayConfig")
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const kmsContextId = getRequiredEnvVar("KMS_CONTEXT_ID");
-    await upgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre, [kmsContextId]);
+    await upgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre, []);
   });
 
 task("task:prepareUpgradeGatewayConfig")
@@ -381,8 +380,7 @@ task("task:prepareUpgradeGatewayConfig")
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const kmsContextId = getRequiredEnvVar("KMS_CONTEXT_ID");
-    await prepareUpgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre, [kmsContextId]);
+    await prepareUpgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre, []);
   });
 
 task("task:upgradeKMSGeneration")

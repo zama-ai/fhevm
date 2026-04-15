@@ -231,35 +231,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
-        if (initialKmsContextId == 0) {
-            revert InvalidNullKmsContextId();
-        }
-
-        // Migrate existing global KMS nodes to the initial KMS context ID
-        uint256 nKmsNodes = $.kmsTxSenderAddresses.length;
-        for (uint256 i = 0; i < nKmsNodes; i++) {
-            address txSenderAddr = $.kmsTxSenderAddresses[i];
-            address signerAddr = $.kmsSignerAddresses[i];
-
-            $.isKmsTxSenderForContext[initialKmsContextId][txSenderAddr] = true;
-            $.isKmsSignerForContext[initialKmsContextId][signerAddr] = true;
-            $.kmsNodesForContext[initialKmsContextId][txSenderAddr] = $.kmsNodes[txSenderAddr];
-            $.kmsTxSenderAddressesForContext[initialKmsContextId].push(txSenderAddr);
-            $.kmsSignerAddressesForContext[initialKmsContextId].push(signerAddr);
-        }
-
-        // Migrate all thresholds
-        _setMpcThreshold(initialKmsContextId, $.mpcThreshold);
-        _setPublicDecryptionThreshold(initialKmsContextId, $.publicDecryptionThreshold);
-        _setUserDecryptionThreshold(initialKmsContextId, $.userDecryptionThreshold);
-        _setKmsGenThreshold(initialKmsContextId, $.kmsGenThreshold);
-
-        // Set the current context ID
-        $.currentKmsContextId = initialKmsContextId;
-    }
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
