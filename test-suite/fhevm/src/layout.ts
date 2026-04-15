@@ -136,6 +136,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "discover": [],
   "regenerate": [],
   "validate": [],
+  "listener-core": ["listener-core"],
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
