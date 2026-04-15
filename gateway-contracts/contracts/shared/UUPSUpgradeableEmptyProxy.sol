@@ -16,6 +16,13 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 abstract contract UUPSUpgradeableEmptyProxy is UUPSUpgradeable {
     error NotInitializingFromEmptyProxy();
 
+    /**
+     * @dev IMPORTANT: This modifier MUST appear before `reinitializer(N)` in the modifier list.
+     *      It relies on `_getInitializedVersion()` still returning 1 at the time of the check,
+     *      which is only true because Solidity evaluates modifiers left-to-right and
+     *      `reinitializer(N)` has not yet bumped the version. Reversing the order would
+     *      silently disable this guard.
+     */
     modifier onlyFromEmptyProxy() {
         if (_getInitializedVersion() != 1) {
             revert NotInitializingFromEmptyProxy();
