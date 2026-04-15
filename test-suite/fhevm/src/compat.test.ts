@@ -8,6 +8,7 @@ import {
   compatPolicyForState,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
+  supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
@@ -98,6 +99,42 @@ describe("compat", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  test("keeps host-listener consumer disabled for legacy host-listener bundles", () => {
+    expect(
+      supportsHostListenerConsumer({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: { COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
+  });
+
+  test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {
+    expect(
+      supportsHostListenerConsumer({
+        versions: {
+          target: "latest-main",
+          lockName: "latest-main.json",
+          env: { COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0-rc.1" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      supportsHostListenerConsumer({
+        versions: {
+          target: "latest-main",
+          lockName: "latest-main.json",
+          env: { COPROCESSOR_HOST_LISTENER_VERSION: "02f6cc0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
   });
 
   test("renders legacy pauser flags for old contract tags", () => {
