@@ -50,6 +50,7 @@ import {
 const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
+const TIMESTAMP_TOLERANCE = 120;
 
 // Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
@@ -1023,6 +1024,28 @@ describe("Decryption", function () {
             extraDataV0,
           ),
       ).to.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
+    });
+
+    it("Should not revert with StartTimestampInFuture when start timestamp is within tolerance", async function () {
+      // A start timestamp within the tolerance should pass the timestamp check
+      const toleratedRequestValidity: IDecryption.RequestValidityStruct = {
+        startTimestamp: startTimestamp + TIMESTAMP_TOLERANCE - 1,
+        durationDays,
+      };
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            toleratedRequestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            userSignature,
+            extraDataV0,
+          ),
+      ).to.not.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
     });
 
     it("Should revert because the user decryption request has expired", async function () {
@@ -2000,6 +2023,28 @@ describe("Decryption", function () {
             extraDataV0,
           ),
       ).to.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
+    });
+
+    it("Should not revert with StartTimestampInFuture when start timestamp is within tolerance", async function () {
+      // A start timestamp within the tolerance should pass the timestamp check
+      const toleratedRequestValidity: IDecryption.RequestValidityStruct = {
+        startTimestamp: startTimestamp + TIMESTAMP_TOLERANCE - 1,
+        durationDays,
+      };
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            toleratedRequestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            delegateSignature,
+            extraDataV0,
+          ),
+      ).to.not.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
     });
 
     it("Should revert because the delegated user decryption request has expired", async function () {
