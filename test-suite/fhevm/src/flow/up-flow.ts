@@ -284,10 +284,13 @@ const stageCompatFiles = async (targetDir: string, files: Array<{ source: string
   }
 };
 
+const chmodCompatTree = async (root: string) => {
+  await run(["sh", "-lc", `chmod -R ugo+rwX ${shellEscape(root)}`], { cwd: REPO_ROOT });
+};
+
 const materializePathsFromRef = async (ref: string, paths: string[], targetDir: string) => {
   await remove(targetDir);
   await ensureDir(targetDir);
-  await fs.chmod(targetDir, 0o777);
   await run(
     [
       "sh",
@@ -296,6 +299,7 @@ const materializePathsFromRef = async (ref: string, paths: string[], targetDir: 
     ],
     { cwd: REPO_ROOT },
   );
+  await chmodCompatTree(targetDir);
 };
 
 const materializeGatewayContractsFromRef = async (ref: string) => {
@@ -305,6 +309,7 @@ const materializeGatewayContractsFromRef = async (ref: string) => {
     { source: gatewayAddressesSolidityPath, target: "addresses/GatewayAddresses.sol" },
     { source: paymentBridgingAddressesSolidityPath, target: "addresses/PaymentBridgingAddresses.sol" },
   ]);
+  await chmodCompatTree(targetDir);
 };
 
 const materializeGatewayTargetFromRef = async (ref: string) =>
@@ -316,6 +321,7 @@ const materializeHostContractsFromRef = async (ref: string, chainKey: string) =>
   await stageCompatFiles(targetDir, [
     { source: hostChainAddressesSolidityPath(chainKey), target: "addresses/FHEVMHostAddresses.sol" },
   ]);
+  await chmodCompatTree(targetDir);
 };
 
 const materializeHostTargetFromRef = async (ref: string) =>
