@@ -14,12 +14,21 @@ services:
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
+    environment:
+      UPGRADE_GENERATED_PREVIOUS_ROOT: /app/generated-previous
+      UPGRADE_WORK_PREVIOUS_ROOT: /app/previous-contracts
+      UPGRADE_CURRENT_CONTRACTS_DIR: /app/contracts
+      UPGRADE_PREVIOUS_CONTRACTS_DIR: contracts
+      UPGRADE_GENERATED_ADDRESSES_DIR: /app/addresses
+      UPGRADE_PREVIOUS_ADDRESSES_DIR: addresses
+      UPGRADE_COPY_ADDRESS_FILES: GatewayAddresses.sol,PaymentBridgingAddresses.sol
+      UPGRADE_MANIFEST_PATH: /app/upgrade-manifest.json
     command:
-      - sh /app/gateway-compat-upgrade.sh
+      - node /app/contracts-upgrade-runner.js
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/generated-upgrade-from:ro
-      - ../scripts/gateway-compat-upgrade.sh:/app/gateway-compat-upgrade.sh:ro
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/generated-previous:ro
+      - ../scripts/contracts-upgrade-runner.js:/app/contracts-upgrade-runner.js:ro
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network

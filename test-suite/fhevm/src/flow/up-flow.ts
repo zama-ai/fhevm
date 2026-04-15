@@ -271,8 +271,7 @@ const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY
 const gatewayCompatUpgradeFromDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-from");
 const hostCompatPreviousContractsDir = () => path.join(RUNTIME_DIR, "compat", "host-previous-contracts");
 
-const materializeGatewayContractsFromRef = async (ref: string) => {
-  const targetDir = gatewayCompatUpgradeFromDir();
+const materializeContractsFromRef = async (ref: string, sourceDir: string, targetDir: string) => {
   await remove(targetDir);
   await ensureDir(targetDir);
   await fs.chmod(targetDir, 0o777);
@@ -280,25 +279,17 @@ const materializeGatewayContractsFromRef = async (ref: string) => {
     [
       "sh",
       "-lc",
-      `git archive --format=tar ${shellEscape(ref)} gateway-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
+      `git archive --format=tar ${shellEscape(ref)} ${shellEscape(sourceDir)} | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
     ],
     { cwd: REPO_ROOT },
   );
 };
 
+const materializeGatewayContractsFromRef = async (ref: string) =>
+  materializeContractsFromRef(ref, "gateway-contracts/contracts", gatewayCompatUpgradeFromDir());
+
 const materializeHostContractsFromRef = async (ref: string) => {
-  const targetDir = hostCompatPreviousContractsDir();
-  await remove(targetDir);
-  await ensureDir(targetDir);
-  await fs.chmod(targetDir, 0o777);
-  await run(
-    [
-      "sh",
-      "-lc",
-      `git archive --format=tar ${shellEscape(ref)} host-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=2`,
-    ],
-    { cwd: REPO_ROOT },
-  );
+  await materializeContractsFromRef(ref, "host-contracts/contracts", hostCompatPreviousContractsDir());
 };
 
 /** Prints the resolved version bundle in compact or detailed form. */
