@@ -65,8 +65,12 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           COMPAT_TEST_INPUT: ${{ github.event.inputs.compat-test || 'v0.11-to-v0.12' }}
+          COMPAT_OVERRIDES_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.compat-overrides || '' }}
         run: |
           set -euo pipefail
+          merge_csv() {
+            printf '%s\n' "$@" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
+          }
           resolve_test() {
             local value="$1"
             local workspace_value="${GITHUB_WORKSPACE}/${value}"
@@ -92,9 +96,12 @@ jobs:
           }
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
+          # Compat runs always use the branch test-suite harness: rollout validates the
+          # backend transition, while CLI/test-suite own backward-compat shims.
+          compat_overrides="$(merge_csv test-suite "$COMPAT_OVERRIDES_INPUT")"
           {
             echo "compat_test=$compat_test_rel"
-            echo "compat_overrides=${{ github.event.inputs.compat-overrides || '' }}"
+            echo "compat_overrides=$compat_overrides"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
