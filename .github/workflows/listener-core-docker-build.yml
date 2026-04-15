@@ -1,0 +1,149 @@
+name: listener-core-docker-build
+
+on:
+  release:
+    types:
+      - published
+  workflow_call:
+    inputs:
+      is_workflow_call:
+        description: "Indicates if the workflow is called from another workflow"
+        type: boolean
+        default: true
+        required: false
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      GHCR_READ_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    outputs:
+      listener-core:
+        description: "Result of the listener-core job"
+        value: ${{ jobs.build-db-migration.result }}
+  workflow_dispatch:
+    inputs:
+      listener-core:
+        description: "Enable/disable build for Listener Core"
+        type: boolean
+        default: true
+  push:
+    branches: ['main', 'release/*']
+
+permissions: {}
+
+jobs:
+  ########################################################################
+  #                        PRE-BUILD CHECKS                              #
+  ########################################################################
+  is-latest-commit:
+    uses: ./.github/workflows/is-latest-commit.yml
+    if: github.event_name == 'push'
+
+  check-changes-listener-core:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: &check_changes_secrets
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    permissions: &check_changes_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/listener
+      filters: |
+        listener-core:
+          - .github/workflows/listener-core-docker-build.yml
+          - listener/**
+
+  ########################################################################
+  #                        BUILD DECISIONS                               #
+  # Centralizes all build/re-tag logic in one place for maintainability  #
+  ########################################################################
+  build-decisions:
+    name: build-decisions
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - is-latest-commit
+      - check-changes-listener-core
+    outputs:
+      listener_core: ${{ steps.decide.outputs.listener_core }}
+    steps:
+      - id: decide
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+          INPUTS: ${{ toJSON(inputs) }}
+        with:
+          script: |
+            // Decision logic (returns: "build", "retag", or "skip"):
+            // - release: always build
+            // - push: only act if latest commit; build if changes, retag otherwise
+            // - workflow_call: build if changes detected, otherwise skip
+            // - workflow_dispatch: build if input is true, otherwise skip
+            const event = process.env.EVENT_NAME;
+            const needs = JSON.parse(process.env.NEEDS);
+            const inputs = JSON.parse(process.env.INPUTS);
+            const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
+            const isWorkflowCall = inputs.is_workflow_call ?? false;
+
+            const decideAction = (changes, manualInput) => {
+              if (event === 'release') return 'build';
+              if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
+              if (isWorkflowCall) return changes ? 'build' : 'skip';
+              if (!isWorkflowCall && event === 'workflow_dispatch') return manualInput ? 'build' : 'skip';
+              return 'skip';
+            };
+
+            const services = {
+              listener_core: { changes: needs['check-changes-db-migration'].outputs?.changes, build_input: inputs.build_listener_core },
+            };
+
+            core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
+            for (const [name, { changes, build_input }] of Object.entries(services)) {
+              const action = decideAction(changes === 'true', build_input ?? false);
+              core.setOutput(name, action);
+              core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
+            }
+
+
+  ########################################################################
+  #                           LISTENER CORE                              #
+  ########################################################################
+  build-listener-core:
+    needs: build-decisions
+    concurrency:
+      group: coprocessor-build-listener-core-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.gw_listener == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/listener"
+      docker-file: "./listener/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-listener-core"
+      rust-toolchain-file-path: listener/rust-toolchain.toml
+
+  re-tag-listener-core-image:
+    needs: [build-decisions, check-changes-listener-core]
+    if: always() && needs.build-decisions.outputs.listener_core == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/listener"
+      previous-tag-or-commit: ${{ needs.check-changes-listener-core.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
