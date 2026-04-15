@@ -6,7 +6,7 @@ import path from "node:path";
 
 import YAML from "yaml";
 
-import { compatPolicyForState, type CompatPolicy } from "../compat/compat";
+import { compatPolicyForState, supportsHostListenerConsumer, type CompatPolicy } from "../compat/compat";
 import { topologyForState, type StackSpec } from "../stack-spec/stack-spec";
 import {
   COMPONENTS,
@@ -82,7 +82,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "db-migration" }),
     "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
     "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
-    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener-consumer" }),
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
     "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "gw-listener" }),
     "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "tfhe-worker" }),
     "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "zkproof-worker" }),
@@ -256,12 +256,14 @@ const applyInstanceAdjustments = (
 };
 
 /** Lists runtime service names for the requested component and topology. */
-export const serviceNameList = (state: Pick<State, "scenario">, component: string) => {
+export const serviceNameList = (state: Pick<State, "scenario" | "versions">, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }
   const topology = topologyForState(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor;
+  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+    (suffix) => suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state),
+  );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
