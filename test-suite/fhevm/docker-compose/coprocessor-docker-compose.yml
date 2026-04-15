@@ -64,10 +64,10 @@ services:
 
   coprocessor-host-listener-consumer:
     container_name: coprocessor-host-listener-consumer
-    build:
-      context: ../../..
-      dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
-    # image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    # build:
+    #   context: ../../..
+    #   dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+    image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
