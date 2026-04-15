@@ -22,15 +22,12 @@ services:
         mkdir -p /app/upgrade-from/addresses &&
         cp /app/addresses/GatewayAddresses.sol /app/upgrade-from/addresses/GatewayAddresses.sol &&
         cp /app/addresses/PaymentBridgingAddresses.sol /app/upgrade-from/addresses/PaymentBridgingAddresses.sol &&
-        reinitializer_version() {
-          sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$$1\"
-        } &&
         maybe_upgrade() {
           name=\"$$1\" &&
           old=\"upgrade-from/contracts/$${name}.sol\" &&
           new=\"contracts/$${name}.sol\" &&
-          old_ver=$$(reinitializer_version \"$$old\") &&
-          new_ver=$$(reinitializer_version \"$$new\") &&
+          old_ver=$$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$$old\") &&
+          new_ver=$$(sed -n 's/.*REINITIALIZER_VERSION[[:space:]]*=[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$$new\") &&
           test -n \"$$old_ver\" &&
           test -n \"$$new_ver\" &&
           if [ \"$$old_ver\" = \"$$new_ver\" ]; then
