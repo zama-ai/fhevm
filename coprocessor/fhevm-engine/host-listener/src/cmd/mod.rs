@@ -17,6 +17,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
@@ -1039,6 +1040,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
+
     info!(chain_id = %chain_id, "Chain ID");
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
@@ -1047,6 +1049,31 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
+
+    let health_check = HealthCheck {
+        blockchain_timeout_tick: log_iter.tick_timeout.clone(),
+        blockchain_tick: log_iter.tick_block.clone(),
+        blockchain_provider: log_iter.provider.clone(),
+        database_pool: db.pool.clone(),
+        database_tick: db.tick.clone(),
+    };
+
+    let cancel_token = CancellationToken::new();
+
+    // Start health check before drift-revert init so the service stays
+    // healthy while waiting for a revert to complete.
+    let health_check_server = HealthHttpServer::new(
+        Arc::new(health_check),
+        args.health_port,
+        cancel_token.clone(),
+    );
+    tokio::spawn(async move { health_check_server.start().await });
+
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    drift_revert::init(args.database_url.as_str(), cancel_token.clone(), None)
+        .await?;
+
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -1056,21 +1083,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             );
         }
     }
-
-    let health_check = HealthCheck {
-        blockchain_timeout_tick: log_iter.tick_timeout.clone(),
-        blockchain_tick: log_iter.tick_block.clone(),
-        blockchain_provider: log_iter.provider.clone(),
-        database_pool: db.pool.clone(),
-        database_tick: db.tick.clone(),
-    };
-    let cancel_token = CancellationToken::new();
-    let health_check_server = HealthHttpServer::new(
-        Arc::new(health_check),
-        args.health_port,
-        cancel_token.clone(),
-    );
-    tokio::spawn(async move { health_check_server.start().await });
 
     if log_iter.start_at_block.is_none() {
         log_iter.start_at_block = db

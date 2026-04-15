@@ -1,7 +1,7 @@
 use ::tracing::{error, info};
 use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
-use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
+use fhevm_engine_common::{drift_revert, healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
 
 use std::sync::{Once, OnceLock};
@@ -65,10 +65,35 @@ pub async fn async_main(
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    let database_url = resolve_database_url_from_option(args.database_url.clone())?;
-    let health_check = health_check::HealthCheck::new(database_url);
+    let database_url = args.database_url.clone().unwrap_or_default();
+
+    let health_check = health_check::HealthCheck::new(database_url.clone());
 
     let mut set = JoinSet::new();
+    let metrics_addr = args.metrics_addr.clone();
+    if let Some(fut) = metrics_server::metrics_future(metrics_addr, cancel_token.child_token()) {
+        set.spawn(async {
+            fut.await;
+            Ok(())
+        });
+    }
+
+    info!(target: "async_main", "Start health check server");
+    let health_check_cancel_token = CancellationToken::new();
+    let health_check_server = healthz_server::HttpServer::new(
+        std::sync::Arc::new(health_check.clone()),
+        args.health_check_port,
+        health_check_cancel_token,
+    );
+    set.spawn(async move {
+        if let Err(e) = health_check_server.start().await {
+            error!(target: "async_main", error = %e, "Health check server failed");
+        }
+        Ok(())
+    });
+
+    drift_revert::init(database_url.as_str(), cancel_token.clone(), None).await?;
+
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
         info!(target: "async_main", gpu_enabled,  "Initializing background worker");
@@ -79,28 +104,9 @@ pub async fn async_main(
         ));
     }
 
-    let metrics_addr = args.metrics_addr.clone();
-    if let Some(fut) = metrics_server::metrics_future(metrics_addr, cancel_token.child_token()) {
-        set.spawn(async {
-            fut.await;
-            Ok(())
-        });
-    }
-
     if set.is_empty() {
         panic!("No tasks specified to run");
     }
-
-    info!(target: "async_main", "Start health check server");
-    let health_check_cancel_token = CancellationToken::new();
-    let health_check_server = healthz_server::HttpServer::new(
-        std::sync::Arc::new(health_check.clone()),
-        args.health_check_port,
-        health_check_cancel_token,
-    );
-    let Ok(()) = health_check_server.start().await else {
-        panic!("Failed to start health check server");
-    };
 
     while let Some(res) = set.join_next().await {
         if let Err(e) = res {

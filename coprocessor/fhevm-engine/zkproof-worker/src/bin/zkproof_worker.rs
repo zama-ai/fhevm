@@ -1,7 +1,9 @@
 use clap::{command, Parser};
 use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::telemetry::{self, MetricsConfig};
-use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, utils::DatabaseURL};
+use fhevm_engine_common::{
+    drift_revert, healthz_server::HttpServer, metrics_server, utils::DatabaseURL,
+};
 use humantime::parse_duration;
 use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
@@ -109,7 +111,9 @@ async fn main() {
     };
 
     let cancel_token = CancellationToken::new();
-    let Some(service) = ZkProofService::create(conf, cancel_token.child_token()).await else {
+
+    let Some(service) = ZkProofService::create(conf.clone(), cancel_token.child_token()).await
+    else {
         error!("Failed to create zkproof service");
         std::process::exit(1);
     };
@@ -133,8 +137,14 @@ async fn main() {
         anyhow::Ok(())
     });
 
-    // Start metrics server
     metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
+
+    drift_revert::init(conf.database_url.as_str(), cancel_token.clone(), None)
+        .await
+        .unwrap_or_else(|err| {
+            error!(error = %err, "Drift-revert init failed");
+            std::process::exit(1);
+        });
 
     let service_task = async {
         info!("Starting worker...");

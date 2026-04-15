@@ -288,6 +288,7 @@ export const STANDARD_TEST_PROFILES = [
   "multi-chain-isolation",
   "hcu-block-cap",
   "ciphertext-drift",
+  "ciphertext-drift-auto-recovery",
 ] as const;
 
 /** Heavy suites are the slowest and most stateful CI checks. */

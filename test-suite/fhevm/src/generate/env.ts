@@ -72,6 +72,10 @@ const applyBaseRuntimeEnv = (
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
 
   envs["coprocessor"].DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor`;
+  // Test-only: hold drift-revert signal in "reverting" state briefly so e2e
+  // tests can observe the post-revert DB state before services resume.
+  // No-op when no drift revert is in progress.
+  envs["coprocessor"].DRIFT_REVERT_TEST_HOLD_SECS = "15";
   envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.minioExternal ?? MINIO_INTERNAL_URL;

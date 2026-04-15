@@ -5,6 +5,11 @@ use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
+use fhevm_engine_common::{
+    drift_revert::{self, RevertRunnerConfig},
+    metrics_server, telemetry,
+    utils::DatabaseURL,
+};
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
@@ -110,6 +115,12 @@ struct Conf {
     /// coprocessors to submit their ciphertext material. Wall-clock duration.
     #[arg(long, default_value = "5m", value_parser = parse_duration, requires = "ciphertext_commits_address")]
     drift_post_consensus_grace: Duration,
+
+    /// How long to wait after detecting a pending drift-revert signal before
+    /// running the revert SQL. Gives other services time to see the signal and
+    /// re-exec before the DB state changes.
+    #[arg(long, default_value = "60s", value_parser = parse_duration)]
+    drift_revert_grace_period: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -187,19 +198,17 @@ async fn main() -> anyhow::Result<()> {
         gateway_config_address: conf.gateway_config_address,
         drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
+        drift_revert_grace_period: conf.drift_revert_grace_period,
     };
 
-    let gw_listener = GatewayListener::new(
+    let gw_listener = std::sync::Arc::new(GatewayListener::new(
         conf.input_verification_address,
         conf.kms_generation_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
         aws_s3_client.clone(),
-    );
-
-    // Wrap the GatewayListener in an Arc
-    let gw_listener = std::sync::Arc::new(gw_listener);
+    ));
 
     let http_server = HttpServer::new(
         gw_listener.clone(),
@@ -209,17 +218,25 @@ async fn main() -> anyhow::Result<()> {
 
     install_signal_handlers(cancel_token.clone())?;
 
+    let http_server_fut = tokio::spawn(async move { http_server.start().await });
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+
     info!(
         health_check_port = conf.health_check_port,
         "Starting HTTP health check server"
     );
 
-    // Run both services in parallel. Here we assume that if gw listener stops without an error, HTTP server should also stop.
-    let gw_listener_fut = tokio::spawn(async move { gw_listener.run().await });
-    let http_server_fut = tokio::spawn(async move { http_server.start().await });
+    // gw-listener is the revert runner — it runs the revert SQL if pending.
+    drift_revert::init(
+        config.database_url.as_str(),
+        cancel_token.clone(),
+        Some(RevertRunnerConfig {
+            grace_period: config.drift_revert_grace_period,
+        }),
+    )
+    .await?;
 
-    // Start the metrics server.
-    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+    let gw_listener_fut = tokio::spawn(async move { gw_listener.run().await });
 
     let gw_listener_res = gw_listener_fut.await;
     let http_server_res = http_server_fut.await;

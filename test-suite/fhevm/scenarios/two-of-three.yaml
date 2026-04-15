@@ -1,0 +1,7 @@
+version: 1
+kind: coprocessor-consensus
+name: Two Of Three
+description: 3 coprocessors with threshold 2 — enables consensus mismatch detection
+topology:
+  count: 3
+  threshold: 2

@@ -57,6 +57,10 @@ pub struct ConfigSettings {
     pub gateway_config_address: Option<Address>,
     pub drift_no_consensus_timeout: Duration,
     pub drift_post_consensus_grace: Duration,
+    /// How long to wait after detecting a pending drift-revert signal before
+    /// running the revert SQL. Gives other services time to see the signal and
+    /// drop their in-flight work.
+    pub drift_revert_grace_period: Duration,
 }
 
 /// Default is used by unit tests only. Production defaults come from
@@ -81,6 +85,7 @@ impl Default for ConfigSettings {
             gateway_config_address: None,
             drift_no_consensus_timeout: Duration::from_secs(5),
             drift_post_consensus_grace: Duration::from_secs(2),
+            drift_revert_grace_period: Duration::from_secs(60),
         }
     }
 }
