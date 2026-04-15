@@ -93,14 +93,30 @@ describe("rollout", () => {
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
-  test("rejects compat-tests that leave required version keys out of all units", async () => {
+  test("allows pinned version keys outside rollout units", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
     const { TEST_SUITE: _testSuite, ...units } = testDef.units;
-    await writeJson(file, { ...testDef, units });
-    await expect(readCompatTest(file)).rejects.toThrow("do not cover required version keys: TEST_SUITE_VERSION");
+    await writeJson(file, {
+      ...testDef,
+      from: { ...testDef.from, TEST_SUITE_VERSION: "pinned-test-suite" },
+      to: { ...testDef.to, TEST_SUITE_VERSION: "pinned-test-suite" },
+      units,
+      steps: testDef.steps.filter((step) => !step.includes("TEST_SUITE")),
+    });
+    await expect(readCompatTest(file)).resolves.toBeTruthy();
+  });
+
+  test("rejects changing version keys left outside rollout units", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
+    tempDirs.push(root);
+    const file = path.join(root, "compat.json");
+    const testDef = compatTest();
+    const { TEST_SUITE: _testSuite, ...units } = testDef.units;
+    await writeJson(file, { ...testDef, units, steps: testDef.steps.filter((step) => !step.includes("TEST_SUITE")) });
+    await expect(readCompatTest(file)).rejects.toThrow("do not cover changing version keys: TEST_SUITE_VERSION");
   });
 
   test("generates cumulative mixed-version locks from ordered unit steps", () => {

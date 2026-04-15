@@ -18,7 +18,7 @@
     "COPROCESSOR_TFHE_WORKER_VERSION": "v0.11.0",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION": "v0.11.0",
     "COPROCESSOR_SNS_WORKER_VERSION": "v0.11.0",
-    "TEST_SUITE_VERSION": "v0.11.1"
+    "TEST_SUITE_VERSION": "v0.12.0"
   },
   "to": {
     "RELAYER_VERSION": "v0.11.0",
@@ -40,7 +40,7 @@
     "TEST_SUITE_VERSION": "v0.12.0"
   },
   "steps": [
-    ["RELAYER", "TEST_SUITE"],
+    ["RELAYER"],
     ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
     ["KMS_CORE", "KMS_CONNECTOR"],
     ["COPROCESSOR"]
@@ -64,8 +64,7 @@
       "COPROCESSOR_TFHE_WORKER_VERSION",
       "COPROCESSOR_ZKPROOF_WORKER_VERSION",
       "COPROCESSOR_SNS_WORKER_VERSION"
-    ],
-    "TEST_SUITE": ["TEST_SUITE_VERSION"]
+    ]
   },
   "execution": {
     "scenario": "two-of-two",

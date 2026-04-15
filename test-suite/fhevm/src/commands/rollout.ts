@@ -65,7 +65,7 @@ const validateEnvMap = (label: string, value: Record<string, string>) => {
   return Object.fromEntries(REQUIRED_VERSION_KEYS.map((key) => [key, value[key]]));
 };
 
-/** Validates unit definitions declared by one compat-test. */
+/** Validates unit definitions declared by one compat-test and returns the covered keys. */
 const validateCompatUnits = (units: Record<string, string[]>, env: Record<string, string>) => {
   const names = Object.keys(units);
   if (!names.length) {
@@ -87,10 +87,7 @@ const validateCompatUnits = (units: Record<string, string[]>, env: Record<string
       referenced.add(key);
     }
   }
-  const missing = Object.keys(env).filter((key) => !referenced.has(key));
-  if (missing.length) {
-    throw new PreflightError(`compat-test units do not cover required version keys: ${missing.join(", ")}`);
-  }
+  return referenced;
 };
 
 /** Validates ordered rollout steps, unit names, and duplicate coverage. */
@@ -131,8 +128,13 @@ export const readCompatTest = async (file: string) => {
     from: validateEnvMap("from", test.from),
     to: validateEnvMap("to", test.to),
   } satisfies CompatTestDefinition;
-  validateCompatUnits(validated.units, validated.from);
-  validateCompatUnits(validated.units, validated.to);
+  const fromCovered = validateCompatUnits(validated.units, validated.from);
+  const toCovered = validateCompatUnits(validated.units, validated.to);
+  const uncovered = REQUIRED_VERSION_KEYS.filter((key) => !fromCovered.has(key) || !toCovered.has(key));
+  const changingUncovered = uncovered.filter((key) => validated.from[key] !== validated.to[key]);
+  if (changingUncovered.length) {
+    throw new PreflightError(`compat-test units do not cover changing version keys: ${changingUncovered.join(", ")}`);
+  }
   validateCompatSteps(validated.steps, validated.units);
   return validated;
 };
