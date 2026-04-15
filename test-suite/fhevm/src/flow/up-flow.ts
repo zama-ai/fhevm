@@ -273,7 +273,9 @@ const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY
 };
 
 const gatewayCompatUpgradeFromDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-from");
+const gatewayCompatUpgradeToDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-to");
 const hostCompatPreviousContractsDir = () => path.join(RUNTIME_DIR, "compat", "host-previous-contracts");
+const hostCompatCurrentContractsDir = () => path.join(RUNTIME_DIR, "compat", "host-current-contracts");
 
 const stageCompatFiles = async (targetDir: string, files: Array<{ source: string; target: string }>) => {
   for (const file of files) {
@@ -282,7 +284,7 @@ const stageCompatFiles = async (targetDir: string, files: Array<{ source: string
   }
 };
 
-const materializeContractsFromRef = async (ref: string, sourceDir: string, targetDir: string) => {
+const materializePathsFromRef = async (ref: string, paths: string[], targetDir: string) => {
   await remove(targetDir);
   await ensureDir(targetDir);
   await fs.chmod(targetDir, 0o777);
@@ -290,7 +292,7 @@ const materializeContractsFromRef = async (ref: string, sourceDir: string, targe
     [
       "sh",
       "-lc",
-      `git archive --format=tar ${shellEscape(ref)} ${shellEscape(sourceDir)} | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
+      `git archive --format=tar ${shellEscape(ref)} ${paths.map(shellEscape).join(" ")} | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
     ],
     { cwd: REPO_ROOT },
   );
@@ -298,20 +300,26 @@ const materializeContractsFromRef = async (ref: string, sourceDir: string, targe
 
 const materializeGatewayContractsFromRef = async (ref: string) => {
   const targetDir = gatewayCompatUpgradeFromDir();
-  await materializeContractsFromRef(ref, "gateway-contracts/contracts", targetDir);
+  await materializePathsFromRef(ref, ["gateway-contracts/contracts"], targetDir);
   await stageCompatFiles(targetDir, [
     { source: gatewayAddressesSolidityPath, target: "addresses/GatewayAddresses.sol" },
     { source: paymentBridgingAddressesSolidityPath, target: "addresses/PaymentBridgingAddresses.sol" },
   ]);
 };
 
+const materializeGatewayTargetFromRef = async (ref: string) =>
+  materializePathsFromRef(ref, ["gateway-contracts/contracts", "gateway-contracts/upgrade-manifest.json"], gatewayCompatUpgradeToDir());
+
 const materializeHostContractsFromRef = async (ref: string, chainKey: string) => {
   const targetDir = hostCompatPreviousContractsDir();
-  await materializeContractsFromRef(ref, "host-contracts/contracts", targetDir);
+  await materializePathsFromRef(ref, ["host-contracts/contracts"], targetDir);
   await stageCompatFiles(targetDir, [
     { source: hostChainAddressesSolidityPath(chainKey), target: "addresses/FHEVMHostAddresses.sol" },
   ]);
 };
+
+const materializeHostTargetFromRef = async (ref: string) =>
+  materializePathsFromRef(ref, ["host-contracts/contracts", "host-contracts/upgrade-manifest.json"], hostCompatCurrentContractsDir());
 
 /** Prints the resolved version bundle in compact or detailed form. */
 const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
@@ -583,7 +591,8 @@ export const runStep = async (state: State, step: StepName) => {
         });
         await waitForContainer("gateway-sc-deploy", "complete");
         await materializeGatewayContractsFromRef(legacyGatewayEnv.GATEWAY_VERSION);
-        await runContractUpgrades("gateway", gatewayCompatUpgradeFromDir());
+        await materializeGatewayTargetFromRef(state.versions.env.GATEWAY_VERSION);
+        await runContractUpgrades("gateway", gatewayCompatUpgradeFromDir(), gatewayCompatUpgradeToDir());
       } else {
         await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
         await waitForContainer("gateway-sc-deploy", "complete");
@@ -614,7 +623,8 @@ export const runStep = async (state: State, step: StepName) => {
         });
         await waitForContainer("host-sc-deploy", "complete");
         await materializeHostContractsFromRef(legacyHostEnv.HOST_VERSION, defaultHostChain(state)!.key);
-        await runContractUpgrades("host", hostCompatPreviousContractsDir());
+        await materializeHostTargetFromRef(state.versions.env.HOST_VERSION);
+        await runContractUpgrades("host", hostCompatPreviousContractsDir(), hostCompatCurrentContractsDir());
       } else {
         await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
         await waitForContainer("host-sc-deploy", "complete");

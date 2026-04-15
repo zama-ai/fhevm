@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { captureContractTask, runContractTask } from "./contracts";
+import { runContractTask } from "./contracts";
 
 type ContractSurface = "gateway" | "host";
 
@@ -18,8 +18,8 @@ const parseReinitializerVersion = (source: string, filePath: string) => {
   return Number(match[1]);
 };
 
-const manifestFromService = async (component: "host-sc" | "gateway-sc", service: string) => {
-  const raw = await captureContractTask(component, service, "cat /app/upgrade-manifest.json");
+const manifestFromTree = async (root: string) => {
+  const raw = await fs.readFile(path.join(root, "upgrade-manifest.json"), "utf8");
   const manifest = JSON.parse(raw) as string[];
   if (!Array.isArray(manifest)) {
     throw new Error("upgrade-manifest.json must be an array");
@@ -27,11 +27,8 @@ const manifestFromService = async (component: "host-sc" | "gateway-sc", service:
   return manifest;
 };
 
-const serviceContractSource = (component: "host-sc" | "gateway-sc", service: string, name: string) =>
-  captureContractTask(component, service, `cat ${JSON.stringify(`contracts/${name}.sol`)}`);
-
-const previousContractSource = async (previousRoot: string, name: string) => {
-  const filePath = path.join(previousRoot, "contracts", `${name}.sol`);
+const contractSource = async (root: string, name: string) => {
+  const filePath = path.join(root, "contracts", `${name}.sol`);
   try {
     return { exists: true as const, filePath, source: await fs.readFile(filePath, "utf8") };
   } catch (error) {
@@ -43,17 +40,15 @@ const previousContractSource = async (previousRoot: string, name: string) => {
 };
 
 const planContractUpgrades = async (
-  component: "host-sc" | "gateway-sc",
-  service: string,
   previousRoot: string,
+  currentRoot: string,
 ): Promise<UpgradeAction[]> => {
-  const manifest = await manifestFromService(component, service);
+  const manifest = await manifestFromTree(currentRoot);
   const actions: UpgradeAction[] = [];
 
   for (const name of manifest) {
-    const currentSource = await serviceContractSource(component, service, name);
-    const currentFile = `contracts/${name}.sol`;
-    const previous = await previousContractSource(previousRoot, name);
+    const current = await contractSource(currentRoot, name);
+    const previous = await contractSource(previousRoot, name);
 
     if (!previous.exists) {
       actions.push({ type: "deploy-new", name });
@@ -61,7 +56,7 @@ const planContractUpgrades = async (
     }
 
     const previousVersion = parseReinitializerVersion(previous.source, previous.filePath);
-    const currentVersion = parseReinitializerVersion(currentSource, currentFile);
+    const currentVersion = parseReinitializerVersion(current.source, current.filePath);
     if (previousVersion === currentVersion) {
       actions.push({ type: "skip", name, reason: `reinitializer unchanged: ${previousVersion}` });
       continue;
@@ -75,10 +70,10 @@ const planContractUpgrades = async (
 
 const quoted = (value: string) => JSON.stringify(value);
 
-export const runContractUpgrades = async (surface: ContractSurface, previousRoot: string) => {
+export const runContractUpgrades = async (surface: ContractSurface, previousRoot: string, currentRoot: string) => {
   const component = surface === "gateway" ? "gateway-sc" : "host-sc";
   const service = surface === "gateway" ? "gateway-sc-compat-upgrade" : "host-sc-compat-upgrade";
-  const actions = await planContractUpgrades(component, service, previousRoot);
+  const actions = await planContractUpgrades(previousRoot, currentRoot);
 
   for (const action of actions) {
     if (action.type === "skip") {
