@@ -61,7 +61,10 @@ import {
   dockerArgs,
   envPath,
   gatewayAddressesPath,
+  gatewayAddressesSolidityPath,
   hostChainAddressesPath,
+  hostChainAddressesSolidityPath,
+  paymentBridgingAddressesSolidityPath,
 } from "../layout";
 import type {
   BuiltImage,
@@ -136,6 +139,7 @@ import {
   stepComposeUp,
 } from "./runtime-compose";
 import { pause, runContractTask, unpause } from "./contracts";
+import { runContractUpgrades } from "./contracts-upgrade";
 
 export {
   castBool,
@@ -271,6 +275,13 @@ const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY
 const gatewayCompatUpgradeFromDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-from");
 const hostCompatPreviousContractsDir = () => path.join(RUNTIME_DIR, "compat", "host-previous-contracts");
 
+const stageCompatFiles = async (targetDir: string, files: Array<{ source: string; target: string }>) => {
+  for (const file of files) {
+    await ensureDir(path.join(targetDir, path.dirname(file.target)));
+    await fs.copyFile(file.source, path.join(targetDir, file.target));
+  }
+};
+
 const materializeContractsFromRef = async (ref: string, sourceDir: string, targetDir: string) => {
   await remove(targetDir);
   await ensureDir(targetDir);
@@ -285,11 +296,21 @@ const materializeContractsFromRef = async (ref: string, sourceDir: string, targe
   );
 };
 
-const materializeGatewayContractsFromRef = async (ref: string) =>
-  materializeContractsFromRef(ref, "gateway-contracts/contracts", gatewayCompatUpgradeFromDir());
+const materializeGatewayContractsFromRef = async (ref: string) => {
+  const targetDir = gatewayCompatUpgradeFromDir();
+  await materializeContractsFromRef(ref, "gateway-contracts/contracts", targetDir);
+  await stageCompatFiles(targetDir, [
+    { source: gatewayAddressesSolidityPath, target: "addresses/GatewayAddresses.sol" },
+    { source: paymentBridgingAddressesSolidityPath, target: "addresses/PaymentBridgingAddresses.sol" },
+  ]);
+};
 
-const materializeHostContractsFromRef = async (ref: string) => {
-  await materializeContractsFromRef(ref, "host-contracts/contracts", hostCompatPreviousContractsDir());
+const materializeHostContractsFromRef = async (ref: string, chainKey: string) => {
+  const targetDir = hostCompatPreviousContractsDir();
+  await materializeContractsFromRef(ref, "host-contracts/contracts", targetDir);
+  await stageCompatFiles(targetDir, [
+    { source: hostChainAddressesSolidityPath(chainKey), target: "addresses/FHEVMHostAddresses.sol" },
+  ]);
 };
 
 /** Prints the resolved version bundle in compact or detailed form. */
@@ -562,13 +583,12 @@ export const runStep = async (state: State, step: StepName) => {
         });
         await waitForContainer("gateway-sc-deploy", "complete");
         await materializeGatewayContractsFromRef(legacyGatewayEnv.GATEWAY_VERSION);
-        await stepComposeTask("gateway-sc", state, ["gateway-sc-compat-upgrade"]);
-        await waitForContainer("gateway-sc-compat-upgrade", "complete");
+        await runContractUpgrades("gateway", gatewayCompatUpgradeFromDir());
       } else {
         await stepComposeTask("gateway-sc", state, ["gateway-sc-deploy"]);
         await waitForContainer("gateway-sc-deploy", "complete");
       }
-      await ensureGeneratedAddressFile(gatewayAddressesPath, legacyGatewayEnv ? "gateway-sc-compat-upgrade" : "gateway-sc-deploy", [
+      await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
         "INPUT_VERIFICATION_ADDRESS",
         "KMS_GENERATION_ADDRESS",
@@ -593,14 +613,13 @@ export const runStep = async (state: State, step: StepName) => {
           env: legacyHostEnv,
         });
         await waitForContainer("host-sc-deploy", "complete");
-        await materializeHostContractsFromRef(legacyHostEnv.HOST_VERSION);
-        await stepComposeTask("host-sc", state, ["host-sc-compat-upgrade"]);
-        await waitForContainer("host-sc-compat-upgrade", "complete");
+        await materializeHostContractsFromRef(legacyHostEnv.HOST_VERSION, defaultHostChain(state)!.key);
+        await runContractUpgrades("host", hostCompatPreviousContractsDir());
       } else {
         await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
         await waitForContainer("host-sc-deploy", "complete");
       }
-      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), legacyHostEnv ? "host-sc-compat-upgrade" : "host-sc-deploy", [
+      await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
         "FHEVM_EXECUTOR_CONTRACT_ADDRESS",
         "KMS_VERIFIER_CONTRACT_ADDRESS",

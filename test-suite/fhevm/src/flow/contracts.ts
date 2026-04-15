@@ -3,7 +3,7 @@ import { dockerArgs, envPath } from "../layout";
 import { loadState } from "../state/state";
 import { resolvedComposeEnv } from "../generate/compose";
 import { readEnvFileIfExists } from "../utils/fs";
-import { runStreaming } from "../utils/process";
+import { run, runStreaming } from "../utils/process";
 import { ensureRuntimeArtifacts } from "./artifacts";
 import { projectContainers } from "./runtime-compose";
 
@@ -17,24 +17,42 @@ export const assertContractTaskStackRunning = (hasState: boolean, runningContain
   }
 };
 
-/** Runs a host or gateway contract task inside its deploy container. */
-export const runContractTask = async (
-  component: "host-sc" | "gateway-sc",
-  service: "host-sc-deploy" | "gateway-sc-deploy",
-  command: string,
-) => {
+const contractTaskInvocation = async (component: "host-sc" | "gateway-sc", service: string, command: string) => {
   const state = await loadState();
   if (!state) {
     assertContractTaskStackRunning(false, 0);
-    return;
+    return undefined;
   }
   const runningState = state;
   assertContractTaskStackRunning(true, (await projectContainers()).length);
   await ensureRuntimeArtifacts(runningState, "contract task");
-  await runStreaming(
-    [...dockerArgs(component), "run", "--rm", "--no-deps", "--entrypoint", "sh", service, "-lc", command],
-    { env: { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))) } },
-  );
+  return {
+    args: [...dockerArgs(component), "run", "--rm", "--no-deps", "--entrypoint", "sh", service, "-lc", command],
+    env: { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))) },
+  };
+};
+
+/** Runs a host or gateway contract task inside its deploy container. */
+export const runContractTask = async (
+  component: "host-sc" | "gateway-sc",
+  service: string,
+  command: string,
+) => {
+  const invocation = await contractTaskInvocation(component, service, command);
+  if (!invocation) return;
+  await runStreaming(invocation.args, { env: invocation.env });
+};
+
+/** Captures stdout from a host or gateway contract task inside its service container. */
+export const captureContractTask = async (
+  component: "host-sc" | "gateway-sc",
+  service: string,
+  command: string,
+) => {
+  const invocation = await contractTaskInvocation(component, service, command);
+  if (!invocation) return "";
+  const result = await run(invocation.args, { env: invocation.env });
+  return result.stdout;
 };
 
 /** Pauses the requested contract surface through its deploy task. */
