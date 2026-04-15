@@ -381,6 +381,8 @@ jobs:
             fi
             echo "::endgroup::"
           }
+          snapshot_logs "Listener Publisher" listener-publisher-for-anvil
+          snapshot_logs "Listener Redis" listener-redis
           snapshot_logs "Relayer Logs" fhevm-relayer
           # Iterate over all running coprocessor instances (primary is "coprocessor-",
           # additional instances are "coprocessorN-" where N>=1).
