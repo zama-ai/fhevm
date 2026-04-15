@@ -283,9 +283,7 @@ contract InputVerification is
         }
     }
 
-    /**
-     * @notice See {IInputVerification-rejectProofResponse}.
-     */
+    /// @notice See {IInputVerification-rejectProofResponse}.
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
