@@ -171,6 +171,18 @@ export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
+/** Detects when the harness should keep emitting legacy empty extraData for mixed-version stacks. */
+export const requiresLegacyRelayerSdkExtraData = (state: Pick<CompatState, "versions">) =>
+  versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
+  versionLt(state.versions.env.HOST_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
+  versionLt(state.versions.env.CORE_VERSION ?? "", [0, 13, 10], { unparsed: "modern" }) ||
+  [
+    "CONNECTOR_DB_MIGRATION_VERSION",
+    "CONNECTOR_GW_LISTENER_VERSION",
+    "CONNECTOR_KMS_WORKER_VERSION",
+    "CONNECTOR_TX_SENDER_VERSION",
+  ].some((key) => versionLt(state.versions.env[key] ?? "", [0, 12, 0], { unparsed: "modern" }));
+
 /** Detects when the coprocessor schema supports DB state revert checks. */
 export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versions">) =>
   !versionLt(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||

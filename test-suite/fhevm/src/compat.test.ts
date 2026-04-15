@@ -7,6 +7,7 @@ import {
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
   requiresLegacyKmsCoreConfig,
+  requiresLegacyRelayerSdkExtraData,
   requiresLegacyRelayerUrl,
   supportsCoprocessorDbStateRevert,
   validateBundleCompatibility,
@@ -95,6 +96,45 @@ describe("compat", () => {
           target: "sha",
           lockName: "sha.json",
           env: { CORE_VERSION: "v0.13.10-rc.3" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
+  });
+
+  test("forces legacy relayer-sdk extraData while backend components are still pre-v0.12", () => {
+    expect(
+      requiresLegacyRelayerSdkExtraData({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: {
+            GATEWAY_VERSION: "v0.12.0",
+            HOST_VERSION: "v0.12.0",
+            CORE_VERSION: "v0.13.3",
+            CONNECTOR_DB_MIGRATION_VERSION: "v0.11.0",
+            CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
+            CONNECTOR_KMS_WORKER_VERSION: "v0.11.0",
+            CONNECTOR_TX_SENDER_VERSION: "v0.11.0",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      requiresLegacyRelayerSdkExtraData({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: {
+            GATEWAY_VERSION: "v0.12.0",
+            HOST_VERSION: "v0.12.0",
+            CORE_VERSION: "v0.13.10",
+            CONNECTOR_DB_MIGRATION_VERSION: "v0.12.0",
+            CONNECTOR_GW_LISTENER_VERSION: "v0.12.0",
+            CONNECTOR_KMS_WORKER_VERSION: "v0.12.0",
+            CONNECTOR_TX_SENDER_VERSION: "v0.12.0",
+          } as Record<string, string>,
           sources: [],
         },
       }),

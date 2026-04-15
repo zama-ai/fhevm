@@ -4,6 +4,7 @@ import { vars } from 'hardhat/config';
 
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
+import { getCompatExtraData } from './compat';
 
 const defaults = (() => {
   const chainId = network.config.chainId;
@@ -92,8 +93,10 @@ export const createInstance = async () => {
       encrypt: (options) => input.encrypt({ timeout: inputProofTimeoutMs, ...options }),
     };
   };
+  const getExtraData = () => getCompatExtraData(() => instance.getExtraData());
   return {
     ...instance,
+    getExtraData,
     createEncryptedInput,
     publicDecrypt: (handles, options) => instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
   };

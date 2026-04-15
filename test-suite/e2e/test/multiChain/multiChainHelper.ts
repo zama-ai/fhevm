@@ -2,6 +2,7 @@ import { ethers as hardhatEthers } from 'hardhat';
 import { ethers } from 'ethers';
 import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { vars } from 'hardhat/config';
+import { getCompatExtraData } from './compat';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -134,8 +135,10 @@ export async function createInstance(chain: ChainConfig) {
       encrypt: (options) => input.encrypt({ timeout: inputProofTimeoutMs, ...options }),
     };
   };
+  const getExtraData = () => getCompatExtraData(() => instance.getExtraData());
   return {
     ...instance,
+    getExtraData,
     createEncryptedInput,
     publicDecrypt: (handles, options) => instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
   };

@@ -3,6 +3,7 @@
  */
 import {
   compatPolicyForState,
+  requiresLegacyRelayerSdkExtraData,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
 } from "../compat/compat";
@@ -100,6 +101,9 @@ const applyCompatEnv = (
     if (base && !base.endsWith("/v2")) {
       envs["test-suite"].RELAYER_URL = `${base}/v2`;
     }
+  }
+  if (requiresLegacyRelayerSdkExtraData(plan)) {
+    envs["test-suite"].RELAYER_SDK_FORCE_LEGACY_EXTRA_DATA = "true";
   }
 };
 

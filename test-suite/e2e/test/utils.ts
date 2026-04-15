@@ -13,7 +13,7 @@ import { TypedContractMethod } from '../types/common';
 
 const delegatedUserDecryptRetryMs = Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_RETRY_MS) || 2_000;
 const delegatedUserDecryptTimeoutMs =
-  Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_TIMEOUT_MS) || 2 * 60 * 1000;
+  Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_TIMEOUT_MS) || 5 * 60 * 1000;
 
 const isDelegatedDecryptNotReady = (error: unknown) =>
   error instanceof Error && error.message.includes('Ciphertext not ready for decryption on the gateway chain');
