@@ -14,11 +14,15 @@ on:
         description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
         default: "v0.11-to-v0.12"
         type: string
+      compat-overrides:
+        description: "Optional local override groups appended to each compat step for diagnostic runs (e.g. relayer,test-suite)"
+        default: ""
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.11-to-v0.12' }}
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.11-to-v0.12' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: true
 
 jobs:
@@ -33,6 +37,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
       compat_test: ${{ steps.prepare.outputs.compat_test }}
+      compat_overrides: ${{ steps.prepare.outputs.compat_overrides }}
       matrix: ${{ steps.prepare.outputs.matrix }}
       scenario: ${{ steps.prepare.outputs.scenario }}
       test_profile: ${{ steps.prepare.outputs.test_profile }}
@@ -89,6 +94,7 @@ jobs:
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
           {
             echo "compat_test=$compat_test_rel"
+            echo "compat_overrides=${{ github.event.inputs.compat-overrides || '' }}"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
@@ -117,7 +123,7 @@ jobs:
     with:
       build: false
       compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
-      compat-overrides: ${{ matrix.overrides }}
+      compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
       test-profile: ${{ needs.prepare_rollout.outputs.test_profile }}
