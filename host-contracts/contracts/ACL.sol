@@ -579,13 +579,15 @@ contract ACL is
      */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
+    /// @dev Looks up `userDecryptionDelegations[delegator][delegate][contractAddress]`.
+    /// @param contractAddress App contract from the decryption request, or `WILDCARD_CONTRACT` for the wildcard row.
     function _isUserDecryptionDelegationActive(
         ACLStorage storage $,
         address delegator,
         address delegate,
-        address contractKey
+        address contractAddress
     ) private view returns (bool) {
-        return $.userDecryptionDelegations[delegator][delegate][contractKey].expirationDate >= block.timestamp;
+        return $.userDecryptionDelegations[delegator][delegate][contractAddress].expirationDate >= block.timestamp;
     }
 
     /**
