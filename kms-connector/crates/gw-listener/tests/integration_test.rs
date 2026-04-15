@@ -14,8 +14,6 @@ use tracing::info;
 #[case::prep_keygen(EventType::PrepKeygenRequest)]
 #[case::keygen(EventType::KeygenRequest)]
 #[case::crsgen(EventType::CrsgenRequest)]
-#[case::prss_init(EventType::PrssInit)]
-#[case::key_reshare_same_set(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_publish_event(#[case] event_type: EventType) -> anyhow::Result<()> {

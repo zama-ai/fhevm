@@ -25,9 +25,8 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::{
-    CrsGenResult, Empty, InitiateResharingResponse, KeyGenPreprocResult, KeyGenResult,
-    PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
-    UserDecryptionResponsePayload,
+    CrsGenResult, Empty, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
+    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::Config;
 use mocktail::{MockSet, server::MockServer};
@@ -43,8 +42,6 @@ use tracing::{info, warn};
 #[case::prep_keygen(EventType::PrepKeygenRequest, false)]
 #[case::keygen(EventType::KeygenRequest, false)]
 #[case::crsgen(EventType::CrsgenRequest, false)]
-#[case::prss_init(EventType::PrssInit, false)]
-#[case::key_reshare_same_set(EventType::KeyReshareSameSet, false)]
 #[case::public_decryption_already_sent(EventType::PublicDecryptionRequest, true)]
 #[case::user_decryption_already_sent(EventType::UserDecryptionRequest, true)]
 #[case::prep_keygen_already_sent(EventType::PrepKeygenRequest, true)]
@@ -126,21 +123,9 @@ async fn test_processing_request(
     info!("KmsWorker started!");
 
     // Waiting for kms_worker to process the request
-    match &request {
-        ProtocolEventKind::PrssInit(_) | ProtocolEventKind::KeyReshareSameSet(_) => {
-            while let Err(e) =
-                check_no_uncompleted_request_in_db(test_instance.db(), event_type).await
-            {
-                warn!("Still requests in DB: {e}");
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        }
-        _ => {
-            let response = wait_for_response_in_db(test_instance.db(), &request).await?;
-            check_response_data(&request, response)?;
-            check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
-        }
-    }
+    let response = wait_for_response_in_db(test_instance.db(), &request).await?;
+    check_response_data(&request, response)?;
+    check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
 
     // Stopping the test
     cancel_token.cancel();
@@ -164,8 +149,6 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
-        ProtocolEventKind::PrssInit(id) => (*id, "Init", ""),
-        ProtocolEventKind::KeyReshareSameSet(r) => (r.keyId, "InitiateResharing", ""),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -176,13 +159,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             when.path(format!(
                 "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
             ));
-            match req {
-                ProtocolEventKind::KeyReshareSameSet(_) => {
-                    then.pb(InitiateResharingResponse::default())
-                }
-                // KMS returns `Empty` for all kind of requests except `KeyReshareSameSet`
-                _ => then.pb(Empty::default()),
-            };
+            then.pb(Empty::default());
         });
     }
 
@@ -212,7 +189,6 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 request_id,
                 ..Default::default()
             }),
-            _ => then.pb(Empty::default()),
         };
     });
 
@@ -230,7 +206,6 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
         ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
-        _ => unimplemented!(),
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
@@ -255,7 +230,6 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::Crsgen(_) => {
                     break kms_response::from_crsgen_row(&result[0])?;
                 }
-                _ => unimplemented!(),
             };
         }
     };
@@ -292,7 +266,6 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             request_id: Some(u256_to_request_id(r.crsId)),
             ..Default::default()
         }),
-        _ => unimplemented!(),
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
     info!("OK!");
