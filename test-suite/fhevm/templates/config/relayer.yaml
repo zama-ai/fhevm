@@ -9,6 +9,9 @@ gateway:
     chain_id: 54321
     ws_health_check_timeout_secs: 5
     http_health_check_timeout_secs: 5
+  gw_event_not_found_retry:
+    max_retries: 30
+    retry_delay_ms: 1000
   # Unified listener pool configuration
   # Supports multiple listener types with shared deduplication and staggered recycling
   listener_pool:
