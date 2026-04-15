@@ -269,6 +269,7 @@ const compatContractsUpgradeEnv = (state: Pick<State, "versions">, key: "GATEWAY
 };
 
 const gatewayCompatUpgradeFromDir = () => path.join(RUNTIME_DIR, "compat", "gateway-upgrade-from");
+const hostCompatPreviousContractsDir = () => path.join(RUNTIME_DIR, "compat", "host-previous-contracts");
 
 const materializeGatewayContractsFromRef = async (ref: string) => {
   const targetDir = gatewayCompatUpgradeFromDir();
@@ -280,6 +281,21 @@ const materializeGatewayContractsFromRef = async (ref: string) => {
       "sh",
       "-lc",
       `git archive --format=tar ${shellEscape(ref)} gateway-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=1`,
+    ],
+    { cwd: REPO_ROOT },
+  );
+};
+
+const materializeHostContractsFromRef = async (ref: string) => {
+  const targetDir = hostCompatPreviousContractsDir();
+  await remove(targetDir);
+  await ensureDir(targetDir);
+  await fs.chmod(targetDir, 0o777);
+  await run(
+    [
+      "sh",
+      "-lc",
+      `git archive --format=tar ${shellEscape(ref)} host-contracts/contracts | tar -x -C ${shellEscape(targetDir)} --strip-components=2`,
     ],
     { cwd: REPO_ROOT },
   );
@@ -586,6 +602,7 @@ export const runStep = async (state: State, step: StepName) => {
           env: legacyHostEnv,
         });
         await waitForContainer("host-sc-deploy", "complete");
+        await materializeHostContractsFromRef(legacyHostEnv.HOST_VERSION);
         await stepComposeTask("host-sc", state, ["host-sc-upgrade"]);
         await waitForContainer("host-sc-upgrade", "complete");
       } else {
