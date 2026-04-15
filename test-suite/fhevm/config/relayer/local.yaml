@@ -48,12 +48,8 @@ gateway:
     # Instance ID is assigned by position (0-indexed) for stagger calculation
     # In production, use different URLs for redundancy
     listeners:
-      - type: subscription
-        url: "ws://gateway-node:8546"
-      - type: subscription
-        url: "ws://gateway-node:8546"
-      - type: subscription
-        url: "ws://gateway-node:8546"
+      - type: polling
+        url: "http://gateway-node:8546"
   tx_engine:
     signer:
       type: "private_key"
