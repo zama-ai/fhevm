@@ -24,11 +24,11 @@ services:
       UPGRADE_COPY_ADDRESS_FILES: GatewayAddresses.sol,PaymentBridgingAddresses.sol
       UPGRADE_MANIFEST_PATH: /app/upgrade-manifest.json
     command:
-      - node /app/contracts-upgrade-runner.js
+      - node /app/contracts-upgrade-runner.ts
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/gateway-upgrade-from:/app/generated-previous:ro
-      - ../scripts/contracts-upgrade-runner.js:/app/contracts-upgrade-runner.js:ro
+      - ../scripts/contracts-upgrade-runner.ts:/app/contracts-upgrade-runner.ts:ro
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network

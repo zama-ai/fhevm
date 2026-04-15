@@ -1,33 +1,33 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const cwd = process.cwd();
 
-const readEnv = (name) => {
+const readEnv = (name: string): string => {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required env: ${name}`);
   return value;
 };
 
-const resolveFromCwd = (value) => path.resolve(cwd, value);
-const toTaskPath = (value) => path.relative(cwd, value).split(path.sep).join("/");
+const resolveFromCwd = (value: string): string => path.resolve(cwd, value);
+const toTaskPath = (value: string): string => path.relative(cwd, value).split(path.sep).join("/");
 
-const parseVersion = (filePath) => {
+const parseVersion = (filePath: string): string => {
   const content = fs.readFileSync(filePath, "utf8");
   const match = content.match(/REINITIALIZER_VERSION\s*=\s*(\d+)/);
   if (!match) throw new Error(`Failed to parse REINITIALIZER_VERSION from ${filePath}`);
   return match[1];
 };
 
-const run = (args) => {
+const run = (args: string[]): void => {
   const result = spawnSync(args[0], args.slice(1), { cwd, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 };
 
-const copyDir = (source, target) => {
+const copyDir = (source: string, target: string): void => {
   fs.rmSync(target, { force: true, recursive: true });
   fs.mkdirSync(target, { recursive: true });
   fs.cpSync(source, target, { recursive: true });
@@ -54,7 +54,7 @@ if (copyAddressFiles.length) {
   }
 }
 
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as string[];
 if (!Array.isArray(manifest)) throw new Error(`Upgrade manifest must be an array: ${manifestPath}`);
 
 for (const name of manifest) {

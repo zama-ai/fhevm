@@ -24,11 +24,11 @@ services:
       UPGRADE_COPY_ADDRESS_FILES: FHEVMHostAddresses.sol
       UPGRADE_MANIFEST_PATH: /app/upgrade-manifest.json
     command:
-      - node /app/contracts-upgrade-runner.js
+      - node /app/contracts-upgrade-runner.ts
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/compat/host-previous-contracts:/app/generated-previous:ro
-      - ../scripts/contracts-upgrade-runner.js:/app/contracts-upgrade-runner.js:ro
+      - ../scripts/contracts-upgrade-runner.ts:/app/contracts-upgrade-runner.ts:ro
 
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
