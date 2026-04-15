@@ -50,6 +50,8 @@ gateway:
     listeners:
       - type: polling
         url: "http://gateway-node:8546"
+      - type: polling
+        url: "http://gateway-node:8546"
   tx_engine:
     signer:
       type: "private_key"
