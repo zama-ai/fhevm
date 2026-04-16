@@ -1,15 +1,18 @@
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { Bytes65Hex, BytesHex } from '../types/primitives.js';
-import type { PublicDecryptionProof } from '../types/publicDecryptionProof.js';
+import type { PublicDecryptionProof } from '../types/publicDecryptionProof-p.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type { ClearValue, EncryptedValue } from '../types/encryptedTypes.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ClearValueType, SolidityPrimitiveTypeName } from '../types/fheType.js';
+import type { NonEmptyReadonlyArray } from '../types/utils.js';
+import type { ClearValue, Handle } from '../types/encryptedTypes-p.js';
 import { concatBytesHex } from '../base/bytes.js';
 import { abiEncodeClearValues, createClearValueArray } from '../handle/ClearValue.js';
 import { toClearValueType } from '../handle/FheType.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { verifyKmsPublicDecryptEip712 } from './verifyKmsPublicDecryptEip712-p.js';
+
+//////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_TOKEN = Symbol('PublicDecryptionProof.token');
 
@@ -23,7 +26,7 @@ const PRIVATE_TOKEN = Symbol('PublicDecryptionProof.token');
 export class PublicDecryptionProofImpl implements PublicDecryptionProof {
   // numSigners + KMS signatures + extraData
   readonly #decryptionProof: BytesHex;
-  readonly #orderedClearValues: readonly ClearValue[];
+  readonly #orderedClearValues: NonEmptyReadonlyArray<ClearValue>;
   readonly #orderedAbiEncodedClearValues: BytesHex;
   // legacy is '0x' (not '0x00')
   readonly #extraData: BytesHex;
@@ -40,8 +43,11 @@ export class PublicDecryptionProofImpl implements PublicDecryptionProof {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
+    if (parameters.orderedClearValues.length === 0) {
+      throw new Error('PublicDecryptionProof requires at least one clear value');
+    }
     this.#decryptionProof = parameters.decryptionProof;
-    this.#orderedClearValues = Object.freeze([...parameters.orderedClearValues]);
+    this.#orderedClearValues = Object.freeze([...parameters.orderedClearValues]) as NonEmptyReadonlyArray<ClearValue>;
     this.#extraData = parameters.extraData;
     this.#orderedAbiEncodedClearValues = parameters.orderedAbiEncodedClearValues;
   }
@@ -54,7 +60,7 @@ export class PublicDecryptionProofImpl implements PublicDecryptionProof {
     return this.#decryptionProof;
   }
 
-  public get orderedClearValues(): readonly ClearValue[] {
+  public get orderedClearValues(): NonEmptyReadonlyArray<ClearValue> {
     return this.#orderedClearValues;
   }
 
@@ -80,7 +86,8 @@ type Context = {
 };
 
 type Parameters = {
-  readonly orderedEncryptedValues: readonly EncryptedValue[];
+  readonly originToken: symbol;
+  readonly orderedHandles: readonly Handle[];
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly kmsPublicDecryptEIP712Signatures: readonly Bytes65Hex[];
   readonly kmsSignersContext: KmsSignersContext;
@@ -98,8 +105,13 @@ export async function createPublicDecryptionProof(
   // Always verify KMS signatures
   await verifyKmsPublicDecryptEip712(context, parameters);
 
-  const { orderedEncryptedValues, orderedAbiEncodedClearValues, kmsPublicDecryptEIP712Signatures, kmsSignersContext } =
-    parameters;
+  const {
+    orderedHandles: orderedEncryptedValues,
+    orderedAbiEncodedClearValues,
+    kmsPublicDecryptEIP712Signatures,
+    kmsSignersContext,
+    originToken,
+  } = parameters;
 
   //////////////////////////////////////////////////////////////////////////////
   // Compute extraData using KmsSignersContext
@@ -150,9 +162,8 @@ export async function createPublicDecryptionProof(
     toClearValueType(h.fheType, decoded[index]),
   );
 
-  const originToken: symbol = Symbol('asasa');
   const orderedDecryptedFhevmHandles = createClearValueArray({
-    orderedEncryptedValues,
+    orderedHandles: orderedEncryptedValues,
     orderedValues,
     originToken,
   });

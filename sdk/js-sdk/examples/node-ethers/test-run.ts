@@ -18,6 +18,12 @@ import { ethers } from 'ethers';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setFhevmRuntimeConfig, createFhevmClient } from '../../src/ethers/index.js';
+import { sepolia } from '../../src/core/chains/index.js';
+import { asChecksummedAddress } from '../../src/core/base/address.js';
+import { toFhevmHandle } from '../../src/core/handle/FhevmHandle.js';
+
+////////////////////////////////////////////////////////////////////////////////
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -40,10 +46,7 @@ function loadEnv(): Record<string, string> {
 
 const env = loadEnv();
 
-import { setFhevmRuntimeConfig, createFhevmClient } from '../../src/ethers/index.js';
-import { sepolia } from '../../src/core/chains/index.js';
-import { asChecksummedAddress } from '../../src/core/base/address.js';
-import { toHandle } from '../../src/core/handle/FhevmHandle.js';
+////////////////////////////////////////////////////////////////////////////////
 
 const RPC_URL = 'https://ethereum-sepolia-rpc.publicnode.com';
 
@@ -69,11 +72,13 @@ const PUBLIC_ENCRYPTED_VALUES = [
     type: 'ebool',
     expected: false,
   },
-];
+] as const;
 
 // FHECounter contract on Sepolia (deployed by the Next.js example)
 const FHE_COUNTER_ADDRESS = '0xef6c6230bF565015f8B37f2966d200C8804b409a';
 const FHE_COUNTER_ABI = ['function getCount() view returns (uint256)'] as const;
+
+////////////////////////////////////////////////////////////////////////////////
 
 async function main(): Promise<void> {
   const t0 = Date.now();
@@ -109,17 +114,18 @@ async function main(): Promise<void> {
 
   step('Encrypt uint32(42) + bool(true)');
   try {
-    const proof = await client.encrypt({
+    const values = [
+      { type: 'uint32', value: 42 },
+      { type: 'bool', value: true },
+    ] as const;
+    const proof = await client.encryptValues({
       contractAddress: FHE_COUNTER_ADDRESS,
       userAddress: userAddress,
-      values: [
-        { type: 'uint32', value: 42 },
-        { type: 'bool', value: true },
-      ],
+      values,
     });
-    console.log('  Handles:', proof.externalEncryptedValues.length);
-    for (const h of proof.externalEncryptedValues) {
-      console.log(`    [${h.index}] ${h.fheType} → ${h.bytes32Hex}`);
+    console.log('  Handles:', proof.encryptedValues.length);
+    for (const [i, h] of proof.encryptedValues.entries()) {
+      console.log(`    [${i}] ${values[i].type} → ${h}`);
     }
     console.log('  Proof bytes length:', proof.inputProof.length);
   } catch (err: unknown) {
@@ -134,16 +140,16 @@ async function main(): Promise<void> {
 
   step(`Read ${PUBLIC_ENCRYPTED_VALUES.length} public values from testnet`);
   try {
-    const handles = PUBLIC_ENCRYPTED_VALUES.map((h) => toHandle(h.hex));
-    const result = await client.publicDecrypt({ encryptedValues: handles });
+    const encryptedValues = PUBLIC_ENCRYPTED_VALUES.map((h) => h.hex);
+    const typedValues = await client.readPublicValues({ encryptedValues });
 
     console.log('  Read public values succeeded!');
-    for (let i = 0; i < result.orderedClearValues.length; i++) {
-      const d = result.orderedClearValues[i];
+    for (let i = 0; i < typedValues.length; i++) {
+      const d = typedValues[i];
       if (d === undefined) continue;
       const expected = PUBLIC_ENCRYPTED_VALUES[i]?.expected;
       const match = d.value === expected ? 'OK' : 'MISMATCH';
-      console.log(`  [${match}] ${d.encryptedValue.fheType}: ${d.value} (expected: ${expected})`);
+      console.log(`  [${match}] ${d.type}: ${d.value} (expected: ${expected})`);
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -165,18 +171,18 @@ async function main(): Promise<void> {
   if (rawCount === 0n) {
     console.log('  Count is zero — no encrypted value stored yet. Skipping decrypt.');
   } else {
-    const countHandle = toHandle(countHex);
+    const countHandle = toFhevmHandle(countHex);
     console.log('  Parsed handle — chainId:', countHandle.chainId.toString(), 'fheType:', countHandle.fheType);
 
-    step('Generate E2E transport key pair');
-    const e2eTransportKeypair = await client.generateE2eTransportKeypair();
-    const pubKeyHex = e2eTransportKeypair.publicKey;
+    step('Generate transport key pair');
+    const transportKeypair = await client.generateTransportKeypair();
+    const pubKeyHex = transportKeypair.publicKey;
     console.log('  Public key:', pubKeyHex.slice(0, 40) + '...');
 
     step('Create and sign EIP-712 decrypt permit');
     const now = Math.floor(Date.now() / 1000);
     const signedPermit = await client.signDecryptionPermit({
-      e2eTransportKeypair,
+      transportKeypair,
       contractAddresses: [FHE_COUNTER_ADDRESS],
       startTimestamp: now,
       durationDays: 1,
@@ -188,19 +194,14 @@ async function main(): Promise<void> {
 
     step('Decrypt the FHECounter count');
     try {
-      const results = await client.decrypt({
-        e2eTransportKeypair,
-        encryptedValues: [
-          {
-            encryptedValue: countHandle,
-            contractAddress: asChecksummedAddress(FHE_COUNTER_ADDRESS),
-          },
-        ],
+      const decrypted = await client.decryptValue({
+        transportKeypair,
+        encryptedValue: countHandle,
+        contractAddress: asChecksummedAddress(FHE_COUNTER_ADDRESS),
         signedPermit,
       });
-      const decrypted = results[0];
       console.log('  Decryption succeeded!');
-      console.log(`  Value: ${decrypted?.value} (${decrypted?.encryptedValue.fheType})`);
+      console.log(`  Value: ${decrypted.value} (${decrypted.type})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log('  Decryption failed:', msg.slice(0, 200));
@@ -215,7 +216,9 @@ async function main(): Promise<void> {
   console.log(`\nAll ${stepCount} steps completed in ${totalTime}s`);
 }
 
-main().catch((err: unknown) => {
-  console.error('\nFatal error:', err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err: unknown) => {
+    console.error('\nFatal error:', err);
+    process.exit(1);
+  });

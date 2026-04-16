@@ -3,7 +3,7 @@ import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsPublicDecryptEip712Message } from '../types/kms.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { Bytes32Hex, Bytes65Hex, BytesHex } from '../types/primitives.js';
-import type { EncryptedValue } from '../types/encryptedTypes.js';
+import type { Handle } from '../types/encryptedTypes-p.js';
 import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
 import { assertKmsSignerThreshold, kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
@@ -17,7 +17,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly orderedEncryptedValues: readonly EncryptedValue[];
+  readonly orderedHandles: readonly Handle[];
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly kmsPublicDecryptEIP712Signatures: readonly Bytes65Hex[];
   readonly kmsSignersContext: KmsSignersContext;
@@ -26,7 +26,7 @@ type Parameters = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function verifyKmsPublicDecryptEip712(context: Context, parameters: Parameters): Promise<void> {
-  const { kmsSignersContext, orderedEncryptedValues, orderedAbiEncodedClearValues } = parameters;
+  const { kmsSignersContext, orderedHandles: orderedEncryptedValues, orderedAbiEncodedClearValues } = parameters;
 
   // TODO:  use createKmsPublicDecryptEIP712 instead!
 

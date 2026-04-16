@@ -12,6 +12,7 @@ export type IsAllowedForDecryptionParameters = {
 
 export type IsAllowedForDecryptionReturnType = boolean;
 
+// to be removed from core/actions
 export async function isAllowedForDecryption(
   fhevm: Fhevm,
   parameters: IsAllowedForDecryptionParameters,

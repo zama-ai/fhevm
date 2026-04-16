@@ -1,12 +1,13 @@
 import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
 import type { FheType } from '../../../src/core/types/fheType.js';
-import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
 import { ethers } from 'ethers';
-import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -162,11 +163,11 @@ describe(
       });
       await client.ready;
 
-      const keypair = await client.generateE2eTransportKeypair();
+      const keypair = await client.generateTransportKeypair();
 
       // Bob signs a delegated permit to decrypt Alice's handles
       const signedPermit = await client.signDecryptionPermit({
-        e2eTransportKeypair: keypair,
+        transportKeypair: keypair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -196,7 +197,7 @@ describe(
         const fheTest = config.fheTestContract.connect(config.alice.signer) as ethers.Contract;
 
         // Read Alice's handle from FHETest contract
-        const aliceHandle: Handle = toHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
+        const aliceHandle: Handle = toFhevmHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
         expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
 
         // Read expected clear value from FHETest._db
@@ -210,9 +211,9 @@ describe(
         });
         await client.ready;
 
-        const e2eTransportKeypair = await client.generateE2eTransportKeypair();
+        const transportKeypair = await client.generateTransportKeypair();
         const bobSignedPermit = await client.signDecryptionPermit({
-          e2eTransportKeypair,
+          transportKeypair,
           contractAddresses: [config.fheTestAddress],
           durationDays: 1,
           startTimestamp: Math.floor(Date.now() / 1000),
@@ -221,26 +222,24 @@ describe(
           delegatorAddress: config.alice.wallet.address,
         });
 
-        const clearValues = await client.decrypt({
-          encryptedValues: {
-            encryptedValue: aliceHandle.bytes32Hex,
-            contractAddress: config.fheTestAddress as ChecksummedAddress,
-          },
+        const typedValue = await client.decryptValue({
+          encryptedValue: aliceHandle.bytes32Hex,
+          contractAddress: config.fheTestAddress as ChecksummedAddress,
           signedPermit: bobSignedPermit,
-          e2eTransportKeypair,
+          transportKeypair,
         });
 
-        expect(clearValues).toHaveLength(1);
-        const decrypted = clearValues[0]!;
-        console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
+        expect(typedValue.type).toBe(aliceHandle.clearType);
+
+        console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
         if (fheType === 'ebool') {
-          expect(decrypted.value).toBe(expectedRaw !== 0n);
+          expect(typedValue.value).toBe(expectedRaw !== 0n);
         } else if (fheType === 'eaddress') {
           const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-          expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
+          expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
         } else {
-          expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
+          expect(BigInt(typedValue.value as number | bigint)).toBe(expectedRaw);
         }
       });
     }
@@ -261,7 +260,7 @@ describe(
 
       for (const fheType of decryptTestCases) {
         const fheTypeId = fheTypeIdFromName(fheType);
-        const aliceHandle: Handle = toHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
+        const aliceHandle: Handle = toFhevmHandle(await fheTest.getHandleOf!(config.alice.wallet.address, fheTypeId));
         expect(aliceHandle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
         expect(aliceHandle.fheType).toBe(fheType);
         const aliceClearValue: bigint = await fheTest.getClearText!(aliceHandle.bytes32Hex);
@@ -276,9 +275,9 @@ describe(
       });
       await bobClient.ready;
 
-      const bobKeypair = await bobClient.generateE2eTransportKeypair();
+      const bobKeypair = await bobClient.generateTransportKeypair();
       const bobSignedPermit = await bobClient.signDecryptionPermit({
-        e2eTransportKeypair: bobKeypair,
+        transportKeypair: bobKeypair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -287,15 +286,13 @@ describe(
         delegatorAddress: config.alice.wallet.address,
       });
 
-      const aliceEncryptedValues = aliceEntries.map((e) => ({
-        encryptedValue: e.aliceHandle.bytes32Hex,
-        contractAddress: config.fheTestAddress as ChecksummedAddress,
-      }));
+      const aliceEncryptedValues = aliceEntries.map((e) => asEncryptedValue(e.aliceHandle));
 
-      const bobDecryptedValues = await bobClient.decrypt({
+      const bobDecryptedValues = await bobClient.decryptValues({
+        contractAddress: config.fheTestAddress as ChecksummedAddress,
         encryptedValues: aliceEncryptedValues,
         signedPermit: bobSignedPermit,
-        e2eTransportKeypair: bobKeypair,
+        transportKeypair: bobKeypair,
       });
 
       expect(bobDecryptedValues).toHaveLength(aliceEntries.length);
@@ -305,7 +302,7 @@ describe(
         const bobDecrypted = bobDecryptedValues[i]!;
         console.log(`  ${aliceHandle.fheType}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`);
 
-        expect(bobDecrypted.encryptedValue.bytes32Hex).toBe(aliceHandle.bytes32Hex);
+        expect(bobDecrypted.type).toBe(aliceHandle.clearType);
 
         if (aliceHandle.fheType === 'ebool') {
           expect(bobDecrypted.value).toBe(aliceClearValue !== 0n);

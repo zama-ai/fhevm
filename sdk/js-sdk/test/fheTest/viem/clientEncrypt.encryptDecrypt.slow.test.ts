@@ -1,4 +1,5 @@
-import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
+import type { TypedValue } from '../../../src/core/types/primitives.js';
+import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
@@ -6,6 +7,8 @@ import { isV2, getBaseEnv } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
 import { createWalletClient, http, type Hex } from 'viem';
+import { isBytes32Hex } from '../../../src/core/base/bytes.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -91,21 +94,22 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
       });
       await client.ready;
 
-      const result = await client.encrypt({
+      const result = await client.encryptValues({
         contractAddress: config.fheTestAddress,
         userAddress: config.account.address,
         values: encryptTestCases,
       });
 
-      expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
+      expect(result.encryptedValues).toHaveLength(encryptTestCases.length);
       expect(result.inputProof).toBeDefined();
       expect(result.inputProof.startsWith('0x')).toBe(true);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const tc = encryptTestCases[i]!;
-        const ev = result.externalEncryptedValues[i]!;
-        console.log(`  ${tc.type}: handle=${ev.bytes32Hex.slice(0, 20)}...`);
-        expect(ev.bytes32Hex).toBeDefined();
+        const ev = result.encryptedValues[i]!;
+        expect(ev).toBeDefined();
+        expect(isBytes32Hex(ev)).toBe(true);
+        console.log(`  ${tc.type}: handle=${ev.slice(0, 20)}...`);
       }
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -119,15 +123,16 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {
-        const enc = result.externalEncryptedValues[i]!;
+        const enc: EncryptedValue = result.encryptedValues[i]!;
+        const fheType = toFhevmHandle(enc).fheType;
         const ct = encryptTestCases[i]!.value;
 
-        const inputHandle = enc.bytes32Hex;
+        const inputHandle = enc;
         const inputProof = result.inputProof;
         const makePublic = true;
 
         // Compute function name from fheType: ebool → setEbool, euint8 → setEuint8, etc.
-        const functionName = `set${enc.fheType.charAt(0).toUpperCase()}${enc.fheType.slice(1)}`;
+        const functionName = `set${fheType.charAt(0).toUpperCase()}${fheType.slice(1)}`;
         console.log(`${functionName}(${inputHandle})...`);
 
         const hash = await walletClient.writeContract({
@@ -163,9 +168,9 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
 
       await decryptClient.ready;
 
-      const e2eTransportKeypair = await decryptClient.generateE2eTransportKeypair();
+      const transportKeypair = await decryptClient.generateTransportKeypair();
       const signedPermit = await decryptClient.signDecryptionPermit({
-        e2eTransportKeypair,
+        transportKeypair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -173,25 +178,21 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
         signer: config.account,
       });
 
-      const encryptedValues = result.externalEncryptedValues.map((ev) => {
-        return {
-          encryptedValue: ev.bytes32Hex,
-          contractAddress: config.fheTestAddress as ChecksummedAddress,
-        };
-      });
+      const encryptedValues = result.encryptedValues;
 
       console.log('decrypt...');
 
-      const clearValues = await decryptClient.decrypt({
+      const typedValues = await decryptClient.decryptValues({
         encryptedValues,
+        contractAddress: config.fheTestAddress,
         signedPermit,
-        e2eTransportKeypair,
+        transportKeypair,
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {
-        console.log(clearValues[i]?.value);
-        expect(clearValues[i]?.type).toBe(encryptTestCases[i]?.type);
-        expect(clearValues[i]?.value).toBe(encryptTestCases[i]?.value);
+        console.log(typedValues[i]?.value);
+        expect(typedValues[i]?.type).toBe(encryptTestCases[i]?.type);
+        expect(typedValues[i]?.value).toBe(encryptTestCases[i]?.value);
       }
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -200,17 +201,18 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
       // └─────────────────────────────────────────────────────────────────────┘
       console.log('publicDecrypt...');
 
-      const publicProof = await decryptClient.readPublicValue({
-        encryptedValues: result.externalEncryptedValues,
+      const publicTypedValues = await decryptClient.readPublicValues({
+        encryptedValues: result.encryptedValues,
       });
 
-      expect(publicProof.orderedClearValues).toHaveLength(encryptTestCases.length);
+      expect(publicTypedValues).toHaveLength(encryptTestCases.length);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const expected = encryptTestCases[i]!;
-        const actual = publicProof.orderedClearValues[i]!;
+        const actual = publicTypedValues[i]!;
         console.log(`  readPublicValue ${expected.type}: ${actual.value}`);
         expect(actual.value).toBe(expected.value);
+        expect(actual.type).toBe(expected.type);
       }
     });
   },

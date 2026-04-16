@@ -10,22 +10,22 @@ import { verifyTkmsPublicKey } from '../utils-p/decrypt/verifyTkmsPublicKey.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const PRIVATE_TOKEN = Symbol('E2eTransportKeypair.token');
+const PRIVATE_TOKEN = Symbol('TransportKeypair.token');
 
 ////////////////////////////////////////////////////////////////////////////////
 
-declare const E2eTransportKeypairBrand: unique symbol;
+declare const TransportKeypairBrand: unique symbol;
 
-export type E2eTransportKeypair = {
+export type TransportKeypair = {
   readonly publicKey: BytesHex;
-  readonly [E2eTransportKeypairBrand]: true;
+  readonly [TransportKeypairBrand]: true;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// E2eTransportKeypairImpl
+// TransportKeypairImpl
 //
 // Unexported class wrapping closures that bind a tkmsPrivateKey.
-// - Class: enables instanceof checks (isE2eTransportKeypair)
+// - Class: enables instanceof checks (isTransportKeypair)
 // - Closures: methods capture privateKey without exposing it
 // - Frozen: instance, class, and prototype are all immutable
 // - Tree-shakable: unused exports are eliminated by bundlers
@@ -35,8 +35,8 @@ export type E2eTransportKeypair = {
 const GetTkmsPrivateKeyFn = Symbol();
 const SerializeFn = Symbol();
 
-class E2eTransportKeypairImpl implements E2eTransportKeypair {
-  declare readonly [E2eTransportKeypairBrand]: true;
+class TransportKeypairImpl implements TransportKeypair {
+  declare readonly [TransportKeypairBrand]: true;
 
   readonly #publicKeyBytesHex: BytesHex;
   readonly #privateKeyBytes: Bytes;
@@ -135,29 +135,29 @@ class E2eTransportKeypairImpl implements E2eTransportKeypair {
   }
 }
 
-Object.freeze(E2eTransportKeypairImpl);
-Object.freeze(E2eTransportKeypairImpl.prototype);
+Object.freeze(TransportKeypairImpl);
+Object.freeze(TransportKeypairImpl.prototype);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Type guard. */
-export function isE2eTransportKeypair(value: unknown): value is E2eTransportKeypair {
-  return value instanceof E2eTransportKeypairImpl;
+export function isTransportKeypair(value: unknown): value is TransportKeypair {
+  return value instanceof TransportKeypairImpl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Throws {@link InvalidTypeError} if value is not a valid {@link E2eTransportKeypair}. */
-export function assertIsE2eTransportKeypair(
+/** Throws {@link InvalidTypeError} if value is not a valid {@link TransportKeypair}. */
+export function assertIsTransportKeypair(
   value: unknown,
   options: { subject?: string } & ErrorMetadataParams,
-): asserts value is E2eTransportKeypair {
-  if (!isE2eTransportKeypair(value)) {
+): asserts value is TransportKeypair {
+  if (!isTransportKeypair(value)) {
     throw new InvalidTypeError(
       {
         subject: options.subject,
         type: typeof value,
-        expectedType: 'E2eTransportKeypair',
+        expectedType: 'TransportKeypair',
       },
       options,
     );
@@ -166,16 +166,14 @@ export function assertIsE2eTransportKeypair(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Generates a fresh {@link E2eTransportKeypair}. */
-export async function generateE2eTransportKeypair(context: {
-  readonly runtime: WithDecrypt;
-}): Promise<E2eTransportKeypair> {
+/** Generates a fresh {@link TransportKeypair}. */
+export async function generateTransportKeypair(context: { readonly runtime: WithDecrypt }): Promise<TransportKeypair> {
   const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey();
   const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey });
   const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
     tkmsPrivateKey,
   });
-  return new E2eTransportKeypairImpl(PRIVATE_TOKEN, context.runtime, {
+  return new TransportKeypairImpl(PRIVATE_TOKEN, context.runtime, {
     privateKeyBytes: tkmsPrivateKeyBytes,
     publicKeyBytesHex: tkmsPublicKeyBytesHex,
     tkmsPrivateKey,
@@ -183,25 +181,25 @@ export async function generateE2eTransportKeypair(context: {
 }
 
 /**
- * Converts an unknown value into a {@link E2eTransportKeypair}.
+ * Converts an unknown value into a {@link TransportKeypair}.
  *
  * Accepted inputs:
- * - An existing {@link E2eTransportKeypair} (returned as-is)
+ * - An existing {@link TransportKeypair} (returned as-is)
  * - A plain object `{ publicKey, privateKey }` where each is `Bytes` or `BytesHex`
  *
  * @throws {InvalidTypeError} If `value` is not a recognized keypair shape.
  */
-export async function toE2eTransportKeypair(
+export async function toTransportKeypair(
   context: { readonly runtime: FhevmRuntime },
   value: unknown,
-): Promise<E2eTransportKeypair> {
-  if (isE2eTransportKeypair(value)) {
+): Promise<TransportKeypair> {
+  if (isTransportKeypair(value)) {
     // Force realize
-    await (value as E2eTransportKeypairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
+    await (value as TransportKeypairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
     return value;
   }
 
-  const name = 'E2eTransportKeypair';
+  const name = 'TransportKeypair';
   const options = {};
 
   assertRecordNonNullableProperty(value, 'publicKey', name, {
@@ -242,7 +240,7 @@ export async function toE2eTransportKeypair(
     await verifyTkmsPublicKey({ runtime: runtimeWithDecrypt }, { tkmsPrivateKey, tkmsPublicKeyBytesHex });
   }
 
-  return new E2eTransportKeypairImpl(PRIVATE_TOKEN, context.runtime, {
+  return new TransportKeypairImpl(PRIVATE_TOKEN, context.runtime, {
     privateKeyBytes: tkmsPrivateKeyBytes,
     publicKeyBytesHex: tkmsPublicKeyBytesHex,
     tkmsPrivateKey,
@@ -250,31 +248,31 @@ export async function toE2eTransportKeypair(
 }
 
 /**
- * Serializes an {@link E2eTransportKeypair} including the private key.
+ * Serializes an {@link TransportKeypair} including the private key.
  *
  * **The output contains sensitive key material — handle and store securely.**
  *
- * @throws {InvalidTypeError} If `value` is not a valid {@link E2eTransportKeypair}.
+ * @throws {InvalidTypeError} If `value` is not a valid {@link TransportKeypair}.
  */
-export function serializeE2eTransportKeypair(value: E2eTransportKeypair): {
+export function serializeTransportKeypair(value: TransportKeypair): {
   publicKey: BytesHex;
   privateKey: BytesHex;
 } {
-  assertIsE2eTransportKeypair(value, {});
-  return (value as E2eTransportKeypairImpl)[SerializeFn](PRIVATE_TOKEN);
+  assertIsTransportKeypair(value, {});
+  return (value as TransportKeypairImpl)[SerializeFn](PRIVATE_TOKEN);
 }
 
 /**
- * Extracts the deserialized TKMS private key from an {@link E2eTransportKeypair}.
+ * Extracts the deserialized TKMS private key from an {@link TransportKeypair}.
  * Lazily deserializes and verifies the key on first access.
  *
- * @throws {InvalidTypeError} If `value` is not a valid {@link E2eTransportKeypair}.
+ * @throws {InvalidTypeError} If `value` is not a valid {@link TransportKeypair}.
  * @throws If the runtime does not match or the key verification fails.
  */
-export async function e2eTransportKeypairToTkmsPrivateKey(
+export async function transportKeypairToTkmsPrivateKey(
   context: { readonly runtime: FhevmRuntime },
-  value: E2eTransportKeypair,
+  value: TransportKeypair,
 ): Promise<TkmsPrivateKey> {
-  assertIsE2eTransportKeypair(value, {});
-  return await (value as E2eTransportKeypairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
+  assertIsTransportKeypair(value, {});
+  return await (value as TransportKeypairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
 }

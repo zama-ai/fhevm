@@ -1,7 +1,7 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { Bytes65Hex, BytesHex } from '../../types/primitives.js';
-import type { ZkProof } from '../../types/zkProof.js';
+import type { ZkProof } from '../../types/zkProof-p.js';
 import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
 import { verifyHandlesCoprocessorSignatures } from './verifyHandlesCoprocessorSignatures.js';
 
@@ -22,7 +22,7 @@ export async function verifyZkProofCoprocessorSignatures(
   assertIsZkProof(parameters.zkProof, {});
 
   return verifyHandlesCoprocessorSignatures(fhevm, {
-    handles: parameters.zkProof.getExternalEncryptedValues(),
+    inputHandles: parameters.zkProof.getInputHandles(),
     userAddress: parameters.zkProof.userAddress,
     contractAddress: parameters.zkProof.contractAddress,
     chainId: parameters.zkProof.chainId,

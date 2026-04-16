@@ -32,6 +32,93 @@
 - verifyKmsPublicDecryptEIP712 should use createKmsPublicDecryptEIP712
 - handle = Bytes32Hex (0x....)
 - object { } FhevmHandleImpl implement
+- isAllowedForDecryption => canReadPublicValue(h), readPublicValue(h) -> TypedValue | TypedValue[]
+- new handle format: https://github.com/zama-ai/fhevm/pull/2014
+- fix: const originToken = Symbol('readPublicValues');
+
+```ts
+    function checkSignatures(
+        bytes32[] memory handlesList,
+        bytes memory abiEncodedCleartexts,
+        bytes memory decryptionProof
+    ) internal;
+
+
+    function run() {
+      ...
+      handle1= FHE.add();
+      map[contractAddress] = handle1
+      emit (please decrypt handle1)
+    }
+
+    function callbackDec(h, bytes memory abiEncodedCleartexts, bytes memory decryptionProof) {
+      uint32 cv = abi.decode(abiEncodedCleartexts)[0];
+
+      // verif
+      FHE.checkSignatures([h], abiEncodedCleartexts, decryptionProof);
+
+      transferDollars(cv, target);
+    }
+
+    {}
+    npm install @zama-fhe/relayer-sdk
+
+    npm run build
+    cd js-sdk/src
+    npm pack
+
+    {
+      dependencies: {
+        "@fhevm/sdk": file.tgz
+      }
+    }
+    index.ts import { create} from "@fhevm/sdk"
+
+
+```
+
+```ts
+
+-- 4 functions --
+const res: boolean = await client.canReadPublicValue({ handles });
+const res: boolean[] = await client.canReadPublicValues({ handles });
+
+const res: TypedValue = await client.readPublicValue({ handle });
+const res: TypedValue[] = await client.readPublicValues({ handles });
+
+-- or 2 functions --
+const res: boolean = await client.canReadPublicValue({ handles });
+const res: boolean[] = await client.canReadPublicValue({ handles });
+
+const res: TypedValue = await client.readPublicValue({ handle });
+const res: TypedValue[] = await client.readPublicValue({ handles });
+
+
+
+const res = await client.readPublicValuesWithSignatures({ handles });
+res.clearValues
+res.checkSignaturesArgs {
+  handleList,
+  abiEncodedCleartexts,
+  decryptionProof
+}
+
+// verif
+FHE.checkSignatures([h], abiEncodedCleartexts, decryptionProof);
+const res = await client.fetchCheckSignaturesArgs({ handles });
+res {
+  handleList,
+  abiEncodedCleartexts,
+  decryptionProof
+}
+
+foo(handles, res.abiEncodedCleartexts, res.decryptionProof)
+```
+
+```ts
+// TODO TypedValue[]
+export type DecryptReturnType = readonly ClearValue[];
+```
 
 FhevmHandle { bytes32Hex, fheType }
 const h: FhevmHandleImpl;
@@ -61,4 +148,81 @@ export class TfheError extends FhevmErrorBase {
     });
   }
 }
+```
+
+```ts
+// Option 1
+export type DecryptValueParameters = {
+  readonly handle: HandleLike;
+  readonly contractAddress: string;
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptValue(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptValueParameters,
+): Promise<TypedValue>;
+
+// Option 2
+export type DecryptHandleParameters = {
+  readonly handle: HandleLike;
+  readonly contractAddress: string;
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptHandle(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptValueParameters,
+): Promise<TypedValue>;
+
+// Option 1 (multi)
+export type DecryptValuesParameters = {
+  readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptValues(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptValuesParameters,
+): Promise<TypedValue[]>;
+
+// Option 1-bis (multi-single contract)
+export type DecryptValuesParameters = {
+  readonly handles: HandleLike[];
+  readonly contractAddress: string;
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptValues(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptValuesParameters,
+): Promise<TypedValue[]>;
+
+// Option 2 (multi)
+export type DecryptHandlesParameters = {
+  readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptHandles(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptHandlesParameters,
+): Promise<TypedValue[]>;
+
+// Option 2 (multi)
+export type DecryptHandleContractPairsParameters = {
+  readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
+  readonly signedPermit: SignedSelfDecryptionPermit;
+  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly options?: RelayerUserDecryptOptions | undefined;
+};
+export async function decryptHandleContractPairs(
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
+  parameters: DecryptHandleContractPairsParameters,
+): Promise<TypedValue[]>;
 ```

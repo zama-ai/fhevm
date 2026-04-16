@@ -36,7 +36,7 @@ export async function verifyInputProof(
     chainId,
     coprocessorSignatures: parameters.inputProof.coprocessorSignatures,
     extraData: parameters.inputProof.extraData,
-    handles: parameters.inputProof.inputHandles,
+    inputHandles: parameters.inputProof.inputHandles,
     userAddress: signedHandleAccess.userAddress,
     contractAddress: signedHandleAccess.contractAddress,
   });

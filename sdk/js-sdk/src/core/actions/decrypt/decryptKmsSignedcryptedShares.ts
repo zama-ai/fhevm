@@ -2,9 +2,10 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { KmsSigncryptedShares } from '../../types/kms.js';
-import type { ClearValue } from '../../types/encryptedTypes.js';
-import type { E2eTransportKeypair } from '../../kms/E2eTransportKeypair-p.js';
-import { e2eTransportKeypairToTkmsPrivateKey } from '../../kms/E2eTransportKeypair-p.js';
+import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { TypedValue } from '../../types/primitives.js';
+import { decryptKmsSignedcryptedShares as decryptKmsSignedcryptedShares_ } from '../../kms/decryptKmsSignedcryptedShares-p.js';
+import { clearValueToTypedValue } from '../../handle/ClearValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // decryptKmsSignedcryptedShares (with privateKey)
@@ -12,10 +13,10 @@ import { e2eTransportKeypairToTkmsPrivateKey } from '../../kms/E2eTransportKeypa
 
 export type DecryptKmsSignedcryptedSharesParameters = {
   readonly kmsSigncryptedShares: KmsSigncryptedShares;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeypair: TransportKeypair;
 };
 
-export type DecryptKmsSignedcryptedSharesReturnType = readonly ClearValue[];
+export type DecryptKmsSignedcryptedSharesReturnType = readonly TypedValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -23,16 +24,8 @@ export async function decryptKmsSignedcryptedShares(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
   parameters: DecryptKmsSignedcryptedSharesParameters,
 ): Promise<DecryptKmsSignedcryptedSharesReturnType> {
-  const { e2eTransportKeypair, kmsSigncryptedShares } = parameters;
+  const clearValues = await decryptKmsSignedcryptedShares_(fhevm, parameters);
 
-  // also validates `e2eTransportKeypair`
-  const tkmsPrivateKey = await e2eTransportKeypairToTkmsPrivateKey(fhevm, e2eTransportKeypair);
-
-  // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
-  const orderedDecryptedHandles: readonly ClearValue[] = await fhevm.runtime.decrypt.decryptAndReconstruct({
-    shares: kmsSigncryptedShares,
-    tkmsPrivateKey,
-  });
-
-  return orderedDecryptedHandles;
+  const originToken = Symbol('decryptKmsSignedcryptedShares');
+  return clearValues.map((cv) => clearValueToTypedValue(cv, originToken));
 }

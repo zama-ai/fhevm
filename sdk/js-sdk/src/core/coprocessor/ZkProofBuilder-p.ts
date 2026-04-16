@@ -1,7 +1,6 @@
-import type { Bytes20, Bytes32, UintNumber } from '../types/primitives.js';
-import type { ZkProof } from '../types/zkProof.js';
+import type { Bytes20, Bytes32, ChecksummedAddress, UintNumber } from '../types/primitives.js';
+import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
-import type { Fhevm } from '../types/coreFhevmClient.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
@@ -21,10 +20,17 @@ import { isUint64, uint256ToBytes32 } from '../base/uint.js';
 import { isAddress } from '../base/address.js';
 import { hexToBytes20 } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
-import { TypedValueArrayBuilder } from '../base/typedValue.js';
+import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
+
+////////////////////////////////////////////////////////////////////////////////
+
+type Context = {
+  readonly chain: FhevmChain;
+  readonly runtime: WithEncrypt;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -132,7 +138,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
   }
 
   public async build(
-    fhevm: Fhevm<FhevmChain, WithEncrypt>,
+    context: Context,
     {
       contractAddress,
       userAddress,
@@ -142,7 +148,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     },
   ): Promise<ZkProof> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(fhevm);
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context);
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -164,8 +170,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       });
     }
 
-    const aclContractAddress = fhevm.chain.fhevm.contracts.acl.address;
-    const chainId = fhevm.chain.id;
+    const aclContractAddress = context.chain.fhevm.contracts.acl.address;
+    const chainId = context.chain.id;
 
     if (!isAddress(aclContractAddress)) {
       throw new ZkProofError({
@@ -205,7 +211,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
 
     assert(metaData.length - chainIdBytes32.length === 60);
 
-    const ciphertextWithZKProofBytes: Uint8Array = await fhevm.runtime.encrypt.buildWithProofPacked({
+    const ciphertextWithZKProofBytes: Uint8Array = await context.runtime.encrypt.buildWithProofPacked({
       typedValues: [...this.#builder.build()],
       fheEncryptionKey: fheEncryptionKeyWasm,
       metaData,
@@ -257,4 +263,33 @@ export function createZkProofBuilder(): ZkProofBuilder {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
     bitsCapacity: TFHE_CRS_BITS_CAPACITY,
   });
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+export async function createZkProof(
+  context: Context,
+  parameters: {
+    readonly values: readonly TypedValue[];
+    readonly contractAddress: ChecksummedAddress;
+    readonly userAddress: ChecksummedAddress;
+  },
+): Promise<ZkProof> {
+  const { contractAddress, userAddress, values } = parameters;
+
+  const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
+    ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
+    bitsCapacity: TFHE_CRS_BITS_CAPACITY,
+  });
+
+  for (const value of values) {
+    builder.addTypedValue(createTypedValue(value));
+  }
+
+  const zkProof = await builder.build(context, {
+    contractAddress,
+    userAddress,
+  });
+
+  return zkProof;
 }

@@ -1,4 +1,3 @@
-import type { ReadPublicValueParameters, ReadPublicValueReturnType } from '../../actions/base/readPublicValue.js';
 import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type {
@@ -6,14 +5,9 @@ import type {
   SignedDelegatedDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
 import type {
-  SerializeE2eTransportKeypairParameters,
-  SerializeE2eTransportKeypairReturnType,
-} from '../../actions/chain/serializeE2eTransportKeypair.js';
-import {
-  publicDecrypt,
-  type PublicDecryptParameters,
-  type PublicDecryptReturnType,
-} from '../../actions/base/publicDecrypt.js';
+  SerializeTransportKeypairParameters,
+  SerializeTransportKeypairReturnType,
+} from '../../actions/chain/serializeTransportKeypair.js';
 import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
 import {
   signDecryptionPermit,
@@ -21,16 +15,16 @@ import {
   type SignDelegatedDecryptionPermitParameters,
 } from '../../actions/base/signDecryptionPermit.js';
 import {
-  parseE2eTransportKeypair,
-  type ParseE2eTransportKeypairParameters,
-  type ParseE2eTransportKeypairReturnType,
-} from '../../actions/chain/parseE2eTransportKeypair.js';
+  parseTransportKeypair,
+  type ParseTransportKeypairParameters,
+  type ParseTransportKeypairReturnType,
+} from '../../actions/chain/parseTransportKeypair.js';
 import {
   fetchFheEncryptionKeyBytes,
   type FetchFheEncryptionKeyBytesParameters,
   type FetchFheEncryptionKeyBytesReturnType,
 } from '../../actions/chain/fetchFheEncryptionKeyBytes.js';
-import { serializeE2eTransportKeypair } from '../../actions/chain/serializeE2eTransportKeypair.js';
+import { serializeTransportKeypair } from '../../actions/chain/serializeTransportKeypair.js';
 import {
   serializeSignedDecryptionPermit,
   type SerializeSignedDecryptionPermitParameters,
@@ -41,12 +35,63 @@ import {
   type ParseSignedDecryptionPermitParameters,
   type ParseSignedDecryptionPermitReturnType,
 } from '../../actions/chain/parseSignedDecryptionPermit.js';
+import {
+  readPublicValue,
+  type ReadPublicValueParameters,
+  type ReadPublicValueReturnType,
+} from '../../actions/base/readPublicValue.js';
+import {
+  readPublicValues,
+  type ReadPublicValuesParameters,
+  type ReadPublicValuesReturnType,
+} from '../../actions/base/readPublicValues.js';
+import {
+  readPublicValuesWithSignatures,
+  type ReadPublicValuesWithSignaturesParameters,
+  type ReadPublicValuesWithSignaturesReturnType,
+} from '../../actions/base/readPublicValuesWithSignatures.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export type BaseActions = {
-  /** Alias for {@link readPublicValue}. */
-  readonly publicDecrypt: (parameters: PublicDecryptParameters) => Promise<PublicDecryptReturnType>;
+  /**
+   * Reads the decrypted (clear) value of an encrypted value that was made public.
+   *
+   * By default, encrypted values on-chain can only be decrypted by their owner.
+   * When a contract calls `TFHE.allowForDecryption(encryptedValue)` in Solidity,
+   * the value becomes publicly readable. Anyone can then call `readPublicValue`
+   * to get the clear value — no permit or private key needed.
+   *
+   * @example
+   * ```ts
+   * const result = await client.readPublicValue({
+   *   encryptedValue: "0xabcd..."
+   * });
+   * console.log(result.value); // e.g. 42
+   * console.log(result.type); // e.g. 'uint8'
+   * ```
+   */
+  readonly readPublicValue: (parameters: ReadPublicValueParameters) => Promise<ReadPublicValueReturnType>;
+  /**
+   * Reads the decrypted (clear) values of encrypted values that were made public.
+   *
+   * By default, encrypted values on-chain can only be decrypted by their owner.
+   * When a contract calls `TFHE.allowForDecryption(encryptedValue)` in Solidity,
+   * a value becomes publicly readable. Anyone can then call `readPublicValues`
+   * to get the clear values — no permit or private key needed.
+   *
+   * @example
+   * ```ts
+   * const results = await client.readPublicValues({
+   *   encryptedValues: ["0xabcd...", "0xef..."]
+   * });
+   * console.log(results[0].value); // e.g. 42
+   * console.log(results[0].type); // e.g. 'uint8'
+   * console.log(results[1].value); // e.g. 123456789
+   * console.log(results[1].type); // e.g. 'uint32'
+   * ```
+   */
+  readonly readPublicValues: (parameters: ReadPublicValuesParameters) => Promise<ReadPublicValuesReturnType>;
   /**
    * Reads the decrypted (clear) value of an encrypted value that was made public.
    *
@@ -61,21 +106,26 @@ export type BaseActions = {
    *
    * @example
    * ```ts
-   * const handles = ["0xabcd..."]; // handle(s) of public encrypted value(s)
-   * const result = await client.readPublicValue({
-   *   encryptedValues: handles
+   * const result = await client.readPublicValuesWithSignatures({
+   *   encryptedValues: ["0xabcd...", "0xef..."]
    * });
-   * console.log(result.orderedClearValues[0].value); // e.g. 42
+   * console.log(results.clearValues[0].value); // e.g. 42
+   * console.log(results.clearValues[0].type); // e.g. 'uint8'
+   * console.log(results.clearValues[1].value); // e.g. 123456789
+   * console.log(results.clearValues[1].type); // e.g. 'uint32'
    *
    * // Forward the proof on-chain for smart contract verification
    * // Solidity side:
    * //   function verify(bytes32[] calldata handlesList, bytes memory cleartexts, bytes memory decryptionProof) external {
    * //       FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
    * //   }
-   * await contract.verify(handles, result.orderedAbiEncodedClearValues, result.decryptionProof);
+   * const args = result.checkSignaturesArgs;
+   * await contract.verify(args.handlesList, args.abiEncodedCleartexts, args.decryptionProof);
    * ```
    */
-  readonly readPublicValue: (parameters: ReadPublicValueParameters) => Promise<ReadPublicValueReturnType>;
+  readonly readPublicValuesWithSignatures: (
+    parameters: ReadPublicValuesWithSignaturesParameters,
+  ) => Promise<ReadPublicValuesWithSignaturesReturnType>;
   readonly signDecryptionPermit: {
     /**
      * Signs a self decryption permit — Alice decrypts her own encrypted values.
@@ -98,13 +148,13 @@ export type BaseActions = {
     (parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>;
   };
   /** Deserializes a previously serialized e2e transport keypair back into a usable keypair. */
-  readonly parseE2eTransportKeypair: (
-    parameters: ParseE2eTransportKeypairParameters,
-  ) => Promise<ParseE2eTransportKeypairReturnType>;
+  readonly parseTransportKeypair: (
+    parameters: ParseTransportKeypairParameters,
+  ) => Promise<ParseTransportKeypairReturnType>;
   /** Serializes an e2e transport keypair to hex strings for storage. */
-  readonly serializeE2eTransportKeypair: (
-    parameters: SerializeE2eTransportKeypairParameters,
-  ) => SerializeE2eTransportKeypairReturnType;
+  readonly serializeTransportKeypair: (
+    parameters: SerializeTransportKeypairParameters,
+  ) => SerializeTransportKeypairReturnType;
   /** Serializes a signed decryption permit to a plain object for storage or transmission. */
   readonly serializeSignedDecryptionPermit: (
     parameters: SerializeSignedDecryptionPermitParameters,
@@ -123,18 +173,18 @@ export type BaseActions = {
 
 function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
   return {
-    publicDecrypt: (parameters) => publicDecrypt(fhevm, parameters),
-    readPublicValue: (parameters) => publicDecrypt(fhevm, parameters),
-    signDecryptionPermit: ((
-      parameters: SignSelfDecryptionPermitParameters | SignDelegatedDecryptionPermitParameters,
-    ) => {
-      if (parameters.delegatorAddress !== undefined) {
-        return signDecryptionPermit(fhevm, parameters);
-      }
-      return signDecryptionPermit(fhevm, parameters);
-    }) as BaseActions['signDecryptionPermit'],
-    parseE2eTransportKeypair: (parameters) => parseE2eTransportKeypair(fhevm, parameters),
-    serializeE2eTransportKeypair: (parameters) => serializeE2eTransportKeypair(fhevm, parameters),
+    readPublicValue: (parameters) => readPublicValue(fhevm, parameters),
+    readPublicValues: (parameters) => readPublicValues(fhevm, parameters),
+    readPublicValuesWithSignatures: (parameters) => readPublicValuesWithSignatures(fhevm, parameters),
+    // Preserve the original action overloads on the decorated client API.
+    // Runtime behavior is unchanged: this is a direct pass-through wrapper.
+    signDecryptionPermit: ((parameters: SignSelfDecryptionPermitParameters | SignDelegatedDecryptionPermitParameters) =>
+      signDecryptionPermit(
+        fhevm,
+        parameters as SignSelfDecryptionPermitParameters,
+      )) as BaseActions['signDecryptionPermit'],
+    parseTransportKeypair: (parameters) => parseTransportKeypair(fhevm, parameters),
+    serializeTransportKeypair: (parameters) => serializeTransportKeypair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
     parseSignedDecryptionPermit: (parameters) => parseSignedDecryptionPermit(fhevm, parameters),
     fetchFheEncryptionKeyBytes: (parameters) => fetchFheEncryptionKeyBytes(fhevm, parameters),

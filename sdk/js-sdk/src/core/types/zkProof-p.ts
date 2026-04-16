@@ -1,4 +1,4 @@
-import type { ExternalEncryptedValue } from './encryptedTypes.js';
+import type { InputHandle } from './encryptedTypes-p.js';
 import type { EncryptionBits } from './fheType.js';
 import type { Bytes, ChecksummedAddress, Uint64BigInt } from './primitives.js';
 
@@ -25,5 +25,5 @@ export interface ZkProof {
   readonly ciphertextWithZkProof: Bytes;
   readonly encryptionBits: readonly EncryptionBits[];
 
-  getExternalEncryptedValues(): readonly ExternalEncryptedValue[];
+  getInputHandles(): readonly InputHandle[];
 }

@@ -10,8 +10,8 @@ import type { KmsSigncryptedShare } from '../../types/kms-p.js';
 import type { KmsDelegatedUserDecryptEip712Message, KmsUserDecryptEip712Message } from '../../types/kms.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
-import type { ZkProof } from '../../types/zkProof.js';
-import type { Handle, InputHandle } from '../../types/encryptedTypes.js';
+import type { ZkProof } from '../../types/zkProof-p.js';
+import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

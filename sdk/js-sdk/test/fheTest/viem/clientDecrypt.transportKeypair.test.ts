@@ -1,26 +1,26 @@
 //
 // Sepolia Testnet:
 // ----------------
-// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.e2eTransportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
 //
 // Devnet:
 // -------
-// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.e2eTransportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
 //
 // localhost fhevm:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.e2eTransportKeypair.test.ts
+// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
 //
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 
 describe('Decrypt client — e2e transport keypair', () => {
-  let config: FheTestEthersConfig;
+  let config: FheTestViemConfig;
 
   beforeAll(() => {
-    config = getEthersTestConfig();
+    config = getViemTestConfig();
     setFhevmRuntimeConfig({
       auth: {
         type: 'ApiKeyHeader',
@@ -33,11 +33,11 @@ describe('Decrypt client — e2e transport keypair', () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
-      provider: config.provider,
+      publicClient: config.publicClient,
     });
     await client.ready;
 
-    const keypair = await client.generateE2eTransportKeypair();
+    const keypair = await client.generateTransportKeypair();
     expect(keypair).toBeDefined();
   });
 
@@ -45,13 +45,13 @@ describe('Decrypt client — e2e transport keypair', () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
-      provider: config.provider,
+      publicClient: config.publicClient,
     });
     await client.ready;
 
-    const keypair = await client.generateE2eTransportKeypair();
+    const keypair = await client.generateTransportKeypair();
     const serialized = serializeE2eTransportKeypair(client, {
-      e2eTransportKeypair: keypair,
+      transportKeypair: keypair,
     });
 
     expect(serialized).toBeDefined();
@@ -69,16 +69,16 @@ describe('Decrypt client — e2e transport keypair', () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
-      provider: config.provider,
+      publicClient: config.publicClient,
     });
     await client.ready;
 
     // Generate
-    const original = await client.generateE2eTransportKeypair();
+    const original = await client.generateTransportKeypair();
 
     // Serialize to hex
     const serialized = serializeE2eTransportKeypair(client, {
-      e2eTransportKeypair: original,
+      transportKeypair: original,
     });
 
     // Parse back from hex
@@ -87,7 +87,7 @@ describe('Decrypt client — e2e transport keypair', () => {
 
     // Serialize again and compare — should be identical
     const reSerialized = serializeE2eTransportKeypair(client, {
-      e2eTransportKeypair: parsed,
+      transportKeypair: parsed,
     });
     expect(reSerialized.publicKey).toBe(serialized.publicKey);
     expect(reSerialized.privateKey).toBe(serialized.privateKey);

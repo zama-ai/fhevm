@@ -345,11 +345,18 @@ export function fheTypeNameFromId(typeId: FheTypeId): FheType {
 
 /**
  * Converts a TypeName to its corresponding FheType.
- * @throws A {@link FheTypeError} If id is not a valid FheTypeId.
  * @example fheTypeNameFromTypeName('uint8') // 'euint8'
  */
 export function fheTypeNameFromTypeName(typeName: ValueTypeName): FheType {
   return ValueTypeNameToFheTypeName[typeName];
+}
+
+/**
+ * Converts a FheType to its corresponding TypeName.
+ * @example fheTypeNameFromTypeName('euint8') // 'uint8'
+ */
+export function typeNameFromFheTypeName(fheType: FheType): ValueTypeName {
+  return fheType.substring(1) as ValueTypeName;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

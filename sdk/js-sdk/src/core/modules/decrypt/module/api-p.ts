@@ -6,7 +6,7 @@ import type {
   TypedPlaintext,
 } from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
-import type { ClearValue } from '../../../types/encryptedTypes.js';
+import type { ClearValue } from '../../../types/encryptedTypes-p.js';
 import type { TkmsPrivateKey, TkmsPrivateKeyBrand } from '../../../types/tkms-p.js';
 import type { Bytes, BytesHex, BytesHexNo0x } from '../../../types/primitives.js';
 import type {
@@ -303,7 +303,7 @@ export async function decryptAndReconstruct(
       }
       return createClearValue({
         value: bytesToClearValueType(fhevmHandle.fheType, typedPlaintext.bytes),
-        encryptedValue: fhevmHandle,
+        handle: fhevmHandle,
         originToken: PRIVATE_TKMS_LIB_TOKEN, // origin token for authenticity assertion
       });
     },

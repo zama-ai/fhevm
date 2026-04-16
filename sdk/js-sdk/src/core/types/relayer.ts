@@ -1,7 +1,7 @@
 import type { Bytes65Hex, Bytes65HexNo0x, BytesHex, BytesHexNo0x } from './primitives.js';
 import type { Prettify } from './utils.js';
 import type { Auth } from './auth.js';
-import type { InputHandle } from './encryptedTypes.js';
+import type { InputHandle } from './encryptedTypes-p.js';
 
 export type RelayerSuccessStatus = 200 | 202;
 export type RelayerFailureStatus = 400 | 401 | 404 | 429 | 500 | 503;

@@ -1,11 +1,12 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { BytesHex, ValueType } from '../types/primitives.js';
+import type { BytesHex, TypedValue, TypedValueOf, ValueType } from '../types/primitives.js';
 import type { FheTypeId, FheType, ClearValueType } from '../types/fheType.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { ClearValue, ClearValueOfFheType, ClearValueTypeName, EncryptedValue } from '../types/encryptedTypes.js';
+import type { ClearValue, ClearValueOfFheType, ClearValueTypeName, Handle } from '../types/encryptedTypes-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { asClearValueType } from './FheType.js';
 import { assertNever } from '../base/errors/utils.js';
+import { createTypedValue } from '../base/typedValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -32,14 +33,14 @@ const VERIFY_ORIGIN_FUNC = Symbol('ClearValue.verifyOrigin');
  */
 class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype> {
   readonly #value: ClearValueType<etype>;
-  readonly #encryptedValue: EncryptedValue<etype>;
+  readonly #handle: Handle<etype>;
   readonly #originToken: symbol;
 
   constructor(
     privateToken: symbol,
     parameters: {
       readonly value: ClearValueType<etype>;
-      readonly encryptedValue: EncryptedValue<etype>;
+      readonly handle: Handle<etype>;
       readonly originToken: symbol;
     },
   ) {
@@ -47,7 +48,7 @@ class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype
       throw new Error('Unauthorized');
     }
 
-    this.#encryptedValue = parameters.encryptedValue;
+    this.#handle = parameters.handle;
     this.#value = parameters.value;
     this.#originToken = parameters.originToken;
   }
@@ -58,11 +59,18 @@ class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype
 
   public get type(): ClearValueTypeName<etype> {
     // FheType is always "e" + ValueTypeName (e.g. "euint8" → "uint8")
-    return this.#encryptedValue.fheType.substring(1) as ClearValueTypeName<etype>;
+    return this.#handle.fheType.substring(1) as ClearValueTypeName<etype>;
   }
 
-  public get encryptedValue(): EncryptedValue<etype> {
-    return this.#encryptedValue;
+  public get handle(): Handle<etype> {
+    return this.#handle;
+  }
+
+  public get typedValue(): TypedValueOf<ClearValueTypeName<etype>> {
+    return {
+      type: this.type,
+      value: this.value,
+    };
   }
 
   /**
@@ -78,7 +86,7 @@ class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype
    * Safe string representation that does not expose the value.
    */
   public toString(): string {
-    return `ClearValue<${this.#encryptedValue.fheType}>`;
+    return `ClearValue<${this.#handle.fheType}>`;
   }
 
   /**
@@ -86,8 +94,8 @@ class ClearValueImpl<etype extends FheType> implements ClearValueOfFheType<etype
    */
   public toJSON(): { handle: string; fheType: FheType } {
     return {
-      handle: this.#encryptedValue.bytes32Hex,
-      fheType: this.#encryptedValue.fheType,
+      handle: this.#handle.bytes32Hex,
+      fheType: this.#handle.fheType,
     };
   }
 }
@@ -111,6 +119,11 @@ Object.freeze(ClearValueImpl.prototype);
 export function isClearValue(value: unknown, originToken: symbol): value is ClearValue {
   if (!(value instanceof ClearValueImpl)) return false;
   return value[VERIFY_ORIGIN_FUNC](originToken);
+}
+
+export function clearValueToTypedValue(value: unknown, originToken: symbol): TypedValue {
+  assertIsClearValue(value, { originToken });
+  return createTypedValue((value as ClearValueImpl<FheType>).typedValue);
 }
 
 /**
@@ -194,19 +207,19 @@ export function assertIsClearValueArray(
  * instances that pass {@link isClearValue} with origin verification.
  *
  * @param value - The decrypted plaintext value (validated against `handle.fheType`)
- * @param encryptedValue - A validated {@link EncryptedValue}
+ * @param handle - A validated {@link Handle}
  * @param originToken - Private symbol owned by the calling decrypt flow
  * @returns A frozen `ClearValue` instance
  * @throws {InvalidTypeError} If the value doesn't match the handle's FHE type
  */
 export function createClearValue<etype extends FheType>(parameters: {
   readonly value: ClearValueType<etype>;
-  readonly encryptedValue: EncryptedValue<etype>;
+  readonly handle: Handle<etype>;
   readonly originToken: symbol;
 }): ClearValue<etype> {
   const v = new ClearValueImpl<etype>(PRIVATE_TOKEN, {
-    encryptedValue: parameters.encryptedValue,
-    value: asClearValueType(parameters.encryptedValue.fheType, parameters.value),
+    handle: parameters.handle,
+    value: asClearValueType(parameters.handle.fheType, parameters.value),
     originToken: parameters.originToken,
   });
   Object.freeze(v);
@@ -224,10 +237,10 @@ export function createClearValue<etype extends FheType>(parameters: {
  */
 export function createClearValueArray(parameters: {
   readonly orderedValues: ClearValueType[];
-  readonly orderedEncryptedValues: readonly EncryptedValue[];
+  readonly orderedHandles: readonly Handle[];
   readonly originToken: symbol;
 }): readonly ClearValue[] {
-  const { orderedValues: orderedClearValues, orderedEncryptedValues, originToken } = parameters;
+  const { orderedValues: orderedClearValues, orderedHandles: orderedEncryptedValues, originToken } = parameters;
   if (orderedEncryptedValues.length !== orderedClearValues.length) {
     throw new InvalidTypeError(
       {
@@ -241,7 +254,7 @@ export function createClearValueArray(parameters: {
 
   const result = orderedEncryptedValues.map((handle, i) =>
     createClearValue({
-      encryptedValue: handle,
+      handle: handle,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       value: orderedClearValues[i]!,
       originToken,
@@ -273,7 +286,7 @@ export function abiEncodeClearValues(
   const abiValues: Array<string | bigint> = [];
 
   for (const clearValue of orderedClearValues) {
-    const handleType: FheTypeId = clearValue.encryptedValue.fheTypeId;
+    const handleType: FheTypeId = clearValue.handle.fheTypeId;
 
     const clearTextValueBigInt = _clearValueTypeToBigInt(clearValue.value);
 

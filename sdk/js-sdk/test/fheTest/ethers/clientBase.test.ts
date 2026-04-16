@@ -51,9 +51,11 @@ describe('createFhevmBaseClient', () => {
       chain: config.fhevmChain,
       provider: config.provider,
     });
-    expect(typeof client.publicDecrypt).toBe('function');
+    expect(typeof client.readPublicValue).toBe('function');
+    expect(typeof client.readPublicValues).toBe('function');
+    expect(typeof client.readPublicValuesWithSignatures).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
-    expect(typeof client.parseE2eTransportKeypair).toBe('function');
+    expect(typeof client.parseTransportKeypair).toBe('function');
     expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
   });
 

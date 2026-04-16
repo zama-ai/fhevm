@@ -1,4 +1,4 @@
-import type { Handle } from '../../../src/core/types/encryptedTypes.js';
+import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import type { Hex } from 'viem';
 import type { FheType } from '../../../src/core/types/fheType.js';
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -7,7 +7,8 @@ import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 import { isV2 } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { toHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -66,7 +67,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))('Base client — readPublicV
       const fheTypeId = fheTypeIdFromName(fheType);
 
       // Read handle from FHETest contract
-      const handle: Handle = toHandle(
+      const handle: Handle = toFhevmHandle(
         await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
           abi: FHETestABI,
@@ -92,23 +93,22 @@ describe.runIf(isV2(getViemTestConfig().chainName))('Base client — readPublicV
         publicClient: config.publicClient,
       });
 
-      const proof = await client.readPublicValue({
-        encryptedValues: [handle.bytes32Hex],
+      const encryptedValue = asEncryptedValue(handle);
+      const typedValue = await client.readPublicValue({
+        encryptedValue,
       });
 
-      expect(proof).toBeDefined();
-      expect(proof.orderedClearValues).toHaveLength(1);
+      expect(typedValue.type).toBe(handle.clearType);
 
-      const decrypted = proof.orderedClearValues[0]!;
-      console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
+      console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
       if (fheType === 'ebool') {
-        expect(decrypted.value).toBe(expectedRaw !== 0n);
+        expect(typedValue.value).toBe(expectedRaw !== 0n);
       } else if (fheType === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-        expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
+        expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {
-        expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
+        expect(BigInt(typedValue.value as number | bigint)).toBe(expectedRaw);
       }
     });
   }
@@ -127,7 +127,7 @@ describe.runIf(isV2(getViemTestConfig().chainName))('Base client — readPublicV
 
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const handle: Handle = toHandle(
+      const handle: Handle = toFhevmHandle(
         await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
           abi: FHETestABI,
@@ -153,26 +153,27 @@ describe.runIf(isV2(getViemTestConfig().chainName))('Base client — readPublicV
       publicClient: config.publicClient,
     });
 
-    const allBytes32 = entries.map((e) => e.handle.bytes32Hex);
-    const proof = await client.readPublicValue({
-      encryptedValues: allBytes32,
+    const allEncryptedValues = entries.map((e) => asEncryptedValue(e.handle));
+    const typedValues = await client.readPublicValues({
+      encryptedValues: allEncryptedValues,
     });
 
-    expect(proof).toBeDefined();
-    expect(proof.orderedClearValues).toHaveLength(entries.length);
+    expect(typedValues).toHaveLength(entries.length);
 
     for (let i = 0; i < entries.length; i++) {
       const { handle, expectedRaw } = entries[i]!;
-      const decrypted = proof.orderedClearValues[i]!;
-      console.log(`  ${handle.fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
+      const typedValue = typedValues[i]!;
+      console.log(`  ${handle.fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
+
+      expect(typedValue.type).toBe(handle.clearType);
 
       if (handle.fheType === 'ebool') {
-        expect(decrypted.value).toBe(expectedRaw !== 0n);
+        expect(typedValue.value).toBe(expectedRaw !== 0n);
       } else if (handle.fheType === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-        expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
+        expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {
-        expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
+        expect(BigInt(typedValue.value as number | bigint)).toBe(expectedRaw);
       }
     }
   });
