@@ -102,9 +102,9 @@ interface IKMSGeneration {
 
     /**
      * @notice Emitted when a keygen is aborted.
-     * @param keyId The ID of the aborted keygen.
+     * @param prepKeygenId The ID of the aborted preprocessing keygen.
      */
-    event AbortKeygen(uint256 keyId);
+    event AbortKeygen(uint256 prepKeygenId);
 
     /**
      * @notice Emitted when a CRS generation is aborted.
@@ -212,15 +212,15 @@ interface IKMSGeneration {
 
     /**
      * @notice Error thrown when the abort keygen ID is invalid.
-     * @param keyId The invalid key ID.
+     * @param prepKeygenId The invalid preprocessing keygen ID.
      */
-    error AbortKeygenInvalidId(uint256 keyId);
+    error AbortKeygenInvalidId(uint256 prepKeygenId);
 
     /**
      * @notice Error thrown when the keygen was already completed and cannot be aborted.
-     * @param keyId The key ID.
+     * @param prepKeygenId The preprocessing keygen ID.
      */
-    error AbortKeygenAlreadyDone(uint256 keyId);
+    error AbortKeygenAlreadyDone(uint256 prepKeygenId);
 
     /**
      * @notice Error thrown when the abort CRS gen ID is invalid.
@@ -272,9 +272,9 @@ interface IKMSGeneration {
 
     /**
      * @notice Abort an ongoing keygen request.
-     * @param keyId The ID of the keygen to abort.
+     * @param prepKeygenId The ID of the preprocessing keygen to abort.
      */
-    function abortKeygen(uint256 keyId) external;
+    function abortKeygen(uint256 prepKeygenId) external;
 
     /**
      * @notice Abort an ongoing CRS generation request.

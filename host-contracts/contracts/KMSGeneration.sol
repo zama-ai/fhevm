@@ -496,24 +496,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-abortKeygen}.
      */
-    function abortKeygen(uint256 keyId) external virtual onlyACLOwner {
+    function abortKeygen(uint256 prepKeygenId) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
-            revert AbortKeygenInvalidId(keyId);
+        if (prepKeygenId > $.prepKeygenCounter || prepKeygenId <= PREP_KEYGEN_COUNTER_BASE) {
+            revert AbortKeygenInvalidId(prepKeygenId);
         }
+
+        // The prep request reaches consensus before the paired key request does.
+        // Keep abort available until the key lifecycle itself is done.
+        uint256 keyId = $.keygenIdPairs[prepKeygenId];
         if ($.isRequestDone[keyId]) {
-            revert AbortKeygenAlreadyDone(keyId);
+            revert AbortKeygenAlreadyDone(prepKeygenId);
         }
 
-        // Mark both the key and its associated prep-keygen as done to unblock
-        $.isRequestDone[keyId] = true;
-        uint256 prepKeygenId = $.keygenIdPairs[keyId];
-        if (prepKeygenId != 0) {
-            $.isRequestDone[prepKeygenId] = true;
+        // Mark both the prep-keygen and its associated key as done to unblock
+        $.isRequestDone[prepKeygenId] = true;
+        if (keyId != 0) {
+            $.isRequestDone[keyId] = true;
         }
 
-        emit AbortKeygen(keyId);
+        emit AbortKeygen(prepKeygenId);
     }
 
     /**

@@ -12,8 +12,8 @@ interface IKMSGeneration {
 
     error AbortCrsgenAlreadyDone(uint256 crsId);
     error AbortCrsgenInvalidId(uint256 crsId);
-    error AbortKeygenAlreadyDone(uint256 keyId);
-    error AbortKeygenInvalidId(uint256 keyId);
+    error AbortKeygenAlreadyDone(uint256 prepKeygenId);
+    error AbortKeygenInvalidId(uint256 prepKeygenId);
     error CrsNotGenerated(uint256 crsId);
     error CrsgenNotRequested(uint256 crsId);
     error CrsgenOngoing(uint256 crsId);
@@ -32,7 +32,7 @@ interface IKMSGeneration {
     error UnsupportedExtraDataVersion(uint8 version);
 
     event AbortCrsgen(uint256 crsId);
-    event AbortKeygen(uint256 keyId);
+    event AbortKeygen(uint256 prepKeygenId);
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
@@ -43,7 +43,7 @@ interface IKMSGeneration {
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
     function abortCrsgen(uint256 crsId) external;
-    function abortKeygen(uint256 keyId) external;
+    function abortKeygen(uint256 prepKeygenId) external;
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external;
     function crsgenResponse(uint256 crsId, bytes memory crsDigest, bytes memory signature) external;
     function getActiveCrsId() external view returns (uint256);
@@ -82,7 +82,7 @@ interface IKMSGeneration {
     "name": "abortKeygen",
     "inputs": [
       {
-        "name": "keyId",
+        "name": "prepKeygenId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -384,7 +384,7 @@ interface IKMSGeneration {
     "name": "AbortKeygen",
     "inputs": [
       {
-        "name": "keyId",
+        "name": "prepKeygenId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -661,7 +661,7 @@ interface IKMSGeneration {
     "name": "AbortKeygenAlreadyDone",
     "inputs": [
       {
-        "name": "keyId",
+        "name": "prepKeygenId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -672,7 +672,7 @@ interface IKMSGeneration {
     "name": "AbortKeygenInvalidId",
     "inputs": [
       {
-        "name": "keyId",
+        "name": "prepKeygenId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1553,13 +1553,13 @@ error AbortCrsgenInvalidId(uint256 crsId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AbortKeygenAlreadyDone(uint256)` and selector `0x92789b67`.
 ```solidity
-error AbortKeygenAlreadyDone(uint256 keyId);
+error AbortKeygenAlreadyDone(uint256 prepKeygenId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AbortKeygenAlreadyDone {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -1590,14 +1590,14 @@ error AbortKeygenAlreadyDone(uint256 keyId);
         #[doc(hidden)]
         impl ::core::convert::From<AbortKeygenAlreadyDone> for UnderlyingRustTuple<'_> {
             fn from(value: AbortKeygenAlreadyDone) -> Self {
-                (value.keyId,)
+                (value.prepKeygenId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for AbortKeygenAlreadyDone {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { keyId: tuple.0 }
+                Self { prepKeygenId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -1619,7 +1619,7 @@ error AbortKeygenAlreadyDone(uint256 keyId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                 )
             }
             #[inline]
@@ -1635,13 +1635,13 @@ error AbortKeygenAlreadyDone(uint256 keyId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AbortKeygenInvalidId(uint256)` and selector `0xfcf2db7a`.
 ```solidity
-error AbortKeygenInvalidId(uint256 keyId);
+error AbortKeygenInvalidId(uint256 prepKeygenId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AbortKeygenInvalidId {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -1672,14 +1672,14 @@ error AbortKeygenInvalidId(uint256 keyId);
         #[doc(hidden)]
         impl ::core::convert::From<AbortKeygenInvalidId> for UnderlyingRustTuple<'_> {
             fn from(value: AbortKeygenInvalidId) -> Self {
-                (value.keyId,)
+                (value.prepKeygenId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for AbortKeygenInvalidId {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { keyId: tuple.0 }
+                Self { prepKeygenId: tuple.0 }
             }
         }
         #[automatically_derived]
@@ -1701,7 +1701,7 @@ error AbortKeygenInvalidId(uint256 keyId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                 )
             }
             #[inline]
@@ -3174,7 +3174,7 @@ event AbortCrsgen(uint256 crsId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AbortKeygen(uint256)` and selector `0x2b087b884b35a81d769d1a1e092880f1da56de964e4b339eabcb1f45f5fe3264`.
 ```solidity
-event AbortKeygen(uint256 keyId);
+event AbortKeygen(uint256 prepKeygenId);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3185,7 +3185,7 @@ event AbortKeygen(uint256 keyId);
     #[derive(Clone)]
     pub struct AbortKeygen {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -3215,7 +3215,7 @@ event AbortKeygen(uint256 keyId);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { keyId: data.0 }
+                Self { prepKeygenId: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -3237,7 +3237,7 @@ event AbortKeygen(uint256 keyId);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                 )
             }
             #[inline]
@@ -4433,13 +4433,13 @@ function abortCrsgen(uint256 crsId) external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `abortKeygen(uint256)` and selector `0xc2c1faee`.
 ```solidity
-function abortKeygen(uint256 keyId) external;
+function abortKeygen(uint256 prepKeygenId) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct abortKeygenCall {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
     }
     ///Container type for the return parameters of the [`abortKeygen(uint256)`](abortKeygenCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4475,14 +4475,14 @@ function abortKeygen(uint256 keyId) external;
             #[doc(hidden)]
             impl ::core::convert::From<abortKeygenCall> for UnderlyingRustTuple<'_> {
                 fn from(value: abortKeygenCall) -> Self {
-                    (value.keyId,)
+                    (value.prepKeygenId,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for abortKeygenCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { keyId: tuple.0 }
+                    Self { prepKeygenId: tuple.0 }
                 }
             }
         }
@@ -4548,7 +4548,7 @@ function abortKeygen(uint256 keyId) external;
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                 )
             }
             #[inline]
@@ -8755,9 +8755,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`abortKeygen`] function.
         pub fn abortKeygen(
             &self,
-            keyId: alloy::sol_types::private::primitives::aliases::U256,
+            prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, abortKeygenCall, N> {
-            self.call_builder(&abortKeygenCall { keyId })
+            self.call_builder(&abortKeygenCall { prepKeygenId })
         }
         ///Creates a new call builder for the [`crsgenRequest`] function.
         pub fn crsgenRequest(

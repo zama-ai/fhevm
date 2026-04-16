@@ -271,11 +271,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     /// @dev Run a full keygen cycle: keygen() -> prepKeygenResponse -> keygenResponse for one node
-    function _runFullKeygenCycle() internal returns (uint256 keyId) {
+    function _runFullKeygenCycle() internal returns (uint256 prepKeygenId, uint256 keyId) {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
-        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         keyId = KEY_COUNTER_BASE + 1;
 
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
@@ -395,14 +395,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_fullKeygenCycle() public {
-        uint256 keyId = _runFullKeygenCycle();
+        (, uint256 keyId) = _runFullKeygenCycle();
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
         assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_keygenMaterials() public {
-        uint256 keyId = _runFullKeygenCycle();
+        (, uint256 keyId) = _runFullKeygenCycle();
         (string[] memory urls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(urls.length, 1);
         assertEq(urls[0], "https://s0.example.com");
@@ -545,7 +545,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
         vm.prank(owner);
-        kmsGeneration.abortKeygen(KEY_COUNTER_BASE + 1);
+        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
         // Rotate to a new context with different KMS nodes.
         KmsNode[] memory newNodes = new KmsNode[](2);
@@ -783,13 +783,32 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
         assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
 
-        uint256 keyId = KEY_COUNTER_BASE + 1;
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.AbortKeygen(keyId);
+        emit IKMSGeneration.AbortKeygen(prepKeygenId);
         vm.prank(owner);
-        kmsGeneration.abortKeygen(keyId);
+        kmsGeneration.abortKeygen(prepKeygenId);
 
         assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+    }
+
+    function test_abortKeygenAfterPrepConsensus() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
+
+        vm.expectEmit(true, true, true, true, address(kmsGeneration));
+        emit IKMSGeneration.AbortKeygen(prepKeygenId);
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(prepKeygenId);
+
+        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
     }
 
     function test_abortCrsgen() public {
@@ -808,15 +827,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertAbortKeygenInvalidId() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, KEY_COUNTER_BASE + 99));
-        kmsGeneration.abortKeygen(KEY_COUNTER_BASE + 99);
+        vm.expectRevert(
+            abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, PREP_KEYGEN_COUNTER_BASE + 99)
+        );
+        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 99);
     }
 
     function test_revertAbortKeygenAlreadyDone() public {
-        uint256 keyId = _runFullKeygenCycle();
+        (uint256 prepKeygenId, ) = _runFullKeygenCycle();
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenAlreadyDone.selector, keyId));
-        kmsGeneration.abortKeygen(keyId);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenAlreadyDone.selector, prepKeygenId));
+        kmsGeneration.abortKeygen(prepKeygenId);
     }
 
     function test_revertAbortCrsgenInvalidId() public {
@@ -835,7 +856,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortKeygenNotOwner() public {
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        kmsGeneration.abortKeygen(KEY_COUNTER_BASE + 1);
+        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
     }
 
     function test_abortCrsgenNotOwner() public {
@@ -848,9 +869,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
-        uint256 abortedKeyId = KEY_COUNTER_BASE + 1;
+        uint256 abortedPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         vm.prank(owner);
-        kmsGeneration.abortKeygen(abortedKeyId);
+        kmsGeneration.abortKeygen(abortedPrepKeygenId);
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
@@ -870,9 +891,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
         vm.prank(owner);
-        kmsGeneration.abortKeygen(keyId);
+        kmsGeneration.abortKeygen(prepKeygenId);
 
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
         (string[] memory keyUrls, IKMSGeneration.KeyDigest[] memory keyDigests) = kmsGeneration.getKeyMaterials(keyId);
