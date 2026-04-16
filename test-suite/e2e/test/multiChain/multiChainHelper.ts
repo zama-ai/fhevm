@@ -2,7 +2,6 @@ import { ethers as hardhatEthers } from 'hardhat';
 import { ethers } from 'ethers';
 import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { vars } from 'hardhat/config';
-import { getCompatExtraData } from '../compat';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -12,8 +11,6 @@ const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
-const publicDecryptTimeoutMs = Number(process.env.RELAYER_SDK_PUBLIC_DECRYPT_TIMEOUT_MS) || 125 * 60 * 1000;
-const inputProofTimeoutMs = Number(process.env.RELAYER_SDK_INPUT_PROOF_TIMEOUT_MS) || 245 * 60 * 1000;
 
 export interface ChainConfig {
   rpcUrl: string;
@@ -117,7 +114,7 @@ export function getWallet(chain: ChainConfig, index: number): ManagedWallet {
 }
 
 export async function createInstance(chain: ChainConfig) {
-  const instance = await createFhevmInstance({
+  return createFhevmInstance({
     verifyingContractAddressDecryption: decryptionAddress,
     verifyingContractAddressInputVerification: inputVerificationAddress,
     kmsContractAddress: chain.kmsVerifierAddress,
@@ -128,20 +125,6 @@ export async function createInstance(chain: ChainConfig) {
     gatewayChainId,
     chainId: chain.chainId,
   });
-  const createEncryptedInput = (contractAddress: string, userAddress: string) => {
-    const input = instance.createEncryptedInput(contractAddress, userAddress);
-    return {
-      ...input,
-      encrypt: (options) => input.encrypt({ timeout: inputProofTimeoutMs, ...options }),
-    };
-  };
-  const getExtraData = () => getCompatExtraData(() => instance.getExtraData());
-  return {
-    ...instance,
-    getExtraData,
-    createEncryptedInput,
-    publicDecrypt: (handles, options) => instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
-  };
 }
 
 export async function deployContract(

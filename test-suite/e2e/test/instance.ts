@@ -55,9 +55,6 @@ if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICAT
 const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
 if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
-const publicDecryptTimeoutMs = Number(process.env.RELAYER_SDK_PUBLIC_DECRYPT_TIMEOUT_MS) || 125 * 60 * 1000;
-const inputProofTimeoutMs = Number(process.env.RELAYER_SDK_INPUT_PROOF_TIMEOUT_MS) || 245 * 60 * 1000;
-
 // API key is a secret - support hardhat vars for secure storage
 // Auth is optional since internal smoke tests don't go through Kong
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
@@ -86,19 +83,9 @@ export const createInstance = async () => {
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   });
-  const createEncryptedInput = (contractAddress: string, userAddress: string) => {
-    const input = instance.createEncryptedInput(contractAddress, userAddress);
-    return {
-      ...input,
-      encrypt: (options) => input.encrypt({ timeout: inputProofTimeoutMs, ...options }),
-    };
-  };
-  const getExtraData = () => getCompatExtraData(() => instance.getExtraData());
   return {
     ...instance,
-    getExtraData,
-    createEncryptedInput,
-    publicDecrypt: (handles, options) => instance.publicDecrypt(handles, { timeout: publicDecryptTimeoutMs, ...options }),
+    getExtraData: () => getCompatExtraData(() => instance.getExtraData()),
   };
 };
 
