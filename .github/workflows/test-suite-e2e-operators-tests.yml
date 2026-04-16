@@ -4,6 +4,13 @@ name: test-suite-e2e-operators-tests
 # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
 # Core, relayer and test-suite follow the latest-main defaults unless explicitly pinned
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   workflow_dispatch:
     inputs:
       build:
@@ -42,14 +49,15 @@ on:
 
 permissions: {}
 
-# Allow to run multiple instances of the same workflow in parallel when triggered manually 
+# Cancel stale PR runs on new pushes while keeping manual dispatches independent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
   setup-instance:
     name: test-suite-e2e-operators-tests/setup-instance
+    if: &operators_trigger ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') && contains(github.event.pull_request.labels.*.name, 'e2e operators')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -69,14 +77,14 @@ jobs:
 
   operators-e2e-test:
     name: test-suite-e2e-operators-tests/operators-e2e-test
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: *operators_trigger
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ github.token }}
-      BUILD: ${{ inputs.build && 'true' || 'false' }}
+      BUILD: ${{ github.event_name == 'pull_request' && 'true' || inputs.build && 'true' || 'false' }}
       GREP: ${{ inputs.grep }}
       SCENARIO: ${{ inputs.scenario }}
       CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
