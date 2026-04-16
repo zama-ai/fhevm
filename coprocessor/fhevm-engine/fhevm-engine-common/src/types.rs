@@ -403,8 +403,8 @@ pub enum SupportedFheOperations {
     FheIfThenElse = 25,
     FheRand = 26,
     FheRandBounded = 27,
+    FheSum = 28,
     FheGetInputCiphertext = 32,
-    FheSum = 35,
 }
 
 #[derive(PartialEq, Eq)]
@@ -979,8 +979,8 @@ impl TryFrom<i16> for SupportedFheOperations {
             25 => Ok(SupportedFheOperations::FheIfThenElse),
             26 => Ok(SupportedFheOperations::FheRand),
             27 => Ok(SupportedFheOperations::FheRandBounded),
+            28 => Ok(SupportedFheOperations::FheSum),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
-            35 => Ok(SupportedFheOperations::FheSum),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
 
