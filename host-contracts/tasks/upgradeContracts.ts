@@ -14,12 +14,16 @@ type AbiFunction = {
   inputs?: { type?: string }[];
 };
 
-function getImplementationSourcePath(input: string): string {
-  const contractNameIndex = input.lastIndexOf(':');
-  if (contractNameIndex !== -1) {
-    return input.substring(0, contractNameIndex);
+function getImplementationDirectory(input: string): string {
+  const colonIndex = input.lastIndexOf('/');
+  if (colonIndex !== -1) {
+    return input.substring(0, colonIndex);
   }
   return input;
+}
+
+function getReinitializeFunction(abi: AbiFunction[]) {
+  return abi.find((item) => item.type === 'function' && item.name?.includes(REINITIALIZE_FUNCTION_PREFIX));
 }
 
 function getFunctionSignature(fn: AbiFunction): string {
@@ -35,20 +39,6 @@ function formatCastArg(arg: unknown): string {
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
-}
-
-function resolveReinitializeFunction(newImplementationArtifact: {
-  abi: AbiFunction[];
-}): AbiFunction & { name: string } {
-  const discoveredFunction = newImplementationArtifact.abi.find(
-    (item) => item.type === 'function' && item.name?.startsWith(REINITIALIZE_FUNCTION_PREFIX),
-  );
-  if (!discoveredFunction?.name) {
-    throw new Error(
-      'The new implementation artifact does not contain a reinitialize function. Please ensure the contract has a reinitialize function defined.',
-    );
-  }
-  return discoveredFunction as AbiFunction & { name: string };
 }
 
 async function upgradeCurrentToNew(
@@ -74,13 +64,17 @@ async function upgradeCurrentToNew(
 
   // Get reinitialize function from the new implementation artifact
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  const selectedReinitializeFunction = resolveReinitializeFunction(newImplementationArtifact);
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  if (!reinitializeFunction?.name) {
+    throw new Error(`No reinitialize function found in ${newImplementation}`);
+  }
 
   // Prepare the new implementation factory and execute the upgrade by calling the reinitialize function
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+
   await hre.upgrades.upgradeProxy(currentProxyContract, newImplementationFactory, {
     call: {
-      fn: selectedReinitializeFunction.name,
+      fn: reinitializeFunction.name,
       args: reinitializeArgs,
     },
   });
@@ -123,8 +117,11 @@ async function deployImplementationForPreparedUpgrade(
   await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
 
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  if (!reinitializeFunction?.name) {
+    throw new Error(`No reinitialize function found in ${newImplementation}`);
+  }
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
-  const selectedReinitializeFunction = resolveReinitializeFunction(newImplementationArtifact);
 
   console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
   const implementationAddress = await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
@@ -133,12 +130,12 @@ async function deployImplementationForPreparedUpgrade(
   console.log('New implementation deployed at:', implementationAddress);
 
   const reinitializeCalldata = hre.ethers.Interface.from(newImplementationArtifact.abi).encodeFunctionData(
-    selectedReinitializeFunction.name,
+    reinitializeFunction.name,
     reinitializeArgs,
   );
-  console.log(`${selectedReinitializeFunction.name} calldata:`, reinitializeCalldata);
+  console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
   console.log(
-    `To double check, run: cast calldata ${shellQuote(getFunctionSignature(selectedReinitializeFunction))} ${reinitializeArgs
+    `To double check, run: cast calldata ${shellQuote(getFunctionSignature(reinitializeFunction))} ${reinitializeArgs
       .map((arg) => shellQuote(formatCastArg(arg)))
       .join(' ')}`.trim(),
   );
@@ -159,8 +156,8 @@ async function compileImplementations(
   newImplementation: string,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
-  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
 }
 
 async function checkImplementationArtifacts(
@@ -172,16 +169,25 @@ async function checkImplementationArtifacts(
   const currentImplementationArtifact = await hre.artifacts.readArtifact(currentImplementation);
   if (currentImplementationArtifact.contractName !== expectedArtifactName) {
     throw new Error(
-      `The current implementation artifact does not match the expected contract name "${expectedArtifactName}". Found: ${currentImplementationArtifact.contractName}.`,
+      `The current implementation artifact does not match the expected contract name "${expectedArtifactName}". Found: ${currentImplementationArtifact.contractName}`,
     );
   }
+
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
   if (newImplementationArtifact.contractName !== expectedArtifactName) {
     throw new Error(
       `The new implementation artifact does not match the expected contract name "${expectedArtifactName}". Found: ${newImplementationArtifact.contractName}`,
     );
   }
-  resolveReinitializeFunction(newImplementationArtifact);
+
+  const hasReinitializeFunction = newImplementationArtifact.abi.some(
+    (item) => item.type === 'function' && item.name.includes(REINITIALIZE_FUNCTION_PREFIX),
+  );
+  if (!hasReinitializeFunction) {
+    throw new Error(
+      `The new implementation artifact does not contain a reinitialize function. Please ensure the contract has a reinitialize function defined.`,
+    );
+  }
 }
 
 // Helper to perform a standard upgrade: compile, check artifacts, load address, upgrade
