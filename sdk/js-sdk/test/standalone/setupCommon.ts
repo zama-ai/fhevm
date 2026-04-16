@@ -1,8 +1,8 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { FHETestAddresses as FHETestAddressesv1 } from './abi-v1.js';
-import { FHETestAddresses as FHETestAddressesv2 } from './abi-v2.js';
+import { FHETestAddresses as FHETestAddressesv1 } from '../fheTest/abi-v1.js';
+import { FHETestAddresses as FHETestAddressesv2 } from '../fheTest/abi-v2.js';
 import { localhostFhevm } from './chains/localhostFhevm.js';
 import { devnet } from './chains/devnet.js';
 import { sepolia, mainnet } from '@fhevm/sdk/chains';
@@ -97,7 +97,7 @@ export function getBaseEnv(): FheTestBaseEnv {
     return _baseEnv;
   }
 
-  const testDir = resolve(__dirname, '..');
+  const testDir = resolve(import.meta.dirname, '..');
   const chainName = resolveChainName();
 
   // Load shared secrets
