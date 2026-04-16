@@ -4,6 +4,7 @@ import { vars } from 'hardhat/config';
 
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
+import { getCompatExtraData } from './compat';
 
 const defaults = (() => {
   const chainId = network.config.chainId;
@@ -70,7 +71,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  return createFhevmInstance({
+  const instance = await createFhevmInstance({
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
     kmsContractAddress: kmsVerifierAddress,
@@ -82,6 +83,10 @@ export const createInstance = async () => {
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   });
+  return {
+    ...instance,
+    getExtraData: () => getCompatExtraData(() => instance.getExtraData()),
+  };
 };
 
 // Export coprocessor config addresses for smoke tests

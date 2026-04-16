@@ -11,6 +11,13 @@ import hre from 'hardhat';
 import { coprocessorAddress } from './instance';
 import { TypedContractMethod } from '../types/common';
 
+const delegatedUserDecryptRetryMs = Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_RETRY_MS) || 2_000;
+const delegatedUserDecryptTimeoutMs =
+  Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_TIMEOUT_MS) || 10 * 60 * 1000;
+
+const isDelegatedDecryptNotReady = (error: unknown) =>
+  error instanceof Error && error.message.includes('Ciphertext not ready for decryption on the gateway chain');
+
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
   if (signers.findIndex((s) => s.address === signer.address) === -1) {
@@ -214,18 +221,30 @@ export const delegatedUserDecryptSingleHandle = async (
     eip712.message,
   );
 
-  const result = await instance.delegatedUserDecrypt(
-    handleContractPairs,
-    delegatePrivateKey,
-    delegatePublicKey,
-    delegateSignature.replace('0x', ''),
-    contractAddresses,
-    delegatorAddress,
-    delegateAddress,
-    startTimeStamp,
-    durationDays,
-    extraData,
-  );
+  const deadline = Date.now() + delegatedUserDecryptTimeoutMs;
+  let result;
+  while (true) {
+    try {
+      result = await instance.delegatedUserDecrypt(
+        handleContractPairs,
+        delegatePrivateKey,
+        delegatePublicKey,
+        delegateSignature.replace('0x', ''),
+        contractAddresses,
+        delegatorAddress,
+        delegateAddress,
+        startTimeStamp,
+        durationDays,
+        extraData,
+      );
+      break;
+    } catch (error) {
+      if (!isDelegatedDecryptNotReady(error) || Date.now() + delegatedUserDecryptRetryMs > deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delegatedUserDecryptRetryMs));
+    }
+  }
 
   return result[handle];
 };
