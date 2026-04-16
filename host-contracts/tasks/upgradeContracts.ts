@@ -1,7 +1,4 @@
 import { Wallet } from 'ethers';
-import fs from 'fs';
-import path from 'path';
-import { execFileSync } from 'child_process';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
@@ -11,6 +8,12 @@ const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize
 
 // This file defines generic tasks that can be used to upgrade the implementation of already deployed contracts.
 
+type AbiFunction = {
+  type?: string;
+  name?: string;
+  inputs?: { type?: string }[];
+};
+
 function getImplementationDirectory(input: string): string {
   const colonIndex = input.lastIndexOf('/');
   if (colonIndex !== -1) {
@@ -19,34 +22,23 @@ function getImplementationDirectory(input: string): string {
   return input;
 }
 
-function materializeContractsFromGit(gitRef: string, relativeDir: string) {
-  const repoRoot = path.resolve(__dirname, '../..');
-  const absoluteDir = path.resolve(__dirname, '..', relativeDir);
-  fs.mkdirSync(absoluteDir, { recursive: true });
+function getReinitializeFunction(abi: AbiFunction[]) {
+  return abi.find((item) => item.type === 'function' && item.name?.includes(REINITIALIZE_FUNCTION_PREFIX));
+}
 
-  execFileSync(
-    'sh',
-    [
-      '-c',
-      'git archive --format=tar "$1" '
-        + 'host-contracts/contracts/FHEVMExecutor.sol '
-        + 'host-contracts/contracts/ACL.sol '
-        + 'host-contracts/contracts/HCULimit.sol '
-        + 'host-contracts/contracts/FHEEvents.sol '
-        + 'host-contracts/contracts/ACLEvents.sol '
-        + 'host-contracts/contracts/interfaces/IPauserSet.sol '
-        + 'host-contracts/contracts/shared '
-        + '| tar -x -C "$2" --strip-components=2',
-      'sh',
-      gitRef,
-      absoluteDir,
-    ],
-    { cwd: repoRoot },
-  );
+function getFunctionSignature(fn: AbiFunction): string {
+  return `${fn.name}(${(fn.inputs ?? []).map((input) => input.type).join(',')})`;
+}
 
-  return {
-    cleanup: () => fs.rmSync(absoluteDir, { recursive: true, force: true }),
-  };
+function formatCastArg(arg: unknown): string {
+  if (Array.isArray(arg)) {
+    return `[${arg.map(formatCastArg).join(',')}]`;
+  }
+  return String(arg);
+}
+
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
 async function upgradeCurrentToNew(
@@ -72,9 +64,10 @@ async function upgradeCurrentToNew(
 
   // Get reinitialize function from the new implementation artifact
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  const reinitializeFunction = newImplementationArtifact.abi.find(
-    (item) => item.type === 'function' && item.name.includes(REINITIALIZE_FUNCTION_PREFIX),
-  );
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  if (!reinitializeFunction?.name) {
+    throw new Error(`No reinitialize function found in ${newImplementation}`);
+  }
 
   // Prepare the new implementation factory and execute the upgrade by calling the reinitialize function
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
@@ -106,12 +99,15 @@ async function deployImplementationForPreparedUpgrade(
   newImplementation: string,
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
+  reinitializeArgs: unknown[] = [],
+  forceClean = false,
 ): Promise<void> {
-  // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
-  // reusing artifacts compiled against another environment.
-  await hre.run('clean');
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  if (forceClean) {
+    // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
+    // reusing artifacts compiled against another environment.
+    await hre.run('clean');
+  }
+  await compileImplementations(currentImplementation, newImplementation, hre);
 
   await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
 
@@ -121,9 +117,10 @@ async function deployImplementationForPreparedUpgrade(
   await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
 
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  const reinitializeFunction = newImplementationArtifact.abi.find(
-    (item) => item.type === 'function' && item.name.includes(REINITIALIZE_FUNCTION_PREFIX),
-  );
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  if (!reinitializeFunction?.name) {
+    throw new Error(`No reinitialize function found in ${newImplementation}`);
+  }
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
 
   console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
@@ -134,9 +131,14 @@ async function deployImplementationForPreparedUpgrade(
 
   const reinitializeCalldata = hre.ethers.Interface.from(newImplementationArtifact.abi).encodeFunctionData(
     reinitializeFunction.name,
-    [],
+    reinitializeArgs,
   );
   console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
+  console.log(
+    `To double check, run: cast calldata ${shellQuote(getFunctionSignature(reinitializeFunction))} ${reinitializeArgs
+      .map((arg) => shellQuote(formatCastArg(arg)))
+      .join(' ')}`.trim(),
+  );
 
   if (verifyContract) {
     console.log('Waiting 2 minutes before contract verification... Please wait...');
@@ -214,6 +216,31 @@ async function upgradeContract(
   );
 }
 
+async function prepareUpgradeContract(
+  contractName: string,
+  addressEnvVar: string,
+  taskArgs: TaskArguments,
+  hre: HardhatRuntimeEnvironment,
+  reinitializeArgs: unknown[] = [],
+  forceClean = false,
+) {
+  if (taskArgs.useInternalProxyAddress) {
+    loadHostAddresses();
+  }
+  const proxyAddress = getRequiredEnvVar(addressEnvVar);
+
+  await deployImplementationForPreparedUpgrade(
+    proxyAddress,
+    contractName,
+    taskArgs.currentImplementation,
+    taskArgs.newImplementation,
+    taskArgs.verifyContract,
+    hre,
+    reinitializeArgs,
+    forceClean,
+  );
+}
+
 task('task:upgradeACL')
   .addParam(
     'currentImplementation',
@@ -266,8 +293,8 @@ task('task:upgradeFHEVMExecutor')
 
 task('task:prepareUpgradeFHEVMExecutor')
   .addParam(
-    'upgradeFromRef',
-    'Git ref used to materialize the implementation currently deployed behind the proxy, eg: v0.11.1',
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/FHEVMExecutor.sol:FHEVMExecutor',
   )
   .addParam(
     'newImplementation',
@@ -285,29 +312,31 @@ task('task:prepareUpgradeFHEVMExecutor')
     true,
     types.boolean,
   )
-  .setAction(
-    async function ({ upgradeFromRef, newImplementation, useInternalProxyAddress, verifyContract }: TaskArguments, hre) {
-      const generatedCurrentImplementation = materializeContractsFromGit(upgradeFromRef, 'generated-upgrade-from-contracts');
-      const currentImplementation = 'generated-upgrade-from-contracts/FHEVMExecutor.sol:FHEVMExecutor';
-      if (useInternalProxyAddress) {
-        loadHostAddresses();
-      }
-      const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre, [], true);
+  });
 
-      try {
-        await deployImplementationForPreparedUpgrade(
-          proxyAddress,
-          'FHEVMExecutor',
-          currentImplementation,
-          newImplementation,
-          verifyContract,
-          hre,
-        );
-      } finally {
-        generatedCurrentImplementation.cleanup();
-      }
-    },
-  );
+task('task:prepareUpgradeACL')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/ACL.sol:ACL',
+  )
+  .addParam('newImplementation', 'The new implementation solidity contract path and name, eg: contracts/ACL.sol:ACL')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('ACL', 'ACL_CONTRACT_ADDRESS', taskArgs, hre);
+  });
 
 task('task:upgradeKMSVerifier')
   .addParam(
@@ -334,6 +363,31 @@ task('task:upgradeKMSVerifier')
     await upgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+task('task:prepareUpgradeKMSVerifier')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/KMSVerifier.sol:KMSVerifier',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/KMSVerifier.sol:KMSVerifier',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
 task('task:upgradeInputVerifier')
   .addParam(
     'currentImplementation',
@@ -356,10 +410,6 @@ task('task:upgradeInputVerifier')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    if (taskArgs.useInternalProxyAddress) {
-      loadHostAddresses();
-    }
-
     const initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < +numSigners; idx++) {
@@ -368,6 +418,41 @@ task('task:upgradeInputVerifier')
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
     await upgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
+      initialSigners,
+      coprocessorThreshold,
+    ]);
+  });
+
+task('task:prepareUpgradeInputVerifier')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/InputVerifier.sol:InputVerifier',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/InputVerifier2.sol:InputVerifier',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const initialSigners: string[] = [];
+    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < +numSigners; idx++) {
+      initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
+    }
+    const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
+
+    await prepareUpgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
       initialSigners,
       coprocessorThreshold,
     ]);
@@ -406,14 +491,51 @@ task('task:upgradeHCULimit')
     '5000000',
     types.string,
   )
-  .addOptionalParam(
-    'maxHcuPerTx',
-    'Max total HCU per transaction (default: 20000000)',
-    '20000000',
-    types.string,
-  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
+      BigInt(taskArgs.hcuCapPerBlock),
+      BigInt(taskArgs.maxHcuDepthPerTx),
+      BigInt(taskArgs.maxHcuPerTx),
+    ]);
+  });
+
+task('task:prepareUpgradeHCULimit')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/HCULimit.sol:HCULimit',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/HCULimit.sol:HCULimit',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'hcuCapPerBlock',
+    'Global HCU cap per block passed to reinitializeV2 (default: uint48 max)',
+    '281474976710655',
+    types.string,
+  )
+  .addOptionalParam(
+    'maxHcuDepthPerTx',
+    'Max sequential HCU depth per transaction (default: 5000000)',
+    '5000000',
+    types.string,
+  )
+  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
       BigInt(taskArgs.hcuCapPerBlock),
       BigInt(taskArgs.maxHcuDepthPerTx),
       BigInt(taskArgs.maxHcuPerTx),

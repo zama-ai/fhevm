@@ -10,6 +10,7 @@ import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
  * @title PauserSet smart contract
  * @dev See {IPauserSet}
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract PauserSet is IPauserSet, ACLOwnable {
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that

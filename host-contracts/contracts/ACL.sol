@@ -17,6 +17,7 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ACL is
     UUPSUpgradeableEmptyProxy,
     Ownable2StepUpgradeable,
@@ -278,9 +279,6 @@ contract ACL is
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
 
-        // Set the last block where the delegation happened.
-        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
-
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
         }
@@ -299,6 +297,9 @@ contract ACL is
         if (oldExpirationDate == newExpirationDate) {
             revert ExpirationDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpirationDate);
         }
+
+        // Set the last block where the delegation happened.
+        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
         // Set the delegation expiration date.
         userDecryptionDelegation.expirationDate = newExpirationDate;

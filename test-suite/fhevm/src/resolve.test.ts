@@ -3,7 +3,14 @@ import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import { validateBundleCompatibility } from "./compat/compat";
-import { explainGitHubCliError, shouldRetryGitHubCliError, shouldStopPackageTagScan } from "./resolve/github";
+import {
+  explainGitHubCliError,
+  isRateLimitGitHubCliError,
+  rateLimitRetryDelayMs,
+  retryDelayMs,
+  shouldRetryGitHubCliError,
+  shouldStopPackageTagScan,
+} from "./resolve/github";
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
@@ -146,12 +153,52 @@ describe("resolve", () => {
     expect(shouldRetryGitHubCliError("gh: HTTP 503")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 502 Bad Gateway")).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 504 Gateway Timeout")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: HTTP 429 Too Many Requests")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: API rate limit exceeded for user ID 12345 (HTTP 403)")).toBe(true);
+    expect(shouldRetryGitHubCliError("gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)")).toBe(true);
     expect(
       shouldRetryGitHubCliError(
         "gh: No server is currently available to service your request. Sorry about that. Please try resubmitting your request and contact us if the problem persists. (HTTP 503)",
       ),
     ).toBe(true);
     expect(shouldRetryGitHubCliError("gh: HTTP 404")).toBe(false);
+  });
+
+  test("classifies GitHub rate-limit responses separately", () => {
+    expect(isRateLimitGitHubCliError("gh: HTTP 429 Too Many Requests")).toBe(true);
+    expect(isRateLimitGitHubCliError("gh: API rate limit exceeded for user ID 12345 (HTTP 403)")).toBe(true);
+    expect(isRateLimitGitHubCliError("gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)")).toBe(true);
+    expect(isRateLimitGitHubCliError("gh: HTTP 503")).toBe(false);
+  });
+
+  test("uses a longer retry delay budget for rate limits", () => {
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+      expect(retryDelayMs(1, false)).toBe(1_000);
+      expect(retryDelayMs(1, true)).toBe(60_000);
+      expect(retryDelayMs(3, true)).toBe(240_000);
+    } finally {
+      Math.random = random;
+    }
+  });
+
+  test("prefers Retry-After for rate-limit cooldowns when available", () => {
+    expect(rateLimitRetryDelayMs({ "retry-after": "90" }, 1, 0)).toBe(90_000);
+  });
+
+  test("falls back to X-RateLimit-Reset for rate-limit cooldowns", () => {
+    expect(rateLimitRetryDelayMs({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(150_000);
+  });
+
+  test("does not use X-RateLimit-Reset when the primary bucket still has room", () => {
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+      expect(rateLimitRetryDelayMs({ "x-ratelimit-remaining": "42", "x-ratelimit-reset": "180" }, 1, 30_000)).toBe(60_000);
+    } finally {
+      Math.random = random;
+    }
   });
 
   test("rewrites missing package scope errors into actionable guidance", () => {

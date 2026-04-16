@@ -99,6 +99,12 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
 
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
+
+  const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
+
+  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -432,5 +438,65 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
       console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ProtocolConfig Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setProtocolConfigAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`ProtocolConfig address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ProtocolConfig address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant protocolConfigAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with protocolConfigAdd successfully!');
+    } catch (error) {
+      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup KMSGeneration Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setKMSGenerationAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`KMSGeneration address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write KMSGeneration address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant kmsGenerationAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with kmsGenerationAdd successfully!');
+    } catch (error) {
+      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
     }
   });

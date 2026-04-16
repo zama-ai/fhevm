@@ -1,11 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO key_reshare_same_set(prep_keygen_id, key_id, key_reshare_id, params_type, tx_hash, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO crsgen_requests(crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Bytea",
         "Bytea",
         "Bytea",
         {
@@ -20,11 +19,12 @@
           }
         },
         "Bytea",
+        "Bytea",
         "Timestamptz",
         "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "a4880722c49af43d7f6cb9816c113e332879762cdf89f2b13171c248f5a0a477"
+  "hash": "b7769c246f228d2270f3b388132168aafb9db182e820db5fb4a04b4f675cf186"
 }

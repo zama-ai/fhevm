@@ -35,12 +35,12 @@ where
     let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
     let decryption_processor = DecryptionProcessor::new(
         &config,
-        context_manager,
+        context_manager.clone(),
         gateway_provider.clone(),
         acl_contracts_mock,
         s3_service,
     );
-    let kms_generation_processor = KMSGenerationProcessor::new(&config);
+    let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         decryption_processor,

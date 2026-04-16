@@ -17,6 +17,7 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  *           This contract is called by the FHEVMExecutor inside verifyInput function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the deserializing of the input proof fails.
     error DeserializingInputProofFail();
