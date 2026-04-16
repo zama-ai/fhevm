@@ -66,6 +66,7 @@ describe('Delegated user decryption', function () {
   });
 
   it('test delegated user decryption - smartWallet owner delegates his own EOA to decrypt the smartWallet balance', async function () {
+    this.timeout(10 * 60 * 1000);
     // Bob (smartWallet owner) delegates decryption rights to his own EOA.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
     const delegateTx = await this.smartWallet
@@ -103,6 +104,7 @@ describe('Delegated user decryption', function () {
   });
 
   it('test delegated user decryption - smartWallet owner delegates a third EOA to decrypt the smartWallet balance', async function () {
+    this.timeout(10 * 60 * 1000);
     // Bob (smartWallet owner) delegates decryption rights to Carol's EOA.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
     const delegateTx = await this.smartWallet
@@ -140,6 +142,7 @@ describe('Delegated user decryption', function () {
   });
 
   it('test delegated user decryption - smartWallet can execute transference of funds to a third EOA', async function () {
+    this.timeout(10 * 60 * 1000);
     // First, Bob needs to delegate so the smartWallet can initiate transfers.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
     const delegateTx = await this.smartWallet

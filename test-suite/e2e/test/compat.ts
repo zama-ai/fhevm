@@ -1,4 +1,4 @@
-const LEGACY_EXTRA_DATA = '0x';
+const LEGACY_EXTRA_DATA = '0x00';
 
 const isCurrentKmsContextUnavailable = (error: unknown) => {
   if (!(error instanceof Error)) return false;
