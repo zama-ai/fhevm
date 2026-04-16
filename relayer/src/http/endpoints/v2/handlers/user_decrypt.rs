@@ -631,16 +631,20 @@ impl UserDecryptHandler {
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
-        let threshold = self.user_decrypt_shares_threshold as i64;
+        let fallback_threshold = self.user_decrypt_shares_threshold as i64;
         match self
             .user_decrypt_repo
-            .find_req_and_shares_by_ext_job_id(job_id, threshold)
+            .find_req_and_shares_by_ext_job_id(job_id, fallback_threshold)
             .await
         {
             Ok(Some(response_model)) => {
                 match response_model.req_status {
                     ReqStatus::Completed => {
-                        let required_threshold = self.user_decrypt_shares_threshold as usize;
+                        // Use resolved_threshold from DB if available, fall back to static config
+                        let required_threshold = response_model
+                            .resolved_threshold
+                            .unwrap_or(self.user_decrypt_shares_threshold as i64)
+                            as usize;
                         if response_model.shares.len() >= required_threshold {
                             // Convert from database model to API response
                             match UserDecryptResponseJson::try_from(response_model) {

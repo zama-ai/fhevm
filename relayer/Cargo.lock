@@ -2544,7 +2544,6 @@ dependencies = [
 [[package]]
 name = "fhevm_host_bindings"
 version = "0.10.0"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.11.0#e446c370002f62f193bbb5eb4075dea5d29a6996"
 dependencies = [
  "alloy",
  "serde",

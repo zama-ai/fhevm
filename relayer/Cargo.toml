@@ -54,7 +54,8 @@ rustls = { version = "0.23.36", features = [
 ], default-features = false }
 # Use a pinned version of fhevm gateway bindings contract as the feature branch is still unmerged.
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "aa25e2e089da3651f59b8c68a3d32865301ea6bf", default-features = false }
-fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.11.0", default-features = false }
+# Use local path for host bindings to pick up ProtocolConfig contract bindings.
+fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }

@@ -575,6 +575,16 @@ pub struct HostChainConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct ProtocolConfigSettings {
+    /// HTTP RPC URL of the Ethereum chain hosting the ProtocolConfig contract
+    pub ethereum_http_rpc_url: String,
+    /// Address of the ProtocolConfig contract
+    pub address: String,
+    /// Retry settings for RPC calls to the ProtocolConfig contract
+    pub retry: RetrySettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.
@@ -594,6 +604,8 @@ pub struct Settings {
     /// Host chain configurations (required, at least one entry)
     #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub host_chains: Vec<HostChainConfig>,
+    /// ProtocolConfig contract settings for dynamic threshold resolution
+    pub protocol_config: ProtocolConfigSettings,
 }
 
 // Error type for application-specific configuration errors
@@ -660,6 +672,9 @@ impl Settings {
         // Validate contract addresses
         settings.validate_addresses()?;
 
+        // Validate protocol_config settings
+        settings.validate_protocol_config()?;
+
         // Validate listener pool configuration
         settings.validate_listener_pool_config()?;
 
@@ -676,6 +691,7 @@ impl Settings {
                 "input_verification",
                 &self.gateway.contracts.input_verification_address,
             ),
+            ("protocol_config", &self.protocol_config.address),
         ];
 
         for (name, address) in addresses {
@@ -721,6 +737,24 @@ impl Settings {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_protocol_config(&self) -> Result<(), AppConfigError> {
+        let pc = &self.protocol_config;
+        if !pc.ethereum_http_rpc_url.starts_with("http://")
+            && !pc.ethereum_http_rpc_url.starts_with("https://")
+        {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "protocol_config.ethereum_http_rpc_url must start with http:// or https://: {}",
+                pc.ethereum_http_rpc_url
+            )));
+        }
+        if pc.retry.max_attempts < 1 {
+            return Err(AppConfigError::Config(
+                "protocol_config.retry.max_attempts must be at least 1".to_string(),
+            ));
+        }
         Ok(())
     }
 

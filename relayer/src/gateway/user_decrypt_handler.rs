@@ -21,6 +21,7 @@ use crate::{
         },
         utils::{classify_revert_selector, extract_revert_selector},
     },
+    host::{extra_data::parse_context_id_from_extra_data, ThresholdResolver},
     logging::UserDecryptStep,
     orchestrator::{
         traits::{Event, EventHandler},
@@ -58,7 +59,6 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
 #[derive(Clone)]
 pub struct UserDecryptHandlerConfig {
     pub decryption_address: Address,
-    pub shares_threshold: usize,
     pub gw_event_retry: GwEventNotFoundRetryConfig,
 }
 
@@ -70,6 +70,7 @@ pub struct GatewayHandler {
     delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     config: UserDecryptHandlerConfig,
+    threshold_resolver: Arc<ThresholdResolver>,
 }
 
 impl GatewayHandler {
@@ -82,6 +83,7 @@ impl GatewayHandler {
         >,
         user_decrypt_repo: Arc<UserDecryptRepository>,
         config: UserDecryptHandlerConfig,
+        threshold_resolver: Arc<ThresholdResolver>,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
@@ -90,6 +92,7 @@ impl GatewayHandler {
             delegated_user_decrypt_readiness_throttler,
             user_decrypt_repo,
             config,
+            threshold_resolver,
         });
 
         // Self-register for events
@@ -495,7 +498,9 @@ impl GatewayHandler {
         tx_hash: TxHash,
     ) -> Result<(), EventProcessingError> {
         let user_decryption_id = user_decrypt_response.decryptionId;
-        let threshold = self.config.shares_threshold as i64;
+
+        let context_id = parse_context_id_from_extra_data(&user_decrypt_response.extraData)?;
+        let threshold = self.threshold_resolver.resolve(context_id).await? as i64;
 
         let tx_hash_str = format!("{:?}", tx_hash);
         // Pre-compute hex-encoded values to avoid lifetime issues with closures
@@ -633,7 +638,8 @@ impl GatewayHandler {
                     threshold = threshold,
                     "Threshold reached and completion successful"
                 );
-                self.assemble_final_response(event, metadata, shares).await;
+                self.assemble_final_response(event, metadata, shares, threshold as usize)
+                    .await;
             }
             ShareCompletionOutcome::ThresholdNotReached { count } => {
                 debug!(
@@ -656,7 +662,8 @@ impl GatewayHandler {
                     "Threshold reached but request already completed (duplicate share)"
                 );
                 // Request already completed - re-dispatch the response for any waiting HTTP handlers
-                self.assemble_final_response(event, metadata, shares).await;
+                self.assemble_final_response(event, metadata, shares, threshold as usize)
+                    .await;
             }
             ShareCompletionOutcome::AlreadyInFinalState {
                 count,
@@ -717,9 +724,9 @@ impl GatewayHandler {
         event: RelayerEvent,
         consensus_state: ConsensusReqState,
         shares: Vec<UserDecryptShare>,
+        threshold: usize,
     ) {
         let count = shares.len();
-        let threshold = self.config.shares_threshold;
 
         // Validate share count matches threshold exactly (database LIMIT should ensure this)
         if shares.len() != threshold {
@@ -727,7 +734,7 @@ impl GatewayHandler {
                 job_id = %event.job_id,
                 got_count = %count,
                 expected_count = %threshold,
-                threshold = %self.config.shares_threshold,
+                threshold = %threshold,
                 "Number of shares not matching count"
             );
             for share in shares {
@@ -955,6 +962,18 @@ impl GatewayHandler {
                         );
                     }
                 }
+            }
+
+            EventProcessingError::ThresholdResolutionFailed(ref reason) => {
+                error!(
+                    job_id = %event.job_id,
+                    reason = %reason,
+                    "Threshold resolution failed for share event, ignoring share"
+                );
+                // Share arrives via EventLogRcvd — no DB state to update.
+                // The share is silently dropped; the request will either
+                // complete from other shares or eventually time out.
+                return;
             }
 
             EventProcessingError::NotAllowedOnHostAcl(_)
