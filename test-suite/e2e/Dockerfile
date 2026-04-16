@@ -27,7 +27,11 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
-    if [ -n "$RELAYER_SDK_VERSION" ]; then npm install --workspace test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; fi
+    if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      cd /app/test-suite/e2e && \
+      npm install --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
+      node -e "const {createRequire}=require('module'); const req=createRequire('/app/test-suite/e2e/package.json'); const version=req('@zama-fhe/relayer-sdk/package.json').version; if (version !== '${RELAYER_SDK_VERSION}') throw new Error('expected relayer-sdk ${RELAYER_SDK_VERSION}, got ' + version);" ; \
+    fi
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity

@@ -15,8 +15,22 @@ const delegatedUserDecryptRetryMs = Number(process.env.RELAYER_SDK_DELEGATED_USE
 const delegatedUserDecryptTimeoutMs =
   Number(process.env.RELAYER_SDK_DELEGATED_USER_DECRYPT_TIMEOUT_MS) || 10 * 60 * 1000;
 
-const isDelegatedDecryptNotReady = (error: unknown) =>
-  error instanceof Error && error.message.includes('Ciphertext not ready for decryption on the gateway chain');
+const readinessTimedOut = 'readiness_check_timed_out';
+const readinessTimedOutMessage = 'Ciphertext not ready for decryption on the gateway chain';
+
+const isDelegatedDecryptNotReady = (error: unknown) => {
+  if (error instanceof Error && error.message.includes(readinessTimedOutMessage)) {
+    return true;
+  }
+  if (typeof error !== 'object' || error === null || !('relayerApiError' in error)) {
+    return false;
+  }
+  const relayerApiError = (error as { relayerApiError?: { label?: string; message?: string } }).relayerApiError;
+  return (
+    relayerApiError?.label === readinessTimedOut ||
+    relayerApiError?.message?.includes(readinessTimedOutMessage) === true
+  );
+};
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
