@@ -20,6 +20,11 @@
       "import": "./_esm/index.js",
       "default": "./_cjs/index.js"
     },
+    "./base": {
+      "types": "./_types/core/base/index.d.ts",
+      "import": "./_esm/core/base/index.js",
+      "default": "./_cjs/core/base/index.js"
+    },
     "./chains": {
       "types": "./_types/core/chains/index.d.ts",
       "import": "./_esm/core/chains/index.js",
@@ -29,6 +34,11 @@
       "types": "./_types/ethers/index.d.ts",
       "import": "./_esm/ethers/index.js",
       "default": "./_cjs/ethers/index.js"
+    },
+    "./types": {
+      "types": "./_types/core/types/index.d.ts",
+      "import": "./_esm/core/types/index.js",
+      "default": "./_cjs/core/types/index.js"
     },
     "./viem": {
       "types": "./_types/viem/index.d.ts",
