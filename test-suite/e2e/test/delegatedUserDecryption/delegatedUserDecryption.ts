@@ -204,6 +204,9 @@ describe('Delegated user decryption', function () {
       .executeTx(txId);
     await executeTx.wait();
 
+    currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
+
     // Verify the smartWallet balance decreased.
     const smartWalletBalanceAfter = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey: pkAfter, privateKey: skAfter } = this.instances.bob.generateKeypair();

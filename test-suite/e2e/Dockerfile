@@ -34,6 +34,8 @@ COPY test-suite/e2e ./test-suite/e2e
 
 WORKDIR /app/test-suite/e2e
 
+RUN node ./scripts/patch-relayer-sdk-compat.mjs
+
 RUN npx hardhat compile
 
 # --- Runtime Stage ---
