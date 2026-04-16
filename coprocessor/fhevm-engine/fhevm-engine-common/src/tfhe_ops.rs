@@ -719,11 +719,14 @@ pub fn check_fhe_operand_types(
 
                     // FheUint160 (7) and FheUint256 (8) are not supported for FheSum.
                     let fhe_sum_max_inputs = match first_type {
-                        5 | 6 => FHE_SUM_MAX_INPUTS_WIDE, // Uint64 | Uint128
-                        2 | 3 | 4 => FHE_SUM_MAX_INPUTS_NARROW, // Uint8 | Uint16 | Uint32
+                        5 | 6 => FHE_SUM_MAX_INPUTS_WIDE,   // Uint64 | Uint128
+                        2..=4 => FHE_SUM_MAX_INPUTS_NARROW, // Uint8 | Uint16 | Uint32
                         _ => {
                             return Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!("{:?}: type {first_type} is not supported for FheSum", fhe_op),
+                                fhe_operation: format!(
+                                    "{:?}: type {first_type} is not supported for FheSum",
+                                    fhe_op
+                                ),
                                 input_types: vec![],
                             })
                         }
@@ -818,6 +821,22 @@ pub fn perform_fhe_operation(
     let res = perform_fhe_operation_impl(fhe_operation_int, input_operands);
     release_memory_on_gpu(gpu_mem_res, gpu_idx);
     res
+}
+
+fn collect_operands_as<'a, T>(
+    fhe_operation: &SupportedFheOperations,
+    operands: &'a [SupportedFheCiphertexts],
+    extract: impl Fn(&'a SupportedFheCiphertexts) -> Option<&'a T>,
+) -> Result<Vec<&'a T>, FhevmError> {
+    operands
+        .iter()
+        .map(|op| {
+            extract(op).ok_or_else(|| FhevmError::UnsupportedFheTypes {
+                fhe_operation: format!("{:?}", fhe_operation),
+                input_types: operands.iter().map(|i| i.type_name()).collect(),
+            })
+        })
+        .collect()
 }
 
 pub fn perform_fhe_operation_impl(
@@ -3181,61 +3200,41 @@ pub fn perform_fhe_operation_impl(
             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
         }),
         SupportedFheOperations::FheSum => match &input_operands[0] {
-            SupportedFheCiphertexts::FheUint8(_) => input_operands
-                .iter()
-                .map(|op| match op {
-                    SupportedFheCiphertexts::FheUint8(v) => Ok(v),
-                    _ => Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    }),
+            SupportedFheCiphertexts::FheUint8(_) => {
+                collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                    SupportedFheCiphertexts::FheUint8(v) => Some(v),
+                    _ => None,
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|refs| SupportedFheCiphertexts::FheUint8(refs.into_iter().sum())),
-            SupportedFheCiphertexts::FheUint16(_) => input_operands
-                .iter()
-                .map(|op| match op {
-                    SupportedFheCiphertexts::FheUint16(v) => Ok(v),
-                    _ => Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    }),
+                .map(|refs| SupportedFheCiphertexts::FheUint8(refs.into_iter().sum()))
+            }
+            SupportedFheCiphertexts::FheUint16(_) => {
+                collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                    SupportedFheCiphertexts::FheUint16(v) => Some(v),
+                    _ => None,
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|refs| SupportedFheCiphertexts::FheUint16(refs.into_iter().sum())),
-            SupportedFheCiphertexts::FheUint32(_) => input_operands
-                .iter()
-                .map(|op| match op {
-                    SupportedFheCiphertexts::FheUint32(v) => Ok(v),
-                    _ => Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    }),
+                .map(|refs| SupportedFheCiphertexts::FheUint16(refs.into_iter().sum()))
+            }
+            SupportedFheCiphertexts::FheUint32(_) => {
+                collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                    SupportedFheCiphertexts::FheUint32(v) => Some(v),
+                    _ => None,
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|refs| SupportedFheCiphertexts::FheUint32(refs.into_iter().sum())),
-            SupportedFheCiphertexts::FheUint64(_) => input_operands
-                .iter()
-                .map(|op| match op {
-                    SupportedFheCiphertexts::FheUint64(v) => Ok(v),
-                    _ => Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    }),
+                .map(|refs| SupportedFheCiphertexts::FheUint32(refs.into_iter().sum()))
+            }
+            SupportedFheCiphertexts::FheUint64(_) => {
+                collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                    SupportedFheCiphertexts::FheUint64(v) => Some(v),
+                    _ => None,
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|refs| SupportedFheCiphertexts::FheUint64(refs.into_iter().sum())),
-            SupportedFheCiphertexts::FheUint128(_) => input_operands
-                .iter()
-                .map(|op| match op {
-                    SupportedFheCiphertexts::FheUint128(v) => Ok(v),
-                    _ => Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    }),
+                .map(|refs| SupportedFheCiphertexts::FheUint64(refs.into_iter().sum()))
+            }
+            SupportedFheCiphertexts::FheUint128(_) => {
+                collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                    SupportedFheCiphertexts::FheUint128(v) => Some(v),
+                    _ => None,
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum())),
+                .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum()))
+            }
             _ => Err(FhevmError::UnsupportedFheTypes {
                 fhe_operation: format!("{:?}", fhe_operation),
                 input_types: input_operands.iter().map(|i| i.type_name()).collect(),
@@ -3554,9 +3553,9 @@ mod fhe_sum_tests {
 
     #[test]
     fn fhe_sum_try_from_i16_roundtrip() {
-        let op: SupportedFheOperations = (35i16).try_into().unwrap();
+        let op: SupportedFheOperations = (28i16).try_into().unwrap();
         assert_eq!(op, SupportedFheOperations::FheSum);
-        assert_eq!(op as i16, 35);
+        assert_eq!(op as i16, 28);
     }
 
     #[test]

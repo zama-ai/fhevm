@@ -1822,7 +1822,9 @@ pub fn get_op_size_on_gpu(
                 }),
             }
         }
-        SupportedFheOperations::FheSum => get_fhe_sum_size_on_gpu(fhe_operation_int, input_operands),
+        SupportedFheOperations::FheSum => {
+            get_fhe_sum_size_on_gpu(fhe_operation_int, input_operands)
+        }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
     }
 }
