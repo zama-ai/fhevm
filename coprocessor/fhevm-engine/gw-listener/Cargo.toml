@@ -44,6 +44,7 @@ semver = { workspace = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["node-bindings"] }
+aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 aws-smithy-mocks = "0.1.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
