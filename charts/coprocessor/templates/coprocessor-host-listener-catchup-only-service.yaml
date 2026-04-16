@@ -1,7 +1,8 @@
 {{- range $i, $chain := .Values.chains }}
 {{- if (($chain.hostListenerCatchupOnly).enabled) }}
-{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name) (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name) (eq $i 0) -}}
-{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) (eq $i 0) -}}
+{{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name) (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
 ---
 apiVersion: v1
 kind: Service
@@ -13,10 +14,10 @@ metadata:
 spec:
   ports:
     - name: metrics
-      port: {{ $.Values.hostListenerCatchupOnly.ports.metrics }}
+      port: {{ $.Values.hostListenerCatchupOnlyShared.ports.metrics }}
       targetPort: metrics
     - name: healthcheck
-      port: {{ $.Values.hostListenerCatchupOnly.ports.healthcheck }}
+      port: {{ $.Values.hostListenerCatchupOnlyShared.ports.healthcheck }}
       targetPort: healthcheck
   selector:
     app: {{ $appLabel }}

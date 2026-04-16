@@ -1,7 +1,8 @@
 {{- range $i, $chain := .Values.chains }}
-{{- if and (($chain.hostListenerPoller).enabled) $.Values.hostListenerPoller.serviceMonitor.enabled }}
-{{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) (eq $i 0) -}}
-{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) (eq $i 0) -}}
+{{- if and (($chain.hostListenerPoller).enabled) $.Values.hostListenerPollerShared.serviceMonitor.enabled }}
+{{- $useLegacyName := $chain.hostListenerPoller.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName -}}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
