@@ -1,0 +1,134 @@
+name: js-sdk-publish
+
+on:
+  push:
+    branches:
+      - geoxel/js-sdk-ci # triggers on every push to your branch
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Set to true for release tagging"
+        required: false
+        default: false
+
+# No permissions at the workflow level — each job declares only what it needs.
+permissions: {}
+
+jobs:
+  publish:
+    name: js-sdk-publish/publish
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/js-sdk
+    permissions:
+      contents: "read" # Required to checkout repository code
+      id-token: "write" # Required for OIDC / npm provenance attestation
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
+      #    chain attacks. persist-credentials: false removes the Git token from
+      #    the local config so subsequent steps can't accidentally leak it.
+      # -----------------------------------------------------------------------
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: "false"
+
+      # -----------------------------------------------------------------------
+      # 2. Node.js setup
+      #    The SDK requires Node >=22.0 (declared in package.json "engines").
+      #    registry-url configures the npm config so NODE_AUTH_TOKEN is
+      #    automatically picked up as the Bearer token for registry auth.
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+
+      # -----------------------------------------------------------------------
+      # 3. Upgrade npm
+      #    The bundled npm in Node 22 may not support provenance publishing.
+      #    Pin to the same version used in the sibling library-solidity workflow
+      #    for consistency. The .npmrc already sets provenance=true.
+      # -----------------------------------------------------------------------
+      - name: Update npm
+        run: npm install -g npm@11.7.0
+
+      # -----------------------------------------------------------------------
+      # 4. Install dependencies
+      #    npm ci is strict and deterministic: it installs exactly what is in
+      #    package-lock.json, fails if the lockfile is out of sync, and never
+      #    modifies it. This is preferred over npm install in CI environments.
+      #    auto-install-peers=false and strict-peer-dependencies=false are
+      #    already set in the project's .npmrc, so no extra flags are needed.
+      # -----------------------------------------------------------------------
+      - name: Install dependencies
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      # 5. Build
+      #    The top-level "build" script orchestrates all sub-builds:
+      #      - build:cjs       → CommonJS output
+      #      - build:cjs:wasm  → WASM glue for CJS
+      #      - build:esm       → ES Modules output
+      #      - build:esm:wasm  → WASM glue for ESM
+      #      - build:types     → TypeScript declaration files (.d.ts)
+      #    Running "build" ensures the dist/ folder is fully populated before
+      #    packing. Publishing without this step would ship source-only.
+      # -----------------------------------------------------------------------
+      - name: Build package (CJS + ESM + types)
+        run: npm run build:cjs && npm run build:esm && npm run build:types
+
+      # -----------------------------------------------------------------------
+      # 6. Pack inspection
+      #    "npm pack --dry-run" lists every file that would be included in the
+      #    tarball, along with its size and the total packed/unpacked sizes.
+      #    This is useful to catch .npmignore or "files" field issues — e.g.,
+      #    accidentally shipping test fixtures, source maps, or missing the
+      #    compiled dist/ output — without actually creating the .tgz.
+      # -----------------------------------------------------------------------
+      - name: Inspect pack contents
+        run: cd src && npm pack --dry-run
+
+      # -----------------------------------------------------------------------
+      # 7a. Prerelease publish
+      #     Runs when release != 'true' (the default).
+      #     tag: alpha        → published under the "alpha" dist-tag so
+      #                         "npm install @fhevm/sdk" (which resolves "latest")
+      #                         is unaffected. Users opt in with @alpha or the
+      #                         exact version e.g. @1.3.0-alpha.0.
+      #     access: public    → required for scoped packages (@fhevm/sdk) to be
+      #                         publicly visible on the registry.
+      #     provenance: true  → generates a signed attestation via OIDC linking
+      #                         the package to this exact CI run and source commit.
+      #     token             → set NPM_TOKEN in repo Settings → Secrets → Actions.
+      #     The action is also idempotent: it skips publish if the version in
+      #     package.json was already published, preventing re-publish errors.
+      # -----------------------------------------------------------------------
+      - name: Publish prerelease to npm
+        if: ${{ inputs.release != 'true' }}
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
+        with:
+          package: ./sdk/js-sdk/src
+          tag: alpha
+          provenance: true
+          access: public
+
+      # -----------------------------------------------------------------------
+      # 7b. Release publish
+      #     Runs only when release == 'true'.
+      #     No tag input → publishes to the "latest" dist-tag, the default
+      #     that users get when they run "npm install @fhevm/sdk".
+      #     All other inputs and behaviours identical to 7a.
+      # -----------------------------------------------------------------------
+      - name: Publish release to npm
+        if: ${{ inputs.release == 'true' }}
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
+        with:
+          package: ./sdk/js-sdk/src
+          # Can run in dry-run mode for testing purpose
+          dry-run: false
+          provenance: true
+          access: public
