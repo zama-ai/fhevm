@@ -71,7 +71,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  const instance = await createFhevmInstance({
+  const instance: any = await createFhevmInstance({
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
     kmsContractAddress: kmsVerifierAddress,
@@ -83,9 +83,13 @@ export const createInstance = async () => {
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   });
+  const getSdkExtraData = () =>
+    typeof instance.getExtraData === 'function'
+      ? instance.getExtraData()
+      : Promise.reject(new Error('Legacy relayer-sdk missing getExtraData'));
   return {
     ...instance,
-    getExtraData: () => getCompatExtraData(() => instance.getExtraData()),
+    getExtraData: () => getCompatExtraData(getSdkExtraData),
   };
 };
 

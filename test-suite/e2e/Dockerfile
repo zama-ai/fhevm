@@ -1,4 +1,5 @@
 ARG NODE_VERSION=20.19.1-alpine3.21
+ARG RELAYER_SDK_VERSION=
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
@@ -26,7 +27,7 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
-    npm prune
+    if [ -n "$RELAYER_SDK_VERSION" ]; then npm install --workspace test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; fi
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity

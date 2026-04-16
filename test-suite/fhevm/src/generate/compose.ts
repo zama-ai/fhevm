@@ -119,6 +119,21 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
 
+/** Injects test-suite build args derived from the generated runtime env file. */
+const applyTestSuiteBuildArgs = async (build: Record<string, unknown>) => {
+  const envVars = await readEnvFile(envPath("test-suite"));
+  if (!envVars.RELAYER_SDK_VERSION) {
+    return build;
+  }
+  return {
+    ...build,
+    args: {
+      ...((build.args as Record<string, unknown> | undefined) ?? {}),
+      RELAYER_SDK_VERSION: envVars.RELAYER_SDK_VERSION,
+    },
+  };
+};
+
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {
   if (typeof value !== "string") {
@@ -392,7 +407,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     applyBuildPolicy(next, true);
     const build = localBuildSpecFor(component, name);
     if (build) {
-      next.build = build;
+      next.build = component === "test-suite" ? await applyTestSuiteBuildArgs(build) : build;
     }
     services[name] = next;
   }

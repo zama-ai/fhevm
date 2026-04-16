@@ -3,10 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   LEGACY_RELAYER_IMAGE_REPOSITORY,
   LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
+  LEGACY_RELAYER_SDK_VERSION,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
   requiresLegacyKmsCoreConfig,
+  requiresLegacyRelayerSdk,
   requiresLegacyRelayerSdkExtraData,
   requiresLegacyRelayerUrl,
   supportsCoprocessorDbStateRevert,
@@ -139,6 +141,29 @@ describe("compat", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  test("keeps relayer-sdk on the pre-v0.12 line until backend components reach target", () => {
+    const mixedVersions = {
+      GATEWAY_VERSION: "v0.12.0",
+      HOST_VERSION: "v0.12.0",
+      CORE_VERSION: "v0.13.3",
+      CONNECTOR_DB_MIGRATION_VERSION: "v0.11.0",
+      CONNECTOR_GW_LISTENER_VERSION: "v0.11.0",
+      CONNECTOR_KMS_WORKER_VERSION: "v0.11.0",
+      CONNECTOR_TX_SENDER_VERSION: "v0.11.0",
+    } as Record<string, string>;
+    expect(
+      requiresLegacyRelayerSdk({
+        versions: {
+          target: "latest-supported",
+          lockName: "latest-supported.json",
+          env: mixedVersions,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+    expect(LEGACY_RELAYER_SDK_VERSION).toBe("0.4.0");
   });
 
   test("renders legacy pauser flags for old contract tags", () => {

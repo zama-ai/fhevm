@@ -47,6 +47,7 @@ export const LEGACY_RELAYER_IMAGE_REPOSITORY = "ghcr.io/zama-ai/console/relayer"
 export const LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY = "ghcr.io/zama-ai/console/relayer-migrate";
 export const MODERN_RELAYER_IMAGE_REPOSITORY = "ghcr.io/zama-ai/fhevm/relayer";
 export const MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY = "ghcr.io/zama-ai/fhevm/relayer-migrate";
+export const LEGACY_RELAYER_SDK_VERSION = "0.4.0";
 
 const SHIM_PROFILES = {
   "legacy-gw-listener-no-drift-addresses": {
@@ -182,6 +183,10 @@ export const requiresLegacyRelayerSdkExtraData = (state: Pick<CompatState, "vers
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
   ].some((key) => versionLt(state.versions.env[key] ?? "", [0, 12, 0], { unparsed: "modern" }));
+
+/** Detects when the harness must keep using the pre-v0.12 relayer-sdk line. */
+export const requiresLegacyRelayerSdk = (state: Pick<CompatState, "versions">) =>
+  requiresLegacyRelayerSdkExtraData(state);
 
 /** Detects when the coprocessor schema supports DB state revert checks. */
 export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versions">) =>
