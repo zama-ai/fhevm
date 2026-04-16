@@ -4,7 +4,7 @@ import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConf
 import { getBaseEnv } from './setupCommon.js';
 import { getViemTestConfig, type FheTestViemConfig } from './setup-viem.js';
 import { createWalletClient, http, type Hex } from 'viem';
-import { FHETestABI } from '../fheTest/abi-v2.js';
+import { FHETestABI } from '../../fheTest/abi-v2.js';
 
 let config: FheTestViemConfig;
 config = getViemTestConfig();

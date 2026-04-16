@@ -4,8 +4,10 @@
   "description": "Package test for fhevm/sdk",
   "main": "index.ts",
   "scripts": {
-    "start:ethers": "export CHAIN=devnet && tsx test-ethers.ts",
-    "start:viem": "export CHAIN=devnet && tsx test-viem.ts"
+    "test:devnet:ethers": "export CHAIN=devnet && tsx test-ethers.ts",
+    "test:devnet:viem": "export CHAIN=devnet && tsx test-viem.ts",
+    "test:testnet:ethers": "export CHAIN=testnet && tsx test-ethers.ts",
+    "test:testnet:viem": "export CHAIN=testnet && tsx test-viem.ts"
   },
   "type": "module",
   "dependencies": {
