@@ -208,8 +208,9 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /**
      * @notice              Returns the list of signers for a given KMS context.
+     * @dev                 Reverts if the context doesn't exist or has been destroyed.
      * @param kmsContextId  The context ID.
-     * @return signers      The list of signers for the context, or empty if context doesn't exist or is destroyed.
+     * @return signers      The list of signers for the context.
      */
     function getSignersForKmsContext(uint256 kmsContextId) public view virtual returns (address[] memory) {
         return PROTOCOL_CONFIG.getKmsSignersForContext(kmsContextId);

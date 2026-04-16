@@ -18,6 +18,7 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error SignersSetIsEmpty()",
       "error ThresholdIsNull()",
       "error ThresholdIsAboveNumberOfSigners()",
+      "error InvalidKMSContext(uint256)",
       "error CurrentKMSContextCannotBeDestroyed(uint256)",
     ],
   },
