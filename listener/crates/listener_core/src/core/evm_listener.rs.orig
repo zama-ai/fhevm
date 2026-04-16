@@ -439,10 +439,10 @@ impl EvmListener {
     /// to `EvmListenerError::InvariantViolation`.
     pub async fn fetch_blocks_and_run_cursor(&self) -> Result<CursorResult, EvmListenerError> {
         // Pre verification:
-        // The prefetch count setted up to 1 allows us to simply verify emptiness of the queue/stream, to ensure there is no possibility of overlaping
+        // The prefetch count set up to 1 allows us to simply verify emptiness of the queue/stream, to ensure there is no possibility of overlapping
         // messages.
-        // If there is another message sitting in the queue, we can basically skip the message and avoid consuming it, by directly acknoledging.
-        // TODO: This is a first security, but not complient with horizontal scaling and needs to be locked.
+        // If there is another message sitting in the queue, we can basically skip the message and avoid consuming it, by directly acknowledging.
+        // TODO: This is a first security, but not compliant with horizontal scaling and needs to be locked.
         let fetch_topic = Topic::new(routing::FETCH_NEW_BLOCKS)
             .with_namespace(chain_id_to_namespace(self.chain_id));
         let task_lock = self
@@ -744,7 +744,7 @@ impl EvmListener {
         let chain_id_u64 = self.repositories.chain_id() as u64;
 
         // pre-check: Skipping duplicate messages.
-        // TODO: This is a first security, but not complient with horizontal scaling and needs to be locked.
+        // TODO: This is a first security, but not compliant with horizontal scaling and needs to be locked.
         let reorg_topic = Topic::new(routing::BACKTRACK_REORG)
             .with_namespace(chain_id_to_namespace(self.chain_id));
         let task_lock = self
@@ -786,7 +786,7 @@ impl EvmListener {
             &self.repositories,
             &block_n,
             chain_id_u64,
-            // This block is comming from the live flow, and detect the reorg processing, but was issued from the live flow.
+            // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
             BlockFlow::Live,
             &self.broker,
             &self.event_publisher,

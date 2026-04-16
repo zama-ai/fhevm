@@ -684,7 +684,7 @@ async fn test_circuit_breaker_halts_consumption() {
 // Without a circuit breaker, the message remains in retry circulation.
 //
 // With CB (threshold=2, cooldown=5 s) the consumer pauses after 2 failures,
-// preventing any further XREADGROUP reads. The ClaimSweeper is neutralised by a
+// preventing any further XREADGROUP reads. The ClaimSweeper is neutralized by a
 // very long claim_min_idle (60 s) so it cannot accumulate delivery counts within
 // the 3 s observation window — keeping the dead stream empty.
 #[tokio::test]

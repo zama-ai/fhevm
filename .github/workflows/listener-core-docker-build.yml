@@ -26,11 +26,11 @@ on:
         required: true
     outputs:
       listener-core:
-        description: "Result of the listener-core job"
-        value: ${{ jobs.build-db-migration.result }}
+        description: "Result of the build-listener-core job"
+        value: ${{ jobs.build-listener-core.result }}
   workflow_dispatch:
     inputs:
-      listener-core:
+      build_listener_core:
         description: "Enable/disable build for Listener Core"
         type: boolean
         default: true
@@ -107,7 +107,7 @@ jobs:
             };
 
             const services = {
-              listener_core: { changes: needs['check-changes-db-migration'].outputs?.changes, build_input: inputs.build_listener_core },
+              listener_core: { changes: needs['check-changes-listener-core'].outputs?.changes, build_input: inputs.build_listener_core },
             };
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
@@ -126,10 +126,21 @@ jobs:
     concurrency:
       group: coprocessor-build-listener-core-${{ github.ref_name }}
       cancel-in-progress: true
-    if: always() && needs.build-decisions.outputs.gw_listener == 'build'
+    if: always() && needs.build-decisions.outputs.listener_core == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
-    permissions: *docker_permissions
-    secrets: *docker_secrets
+    secrets: &docker_secrets
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions: &docker_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     with:
       use-cgr-secrets: true
       working-directory: "."
@@ -141,7 +152,11 @@ jobs:
   re-tag-listener-core-image:
     needs: [build-decisions, check-changes-listener-core]
     if: always() && needs.build-decisions.outputs.listener_core == 'retag'
-    permissions: *re-tag-image-permissions
+    permissions: &re-tag-image-permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/listener"

@@ -19,12 +19,12 @@ flowchart TB
         RANGE -->|"spawn N tasks"| P1[Poller 1]
         RANGE --> P2[Poller 2]
         RANGE --> P3[Poller 3]
-        RANGE --> PN[Poller N]
+        RANGE --> POLLER_N[Poller N]
 
         P1 -->|"fetch block by number + receipts + compute"| RPC1[RPC Call]
         P2 -->|"fetch block by number + receipts + compute"| RPC2[RPC Call]
         P3 -->|"fetch block by number + receipts + compute"| RPC3[RPC Call]
-        PN -->|"fetch block by number + receipts + compute"| RPCN[RPC Call]
+        POLLER_N -->|"fetch block by number + receipts + compute"| RPCN[RPC Call]
 
         RPC1 -->|"set_once(0)"| BUFFER
         RPC2 -->|"set_once(1)"| BUFFER

@@ -85,7 +85,7 @@ impl SemEvmRpcProvider {
         // Network policy blackholes (TCP keepalive detects silent drops)
         // Load balancer idle timeout alignment (10 s < any cloud LB timeout)
         let http_client = alloy::transports::http::Client::builder()
-            .timeout(Duration::from_secs(25)) // Must accomodate slow providers with high response time
+            .timeout(Duration::from_secs(25)) // Must accommodate slow providers with high response time
             .connect_timeout(Duration::from_secs(3)) // fast failure if the host is unreachable
             .pool_idle_timeout(Duration::from_secs(10)) // aggressive eviction of unused request.
             .pool_max_idle_per_host(max_concurrent_requests) // Match the semaphore size setting
