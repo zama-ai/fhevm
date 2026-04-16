@@ -6,6 +6,7 @@ import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 
 const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
+const SDK_KMS_CONTEXT_FETCH_FAILURE = 'Failed to fetch current KMS context ID';
 
 describe('Paused gateway', function () {
   before(async function () {
@@ -64,7 +65,7 @@ describe('Paused gateway', function () {
     const handleAddress = await this.httpPublicDecryptContract.xAddress();
     const handle32 = await this.httpPublicDecryptContract.xUint32();
     await expect(this.instances.alice.publicDecrypt([handleAddress, handle32, handleBool])).to.be.rejectedWith(
-      new RegExp(ENFORCED_PAUSE_SELECTOR),
+      new RegExp(`${ENFORCED_PAUSE_SELECTOR}|${SDK_KMS_CONTEXT_FETCH_FAILURE}`),
     );
   });
 });

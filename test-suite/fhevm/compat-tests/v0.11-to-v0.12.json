@@ -41,8 +41,7 @@
   },
   "steps": [
     ["RELAYER"],
-    ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
-    ["KMS_CORE", "KMS_CONNECTOR"],
+    ["GATEWAY_CONTRACTS", "HOST_CONTRACTS", "KMS_CORE", "KMS_CONNECTOR"],
     ["COPROCESSOR"]
   ],
   "units": {
