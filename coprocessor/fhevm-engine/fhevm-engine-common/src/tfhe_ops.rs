@@ -717,9 +717,16 @@ pub fn check_fhe_operand_types(
 
                     let first_type = get_ct_type(&input_handles[0])?;
 
+                    // FheUint160 (7) and FheUint256 (8) are not supported for FheSum.
                     let fhe_sum_max_inputs = match first_type {
                         5 | 6 => FHE_SUM_MAX_INPUTS_WIDE, // Uint64 | Uint128
-                        _ => FHE_SUM_MAX_INPUTS_NARROW,
+                        2 | 3 | 4 => FHE_SUM_MAX_INPUTS_NARROW, // Uint8 | Uint16 | Uint32
+                        _ => {
+                            return Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!("{:?}: type {first_type} is not supported for FheSum", fhe_op),
+                                input_types: vec![],
+                            })
+                        }
                     };
 
                     if input_handles.len() > fhe_sum_max_inputs {
