@@ -16,11 +16,11 @@ rm -f "$pack_dir"/fhevm-sdk-*.tgz
 
 # Build
 echo -e "${GREEN} Building project...${NC}"
-(cd "$home_dir/../.." && npm run build)
+(cd "$home_dir/../../.." && npm run build)
 
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN} Packing project...${NC}"
-(cd "$home_dir/../../src" && npm pack --pack-destination "$pack_dir")
+(cd "$home_dir/../../../src" && npm pack --pack-destination "$pack_dir")
 
 # Resolve the newly created tarball
 tarball=$(echo "$pack_dir"/fhevm-sdk-*.tgz)
