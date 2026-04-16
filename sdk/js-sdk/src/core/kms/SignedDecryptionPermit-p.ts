@@ -4,7 +4,14 @@ import type {
   SignedSelfDecryptionPermit,
 } from '../types/signedDecryptionPermit.js';
 import type { KmsDelegatedUserDecryptEip712, KmsUserDecryptEip712 } from '../types/kms.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256BigInt, UintNumber } from '../types/primitives.js';
+import type {
+  Bytes65Hex,
+  BytesHex,
+  ChecksummedAddress,
+  Uint256BigInt,
+  Uint8Number,
+  UintNumber,
+} from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
@@ -22,7 +29,7 @@ import {
   createKmsDelegatedUserDecryptEip712,
 } from './createKmsDelegatedUserDecryptEip712.js';
 import { assertRecordStringProperty } from '../base/string.js';
-import { assertIsE2eTransportKeypair, type E2eTransportKeypair } from './E2eTransportKeypair-p.js';
+import { assertIsTransportKeypair, type TransportKeypair } from './TransportKeypair-p.js';
 import { assertKmsEIP712DeadlineValidity } from './utils.js';
 import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
@@ -32,6 +39,7 @@ import { fromKmsExtraData } from './kmsExtraData.js';
 
 const PRIVATE_TOKEN = Symbol('SignedDecryptionPermit.token');
 const MAX_USER_DECRYPT_DURATION_DAYS = 365 as UintNumber;
+const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -221,11 +229,27 @@ export function assertIsSignedDecryptionPermit(
   }
 }
 
+/**
+ * Asserts that every address in {@link contractAddresses} is listed in the
+ * permit's `contractAddresses` (case-insensitive comparison).
+ */
+export function assertPermitIncludesContractAddresses(
+  permit: SignedDecryptionPermit,
+  contractAddresses: readonly string[],
+): void {
+  const permitAddresses = permit.eip712.message.contractAddresses;
+  for (const address of contractAddresses) {
+    if (!permitAddresses.some((a) => a.toLowerCase() === address.toLowerCase())) {
+      throw Error(`contract address ${address} is not listed in the permit's contractAddresses`);
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // createSignedDecryptionPermit
 ////////////////////////////////////////////////////////////////////////////////
 
-async function createSignedDecryptionPermit(
+async function _createSignedDecryptionPermit(
   context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
   parameters: {
     readonly signerAddress: ChecksummedAddress;
@@ -234,6 +258,18 @@ async function createSignedDecryptionPermit(
   },
 ): Promise<SignedDecryptionPermit> {
   const { signerAddress, eip712, signature } = parameters;
+
+  if (eip712.message.contractAddresses.length === 0) {
+    throw Error('contractAddresses is empty');
+  }
+
+  if (eip712.message.contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+    throw Error(`contractAddresses max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
+  }
+
+  if (Number(eip712.message.durationDays) > MAX_USER_DECRYPT_DURATION_DAYS) {
+    throw Error(`durationDays is above max duration of ${MAX_USER_DECRYPT_DURATION_DAYS}`);
+  }
 
   if (eip712.primaryType === 'UserDecryptRequestVerification') {
     await verifyKmsUserDecryptEip712(context, {
@@ -265,7 +301,7 @@ type SignDecryptionPermitCommonParameters = {
   readonly durationDays: number;
   readonly signerAddress: string;
   readonly signer: NativeSigner;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeypair: TransportKeypair;
 };
 
 export type SignSelfDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
@@ -317,12 +353,12 @@ export async function signDecryptionPermit(
     startTimestamp,
     durationDays,
     signerAddress: signerAddressArg,
-    e2eTransportKeypair,
+    transportKeypair,
     signer,
     delegatorAddress,
   } = parameters;
 
-  assertIsE2eTransportKeypair(e2eTransportKeypair, {});
+  assertIsTransportKeypair(transportKeypair, {});
   assertIsAddress(signerAddressArg, {});
 
   if (delegatorAddress !== undefined) {
@@ -344,7 +380,7 @@ export async function signDecryptionPermit(
     durationDays,
     startTimestamp,
     extraData,
-    publicKey: e2eTransportKeypair.publicKey,
+    publicKey: transportKeypair.publicKey,
   };
 
   const eip712 =
@@ -360,7 +396,7 @@ export async function signDecryptionPermit(
     ...eip712,
   });
 
-  return await createSignedDecryptionPermit(context, {
+  return await _createSignedDecryptionPermit(context, {
     signature,
     signerAddress,
     eip712,
@@ -378,10 +414,10 @@ export async function parseSignedDecryptionPermit(
     readonly client: NonNullable<object>;
     readonly options: { readonly batchRpcCalls: boolean };
   },
-  e2eTransportKeypair: E2eTransportKeypair,
+  transportKeypair: TransportKeypair,
   permit: unknown,
 ): Promise<SignedDecryptionPermit> {
-  assertIsE2eTransportKeypair(e2eTransportKeypair, {});
+  assertIsTransportKeypair(transportKeypair, {});
 
   const permitName = 'permit';
   const options = {};
@@ -402,14 +438,14 @@ export async function parseSignedDecryptionPermit(
     throw new Error(`Unknown permit primaryType: ${primaryType}`);
   }
 
-  if (eip712.message.publicKey.toLowerCase() !== e2eTransportKeypair.publicKey.toLowerCase()) {
+  if (eip712.message.publicKey.toLowerCase() !== transportKeypair.publicKey.toLowerCase()) {
     throw new Error(
       "The permit's publicKey does not match the E2eTransportKeypair's publicKey. " +
         'Ensure the permit was signed with the same keypair.',
     );
   }
 
-  return await createSignedDecryptionPermit(context, {
+  return await _createSignedDecryptionPermit(context, {
     signature: permit.signature,
     eip712,
     signerAddress: addressToChecksummedAddress(permit.signerAddress),

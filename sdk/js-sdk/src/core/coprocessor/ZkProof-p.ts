@@ -8,11 +8,11 @@ import type {
   Bytes21Hex,
   Uint8Number,
 } from '../types/primitives.js';
-import type { ZkProofLike, ZkProof } from '../types/zkProof.js';
+import type { ZkProofLike, ZkProof } from '../types/zkProof-p.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
 import type { ParseTFHEProvenCompactCiphertextListModuleFunction } from '../modules/encrypt/types.js';
-import type { ExternalEncryptedValue } from '../types/encryptedTypes.js';
+import type { InputHandle } from '../types/encryptedTypes-p.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -47,7 +47,7 @@ class ZkProofImpl implements ZkProof {
   readonly #ciphertextWithZkProof: Bytes; // Never empty
   readonly #encryptionBits: readonly EncryptionBits[]; // Can be empty
   readonly #fheTypeIds: readonly FheTypeId[]; // Can be empty
-  #externalEncryptedValues: ExternalEncryptedValue[] | undefined;
+  #inputHandles: InputHandle[] | undefined;
 
   constructor(
     privateToken: symbol,
@@ -132,17 +132,17 @@ class ZkProofImpl implements ZkProof {
     return `ZkProof(chainId=${String(this.#chainId)}, contract=${this.#contractAddress}, user=${this.#userAddress}, types=${this.#fheTypeIds.length}, bytes=${String(this.#ciphertextWithZkProof.length)})`;
   }
 
-  public getExternalEncryptedValues(): readonly ExternalEncryptedValue[] {
-    if (this.#externalEncryptedValues === undefined) {
-      this.#externalEncryptedValues = _zkProofToExternalEncryptedValues({
+  public getInputHandles(): readonly InputHandle[] {
+    if (this.#inputHandles === undefined) {
+      this.#inputHandles = _zkProofToInputHandles({
         ciphertextWithZkProof: this.#ciphertextWithZkProof,
         aclContractAddress: this.#aclContractAddress,
         fheTypeIds: this.#fheTypeIds,
         chainId: this.#chainId,
       });
-      Object.freeze(this.#externalEncryptedValues);
+      Object.freeze(this.#inputHandles);
     }
-    return this.#externalEncryptedValues;
+    return this.#inputHandles;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -280,9 +280,9 @@ export async function zkProofToExternalEncryptedValues(
     readonly version?: number;
     readonly zkProofParser?: ParseTFHEProvenCompactCiphertextListModuleFunction;
   },
-): Promise<readonly ExternalEncryptedValue[]> {
+): Promise<readonly InputHandle[]> {
   if (zkProofLike instanceof ZkProofImpl) {
-    return zkProofLike.getExternalEncryptedValues();
+    return zkProofLike.getInputHandles();
   }
 
   assertIsChecksummedAddress(zkProofLike.aclContractAddress, {
@@ -303,7 +303,7 @@ export async function zkProofToExternalEncryptedValues(
 
   assertIsUint8(fheTypeIds.length, {});
 
-  return _zkProofToExternalEncryptedValues({
+  return _zkProofToInputHandles({
     ciphertextWithZkProof: ciphertextWithZkProof,
     aclContractAddress: zkProofLike.aclContractAddress,
     fheTypeIds,
@@ -339,7 +339,7 @@ function _assertEncryptionBitsMatch(actual: readonly EncryptionBits[], expected:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function _zkProofToExternalEncryptedValues(
+function _zkProofToInputHandles(
   args: {
     readonly ciphertextWithZkProof: Bytes;
     readonly aclContractAddress: ChecksummedAddress;
@@ -349,7 +349,7 @@ function _zkProofToExternalEncryptedValues(
   options?: {
     readonly version?: number;
   },
-): ExternalEncryptedValue[] {
+): InputHandle[] {
   const encoder = new TextEncoder();
   const domainSepBytes = encoder.encode(FHEVM_HANDLE_RAW_CT_HASH_DOMAIN_SEPARATOR);
 
@@ -357,11 +357,11 @@ function _zkProofToExternalEncryptedValues(
     keccak_256(concatBytes(domainSepBytes, args.ciphertextWithZkProof)),
   );
 
-  const handles: ExternalEncryptedValue[] = [];
+  const inputHandles: InputHandle[] = [];
   for (const [i, fheTypeId] of args.fheTypeIds.entries()) {
     const hash21 = _computeInputHash21(hexToBytes32(blobHashBytes32Hex), args.aclContractAddress, args.chainId, i);
 
-    handles.push(
+    inputHandles.push(
       buildHandle({
         hash21,
         chainId: args.chainId,
@@ -372,7 +372,7 @@ function _zkProofToExternalEncryptedValues(
     );
   }
 
-  return handles;
+  return inputHandles; // not readonly
 }
 
 ////////////////////////////////////////////////////////////////////////////////

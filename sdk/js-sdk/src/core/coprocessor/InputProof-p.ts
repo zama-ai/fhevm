@@ -1,8 +1,8 @@
-import type { Bytes, Bytes32Hex, Bytes65Hex, BytesHex, ChecksummedAddress, Uint } from '../types/primitives.js';
+import type { Bytes, Bytes65Hex, BytesHex, ChecksummedAddress, Uint } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { InputProof, InputProofBytes, UnverifiedInputProof, VerifiedInputProof } from '../types/inputProof.js';
 import type { NonEmptyReadonlyArray } from '../types/utils.js';
-import type { InputHandle, InputHandleLike } from '../types/encryptedTypes.js';
+import type { InputHandle, InputHandleBytes32Hex } from '../types/encryptedTypes-p.js';
 import { MAX_UINT8, uintToBytesHexNo0x } from '../base/uint.js';
 import {
   assertIsBytes,
@@ -122,12 +122,10 @@ Object.freeze(InputProofImpl);
 Object.freeze(InputProofImpl.prototype);
 
 ////////////////////////////////////////////////////////////////////////////////
-// Public API
-////////////////////////////////////////////////////////////////////////////////
 
 export function createUnverifiedInputProofFromComponents(args: {
   readonly coprocessorEip712Signatures: readonly Bytes65Hex[];
-  readonly inputHandles: readonly InputHandleLike[];
+  readonly inputHandleBytes32HexArray: readonly InputHandleBytes32Hex[];
   readonly extraData: BytesHex;
 }): UnverifiedInputProof {
   return createInputProofFromComponents(args) as UnverifiedInputProof;
@@ -137,12 +135,38 @@ export function createUnverifiedInputProofFromComponents(args: {
 
 export function createInputProofFromComponents({
   coprocessorEip712Signatures,
+  inputHandleBytes32HexArray,
+  extraData,
+  signedHandleAccess,
+}: {
+  readonly coprocessorEip712Signatures: readonly Bytes65Hex[];
+  readonly inputHandleBytes32HexArray: readonly InputHandleBytes32Hex[];
+  readonly extraData: BytesHex;
+  readonly signedHandleAccess?:
+    | {
+        readonly userAddress: ChecksummedAddress;
+        readonly contractAddress: ChecksummedAddress;
+      }
+    | undefined;
+}): InputProof {
+  return createInputProofFromInputHandles({
+    coprocessorEip712Signatures,
+    inputHandles: inputHandleBytes32HexArray.map(toInputHandle),
+    extraData,
+    signedHandleAccess,
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function createInputProofFromInputHandles({
+  coprocessorEip712Signatures,
   inputHandles,
   extraData,
   signedHandleAccess,
 }: {
   readonly coprocessorEip712Signatures: readonly Bytes65Hex[];
-  readonly inputHandles: readonly InputHandleLike[];
+  readonly inputHandles: readonly InputHandle[];
   readonly extraData: BytesHex;
   readonly signedHandleAccess?:
     | {
@@ -161,8 +185,6 @@ export function createInputProofFromComponents({
     assertIsChecksummedAddress(signedHandleAccess.userAddress, {});
     assertIsChecksummedAddress(signedHandleAccess.contractAddress, {});
   }
-
-  const externalFhevmHandles: InputHandle[] = inputHandles.map(toInputHandle);
 
   assertIsBytes65HexArray(coprocessorEip712Signatures, {});
   assertIsBytesHex(extraData, {});
@@ -200,10 +222,10 @@ export function createInputProofFromComponents({
   proof += uintToBytesHexNo0x(coprocessorEip712Signatures.length as Uint);
 
   // Add handles: (uint256 | Byte32) x numHandles
-  externalFhevmHandles.map((h) => (proof += h.bytes32HexNo0x));
+  inputHandles.forEach((h) => (proof += h.bytes32HexNo0x));
 
   // Add signatures: (uint256 | Byte32) x numSignatures
-  coprocessorEip712Signatures.map((signatureBytesHex: BytesHex) => (proof += remove0x(signatureBytesHex)));
+  coprocessorEip712Signatures.forEach((signatureBytesHex: BytesHex) => (proof += remove0x(signatureBytesHex)));
 
   // Append the extra data to the input proof
   proof += remove0x(extraData);
@@ -214,7 +236,7 @@ export function createInputProofFromComponents({
   const inputProof = new InputProofImpl(PRIVATE_TOKEN, {
     inputProofBytesHex: `0x${proof}` as BytesHex,
     coprocessorSignatures: [...coprocessorEip712Signatures],
-    inputHandles: externalFhevmHandles,
+    inputHandles,
     extraData,
     signedHandleAccess: signedHandleAccess,
   });
@@ -277,13 +299,13 @@ export function createInputProofFromRawBytes({
   }
 
   // Extract handles
-  const handles: Bytes32Hex[] = [];
+  const inputHandleBytes32HexArray: InputHandleBytes32Hex[] = [];
   for (let i = 0; i < numHandles; i++) {
     const start = handlesStart + i * HANDLE_SIZE;
     const end = start + HANDLE_SIZE;
     const handleBytes = inputProofBytes.slice(start, end);
     const handleBytes32Hex = bytes32ToHex(handleBytes);
-    handles.push(handleBytes32Hex);
+    inputHandleBytes32HexArray.push(handleBytes32Hex as InputHandleBytes32Hex);
   }
 
   // Extract signatures
@@ -302,7 +324,7 @@ export function createInputProofFromRawBytes({
 
   const inputProof = createInputProofFromComponents({
     coprocessorEip712Signatures: signatures,
-    inputHandles: handles,
+    inputHandleBytes32HexArray: inputHandleBytes32HexArray,
     extraData,
     signedHandleAccess: signedHandleAccess,
   });

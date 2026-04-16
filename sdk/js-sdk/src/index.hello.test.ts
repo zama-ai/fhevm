@@ -148,16 +148,16 @@ describe('hello', () => {
       await fhevmDecryptClient.ready;
 
       // Let's generate a simple kms private decryption key
-      // const e2eTransportKeypair =
+      // const transportKeypair =
       //   await fhevmDecryptClient.generateE2eTransportKeypair();
 
       // const dummySigner: ethers.Signer =
-      //   e2eTransportKeypair as unknown as ethers.Signer;
+      //   transportKeypair as unknown as ethers.Signer;
 
       // SignedSelfDecryptionPermit
       // const signedPermit: SignedSelfDecryptionPermit =
       //   await fhevmDecryptClient.signDecryptionPermit({
-      //     e2eTransportKeypair,
+      //     transportKeypair,
       //     contractAddresses: ["0x1E7eA8fE4877E6ea5dc8856f0dA92da8d5066241"],
       //     durationDays: 356,
       //     startTimestamp: timestampNow(),
@@ -168,7 +168,7 @@ describe('hello', () => {
       // // SignedDelegatedDecryptionPermit
       // const signedDelegatePermit: SignedDelegatedDecryptionPermit =
       //   await fhevmDecryptClient.signDecryptionPermit({
-      //     e2eTransportKeypair,
+      //     transportKeypair,
       //     contractAddresses: ["0x1E7eA8fE4877E6ea5dc8856f0dA92da8d5066241"],
       //     durationDays: 356,
       //     startTimestamp: timestampNow(),
@@ -179,13 +179,13 @@ describe('hello', () => {
 
       // const clearText = await fhevmDecryptClient.decrypt({
       //   encryptedValues: [],
-      //   e2eTransportKeypair,
+      //   transportKeypair,
       //   signedPermit,
       // });
 
       // const clearText2 = await fhevmDecryptClient.decrypt({
       //   encryptedValues: [],
-      //   e2eTransportKeypair,
+      //   transportKeypair,
       //   signedPermit: signedDelegatePermit,
       // });
 

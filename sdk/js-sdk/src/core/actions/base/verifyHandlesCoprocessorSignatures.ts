@@ -3,7 +3,7 @@ import type { CoprocessorSignersContext } from '../../types/coprocessorSignersCo
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
-import type { InputHandle } from '../../types/encryptedTypes.js';
+import type { InputHandle } from '../../types/encryptedTypes-p.js';
 import { recoverSigners } from '../../utils-p/runtime/recoverSigners.js';
 import { coprocessorEip712PrimaryType, coprocessorEip712Types } from '../../coprocessor/coprocessorEip712Types.js';
 import { createCoprocessorEip712Domain } from '../../coprocessor/createCoprocessorEip712Domain.js';
@@ -14,7 +14,7 @@ import { readCoprocessorSignersContext } from './readCoprocessorSignersContext.j
 
 export type VerifyHandlesCoprocessorSignaturesParameters = {
   readonly coprocessorSignatures: readonly Bytes65Hex[];
-  readonly handles: readonly InputHandle[];
+  readonly inputHandles: readonly InputHandle[];
   readonly userAddress: ChecksummedAddress;
   readonly contractAddress: ChecksummedAddress;
   readonly chainId: Uint64BigInt;
@@ -32,7 +32,7 @@ export async function verifyHandlesCoprocessorSignatures(
   // Use hex strings (not Uint8Array) for EIP-712 message fields.
   // viem's hashTypedData expects hex strings for bytes32 fields.
   const message: CoprocessorEip712Message = {
-    ctHandles: parameters.handles.map((h) => h.bytes32Hex),
+    ctHandles: parameters.inputHandles.map((h) => h.bytes32Hex),
     userAddress: parameters.userAddress,
     contractAddress: parameters.contractAddress,
     contractChainId: parameters.chainId,

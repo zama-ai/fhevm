@@ -1,4 +1,4 @@
-import type { Handle } from '../types/encryptedTypes.js';
+import type { Handle } from '../types/encryptedTypes-p.js';
 import type { UintNumber } from '../types/primitives.js';
 
 const MAX_KMS_DECRYPT_DECRYPTION_BIT_LIMIT = 2048 as UintNumber;
@@ -53,7 +53,7 @@ export function assertKmsEIP712DeadlineValidity(
     throw Error('startTimestamp is set in the future');
   }
 
-  const durationInSeconds = durationDaysBigInt * BigInt(86400);
+  const durationInSeconds = durationDaysBigInt * BigInt(24 * 60 * 60);
   if (startTimestampBigInt + durationInSeconds < currentTimestamp) {
     throw Error('request has expired');
   }

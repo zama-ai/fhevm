@@ -3,7 +3,7 @@ import type { KmsSigncryptedShares } from '../../types/kms.js';
 import type { Bytes, BytesHex } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
-import type { ClearValue } from '../../types/encryptedTypes.js';
+import type { ClearValue } from '../../types/encryptedTypes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

@@ -1,4 +1,4 @@
-import type { Handle } from './encryptedTypes.js';
+import type { Handle } from './encryptedTypes-p.js';
 import type { KmsEip712Domain } from './kms.js';
 import type { KmsSignersContext } from './kmsSignersContext.js';
 import type { Bytes65Hex, Bytes65HexNo0x, BytesHexNo0x, ChecksummedAddress } from './primitives.js';

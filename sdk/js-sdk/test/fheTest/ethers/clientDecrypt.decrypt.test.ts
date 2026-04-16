@@ -1,10 +1,12 @@
-import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
+import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
 import type { FheType } from '../../../src/core/types/fheType.js';
 import type { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
+import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -59,8 +61,10 @@ describe('Decrypt client — user decrypt', () => {
       provider: config.provider,
     });
     expect(client).toBeDefined();
-    expect(typeof client.decrypt).toBe('function');
-    expect(typeof client.generateE2eTransportKeypair).toBe('function');
+    expect(typeof client.decryptValue).toBe('function');
+    expect(typeof client.decryptValues).toBe('function');
+    expect(typeof client.decryptValuesFromPairs).toBe('function');
+    expect(typeof client.generateTransportKeypair).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
   });
 
@@ -71,7 +75,7 @@ describe('Decrypt client — user decrypt', () => {
     });
     await client.ready;
 
-    const keypair = await client.generateE2eTransportKeypair();
+    const keypair = await client.generateTransportKeypair();
     expect(keypair).toBeDefined();
   });
 
@@ -82,9 +86,9 @@ describe('Decrypt client — user decrypt', () => {
     });
     await client.ready;
 
-    const keypair = await client.generateE2eTransportKeypair();
+    const keypair = await client.generateTransportKeypair();
     const signedPermit = await client.signDecryptionPermit({
-      e2eTransportKeypair: keypair,
+      transportKeypair: keypair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -125,9 +129,9 @@ describe('Decrypt client — user decrypt', () => {
       });
       await client.ready;
 
-      const e2eTransportKeypair = await client.generateE2eTransportKeypair();
+      const transportKeypair = await client.generateTransportKeypair();
       const signedPermit = await client.signDecryptionPermit({
-        e2eTransportKeypair,
+        transportKeypair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -135,29 +139,27 @@ describe('Decrypt client — user decrypt', () => {
         signer: config.signer,
       });
 
-      const clearValues = await client.decrypt({
-        encryptedValues: {
-          encryptedValue: handle,
-          contractAddress: config.fheTestAddress as ChecksummedAddress,
-        },
+      const typedValue = await client.decryptValue({
+        contractAddress: config.fheTestAddress as ChecksummedAddress,
+        encryptedValue: handle,
         signedPermit,
-        e2eTransportKeypair,
+        transportKeypair,
       });
 
-      expect(clearValues).toHaveLength(1);
-      const decrypted = clearValues[0]!;
-      console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
+      expect(typedValue.type).toBe(toFhevmHandle(handle).clearType);
+
+      console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
       // Compare based on type
       if (fheType === 'ebool') {
-        expect(decrypted.value).toBe(expectedRaw !== 0n);
+        expect(typedValue.value).toBe(expectedRaw !== 0n);
       } else if (fheType === 'eaddress') {
         // eaddress: compare as lowercase hex strings
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
-        expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
+        expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {
         // uint types: compare as bigint
-        expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
+        expect(BigInt(typedValue.value as number | bigint)).toBe(expectedRaw);
       }
     });
   }
@@ -193,9 +195,9 @@ describe('Decrypt client — user decrypt', () => {
     });
     await client.ready;
 
-    const e2eTransportKeypair = await client.generateE2eTransportKeypair();
+    const transportKeypair = await client.generateTransportKeypair();
     const signedPermit = await client.signDecryptionPermit({
-      e2eTransportKeypair,
+      transportKeypair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -203,23 +205,21 @@ describe('Decrypt client — user decrypt', () => {
       signer: config.signer,
     });
 
-    const encryptedValues = entries.map((e) => ({
-      encryptedValue: e.handle,
-      contractAddress: config.fheTestAddress as ChecksummedAddress,
-    }));
+    const encryptedValues = entries.map((e) => asEncryptedValue(e.handle));
 
-    const clearValues = await client.decrypt({
+    const typedValues: readonly TypedValue[] = await client.decryptValues({
       encryptedValues,
+      contractAddress: config.fheTestAddress as ChecksummedAddress,
       signedPermit,
-      e2eTransportKeypair,
+      transportKeypair,
     });
 
-    expect(clearValues).toHaveLength(entries.length);
+    expect(typedValues).toHaveLength(entries.length);
 
     // Compare each result
     for (let i = 0; i < entries.length; i++) {
       const { fheType, expectedRaw } = entries[i]!;
-      const decrypted = clearValues[i]!;
+      const decrypted = typedValues[i]!;
       console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
 
       if (fheType === 'ebool') {

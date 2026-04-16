@@ -1,4 +1,4 @@
-import type { InputHandle } from './encryptedTypes.js';
+import type { InputHandle } from './encryptedTypes-p.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from './primitives.js';
 import type { NonEmptyReadonlyArray, Prettify } from './utils.js';
 

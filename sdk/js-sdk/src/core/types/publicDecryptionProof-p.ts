@@ -1,5 +1,6 @@
-import type { ClearValue } from './encryptedTypes.js';
+import type { ClearValue } from './encryptedTypes-p.js';
 import type { BytesHex } from './primitives.js';
+import type { NonEmptyReadonlyArray } from './utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -25,7 +26,7 @@ export type PublicDecryptionProof = {
    */
   readonly decryptionProof: BytesHex;
   /** Decrypted clear values, in the same order as the input `encryptedValues`. Do not reorder. */
-  readonly orderedClearValues: readonly ClearValue[];
+  readonly orderedClearValues: NonEmptyReadonlyArray<ClearValue>;
   /** ABI-encoded clear values, in the same order as the input `encryptedValues`. Do not reorder. */
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly extraData: BytesHex;

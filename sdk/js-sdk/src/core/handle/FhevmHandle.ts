@@ -1,20 +1,20 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { Bytes21Hex, Bytes32, Bytes32Hex, Uint64BigInt, Uint8Number } from '../types/primitives.js';
+import type { Bytes21Hex, Bytes32, Bytes32Hex, Uint64BigInt, Uint8Number, ValueTypeName } from '../types/primitives.js';
 import type { EncryptionBits, FheType, FheTypeId, SolidityPrimitiveTypeName } from '../types/fheType.js';
-import type { EncryptedValueLike, Handle, HandleLike, InputHandle, InputHandleLike } from '../types/encryptedTypes.js';
+import type { EncryptedValueLike } from '../types/encryptedTypes.js';
 import type {
-  EncryptedValueBase,
+  Handle,
+  HandleBaseV0,
   HandleBytes32,
   HandleBytes32Hex,
   HandleBytes32HexNo0x,
+  InputHandle,
   InputHandleBytes32,
   InputHandleBytes32Hex,
 } from '../types/encryptedTypes-p.js';
 import { FhevmHandleError } from '../errors/FhevmHandleError.js';
 import {
   asBytes21,
-  asBytes32,
-  asBytes32Hex,
   assertIsBytes32,
   assertIsBytes32Hex,
   bytes32ToHex,
@@ -32,10 +32,10 @@ import {
   fheTypeNameFromId,
   isFheTypeId,
   solidityPrimitiveTypeNameFromFheTypeId,
+  typeNameFromFheTypeName,
 } from './FheType.js';
 import { remove0x } from '../base/string.js';
 import { asUint8Number, uint64ToBytes32 } from '../base/uint.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -57,7 +57,7 @@ const FHEVM_HANDLE_VERSION_BYTE_OFFSET = 31 as Uint8Number;
 // Handle (EncryptedValue) implementation
 ////////////////////////////////////////////////////////////////////////////////
 
-class FhevmHandleImpl implements EncryptedValueBase {
+class FhevmHandleImpl implements HandleBaseV0 {
   //////////////////////////////////////////////////////////////////////////////
   // Instance Properties
   //////////////////////////////////////////////////////////////////////////////
@@ -116,6 +116,10 @@ class FhevmHandleImpl implements EncryptedValueBase {
 
   public get fheType(): FheType {
     return fheTypeNameFromId(this.fheTypeId);
+  }
+
+  public get clearType(): ValueTypeName {
+    return typeNameFromFheTypeName(this.fheType);
   }
 
   public get version(): Uint8Number {
@@ -226,10 +230,10 @@ export function assertIsInputHandle(
   }
 }
 
-export function assertIsHandleLike(
+export function assertIsEncryptedValueLike(
   value: unknown,
   options?: { subject?: string } & ErrorMetadataParams,
-): asserts value is HandleLike {
+): asserts value is EncryptedValueLike {
   if (value === null || value === undefined) {
     throw new FhevmHandleError({
       ...options,
@@ -254,36 +258,36 @@ export function assertIsHandleLike(
   assertIsHandleBytes32(value, options);
 }
 
-export function assertIsEncryptedValueLike(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): asserts value is EncryptedValueLike {
-  assertIsHandleLike(value, options);
-}
+// export function assertIsEncryptedValueLike(
+//   value: unknown,
+//   options?: { subject?: string } & ErrorMetadataParams,
+// ): asserts value is EncryptedValueLike {
+//   assertIsHandleLike(value, options);
+// }
 
-export function assertIsInputHandleLike(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): asserts value is InputHandleLike {
-  if (value instanceof FhevmHandleImpl) {
-    if (!value.isExternal) {
-      throw new FhevmHandleError({ message: 'Expected an input handle' });
-    }
-    return;
-  }
+// export function assertIsInputHandleLike(
+//   value: unknown,
+//   options?: { subject?: string } & ErrorMetadataParams,
+// ): asserts value is InputHandleLike {
+//   if (value instanceof FhevmHandleImpl) {
+//     if (!value.isExternal) {
+//       throw new FhevmHandleError({ message: 'Expected an input handle' });
+//     }
+//     return;
+//   }
 
-  if (value !== null && typeof value === 'object' && 'bytes32Hex' in value) {
-    assertIsInputHandleBytes32Hex(value.bytes32Hex, options);
-    return;
-  }
+//   if (value !== null && typeof value === 'object' && 'bytes32Hex' in value) {
+//     assertIsInputHandleBytes32Hex(value.bytes32Hex, options);
+//     return;
+//   }
 
-  if (typeof value === 'string') {
-    assertIsInputHandleBytes32Hex(value, options);
-    return;
-  }
+//   if (typeof value === 'string') {
+//     assertIsInputHandleBytes32Hex(value, options);
+//     return;
+//   }
 
-  assertIsInputHandleBytes32(value, options);
-}
+//   assertIsInputHandleBytes32(value, options);
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -305,23 +309,23 @@ export function isHandleBytes32Hex(value: unknown): value is HandleBytes32Hex {
   }
 }
 
-export function isHandleLike(value: unknown): value is HandleLike {
-  try {
-    assertIsHandleLike(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// export function isHandleLike(value: unknown): value is HandleLike {
+//   try {
+//     assertIsHandleLike(value);
+//     return true;
+//   } catch {
+//     return false;
+//   }
+// }
 
-export function isInputHandleLike(value: unknown): value is InputHandleLike {
-  try {
-    assertIsInputHandleLike(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// export function isInputHandleLike(value: unknown): value is InputHandleLike {
+//   try {
+//     assertIsInputHandleLike(value);
+//     return true;
+//   } catch {
+//     return false;
+//   }
+// }
 
 /**
  * Checks if a value is a `Handle` (EncryptedValue) instance.
@@ -351,10 +355,10 @@ export function asHandle(value: unknown): Handle {
   return value;
 }
 
-export function asHandleLike(value: unknown): HandleLike {
-  assertIsHandleLike(value);
-  return value;
-}
+// export function asHandleLike(value: unknown): HandleLike {
+//   assertIsHandleLike(value);
+//   return value;
+// }
 
 export function asHandleBytes32(value: unknown): HandleBytes32 {
   assertIsHandleBytes32(value);
@@ -427,35 +431,35 @@ export function bytes32ToHandle(bytes: Bytes32): Handle {
   }) as Handle;
 }
 
-/**
- * [Trusted] Converts a `HandleLike` to a `Handle`.
- *
- * Trusts the type system for input validation.
- * Still validates FHEVM-specific fields (fheTypeId, version).
- *
- * @param handleLike - A `HandleLike` (Bytes32, Bytes32Hex, Bytes32HexAble, or Handle)
- * @returns A `Handle` instance
- * @throws A {@link FhevmHandleError} If fheTypeId or version is invalid
- */
-export function handleLikeToHandle(handleLike: HandleLike): Handle {
-  // Already a Handle
-  if (handleLike instanceof FhevmHandleImpl) {
-    return handleLike as Handle;
-  }
+// /**
+//  * [Trusted] Converts a `HandleLike` to a `Handle`.
+//  *
+//  * Trusts the type system for input validation.
+//  * Still validates FHEVM-specific fields (fheTypeId, version).
+//  *
+//  * @param handleLike - A `HandleLike` (Bytes32, Bytes32Hex, Bytes32HexAble, or Handle)
+//  * @returns A `Handle` instance
+//  * @throws A {@link FhevmHandleError} If fheTypeId or version is invalid
+//  */
+// export function handleLikeToHandle(handleLike: HandleLike): Handle {
+//   // Already a Handle
+//   if (handleLike instanceof FhevmHandleImpl) {
+//     return handleLike as Handle;
+//   }
 
-  // Bytes32Hex (string)
-  if (typeof handleLike === 'string') {
-    return bytes32HexToHandle(asBytes32Hex(handleLike));
-  }
+//   // Bytes32Hex (string)
+//   if (typeof handleLike === 'string') {
+//     return bytes32HexToHandle(asBytes32Hex(handleLike));
+//   }
 
-  // Bytes32HexAble (object with bytes32Hex property)
-  if ('bytes32Hex' in handleLike) {
-    return bytes32HexToHandle(asBytes32Hex(handleLike.bytes32Hex));
-  }
+//   // Bytes32HexAble (object with bytes32Hex property)
+//   if ('bytes32Hex' in handleLike) {
+//     return bytes32HexToHandle(asBytes32Hex(handleLike.bytes32Hex));
+//   }
 
-  // Bytes32 (Uint8Array)
-  return bytes32ToHandle(asBytes32(handleLike));
-}
+//   // Bytes32 (Uint8Array)
+//   return bytes32ToHandle(asBytes32(handleLike));
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Conversion
@@ -471,7 +475,7 @@ export function handleLikeToHandle(handleLike: HandleLike): Handle {
  * @throws {InvalidTypeError} If value is not a valid bytes32 hex or bytes32
  * @throws {FhevmHandleError} If fheTypeId or version is invalid
  */
-export function toHandle(value: unknown): Handle {
+export function toFhevmHandle(value: unknown): Handle {
   if (value instanceof FhevmHandleImpl) {
     return value as Handle;
   }
@@ -492,10 +496,10 @@ export function toHandle(value: unknown): Handle {
 }
 
 export function toInputHandle(value: unknown): InputHandle {
-  const h = toHandle(value);
+  const h = toFhevmHandle(value);
   if (!isInputHandle(h)) {
     throw new FhevmHandleError({
-      message: 'Invalid external handle',
+      message: 'Invalid input handle',
     });
   }
   return h;
@@ -514,7 +518,7 @@ export function handleEquals(a: Handle, b: Handle): boolean {
 
 export function assertHandleArrayEquals(
   actual: readonly Handle[],
-  expected: readonly HandleLike[],
+  expected: readonly Handle[],
   options?: {
     actualName?: string | undefined;
     expectedName?: string | undefined;
@@ -529,7 +533,7 @@ export function assertHandleArrayEquals(
     });
   }
 
-  const expectedHandles = expected.map((h) => toHandle(h));
+  const expectedHandles = expected.map((h) => toFhevmHandle(h));
 
   for (let i = 0; i < actual.length; ++i) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -587,63 +591,63 @@ export function buildHandle({
   return bytes32ToHandle(handleBytes32AsBytes);
 }
 
-export function assertIsHandleLikeArray(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): asserts value is HandleLike[] {
-  if (!Array.isArray(value)) {
-    throw new InvalidTypeError(
-      {
-        subject: options?.subject,
-        type: typeof value,
-        expectedType: 'HandleLike[]',
-      },
-      options ?? {},
-    );
-  }
-  for (let i = 0; i < value.length; ++i) {
-    if (!isHandleLike(value[i])) {
-      throw new InvalidTypeError(
-        {
-          subject: options?.subject,
-          index: i,
-          type: typeof value[i],
-          expectedType: 'HandleLike',
-        },
-        options ?? {},
-      );
-    }
-  }
-}
+// export function assertIsHandleLikeArray(
+//   value: unknown,
+//   options?: { subject?: string } & ErrorMetadataParams,
+// ): asserts value is HandleLike[] {
+//   if (!Array.isArray(value)) {
+//     throw new InvalidTypeError(
+//       {
+//         subject: options?.subject,
+//         type: typeof value,
+//         expectedType: 'HandleLike[]',
+//       },
+//       options ?? {},
+//     );
+//   }
+//   for (let i = 0; i < value.length; ++i) {
+//     if (!isHandleLike(value[i])) {
+//       throw new InvalidTypeError(
+//         {
+//           subject: options?.subject,
+//           index: i,
+//           type: typeof value[i],
+//           expectedType: 'HandleLike',
+//         },
+//         options ?? {},
+//       );
+//     }
+//   }
+// }
 
-export function assertIsInputHandleLikeArray(
-  value: unknown,
-  options?: { subject?: string } & ErrorMetadataParams,
-): asserts value is InputHandleLike[] {
-  if (!Array.isArray(value)) {
-    throw new InvalidTypeError(
-      {
-        subject: options?.subject,
-        type: typeof value,
-        expectedType: 'InputHandleLike[]',
-      },
-      options ?? {},
-    );
-  }
-  for (let i = 0; i < value.length; ++i) {
-    if (!isInputHandleLike(value[i])) {
-      throw new InvalidTypeError(
-        {
-          subject: options?.subject,
-          index: i,
-          type: typeof value[i],
-          expectedType: 'InputHandleLike',
-        },
-        options ?? {},
-      );
-    }
-  }
-}
+// export function assertIsInputHandleLikeArray(
+//   value: unknown,
+//   options?: { subject?: string } & ErrorMetadataParams,
+// ): asserts value is InputHandleLike[] {
+//   if (!Array.isArray(value)) {
+//     throw new InvalidTypeError(
+//       {
+//         subject: options?.subject,
+//         type: typeof value,
+//         expectedType: 'InputHandleLike[]',
+//       },
+//       options ?? {},
+//     );
+//   }
+//   for (let i = 0; i < value.length; ++i) {
+//     if (!isInputHandleLike(value[i])) {
+//       throw new InvalidTypeError(
+//         {
+//           subject: options?.subject,
+//           index: i,
+//           type: typeof value[i],
+//           expectedType: 'InputHandleLike',
+//         },
+//         options ?? {},
+//       );
+//     }
+//   }
+// }
 
 export function assertHandlesBelongToSameChainId(fhevmHandles: readonly Handle[], chainId?: Uint64BigInt): void {
   if (fhevmHandles.length === 0) {

@@ -1,19 +1,19 @@
 import type { Uint64BigInt } from '../types/primitives.js';
 import type { CoprocessorEip712 } from '../types/coprocessor.js';
-import type { InputHandleLike } from '../types/encryptedTypes.js';
-import { assertIsInputHandleLikeArray, handleLikeToHandle } from '../handle/FhevmHandle.js';
+import type { InputHandle } from '../types/encryptedTypes-p.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../base/address.js';
 import { assertIsUint64 } from '../base/uint.js';
 import { assertIsBytesHex } from '../base/bytes.js';
 import { coprocessorEip712Types } from './coprocessorEip712Types.js';
 import { createCoprocessorEip712Domain } from './createCoprocessorEip712Domain.js';
+import { assertIsInputHandle } from '../handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export type CreateCoprocessorEip712Parameters = {
   readonly gatewayChainId: number | bigint;
   readonly verifyingContractAddressInputVerification: string;
-  readonly handles: readonly InputHandleLike[];
+  readonly inputHandles: readonly InputHandle[];
   readonly contractChainId: number | bigint;
   readonly contractAddress: string;
   readonly userAddress: string;
@@ -27,13 +27,12 @@ export type CreateCoprocessorEip712Parameters = {
 export function createCoprocessorEip712({
   gatewayChainId,
   verifyingContractAddressInputVerification,
-  handles,
+  inputHandles,
   contractChainId,
   contractAddress,
   userAddress,
   extraData,
 }: CreateCoprocessorEip712Parameters): CoprocessorEip712 {
-  assertIsInputHandleLikeArray(handles, {});
   assertIsAddress(userAddress, {});
   assertIsAddress(contractAddress, {});
   assertIsUint64(contractChainId, {});
@@ -48,8 +47,9 @@ export function createCoprocessorEip712({
     domain,
     types: coprocessorEip712Types,
     message: {
-      ctHandles: handles.map((h) => {
-        return handleLikeToHandle(h).bytes32Hex;
+      ctHandles: inputHandles.map((inputHandle) => {
+        assertIsInputHandle(inputHandle, {});
+        return inputHandle.bytes32Hex;
       }),
       userAddress: addressToChecksummedAddress(userAddress),
       contractAddress: addressToChecksummedAddress(contractAddress),

@@ -1,4 +1,4 @@
-import type { PublicDecryptionProof } from '../types/publicDecryptionProof.js';
+import type { PublicDecryptionProof } from '../types/publicDecryptionProof-p.js';
 import { PublicDecryptionProofImpl } from './PublicDecryptionProof-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////

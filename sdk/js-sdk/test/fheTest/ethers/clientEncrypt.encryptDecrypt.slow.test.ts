@@ -1,9 +1,12 @@
 import type { ethers } from 'ethers';
-import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
+import type { TypedValue } from '../../../src/core/types/primitives.js';
+import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+import { isBytes32Hex } from '../../../src/core/base/bytes.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -89,21 +92,22 @@ describe(
       });
       await client.ready;
 
-      const result = await client.encrypt({
+      const result = await client.encryptValues({
         contractAddress: config.fheTestAddress,
         userAddress: config.wallet.address,
         values: encryptTestCases,
       });
 
-      expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
+      expect(result.encryptedValues).toHaveLength(encryptTestCases.length);
       expect(result.inputProof).toBeDefined();
       expect(result.inputProof.startsWith('0x')).toBe(true);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const tc = encryptTestCases[i]!;
-        const ev = result.externalEncryptedValues[i]!;
-        console.log(`  ${tc.type}: handle=${ev.bytes32Hex.slice(0, 20)}...`);
-        expect(ev.bytes32Hex).toBeDefined();
+        const ev = result.encryptedValues[i]!;
+        expect(ev).toBeDefined();
+        expect(isBytes32Hex(ev)).toBe(true);
+        console.log(`  ${tc.type}: handle=${ev.slice(0, 20)}...`);
       }
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -113,18 +117,19 @@ describe(
       const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
       for (let i = 0; i < encryptTestCases.length; i++) {
-        const enc = result.externalEncryptedValues[i]!;
+        const enc: EncryptedValue = result.encryptedValues[i]!;
+        const fheType = toFhevmHandle(enc).fheType;
         const ct = encryptTestCases[i]!.value;
 
-        const inputHandle = enc.bytes32Hex;
+        const inputHandle = enc;
         const inputProof = result.inputProof;
         const makePublic = true;
 
         let tx: ethers.TransactionResponse;
 
-        console.log(`setE${enc.fheType.substring(1)}(${inputHandle})...`);
+        console.log(`setE${fheType.substring(1)}(${inputHandle})...`);
 
-        switch (enc.fheType) {
+        switch (fheType) {
           case 'ebool':
             tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
@@ -168,9 +173,9 @@ describe(
 
       await decryptClient.ready;
 
-      const e2eTransportKeypair = await decryptClient.generateE2eTransportKeypair();
+      const transportKeypair = await decryptClient.generateTransportKeypair();
       const signedPermit = await decryptClient.signDecryptionPermit({
-        e2eTransportKeypair,
+        transportKeypair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -178,25 +183,21 @@ describe(
         signer: config.signer,
       });
 
-      const encryptedValues = result.externalEncryptedValues.map((ev) => {
-        return {
-          encryptedValue: ev.bytes32Hex,
-          contractAddress: config.fheTestAddress as ChecksummedAddress,
-        };
-      });
+      const encryptedValues = result.encryptedValues;
 
       console.log('decrypt...');
 
-      const clearValues = await decryptClient.decrypt({
+      const typedValues = await decryptClient.decryptValues({
         encryptedValues,
+        contractAddress: config.fheTestAddress,
         signedPermit,
-        e2eTransportKeypair,
+        transportKeypair,
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {
-        console.log(clearValues[i]?.value);
-        expect(clearValues[i]?.type).toBe(encryptTestCases[i]?.type);
-        expect(clearValues[i]?.value).toBe(encryptTestCases[i]?.value);
+        console.log(typedValues[i]?.value);
+        expect(typedValues[i]?.type).toBe(encryptTestCases[i]?.type);
+        expect(typedValues[i]?.value).toBe(encryptTestCases[i]?.value);
       }
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -205,17 +206,18 @@ describe(
       // └─────────────────────────────────────────────────────────────────────┘
       console.log('publicDecrypt...');
 
-      const publicProof = await decryptClient.readPublicValue({
-        encryptedValues: result.externalEncryptedValues,
+      const publicTypedValues = await decryptClient.readPublicValues({
+        encryptedValues: result.encryptedValues,
       });
 
-      expect(publicProof.orderedClearValues).toHaveLength(encryptTestCases.length);
+      expect(publicTypedValues).toHaveLength(encryptTestCases.length);
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const expected = encryptTestCases[i]!;
-        const actual = publicProof.orderedClearValues[i]!;
+        const actual = publicTypedValues[i]!;
         console.log(`  readPublicValue ${expected.type}: ${actual.value}`);
         expect(actual.value).toBe(expected.value);
+        expect(actual.type).toBe(expected.type);
       }
     });
   },

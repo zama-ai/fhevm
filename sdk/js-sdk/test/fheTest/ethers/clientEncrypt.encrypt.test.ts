@@ -3,6 +3,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
+import { isBytes32Hex } from '../../../src/core/base/bytes.js';
+import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -82,21 +84,25 @@ describe('Encrypt', () => {
     });
     await client.ready;
 
-    const result = await client.encrypt({
+    const result = await client.encryptValues({
       contractAddress: config.fheTestAddress,
       userAddress: config.wallet.address,
       values: encryptTestCases,
     });
 
-    expect(result.externalEncryptedValues).toHaveLength(encryptTestCases.length);
+    expect(result.encryptedValues).toHaveLength(encryptTestCases.length);
     expect(result.inputProof).toBeDefined();
     expect(result.inputProof.startsWith('0x')).toBe(true);
 
     for (let i = 0; i < encryptTestCases.length; i++) {
       const tc = encryptTestCases[i]!;
-      const ev = result.externalEncryptedValues[i]!;
-      console.log(`  ${tc.type}: handle=${ev.bytes32Hex.slice(0, 20)}...`);
-      expect(ev.bytes32Hex).toBeDefined();
+      const ev = result.encryptedValues[i]!;
+      const handle = toFhevmHandle(ev);
+      expect(ev).toBeDefined();
+      expect(isBytes32Hex(ev)).toBe(true);
+      expect(handle.chainId).toBe(BigInt(client.chain.id));
+      expect(handle.clearType).toBe(tc.type);
+      console.log(`  ${tc.type}: handle=${ev.slice(0, 20)}...`);
     }
   });
 
@@ -113,17 +119,17 @@ describe('Encrypt', () => {
       });
       await client.ready;
 
-      const result = await client.encrypt({
+      const result = await client.encryptValue({
         contractAddress: config.fheTestAddress,
         userAddress: config.wallet.address,
-        values: tc,
+        value: tc,
       });
 
-      expect(result.externalEncryptedValue).toBeDefined();
+      expect(result.encryptedValue).toBeDefined();
       expect(result.inputProof).toBeDefined();
       expect(result.inputProof.startsWith('0x')).toBe(true);
       console.log(
-        `  ${tc.type}: handle=${result.externalEncryptedValue.bytes32Hex.slice(0, 20)}... proof=${result.inputProof.length} chars`,
+        `  ${tc.type}: handle=${result.encryptedValue.slice(0, 20)}... proof=${result.inputProof.length} chars`,
       );
     });
   }

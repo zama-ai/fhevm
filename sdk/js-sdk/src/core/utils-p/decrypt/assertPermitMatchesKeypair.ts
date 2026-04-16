@@ -1,6 +1,6 @@
-import type { E2eTransportKeypair } from '../../kms/E2eTransportKeypair-p.js';
+import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
-import { assertIsE2eTransportKeypair } from '../../kms/E2eTransportKeypair-p.js';
+import { assertIsTransportKeypair } from '../../kms/TransportKeypair-p.js';
 import { assertIsSignedDecryptionPermit } from '../../kms/SignedDecryptionPermit-p.js';
 
 /**
@@ -13,12 +13,12 @@ import { assertIsSignedDecryptionPermit } from '../../kms/SignedDecryptionPermit
  */
 export function assertPermitMatchesKeypair(
   signedPermit: SignedDecryptionPermit,
-  e2eTransportKeypair: E2eTransportKeypair,
+  transportKeypair: TransportKeypair,
 ): void {
   assertIsSignedDecryptionPermit(signedPermit, {});
-  assertIsE2eTransportKeypair(e2eTransportKeypair, {});
+  assertIsTransportKeypair(transportKeypair, {});
 
-  if (signedPermit.e2eTransportPublicKey.toLowerCase() !== e2eTransportKeypair.publicKey.toLowerCase()) {
+  if (signedPermit.e2eTransportPublicKey.toLowerCase() !== transportKeypair.publicKey.toLowerCase()) {
     throw new Error(
       "The permit's publicKey does not match the E2eTransportKeypair's publicKey. " +
         'Ensure the permit was signed with the same keypair.',

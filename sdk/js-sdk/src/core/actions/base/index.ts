@@ -1,13 +1,30 @@
 export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './readKmsSignersContext.js';
 
-export {
-  type CheckUserAllowedForDecryptionParameters,
-  checkUserAllowedForDecryption,
-} from './checkUserAllowedForDecryption.js';
-
-export { type PublicDecryptParameters, type PublicDecryptReturnType, publicDecrypt } from './publicDecrypt.js';
-
 export { type ReadPublicValueParameters, type ReadPublicValueReturnType, readPublicValue } from './readPublicValue.js';
+
+export {
+  type ReadPublicValuesParameters,
+  type ReadPublicValuesReturnType,
+  readPublicValues,
+} from './readPublicValues.js';
+
+export {
+  type ReadPublicValuesWithSignaturesParameters,
+  type ReadPublicValuesWithSignaturesReturnType,
+  readPublicValuesWithSignatures,
+} from './readPublicValuesWithSignatures.js';
+
+export {
+  type CanReadPublicValueParameters,
+  type CanReadPublicValueReturnType,
+  canReadPublicValue,
+} from './canReadPublicValue.js';
+
+export {
+  type CanReadPublicValuesParameters,
+  type CanReadPublicValuesReturnType,
+  canReadPublicValues,
+} from './canReadPublicValues.js';
 
 export {
   type CreateVerifiedInputProofFromRawBytesParameters,
@@ -19,12 +36,6 @@ export {
   type ReadCoprocessorSignersContextReturnType,
   readCoprocessorSignersContext,
 } from './readCoprocessorSignersContext.js';
-
-export {
-  type CreateVerifiedInputProofFromComponentsParameters,
-  type CreateVerifiedInputProofFromComponentsReturnType,
-  createVerifiedInputProofFromComponents,
-} from './createVerifiedInputProofFromComponents.js';
 
 export {
   type VerifyInputProofParameters,
@@ -39,33 +50,16 @@ export {
 } from './fetchVerifiedInputProof.js';
 
 export {
-  type IsAllowedForDecryptionArrayParameters,
-  type IsAllowedForDecryptionArrayReturnType,
-  type IsAllowedForDecryptionSingleParameters,
-  type IsAllowedForDecryptionSingleReturnType,
-  isAllowedForDecryption,
-} from './isAllowedForDecryption.js';
-
-export {
-  type PersistAllowedArrayParameters,
-  type PersistAllowedArrayReturnType,
-  type PersistAllowedSingleParameters,
-  type PersistAllowedSingleReturnType,
-  persistAllowed,
-} from './persistAllowed.js';
-
-export {
   type VerifyZkProofCoprocessorSignaturesParameters,
   verifyZkProofCoprocessorSignatures,
 } from './verifyZkProofCoprocessorSignatures.js';
 
 export {
-  type FetchKmsSignedcryptedSharesParameters,
+  type FetchSelfKmsSignedcryptedSharesParameters,
+  type FetchDelegatedKmsSignedcryptedSharesParameters,
   type FetchKmsSignedcryptedSharesReturnType,
   fetchKmsSignedcryptedShares,
 } from './fetchKmsSignedcryptedShares.js';
-
-export { type CheckAllowedForDecryptionParameters, checkAllowedForDecryption } from './checkAllowedForDecryption.js';
 
 export {
   type VerifyHandlesCoprocessorSignaturesParameters,

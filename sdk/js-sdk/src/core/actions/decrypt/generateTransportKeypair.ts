@@ -2,18 +2,18 @@ import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import {
-  generateE2eTransportKeypair as generateE2eTransportKeypair_,
-  type E2eTransportKeypair,
-} from '../../kms/E2eTransportKeypair-p.js';
+  generateTransportKeypair as generateTransportKeypair_,
+  type TransportKeypair,
+} from '../../kms/TransportKeypair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GenerateE2eTransportKeypairReturnType = E2eTransportKeypair;
+export type GenerateTransportKeypairReturnType = TransportKeypair;
 
-export async function generateE2eTransportKeypair(
+export async function generateTransportKeypair(
   fhevm: Fhevm<FhevmChain | undefined, WithDecrypt, OptionalNativeClient>,
-): Promise<GenerateE2eTransportKeypairReturnType> {
-  return await generateE2eTransportKeypair_(fhevm);
+): Promise<GenerateTransportKeypairReturnType> {
+  return await generateTransportKeypair_(fhevm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
