@@ -28,6 +28,13 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
+function readExistingHostEnv(): Record<string, string> {
+  if (!fs.existsSync(HOST_ENV_FILE)) {
+    return {};
+  }
+  return readHostEnv();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +134,36 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   // Set KMSGeneration Address
   const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
+});
+
+task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  const existingEnv = readExistingHostEnv();
+
+  const targets = [
+    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
+    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+  ] as const;
+
+  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
+
+  if (missingTargets.length === 0) {
+    console.warn(
+      'Migration bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration. Remove task:ensureMigrationProxyAddresses once UPGRADE_FROM_TAG includes #2243.',
+    );
+    return;
+  }
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  for (const { envKey, setterTask } of missingTargets) {
+    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run(setterTask, { address: proxyAddress });
+  }
 });
 
 ////////////////////////////////////////////////////////////////////////////////
