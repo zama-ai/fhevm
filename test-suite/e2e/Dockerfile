@@ -30,11 +30,14 @@ RUN npm ci && \
     if [ -n "$RELAYER_SDK_VERSION" ]; then \
       cd /tmp && \
       SDK_TARBALL="$(npm pack "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}")" && \
+      rm -rf /app/node_modules/@zama-fhe/relayer-sdk && \
+      mkdir -p /app/node_modules/@zama-fhe/relayer-sdk && \
+      tar -xzf "$SDK_TARBALL" -C /app/node_modules/@zama-fhe/relayer-sdk --strip-components=1 package && \
       rm -rf /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk && \
       mkdir -p /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk && \
       tar -xzf "$SDK_TARBALL" -C /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk --strip-components=1 package && \
       rm -f "$SDK_TARBALL" && \
-      node -e "const {createRequire}=require('module'); const req=createRequire('/app/test-suite/e2e/package.json'); const version=req('@zama-fhe/relayer-sdk/package.json').version; if (version !== '${RELAYER_SDK_VERSION}') throw new Error('expected relayer-sdk ${RELAYER_SDK_VERSION}, got ' + version);" ; \
+      node -e \"const {createRequire}=require('module'); const checks=[createRequire('/app/package.json'),createRequire('/app/test-suite/e2e/package.json')]; for (const req of checks) { const version=req('@zama-fhe/relayer-sdk/package.json').version; if (version !== '${RELAYER_SDK_VERSION}') throw new Error('expected relayer-sdk ${RELAYER_SDK_VERSION}, got ' + version); }\" ; \
     fi
 
 # Copy sources after deps are cached

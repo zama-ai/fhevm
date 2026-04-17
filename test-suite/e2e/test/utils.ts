@@ -177,17 +177,29 @@ export const userDecryptSingleHandle = async (
   );
 
   const signerAddress = await signer.getAddress();
-  const result = await instance.userDecrypt(
-    HandleContractPairs,
-    privateKey,
-    publicKey,
-    signature.replace('0x', ''),
-    contractAddresses,
-    signerAddress,
-    startTimeStamp,
-    durationDays,
-    extraData,
-  );
+  const deadline = Date.now() + delegatedUserDecryptTimeoutMs;
+  let result;
+  while (true) {
+    try {
+      result = await instance.userDecrypt(
+        HandleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace('0x', ''),
+        contractAddresses,
+        signerAddress,
+        startTimeStamp,
+        durationDays,
+        extraData,
+      );
+      break;
+    } catch (error) {
+      if (!isDelegatedDecryptNotReady(error) || Date.now() + delegatedUserDecryptRetryMs > deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delegatedUserDecryptRetryMs));
+    }
+  }
 
   const decryptedValue = result[handle];
   return decryptedValue;
