@@ -702,7 +702,7 @@ pub fn check_fhe_operand_types(
                     Ok(())
                 }
                 SupportedFheOperations::FheSum => {
-                    const FHE_SUM_MIN_INPUTS: usize = 2;
+                    const FHE_SUM_MIN_INPUTS: usize = 1;
                     const FHE_SUM_MAX_INPUTS_WIDE: usize = 60;
                     const FHE_SUM_MAX_INPUTS_NARROW: usize = 100;
 
@@ -3561,7 +3561,12 @@ mod fhe_sum_tests {
     #[test]
     fn fhe_sum_check_operand_types_too_few_inputs() {
         assert!(check_fhe_operand_types(FHE_SUM_OP, &[], &[]).is_err());
-        assert!(check_fhe_operand_types(FHE_SUM_OP, &[vec![0u8; 32]], &[false]).is_err());
+    }
+
+    #[test]
+    fn fhe_sum_check_operand_types_single_input() {
+        assert!(check_sum(1, 2));
+        assert!(check_sum(1, 5));
     }
 
     #[test]

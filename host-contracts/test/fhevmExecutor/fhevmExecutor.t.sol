@@ -2024,17 +2024,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheSum(values);
     }
 
-    function test_RevertsIfFheSumTooFewInputs() public {
-        bytes32[] memory empty = new bytes32[](0);
-        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
-        fhevmExecutor.fheSum(empty);
-
-        bytes32[] memory single = new bytes32[](1);
-        single[0] = _generateMockHandle(FheType.Uint8);
-        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
-        fhevmExecutor.fheSum(single);
-    }
-
     function test_RevertsIfFheSumTooManyInputs() public {
         // Uint64 has maxSize=60; 61 elements should revert.
         bytes32[] memory values = new bytes32[](61);
@@ -2043,5 +2032,30 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         }
         vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
         fhevmExecutor.fheSum(values);
+    }
+
+    function test_FheSumSingleElementWorksAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSum));
+        address sender = address(123);
+
+        bytes32[] memory values = new bytes32[](1);
+        values[0] = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(values[0], sender);
+
+        bytes32 expectedResult = _computeExpectedResultFheSum(values, FheType(fheType));
+
+        vm.prank(sender);
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheSum(sender, values, expectedResult);
+        bytes32 result = fhevmExecutor.fheSum(values);
+        assertEq(result, expectedResult);
+    }
+
+    function test_FheSumEmptyArrayRevertsAtExecutor() public {
+        bytes32[] memory empty = new bytes32[](0);
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        fhevmExecutor.fheSum(empty);
     }
 }
