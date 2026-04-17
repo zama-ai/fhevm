@@ -58,6 +58,12 @@ contract ACL is
     error DelegateCannotBeContractAddress(address contractAddress);
 
     /**
+     * @notice Returned if the delegate address is the wildcard contract address.
+     * @param delegate The address of the delegate.
+     */
+    error DelegateCannotBeWildcard(address delegate);
+
+    /**
      * @notice Returned if the requested expiration date was already set to same expiration for (delegate,contractAddress).
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -144,7 +150,7 @@ contract ACL is
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -165,7 +171,7 @@ contract ACL is
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -185,11 +191,11 @@ contract ACL is
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
@@ -296,6 +302,9 @@ contract ACL is
         }
         if (delegate == contractAddress) {
             revert DelegateCannotBeContractAddress(contractAddress);
+        }
+        if (delegate == WILDCARD_CONTRACT) {
+            revert DelegateCannotBeWildcard(delegate);
         }
         if (expirationDate <= block.timestamp) {
             revert ExpirationDateInThePast();
@@ -475,8 +484,8 @@ contract ACL is
             return false;
         }
         return
-            _isUserDecryptionDelegationActive($, delegator, delegate, contractAddress) ||
-            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_CONTRACT);
+            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_CONTRACT) ||
+            _isUserDecryptionDelegationActive($, delegator, delegate, contractAddress);
     }
 
     /**
