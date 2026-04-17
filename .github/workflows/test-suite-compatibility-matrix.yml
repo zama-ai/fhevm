@@ -12,7 +12,7 @@ on:
     inputs:
       compat-test:
         description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
-        default: "v0.11-to-v0.12"
+        default: "v0.12-to-main"
         type: string
       compat-overrides:
         description: "Optional local override groups appended to each compat step for diagnostic runs (e.g. relayer,test-suite)"
@@ -22,7 +22,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.11-to-v0.12' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.12-to-main' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,6 @@ jobs:
       compat_overrides: ${{ steps.prepare.outputs.compat_overrides }}
       matrix: ${{ steps.prepare.outputs.matrix }}
       scenario: ${{ steps.prepare.outputs.scenario }}
-      test_profile: ${{ steps.prepare.outputs.test_profile }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -64,7 +63,7 @@ jobs:
         name: Resolve compat-test and generate rollout matrix
         working-directory: test-suite/fhevm
         env:
-          COMPAT_TEST_INPUT: ${{ github.event.inputs.compat-test || 'v0.11-to-v0.12' }}
+          COMPAT_TEST_INPUT: ${{ github.event.inputs.compat-test || 'v0.12-to-main' }}
           COMPAT_OVERRIDES_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.compat-overrides || '' }}
         run: |
           set -euo pipefail
@@ -96,18 +95,14 @@ jobs:
           }
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
-          # Compat runs always use the branch test-suite harness: rollout validates the
-          # backend transition, while CLI/test-suite own backward-compat shims.
-          compat_overrides="$(merge_csv test-suite "$COMPAT_OVERRIDES_INPUT")"
+          compat_overrides="$(merge_csv "$COMPAT_OVERRIDES_INPUT")"
           {
             echo "compat_test=$compat_test_rel"
             echo "compat_overrides=$compat_overrides"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
-            echo "test_profile=$(jq -r '.execution.testProfile // \"standard\"' "$compat_test")"
             echo "matrix<<EOF"
-            # Skip baseline in CI: historical rollout baselines can fail before step 1
-            # because old relayer releases only serve the v1 API while current test-suite
-            # images expect the v2 API shape. Baseline rendering is still available locally.
+            # Skip baseline in CI: canonical rollout CI focuses on transitional states.
+            # Baseline rendering remains available locally when needed.
             ./fhevm-cli rollout --compat-test "$compat_test" --matrix | jq '{include: [.include[] | select(.stepIndex > 0)]}'
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -133,4 +128,4 @@ jobs:
       compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
-      test-profile: ${{ needs.prepare_rollout.outputs.test_profile }}
+      test-profile: ${{ matrix.testProfile }}

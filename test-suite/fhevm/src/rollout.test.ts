@@ -27,20 +27,36 @@ const versionKeys = [
   "CORE_VERSION",
   "RELAYER_VERSION",
   "RELAYER_MIGRATE_VERSION",
-  "TEST_SUITE_VERSION",
 ];
 
 const envMap = (suffix: string) => Object.fromEntries(versionKeys.map((key) => [key, `${suffix}-${key.toLowerCase()}`]));
 const compatTest = (): CompatTestDefinition => ({
-  name: "v0.11-to-v0.12-upgrade",
+  name: "v0.12-to-main-upgrade",
   from: envMap("from"),
   to: envMap("to"),
+  harness: {
+    testSuiteImageTag: "v0.12.0",
+  },
+  profiles: {
+    baseline: "rollout-baseline",
+    final: "standard",
+  },
   steps: [
-    ["RELAYER"],
-    ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"],
-    ["KMS_CORE", "KMS_CONNECTOR"],
-    ["COPROCESSOR"],
-    ["TEST_SUITE"],
+    { name: "relayer", units: ["RELAYER"] },
+    { name: "contracts", units: ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"] },
+    { name: "kms", units: ["KMS_CORE", "KMS_CONNECTOR"] },
+    {
+      name: "coprocessor",
+      substeps: [
+        { name: "db-migration", units: ["COPROCESSOR_DB_MIGRATION"] },
+        { name: "host-listener", units: ["COPROCESSOR_HOST_LISTENER"] },
+        { name: "gw-listener", units: ["COPROCESSOR_GW_LISTENER"] },
+        { name: "tx-sender", units: ["COPROCESSOR_TX_SENDER"] },
+        { name: "tfhe-worker", units: ["COPROCESSOR_TFHE_WORKER"] },
+        { name: "zkproof-worker", units: ["COPROCESSOR_ZKPROOF_WORKER"] },
+        { name: "sns-worker", units: ["COPROCESSOR_SNS_WORKER"] },
+      ],
+    },
   ],
   units: {
     RELAYER: ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -53,20 +69,16 @@ const compatTest = (): CompatTestDefinition => ({
       "CONNECTOR_KMS_WORKER_VERSION",
       "CONNECTOR_TX_SENDER_VERSION",
     ],
-    COPROCESSOR: [
-      "COPROCESSOR_DB_MIGRATION_VERSION",
-      "COPROCESSOR_HOST_LISTENER_VERSION",
-      "COPROCESSOR_GW_LISTENER_VERSION",
-      "COPROCESSOR_TX_SENDER_VERSION",
-      "COPROCESSOR_TFHE_WORKER_VERSION",
-      "COPROCESSOR_ZKPROOF_WORKER_VERSION",
-      "COPROCESSOR_SNS_WORKER_VERSION",
-    ],
-    TEST_SUITE: ["TEST_SUITE_VERSION"],
+    COPROCESSOR_DB_MIGRATION: ["COPROCESSOR_DB_MIGRATION_VERSION"],
+    COPROCESSOR_HOST_LISTENER: ["COPROCESSOR_HOST_LISTENER_VERSION"],
+    COPROCESSOR_GW_LISTENER: ["COPROCESSOR_GW_LISTENER_VERSION"],
+    COPROCESSOR_TX_SENDER: ["COPROCESSOR_TX_SENDER_VERSION"],
+    COPROCESSOR_TFHE_WORKER: ["COPROCESSOR_TFHE_WORKER_VERSION"],
+    COPROCESSOR_ZKPROOF_WORKER: ["COPROCESSOR_ZKPROOF_WORKER_VERSION"],
+    COPROCESSOR_SNS_WORKER: ["COPROCESSOR_SNS_WORKER_VERSION"],
   },
   execution: {
     scenario: "two-of-two",
-    testProfile: "standard",
   },
 });
 
@@ -75,11 +87,14 @@ afterEach(async () => {
 });
 
 describe("rollout", () => {
-  test("requires each rollout unit exactly once across steps", () => {
+  test("requires each rollout unit exactly once across steps and substeps", () => {
     const { units } = compatTest();
-    expect(() => validateCompatSteps([["RELAYER"], ["COPROCESSOR"]], units)).toThrow(PreflightError);
-    expect(() => validateCompatSteps([["RELAYER"], ["KMS_CORE", "KMS_CORE"]], units)).toThrow(PreflightError);
-    expect(() => validateCompatSteps([["RELAYER"], ["BOGUS" as never]], units)).toThrow(PreflightError);
+    expect(() => validateCompatSteps([{ name: "relayer", units: ["RELAYER"] }], units)).toThrow(PreflightError);
+    expect(() => validateCompatSteps([{ name: "relayer", units: ["RELAYER", "RELAYER"] }], units)).toThrow(PreflightError);
+    expect(() => validateCompatSteps([{ name: "relayer", units: ["BOGUS" as never] }], units)).toThrow(PreflightError);
+    expect(() =>
+      validateCompatSteps([{ name: "coprocessor", units: ["RELAYER"], substeps: [{ name: "db", units: ["COPROCESSOR_DB_MIGRATION"] }] }], units),
+    ).toThrow(PreflightError);
   });
 
   test("rejects compat-tests that reference unknown or duplicated version keys", async () => {
@@ -89,24 +104,19 @@ describe("rollout", () => {
     const testDef = compatTest();
     await writeJson(file, { ...testDef, units: { ...testDef.units, KMS_CORE: ["CORE_VERSION", "BOGUS"] } });
     await expect(readCompatTest(file)).rejects.toThrow("references unknown version key BOGUS");
-    await writeJson(file, { ...testDef, units: { ...testDef.units, TEST_SUITE: ["RELAYER_VERSION"] } });
+    await writeJson(file, { ...testDef, units: { ...testDef.units, COPROCESSOR_SNS_WORKER: ["RELAYER_VERSION"] } });
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
-  test("allows pinned version keys outside rollout units", async () => {
+  test("injects the pinned harness tag into from/to env maps", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
-    const { TEST_SUITE: _testSuite, ...units } = testDef.units;
-    await writeJson(file, {
-      ...testDef,
-      from: { ...testDef.from, TEST_SUITE_VERSION: "pinned-test-suite" },
-      to: { ...testDef.to, TEST_SUITE_VERSION: "pinned-test-suite" },
-      units,
-      steps: testDef.steps.filter((step) => !step.includes("TEST_SUITE")),
-    });
-    await expect(readCompatTest(file)).resolves.toBeTruthy();
+    await writeJson(file, testDef);
+    const loaded = await readCompatTest(file);
+    expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
   });
 
   test("rejects changing version keys left outside rollout units", async () => {
@@ -114,49 +124,61 @@ describe("rollout", () => {
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
-    const { TEST_SUITE: _testSuite, ...units } = testDef.units;
-    await writeJson(file, { ...testDef, units, steps: testDef.steps.filter((step) => !step.includes("TEST_SUITE")) });
-    await expect(readCompatTest(file)).rejects.toThrow("do not cover changing version keys: TEST_SUITE_VERSION");
+    const { RELAYER: _relayer, ...units } = testDef.units;
+    await writeJson(file, { ...testDef, units, steps: testDef.steps.filter((step) => step.name !== "relayer") });
+    await expect(readCompatTest(file)).rejects.toThrow("do not cover changing version keys: RELAYER_MIGRATE_VERSION, RELAYER_VERSION");
   });
 
-  test("generates cumulative mixed-version locks from ordered unit steps", () => {
+  test("generates cumulative mixed-version locks from ordered unit steps and substeps", () => {
     const locks = generateRolloutLocks(compatTest());
     expect(locks.map((entry) => entry.lockName)).toEqual([
       "00-baseline.lock.json",
       "01-relayer.lock.json",
-      "02-gateway-contracts_host-contracts.lock.json",
-      "03-kms-core_kms-connector.lock.json",
-      "04-coprocessor.lock.json",
-      "05-test-suite.lock.json",
+      "02-contracts.lock.json",
+      "03-kms.lock.json",
+      "04-coprocessor-db-migration.lock.json",
+      "05-coprocessor-host-listener.lock.json",
+      "06-coprocessor-gw-listener.lock.json",
+      "07-coprocessor-tx-sender.lock.json",
+      "08-coprocessor-tfhe-worker.lock.json",
+      "09-coprocessor-zkproof-worker.lock.json",
+      "10-coprocessor-sns-worker.lock.json",
     ]);
+    expect(locks[0].env.TEST_SUITE_VERSION).toBe("v0.12.0");
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
-    expect(locks[2].env.HOST_VERSION).toBe("to-host_version");
     expect(locks[3].env.CORE_VERSION).toBe("to-core_version");
-    expect(locks[3].env.CONNECTOR_KMS_WORKER_VERSION).toBe("to-connector_kms_worker_version");
-    expect(locks[3].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
-    expect(locks[5].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
+    expect(locks[4].env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
+    expect(locks[5].env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
+    expect(locks[5].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
+    expect(locks[10].env.COPROCESSOR_SNS_WORKER_VERSION).toBe("to-coprocessor_sns_worker_version");
     expect(locks[2].sources).toContain("compat-from:GATEWAY_VERSION=from-gateway_version");
     expect(locks[2].sources).toContain("compat-from:HOST_VERSION=from-host_version");
   });
 
   test("renders one rollout step on demand", () => {
-    const bundle = renderRolloutStep(compatTest(), 3);
-    expect(bundle.lockName).toBe("03-kms-core_kms-connector.lock.json");
+    const bundle = renderRolloutStep(compatTest(), 5);
+    expect(bundle.lockName).toBe("05-coprocessor-host-listener.lock.json");
     expect(bundle.env.RELAYER_VERSION).toBe("to-relayer_version");
-    expect(bundle.env.CORE_VERSION).toBe("to-core_version");
+    expect(bundle.env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
     expect(bundle.env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
   });
 
-  test("prints matrix metadata without lock file names", () => {
+  test("prints matrix metadata with selected test profiles", () => {
     expect(rolloutMatrix(compatTest())).toEqual({
       include: [
-        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "" },
-        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "relayer" },
-        { step: "gateway-contracts_host-contracts", stepIndex: 2, name: "02-gateway-contracts_host-contracts", overrides: "relayer,gateway-contracts,host-contracts" },
-        { step: "kms-core_kms-connector", stepIndex: 3, name: "03-kms-core_kms-connector", overrides: "relayer,gateway-contracts,host-contracts,kms-connector" },
-        { step: "coprocessor", stepIndex: 4, name: "04-coprocessor", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor" },
-        { step: "test-suite", stepIndex: 5, name: "05-test-suite", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor,test-suite" },
+        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "", testProfile: "rollout-baseline" },
+        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "relayer", testProfile: "rollout-baseline" },
+        { step: "contracts", stepIndex: 2, name: "02-contracts", overrides: "relayer,gateway-contracts,host-contracts", testProfile: "rollout-baseline" },
+        { step: "kms", stepIndex: 3, name: "03-kms", overrides: "relayer,gateway-contracts,host-contracts,kms-connector", testProfile: "rollout-baseline" },
+        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "rollout-baseline" },
+        { step: "coprocessor-sns-worker", stepIndex: 10, name: "10-coprocessor-sns-worker", overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor", testProfile: "standard" },
       ],
     });
   });
@@ -171,19 +193,21 @@ describe("rollout", () => {
       compatTest: file,
       out: outDir,
     });
-    const matrix = await readJson<{ include: Array<{ step: string; stepIndex: number; name: string }> }>(path.join(outDir, "matrix.json"));
-    expect(matrix.include.map((entry) => entry.name)).toEqual([
-      "00-baseline",
-      "01-relayer",
-      "02-gateway-contracts_host-contracts",
-      "03-kms-core_kms-connector",
-      "04-coprocessor",
-      "05-test-suite",
-    ]);
-    const mixed = await readJson<VersionBundle>(path.join(outDir, "03-kms-core_kms-connector.lock.json"));
+    const matrix = await readJson<{ include: Array<{ step: string; stepIndex: number; name: string; overrides: string; testProfile: string }> }>(
+      path.join(outDir, "matrix.json"),
+    );
+    expect(matrix.include.at(-1)).toEqual({
+      step: "coprocessor-sns-worker",
+      stepIndex: 10,
+      name: "10-coprocessor-sns-worker",
+      overrides: "relayer,gateway-contracts,host-contracts,kms-connector,coprocessor",
+      testProfile: "standard",
+    });
+    const mixed = await readJson<VersionBundle>(path.join(outDir, "05-coprocessor-host-listener.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");
-    expect(mixed.env.GATEWAY_VERSION).toBe("to-gateway_version");
-    expect(mixed.env.CORE_VERSION).toBe("to-core_version");
+    expect(mixed.env.HOST_VERSION).toBe("to-host_version");
+    expect(mixed.env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
+    expect(mixed.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
     expect(mixed.env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
   });
 
@@ -193,10 +217,10 @@ describe("rollout", () => {
     const file = path.join(root, "compat.json");
     const outFile = path.join(root, "tmp", "step.lock.json");
     await writeJson(file, compatTest());
-    await rolloutStep({ compatTest: file, out: outFile, step: 2 });
+    await rolloutStep({ compatTest: file, out: outFile, step: 3 });
     const mixed = await readJson<VersionBundle>(outFile);
     expect(mixed.lockName).toBe("step.lock.json");
-    expect(mixed.env.HOST_VERSION).toBe("to-host_version");
-    expect(mixed.env.CORE_VERSION).toBe("from-core_version");
+    expect(mixed.env.CORE_VERSION).toBe("to-core_version");
+    expect(mixed.env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("from-coprocessor_db_migration_version");
   });
 });

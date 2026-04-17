@@ -195,11 +195,11 @@ For release compatibility matrices, check in a compat-test definition under `com
 
 ```sh
 ./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.11-to-v0.12.json \
+  --compat-test ./compat-tests/v0.12-to-main.json \
   --out /tmp/fhevm-rollout
 
 ./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.11-to-v0.12.json \
+  --compat-test ./compat-tests/v0.12-to-main.json \
   --step 3 \
   --out /tmp/fhevm-step.lock.json
 ```
@@ -207,9 +207,11 @@ For release compatibility matrices, check in a compat-test definition under `com
 Compat-tests define:
 
 - explicit `from` and `to` version maps
-- ordered rollout `steps`
+- optional `harness` pinning such as the test-suite image tag
+- optional baseline/final `profiles`
+- ordered rollout `steps` with either `units` or ordered `substeps`
 - an explicit `units` map that assigns every version key to exactly one rollout unit
-- optional execution defaults such as scenario and test profile
+- optional execution defaults such as scenario
 
 `rollout` writes:
 
