@@ -760,8 +760,10 @@ impl UserDecryptRepository {
     pub async fn insert_share_and_complete_if_threshold_reached(
         &self,
         params: ShareInsertParams<'_>,
-        threshold: i64,
+        threshold: u32,
     ) -> SqlResult<ShareCompletionOutcome> {
+        // u32 → i64: safe widening for DB BIGINT column
+        let threshold = i64::from(threshold);
         let id_as_bytes_array: [u8; 32] = params.gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(params.share_index)
@@ -1041,8 +1043,10 @@ impl UserDecryptRepository {
     pub async fn find_req_and_shares_by_ext_job_id(
         &self,
         ext_job_id: Uuid,
-        fallback_threshold: i64,
+        fallback_threshold: u32,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
+        // u32 → i64: safe widening for DB BIGINT column
+        let fallback_threshold = i64::from(fallback_threshold);
         let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();

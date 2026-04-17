@@ -500,7 +500,7 @@ impl GatewayHandler {
         let user_decryption_id = user_decrypt_response.decryptionId;
 
         let context_id = parse_context_id_from_extra_data(&user_decrypt_response.extraData)?;
-        let threshold = self.threshold_resolver.resolve(context_id).await? as i64;
+        let threshold = self.threshold_resolver.resolve(context_id).await?;
 
         let tx_hash_str = format!("{:?}", tx_hash);
         // Pre-compute hex-encoded values to avoid lifetime issues with closures
@@ -621,7 +621,7 @@ impl GatewayHandler {
         &self,
         event: RelayerEvent,
         user_decryption_id: U256,
-        threshold: i64,
+        threshold: u32,
         outcome: ShareCompletionOutcome,
     ) -> Result<(), EventProcessingError> {
         match outcome {
@@ -638,7 +638,7 @@ impl GatewayHandler {
                     threshold = threshold,
                     "Threshold reached and completion successful"
                 );
-                self.assemble_final_response(event, metadata, shares, threshold as usize)
+                self.assemble_final_response(event, metadata, shares, threshold)
                     .await;
             }
             ShareCompletionOutcome::ThresholdNotReached { count } => {
@@ -662,7 +662,7 @@ impl GatewayHandler {
                     "Threshold reached but request already completed (duplicate share)"
                 );
                 // Request already completed - re-dispatch the response for any waiting HTTP handlers
-                self.assemble_final_response(event, metadata, shares, threshold as usize)
+                self.assemble_final_response(event, metadata, shares, threshold)
                     .await;
             }
             ShareCompletionOutcome::AlreadyInFinalState {
@@ -724,12 +724,12 @@ impl GatewayHandler {
         event: RelayerEvent,
         consensus_state: ConsensusReqState,
         shares: Vec<UserDecryptShare>,
-        threshold: usize,
+        threshold: u32,
     ) {
         let count = shares.len();
 
-        // Validate share count matches threshold exactly (database LIMIT should ensure this)
-        if shares.len() != threshold {
+        // u32 → usize: always safe (u32 fits in usize on all platforms)
+        if shares.len() != threshold as usize {
             error!(
                 job_id = %event.job_id,
                 got_count = %count,
@@ -965,14 +965,12 @@ impl GatewayHandler {
             }
 
             EventProcessingError::ThresholdResolutionFailed(ref reason) => {
+                // Share arrives via EventLogRcvd — no DB state to update, drop the share.
                 error!(
                     job_id = %event.job_id,
                     reason = %reason,
-                    "Threshold resolution failed for share event, ignoring share"
+                    "Threshold resolution failed, ignoring share"
                 );
-                // Share arrives via EventLogRcvd — no DB state to update.
-                // The share is silently dropped; the request will either
-                // complete from other shares or eventually time out.
                 return;
             }
 

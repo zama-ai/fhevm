@@ -50,22 +50,26 @@ pub enum ThresholdResolverError {
 /// Resolves the user decrypt threshold per KMS context ID by querying the
 /// ProtocolConfig contract on the Ethereum host chain.
 ///
-/// Context ID 0 is pre-seeded with the static config default. Non-zero context
-/// IDs are fetched from the contract and cached permanently (thresholds don't
-/// change after context creation).
+/// Uses moka over DashMap/HashMap+Mutex because:
+/// 1. `entry().or_try_insert_with()` coalesces concurrent fetches for the same
+///    key — only one RPC call is made, others wait for its result.
+/// 2. Built-in max capacity bound with eviction.
 ///
-/// Concurrent requests for the same uncached context ID are coalesced — only one
-/// RPC call is made, others wait for its result.
+/// Thresholds are cached permanently (no TTL) since they don't change after
+/// context creation. Context ID 0 is pre-seeded with the static config default.
 pub struct ThresholdResolver {
     contract: HostProtocolConfig,
-    context_thresholds: Cache<U256, usize>,
+    /// Cached thresholds keyed by context ID. The on-chain uint256 is narrowed
+    /// to u32 at the contract fetch boundary with an explicit range check.
+    /// The repository layer handles u32 ↔ i64 conversion for DB storage (BIGINT).
+    context_thresholds: Cache<U256, u32>,
     retry_config: RetrySettings,
 }
 
 impl ThresholdResolver {
     pub async fn new(
         config: &ProtocolConfigSettings,
-        default_threshold: usize,
+        default_threshold: u32,
         max_capacity: u64,
     ) -> anyhow::Result<Self> {
         let url = Url::parse(&config.ethereum_http_rpc_url)
@@ -97,12 +101,8 @@ impl ThresholdResolver {
     }
 
     /// Resolve the user decrypt threshold for a given context ID.
-    ///
-    /// - context_id 0: returns the pre-seeded static default (no RPC)
-    /// - Other IDs: checks cache, on miss fetches from ProtocolConfig with retries
-    /// - Concurrent calls for the same key are coalesced into a single fetch
-    /// - Returns error if all retries are exhausted (error is NOT cached)
-    pub async fn resolve(&self, context_id: U256) -> Result<usize, ThresholdResolverError> {
+    /// Returns error if all retries are exhausted (errors are not cached).
+    pub async fn resolve(&self, context_id: U256) -> Result<u32, ThresholdResolverError> {
         let contract = self.contract.clone();
         let retry_config = self.retry_config.clone();
 
@@ -139,7 +139,7 @@ async fn fetch_with_retry(
     contract: &HostProtocolConfig,
     retry_config: &RetrySettings,
     context_id: U256,
-) -> Result<usize, ThresholdResolverError> {
+) -> Result<u32, ThresholdResolverError> {
     let max_attempts = retry_config.max_attempts;
     let retry_interval = Duration::from_millis(retry_config.retry_interval_ms);
     let mut last_error = String::new();
@@ -151,18 +151,12 @@ async fn fetch_with_retry(
             .await
         {
             Ok(ret) => {
-                // On 64-bit platforms usize::MAX is ~1.8e19 — any realistic
-                // threshold fits. The ProtocolConfig contract uses uint256 but
-                // practical values are small integers. An unrealistic value
-                // would deadlock decryption (threshold never met), so we cap
-                // and warn rather than silently accepting usize::MAX.
-                let threshold: usize = ret.try_into().unwrap_or_else(|_| {
-                    warn!(
-                        context_id = %context_id,
-                        "Threshold from ProtocolConfig exceeds usize::MAX, capping"
-                    );
-                    usize::MAX
-                });
+                let threshold: u32 =
+                    u32::try_from(ret).map_err(|_| ThresholdResolverError::FetchFailed {
+                        context_id,
+                        attempts: attempt + 1,
+                        message: format!("threshold {} exceeds u32 range", ret),
+                    })?;
                 debug!(
                     context_id = %context_id,
                     threshold,
@@ -212,10 +206,10 @@ mod tests {
                 retry_interval_ms: 10,
             },
         };
-        let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+        let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
         // context_id 0 always hits the pre-seeded entry
-        assert_eq!(resolver.resolve(U256::ZERO).await.unwrap(), 9);
+        assert_eq!(resolver.resolve(U256::ZERO).await.unwrap(), 9u32);
     }
 
     #[tokio::test]
@@ -229,7 +223,7 @@ mod tests {
                 retry_interval_ms: 10,
             },
         };
-        let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+        let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
         // Non-zero context_id with unreachable RPC should error
         let result = resolver.resolve(U256::from(42)).await;

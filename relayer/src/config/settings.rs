@@ -541,7 +541,7 @@ pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
     /// Number of shares required for user decryption threshold consensus
-    pub user_decrypt_shares_threshold: u16,
+    pub user_decrypt_shares_threshold: u32,
 }
 
 impl ContractConfig {
@@ -576,11 +576,8 @@ pub struct HostChainConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProtocolConfigSettings {
-    /// HTTP RPC URL of the Ethereum chain hosting the ProtocolConfig contract
     pub ethereum_http_rpc_url: String,
-    /// Address of the ProtocolConfig contract
     pub address: String,
-    /// Retry settings for RPC calls to the ProtocolConfig contract
     pub retry: RetrySettings,
 }
 

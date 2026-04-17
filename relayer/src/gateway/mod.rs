@@ -95,7 +95,7 @@ pub async fn initialize_gateway(
     let threshold_resolver = Arc::new(
         ThresholdResolver::new(
             &settings.protocol_config,
-            settings.gateway.contracts.user_decrypt_shares_threshold as usize,
+            settings.gateway.contracts.user_decrypt_shares_threshold, // u32
             10_000,
         )
         .await?,

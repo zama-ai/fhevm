@@ -1,24 +1,17 @@
 use alloy::primitives::U256;
 
-/// Version `0x01`: context_id only (RFC 003).
-const EXTRA_DATA_V1_VERSION: u8 = 0x01;
-/// Minimum length of v1 extra_data (version + context_id).
-const EXTRA_DATA_V1_LENGTH: usize = 33;
+const EXTRA_DATA_V1_VERSION: u8 = 0x01; // RFC 003: context_id only
+const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 
-/// Version `0x02`: context_id + epoch_id (RFC 005).
-const EXTRA_DATA_V2_VERSION: u8 = 0x02;
-/// Minimum length of v2 extra_data (version + context_id + epoch_id).
-const EXTRA_DATA_V2_LENGTH: usize = 65;
+const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
+const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-/// Parse the context ID from extra_data bytes.
+/// Parse context ID from extra_data bytes.
 ///
-/// Format v1: `[0x01 | context_id (32 bytes)]`
-/// Format v2: `[0x02 | context_id (32 bytes) | epoch_id (32 bytes)]`
-///
-/// Returns `Ok(U256::ZERO)` when extra_data is empty or version is `0x00`,
-/// signalling "use static config default" (context ID 0 is invalid).
-///
-/// Returns `Err` for malformed input (unsupported version, truncated data).
+/// - v1: `[0x01 | context_id(32)]`
+/// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
+/// - empty or `0x00`: returns `U256::ZERO` (use static default)
+/// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
     let Some(&version) = extra_data.first() else {
         return Ok(U256::ZERO);

@@ -60,10 +60,10 @@ async fn context_zero_returns_preseeded_default() {
     let port = get_free_port();
     let config = make_config(port);
 
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     // Context ID 0 returns the pre-seeded static default — no RPC needed
-    assert_eq!(resolver.resolve(U256::ZERO).await.unwrap(), 9);
+    assert_eq!(resolver.resolve(U256::ZERO).await.unwrap(), 9u32);
 }
 
 #[tokio::test]
@@ -78,11 +78,11 @@ async fn fetches_threshold_from_contract() {
 
     let _handle = mock.start().await.unwrap();
     let config = make_config(port);
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     // Non-zero context_id fetches from mock
     let threshold = resolver.resolve(U256::from(42)).await.unwrap();
-    assert_eq!(threshold, 5);
+    assert_eq!(threshold, 5u32);
 }
 
 #[tokio::test]
@@ -98,7 +98,7 @@ async fn caches_threshold_permanently() {
 
     let _handle = mock.start().await.unwrap();
     let config = make_config(port);
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     // First call fetches
     assert_eq!(resolver.resolve(U256::from(10)).await.unwrap(), 7);
@@ -132,11 +132,11 @@ async fn retry_succeeds_after_initial_failure() {
 
     let _handle = mock.start().await.unwrap();
     let config = make_config(port);
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     // First attempt fails, retry succeeds
     let threshold = resolver.resolve(U256::from(77)).await.unwrap();
-    assert_eq!(threshold, 3);
+    assert_eq!(threshold, 3u32);
 }
 
 #[tokio::test]
@@ -163,7 +163,7 @@ async fn all_retries_exhausted_returns_error() {
 
     let _handle = mock.start().await.unwrap();
     let config = make_config(port);
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     // All 3 retries fail → error
     let result = resolver.resolve(U256::from(99)).await;
@@ -202,7 +202,7 @@ async fn failed_fetch_is_not_cached() {
 
     let _handle = mock.start().await.unwrap();
     let config = make_config(port);
-    let resolver = ThresholdResolver::new(&config, 9, 100).await.unwrap();
+    let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
     let context_id = U256::from(55);
 
@@ -212,5 +212,5 @@ async fn failed_fetch_is_not_cached() {
 
     // Second resolve: retries again (not cached) → succeeds
     let threshold = resolver.resolve(context_id).await.unwrap();
-    assert_eq!(threshold, 11);
+    assert_eq!(threshold, 11u32);
 }
