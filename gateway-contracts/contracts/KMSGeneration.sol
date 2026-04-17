@@ -54,7 +54,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
-     * @dev @deprecated. No longer written to. Preserved for historical queries and storage layout
+     * @dev Deprecated. No longer written to. Preserved for historical queries and storage layout
      * compatibility after the move of KMSGeneration to Ethereum.
      */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KMSGeneration
