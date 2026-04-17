@@ -41,9 +41,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     /// @param version The unsupported version byte.
     error UnsupportedExtraDataVersion(uint8 version);
 
-    /// @notice Returned if the hardwired ProtocolConfig is not deployed or not initialized.
-    error ProtocolConfigNotReady();
-
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
@@ -116,15 +113,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         address verifyingContractSource,
         uint64 chainIDSource
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        _requireProtocolConfigReady();
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
     }
 
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
-        _requireProtocolConfigReady();
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice                  Verifies multiple signatures for a given handlesList and a given decryptedResult.
@@ -350,17 +344,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         }
         _cleanTransientHashMap(recoveredSigners, uniqueValidCount);
         return false;
-    }
-
-    /**
-     * @dev Reverts unless the hardwired ProtocolConfig is deployed and initialized.
-     *      An uninitialized ProtocolConfig returns 0 for the counter; a bad address
-     *      reverts the external call via Solidity's implicit extcodesize check.
-     */
-    function _requireProtocolConfigReady() internal view virtual {
-        if (PROTOCOL_CONFIG.getCurrentKmsContextId() == 0) {
-            revert ProtocolConfigNotReady();
-        }
     }
 
     /**
