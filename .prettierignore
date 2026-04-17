@@ -12,6 +12,9 @@ rust_bindings/target
 node_modules
 types
 
+# sdk/js-sdk exceptions
+!sdk/js-sdk/src/core/types
+
 # files
 *.env
 *.log
