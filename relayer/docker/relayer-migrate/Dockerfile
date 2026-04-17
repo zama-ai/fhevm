@@ -37,7 +37,7 @@ RUN --mount=type=bind,source=relayer/relayer-migrate/Cargo.toml,target=Cargo.tom
 # stage.
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
 USER root
-RUN apk add --no-cache ca-certificates=20241010-r0
+RUN apk add --no-cache ca-certificates
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user
