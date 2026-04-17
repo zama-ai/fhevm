@@ -301,11 +301,11 @@ contract ACL is
         if (delegate == msg.sender) {
             revert SenderCannotBeDelegate(delegate);
         }
-        if (delegate == contractAddress) {
-            revert DelegateCannotBeContractAddress(contractAddress);
-        }
         if (delegate == WILDCARD_CONTRACT) {
             revert DelegateCannotBeWildcard(delegate);
+        }
+        if (delegate == contractAddress) {
+            revert DelegateCannotBeContractAddress(contractAddress);
         }
         if (expirationDate <= block.timestamp) {
             revert ExpirationDateInThePast();
