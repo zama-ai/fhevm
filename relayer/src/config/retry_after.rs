@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::settings::AppConfigError;
+use super::settings::{deserialize_vec_from_map_or_seq, AppConfigError};
 
 /// Configuration for dynamic retry-after computation. All fields required.
 #[derive(Debug, Deserialize, Clone)]
@@ -18,6 +18,7 @@ pub struct RetryAfterConfig {
     pub nominal_times: NominalProcessingTimes,
 
     /// Backoff intervals for ReceiptReceived state (Copro/KMS wait).
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub copro_kms_backoff_intervals: Vec<BackoffInterval>,
 }
 
