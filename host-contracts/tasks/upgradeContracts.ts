@@ -14,8 +14,8 @@ type AbiFunction = {
   inputs?: { type?: string }[];
 };
 
-function getImplementationDirectory(input: string): string {
-  const colonIndex = input.lastIndexOf('/');
+function getImplementationSourcePath(input: string): string {
+  const colonIndex = input.lastIndexOf(':');
   if (colonIndex !== -1) {
     return input.substring(0, colonIndex);
   }
@@ -156,8 +156,8 @@ async function compileImplementations(
   newImplementation: string,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
-  await hre.run('compile:specific', { contract: getImplementationDirectory(currentImplementation) });
-  await hre.run('compile:specific', { contract: getImplementationDirectory(newImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(currentImplementation) });
+  await hre.run('compile:specific', { contract: getImplementationSourcePath(newImplementation) });
 }
 
 async function checkImplementationArtifacts(
