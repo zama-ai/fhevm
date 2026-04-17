@@ -1101,7 +1101,7 @@ impl RedisConsumer {
     ///
     /// Non-blocking: does NOT use Redis BLOCK argument. BLOCK commands on
     /// `ConnectionManager` (which wraps `MultiplexedConnection`) are
-    /// architecturally broken — a blocking call monopolises the shared TCP
+    /// architecturally broken — a blocking call monopolizes the shared TCP
     /// connection and hangs indefinitely on dead sockets (redis-rs #1236).
     ///
     /// Callers use client-side `sleep()` as the polling interval instead.

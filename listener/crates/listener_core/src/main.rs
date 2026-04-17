@@ -140,7 +140,7 @@ async fn main() {
     ) {
         Ok(provider) => provider,
         Err(e) => {
-            error!("Could not instanciate the semaphore provider: {}", e);
+            error!("Could not instantiate the semaphore provider: {}", e);
             process::exit(1);
         }
     };
@@ -475,7 +475,7 @@ async fn main() {
 
     // let consumer_lib_handler_test =
     //     AsyncHandlerPayloadOnly::new(move |event: BlockPayload| async move {
-    //         // println!("Consumer recieved event: {}", event);
+    //         // println!("Consumer received event: {}", event);
     //         info!("GETTING EVENT FROM BLOCK: {}", event.block_number);
     //         Ok::<(), EvmListenerError>(())
     //     });

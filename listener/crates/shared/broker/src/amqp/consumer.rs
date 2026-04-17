@@ -290,7 +290,7 @@ impl RmqConsumer {
                         }
                         HandlerOutcome::Nack => {
                             if let Some(b) = cb { b.record_success(); }
-                            debug!("Handler voluntarily yielded, requeueing at tail of main queue");
+                            debug!("Handler voluntarily yielded, requeuing at tail of main queue");
                             result.delivery
                                 .nack(BasicNackOptions { requeue: true, ..Default::default() })
                                 .await

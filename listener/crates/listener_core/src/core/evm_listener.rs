@@ -733,7 +733,7 @@ impl EvmListener {
             &self.repositories,
             &block_n,
             chain_id_u64,
-            // This block is comming from the live flow, and detect the reorg processing, but was issued from the live flow.
+            // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
             BlockFlow::Live,
             &self.broker,
             &self.event_publisher,
