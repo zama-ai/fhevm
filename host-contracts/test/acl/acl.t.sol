@@ -387,6 +387,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         address delegate
     ) public {
         vm.assume(sender != delegate);
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
