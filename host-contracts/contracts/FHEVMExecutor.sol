@@ -666,7 +666,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result handle of the same FheType as the inputs.
      */
     function fheSum(bytes32[] calldata values) public virtual returns (bytes32 result) {
-        if (values.length < 2) revert FHECollectionSizeInvalid(values.length, 2);
+        if (values.length < 1) revert FHECollectionSizeInvalid(values.length, 1);
 
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +

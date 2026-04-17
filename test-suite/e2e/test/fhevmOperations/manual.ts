@@ -1185,4 +1185,51 @@ describe('FHEVM manual operations', function () {
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], 300000000000000000000n);
   });
+
+  it('test operator "sum" euint8 - duplicate handle counted twice', async function () {
+    const value = 7;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_duplicate(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], value * 2);
+  });
+
+  it('test operator "sum" euint8 - uninitialized element treated as 0', async function () {
+    const tx = await this.contract.test_sum_euint8_uninitialized();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 5n);
+  });
+
+  it('test operator "sum" euint8 - empty array returns 0', async function () {
+    const tx = await this.contract.test_sum_euint8_empty();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "sum" euint8 - single element returns fresh handle', async function () {
+    const value = 42;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_single(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    assert.notEqual(handle, encryptedAmount.handles[0]);
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], BigInt(value));
+  });
 });
