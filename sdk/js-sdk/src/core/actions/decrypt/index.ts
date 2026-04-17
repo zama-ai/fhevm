@@ -1,3 +1,9 @@
+export type { RelayerUserDecryptOptions, RelayerUserDecryptProgressArgs } from '../../types/relayer.js';
+export type {
+  RelayerDelegatedUserDecryptOptions,
+  RelayerDelegatedUserDecryptProgressArgs,
+} from '../../types/relayer.js';
+
 export {
   type GenerateTransportKeypairReturnType as GenerateE2eTransportKeypairReturnType,
   generateTransportKeypair as generateE2eTransportKeypair,

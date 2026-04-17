@@ -2,6 +2,8 @@ export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './r
 
 export { type ReadPublicValueParameters, type ReadPublicValueReturnType, readPublicValue } from './readPublicValue.js';
 
+export type { RelayerPublicDecryptOptions, RelayerPublicDecryptProgressArgs } from '../../types/relayer.js';
+
 export {
   type ReadPublicValuesParameters,
   type ReadPublicValuesReturnType,

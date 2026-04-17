@@ -21,7 +21,9 @@ SCAN_DIRS=(
 )
 
 # File patterns to exclude (glob patterns matched against the full path)
-EXCEPTIONS=()
+EXCEPTIONS=(
+  "test/standalone/relayer-sdk-test"
+)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +38,7 @@ is_excluded() {
   for pattern in "${EXCEPTIONS[@]}"; do
     # shellcheck disable=SC2254
     case "$file" in
-      $pattern) return 0 ;;
+      $pattern|$pattern/*) return 0 ;;
     esac
   done
   return 1

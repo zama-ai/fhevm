@@ -19,6 +19,7 @@ export default [
       '**/*.js',
       '**/*.cjs',
       '**/*.mjs',
+      'test/standalone/relayer-sdk-test/**',
     ],
   },
 

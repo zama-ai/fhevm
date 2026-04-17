@@ -35,6 +35,12 @@
 - isAllowedForDecryption => canReadPublicValue(h), readPublicValue(h) -> TypedValue | TypedValue[]
 - new handle format: https://github.com/zama-ai/fhevm/pull/2014
 - fix: const originToken = Symbol('readPublicValues');
+- Missing export RelayerPublicDecryptOptionsType etc...
+- Missing export Fhevm<> types
+- authorize multiple calls (no-op) to setFhevmRuntime (React)
+- initFhevmEncryptRuntime / initFhevmDecryptRuntime / initFhevmRuntime
+- remove userDecryptModule
+- rename RelayerPublicDecryptOptions etc. does not match the API names
 
 ```ts
     function checkSignatures(
