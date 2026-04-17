@@ -4,23 +4,23 @@ import fs from 'fs';
 import { ethers, run, upgrades } from 'hardhat';
 import path from 'path';
 
+import {
+  type KmsGenerationMigrationEnv,
+  type KmsGenerationMigrationEnvSnapshot,
+  applyKmsGenerationMigrationEnv,
+  restoreKmsGenerationMigrationEnv,
+  snapshotKmsGenerationMigrationEnv,
+} from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 
 const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
-const HOST_ADDRESSES_FILE = path.join(__dirname, '../../addresses/FHEVMHostAddresses.sol');
 
 // Solidity counter bases — must stay in sync with the contracts.
 const KMS_CONTEXT_COUNTER_BASE = BigInt(0x07) << BigInt(248);
 const PREP_KEYGEN_COUNTER_BASE = BigInt(3) << BigInt(248);
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
-
-const HOST_ADDRESS_CONSTANT_BY_ENV_KEY = {
-  PROTOCOL_CONFIG_CONTRACT_ADDRESS: 'protocolConfigAdd',
-  KMS_GENERATION_CONTRACT_ADDRESS: 'kmsGenerationAdd',
-  KMS_VERIFIER_CONTRACT_ADDRESS: 'kmsVerifierAdd',
-} as const;
 
 /**
  * Deploy a fresh EmptyUUPSProxy instance (version 1, ready for an upgrade-and-init call).
@@ -82,20 +82,8 @@ function patchHostEnv(key: string, value: string): void {
   fs.writeFileSync(HOST_ENV_FILE, updated);
 }
 
-function patchHostAddress(key: keyof typeof HOST_ADDRESS_CONSTANT_BY_ENV_KEY, value: string): void {
-  patchHostEnv(key, value);
-
-  const constantName = HOST_ADDRESS_CONSTANT_BY_ENV_KEY[key];
-  const content = fs.readFileSync(HOST_ADDRESSES_FILE, 'utf-8');
-  const updated = content.replace(
-    new RegExp(`address constant ${constantName} = .*;`),
-    `address constant ${constantName} = ${value};`,
-  );
-  fs.writeFileSync(HOST_ADDRESSES_FILE, updated);
-}
-
-async function recompileMigratedContracts(): Promise<void> {
-  await run('compile', { force: true });
+function getKmsTxSenderAddresses(count: number): string[] {
+  return Array.from({ length: count }, (_, idx) => getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`));
 }
 
 /**
@@ -105,62 +93,24 @@ function nonZeroBytes32(seed: number): string {
   return '0x' + seed.toString(16).padStart(64, '0');
 }
 
-function setKmsGenerationMigrationEnv(contextId: bigint, txSender: string): void {
-  const activeKeyId = KEY_COUNTER_BASE + BigInt(1);
-  const activeCrsId = CRS_COUNTER_BASE + BigInt(1);
-  const activePrepKeygenId = PREP_KEYGEN_COUNTER_BASE + BigInt(1);
-
-  process.env.MIGRATION_PREP_KEYGEN_COUNTER = activePrepKeygenId.toString();
-  process.env.MIGRATION_KEY_COUNTER = activeKeyId.toString();
-  process.env.MIGRATION_CRS_COUNTER = activeCrsId.toString();
-  process.env.MIGRATION_ACTIVE_KEY_ID = activeKeyId.toString();
-  process.env.MIGRATION_ACTIVE_CRS_ID = activeCrsId.toString();
-  process.env.MIGRATION_ACTIVE_PREP_KEYGEN_ID = activePrepKeygenId.toString();
-  process.env.MIGRATION_ACTIVE_KEY_DIGESTS = JSON.stringify([
-    { keyType: 0, digest: '0xabcdef0123456789' },
-    { keyType: 1, digest: '0x9876543210fedcba' },
-  ]);
-  process.env.MIGRATION_ACTIVE_CRS_DIGEST = '0xdeadbeefcafe0123';
-  process.env.MIGRATION_KEY_CONSENSUS_TX_SENDERS = txSender;
-  process.env.MIGRATION_KEY_CONSENSUS_DIGEST = nonZeroBytes32(1);
-  process.env.MIGRATION_CRS_CONSENSUS_TX_SENDERS = txSender;
-  process.env.MIGRATION_CRS_CONSENSUS_DIGEST = nonZeroBytes32(2);
-  process.env.MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS = txSender;
-  process.env.MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST = nonZeroBytes32(3);
-  process.env.MIGRATION_CRS_MAX_BIT_LENGTH = '4096';
-  process.env.MIGRATION_PREP_KEYGEN_PARAMS_TYPE = '0';
-  process.env.MIGRATION_CRS_PARAMS_TYPE = '0';
-  process.env.MIGRATION_CONTEXT_ID = contextId.toString();
-}
-
 describe('Migration deploy tasks', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
   let originalEnvHost: string;
-  let originalHostAddresses: string;
-  let hostArtifactsMutated = false;
+  let originalMigrationEnv: KmsGenerationMigrationEnvSnapshot;
 
   before(function () {
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
-    originalHostAddresses = fs.readFileSync(HOST_ADDRESSES_FILE, 'utf-8');
+  });
+
+  beforeEach(function () {
+    originalMigrationEnv = snapshotKmsGenerationMigrationEnv();
   });
 
   afterEach(async function () {
     // Restore .env.host so other tests are unaffected.
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
-
-    if (hostArtifactsMutated) {
-      fs.writeFileSync(HOST_ADDRESSES_FILE, originalHostAddresses);
-      await recompileMigratedContracts();
-      hostArtifactsMutated = false;
-    }
-
-    // Clean up migration-specific env vars.
-    for (const key of Object.keys(process.env)) {
-      if (key.startsWith('MIGRATION_')) {
-        delete process.env[key];
-      }
-    }
+    restoreKmsGenerationMigrationEnv(originalMigrationEnv);
   });
 
   // ---------------------------------------------------------------------------
@@ -196,15 +146,15 @@ describe('Migration deploy tasks', function () {
 
       // All migrated nodes must match the env-derived tx senders and signers, not just nodes[0].
       const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+      const expectedTxSenders = getKmsTxSenderAddresses(numNodes);
+      const expectedSigners = Array.from({ length: numNodes }, (_, idx) =>
+        getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
+      );
       const nodes = await protocolConfig.getKmsNodesForContext(migratedContextId);
       const signers = await protocolConfig.getKmsSignersForContext(migratedContextId);
-      expect(nodes.length).to.equal(numNodes);
-      expect(signers.length).to.equal(numNodes);
-      for (let i = 0; i < numNodes; i++) {
-        expect(nodes[i].txSenderAddress).to.equal(getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${i}`));
-        expect(nodes[i].signerAddress).to.equal(getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${i}`));
-        expect(signers[i]).to.equal(getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${i}`));
-      }
+      expect(nodes.map((node) => node.txSenderAddress)).to.deep.equal(expectedTxSenders);
+      expect(nodes.map((node) => node.signerAddress)).to.deep.equal(expectedSigners);
+      expect(signers).to.deep.equal(expectedSigners);
     });
   });
 
@@ -222,13 +172,37 @@ describe('Migration deploy tasks', function () {
       const proxyAddress = await deployFreshEmptyProxy(deployer);
       patchHostEnv('KMS_GENERATION_CONTRACT_ADDRESS', proxyAddress);
 
-      const txSender = getRequiredEnvVar('KMS_TX_SENDER_ADDRESS_0');
       const activeKeyId = KEY_COUNTER_BASE + BigInt(1);
       const activeCrsId = CRS_COUNTER_BASE + BigInt(1);
       const activePrepKeygenId = PREP_KEYGEN_COUNTER_BASE + BigInt(1);
+      const consensusTxSenders = getKmsTxSenderAddresses(+getRequiredEnvVar('KMS_GEN_THRESHOLD'));
+      const consensusTxSendersEnv = consensusTxSenders.join(',');
+      const migrationEnv: KmsGenerationMigrationEnv = {
+        MIGRATION_PREP_KEYGEN_COUNTER: activePrepKeygenId.toString(),
+        MIGRATION_KEY_COUNTER: activeKeyId.toString(),
+        MIGRATION_CRS_COUNTER: activeCrsId.toString(),
+        MIGRATION_ACTIVE_KEY_ID: activeKeyId.toString(),
+        MIGRATION_ACTIVE_CRS_ID: activeCrsId.toString(),
+        MIGRATION_ACTIVE_PREP_KEYGEN_ID: activePrepKeygenId.toString(),
+        MIGRATION_ACTIVE_KEY_DIGESTS: JSON.stringify([
+          { keyType: 0, digest: '0xabcdef0123456789' },
+          { keyType: 1, digest: '0x9876543210fedcba' },
+        ]),
+        MIGRATION_ACTIVE_CRS_DIGEST: '0xdeadbeefcafe0123',
+        MIGRATION_KEY_CONSENSUS_TX_SENDERS: consensusTxSendersEnv,
+        MIGRATION_KEY_CONSENSUS_DIGEST: nonZeroBytes32(1),
+        MIGRATION_CRS_CONSENSUS_TX_SENDERS: consensusTxSendersEnv,
+        MIGRATION_CRS_CONSENSUS_DIGEST: nonZeroBytes32(2),
+        MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS: consensusTxSendersEnv,
+        MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST: nonZeroBytes32(3),
+        MIGRATION_CRS_MAX_BIT_LENGTH: '4096',
+        MIGRATION_PREP_KEYGEN_PARAMS_TYPE: '0',
+        MIGRATION_CRS_PARAMS_TYPE: '0',
+        MIGRATION_CONTEXT_ID: contextId.toString(),
+      };
       const legacyVerifierAddress = await deployLegacyKMSVerifier(deployer, contextId);
       patchHostEnv('KMS_VERIFIER_CONTRACT_ADDRESS', legacyVerifierAddress);
-      setKmsGenerationMigrationEnv(contextId, txSender);
+      applyKmsGenerationMigrationEnv(migrationEnv);
 
       await run('task:deployKMSGenerationFromMigration');
 
@@ -243,16 +217,13 @@ describe('Migration deploy tasks', function () {
 
       // Consensus tx senders should be registered for each migrated request.
       const keyTxSenders = await kmsGeneration.getConsensusTxSenders(activeKeyId);
-      expect(keyTxSenders.length).to.equal(1);
-      expect(keyTxSenders[0]).to.equal(txSender);
+      expect(keyTxSenders).to.deep.equal(consensusTxSenders);
 
       const crsTxSenders = await kmsGeneration.getConsensusTxSenders(activeCrsId);
-      expect(crsTxSenders.length).to.equal(1);
-      expect(crsTxSenders[0]).to.equal(txSender);
+      expect(crsTxSenders).to.deep.equal(consensusTxSenders);
 
       const prepTxSenders = await kmsGeneration.getConsensusTxSenders(activePrepKeygenId);
-      expect(prepTxSenders.length).to.equal(1);
-      expect(prepTxSenders[0]).to.equal(txSender);
+      expect(prepTxSenders).to.deep.equal(consensusTxSenders);
     });
   });
 
@@ -260,8 +231,7 @@ describe('Migration deploy tasks', function () {
     it('rejects the standalone readiness check when ProtocolConfig is not initialized', async function () {
       const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
 
-      patchHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
-      hostArtifactsMutated = true;
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
       await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
         `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigProxyAddress} is not initialized`,
@@ -272,9 +242,8 @@ describe('Migration deploy tasks', function () {
       const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
       const kmsVerifierProxyAddress = await deployFreshEmptyProxy(deployer);
 
-      patchHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
-      patchHostAddress('KMS_VERIFIER_CONTRACT_ADDRESS', kmsVerifierProxyAddress);
-      hostArtifactsMutated = true;
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+      patchHostEnv('KMS_VERIFIER_CONTRACT_ADDRESS', kmsVerifierProxyAddress);
 
       const kmsVerifierImplBefore = await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress);
 
