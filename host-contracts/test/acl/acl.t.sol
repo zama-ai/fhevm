@@ -83,51 +83,6 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Sets up a wildcard delegation with both handles allowed, ready for further assertions.
-     */
-    function _setupWildcardDelegationWithAllowedHandles(
-        bytes32 handle,
-        address sender,
-        address delegate,
-        address contractAddress
-    ) internal {
-        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
-
-        uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_CONTRACT();
-
-        vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
-
-        _allowHandle(handle, sender);
-        _allowHandle(handle, contractAddress);
-        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
-    }
-
-    /**
-     * @dev Sets up a per-contract delegation with both handles allowed, ready for further assertions.
-     */
-    function _setupPerContractDelegationWithAllowedHandles(
-        bytes32 handle,
-        address sender,
-        address delegate,
-        address contractAddress
-    ) internal {
-        vm.assume(sender != contractAddress);
-        vm.assume(sender != delegate);
-        vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_CONTRACT());
-
-        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
-        vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
-
-        _allowHandle(handle, sender);
-        _allowHandle(handle, contractAddress);
-        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
-    }
-
-    /**
      * @dev Sets up the testing environment by deploying a proxy contract and initializing signers.
      * This function is executed before each test to ensure a consistent and isolated state.
      */
@@ -321,7 +276,17 @@ contract ACLTest is HostContractsDeployerTestUtils {
         address delegate,
         address contractAddress
     ) public {
-        _setupWildcardDelegationWithAllowedHandles(handle, sender, delegate, contractAddress);
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_CONTRACT();
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        _allowHandle(handle, sender);
+        _allowHandle(handle, contractAddress);
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
         vm.roll(block.number + 1);
         address wildcardForRevoke = acl.WILDCARD_CONTRACT();
@@ -392,9 +357,18 @@ contract ACLTest is HostContractsDeployerTestUtils {
         address delegate,
         address contractAddress
     ) public {
-        _setupPerContractDelegationWithAllowedHandles(handle, sender, delegate, contractAddress);
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+
+        _allowHandle(handle, sender);
+        _allowHandle(handle, contractAddress);
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
         vm.prank(sender);
         vm.expectRevert(
