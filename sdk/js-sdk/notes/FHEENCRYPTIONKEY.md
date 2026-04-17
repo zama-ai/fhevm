@@ -1,7 +1,7 @@
 # Problem
 
 - We need an Object FheEncryptionKey
-- each FheEncryptionKey object is unique accross the JS V8 runtime
+- each FheEncryptionKey object is unique across the JS V8 runtime
 - Multiple FhevmRuntime instances sharing the same relayerUrl get the same FheEncryptionKey object
 - The 50MB cost is paid once per relayerUrl, regardless of how many runtimes or clients exist.
 - each FheEncryptionKey object is immutable from the outside of the SDK

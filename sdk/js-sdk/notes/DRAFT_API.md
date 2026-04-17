@@ -32,8 +32,8 @@ Behind the scene those `euint8`, `euint16`, ... are bytes32
 # Proposal
 
 ```ts
-function encryptValue({ typedValue: TypedValue, ... /* additional args */ }): { encrytedValue: EncryptedValue, ... /* additional data */ };
-function encryptValues({ typedValues: TypedValue[], ... /* additional args */ }): { encrytedValues: EncryptedValue[], ... /* additional data */ };
+function encryptValue({ typedValue: TypedValue, ... /* additional args */ }): { encryptedValue: EncryptedValue, ... /* additional data */ };
+function encryptValues({ typedValues: TypedValue[], ... /* additional args */ }): { encryptedValues: EncryptedValue[], ... /* additional data */ };
 
 function canDecryptValue({ encryptedValue: EncryptedValue }): { ok: boolean, details: ... };
 function canDecryptValues({ encryptedValues: EncryptedValue[] }): { ok: boolean, details: ... };

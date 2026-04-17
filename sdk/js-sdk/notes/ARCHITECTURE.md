@@ -13,7 +13,7 @@
 
 # SDK Design Principles
 
-- Order-independant API
+- Order-independent API
 - Composable Extensions
 - Composable runtime modules
 - No required init step (explicit or lazy)
@@ -23,7 +23,7 @@
 - SDK lifecycle must be predictable
 - SDK must not cause ordering footguns
 - Zero config must work
-- Lazy init or Explicity init must be supported
+- Lazy init or Explicitly init must be supported
 - For encryption: the publicKey is provided or resolvable
 - Must offer flexible chaining
 - Perform runtime check
@@ -43,7 +43,7 @@
 - Pattern: Explicit, composable, chainable, no constructor explosion, works with partial clients
 - The clients should carry a shared internal context, and extensions read from it
 - SDK design: initialization + dependency orchestration problem: Make the default path Lazy and automatic, but allow explicit control for power users
-- API Shape: 1. The "it just works" default (Everything is memoized), 2. Optional explicit configutation, 3. Power-user explicit init (optional but important) (this is useful for preloading, avoiding latency spikes, SSR/controlled environments)
+- API Shape: 1. The "it just works" default (Everything is memoized), 2. Optional explicit configuration, 3. Power-user explicit init (optional but important) (this is useful for preloading, avoiding latency spikes, SSR/controlled environments)
 - Key design decisions: no async at construction, first usage triggers everything, Clean UX/DX, idempotent init (very important): init() can be called manually or internally, always returns the same promise
 - extend() is always allowed
 - init() is always allowed, always idempotent
@@ -108,7 +108,7 @@ const fhevmFull = fhevmEncrypt.extend(decryptActions);
 
 // decryptActions is a function that takes the client as argument and returns an object that consists in a group of functions
 // with client captured
-// Function groups usually depends on modules that must be extented to the client runtime to run properly
+// Function groups usually depends on modules that must be extended to the client runtime to run properly
 // For example the decryptActions needs the decryptModule.
 // after client extend, the client must be initialized again (because the underlying new decryptModule needs to be initialized)
 

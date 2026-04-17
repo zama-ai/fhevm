@@ -93,7 +93,7 @@ describe('hello', () => {
       // A minimum config is required prior to any SDK interactions
       // - setup the number of threads (0 === single threaded)
       // - setup the urls to the tkms + tfhe wasms
-      //   If urls are left blank, the SDK will try to load local files or base64 embeded js
+      //   If urls are left blank, the SDK will try to load local files or base64 embedded js
       setConfig(20);
 
       // Create a full client (with encryption and decryption features)
@@ -199,7 +199,7 @@ describe('hello', () => {
       // });
       // console.log(safeJSONstringify(eip712, 2));
 
-      // Let's create a new encrypt client (cost is zero, modules and keys are globaly shared)
+      // Let's create a new encrypt client (cost is zero, modules and keys are globally shared)
       const fhevmEncryptClient = createFhevmEncryptClient({
         chain: sepolia,
         provider: new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com'),

@@ -75,7 +75,7 @@ export function humanReadableOperation(relayerOperation: RelayerOperation, capit
     case 'KEY_URL':
       return capitalize ? 'Key url' : 'key url';
     default: {
-      assertNever(relayerOperation, `Unkown operation: ${relayerOperation}`);
+      assertNever(relayerOperation, `Unknown operation: ${relayerOperation}`);
     }
   }
 }

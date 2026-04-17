@@ -24,7 +24,7 @@ export async function fetchDelegatedUserDecrypt(
     throw new Error('Empty handle contract pairs');
   }
 
-  // retreive chainId using handles
+  // retrieve chainId using handles
   const contractsChainId = firstHandleContractPair.handle.chainId.toString();
 
   const relayerPayload: FetchDelegatedUserDecryptPayload = {

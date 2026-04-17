@@ -64,7 +64,7 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
     );
 
   // 3. Check that the handles and the one in the fetch result
-  // Note: this check is theoretically unecessary
+  // Note: this check is theoretically unnecessary
   // We prefer to perform this test since we do not trust the relayer
   // The purpose is to check if the relayer is possibly malicious
   assertHandleArrayEquals(inputHandles, coprocessorSignedHandles);

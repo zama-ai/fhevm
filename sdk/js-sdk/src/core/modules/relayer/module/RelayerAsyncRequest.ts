@@ -877,10 +877,10 @@ export class RelayerAsyncRequest {
             }
 
             //
-            // Unkown operation, assert failed
+            // Unknown operation, assert failed
             //
             else {
-              assertNever(this._relayerOperation, `Unkown operation: ${this._relayerOperation}`);
+              assertNever(this._relayerOperation, `Unknown operation: ${this._relayerOperation}`);
             }
           } catch (cause) {
             // Special case for InputProof rejected

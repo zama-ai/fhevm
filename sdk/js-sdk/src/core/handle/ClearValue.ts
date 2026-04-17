@@ -327,7 +327,7 @@ export function abiEncodeClearValues(
   }
 
   // ABI encode the decryptedResult as done in the KMS, since all decrypted values
-  // are native static types, thay have same abi-encoding as uint256:
+  // are native static types, they have same abi-encoding as uint256:
   const abiEncodedClearValues: BytesHex = context.runtime.ethereum.encode({
     types: abiTypes,
     values: abiValues,

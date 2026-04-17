@@ -61,6 +61,6 @@ export async function verifyHandlesCoprocessorSignatures(context: Context, param
     address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
   });
 
-  // 2. Verify signature theshold is reached
+  // 2. Verify signature threshold is reached
   assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
 }

@@ -55,6 +55,6 @@ export async function verifyHandlesCoprocessorSignatures(
 
   const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(fhevm);
 
-  // 2. Verify signature theshold is reached
+  // 2. Verify signature threshold is reached
   assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
 }

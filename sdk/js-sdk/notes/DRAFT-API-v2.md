@@ -175,7 +175,7 @@ userDecrypt(fhevmClient, { privateKey, ... });
 const fhevmHostClient = createFhevmHostClient({ chain: fhevmMainnet });
 isAllowedForDecryption(fhevmHostClient, { handle }); // ACL call
 isPersistAllowed(fhevmHostClient, { handle, user }); // ACL call
-downloadZamaPublicKey(fhevmHostCleint);
+downloadZamaPublicKey(fhevmHostClient);
 
 const fhevmDecryptionClient = await fhevmHostClient.withDecryption();
 
