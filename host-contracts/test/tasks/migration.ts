@@ -259,6 +259,17 @@ describe('Migration deploy tasks', function () {
   });
 
   describe('KMSVerifier deployment', function () {
+    it('rejects the standalone readiness check when ProtocolConfig is not initialized', async function () {
+      const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
+
+      patchHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+      hostArtifactsMutated = true;
+
+      await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
+        `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigProxyAddress} is not initialized`,
+      );
+    });
+
     it('rejects deployment when ProtocolConfig is not initialized', async function () {
       const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
       const kmsVerifierProxyAddress = await deployFreshEmptyProxy(deployer);

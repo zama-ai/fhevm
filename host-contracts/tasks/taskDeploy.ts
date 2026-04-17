@@ -215,7 +215,7 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
   const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
-  await assertProtocolConfigReady(hre);
+  await hre.run('task:assertProtocolConfigReady');
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
@@ -350,7 +350,7 @@ export function buildKmsThresholds() {
   };
 }
 
-async function assertProtocolConfigReady(hre: HardhatRuntimeEnvironment): Promise<void> {
+task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
@@ -375,7 +375,7 @@ async function assertProtocolConfigReady(hre: HardhatRuntimeEnvironment): Promis
       `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`,
     );
   }
-}
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // ProtocolConfig
