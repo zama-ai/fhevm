@@ -345,6 +345,35 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
+     * @dev Wildcard delegation is active at the exact expiration timestamp and inactive one second later.
+     */
+    function test_WildcardDelegationExpiresAtTimestamp(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_CONTRACT();
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        _allowHandle(handle, sender);
+        _allowHandle(handle, contractAddress);
+
+        /// @dev At the exact expiration timestamp, the delegation should still be active.
+        vm.warp(expirationDate);
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+
+        /// @dev One second after the expiration timestamp, the delegation should be inactive.
+        vm.warp(uint256(expirationDate) + 1);
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
      * @dev Tests that the sender cannot delegate in the same block twice.
      */
     function test_CannotDelegateForUserDecryptionInSameBlockTwice(
