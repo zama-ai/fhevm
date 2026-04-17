@@ -6,8 +6,7 @@ pragma solidity ^0.8.24;
  * @notice The KMSGeneration contract provides read access to historical KMS public materials
  * generated within the fhevm protocol. These materials include FHE keys (logical, physical),
  * KSKs (Key Switching Keys) and CRS (Common Reference String).
- * @dev State-changing functions (keygen, prepKeygenResponse, keygenResponse, crsgenRequest,
- * crsgenResponse, prssInit, keyReshareSameSet) have been removed as part of RFC 013.
+ * @dev State-changing functions have been removed as part of the move of KMSGeneration to Ethereum.
  */
 interface IKMSGeneration {
     /**

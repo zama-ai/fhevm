@@ -12,10 +12,13 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 /**
  * @title KMSGeneration contract (view-only)
  * @notice View-only implementation of KMSGeneration for the Gateway chain.
- * All state-changing functions have been removed as part of RFC 013 (Move Key Generation
- * to Ethereum). This contract remains deployed for historical queries of previously
- * generated keys and CRS materials.
+ * All state-changing functions have been removed after the move of KMSGeneration to Ethereum.
+ * This contract remains deployed for historical queries of previously generated keys and CRS
+ * materials. Fresh deployments are no longer supported: only `reinitializeV5` is provided to
+ * upgrade existing proxies to this view-only implementation.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
+/// @custom:oz-upgrades-unsafe-allow missing-initializer
 contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmptyProxy, GatewayOwnable {
     // ----------------------------------------------------------------------------------------------
     // Other contract references:
@@ -41,8 +44,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint256 private constant PATCH_VERSION = 0;
 
     /**
-     * @dev Constant used for making sure the version number using in the `reinitializer` modifier
-     * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * @dev Version used in the `reinitializer` modifier of the `reinitializeVX` method.
      */
     uint64 private constant REINITIALIZER_VERSION = 6;
 
@@ -52,68 +54,40 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
+     * @dev @deprecated. No longer written to. Preserved for historical queries and storage layout
+     * compatibility after the move of KMSGeneration to Ethereum.
      */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KMSGeneration
     struct KMSGenerationStorage {
         // ----------------------------------------------------------------------------------------------
         // Common consensus variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Whether a KMS node has signed for a response
-        /// @Deprecated. No longer written to.
         mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
-        /// @notice Whether a request has reached consensus
-        /// @dev No longer written to.
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
-        /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
-        /// @dev No longer written to.
         mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
-        /// @notice The digest of the signed struct on which consensus was reached for a request
-        /// @dev No longer written to.
         mapping(uint256 requestId => bytes32 digest) consensusDigest;
         // ----------------------------------------------------------------------------------------------
         // Pre-processing keygen state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The number of preprocessing keygen, used to generate the prepKeygenIds.
-        /// @Deprecated. No longer written to.
         uint256 prepKeygenCounter;
         // ----------------------------------------------------------------------------------------------
         // Keygen state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The number of keygen, used to generate the keyIds.
-        /// @Deprecated. No longer written to.
         uint256 keyCounter;
-        /// @notice Bidirectional mapping between preprocessing request IDs and key IDs
-        /// @dev No longer written to.
         mapping(uint256 id => uint256 pairedId) keygenIdPairs;
-        /// @notice The digests of the generated keys
-        /// @dev No longer written to.
         mapping(uint256 keyId => KeyDigest[] keyDigests) keyDigests;
-        /// @notice The ID of the currently active key
-        /// @Deprecated. No longer written to.
         uint256 activeKeyId;
         // ----------------------------------------------------------------------------------------------
         // Crsgen state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The number of crsgen, used to generate the crsIds.
-        /// @Deprecated. No longer written to.
         uint256 crsCounter;
-        /// @notice The max bit length used for the CRS generation
-        /// @Deprecated. No longer written to.
         mapping(uint256 crsId => uint256 maxBitLength) crsMaxBitLength;
-        /// @notice The digests of the generated CRS
-        /// @dev No longer written to.
         mapping(uint256 crsId => bytes crsDigest) crsDigests;
-        /// @notice The ID of the currently active CRS
-        /// @Deprecated. No longer written to.
         uint256 activeCrsId;
         // ----------------------------------------------------------------------------------------------
         // Parameters variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The parameters type used for the request
-        /// @dev No longer written to.
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The number of key resharing, used to generate the keyReshareIds.
-        /// @Deprecated. No longer written to.
         uint256 keyReshareCounter;
     }
 
@@ -131,18 +105,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Initializes the contract.
-     * @dev This function needs to be public in order to be called by the UUPS proxy.
-     */
-    /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(CONTRACT_NAME, "1");
-    }
-
-    /**
      * @notice Re-initializes the contract to the view-only version.
      * @dev This is an empty reinitializer that marks the upgrade to the view-only implementation.
      * No state changes are needed since the storage layout is preserved.
+     * Fresh deployments are no longer supported: KMSGeneration now lives on Ethereum and this
+     * contract only remains on the Gateway chain to serve historical queries on existing proxies.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -151,9 +118,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     // ----------------------------------------------------------------------------------------------
     // View functions (historical state access):
     // ----------------------------------------------------------------------------------------------
+    // All functions below only expose state that was written before KMSGeneration was moved to
+    // Ethereum. For up-to-date keys, CRS and protocol parameters, query the ProtocolConfig and
+    // KMSGeneration contracts deployed on Ethereum instead.
+    // ----------------------------------------------------------------------------------------------
 
     /**
      * @notice See {IKMSGeneration-getKeyParamsType}.
+     * @dev Historical access only. For current parameters, query ProtocolConfig / KMSGeneration on Ethereum.
      */
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -170,6 +142,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getCrsParamsType}.
+     * @dev Historical access only. For current parameters, query ProtocolConfig / KMSGeneration on Ethereum.
      */
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -184,6 +157,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-getConsensusTxSenders}.
      * The returned list remains empty until the consensus is reached.
+     * @dev Historical access only. For current consensus data, query KMSGeneration on Ethereum.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -200,6 +174,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getKeyMaterials}.
+     * @dev Historical access only. For current key materials, query KMSGeneration on Ethereum.
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -220,6 +195,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getCrsMaterials}.
+     * @dev Historical access only. For current CRS materials, query KMSGeneration on Ethereum.
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
