@@ -1,4 +1,4 @@
-name: cargo-test
+name: listener-cargo-fmt-clippy
 
 on:
   push:
@@ -13,11 +13,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: cargo-test/check-changes
-    permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+    name: listener-cargo-fmt-clippy/check-changes
     runs-on: ubuntu-latest
     outputs:
       rust-changed: ${{ github.event_name == 'push' || steps.filter.outputs.rust }}
@@ -32,14 +28,13 @@ jobs:
         with:
           filters: |
             rust:
-              - .github/actions/setup-rust/**
-              - .github/workflows/tests.yml
+              - .github/workflows/listener-cargo-fmt-clippy.yml
               - Cargo.toml
               - Cargo.lock
-              - crates/**
+              - listener/crates/**
 
-  tests:
-    name: cargo-test/run
+  fmt-clippy:
+    name: listener-cargo-fmt-clippy/fmt-clippy
     needs: check-changes
     if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
     permissions:
@@ -50,14 +45,23 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - uses: ./.github/actions/setup-rust
+      - uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        with:
+          toolchain: 1.91.1
+          components: rustfmt, clippy
 
       - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-test-
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-clippy-
 
-      - run: make test
+      - run: cargo fmt --check
+        working-directory: listener
+
+      - run: >
+          cargo clippy --workspace --all-targets
+          -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
+        working-directory: listener

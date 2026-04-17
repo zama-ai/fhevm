@@ -1,4 +1,4 @@
-name: cargo-fmt
+name: listener-tests
 
 on:
   push:
@@ -13,11 +13,7 @@ concurrency:
 
 jobs:
   check-changes:
-    name: cargo-fmt/check-changes
-    permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+    name: listener-tests/check-changes
     runs-on: ubuntu-latest
     outputs:
       rust-changed: ${{ github.event_name == 'push' || steps.filter.outputs.rust }}
@@ -32,14 +28,13 @@ jobs:
         with:
           filters: |
             rust:
-              - .github/actions/setup-rust/**
-              - .github/workflows/fmt.yml
+              - .github/workflows/listener-tests.yml
               - Cargo.toml
               - Cargo.lock
-              - crates/**
+              - listener/crates/**
 
-  fmt:
-    name: cargo-fmt/run
+  tests:
+    name: listener-tests/tests
     needs: check-changes
     if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
     permissions:
@@ -50,8 +45,17 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - uses: ./.github/actions/setup-rust
+      - uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
         with:
-          components: rustfmt
+          toolchain: 1.91.1
 
-      - run: cargo fmt --check
+      - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      - run: make test
+        working-directory: listener
