@@ -132,6 +132,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         vm.assume(delegate != address(adapter));
         vm.assume(contractContext != address(adapter));
         vm.assume(delegate != contractContext);
+        vm.assume(delegate != acl.WILDCARD_CONTRACT());
     }
 
     function testFuzz_IsUserDecryptable_ReturnsFalseWhenUserEqualsContract(
