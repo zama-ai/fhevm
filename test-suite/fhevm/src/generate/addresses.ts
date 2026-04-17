@@ -65,6 +65,8 @@ const HOST_ADDRESS_KEYS = [
   "INPUT_VERIFIER_CONTRACT_ADDRESS",
   "HCU_LIMIT_CONTRACT_ADDRESS",
   "PAUSER_SET_CONTRACT_ADDRESS",
+  "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
+  "KMS_GENERATION_CONTRACT_ADDRESS",
 ] as const;
 
 const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
@@ -84,5 +86,7 @@ export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">
     ["inputVerifierAdd", host?.INPUT_VERIFIER_CONTRACT_ADDRESS],
     ["hcuLimitAdd", host?.HCU_LIMIT_CONTRACT_ADDRESS],
     ["pauserSetAdd", host?.PAUSER_SET_CONTRACT_ADDRESS],
+    ["protocolConfigAdd", host?.PROTOCOL_CONFIG_CONTRACT_ADDRESS],
+    ["kmsGenerationAdd", host?.KMS_GENERATION_CONTRACT_ADDRESS],
   ]);
 };

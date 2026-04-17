@@ -280,8 +280,15 @@ export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
+    const defaultChainKey = defaultHostChainKey(state.scenario.hostChains);
+    const hostEndpoints = discovery.endpoints.hosts[defaultChainKey];
+    const hostAddresses = discovery.hosts[defaultChainKey] ?? {};
+    const kmsGenAddress = hostAddresses.KMS_GENERATION_CONTRACT_ADDRESS;
+    if (!hostEndpoints?.http || !kmsGenAddress) {
+      return null;
+    }
     const ethCallRaw = async (data: string) => {
-      const rpcUrl = hostReachableRpcUrl(discovery.endpoints.gateway.http);
+      const rpcUrl = hostReachableRpcUrl(hostEndpoints.http);
       const response = await fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -289,7 +296,7 @@ export const probeBootstrap = async (state: State) => {
           jsonrpc: "2.0",
           id: 1,
           method: "eth_call",
-          params: [{ to: withHexPrefix(discovery.gateway.KMS_GENERATION_ADDRESS), data }, "latest"],
+          params: [{ to: withHexPrefix(kmsGenAddress), data }, "latest"],
         }),
       });
       if (!response.ok) return 0n;

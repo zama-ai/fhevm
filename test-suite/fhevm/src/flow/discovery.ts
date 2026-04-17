@@ -100,7 +100,6 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
   }
   const requiredGateway = [
     "GATEWAY_CONFIG_ADDRESS",
-    "KMS_GENERATION_ADDRESS",
     "DECRYPTION_ADDRESS",
     "INPUT_VERIFICATION_ADDRESS",
     "CIPHERTEXT_COMMITS_ADDRESS",
@@ -112,6 +111,8 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
+    "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
+    "KMS_GENERATION_CONTRACT_ADDRESS",
   ];
   for (const key of requiredGateway) {
     if (!discovery.gateway[key]) {

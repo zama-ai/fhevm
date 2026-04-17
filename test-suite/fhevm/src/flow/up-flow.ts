@@ -543,6 +543,8 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
+        "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
+        "KMS_GENERATION_CONTRACT_ADDRESS",
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -555,6 +557,8 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
+            "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
+            "KMS_GENERATION_CONTRACT_ADDRESS",
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
@@ -670,13 +674,13 @@ export const runStep = async (state: State, step: StepName) => {
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
       );
-      await waitForContainer("gateway-sc-trigger-keygen", "complete");
+      await waitForContainer("host-sc-trigger-keygen", "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
       );
-      await waitForContainer("gateway-sc-trigger-crsgen", "complete");
+      await waitForContainer("host-sc-trigger-crsgen", "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;
