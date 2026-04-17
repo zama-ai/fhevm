@@ -276,7 +276,8 @@ contract ACL is
      * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to, or `WILDCARD_CONTRACT` for delegation across
-     *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed but redundant.
+     *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed and can be useful,
+     *        for example when different expiries are desired, although it is often unnecessary.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     function delegateForUserDecryption(
