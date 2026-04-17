@@ -48,6 +48,39 @@ describe('Multi-Chain State Isolation', function () {
     }
   });
 
+  describe('Canonical Host Contracts Topology', function () {
+    it('KMSGeneration is deployed only on the canonical host', async function () {
+      const kmsGenAddress = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+      expect(kmsGenAddress, 'KMS_GENERATION_CONTRACT_ADDRESS must be set in the e2e env').to.match(
+        /^0x[0-9a-fA-F]{40}$/,
+      );
+
+      const canonicalCode = await getProvider(this.chains[0]).getCode(kmsGenAddress!);
+      expect(canonicalCode, 'KMSGeneration should be deployed on the canonical host').to.not.eq('0x');
+
+      for (let i = 1; i < this.chains.length; i++) {
+        const extraCode = await getProvider(this.chains[i]).getCode(kmsGenAddress!);
+        expect(
+          extraCode,
+          `KMSGeneration should not be deployed on non-canonical chain ${this.chains[i].rpcUrl}`,
+        ).to.eq('0x');
+      }
+    });
+
+    it('ProtocolConfig is deployed on every host chain', async function () {
+      for (const chain of this.chains) {
+        expect(chain.protocolConfigAddress, `chain.protocolConfigAddress must be set for ${chain.rpcUrl}`).to.match(
+          /^0x[0-9a-fA-F]{40}$/,
+        );
+        const code = await getProvider(chain).getCode(chain.protocolConfigAddress);
+        expect(
+          code,
+          `ProtocolConfig should be deployed at ${chain.protocolConfigAddress} on ${chain.rpcUrl}`,
+        ).to.not.eq('0x');
+      }
+    });
+  });
+
   describe('User Input Across Chains', function () {
     it('encrypted input and FHE computation work independently on both chains', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;

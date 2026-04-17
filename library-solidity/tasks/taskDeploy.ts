@@ -13,7 +13,7 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployAllHostContracts').setAction(async function (_, hre) {
+task('task:deployCommonHostContracts').setAction(async function (_, hre) {
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     await hre.run('clean');
   }
@@ -39,7 +39,21 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   // Compile examples
   await hre.run('compile:specific', { contract: 'examples' });
 
-  console.info('Contract deployment done!');
+  console.info('Common host contracts deployment done!');
+});
+
+// library-solidity is single-chain dev scaffolding: no topology split, so there are no
+// canonical-only contracts to deploy separately. ProtocolConfig and KMSGeneration are
+// deployed by task:deployCommonHostContracts above. This no-op exists for task-name symmetry
+// with host-contracts so external callers can use the same task names consistently.
+task('task:deployCanonicalHostContracts').setAction(async function () {
+  console.info('Canonical host contracts deployment: nothing to deploy from library-solidity.');
+});
+
+// Alias: preserves existing call sites.
+task('task:deployAllHostContracts').setAction(async function (_, hre) {
+  await hre.run('task:deployCommonHostContracts');
+  await hre.run('task:deployCanonicalHostContracts');
 });
 
 ////////////////////////////////////////////////////////////////////////////////

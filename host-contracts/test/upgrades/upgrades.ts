@@ -1,10 +1,9 @@
 import { expect } from 'chai';
-import dotenv from 'dotenv';
-import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
+import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
@@ -44,16 +43,9 @@ describe('Upgrades', function () {
   it('deploy upgradeable ProtocolConfig', async function () {
     const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
     const factoryUpgraded = await ethers.getContractFactory('ProtocolConfigUpgradedExample', this.signers.fred);
-    const nodes = Array.from({ length: 4 }, (_, i) => ({
-      txSenderAddress: `0x${(0x1111 + i * 0x2222).toString(16).padStart(40, '0')}`,
-      signerAddress: `0x${(0x2222 + i * 0x2222).toString(16).padStart(40, '0')}`,
-      ipAddress: `127.0.0.${i + 1}`,
-      storageUrl: `https://s${i}.example.com`,
-    }));
-    const thresholds = { publicDecryption: 1, userDecryption: 2, kmsGen: 3, mpc: 4 };
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [nodes, thresholds] },
+      call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
     });
     await pc.waitForDeployment();
     expect(await pc.getVersion()).to.equal('ProtocolConfig v0.1.0');
@@ -154,7 +146,7 @@ describe('Upgrades', function () {
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {
-    const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
+    const origACLAdd = readHostAddress('ACL_CONTRACT_ADDRESS');
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
     expect(await acl.getVersion()).to.equal('ACL v0.4.0');

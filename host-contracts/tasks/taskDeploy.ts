@@ -6,6 +6,7 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
+import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { buildKMSGenerationMigrationStateFromEnv } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
@@ -36,20 +37,97 @@ function readExistingHostEnv(): Record<string, string> {
   return readHostEnv();
 }
 
+function formatError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function assertContractDeployed(hre: HardhatRuntimeEnvironment, address: string, label: string): Promise<void> {
+  const code = await hre.ethers.provider.getCode(address);
+  if (code === '0x') {
+    throw new Error(`No contract deployed at ${address} (expected ${label}) on the selected network.`);
+  }
+}
+
+async function assertContractMatchesVersionPrefix(
+  hre: HardhatRuntimeEnvironment,
+  address: string,
+  versionPrefix: string,
+): Promise<void> {
+  const contract = new hre.ethers.Contract(
+    address,
+    ['function getVersion() view returns (string)'],
+    hre.ethers.provider,
+  );
+
+  let version: string;
+  try {
+    version = await contract.getVersion();
+  } catch (err) {
+    throw new Error(
+      `Contract at ${address} does not expose getVersion(); it is not a ${versionPrefix} proxy. (${formatError(err)})`,
+    );
+  }
+
+  if (!version.startsWith(versionPrefix)) {
+    throw new Error(`Contract at ${address} reports version "${version}"; expected "${versionPrefix} v…".`);
+  }
+}
+
+async function readView<T>(errorMessage: string, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (err) {
+    const wrapped = new Error(`${errorMessage} (${formatError(err)})`) as Error & { cause?: unknown };
+    wrapped.cause = err;
+    throw wrapped;
+  }
+}
+
+// OZ upgrades' upgradeProxy sometimes returns before the upgradeToAndCall tx has been mined on
+// interval-mining networks. Poll a view that only the upgraded implementation answers to so the
+// task only returns once the new impl is observable on-chain.
+async function waitForUpgradeLanded(
+  hre: HardhatRuntimeEnvironment,
+  upgraded: { getAddress(): Promise<string> },
+  contractLabel: string,
+): Promise<void> {
+  const upgradedAddress = await upgraded.getAddress();
+  const contract = new hre.ethers.Contract(
+    upgradedAddress,
+    ['function getCurrentKmsContextId() view returns (uint256)'],
+    hre.ethers.provider,
+  );
+  const attempts = 10;
+  const delayMs = 250;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      await contract.getCurrentKmsContextId();
+      return;
+    } catch {
+      if (attempt === attempts - 1) {
+        throw new Error(
+          `${contractLabel} upgrade did not land after ${(attempts * delayMs) / 1000}s of polling. The upgradeToAndCall tx may have reverted or the provider is not mining.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployAllHostContracts').setAction(async function (_, hre) {
+task('task:deployCommonHostContracts').setAction(async function (_, hre) {
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     await hre.run('clean');
   }
 
-  await hre.run('task:deployEmptyUUPSProxies');
+  await hre.run('task:deployCommonEmptyUUPSProxies');
   await hre.run('compile:specific', { contract: 'contracts/immutable' });
   await hre.run('task:deployPauserSet');
 
-  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+  // The deployEmptyUUPSProxies tasks may have updated the contracts' addresses in `addresses/*.sol`.
   // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
   // used.
   await hre.run('compile:specific', { contract: 'contracts' });
@@ -57,10 +135,24 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('task:deployACL');
   await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployProtocolConfig');
-  await hre.run('task:deployKMSGeneration');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
+
+  console.log('Common host contracts deployment done!');
+});
+
+task('task:deployCanonicalHostContracts').setAction(async function (_, hre) {
+  await hre.run('task:deployCanonicalEmptyUUPSProxies');
+  await hre.run('task:deployKMSGeneration');
+
+  console.log('Canonical host contracts deployment done!');
+});
+
+// Alias: keeps existing call sites working. Runs both as if the one chain were canonical.
+task('task:deployAllHostContracts').setAction(async function (_, hre) {
+  await hre.run('task:deployCommonHostContracts');
+  await hre.run('task:deployCanonicalHostContracts');
 
   console.log('Contract deployment done!');
 });
@@ -95,7 +187,10 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
   return UUPSEmptyAddress;
 }
 
-task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+task('task:deployCommonEmptyUUPSProxies').setAction(async function (
+  taskArguments: TaskArguments,
+  { ethers, upgrades, run },
+) {
   // Compile the EmptyUUPS proxy contract for ACL
   await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
@@ -131,6 +226,17 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   // Set ProtocolConfig Address
   const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
+});
+
+task('task:deployCanonicalEmptyUUPSProxies').setAction(async function (
+  taskArguments: TaskArguments,
+  { ethers, upgrades, run },
+) {
+  ensureAddressesDirectoryExists();
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
   // Set KMSGeneration Address
   const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
@@ -165,6 +271,12 @@ task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers
     const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run(setterTask, { address: proxyAddress });
   }
+});
+
+// Alias: runs both variants. Kept so existing call sites continue working.
+task('task:deployEmptyUUPSProxies').setAction(async function (_, hre) {
+  await hre.run('task:deployCommonEmptyUUPSProxies');
+  await hre.run('task:deployCanonicalEmptyUUPSProxies');
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -355,19 +467,25 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
-  const code = await hre.ethers.provider.getCode(protocolConfigAddress);
-  if (code === '0x' || code.length === 2) {
-    throw new Error(`Cannot deploy KMSVerifier: no ProtocolConfig contract deployed at ${protocolConfigAddress}.`);
+  try {
+    await assertContractDeployed(hre, protocolConfigAddress, 'ProtocolConfig');
+    await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
+  } catch (err) {
+    throw new Error(`Cannot deploy KMSVerifier: ${formatError(err)}`);
   }
 
-  const protocolConfig = await hre.ethers.getContractAt('ProtocolConfig', protocolConfigAddress);
+  const protocolConfig = new hre.ethers.Contract(
+    protocolConfigAddress,
+    ['function getCurrentKmsContextId() view returns (uint256)'],
+    hre.ethers.provider,
+  );
 
   let currentKmsContextId: bigint;
   try {
     currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${String(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(err)}).`,
     );
   }
 
@@ -377,6 +495,75 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     );
   }
 });
+
+// Off-chain pre-flight replacing the removed on-chain hasPendingKeyManagementRequest guard.
+//
+// Uses minimal inline view ABIs so operators can run from a fresh checkout without compiled
+// artifacts. It also confirms the address is actually KMSGeneration before reading the
+// request counters, so a wrong code-bearing address cannot silently return a false green.
+task('task:assertNoPendingKeyManagementRequest')
+  .addOptionalParam(
+    'address',
+    'KMSGeneration proxy address. Falls back to env var then addresses/.env.host.',
+    undefined,
+    types.string,
+  )
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const kmsGenAddress: string | undefined =
+      taskArguments.address ??
+      process.env.KMS_GENERATION_CONTRACT_ADDRESS ??
+      readExistingHostEnv().KMS_GENERATION_CONTRACT_ADDRESS;
+    if (!kmsGenAddress) {
+      throw new Error(
+        'KMSGeneration address not resolved. Pass --address 0x…, or set KMS_GENERATION_CONTRACT_ADDRESS, or generate addresses/.env.host via a deploy task first.',
+      );
+    }
+
+    await assertContractDeployed(hre, kmsGenAddress, 'KMSGeneration');
+    await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
+
+    const kmsGen = new hre.ethers.Contract(
+      kmsGenAddress,
+      [
+        'function getKeyCounter() view returns (uint256)',
+        'function getCrsCounter() view returns (uint256)',
+        'function isRequestDone(uint256 requestId) view returns (bool)',
+      ],
+      hre.ethers.provider,
+    );
+    const readKmsStatusView = <T>(viewLabel: string, read: () => Promise<T>) =>
+      readView(
+        `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}.`,
+        read,
+      );
+
+    const keyCounter = await readKmsStatusView('getKeyCounter()', () => kmsGen.getKeyCounter());
+    const crsCounter = await readKmsStatusView('getCrsCounter()', () => kmsGen.getCrsCounter());
+
+    if (keyCounter !== KEY_COUNTER_BASE) {
+      const done = await readKmsStatusView(`isRequestDone(${keyCounter.toString()})`, () =>
+        kmsGen.isRequestDone(keyCounter),
+      );
+      if (!done) {
+        throw new Error(
+          `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
+        );
+      }
+    }
+
+    if (crsCounter !== CRS_COUNTER_BASE) {
+      const done = await readKmsStatusView(`isRequestDone(${crsCounter.toString()})`, () =>
+        kmsGen.isRequestDone(crsCounter),
+      );
+      if (!done) {
+        throw new Error(
+          `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
+        );
+      }
+    }
+
+    console.log(`No pending key management requests on ${kmsGenAddress}.`);
+  });
 
 ////////////////////////////////////////////////////////////////////////////////
 // ProtocolConfig
@@ -389,7 +576,8 @@ task('task:deployProtocolConfig')
     true,
     types.boolean,
   )
-  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { ethers, upgrades } = hre;
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -400,12 +588,17 @@ task('task:deployProtocolConfig')
     const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
     const thresholds = buildKmsThresholds();
 
-    await upgrades.upgradeProxy(proxy, newImplem, {
+    const upgraded = await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: 'initializeFromEmptyProxy',
         args: [initialKmsNodes, thresholds],
       },
     });
+    // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+    // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
+    // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
+    // hit a revert against the still-empty proxy.
+    await waitForUpgradeLanded(hre, upgraded, 'ProtocolConfig');
     console.log('ProtocolConfig code set successfully at address:', proxyAddress);
   });
 

@@ -235,6 +235,40 @@ describe("render-compose", () => {
     });
   });
 
+  test("extra host-sc chain deploy service calls common-only task", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("host-sc")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
+      await writeFile(envPath("host-sc"), "\n");
+      await writeFile(envPath("host-sc-chain-b"), "\n");
+      await generateComposeOverrides(multiChainHostContractsState, stackSpecForState(multiChainHostContractsState));
+
+      const extra = YAML.parse(await readFile(composePath("host-sc-chain-b"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+
+      const extraDeployCommand = extra.services["host-sc-chain-b-deploy"]?.command ?? [];
+      const extraCommandStr = extraDeployCommand.join(" ");
+
+      expect(extraCommandStr).toContain("task:deployCommonHostContracts");
+      expect(extraCommandStr).not.toContain("task:deployCanonicalHostContracts");
+      expect(extraCommandStr).not.toContain("task:deployAllHostContracts");
+    });
+  });
+
+  test("default host-sc deploy service still invokes all host contracts via alias", async () => {
+    const template = YAML.parse(
+      await readFile(
+        path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"),
+        "utf8",
+      ),
+    ) as { services: Record<string, { command?: string[] }> };
+
+    const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
+    expect(cmd).toContain("task:deployAllHostContracts");
+  });
+
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

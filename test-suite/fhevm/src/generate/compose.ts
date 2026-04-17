@@ -439,6 +439,12 @@ const buildExtraHostScOverride = async (
     const cloneService = structuredClone(service);
     cloneService.container_name = cloneName;
     cloneService.env_file = [envPath(scPrefix)];
+    // Non-canonical host chains must NOT deploy KMSGeneration. Override the deploy
+    // service's command to call only the common task. Other services (add-pausers,
+    // triggers) are inherited unchanged.
+    if (cloneName === `${scPrefix}-deploy` && Array.isArray(cloneService.command)) {
+      cloneService.command = ["npx hardhat task:deployCommonHostContracts"];
+    }
     applyBuildPolicy(cloneService, localHostContracts);
     if (localHostContracts) {
       cloneService.build = localBuildSpecFor("host-sc", name);

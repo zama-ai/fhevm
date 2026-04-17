@@ -5,8 +5,11 @@
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
-  requiresLegacyGatewayKmsGenerationAddress,
+  requiresGatewayKmsGenerationAddress,
+  requiresKmsGenerationContractAddress,
   requiresMultichainAclAddress,
+  requiresProtocolConfigContractAddress,
+  usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
@@ -112,6 +115,7 @@ import {
   waitForTestSuite,
 } from "./readiness";
 import {
+  assertGeneratedAddressFileLacks,
   ensureGeneratedAddressFile,
   ensureRuntimeArtifacts,
   multiChainComposeEntries,
@@ -559,7 +563,7 @@ export const runStep = async (state: State, step: StepName) => {
         "INPUT_VERIFICATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
-        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
+        ...(requiresGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
@@ -578,7 +582,8 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
-        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
+        ...(requiresProtocolConfigContractAddress(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+        ...(requiresKmsGenerationContractAddress(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -591,7 +596,10 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
-            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
+            ...(requiresProtocolConfigContractAddress(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+          ]);
+          await assertGeneratedAddressFileLacks(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
+            "KMS_GENERATION_CONTRACT_ADDRESS",
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
@@ -706,14 +714,18 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
+      const useHostKms = usesHostKmsGeneration(state);
+      const bootstrapComponent = useHostKms ? "host-sc" : "gateway-sc";
+      const keygenService = useHostKms ? "host-sc-trigger-keygen" : "gateway-sc-trigger-keygen";
+      const crsgenService = useHostKms ? "host-sc-trigger-crsgen" : "gateway-sc-trigger-crsgen";
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
+        stepComposeTask(bootstrapComponent, state, [keygenService], { noDeps: true }),
       );
-      await waitForContainer("host-sc-trigger-keygen", "complete");
+      await waitForContainer(keygenService, "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
+        stepComposeTask(bootstrapComponent, state, [crsgenService], { noDeps: true }),
       );
-      await waitForContainer("host-sc-trigger-crsgen", "complete");
+      await waitForContainer(crsgenService, "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;

@@ -157,3 +157,47 @@ against the canonical `ProtocolConfig` state during initialization.
 
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
+
+## KMS Context Rotation Runbook (Canonical Host)
+
+`ProtocolConfig.defineNewKmsContext` has no on-chain guard against executing while a key
+management request is in flight on the canonical `KMSGeneration`. An on-chain check was
+considered and rejected because DAO proposals are permissionlessly executable once queued,
+so an execution-time re-check would not prevent conflicting requests. Coordination of
+keygen / CRS generation / context rotation is a **runbook responsibility**.
+
+### Before submitting a DAO proposal that triggers keygen, CRS gen, or context rotation
+
+Run the off-chain pre-flight against the canonical Ethereum `KMSGeneration` proxy. The task
+resolves the KMSGeneration address from `--address`, `KMS_GENERATION_CONTRACT_ADDRESS`, or
+`addresses/.env.host` (in that order), so it runs from a clean checkout:
+
+```bash
+npx hardhat task:assertNoPendingKeyManagementRequest \
+  --network <network> \
+  --address 0x<canonical-KMSGeneration-proxy>
+```
+
+The task performs a view-based pre-flight against `KMSGeneration`: it checks `getVersion()`
+to confirm the address is really a `KMSGeneration` proxy, then reads `getKeyCounter()`,
+`getCrsCounter()`, and `isRequestDone(requestId)` to detect in-flight ceremonies. A key
+request is pending iff `keyCounter != KEY_COUNTER_BASE && !isRequestDone(keyCounter)`, and a
+CRS request is pending iff `crsCounter != CRS_COUNTER_BASE && !isRequestDone(crsCounter)`.
+It also throws if the configured address has no contract code on the selected network — a
+no-code response is not a pre-flight pass. DO NOT queue another keygen, CRS, or context
+rotation while it reports a pending request.
+
+If a request is stuck and cannot be completed by the current KMS committee, the ACL owner
+should first submit an `abortKeygen(prepKeygenId)` / `abortCrsgen(crsId)` proposal, wait for
+it to execute, and then submit the new request.
+
+### Non-canonical host chains
+
+`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
+non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
+LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
+rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
+`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+
+No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
+skipped. Operators are responsible for fan-out correctness.

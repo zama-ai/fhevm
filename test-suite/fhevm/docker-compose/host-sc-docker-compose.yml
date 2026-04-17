@@ -29,9 +29,8 @@ services:
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
-    # Using test parameters (--params-type 1) is currently not possible at it can make the random
+    # Using test parameters (--params-type 1) is currently not possible as it can make the random
     # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
-    # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
       - npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true
     depends_on:
@@ -45,9 +44,7 @@ services:
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
-    # Using test parameters (--params-type 1) is currently not possible for keygen (see above), and
-    # CRS parameters must be of the same type as the keygen parameters.
-    # See https://github.com/zama-ai/fhevm-internal/issues/685
+    # CRS parameters must match the same params type as the keygen request.
     command:
       - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:

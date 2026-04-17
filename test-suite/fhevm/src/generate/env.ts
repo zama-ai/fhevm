@@ -3,9 +3,9 @@
  */
 import {
   compatPolicyForState,
-  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
+  usesHostKmsGeneration,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -152,9 +152,9 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const kmsGenerationAddress = requiresLegacyGatewayKmsGenerationAddress(plan)
-    ? state.discovery.gateway.KMS_GENERATION_ADDRESS
-    : primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
+  const kmsGenerationAddress = usesHostKmsGeneration(plan)
+    ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
+    : state.discovery.gateway.KMS_GENERATION_ADDRESS;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -203,6 +203,8 @@ const applyDiscoveryEnv = (
     ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
     INPUT_VERIFIER_CONTRACT_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
+    PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
+    KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
   });
 };
 
@@ -353,6 +355,7 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 
   validateEnvMaps(envs, instanceEnvs);

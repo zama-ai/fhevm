@@ -2,8 +2,13 @@ import { expect } from 'chai';
 import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, run, upgrades } from 'hardhat';
-import path from 'path';
 
+import {
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+  PREP_KEYGEN_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import {
   type KmsGenerationMigrationEnv,
   type KmsGenerationMigrationEnvSnapshot,
@@ -13,23 +18,14 @@ import {
 } from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
-import { deployEmptyProxy } from '../utils/deploymentHelpers';
-
-const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
-
-// Solidity counter bases — must stay in sync with the contracts.
-const KMS_CONTEXT_COUNTER_BASE = BigInt(0x07) << BigInt(248);
-const PREP_KEYGEN_COUNTER_BASE = BigInt(3) << BigInt(248);
-const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
-const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
-
-/**
- * Deploy a fresh EmptyUUPSProxy instance (version 1, ready for an upgrade-and-init call).
- */
-async function deployFreshEmptyProxy(deployer: Wallet): Promise<string> {
-  const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  return deployEmptyProxy(factory);
-}
+import {
+  HOST_ENV_FILE,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  deployFreshEmptyProxy,
+  readHostAddress,
+  withPatchedMethods,
+} from './taskHelpers';
 
 /**
  * Deploy a legacy-style KMSVerifier proxy mock and advance it to the requested context id.
@@ -227,13 +223,57 @@ describe('Migration deploy tasks', function () {
   });
 
   describe('KMSVerifier deployment', function () {
+    it('passes the standalone readiness check when ProtocolConfig is initialized', async function () {
+      const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+
+      const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+      const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
+      const proxy = await upgrades.forceImport(protocolConfigProxyAddress, currentImplementation);
+      const protocolConfig = await upgrades.upgradeProxy(proxy, newImplementation, {
+        call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
+      });
+      await protocolConfig.waitForDeployment();
+
+      const hardhatEthers = ethers as typeof ethers & {
+        getContractFactory: (...args: unknown[]) => Promise<unknown>;
+        getContractAt: (...args: unknown[]) => Promise<unknown>;
+      };
+
+      await withPatchedMethods(
+        hardhatEthers,
+        {
+          getContractFactory: async () => {
+            throw new Error('ethers.getContractFactory should not be called by task:assertProtocolConfigReady');
+          },
+          getContractAt: async () => {
+            throw new Error('ethers.getContractAt should not be called by task:assertProtocolConfigReady');
+          },
+        },
+        async () => {
+          await run('task:assertProtocolConfigReady');
+        },
+      );
+    });
+
     it('rejects the standalone readiness check when ProtocolConfig is not initialized', async function () {
       const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
       await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigProxyAddress} is not initialized`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
+      );
+    });
+
+    it('rejects the standalone readiness check when pointed at a KMSVerifier address', async function () {
+      const kmsVerifierAddress = readHostAddress('KMS_VERIFIER_CONTRACT_ADDRESS');
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', kmsVerifierAddress);
+
+      await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
+        new RegExp(`Cannot deploy KMSVerifier: Contract at ${kmsVerifierAddress} reports version "KMSVerifier`),
       );
     });
 
@@ -247,7 +287,7 @@ describe('Migration deploy tasks', function () {
       const kmsVerifierImplBefore = await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress);
 
       await expect(run('task:deployKMSVerifier')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigProxyAddress} is not initialized`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
       );
 
       expect(await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress)).to.equal(kmsVerifierImplBefore);

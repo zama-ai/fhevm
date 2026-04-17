@@ -6,9 +6,13 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
+  requiresGatewayKmsGenerationAddress,
+  requiresKmsGenerationContractAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
+  requiresProtocolConfigContractAddress,
+  usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
@@ -183,6 +187,57 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+  });
+
+  test("does not require ProtocolConfig or KMSGeneration host addresses on pre-v0.13 bundles", () => {
+    const state = {
+      versions: {
+        target: "latest-supported" as const,
+        lockName: "latest-supported.json",
+        env: { HOST_VERSION: "v0.11.0" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresProtocolConfigContractAddress(state)).toBe(false);
+    expect(requiresKmsGenerationContractAddress(state)).toBe(false);
+    expect(usesHostKmsGeneration(state)).toBe(false);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(true);
+  });
+
+  test("requires ProtocolConfig and KMSGeneration host addresses on v0.13+ bundles", () => {
+    const state = {
+      versions: {
+        target: "sha" as const,
+        lockName: "sha.json",
+        env: { HOST_VERSION: "13a37bc" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresProtocolConfigContractAddress(state)).toBe(true);
+    expect(requiresKmsGenerationContractAddress(state)).toBe(true);
+    expect(usesHostKmsGeneration(state)).toBe(true);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+  });
+
+  test("requires modern host addresses when host-contracts is locally overridden", () => {
+    const state = {
+      versions: {
+        target: "latest-supported" as const,
+        lockName: "latest-supported.json",
+        env: { HOST_VERSION: "v0.11.0" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [{ group: "host-contracts" as const }],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresProtocolConfigContractAddress(state)).toBe(true);
+    expect(requiresKmsGenerationContractAddress(state)).toBe(true);
+    expect(usesHostKmsGeneration(state)).toBe(true);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
   test("routes semver relayer images to the legacy console registry", () => {

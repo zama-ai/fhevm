@@ -1,5 +1,5 @@
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
-import { requiresLegacyGatewayKmsGenerationAddress } from "../compat/compat";
+import { usesHostKmsGeneration } from "../compat/compat";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -282,26 +282,26 @@ export const probeBootstrap = async (state: State) => {
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
     const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-    const useGatewayKmsGeneration = requiresLegacyGatewayKmsGenerationAddress(state);
-    const rawRpcUrl = useGatewayKmsGeneration
-      ? discovery.endpoints.gateway.http
-      : discovery.endpoints.hosts[defaultHostKey]?.http;
-    const contractAddress = useGatewayKmsGeneration
-      ? discovery.gateway.KMS_GENERATION_ADDRESS
-      : discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS;
+    const useHostKms = usesHostKmsGeneration(state);
+    const rawRpcUrl = useHostKms
+      ? discovery.endpoints.hosts[defaultHostKey]?.http
+      : discovery.endpoints.gateway.http;
+    const contractAddress = useHostKms
+      ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
+      : discovery.gateway.KMS_GENERATION_ADDRESS;
     if (!rawRpcUrl) {
       throw new PreflightError(
-        useGatewayKmsGeneration
-          ? "Missing gateway RPC endpoint for bootstrap probe"
-          : `Missing host RPC endpoint for chain "${defaultHostKey}" during bootstrap probe`,
+        useHostKms
+          ? `Missing host RPC endpoint for chain "${defaultHostKey}" during bootstrap probe`
+          : "Missing gateway RPC endpoint for bootstrap probe",
       );
     }
     const rpcUrl = hostReachableRpcUrl(rawRpcUrl);
     if (!contractAddress) {
       throw new PreflightError(
-        useGatewayKmsGeneration
-          ? "Missing gateway KMS_GENERATION_ADDRESS for bootstrap probe"
-          : `Missing host KMS_GENERATION_CONTRACT_ADDRESS for chain "${defaultHostKey}" during bootstrap probe`,
+        useHostKms
+          ? `Missing host KMS_GENERATION_CONTRACT_ADDRESS for chain "${defaultHostKey}" during bootstrap probe`
+          : "Missing gateway KMS_GENERATION_ADDRESS for bootstrap probe",
       );
     }
     const ethCallRaw = async (data: string) => {

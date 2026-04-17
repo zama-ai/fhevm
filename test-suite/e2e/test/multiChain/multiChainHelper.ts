@@ -18,6 +18,7 @@ export interface ChainConfig {
   aclAddress: string;
   kmsVerifierAddress: string;
   inputVerifierAddress: string;
+  protocolConfigAddress: string;
 }
 
 function requireEnv(name: string): string {
@@ -34,6 +35,7 @@ function parseHostChains(): ChainConfig[] {
     aclAddress: requireEnv('ACL_CONTRACT_ADDRESS'),
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
+    protocolConfigAddress: requireEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
@@ -46,6 +48,7 @@ function parseHostChains(): ChainConfig[] {
       aclAddress: requireEnv(`HOST_CHAIN_${i}_ACL_CONTRACT_ADDRESS`),
       kmsVerifierAddress: requireEnv(`HOST_CHAIN_${i}_KMS_VERIFIER_CONTRACT_ADDRESS`),
       inputVerifierAddress: requireEnv(`HOST_CHAIN_${i}_INPUT_VERIFIER_CONTRACT_ADDRESS`),
+      protocolConfigAddress: requireEnv(`HOST_CHAIN_${i}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`),
     });
   }
   return chains;
