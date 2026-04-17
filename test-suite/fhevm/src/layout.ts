@@ -242,6 +242,8 @@ export const resolveServiceOverrides = (group: OverrideGroup, suffixes: string[]
 };
 
 export const TEST_GREP: Record<string, string> = {
+  "rollout-baseline":
+    "test user input uint64|test user decrypt|test HTTPPublicDecrypt mixed|should transfer tokens between two users.",
   "paused-host-contracts": "test paused host user input|test paused host HTTP public decrypt|test paused host operators",
   "paused-gateway-contracts":
     "test paused gateway user input|test paused gateway HTTP public decrypt",

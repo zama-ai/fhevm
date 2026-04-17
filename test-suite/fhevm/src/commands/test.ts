@@ -1,7 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState } from "../compat/compat";
+import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -57,6 +57,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   light: "Run the lightweight smoke suite.",
   standard: "Run the default CI suite for the active topology.",
   heavy: "Run the long operators suite.",
+  "rollout-baseline": "Run the minimal rollout baseline suite on intermediate states.",
   "paused-host-contracts": "Run pause-mode checks with host contracts paused.",
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
@@ -543,6 +544,15 @@ const waitForDbRevertRecovery = async (
   }
 };
 
+const runtimeImageRef = async (container: string) => {
+  const result = await run(["docker", "inspect", "--format", "{{.Config.Image}}", container], { allowFailure: true });
+  const image = result.stdout.trim();
+  if (result.code !== 0 || !image) {
+    throw new PreflightError(`Could not resolve runtime image for ${container}`);
+  }
+  return image;
+};
+
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */
 const runDbStateRevert = async (
   state: Awaited<ReturnType<typeof loadState>>,
@@ -566,11 +576,7 @@ const runDbStateRevert = async (
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
   const containers = coprocessorRuntimeContainers(topologyForState(state).count);
-  const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
-  if (!migrationVersion) {
-    throw new PreflightError("db-state-revert requires COPROCESSOR_DB_MIGRATION_VERSION in the active stack state");
-  }
-  const revertImage = `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${migrationVersion}`;
+  const revertImage = await runtimeImageRef("coprocessor-db-migration");
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
@@ -700,6 +706,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
+  const dbStateRevertSkipReason = () =>
+    supportsCoprocessorDbStateRevert(state)
+      ? undefined
+      : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
+
   const runProfile = async (name: string) => {
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
@@ -814,6 +825,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           const skipReason = ciphertextDriftSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ciphertext-drift: ${skipReason}`);
+            continue;
+          }
+        }
+        if (profile === "coprocessor-db-state-revert") {
+          const skipReason = dbStateRevertSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
             continue;
           }
         }

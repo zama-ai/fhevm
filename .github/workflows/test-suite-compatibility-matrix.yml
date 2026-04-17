@@ -1,0 +1,129 @@
+name: test-suite-compatibility-matrix
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
+  workflow_dispatch:
+    inputs:
+      compat-test:
+        description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
+        default: "v0.12-to-main"
+        type: string
+      compat-overrides:
+        description: "Optional local override groups appended to each compat step for diagnostic runs (e.g. relayer,test-suite)"
+        default: ""
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.12-to-main' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: true
+
+jobs:
+  prepare_rollout:
+    name: prepare-rollout
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'rollout')) }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to resolve published GitHub Container Registry package tags
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+    outputs:
+      compat_test: ${{ steps.prepare.outputs.compat_test }}
+      compat_overrides: ${{ steps.prepare.outputs.compat_overrides }}
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      scenario: ${{ steps.prepare.outputs.scenario }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Install CLI deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - id: prepare
+        name: Resolve compat-test and generate rollout matrix
+        working-directory: test-suite/fhevm
+        env:
+          COMPAT_TEST_INPUT: ${{ github.event.inputs.compat-test || 'v0.12-to-main' }}
+          COMPAT_OVERRIDES_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.compat-overrides || '' }}
+        run: |
+          set -euo pipefail
+          merge_csv() {
+            printf '%s\n' "$@" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
+          }
+          resolve_test() {
+            local value="$1"
+            local workspace_value="${GITHUB_WORKSPACE}/${value}"
+            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
+            if [ -f "$value" ]; then
+              realpath "$value"
+              return
+            fi
+            if [ -f "$workspace_value" ]; then
+              realpath "$workspace_value"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}.json" ]; then
+              realpath "${compat_dir}/${value}.json"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}" ]; then
+              realpath "${compat_dir}/${value}"
+              return
+            fi
+            echo "Could not resolve compat-test: $value" >&2
+            exit 1
+          }
+          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
+          compat_overrides="$(merge_csv "$COMPAT_OVERRIDES_INPUT")"
+          {
+            echo "compat_test=$compat_test_rel"
+            echo "compat_overrides=$compat_overrides"
+            echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
+            echo "matrix<<EOF"
+            ./fhevm-cli rollout --compat-test "$compat_test" --matrix
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  compatibility-e2e:
+    name: compatibility-${{ matrix.name }}
+    needs: [prepare_rollout]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_rollout.outputs.matrix) }}
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions:
+      contents: 'read' # Required by the called workflow to checkout repository code
+      id-token: 'write' # Required by the called workflow for OIDC-authenticated actions
+      packages: 'read' # Required by the called workflow to pull GitHub Container Registry images
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      build: false
+      compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
+      compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
+      rollout-step: ${{ matrix.stepIndex }}
+      scenario: ${{ needs.prepare_rollout.outputs.scenario }}
+      test-profile: ${{ matrix.testProfile }}

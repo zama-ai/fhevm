@@ -189,6 +189,38 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
+## Rollout Lock Generation
+
+For release compatibility matrices, check in a compat-test definition under `compat-tests/` and either generate the full rollout locally or render one ephemeral step on demand:
+
+```sh
+./fhevm-cli rollout \
+  --compat-test ./compat-tests/v0.12-to-main.json \
+  --out /tmp/fhevm-rollout
+
+./fhevm-cli rollout \
+  --compat-test ./compat-tests/v0.12-to-main.json \
+  --step 3 \
+  --out /tmp/fhevm-step.lock.json
+```
+
+Compat-tests define:
+
+- explicit `from` and `to` version maps
+- optional `harness` pinning such as the test-suite image tag
+- optional baseline/final `profiles`
+- ordered rollout `steps` with either `units` or ordered `substeps`
+- an explicit `units` map that assigns every version key to exactly one rollout unit
+- optional execution defaults such as scenario
+
+`rollout` writes:
+
+- `00-baseline.lock.json`
+- one cumulative lock file per rollout step
+- `matrix.json` for GitHub Actions matrix expansion
+
+GitHub Actions consumes the compat-test JSON directly and renders one temporary lock file per matrix job. The generated lock files are execution artifacts, not checked-in state.
+
 ## Version Override via Environment Variables
 
 After resolving a target bundle, the CLI applies **environment variable overrides**: any
