@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../_types/ethers/index.d.ts",
+  "module": "../_esm/ethers/index.js",
+  "main": "../_cjs/ethers/index.js"
+}

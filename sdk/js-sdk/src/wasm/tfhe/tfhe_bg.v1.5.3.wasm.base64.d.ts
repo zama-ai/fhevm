@@ -1,0 +1,1 @@
+export const tfheWasmBase64: string;

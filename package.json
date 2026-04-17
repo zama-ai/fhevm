@@ -8,11 +8,17 @@
     "host-contracts",
     "library-solidity",
     "library-solidity/codegen",
-    "test-suite/e2e"
+    "test-suite/e2e",
+    "sdk/js-sdk"
   ],
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
-    "prettier": "^3.5.3",
+    "prettier": "^3.8.3",
     "prettier-plugin-solidity": "^2.0.0"
+  },
+  "overrides": {
+    "webpack": {
+      "@types/eslint-scope": "3.7.6"
+    }
   }
 }
