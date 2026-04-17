@@ -33,7 +33,7 @@ async function deployFreshEmptyProxy(deployer: Wallet): Promise<string> {
 }
 
 /**
- * Deploy a legacy v0.2 KMSVerifier proxy fixture and advance it to the requested context id.
+ * Deploy a legacy-style KMSVerifier proxy mock and advance it to the requested context id.
  * The migrated tasks reconcile against this contract before upgrading ProtocolConfig / KMSGeneration.
  */
 async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint): Promise<string> {
@@ -82,18 +82,16 @@ function patchHostEnv(key: string, value: string): void {
   fs.writeFileSync(HOST_ENV_FILE, updated);
 }
 
-function patchHostAddressesSol(constantName: string, value: string): void {
+function patchHostAddress(key: keyof typeof HOST_ADDRESS_CONSTANT_BY_ENV_KEY, value: string): void {
+  patchHostEnv(key, value);
+
+  const constantName = HOST_ADDRESS_CONSTANT_BY_ENV_KEY[key];
   const content = fs.readFileSync(HOST_ADDRESSES_FILE, 'utf-8');
   const updated = content.replace(
     new RegExp(`address constant ${constantName} = .*;`),
     `address constant ${constantName} = ${value};`,
   );
   fs.writeFileSync(HOST_ADDRESSES_FILE, updated);
-}
-
-function patchHostAddress(key: keyof typeof HOST_ADDRESS_CONSTANT_BY_ENV_KEY, value: string): void {
-  patchHostEnv(key, value);
-  patchHostAddressesSol(HOST_ADDRESS_CONSTANT_BY_ENV_KEY[key], value);
 }
 
 async function recompileMigratedContracts(): Promise<void> {
