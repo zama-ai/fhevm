@@ -68,11 +68,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
     /**
      * @dev Bundles common `vm.assume` preconditions for wildcard-delegation fuzz tests.
      */
-    function _assumeWildcardTestPreconditions(
-        address sender,
-        address delegate,
-        address contractAddress
-    ) internal view {
+    function _assumeWildcardTestPreconditions(address sender, address delegate, address contractAddress) internal view {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
