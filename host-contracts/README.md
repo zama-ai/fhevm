@@ -56,6 +56,20 @@ The values to feed into those setter tasks should come from the currently deploy
 environment you are upgrading. A practical source of truth is the verified source bundle of
 the implementation currently behind the proxy, specifically `addresses/FHEVMHostAddresses.sol`.
 
+If the upgrade baseline predates `ProtocolConfig` and `KMSGeneration` (for example
+`UPGRADE_FROM_TAG=v0.11.1` in CI), run:
+
+```bash
+npx hardhat task:ensureMigrationProxyAddresses
+```
+
+This compatibility task only deploys empty UUPS proxies for missing address keys and appends
+the missing generated constants so prepare-upgrade tasks can compile against the current
+source tree. Keep it as a forward-compat safeguard if a manifest contract starts importing
+those generated addresses before the baseline tag catches up. `DEPLOYER_PRIVATE_KEY` is only
+required when the task actually needs to bootstrap missing proxies. Once the baseline tag
+includes those contracts, the task becomes a no-op and the bootstrap step can be removed.
+
 Then run:
 
 ```bash

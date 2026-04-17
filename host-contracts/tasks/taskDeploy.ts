@@ -139,22 +139,28 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
 task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers, upgrades, run }) {
   ensureAddressesDirectoryExists();
 
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const existingEnv = readExistingHostEnv();
-
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
   const targets = [
     { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
     { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
   ] as const;
 
-  for (const { envKey, setterTask } of targets) {
-    if (existingEnv[envKey]) {
-      console.log(`${envKey} already present; skipping.`);
-      continue;
-    }
+  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
+
+  if (missingTargets.length === 0) {
+    console.warn(
+      'Migration bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration. Remove task:ensureMigrationProxyAddresses once UPGRADE_FROM_TAG includes #2243.',
+    );
+    return;
+  }
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  for (const { envKey, setterTask } of missingTargets) {
     const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run(setterTask, { address: proxyAddress });
   }
