@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT MIN(block_number) as \"min_block_number: i64\"\n            FROM blocks\n            WHERE chain_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "min_block_number: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "54b15de246e6f15ac8582a6e9c75cdec505156a57e7b2fe8daab47cb21ebf414"
+}
