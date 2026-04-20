@@ -1336,7 +1336,11 @@ export function getTxHCUFromTxReceipt(
         else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
         else
           hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
-        const maxInputHCU = Math.max(...(event.args[1] as string[]).map((v) => readFromHCUMap(ethers.toBeHex(v, 32))));
+        const inputValues = event.args[1] as string[];
+        const maxInputHCU =
+          inputValues.length > 0
+            ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32))))
+            : 0;
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
