@@ -6,7 +6,7 @@ An FHEVM-native node consists of the following components:
 
 More detailed description of the architecture and FHE execution can be found in [Architecture](../../../fundamentals/fhevm/native/architecture.md) and [FHE Computation](../../../fundamentals/fhevm/native/fhe_computation.md).
 
-The Executor service is a gRPC server that accepts FHE computation requests from the full node/validator node and executes them. It is implemented in the [executor](../../../../fhevm-engine/executor/README.md) directory of `fhevm-engine`.
+The Executor service is a gRPC server that accepts FHE computation requests from the full node/validator node and executes them. It is implemented in the [sns-worker](../../../../fhevm-engine/sns-worker/README.md) directory of `fhevm-engine`.
 
 At the time of writing, the [geth](geth.md) implementation is not yet implemented.
 

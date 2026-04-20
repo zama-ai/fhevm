@@ -12,11 +12,11 @@ This document provides an overview of mocked mode in the FHEVM framework, explai
 
 Mocked mode is currently supported in the [Zama Hardhat template](https://github.com/zama-ai/fhevm-hardhat-template). Developers can enable mocked mode to simulate encrypted operations while building and testing smart contracts locally. The Hardhat template includes pre-configured scripts and libraries to simplify the setup process for mocked mode.
 
-Refer to the [[Quick start - Hardhat]](../getting-started/overview-1/hardhat/README.md) guide for instructions on using the Hardhat template.
+Refer to the [[Quick start - Hardhat]](./hardhat/README.md) guide for instructions on using the Hardhat template.
 
 ### 2. **Foundry (coming soon)**
 
-Mocked mode support is planned for [Foundry](./write_contract/foundry.md) in future releases.
+Mocked mode support is planned for [Foundry](./foundry.md) in future releases.
 
 ## How mocked mode works
 
