@@ -702,17 +702,11 @@ pub fn check_fhe_operand_types(
                     Ok(())
                 }
                 SupportedFheOperations::FheSum => {
-                    const FHE_SUM_MIN_INPUTS: usize = 1;
                     const FHE_SUM_MAX_INPUTS_WIDE: usize = 60;
                     const FHE_SUM_MAX_INPUTS_NARROW: usize = 100;
 
-                    if input_handles.len() < FHE_SUM_MIN_INPUTS {
-                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
-                            fhe_operation,
-                            fhe_operation_name: format!("{:?}", fhe_op),
-                            expected_operands: FHE_SUM_MIN_INPUTS,
-                            got_operands: input_handles.len(),
-                        });
+                    if input_handles.is_empty() {
+                        return Ok(());
                     }
 
                     let first_type = get_ct_type(&input_handles[0])?;
@@ -799,9 +793,9 @@ pub fn perform_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     _: usize,
-    // for deterministic randomness functions
+    output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
-    perform_fhe_operation_impl(fhe_operation_int, input_operands)
+    perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type)
 }
 
 #[cfg(feature = "gpu")]
@@ -809,7 +803,7 @@ pub fn perform_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
     gpu_idx: usize,
-    // for deterministic randomness functions
+    output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
 
@@ -818,7 +812,7 @@ pub fn perform_fhe_operation(
         .iter()
         .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
     reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
-    let res = perform_fhe_operation_impl(fhe_operation_int, input_operands);
+    let res = perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type);
     release_memory_on_gpu(gpu_mem_res, gpu_idx);
     res
 }
@@ -842,7 +836,7 @@ fn collect_operands_as<'a, T>(
 pub fn perform_fhe_operation_impl(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
-    // for deterministic randomness functions
+    output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
     match fhe_operation {
@@ -3199,47 +3193,61 @@ pub fn perform_fhe_operation_impl(
             fhe_operation: format!("{:?}", fhe_operation),
             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
         }),
-        SupportedFheOperations::FheSum => match &input_operands[0] {
-            SupportedFheCiphertexts::FheUint8(_) => {
-                collect_operands_as(&fhe_operation, input_operands, |op| match op {
-                    SupportedFheCiphertexts::FheUint8(v) => Some(v),
-                    _ => None,
-                })
-                .map(|refs| SupportedFheCiphertexts::FheUint8(refs.into_iter().sum()))
+        SupportedFheOperations::FheSum => {
+            if input_operands.is_empty() {
+                if !matches!(output_type, 2..=6) {
+                    return Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!(
+                            "{:?}: type {output_type} is not supported for FheSum",
+                            fhe_operation
+                        ),
+                        input_types: vec![],
+                    });
+                }
+                return trivial_encrypt_be_bytes(output_type, &[0u8]);
             }
-            SupportedFheCiphertexts::FheUint16(_) => {
-                collect_operands_as(&fhe_operation, input_operands, |op| match op {
-                    SupportedFheCiphertexts::FheUint16(v) => Some(v),
-                    _ => None,
-                })
-                .map(|refs| SupportedFheCiphertexts::FheUint16(refs.into_iter().sum()))
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(_) => {
+                    collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                        SupportedFheCiphertexts::FheUint8(v) => Some(v),
+                        _ => None,
+                    })
+                    .map(|refs| SupportedFheCiphertexts::FheUint8(refs.into_iter().sum()))
+                }
+                SupportedFheCiphertexts::FheUint16(_) => {
+                    collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                        SupportedFheCiphertexts::FheUint16(v) => Some(v),
+                        _ => None,
+                    })
+                    .map(|refs| SupportedFheCiphertexts::FheUint16(refs.into_iter().sum()))
+                }
+                SupportedFheCiphertexts::FheUint32(_) => {
+                    collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                        SupportedFheCiphertexts::FheUint32(v) => Some(v),
+                        _ => None,
+                    })
+                    .map(|refs| SupportedFheCiphertexts::FheUint32(refs.into_iter().sum()))
+                }
+                SupportedFheCiphertexts::FheUint64(_) => {
+                    collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                        SupportedFheCiphertexts::FheUint64(v) => Some(v),
+                        _ => None,
+                    })
+                    .map(|refs| SupportedFheCiphertexts::FheUint64(refs.into_iter().sum()))
+                }
+                SupportedFheCiphertexts::FheUint128(_) => {
+                    collect_operands_as(&fhe_operation, input_operands, |op| match op {
+                        SupportedFheCiphertexts::FheUint128(v) => Some(v),
+                        _ => None,
+                    })
+                    .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum()))
+                }
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
             }
-            SupportedFheCiphertexts::FheUint32(_) => {
-                collect_operands_as(&fhe_operation, input_operands, |op| match op {
-                    SupportedFheCiphertexts::FheUint32(v) => Some(v),
-                    _ => None,
-                })
-                .map(|refs| SupportedFheCiphertexts::FheUint32(refs.into_iter().sum()))
-            }
-            SupportedFheCiphertexts::FheUint64(_) => {
-                collect_operands_as(&fhe_operation, input_operands, |op| match op {
-                    SupportedFheCiphertexts::FheUint64(v) => Some(v),
-                    _ => None,
-                })
-                .map(|refs| SupportedFheCiphertexts::FheUint64(refs.into_iter().sum()))
-            }
-            SupportedFheCiphertexts::FheUint128(_) => {
-                collect_operands_as(&fhe_operation, input_operands, |op| match op {
-                    SupportedFheCiphertexts::FheUint128(v) => Some(v),
-                    _ => None,
-                })
-                .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum()))
-            }
-            _ => Err(FhevmError::UnsupportedFheTypes {
-                fhe_operation: format!("{:?}", fhe_operation),
-                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-            }),
-        },
+        }
     }
 }
 
@@ -3559,8 +3567,8 @@ mod fhe_sum_tests {
     }
 
     #[test]
-    fn fhe_sum_check_operand_types_too_few_inputs() {
-        assert!(check_fhe_operand_types(FHE_SUM_OP, &[], &[]).is_err());
+    fn fhe_sum_check_operand_types_empty_is_ok() {
+        assert!(check_fhe_operand_types(FHE_SUM_OP, &[], &[]).is_ok());
     }
 
     #[test]
@@ -3579,7 +3587,7 @@ mod fhe_sum_tests {
 
     #[test]
     fn fhe_sum_check_operand_types_valid_bounds() {
-        // (count, type_byte): min=2, narrow max=100, wide max=60
+        // (count, type_byte): narrow max=100, wide max=60
         for (n, ty) in [(2usize, 2u8), (100, 2), (60, 5), (60, 6)] {
             assert!(check_sum(n, ty), "n={n} ty={ty} should pass");
         }

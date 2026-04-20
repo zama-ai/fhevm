@@ -102,85 +102,65 @@ library FHE {
      * @dev Evaluates sum(euint8[] values) and returns the result.
      */
     function sum(euint8[] memory values) internal returns (euint8) {
-        bytes32[] memory handles = new bytes32[](values.length == 0 ? 1 : values.length);
-        if (values.length == 0) {
-            handles[0] = euint8.unwrap(asEuint8(0));
-        } else {
-            for (uint256 i = 0; i < values.length; i++) {
-                euint8 v = values[i];
-                if (!isInitialized(v)) v = asEuint8(0);
-                handles[i] = euint8.unwrap(v);
-            }
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint8 v = values[i];
+            if (!isInitialized(v)) v = asEuint8(0);
+            handles[i] = euint8.unwrap(v);
         }
-        return euint8.wrap(Impl.sum(handles));
+        return euint8.wrap(Impl.sum(handles, FheType.Uint8));
     }
 
     /**
      * @dev Evaluates sum(euint16[] values) and returns the result.
      */
     function sum(euint16[] memory values) internal returns (euint16) {
-        bytes32[] memory handles = new bytes32[](values.length == 0 ? 1 : values.length);
-        if (values.length == 0) {
-            handles[0] = euint16.unwrap(asEuint16(0));
-        } else {
-            for (uint256 i = 0; i < values.length; i++) {
-                euint16 v = values[i];
-                if (!isInitialized(v)) v = asEuint16(0);
-                handles[i] = euint16.unwrap(v);
-            }
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint16 v = values[i];
+            if (!isInitialized(v)) v = asEuint16(0);
+            handles[i] = euint16.unwrap(v);
         }
-        return euint16.wrap(Impl.sum(handles));
+        return euint16.wrap(Impl.sum(handles, FheType.Uint16));
     }
 
     /**
      * @dev Evaluates sum(euint32[] values) and returns the result.
      */
     function sum(euint32[] memory values) internal returns (euint32) {
-        bytes32[] memory handles = new bytes32[](values.length == 0 ? 1 : values.length);
-        if (values.length == 0) {
-            handles[0] = euint32.unwrap(asEuint32(0));
-        } else {
-            for (uint256 i = 0; i < values.length; i++) {
-                euint32 v = values[i];
-                if (!isInitialized(v)) v = asEuint32(0);
-                handles[i] = euint32.unwrap(v);
-            }
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint32 v = values[i];
+            if (!isInitialized(v)) v = asEuint32(0);
+            handles[i] = euint32.unwrap(v);
         }
-        return euint32.wrap(Impl.sum(handles));
+        return euint32.wrap(Impl.sum(handles, FheType.Uint32));
     }
 
     /**
      * @dev Evaluates sum(euint64[] values) and returns the result.
      */
     function sum(euint64[] memory values) internal returns (euint64) {
-        bytes32[] memory handles = new bytes32[](values.length == 0 ? 1 : values.length);
-        if (values.length == 0) {
-            handles[0] = euint64.unwrap(asEuint64(0));
-        } else {
-            for (uint256 i = 0; i < values.length; i++) {
-                euint64 v = values[i];
-                if (!isInitialized(v)) v = asEuint64(0);
-                handles[i] = euint64.unwrap(v);
-            }
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint64 v = values[i];
+            if (!isInitialized(v)) v = asEuint64(0);
+            handles[i] = euint64.unwrap(v);
         }
-        return euint64.wrap(Impl.sum(handles));
+        return euint64.wrap(Impl.sum(handles, FheType.Uint64));
     }
 
     /**
      * @dev Evaluates sum(euint128[] values) and returns the result.
      */
     function sum(euint128[] memory values) internal returns (euint128) {
-        bytes32[] memory handles = new bytes32[](values.length == 0 ? 1 : values.length);
-        if (values.length == 0) {
-            handles[0] = euint128.unwrap(asEuint128(0));
-        } else {
-            for (uint256 i = 0; i < values.length; i++) {
-                euint128 v = values[i];
-                if (!isInitialized(v)) v = asEuint128(0);
-                handles[i] = euint128.unwrap(v);
-            }
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint128 v = values[i];
+            if (!isInitialized(v)) v = asEuint128(0);
+            handles[i] = euint128.unwrap(v);
         }
-        return euint128.wrap(Impl.sum(handles));
+        return euint128.wrap(Impl.sum(handles, FheType.Uint128));
     }
 
     /**
