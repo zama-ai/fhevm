@@ -377,6 +377,19 @@ jobs:
           ./fhevm-cli rollout --compat-test "$compat_test" --step "${ROLLOUT_STEP_INPUT:-0}" --out "$lock_file"
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
+      - name: Resolve compat local overrides
+        if: ${{ inputs.compat-test != '' }}
+        env:
+          COMPAT_OVERRIDES_INPUT: ${{ inputs.compat-overrides }}
+        run: |
+          overrides="${COMPAT_OVERRIDES_INPUT}"
+          case ",${overrides}," in
+            *,test-suite,*) ;;
+            "") overrides="test-suite" ;;
+            *) overrides="${overrides},test-suite" ;;
+          esac
+          echo "COMPAT_OVERRIDES=${overrides}" >> "$GITHUB_ENV"
+
       - name: Resolve latest-main lock once
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
@@ -390,8 +403,6 @@ jobs:
 
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
-        env:
-          COMPAT_OVERRIDES: ${{ inputs.compat-overrides }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
@@ -412,8 +423,6 @@ jobs:
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
-        env:
-          COMPAT_OVERRIDES: ${{ inputs.compat-overrides }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then

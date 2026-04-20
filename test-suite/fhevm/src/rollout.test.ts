@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { PreflightError } from "./errors";
 import { generateRolloutLocks, readCompatTest, renderRolloutStep, rollout, rolloutMatrix, rolloutStep, validateCompatSteps } from "./commands/rollout";
+import { REPO_ROOT } from "./layout";
 import { readJson, remove, writeJson } from "./utils/fs";
 import type { VersionBundle } from "./types";
 import type { CompatTestDefinition } from "./commands/rollout";
@@ -35,7 +36,8 @@ const compatTest = (): CompatTestDefinition => ({
   from: envMap("from"),
   to: envMap("to"),
   harness: {
-    testSuiteImageTag: "v0.12.0",
+    testSuiteImageTag: "to-test-suite",
+    relayerSdkVersion: "0.5.0-alpha.1",
   },
   profiles: {
     baseline: "rollout-baseline",
@@ -108,15 +110,22 @@ describe("rollout", () => {
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
-  test("injects the pinned harness tag into from/to env maps", async () => {
+  test("injects pinned harness env into from/to env maps", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
     await writeJson(file, testDef);
     const loaded = await readCompatTest(file);
-    expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
-    expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(loaded.from.TEST_SUITE_VERSION).toBe("to-test-suite");
+    expect(loaded.to.TEST_SUITE_VERSION).toBe("to-test-suite");
+    expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
+  });
+
+  test("derives the from relayer-sdk version for the checked-in v0.12 rollout", async () => {
+    const loaded = await readCompatTest(path.join(REPO_ROOT, "test-suite/fhevm/compat-tests/v0.12-to-main.json"));
+    expect(loaded.harness?.testSuiteImageTag).toBe("186c343");
+    expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
   });
 
   test("rejects changing version keys left outside rollout units", async () => {
@@ -144,7 +153,8 @@ describe("rollout", () => {
       "09-coprocessor-zkproof-worker.lock.json",
       "10-coprocessor-sns-worker.lock.json",
     ]);
-    expect(locks[0].env.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(locks[0].env.TEST_SUITE_VERSION).toBe("to-test-suite");
+    expect(locks[0].env.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.1");
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
     expect(locks[3].env.CORE_VERSION).toBe("to-core_version");

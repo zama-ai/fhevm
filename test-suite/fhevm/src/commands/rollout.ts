@@ -1,6 +1,8 @@
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { PreflightError } from "../errors";
+import { REPO_ROOT } from "../layout";
 import { PACKAGE_TO_REPOSITORY } from "../resolve/target";
 import type { VersionBundle } from "../types";
 import { ensureDir, readJson, writeJson } from "../utils/fs";
@@ -29,6 +31,7 @@ type ExpandedCompatStep = {
 };
 type CompatHarnessDefinition = {
   testSuiteImageTag?: string;
+  relayerSdkVersion?: string;
 };
 type CompatProfilesDefinition = {
   baseline?: string;
@@ -79,7 +82,41 @@ const unitNeedsLocalOverride = (test: CompatTestDefinition, unit: string) =>
 const baselineTestProfile = (test: CompatTestDefinition) => test.profiles?.baseline ?? DEFAULT_BASELINE_TEST_PROFILE;
 const finalTestProfile = (test: CompatTestDefinition) => test.profiles?.final ?? DEFAULT_FINAL_TEST_PROFILE;
 const harnessEnv = (test: CompatTestDefinition): Record<string, string> =>
-  test.harness?.testSuiteImageTag ? { TEST_SUITE_VERSION: test.harness.testSuiteImageTag } : {};
+  Object.fromEntries(
+    [
+      test.harness?.testSuiteImageTag ? ["TEST_SUITE_VERSION", test.harness.testSuiteImageTag] : undefined,
+      test.harness?.relayerSdkVersion ? ["RELAYER_SDK_VERSION", test.harness.relayerSdkVersion] : undefined,
+    ].filter((entry): entry is [string, string] => !!entry),
+  );
+
+const exactRelayerSdkVersionFromTag = (tag: string) => {
+  const lockText = execFileSync("git", ["show", `${tag}:package-lock.json`], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const lock = JSON.parse(lockText) as {
+    packages?: Record<string, { version?: string }>;
+  };
+  const version = lock.packages?.["test-suite/e2e/node_modules/@zama-fhe/relayer-sdk"]?.version;
+  if (!version) {
+    throw new PreflightError(`compat-test could not resolve @zama-fhe/relayer-sdk from ${tag}:package-lock.json`);
+  }
+  return version;
+};
+
+const deriveRelayerSdkVersion = (test: CompatTestDefinition) => {
+  if (test.harness?.relayerSdkVersion) {
+    return test.harness.relayerSdkVersion;
+  }
+  const candidate = test.from.TEST_SUITE_VERSION ?? test.from.GATEWAY_VERSION ?? test.from.HOST_VERSION;
+  if (!candidate || !parseCompatVersion(candidate)) {
+    throw new PreflightError(
+      "compat-test could not derive harness relayer-sdk version from the `from` bundle; set harness.relayerSdkVersion explicitly",
+    );
+  }
+  return exactRelayerSdkVersionFromTag(candidate);
+};
 
 const validateStepName = (kind: string, value: unknown) => {
   if (typeof value !== "string" || !value.trim()) {
@@ -225,10 +262,17 @@ export const readCompatTest = async (file: string) => {
   if (test.harness?.testSuiteImageTag && (typeof test.harness.testSuiteImageTag !== "string" || !test.harness.testSuiteImageTag.length)) {
     throw new PreflightError("compat-test harness.testSuiteImageTag must be a non-empty string");
   }
+  if (test.harness?.relayerSdkVersion && (typeof test.harness.relayerSdkVersion !== "string" || !test.harness.relayerSdkVersion.length)) {
+    throw new PreflightError("compat-test harness.relayerSdkVersion must be a non-empty string");
+  }
+  const harness = test.harness
+    ? { ...test.harness, relayerSdkVersion: deriveRelayerSdkVersion(test) }
+    : undefined;
   const validated = {
     ...test,
-    from: validateEnvMap("from", test.from, test.harness),
-    to: validateEnvMap("to", test.to, test.harness),
+    harness,
+    from: validateEnvMap("from", test.from, harness),
+    to: validateEnvMap("to", test.to, harness),
   } satisfies CompatTestDefinition;
   const fromCovered = validateCompatUnits(validated.units, validated.from);
   const toCovered = validateCompatUnits(validated.units, validated.to);

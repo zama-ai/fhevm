@@ -1,7 +1,9 @@
 ARG NODE_VERSION=20.19.1-alpine3.21
+ARG RELAYER_SDK_VERSION=""
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
+ARG RELAYER_SDK_VERSION=""
 
 WORKDIR /app
 
@@ -26,7 +28,14 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
-    npm prune
+    npm prune && \
+    if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      archive="$(npm pack "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" --silent)"; \
+      mkdir -p test-suite/e2e/node_modules/@zama-fhe/relayer-sdk; \
+      tar -xzf "$archive" --strip-components=1 -C test-suite/e2e/node_modules/@zama-fhe/relayer-sdk; \
+      rm -f "$archive"; \
+    fi && \
+    node -e "const path=require.resolve('@zama-fhe/relayer-sdk/package.json',{paths:['/app/test-suite/e2e']});const version=require(path).version;const expected=process.env.RELAYER_SDK_VERSION;if(expected&&version!==expected){throw new Error('resolved @zama-fhe/relayer-sdk '+version+' instead of '+expected+' from '+path);}"
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
