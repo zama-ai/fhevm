@@ -5,6 +5,10 @@ pragma solidity ^0.8.24;
  * @notice The KMS request types.
  * @dev The first request type is deprecated.
  * See `Decryption.sol` for more details.
+ * Indexes 3–6 were previously used by KMSGeneration (PrepKeygen, Keygen, Crsgen,
+ * KeyReshare) before it was moved to Ethereum. They are intentionally not reused
+ * here: historical requestIds with those prefixes are still served by the
+ * view-only KMSGeneration getters on existing Gateway deployments.
  */
 enum RequestType {
     _deprecated_, // 0: DEPRECATED
