@@ -37,7 +37,7 @@ interface IKMSGeneration {
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param paramsType The type of the parameters to use.
-     * @param extraData Additional context data (0x02 || contextId || epochId).
+     * @param extraData Additional context data (0x01 || contextId).
      */
     event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 
