@@ -12,7 +12,7 @@ gateway_url = "http://localhost:8545"
 # ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
 gateway_chain_id = 54321
 
-# Chain ID for the Ethereum network (required)
+# Chain ID for the Ethereum-like network; defaults to Sepolia (required)
 # ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
 ethereum_chain_id = 11155111
 
