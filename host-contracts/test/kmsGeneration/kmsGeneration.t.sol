@@ -65,13 +65,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // Deploy ProtocolConfig with our test KMS nodes
         KmsNode[] memory nodes = _makeKmsNodes(2);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 1,
-            kmsGen: 1,
-            mpc: 1
-        });
-        _deployProtocolConfig(owner, nodes, thresholds);
+        _deployProtocolConfig(owner, nodes, _defaultThresholds());
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
         // Deploy KMSGeneration
@@ -562,10 +556,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             storageUrl: "https://s11.example.com"
         });
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(
-            newNodes,
-            IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1})
-        );
+        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);

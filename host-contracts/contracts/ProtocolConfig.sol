@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsNode} from "./shared/Structs.sol";
+import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {kmsGenerationAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -26,9 +27,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
     uint64 private constant REINITIALIZER_VERSION = 2;
-
-    /// @notice Base value for KMS context IDs. Format: [0x07 type tag | 31 counter bytes].
-    uint256 private constant KMS_CONTEXT_COUNTER_BASE = uint256(0x07) << 248;
 
     /// @notice Canonical KMSGeneration proxy used for the in-flight guard.
     IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAdd);
@@ -173,9 +171,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getKmsSigners() external view virtual returns (address[] memory) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.kmsSignerAddressesForContext[$.currentKmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getKmsSignersForContext(uint256 kmsContextId) external view virtual returns (address[] memory) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().kmsSignerAddressesForContext[kmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function isKmsSigner(address signer) external view virtual returns (bool) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.isKmsSignerForContext[$.currentKmsContextId][signer];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -209,6 +219,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function getPublicDecryptionThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.publicDecryptionThresholdForContext[$.currentKmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
+        _requireValidContext(kmsContextId);
+        return _getProtocolConfigStorage().publicDecryptionThresholdForContext[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig

@@ -36,12 +36,15 @@ interface IProtocolConfig {
     function getKmsGenThreshold() external view returns (uint256);
     function getKmsNodeForContext(uint256 kmsContextId, address txSender) external view returns (KmsNode memory);
     function getKmsNodesForContext(uint256 kmsContextId) external view returns (KmsNode[] memory);
+    function getKmsSigners() external view returns (address[] memory);
     function getKmsSignersForContext(uint256 kmsContextId) external view returns (address[] memory);
     function getMpcThreshold() external view returns (uint256);
     function getPublicDecryptionThreshold() external view returns (uint256);
+    function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
     function getUserDecryptionThreshold() external view returns (uint256);
     function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
     function getVersion() external pure returns (string memory);
+    function isKmsSigner(address signer) external view returns (bool);
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
@@ -241,6 +244,19 @@ interface IProtocolConfig {
   },
   {
     "type": "function",
+    "name": "getKmsSigners",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getKmsSignersForContext",
     "inputs": [
       {
@@ -275,6 +291,25 @@ interface IProtocolConfig {
     "type": "function",
     "name": "getPublicDecryptionThreshold",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPublicDecryptionThresholdForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -328,6 +363,25 @@ interface IProtocolConfig {
       }
     ],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "isKmsSigner",
+    "inputs": [
+      {
+        "name": "signer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -3130,6 +3184,157 @@ function getKmsNodesForContext(uint256 kmsContextId) external view returns (KmsN
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getKmsSigners()` and selector `0x7eaac8f2`.
+```solidity
+function getKmsSigners() external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsSignersCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getKmsSigners()`](getKmsSignersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getKmsSignersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsSignersCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsSignersCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsSignersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getKmsSignersReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getKmsSignersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getKmsSignersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getKmsSignersCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getKmsSigners()";
+            const SELECTOR: [u8; 4] = [126u8, 170u8, 200u8, 242u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getKmsSignersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getKmsSignersReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getKmsSignersForContext(uint256)` and selector `0x5bff76d9`.
 ```solidity
 function getKmsSignersForContext(uint256 kmsContextId) external view returns (address[] memory);
@@ -3590,6 +3795,164 @@ function getPublicDecryptionThreshold() external view returns (uint256);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getPublicDecryptionThresholdForContext(uint256)` and selector `0xc3aaaa5a`.
+```solidity
+function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPublicDecryptionThresholdForContextCall {
+        #[allow(missing_docs)]
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getPublicDecryptionThresholdForContext(uint256)`](getPublicDecryptionThresholdForContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPublicDecryptionThresholdForContextReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPublicDecryptionThresholdForContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPublicDecryptionThresholdForContextCall) -> Self {
+                    (value.kmsContextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPublicDecryptionThresholdForContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { kmsContextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPublicDecryptionThresholdForContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPublicDecryptionThresholdForContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPublicDecryptionThresholdForContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getPublicDecryptionThresholdForContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getPublicDecryptionThresholdForContext(uint256)";
+            const SELECTOR: [u8; 4] = [195u8, 170u8, 170u8, 90u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getPublicDecryptionThresholdForContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getPublicDecryptionThresholdForContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getUserDecryptionThreshold()` and selector `0xc2b42986`.
 ```solidity
 function getUserDecryptionThreshold() external view returns (uint256);
@@ -4033,6 +4396,156 @@ function getVersion() external pure returns (string memory);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getVersionReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isKmsSigner(address)` and selector `0x203d0114`.
+```solidity
+function isKmsSigner(address signer) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isKmsSignerCall {
+        #[allow(missing_docs)]
+        pub signer: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isKmsSigner(address)`](isKmsSignerCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isKmsSignerReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isKmsSignerCall> for UnderlyingRustTuple<'_> {
+                fn from(value: isKmsSignerCall) -> Self {
+                    (value.signer,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isKmsSignerCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { signer: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isKmsSignerReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: isKmsSignerReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isKmsSignerReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isKmsSignerCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isKmsSigner(address)";
+            const SELECTOR: [u8; 4] = [32u8, 61u8, 1u8, 20u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signer,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isKmsSignerReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isKmsSignerReturn = r.into();
                         r._0
                     })
             }
@@ -4553,17 +5066,25 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[allow(missing_docs)]
         getKmsNodesForContext(getKmsNodesForContextCall),
         #[allow(missing_docs)]
+        getKmsSigners(getKmsSignersCall),
+        #[allow(missing_docs)]
         getKmsSignersForContext(getKmsSignersForContextCall),
         #[allow(missing_docs)]
         getMpcThreshold(getMpcThresholdCall),
         #[allow(missing_docs)]
         getPublicDecryptionThreshold(getPublicDecryptionThresholdCall),
         #[allow(missing_docs)]
+        getPublicDecryptionThresholdForContext(
+            getPublicDecryptionThresholdForContextCall,
+        ),
+        #[allow(missing_docs)]
         getUserDecryptionThreshold(getUserDecryptionThresholdCall),
         #[allow(missing_docs)]
         getUserDecryptionThresholdForContext(getUserDecryptionThresholdForContextCall),
         #[allow(missing_docs)]
         getVersion(getVersionCall),
+        #[allow(missing_docs)]
+        isKmsSigner(isKmsSignerCall),
         #[allow(missing_docs)]
         isKmsSignerForContext(isKmsSignerForContextCall),
         #[allow(missing_docs)]
@@ -4581,12 +5102,14 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
+            [32u8, 61u8, 1u8, 20u8],
             [38u8, 207u8, 93u8, 239u8],
             [40u8, 30u8, 139u8, 254u8],
             [42u8, 56u8, 137u8, 152u8],
             [49u8, 255u8, 65u8, 200u8],
             [70u8, 197u8, 187u8, 189u8],
             [91u8, 255u8, 118u8, 217u8],
+            [126u8, 170u8, 200u8, 242u8],
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 111u8, 62u8, 185u8],
             [169u8, 44u8, 117u8, 203u8],
@@ -4594,6 +5117,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [191u8, 155u8, 22u8, 200u8],
             [192u8, 174u8, 100u8, 247u8],
             [194u8, 180u8, 41u8, 134u8],
+            [195u8, 170u8, 170u8, 90u8],
             [249u8, 198u8, 112u8, 195u8],
         ];
     }
@@ -4601,7 +5125,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 15usize;
+        const COUNT: usize = 18usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -4623,6 +5147,9 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 Self::getKmsNodesForContext(_) => {
                     <getKmsNodesForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getKmsSigners(_) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getKmsSignersForContext(_) => {
                     <getKmsSignersForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -4632,6 +5159,9 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 Self::getPublicDecryptionThreshold(_) => {
                     <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getPublicDecryptionThresholdForContext(_) => {
+                    <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getUserDecryptionThreshold(_) => {
                     <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -4640,6 +5170,9 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isKmsSigner(_) => {
+                    <isKmsSignerCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isKmsSignerForContext(_) => {
                     <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SELECTOR
@@ -4679,6 +5212,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::getVersion)
                     }
                     getVersion
+                },
+                {
+                    fn isKmsSigner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::isKmsSigner)
+                    }
+                    isKmsSigner
                 },
                 {
                     fn getMpcThreshold(
@@ -4747,6 +5291,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::getKmsSignersForContext)
                     }
                     getKmsSignersForContext
+                },
+                {
+                    fn getKmsSigners(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::getKmsSigners)
+                    }
+                    getKmsSigners
                 },
                 {
                     fn isKmsSignerForContext(
@@ -4826,6 +5381,19 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     getUserDecryptionThreshold
                 },
                 {
+                    fn getPublicDecryptionThresholdForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigCalls::getPublicDecryptionThresholdForContext,
+                            )
+                    }
+                    getPublicDecryptionThresholdForContext
+                },
+                {
                     fn getKmsNodesForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -4866,6 +5434,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::getVersion)
                     }
                     getVersion
+                },
+                {
+                    fn isKmsSigner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::isKmsSigner)
+                    }
+                    isKmsSigner
                 },
                 {
                     fn getMpcThreshold(
@@ -4934,6 +5513,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::getKmsSignersForContext)
                     }
                     getKmsSignersForContext
+                },
+                {
+                    fn getKmsSigners(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::getKmsSigners)
+                    }
+                    getKmsSigners
                 },
                 {
                     fn isKmsSignerForContext(
@@ -5013,6 +5603,19 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     getUserDecryptionThreshold
                 },
                 {
+                    fn getPublicDecryptionThresholdForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigCalls::getPublicDecryptionThresholdForContext,
+                            )
+                    }
+                    getPublicDecryptionThresholdForContext
+                },
+                {
                     fn getKmsNodesForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -5067,6 +5670,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         inner,
                     )
                 }
+                Self::getKmsSigners(inner) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getKmsSignersForContext(inner) => {
                     <getKmsSignersForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -5082,6 +5690,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         inner,
                     )
                 }
+                Self::getPublicDecryptionThresholdForContext(inner) => {
+                    <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getUserDecryptionThreshold(inner) => {
                     <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -5094,6 +5707,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::isKmsSigner(inner) => {
+                    <isKmsSignerCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::isKmsSignerForContext(inner) => {
                     <isKmsSignerForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -5151,6 +5769,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         out,
                     )
                 }
+                Self::getKmsSigners(inner) => {
+                    <getKmsSignersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getKmsSignersForContext(inner) => {
                     <getKmsSignersForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -5169,6 +5793,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         out,
                     )
                 }
+                Self::getPublicDecryptionThresholdForContext(inner) => {
+                    <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getUserDecryptionThreshold(inner) => {
                     <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -5183,6 +5813,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isKmsSigner(inner) => {
+                    <isKmsSignerCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -5998,6 +6634,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`getKmsSigners`] function.
+        pub fn getKmsSigners(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getKmsSignersCall, N> {
+            self.call_builder(&getKmsSignersCall)
+        }
         ///Creates a new call builder for the [`getKmsSignersForContext`] function.
         pub fn getKmsSignersForContext(
             &self,
@@ -6020,6 +6662,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getPublicDecryptionThresholdCall, N> {
             self.call_builder(&getPublicDecryptionThresholdCall)
+        }
+        ///Creates a new call builder for the [`getPublicDecryptionThresholdForContext`] function.
+        pub fn getPublicDecryptionThresholdForContext(
+            &self,
+            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getPublicDecryptionThresholdForContextCall,
+            N,
+        > {
+            self.call_builder(
+                &getPublicDecryptionThresholdForContextCall {
+                    kmsContextId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getUserDecryptionThreshold`] function.
         pub fn getUserDecryptionThreshold(
@@ -6047,6 +6704,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
+        }
+        ///Creates a new call builder for the [`isKmsSigner`] function.
+        pub fn isKmsSigner(
+            &self,
+            signer: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, isKmsSignerCall, N> {
+            self.call_builder(&isKmsSignerCall { signer })
         }
         ///Creates a new call builder for the [`isKmsSignerForContext`] function.
         pub fn isKmsSignerForContext(
