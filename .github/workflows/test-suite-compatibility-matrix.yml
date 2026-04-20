@@ -59,6 +59,18 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
 
+      - name: Typecheck CLI
+        working-directory: test-suite/fhevm
+        run: bun run check
+
+      - name: Unit test CLI
+        working-directory: test-suite/fhevm
+        run: bun test src
+
+      - name: Compat smoke
+        working-directory: test-suite/fhevm
+        run: bun run compat-smoke
+
       - id: prepare
         name: Resolve compat-test and generate rollout matrix
         working-directory: test-suite/fhevm
@@ -67,35 +79,10 @@ jobs:
           COMPAT_OVERRIDES_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.compat-overrides || '' }}
         run: |
           set -euo pipefail
-          merge_csv() {
-            printf '%s\n' "$@" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
-          }
-          resolve_test() {
-            local value="$1"
-            local workspace_value="${GITHUB_WORKSPACE}/${value}"
-            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
-            if [ -f "$value" ]; then
-              realpath "$value"
-              return
-            fi
-            if [ -f "$workspace_value" ]; then
-              realpath "$workspace_value"
-              return
-            fi
-            if [ -f "${compat_dir}/${value}.json" ]; then
-              realpath "${compat_dir}/${value}.json"
-              return
-            fi
-            if [ -f "${compat_dir}/${value}" ]; then
-              realpath "${compat_dir}/${value}"
-              return
-            fi
-            echo "Could not resolve compat-test: $value" >&2
-            exit 1
-          }
-          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          source scripts/workflow-lib.sh
+          compat_test="$(resolve_compat_test "$COMPAT_TEST_INPUT")"
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
-          compat_overrides="$(merge_csv "$COMPAT_OVERRIDES_INPUT")"
+          compat_overrides="$(normalize_csv "$COMPAT_OVERRIDES_INPUT")"
           {
             echo "compat_test=$compat_test_rel"
             echo "compat_overrides=$compat_overrides"
@@ -122,6 +109,7 @@ jobs:
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     with:
       build: false
+      run-cli-prechecks: false
       compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
       compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}

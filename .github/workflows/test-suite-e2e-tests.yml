@@ -110,6 +110,10 @@ on:
         description: "Named test profile to run instead of the default standard suite"
         default: "standard"
         type: string
+      run-cli-prechecks:
+        description: "Run branch-level fhevm-cli checks before stack boot"
+        default: true
+        type: boolean
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -223,6 +227,10 @@ on:
         description: "Named test profile to run instead of the default standard suite"
         default: "standard"
         type: string
+      run-cli-prechecks:
+        description: "Run branch-level fhevm-cli checks before stack boot"
+        default: true
+        type: boolean
 
 permissions: {}
 
@@ -302,14 +310,17 @@ jobs:
           sudo apt-get install -y gh
 
       - name: Typecheck CLI
+        if: ${{ inputs.run-cli-prechecks }}
         working-directory: test-suite/fhevm
         run: bun run check
 
       - name: Unit test CLI
+        if: ${{ inputs.run-cli-prechecks }}
         working-directory: test-suite/fhevm
         run: bun test src
 
       - name: Compat smoke
+        if: ${{ inputs.run-cli-prechecks }}
         working-directory: test-suite/fhevm
         run: bun run compat-smoke
 
@@ -349,30 +360,8 @@ jobs:
           ROLLOUT_STEP_INPUT: ${{ inputs.rollout-step }}
         run: |
           set -euo pipefail
-          resolve_test() {
-            local value="$1"
-            local workspace_value="${GITHUB_WORKSPACE}/${value}"
-            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
-            if [ -f "$value" ]; then
-              realpath "$value"
-              return
-            fi
-            if [ -f "$workspace_value" ]; then
-              realpath "$workspace_value"
-              return
-            fi
-            if [ -f "${compat_dir}/${value}.json" ]; then
-              realpath "${compat_dir}/${value}.json"
-              return
-            fi
-            if [ -f "${compat_dir}/${value}" ]; then
-              realpath "${compat_dir}/${value}"
-              return
-            fi
-            echo "Could not resolve compat-test: $value" >&2
-            exit 1
-          }
-          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          source scripts/workflow-lib.sh
+          compat_test="$(resolve_compat_test "$COMPAT_TEST_INPUT")"
           lock_file="${RUNNER_TEMP}/compat-step.lock.json"
           ./fhevm-cli rollout --compat-test "$compat_test" --step "${ROLLOUT_STEP_INPUT:-0}" --out "$lock_file"
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
@@ -382,15 +371,8 @@ jobs:
         env:
           COMPAT_OVERRIDES_INPUT: ${{ inputs.compat-overrides }}
         run: |
-          overrides="${COMPAT_OVERRIDES_INPUT}"
-          if [ -z "$overrides" ]; then
-            overrides="test-suite"
-          else
-            case ",${overrides}," in
-              *,test-suite,*) ;;
-              *) overrides="${overrides},test-suite" ;;
-            esac
-          fi
+          source scripts/workflow-lib.sh
+          overrides="$(normalize_csv "$COMPAT_OVERRIDES_INPUT" "test-suite")"
           echo "COMPAT_OVERRIDES=${overrides}" >> "$GITHUB_ENV"
 
       - name: Resolve latest-main lock once
@@ -404,9 +386,10 @@ jobs:
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
-      - name: Resolve stack plan and display effective component versions
+      - name: Resolve stack plan and boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
+          source scripts/workflow-lib.sh
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
             args+=(--lock-file "$LOCK_FILE")
@@ -416,32 +399,8 @@ jobs:
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
-          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
-            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
-            for group in "${override_groups[@]}"; do
-              [ -n "$group" ] && args+=(--override "$group")
-            done
-          fi
+          append_override_args "${COMPAT_OVERRIDES:-}"
           ./fhevm-cli up "${args[@]}" --dry-run
-
-      - name: Boot fhevm Stack
-        working-directory: test-suite/fhevm
-        run: |
-          args=(--scenario "$SCENARIO")
-          if [ -n "${LOCK_FILE:-}" ]; then
-            args+=(--lock-file "$LOCK_FILE")
-          else
-            args+=(--target latest-main)
-          fi
-          if [ "$BUILD" = "true" ]; then
-            args+=(--build)
-          fi
-          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
-            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
-            for group in "${override_groups[@]}"; do
-              [ -n "$group" ] && args+=(--override "$group")
-            done
-          fi
           ./fhevm-cli up "${args[@]}"
 
       - name: Selected e2e suite
@@ -453,9 +412,17 @@ jobs:
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
-          docker stop coprocessor-host-listener
+          listener_running="$(docker inspect -f '{{.State.Running}}' coprocessor-host-listener 2>/dev/null || echo false)"
+          cleanup() {
+            if [ "$listener_running" = "true" ]; then
+              docker start coprocessor-host-listener >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+          if [ "$listener_running" = "true" ]; then
+            docker stop coprocessor-host-listener
+          fi
           ./fhevm-cli test erc20
-          docker start coprocessor-host-listener
 
       - name: Show logs
         working-directory: test-suite/fhevm
