@@ -110,10 +110,6 @@ on:
         description: "Named test profile to run instead of the default standard suite"
         default: "standard"
         type: string
-      run-cli-prechecks:
-        description: "Run branch-level fhevm-cli checks before stack boot"
-        default: true
-        type: boolean
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
