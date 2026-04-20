@@ -676,12 +676,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128) ? 60 : 100;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
-        for (uint256 i = 0; i < values.length; i++) {
-            if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
-            if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
-        }
-
-        result = keccak256(
+        bytes32 preimage = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 Operators.fheSum,
@@ -693,8 +688,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, resultType);
-        acl.allowTransient(result, msg.sender);
+        result = _naryOp(preimage, values, resultType);
         hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
         emit FheSum(msg.sender, values, result);
     }
@@ -984,6 +978,19 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         result = _appendMetadataToPrehandle(result, middleType);
         ACL.allowTransient(result, msg.sender);
+    }
+
+    function _naryOp(
+        bytes32 preimage,
+        bytes32[] calldata values,
+        FheType resultType
+    ) internal virtual returns (bytes32 result) {
+        for (uint256 i = 0; i < values.length; i++) {
+            if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
+        }
+        result = _appendMetadataToPrehandle(preimage, resultType);
+        acl.allowTransient(result, msg.sender);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
