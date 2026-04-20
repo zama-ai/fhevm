@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
       compat_test: ${{ steps.prepare.outputs.compat_test }}
       compat_overrides: ${{ steps.prepare.outputs.compat_overrides }}
@@ -54,6 +55,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ env.GHCR_READ_TOKEN }}
 
       - name: Install CLI deps
         working-directory: test-suite/fhevm
