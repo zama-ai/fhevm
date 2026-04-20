@@ -364,6 +364,7 @@ jobs:
 
       - name: Resolve compat local overrides
         if: ${{ inputs.compat-test != '' }}
+        working-directory: test-suite/fhevm
         env:
           COMPAT_OVERRIDES_INPUT: ${{ inputs.compat-overrides }}
         run: |
