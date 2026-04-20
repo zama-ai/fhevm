@@ -16,8 +16,15 @@ import {protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/address
 import {HostContractsDeployerTestUtils, DeployableERC1967Proxy} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {KMSGenerationUpgradedExample} from "@fhevm-host-contracts/examples/KMSGenerationUpgradedExample.sol";
 
+contract KMSGenerationHarness is KMSGeneration {
+    function extractContextIdFromExtraData(bytes memory extraData) external view returns (uint256) {
+        return _extractContextIdFromExtraData(extraData);
+    }
+}
+
 contract KMSGenerationTest is HostContractsDeployerTestUtils {
     KMSGeneration internal kmsGeneration;
+    KMSGenerationHarness internal kmsGenerationHarness;
     ProtocolConfig internal protocolConfig;
 
     // Counter bases (matching contract)
@@ -71,6 +78,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // Deploy KMSGeneration
         _deployKMSGeneration(owner);
         kmsGeneration = KMSGeneration(kmsGenerationAdd);
+        kmsGenerationHarness = new KMSGenerationHarness();
     }
 
     // -----------------------------------------------------------------------
@@ -128,7 +136,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function _buildExtraDataForContextId(uint256 contextId) internal pure returns (bytes memory) {
-        return abi.encodePacked(uint8(0x02), contextId, uint256(0));
+        return abi.encodePacked(uint8(0x01), contextId);
     }
 
     function _hashPrepKeygen(uint256 prepKeygenId) internal view returns (bytes32) {
@@ -382,6 +390,26 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
         kmsGeneration.initializeFromMigration(state);
+    }
+
+    function testFuzz_revertExtractContextIdMalformedV1ExtraData(bytes calldata malformedSuffix) public {
+        vm.assume(malformedSuffix.length < 32);
+        bytes memory extraData = abi.encodePacked(uint8(0x01), malformedSuffix);
+        vm.expectRevert(IKMSGeneration.DeserializingExtraDataFail.selector);
+        kmsGenerationHarness.extractContextIdFromExtraData(extraData);
+    }
+
+    function testFuzz_revertExtractContextIdUnsupportedExtraDataVersion(bytes calldata extraData) public {
+        vm.assume(extraData.length != 0);
+        vm.assume(uint8(extraData[0]) != 0x00);
+        vm.assume(uint8(extraData[0]) != 0x01);
+        uint8 version = uint8(extraData[0]);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.UnsupportedExtraDataVersion.selector, version));
+        kmsGenerationHarness.extractContextIdFromExtraData(extraData);
+    }
+
+    function test_extractContextIdEmptyExtraDataUsesCurrentContext() public view {
+        assertEq(kmsGenerationHarness.extractContextIdFromExtraData(""), protocolConfig.getCurrentKmsContextId());
     }
 
     // -----------------------------------------------------------------------

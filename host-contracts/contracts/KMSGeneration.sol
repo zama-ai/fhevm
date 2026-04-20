@@ -129,7 +129,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @dev Extra data versions
      */
     uint8 private constant EXTRA_DATA_V1 = 0x01;
-    uint8 private constant EXTRA_DATA_V2 = 0x02;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
@@ -189,7 +188,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The extra data associated with each request (0x02 || contextId || epochId)
+        /// @notice The extra data associated with each request (0x01 || contextId)
         mapping(uint256 requestId => bytes extraData) requestExtraData;
     }
 
@@ -832,26 +831,24 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @return contextId The extracted context ID, or the current context if extraData is empty.
      */
     function _extractContextIdFromExtraData(bytes memory extraData) internal view virtual returns (uint256 contextId) {
-        // Empty extraData is tolerated for migrated requests that did not persist request metadata.
-        if (extraData.length == 0) {
+        // v0 (0x00 prefix or empty): uses the current context. Trailing bytes are
+        // ignored for forward-compatibility with potential v0 extensions.
+        if (extraData.length == 0 || uint8(extraData[0]) == 0x00) {
             return PROTOCOL_CONFIG.getCurrentKmsContextId();
         }
 
         uint8 version = uint8(extraData[0]);
-        if (version == EXTRA_DATA_V1 || version == EXTRA_DATA_V2) {
-            if (extraData.length < 33) {
-                revert DeserializingExtraDataFail();
-            }
-            // Legacy v1 extraData layout: [version(1)] [contextId(32)]
-            // Current v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)]
-            // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
-            assembly {
-                contextId := mload(add(extraData, 33))
-            }
-            return contextId;
+        if (version != EXTRA_DATA_V1) {
+            revert UnsupportedExtraDataVersion(version);
         }
-
-        revert UnsupportedExtraDataVersion(version);
+        if (extraData.length < 33) {
+            revert DeserializingExtraDataFail();
+        }
+        // v1 extraData layout: [version(1)] [contextId(32)]
+        // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
+        assembly {
+            contextId := mload(add(extraData, 33))
+        }
     }
 
     // ----------------------------------------------------------------------------------------------
@@ -1053,7 +1050,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
-        // epochId is hardcoded to 0 until resharing (key rotation across epochs) is implemented.
-        return abi.encodePacked(EXTRA_DATA_V2, contextId, uint256(0));
+        // Emit V1 (contextId only) until resharing (RFC 005) is implemented.
+        return abi.encodePacked(EXTRA_DATA_V1, contextId);
     }
 }
