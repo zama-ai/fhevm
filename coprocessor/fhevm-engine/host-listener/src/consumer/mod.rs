@@ -207,7 +207,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         Err(err) => error!(error = %err, "Consumer task panicked"),
     }
     client.cancel();
-    client.unregister_contracts(&contracts).await.unwrap();
     health_check_cancel_token.cancel();
     Ok(())
 }
