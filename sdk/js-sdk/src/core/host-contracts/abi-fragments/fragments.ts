@@ -41,6 +41,45 @@ export const getFHEVMExecutorAddressAbi: readonly [
 ] as const;
 
 ////////////////////////////////////////////////////////////////////////////////
+// ACL.delegateForUserDecryption()
+////////////////////////////////////////////////////////////////////////////////
+
+export const delegateForUserDecryptionAbi: readonly [
+  Record<string, unknown> & { readonly name: 'delegateForUserDecryption' },
+] = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'delegate', type: 'address' },
+      { internalType: 'address', name: 'contractAddress', type: 'address' },
+      { internalType: 'uint64', name: 'expirationDate', type: 'uint64' },
+    ],
+    name: 'delegateForUserDecryption',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
+
+////////////////////////////////////////////////////////////////////////////////
+// ACL.revokeDelegationForUserDecryption()
+////////////////////////////////////////////////////////////////////////////////
+
+export const revokeDelegationForUserDecryptionAbi: readonly [
+  Record<string, unknown> & { readonly name: 'revokeDelegationForUserDecryption' },
+] = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'delegate', type: 'address' },
+      { internalType: 'address', name: 'contractAddress', type: 'address' },
+    ],
+    name: 'revokeDelegationForUserDecryption',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
+
+////////////////////////////////////////////////////////////////////////////////
 // ACL.getUserDecryptionDelegationExpirationDate()
 ////////////////////////////////////////////////////////////////////////////////
 

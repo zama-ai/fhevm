@@ -31,3 +31,24 @@ export {
   type ReadInputVerifierContractDataReturnType,
   readInputVerifierContractData,
 } from './readInputVerifierContractData.js';
+
+export { WILDCARD_CONTRACT, isWildcardContract } from '../../host-contracts/wildcardContract.js';
+export type { WildcardContractAddress } from '../../host-contracts/wildcardContract.js';
+
+export {
+  type GetUserDecryptionDelegationExpirationDateParameters,
+  type GetUserDecryptionDelegationExpirationDateReturnType,
+  getUserDecryptionDelegationExpirationDate,
+} from './getUserDecryptionDelegationExpirationDate.js';
+
+export {
+  type DelegateForUserDecryptionParameters,
+  type DelegateForUserDecryptionCallArgs,
+  delegateForUserDecryption,
+} from './delegateForUserDecryption.js';
+
+export {
+  type RevokeDelegationForUserDecryptionParameters,
+  type RevokeDelegationForUserDecryptionCallArgs,
+  revokeDelegationForUserDecryption,
+} from './revokeDelegationForUserDecryption.js';
